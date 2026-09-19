@@ -5,7 +5,7 @@
  * encodes.
  */
 
-/** The 7 Jev rubric categories, 0 (worst) to 4 (best). */
+/** The 8 Jev rubric categories, 0 (worst) to 4 (best). */
 export const ALL_CATEGORIES = [
   'complexity_clean_code',
   'code_smells',
@@ -14,6 +14,7 @@ export const ALL_CATEGORIES = [
   'error_handling',
   'security',
   'comments',
+  'concurrency_and_idempotency',
 ] as const;
 export type CategoryId = (typeof ALL_CATEGORIES)[number];
 
@@ -106,14 +107,46 @@ export interface JevUsage {
 
 export interface BaselineEntry {
   categories: Partial<Record<CategoryId, number>>;
+  /** Jev's self-reported confidence (0-1) per category, parallel to `categories`.
+   * Optional: baselines written before confidence was captured omit it, and the
+   * renderer/weighting fall back to raw scores when it is absent. */
+  confidences?: Partial<Record<CategoryId, number>>;
+  /** Mean of the confidence-weighted category values (see `weightByConfidence`). */
   overall: number;
 }
 
 export type Baseline = Record<string, BaselineEntry>;
 
+/** Run-level facts about the scoring pass that produced a baseline, surfaced in
+ * the HTML report. Persisted alongside the file map so a render-only pass can
+ * still show them. Cost/tokens are best-effort — the provider may not report
+ * them, in which case they are null. */
+export interface BaselineMeta {
+  generatedAt: string;
+  model: string;
+  provider: string;
+  concurrency: number;
+  durationMs: number;
+  /** Successful Jev API calls (one POST per scored file). */
+  apiCalls: number;
+  filesScored: number;
+  totalCostUsd: number | null;
+  totalInputTokens: number | null;
+}
+
+/** On-disk baseline shape (current). Legacy baselines are a bare
+ * {@link Baseline} map with no wrapper; {@link loadBaseline} reads both. */
+export interface BaselineFile {
+  meta: BaselineMeta | null;
+  files: Baseline;
+}
+
 export interface CategoryResult {
+  /** Jev's raw 0-4 score, as reported. */
   score: number;
   confidence: number;
+  /** `score` shrunk toward neutral by confidence ({@link weightByConfidence}); zone, verdict, overall and the ratchet judge this, not the raw score. */
+  weighted: number;
   zone: Zone;
   gated: boolean;
   verdict: CategoryVerdict;

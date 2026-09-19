@@ -107,10 +107,10 @@ describe('SettingsStore (issue #391)', () => {
 
   it('writes changed arrays as whole sparse-patch values', async () => {
     const store = await SettingsStore.create(dir);
-    await store.updateGlobal({ verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'] }], critics: [] } } } });
+    await store.updateGlobal({ verify: { task: { preMerge: { commands: [{ id: 'cmd-test', command: 'npm', args: ['test'] }], critics: [] } } } });
 
     expect(parse(readFileSync(join(dir, 'settings.yaml'), 'utf8')).global).toEqual({
-      verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }] } } },
+      verify: { task: { preMerge: { commands: [{ id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }] } } },
     });
   });
 
@@ -264,7 +264,11 @@ describe('SettingsStore (issue #391)', () => {
   it('taskPreMergeCommands/guardrailBudget persist as native YAML (not JSON strings) and round-trip through getOverrides', async () => {
     const store = await SettingsStore.create(dir);
     const wsId = 2;
-    const command = [verificationCommandSchema.parse({ command: 'npm', args: ['test'] })];
+    const command = [{
+      kind: 'local' as const,
+      enabled: true,
+      command: verificationCommandSchema.parse({ id: 'cmd-npm-test', command: 'npm', args: ['test'] }),
+    }];
     const budget = budgetGuardrailSchema.parse({ wallClockMinutes: 120 });
 
     await store.setOverrides(wsId, { taskPreMergeCommands: command, guardrailBudget: budget });
@@ -321,5 +325,62 @@ describe('SettingsStore (issue #391)', () => {
 
     now += 600;
     expect(store.getGlobal().maxAttempts).toBe(9);
+  });
+
+  describe('verifier id backfill and array-to-overlay migration (ADR-0037)', () => {
+    it('backfills a missing id onto a stored global verifier and persists it stably across restarts', async () => {
+      const path = join(dir, 'settings.yaml');
+      writeFileSync(path, stringify({
+        global: { verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [] } } } },
+        workspaces: {},
+      }));
+
+      const store = await SettingsStore.create(dir);
+      const [command] = store.getGlobal().verify.task.preMerge.commands;
+      expect(command!.id).toBeTruthy();
+
+      const persisted = parse(readFileSync(path, 'utf8'));
+      expect(persisted.global.verify.task.preMerge.commands[0].id).toBe(command!.id);
+
+      const reopened = await SettingsStore.create(dir);
+      expect(reopened.getGlobal().verify.task.preMerge.commands[0]!.id).toBe(command!.id);
+    });
+
+    it('converts a pre-ADR-0037 whole-array Workspace override to an overlay of local entries, id-backfilled', async () => {
+      const path = join(dir, 'settings.yaml');
+      writeFileSync(path, stringify({
+        global: {},
+        workspaces: {
+          1: { taskPreMergeCommands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }] },
+        },
+      }));
+
+      const store = await SettingsStore.create(dir);
+      const [entry] = store.getOverrides(1).taskPreMergeCommands!;
+      expect(entry).toMatchObject({ kind: 'local', enabled: true, command: { command: 'npm', args: ['test'] } });
+      expect((entry as { command: { id: string } }).command.id).toBeTruthy();
+
+      const persisted = parse(readFileSync(path, 'utf8'));
+      expect(persisted.workspaces['1'].taskPreMergeCommands[0].kind).toBe('local');
+    });
+
+    it('is a no-op on data already migrated: same ids and shape after a second load', async () => {
+      const path = join(dir, 'settings.yaml');
+      writeFileSync(path, stringify({
+        global: { verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [] } } } },
+        workspaces: {
+          1: { taskPreMergeCommands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }] },
+        },
+      }));
+
+      const first = await SettingsStore.create(dir);
+      const globalCommandId = first.getGlobal().verify.task.preMerge.commands[0]!.id;
+      const overlayCommandId = (first.getOverrides(1).taskPreMergeCommands![0] as { command: { id: string } }).command.id;
+
+      const second = await SettingsStore.create(dir);
+      expect(second.getGlobal().verify.task.preMerge.commands[0]!.id).toBe(globalCommandId);
+      expect((second.getOverrides(1).taskPreMergeCommands![0] as { command: { id: string } }).command.id).toBe(overlayCommandId);
+      expect(second.getOverrides(1).taskPreMergeCommands).toEqual(first.getOverrides(1).taskPreMergeCommands);
+    });
   });
 });

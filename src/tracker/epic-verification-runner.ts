@@ -148,6 +148,7 @@ export class EpicVerificationRunner {
       verifiedHeadOid: criticHeadOid,
       ...(baseOid ? { baseOid } : {}),
       critic: { prompt: critic.prompt, model: critic.model, ...(critic.harness ? { harness: critic.harness } : {}) },
+      timeoutMs: critic.timeoutSeconds * 1000,
       fields: { taskId: '', skill: '/implement', ref: String(epicRef), url: '', title: `Epic #${epicRef}`, description: '' },
       harness,
       harnessId,

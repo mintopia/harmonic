@@ -31,11 +31,14 @@ import {
   evaluateOverall,
   verdictFromReasons,
   warnNotes,
+  weightByConfidence,
 } from './thresholds.js';
 import {
   ALL_CATEGORIES,
   type Baseline,
   type BaselineEntry,
+  type BaselineFile,
+  type BaselineMeta,
   type CategoryId,
   type CategoryResult,
   type FileResult,
@@ -43,6 +46,7 @@ import {
   type GateMode,
   type GateResult,
   type GateSummary,
+  type JevUsage,
 } from './types.js';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -188,10 +192,16 @@ function readSignoffs(cli: readonly string[]): Set<string> {
   return set;
 }
 
-function loadBaseline(path: string): { baseline: Baseline | null; exists: boolean } {
-  if (!existsSync(path)) return { baseline: null, exists: false };
-  const data = JSON.parse(readFileSync(path, 'utf8')) as Baseline;
-  return { baseline: data, exists: true };
+/** True for the current `{ meta, files }` wrapper; legacy baselines are a bare map, without a `files` object. */
+function isBaselineFile(data: unknown): data is BaselineFile {
+  return typeof data === 'object' && data !== null && 'files' in data && typeof (data as BaselineFile).files === 'object';
+}
+
+function loadBaseline(path: string): { baseline: Baseline | null; meta: BaselineMeta | null; exists: boolean } {
+  if (!existsSync(path)) return { baseline: null, meta: null, exists: false };
+  const data = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+  if (isBaselineFile(data)) return { baseline: data.files, meta: data.meta ?? null, exists: true };
+  return { baseline: data as Baseline, meta: null, exists: true };
 }
 
 function chunkText(text: string, chunkChars: number): string[] {
@@ -356,8 +366,8 @@ export async function scoreSubject(
       signoffs,
     });
   }
-  const categoryScores = Object.fromEntries(ALL_CATEGORIES.map((c) => [c, categories[c].score])) as Record<CategoryId, number>;
-  const overall = evaluateOverall(categoryScores, config, baselineEntry);
+  const weightedScores = Object.fromEntries(ALL_CATEGORIES.map((c) => [c, categories[c].weighted])) as Record<CategoryId, number>;
+  const overall = evaluateOverall(weightedScores, config, baselineEntry);
 
   const reasons = blockingReasons(categories, overall, config);
   const warns = warnNotes(categories, overall, config);
@@ -381,7 +391,7 @@ export async function scoreSubject(
 export async function scoreForBaseline(
   subject: Subject,
   ctx: { config: GateConfig; rubrics: ReturnType<typeof loadRubrics>; jevCfg: ReturnType<typeof resolveProviderConfig> },
-): Promise<{ path: string; entry: BaselineEntry } | { path: string; error: string; tooBig: boolean }> {
+): Promise<{ path: string; entry: BaselineEntry; usage: JevUsage } | { path: string; error: string; tooBig: boolean }> {
   const { config, rubrics, jevCfg } = ctx;
   const chunks = chunkText(subject.content, config.chunkChars);
   const state: JevState = {
@@ -392,18 +402,22 @@ export async function scoreForBaseline(
   if (subject.roleHint) state.role_hint = subject.roleHint;
 
   let answers: Record<string, { score: number; confidence: number }>;
+  let usage: JevUsage;
   try {
-    ({ answers } = await callJev(jevCfg, state, rubrics));
+    ({ answers, usage } = await callJev(jevCfg, state, rubrics));
   } catch (err) {
     return { path: subject.relPath, error: (err as Error).message, tooBig: err instanceof JevFileTooBigError };
   }
 
   const categories: Partial<Record<CategoryId, number>> = {};
+  const confidences: Partial<Record<CategoryId, number>> = {};
   for (const cat of ALL_CATEGORIES) {
     categories[cat] = typeof answers[cat]?.score === 'number' ? answers[cat]!.score : 0;
+    if (typeof answers[cat]?.confidence === 'number') confidences[cat] = answers[cat]!.confidence;
   }
-  const overall = ALL_CATEGORIES.reduce((sum, c) => sum + (categories[c] ?? 0), 0) / ALL_CATEGORIES.length;
-  return { path: subject.relPath, entry: { categories, overall } };
+  // Persisted overall is confidence-weighted to match the live gate (evaluateOverall).
+  const overall = ALL_CATEGORIES.reduce((sum, c) => sum + weightByConfidence(categories[c] ?? 0, confidences[c]), 0) / ALL_CATEGORIES.length;
+  return { path: subject.relPath, entry: { categories, confidences, overall }, usage };
 }
 
 /** Sibling `.html` path for a baseline JSON file (foo.json -> foo.html, else foo + .html). */
@@ -411,9 +425,9 @@ function htmlPathFor(baselinePath: string): string {
   return baselinePath.endsWith('.json') ? `${baselinePath.slice(0, -'.json'.length)}.html` : `${baselinePath}.html`;
 }
 
-function writeBaselineHtml(baseline: Baseline, baselinePath: string, repoRoot: string): string {
+function writeBaselineHtml(baseline: Baseline, meta: BaselineMeta | null, baselinePath: string, repoRoot: string): string {
   const htmlPath = htmlPathFor(baselinePath);
-  writeFileSync(htmlPath, renderBaselineHtml(baseline));
+  writeFileSync(htmlPath, renderBaselineHtml(baseline, meta));
   process.stderr.write(`jev-gate: baseline HTML written to ${relative(repoRoot, htmlPath)}\n`);
   return htmlPath;
 }
@@ -422,12 +436,12 @@ function writeBaselineHtml(baseline: Baseline, baselinePath: string, repoRoot: s
 function renderBaselineOnly(opts: CliOptions): number {
   const config = loadGateConfig(opts.configPath);
   const baselinePath = opts.baselinePath ?? join(opts.repoRoot, config.baselinePath);
-  const { baseline, exists } = loadBaseline(baselinePath);
+  const { baseline, meta, exists } = loadBaseline(baselinePath);
   if (!exists) {
     process.stderr.write(`jev-gate: no baseline at ${relative(opts.repoRoot, baselinePath)} — run --write-baseline first\n`);
     return 2;
   }
-  writeBaselineHtml(baseline ?? {}, baselinePath, opts.repoRoot);
+  writeBaselineHtml(baseline ?? {}, meta, baselinePath, opts.repoRoot);
   return 0;
 }
 
@@ -462,6 +476,12 @@ async function runBaseline(opts: CliOptions): Promise<number> {
   let tooBig = preemptiveTooBig.length;
   const tooBigPaths: string[] = preemptiveTooBig.map((f) => f.path);
   const entries: { path: string; entry: BaselineEntry }[] = [];
+  let apiCalls = 0;
+  let totalCostUsd = 0;
+  let costReported = false;
+  let totalInputTokens = 0;
+  let tokensReported = false;
+  const startedAt = Date.now();
   await runPool(subjects, concurrency, async (subject) => {
     const r = await scoreForBaseline(subject, { config, rubrics, jevCfg });
     done += 1;
@@ -475,21 +495,43 @@ async function runBaseline(opts: CliOptions): Promise<number> {
         process.stderr.write(`jev-gate: ${done}/${subjects.length} ERROR ${r.path}: ${r.error}\n`);
       }
     } else {
-      entries.push(r);
+      entries.push({ path: r.path, entry: r.entry });
+      apiCalls += 1;
+      if (typeof r.usage.cost === 'number') {
+        totalCostUsd += r.usage.cost;
+        costReported = true;
+      }
+      if (typeof r.usage.input_tokens === 'number') {
+        totalInputTokens += r.usage.input_tokens;
+        tokensReported = true;
+      }
       process.stderr.write(`jev-gate: ${done}/${subjects.length} scored ${r.path} (${Math.round((r.entry.overall / 4) * 100)}/100)\n`);
     }
     return r;
   });
+  const durationMs = Date.now() - startedAt;
 
   entries.sort((a, b) => a.path.localeCompare(b.path));
   const baseline: Baseline = {};
   for (const { path, entry } of entries) baseline[path] = entry;
-  writeFileSync(baselinePath, `${JSON.stringify(baseline, null, 2)}\n`);
+  const meta: BaselineMeta = {
+    generatedAt: new Date().toISOString(),
+    model: jevCfg.model,
+    provider: jevCfg.provider,
+    concurrency,
+    durationMs,
+    apiCalls,
+    filesScored: entries.length,
+    totalCostUsd: costReported ? totalCostUsd : null,
+    totalInputTokens: tokensReported ? totalInputTokens : null,
+  };
+  const baselineFile: BaselineFile = { meta, files: baseline };
+  writeFileSync(baselinePath, `${JSON.stringify(baselineFile, null, 2)}\n`);
   const tooBigSuffix = tooBig > 0 ? ` (too big: ${[...tooBigPaths].sort().join(', ')})` : '';
   process.stderr.write(
     `jev-gate: baseline written to ${relative(opts.repoRoot, baselinePath)} — ${entries.length} file(s) scored, ${tooBig} too big${tooBigSuffix}, ${errored} errored\n`,
   );
-  if (opts.html) writeBaselineHtml(baseline, baselinePath, opts.repoRoot);
+  if (opts.html) writeBaselineHtml(baseline, meta, baselinePath, opts.repoRoot);
   return errored > 0 ? 1 : 0;
 }
 

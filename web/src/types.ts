@@ -263,12 +263,12 @@ export interface Workspace {
   /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: number | null;
   contextReuseTokenLimit: number | null;
-  taskPreMergeCommands: VerificationCommand[] | null;
-  taskPreMergeCritics: TaskVerificationCritic[] | null;
-  taskPostMergeCommands: VerificationCommand[] | null;
-  taskPostMergeCritics: TaskVerificationCritic[] | null;
-  epicPreMergeCommands: VerificationCommand[] | null;
-  epicPreMergeCritics: EpicVerificationCritic[] | null;
+  taskPreMergeCommands: CommandOverlayEntry[] | null;
+  taskPreMergeCritics: TaskCriticOverlayEntry[] | null;
+  taskPostMergeCommands: CommandOverlayEntry[] | null;
+  taskPostMergeCritics: TaskCriticOverlayEntry[] | null;
+  epicPreMergeCommands: CommandOverlayEntry[] | null;
+  epicPreMergeCritics: EpicCriticOverlayEntry[] | null;
   /** Guardrail overrides; `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
    * object shape it was PATCHed as. */
@@ -292,6 +292,8 @@ export interface Workspace {
 /** A command verifier: an argv-based check run against a
  * frozen candidate in a disposable checkout. Mirrors `verificationCommandSchema`. */
 export interface VerificationCommand {
+  /** Stable identity, independent of argv; assigned once, never editable. */
+  id: string;
   command: string;
   args: string[];
   cwd?: string;
@@ -302,6 +304,8 @@ export interface VerificationCommand {
 /** An agent critic verifier: a read-only reviewer with
  * its own prompt and model. Mirrors `verificationCriticSchema`. */
 export interface TaskVerificationCritic {
+  /** Stable identity, independent of `name` (not guaranteed unique). */
+  id: string;
   /** Operator-facing label; the critic's row title in settings. */
   name: string;
   issuePrompt: string;
@@ -309,15 +313,21 @@ export interface TaskVerificationCritic {
   model: string;
   /** Reviewer harness; omitted = reuse the builder task's harness. */
   harness?: string;
+  /** Hard timeout in seconds for the critic's review turn (default 300). */
+  timeoutSeconds: number;
 }
 
 export interface EpicVerificationCritic {
+  /** Stable identity, independent of `name` (not guaranteed unique). */
+  id: string;
   /** Operator-facing label; the critic's row title in settings. */
   name: string;
   prompt: string;
   model: string;
   /** Reviewer harness; omitted = reuse the builder task's harness. */
   harness?: string;
+  /** Hard timeout in seconds for the critic's review turn (default 300). */
+  timeoutSeconds: number;
 }
 
 export interface TaskVerificationStage {
@@ -329,6 +339,25 @@ export interface EpicVerificationStage {
   commands: VerificationCommand[];
   critics: EpicVerificationCritic[];
 }
+
+/**
+ * A Workspace's additive command overlay entry (ADR-0037): a `global` entry
+ * reorders/disables a global command by `ref` (its id) without editing it; a
+ * `local` entry inlines a Workspace-owned command, fully editable.
+ */
+export type CommandOverlayEntry =
+  | { kind: 'global'; ref: string; enabled: boolean }
+  | { kind: 'local'; enabled: boolean; command: VerificationCommand };
+
+/** The task-critic counterpart of {@link CommandOverlayEntry}. */
+export type TaskCriticOverlayEntry =
+  | { kind: 'global'; ref: string; enabled: boolean }
+  | { kind: 'local'; enabled: boolean; critic: TaskVerificationCritic };
+
+/** The epic-critic counterpart of {@link CommandOverlayEntry}. */
+export type EpicCriticOverlayEntry =
+  | { kind: 'global'; ref: string; enabled: boolean }
+  | { kind: 'local'; enabled: boolean; critic: EpicVerificationCritic };
 
 /** The budget Guardrail: a mandatory wall-clock bound per afk Attempt
  * plus optional token and cost caps (`null` = that cap is off). */

@@ -54,26 +54,30 @@ function StoryFrame({ style, children }: { style?: React.CSSProperties; children
 function SettingsStory() {
   const seed = structuredClone(storyConfig);
   seed.verify.task.preMerge.commands = [
-    { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 },
-    { command: 'npm', args: ['run', 'typecheck'], env: {}, timeoutSeconds: 120 },
+    { id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 },
+    { id: 'cmd-typecheck', command: 'npm', args: ['run', 'typecheck'], env: {}, timeoutSeconds: 120 },
   ];
   seed.verify.task.preMerge.critics = [
     {
+      id: 'critic-correctness',
       name: 'Correctness',
       issuePrompt:
         "Review the diff for {title}. Flag correctness bugs, missing edge cases, and anything that breaks the issue's stated contract.",
       noIssuePrompt: 'Review the diff for correctness. There is no issue to check against.',
       model: 'claude-opus-5',
       harness: 'claude',
+      timeoutSeconds: 300,
     },
     {
+      id: 'critic-security',
       name: 'Security review',
       issuePrompt: 'Check the diff for security regressions relevant to {title}.',
       noIssuePrompt: 'Check the diff for security regressions.',
       model: 'gpt-5.3-codex',
       harness: 'codex',
+      timeoutSeconds: 300,
     },
-    { name: '', issuePrompt: 'Flag narration comments and commented-out code in the diff.', noIssuePrompt: 'Flag narration comments.', model: '' },
+    { id: 'critic-narration', name: '', issuePrompt: 'Flag narration comments and commented-out code in the diff.', noIssuePrompt: 'Flag narration comments.', model: '', timeoutSeconds: 300 },
   ];
   const [config, setConfig] = useState(seed);
   return (

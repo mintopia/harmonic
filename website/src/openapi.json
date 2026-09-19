@@ -3,7 +3,7 @@
   "info": {
     "title": "@mintopia/harmonic",
     "version": "2.14.0",
-    "description": "Queue, run, and review autonomous coding-agent tasks over ACP\n\n## MCP\n\n`POST /mcp` is a stateless streamable-HTTP MCP server (not a REST\nendpoint, so it has no entry in this spec's paths). It authenticates the\nsame way as the REST API — a bearer token, either an operator API key or\nthe Attempt Key Harmonic injects into a spawned harness — and exposes the\nagent task surface as MCP tools (task CRUD, dependencies, queue/cancel,\nattempts and events). Accept/Reject are human-only and are never exposed as\nMCP tools — a verifier's pass is the accept (#140, ADR-0021). An attempt-scoped\nAttempt Key may call `/mcp` regardless of the REST restrictions noted per\nendpoint below. `force_integrate_epic` is an operator-only tool, the same\nfooting as Accept/Reject: an Attempt Key can call `/mcp` but gets a `forbidden`\nerror from it specifically — only an operator API key (`scope: 'full'`) or\nan authenticated session may call it.\n\n## WebSocket\n\n`GET /api/ws` is a single firehose WebSocket (also outside this spec's\npaths): every attempt event, attempt state change, task state change/removal, and\nConversation event/change is broadcast to every connected client as JSON\nmessages of the form `{ type: 'attempt_event' | 'attempt_changed' | 'attempt_usage' |\n'task_changed' | 'task_removed' | 'conversation_event' | 'conversation_changed' |\n'permission_request' | 'scheduled-jobs' | 'operations', ... }`, using the same Task/Attempt/Conversation/Scheduled Job/Operation shapes\nserved over REST. `attempt_usage` is a live-usage snapshot for a running Attempt\n(tokens, context fill, derived Cost, current-activity line, and Process\nTree), pushed about once a second while the Attempt tails its native log.\n`task_removed` (issue #162) announces a hard-deleted Task's id (`{ type:\n'task_removed', id }`) — the row is gone, not another state change.\n`scheduled-jobs` announces the full Scheduled Job registry snapshot, matching\n`GET /api/scheduled-jobs`.\n`operations` announces an Operation lifecycle event, matching the operation shape\nserved by `GET /api/operations`.\n`permission_request` announces a Harness blocked on an\noperator permission decision in a Conversation (ADR-0007), answered via\n`POST /conversations/:id/permissions/:reqId`. Authenticate by passing the\nsession token or an API key as `?token=` (WebSocket clients cannot set an\nAuthorization header). A `read`-scoped key gets a filtered firehose — only\n`task_changed`, `task_removed`, `attempt_changed`, `attempt_event`, `attempt_usage`, and\n`operations` — with the Conversation and permission traffic dropped.\n\n## Read scope\n\nA `read`-scoped API key (created via `POST /api/keys` with\n`{ \"scope\": \"read\" }`) is a viz-client credential: it may `GET` tasks,\nattempts, maps, Operations (`/api/operations`), and the instance-wide Activity snapshot (`/api/activity`,\nfiltered to Attempts only for a read key), and open the WebSocket (filtered as\nabove). Every mutation and the whole operator surface (keys, config,\nchannels, Conversations) is blocked. There is no `map_changed` event — a\nclient re-fetches `/maps` on reconnect or when it sees a `mapRef` it has\nnot resolved yet."
+    "description": "Queue, run, and review autonomous coding-agent tasks over ACP\n\n## MCP\n\n`POST /mcp` is a stateless streamable-HTTP MCP server (not a REST\nendpoint, so it has no entry in this spec's paths). It authenticates the\nsame way as the REST API — a bearer token, either an operator API key or\nthe Attempt Key Harmonic injects into a spawned harness — and exposes the\nagent task surface as MCP tools (task CRUD, dependencies, queue/cancel,\nattempts and events). Accept/Reject are human-only and are never exposed as\nMCP tools — a verifier's pass is the accept (#140, ADR-0021). An attempt-scoped\nAttempt Key may call `/mcp` regardless of the REST restrictions noted per\nendpoint below. `force_integrate_epic` is an operator-only tool, the same\nfooting as Accept/Reject: an Attempt Key can call `/mcp` but gets a `forbidden`\nerror from it specifically — only an operator API key (`scope: 'full'`) or\nan authenticated session may call it.\n\n## WebSocket\n\n`GET /api/ws` is a single firehose WebSocket (also outside this spec's\npaths): every attempt event, attempt state change, task state change/removal, and\nConversation event/change is broadcast to every connected client as JSON\nmessages of the form `{ type: 'attempt_event' | 'attempt_changed' | 'attempt_usage' |\n'task_changed' | 'task_removed' | 'conversation_event' | 'conversation_changed' |\n'permission_request' | 'scheduled-jobs' | 'operations', ... }`, using the same Task/Attempt/Conversation/Scheduled Job/Operation shapes\nserved over REST. `attempt_usage` is a live-usage snapshot for a running Attempt\n(tokens, context fill, derived Cost, current-activity line, and Process\nTree), pushed about once a second while the Attempt tails its native log.\n`task_removed` (issue #162) announces a hard-deleted Task's id (`{ type:\n'task_removed', id }`) — the row is gone, not another state change.\n`scheduled-jobs` announces the full Scheduled Job registry snapshot, matching\n`GET /api/scheduled-jobs`.\n`operations` announces an Operation lifecycle event, matching the operation shape\nserved by `GET /api/operations`.\n`permission_request` announces a Harness blocked on an\noperator permission decision in a Conversation (ADR-0007), answered via\n`POST /conversations/:id/permissions/:reqId`. Authenticate by offering the\nsession token or an API key as the sole WebSocket subprotocol\n(`new WebSocket(url, [token])`) — never as a query parameter, which leaks\ninto logs and browser history. A browser client authenticated by session\ncookie needs no subprotocol. A `read`-scoped key gets a filtered firehose — only\n`task_changed`, `task_removed`, `attempt_changed`, `attempt_event`, `attempt_usage`, and\n`operations` — with the Conversation and permission traffic dropped.\n\n## Read scope\n\nA `read`-scoped API key (created via `POST /api/keys` with\n`{ \"scope\": \"read\" }`) is a viz-client credential: it may `GET` tasks,\nattempts, maps, Operations (`/api/operations`), and the instance-wide Activity snapshot (`/api/activity`,\nfiltered to Attempts only for a read key), and open the WebSocket (filtered as\nabove). Every mutation and the whole operator surface (keys, config,\nchannels, Conversations) is blocked. There is no `map_changed` event — a\nclient re-fetches `/maps` on reconnect or when it sees a `mapRef` it has\nnot resolved yet."
   },
   "components": {
     "securitySchemes": {
@@ -4219,50 +4219,98 @@
               {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "properties": {
-                    "command": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "npm"
-                    },
-                    "args": {
-                      "default": [],
-                      "example": [
-                        "test"
-                      ],
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "cwd": {
-                      "example": "packages/api",
-                      "type": "string"
-                    },
-                    "env": {
-                      "default": {},
-                      "example": {
-                        "CI": "1"
-                      },
+                  "oneOf": [
+                    {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "global"
+                        },
+                        "ref": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
                       },
-                      "additionalProperties": {
-                        "type": "string"
-                      }
+                      "required": [
+                        "kind",
+                        "ref",
+                        "enabled"
+                      ]
                     },
-                    "timeoutSeconds": {
-                      "default": 600,
-                      "example": 600,
-                      "type": "integer",
-                      "exclusiveMinimum": 0,
-                      "maximum": 9007199254740991
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "local"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "command": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "cmd-lint"
+                            },
+                            "command": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "npm"
+                            },
+                            "args": {
+                              "default": [],
+                              "example": [
+                                "test"
+                              ],
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "cwd": {
+                              "example": "packages/api",
+                              "type": "string"
+                            },
+                            "env": {
+                              "default": {},
+                              "example": {
+                                "CI": "1"
+                              },
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "type": "string"
+                              }
+                            },
+                            "timeoutSeconds": {
+                              "default": 600,
+                              "example": 600,
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "command"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "enabled",
+                        "command"
+                      ]
                     }
-                  },
-                  "required": [
-                    "command"
                   ]
                 }
               },
@@ -4277,43 +4325,91 @@
               {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "default": "",
-                      "example": "Correctness",
-                      "type": "string"
-                    },
-                    "model": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "claude-opus-5"
-                    },
-                    "harness": {
-                      "example": "claude",
-                      "type": "string",
-                      "enum": [
-                        "claude",
-                        "codex",
-                        "copilot",
-                        "opencode"
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "global"
+                        },
+                        "ref": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "ref",
+                        "enabled"
                       ]
                     },
-                    "issuePrompt": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "Review task {taskId} against issue {ref}: {title}. {description}"
-                    },
-                    "noIssuePrompt": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "local"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "critic": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "critic-correctness"
+                            },
+                            "name": {
+                              "default": "",
+                              "example": "Correctness",
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "claude-opus-5"
+                            },
+                            "harness": {
+                              "example": "claude",
+                              "type": "string",
+                              "enum": [
+                                "claude",
+                                "codex",
+                                "copilot",
+                                "opencode"
+                              ]
+                            },
+                            "issuePrompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Review task {taskId} against issue {ref}: {title}. {description}"
+                            },
+                            "noIssuePrompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "model",
+                            "issuePrompt",
+                            "noIssuePrompt"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "enabled",
+                        "critic"
+                      ]
                     }
-                  },
-                  "required": [
-                    "model",
-                    "issuePrompt",
-                    "noIssuePrompt"
                   ]
                 }
               },
@@ -4328,50 +4424,98 @@
               {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "properties": {
-                    "command": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "npm"
-                    },
-                    "args": {
-                      "default": [],
-                      "example": [
-                        "test"
-                      ],
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "cwd": {
-                      "example": "packages/api",
-                      "type": "string"
-                    },
-                    "env": {
-                      "default": {},
-                      "example": {
-                        "CI": "1"
-                      },
+                  "oneOf": [
+                    {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "global"
+                        },
+                        "ref": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
                       },
-                      "additionalProperties": {
-                        "type": "string"
-                      }
+                      "required": [
+                        "kind",
+                        "ref",
+                        "enabled"
+                      ]
                     },
-                    "timeoutSeconds": {
-                      "default": 600,
-                      "example": 600,
-                      "type": "integer",
-                      "exclusiveMinimum": 0,
-                      "maximum": 9007199254740991
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "local"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "command": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "cmd-lint"
+                            },
+                            "command": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "npm"
+                            },
+                            "args": {
+                              "default": [],
+                              "example": [
+                                "test"
+                              ],
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "cwd": {
+                              "example": "packages/api",
+                              "type": "string"
+                            },
+                            "env": {
+                              "default": {},
+                              "example": {
+                                "CI": "1"
+                              },
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "type": "string"
+                              }
+                            },
+                            "timeoutSeconds": {
+                              "default": 600,
+                              "example": 600,
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "command"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "enabled",
+                        "command"
+                      ]
                     }
-                  },
-                  "required": [
-                    "command"
                   ]
                 }
               },
@@ -4386,43 +4530,91 @@
               {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "default": "",
-                      "example": "Correctness",
-                      "type": "string"
-                    },
-                    "model": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "claude-opus-5"
-                    },
-                    "harness": {
-                      "example": "claude",
-                      "type": "string",
-                      "enum": [
-                        "claude",
-                        "codex",
-                        "copilot",
-                        "opencode"
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "global"
+                        },
+                        "ref": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "ref",
+                        "enabled"
                       ]
                     },
-                    "issuePrompt": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "Review task {taskId} against issue {ref}: {title}. {description}"
-                    },
-                    "noIssuePrompt": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "local"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "critic": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "critic-correctness"
+                            },
+                            "name": {
+                              "default": "",
+                              "example": "Correctness",
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "claude-opus-5"
+                            },
+                            "harness": {
+                              "example": "claude",
+                              "type": "string",
+                              "enum": [
+                                "claude",
+                                "codex",
+                                "copilot",
+                                "opencode"
+                              ]
+                            },
+                            "issuePrompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Review task {taskId} against issue {ref}: {title}. {description}"
+                            },
+                            "noIssuePrompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "model",
+                            "issuePrompt",
+                            "noIssuePrompt"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "enabled",
+                        "critic"
+                      ]
                     }
-                  },
-                  "required": [
-                    "model",
-                    "issuePrompt",
-                    "noIssuePrompt"
                   ]
                 }
               },
@@ -4437,50 +4629,98 @@
               {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "properties": {
-                    "command": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "npm"
-                    },
-                    "args": {
-                      "default": [],
-                      "example": [
-                        "test"
-                      ],
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "cwd": {
-                      "example": "packages/api",
-                      "type": "string"
-                    },
-                    "env": {
-                      "default": {},
-                      "example": {
-                        "CI": "1"
-                      },
+                  "oneOf": [
+                    {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "global"
+                        },
+                        "ref": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
                       },
-                      "additionalProperties": {
-                        "type": "string"
-                      }
+                      "required": [
+                        "kind",
+                        "ref",
+                        "enabled"
+                      ]
                     },
-                    "timeoutSeconds": {
-                      "default": 600,
-                      "example": 600,
-                      "type": "integer",
-                      "exclusiveMinimum": 0,
-                      "maximum": 9007199254740991
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "local"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "command": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "cmd-lint"
+                            },
+                            "command": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "npm"
+                            },
+                            "args": {
+                              "default": [],
+                              "example": [
+                                "test"
+                              ],
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "cwd": {
+                              "example": "packages/api",
+                              "type": "string"
+                            },
+                            "env": {
+                              "default": {},
+                              "example": {
+                                "CI": "1"
+                              },
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "type": "string"
+                              }
+                            },
+                            "timeoutSeconds": {
+                              "default": 600,
+                              "example": 600,
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "command"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "enabled",
+                        "command"
+                      ]
                     }
-                  },
-                  "required": [
-                    "command"
                   ]
                 }
               },
@@ -4495,37 +4735,85 @@
               {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "default": "",
-                      "example": "Correctness",
-                      "type": "string"
-                    },
-                    "model": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "claude-opus-5"
-                    },
-                    "harness": {
-                      "example": "claude",
-                      "type": "string",
-                      "enum": [
-                        "claude",
-                        "codex",
-                        "copilot",
-                        "opencode"
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "global"
+                        },
+                        "ref": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "ref",
+                        "enabled"
                       ]
                     },
-                    "prompt": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "local"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "critic": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "critic-correctness"
+                            },
+                            "name": {
+                              "default": "",
+                              "example": "Correctness",
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "claude-opus-5"
+                            },
+                            "harness": {
+                              "example": "claude",
+                              "type": "string",
+                              "enum": [
+                                "claude",
+                                "codex",
+                                "copilot",
+                                "opencode"
+                              ]
+                            },
+                            "prompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "model",
+                            "prompt"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "enabled",
+                        "critic"
+                      ]
                     }
-                  },
-                  "required": [
-                    "model",
-                    "prompt"
                   ]
                 }
               },
@@ -5260,6 +5548,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "cmd-lint"
+                            },
                             "command": {
                               "type": "string",
                               "minLength": 1,
@@ -5301,6 +5594,7 @@
                             }
                           },
                           "required": [
+                            "id",
                             "command"
                           ]
                         }
@@ -5310,6 +5604,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "critic-correctness"
+                            },
                             "name": {
                               "default": "",
                               "example": "Correctness",
@@ -5342,6 +5641,7 @@
                             }
                           },
                           "required": [
+                            "id",
                             "model",
                             "issuePrompt",
                             "noIssuePrompt"
@@ -5362,6 +5662,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "cmd-lint"
+                            },
                             "command": {
                               "type": "string",
                               "minLength": 1,
@@ -5403,6 +5708,7 @@
                             }
                           },
                           "required": [
+                            "id",
                             "command"
                           ]
                         }
@@ -5412,6 +5718,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "critic-correctness"
+                            },
                             "name": {
                               "default": "",
                               "example": "Correctness",
@@ -5444,6 +5755,7 @@
                             }
                           },
                           "required": [
+                            "id",
                             "model",
                             "issuePrompt",
                             "noIssuePrompt"
@@ -5469,6 +5781,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "cmd-lint"
+                            },
                             "command": {
                               "type": "string",
                               "minLength": 1,
@@ -5510,6 +5827,7 @@
                             }
                           },
                           "required": [
+                            "id",
                             "command"
                           ]
                         }
@@ -5519,6 +5837,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "critic-correctness"
+                            },
                             "name": {
                               "default": "",
                               "example": "Correctness",
@@ -5546,6 +5869,7 @@
                             }
                           },
                           "required": [
+                            "id",
                             "model",
                             "prompt"
                           ]
@@ -9935,55 +10259,105 @@
               {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "properties": {
-                    "command": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "npm"
-                    },
-                    "args": {
-                      "default": [],
-                      "example": [
-                        "test"
-                      ],
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "cwd": {
-                      "example": "packages/api",
-                      "type": "string"
-                    },
-                    "env": {
-                      "default": {},
-                      "example": {
-                        "CI": "1"
-                      },
+                  "oneOf": [
+                    {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "global"
+                        },
+                        "ref": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
                       },
-                      "additionalProperties": {
-                        "type": "string"
-                      }
+                      "required": [
+                        "kind",
+                        "ref",
+                        "enabled"
+                      ],
+                      "additionalProperties": false
                     },
-                    "timeoutSeconds": {
-                      "default": 600,
-                      "example": 600,
-                      "type": "integer",
-                      "exclusiveMinimum": 0,
-                      "maximum": 9007199254740991
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "local"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "command": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "cmd-lint"
+                            },
+                            "command": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "npm"
+                            },
+                            "args": {
+                              "default": [],
+                              "example": [
+                                "test"
+                              ],
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "cwd": {
+                              "example": "packages/api",
+                              "type": "string"
+                            },
+                            "env": {
+                              "default": {},
+                              "example": {
+                                "CI": "1"
+                              },
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "type": "string"
+                              }
+                            },
+                            "timeoutSeconds": {
+                              "default": 600,
+                              "example": 600,
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "command",
+                            "args",
+                            "env",
+                            "timeoutSeconds"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "enabled",
+                        "command"
+                      ],
+                      "additionalProperties": false
                     }
-                  },
-                  "required": [
-                    "command",
-                    "args",
-                    "env",
-                    "timeoutSeconds"
-                  ],
-                  "additionalProperties": false
+                  ]
                 }
               },
               {
@@ -9997,46 +10371,96 @@
               {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "default": "",
-                      "example": "Correctness",
-                      "type": "string"
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "global"
+                        },
+                        "ref": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "ref",
+                        "enabled"
+                      ],
+                      "additionalProperties": false
                     },
-                    "model": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "claude-opus-5"
-                    },
-                    "harness": {
-                      "example": "claude",
-                      "type": "string",
-                      "enum": [
-                        "claude",
-                        "codex",
-                        "copilot",
-                        "opencode"
-                      ]
-                    },
-                    "issuePrompt": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "Review task {taskId} against issue {ref}: {title}. {description}"
-                    },
-                    "noIssuePrompt": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "local"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "critic": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "critic-correctness"
+                            },
+                            "name": {
+                              "default": "",
+                              "example": "Correctness",
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "claude-opus-5"
+                            },
+                            "harness": {
+                              "example": "claude",
+                              "type": "string",
+                              "enum": [
+                                "claude",
+                                "codex",
+                                "copilot",
+                                "opencode"
+                              ]
+                            },
+                            "issuePrompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Review task {taskId} against issue {ref}: {title}. {description}"
+                            },
+                            "noIssuePrompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "model",
+                            "issuePrompt",
+                            "noIssuePrompt"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "enabled",
+                        "critic"
+                      ],
+                      "additionalProperties": false
                     }
-                  },
-                  "required": [
-                    "name",
-                    "model",
-                    "issuePrompt",
-                    "noIssuePrompt"
-                  ],
-                  "additionalProperties": false
+                  ]
                 }
               },
               {
@@ -10050,55 +10474,105 @@
               {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "properties": {
-                    "command": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "npm"
-                    },
-                    "args": {
-                      "default": [],
-                      "example": [
-                        "test"
-                      ],
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "cwd": {
-                      "example": "packages/api",
-                      "type": "string"
-                    },
-                    "env": {
-                      "default": {},
-                      "example": {
-                        "CI": "1"
-                      },
+                  "oneOf": [
+                    {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "global"
+                        },
+                        "ref": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
                       },
-                      "additionalProperties": {
-                        "type": "string"
-                      }
+                      "required": [
+                        "kind",
+                        "ref",
+                        "enabled"
+                      ],
+                      "additionalProperties": false
                     },
-                    "timeoutSeconds": {
-                      "default": 600,
-                      "example": 600,
-                      "type": "integer",
-                      "exclusiveMinimum": 0,
-                      "maximum": 9007199254740991
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "local"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "command": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "cmd-lint"
+                            },
+                            "command": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "npm"
+                            },
+                            "args": {
+                              "default": [],
+                              "example": [
+                                "test"
+                              ],
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "cwd": {
+                              "example": "packages/api",
+                              "type": "string"
+                            },
+                            "env": {
+                              "default": {},
+                              "example": {
+                                "CI": "1"
+                              },
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "type": "string"
+                              }
+                            },
+                            "timeoutSeconds": {
+                              "default": 600,
+                              "example": 600,
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "command",
+                            "args",
+                            "env",
+                            "timeoutSeconds"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "enabled",
+                        "command"
+                      ],
+                      "additionalProperties": false
                     }
-                  },
-                  "required": [
-                    "command",
-                    "args",
-                    "env",
-                    "timeoutSeconds"
-                  ],
-                  "additionalProperties": false
+                  ]
                 }
               },
               {
@@ -10112,46 +10586,96 @@
               {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "default": "",
-                      "example": "Correctness",
-                      "type": "string"
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "global"
+                        },
+                        "ref": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "ref",
+                        "enabled"
+                      ],
+                      "additionalProperties": false
                     },
-                    "model": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "claude-opus-5"
-                    },
-                    "harness": {
-                      "example": "claude",
-                      "type": "string",
-                      "enum": [
-                        "claude",
-                        "codex",
-                        "copilot",
-                        "opencode"
-                      ]
-                    },
-                    "issuePrompt": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "Review task {taskId} against issue {ref}: {title}. {description}"
-                    },
-                    "noIssuePrompt": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "local"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "critic": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "critic-correctness"
+                            },
+                            "name": {
+                              "default": "",
+                              "example": "Correctness",
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "claude-opus-5"
+                            },
+                            "harness": {
+                              "example": "claude",
+                              "type": "string",
+                              "enum": [
+                                "claude",
+                                "codex",
+                                "copilot",
+                                "opencode"
+                              ]
+                            },
+                            "issuePrompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Review task {taskId} against issue {ref}: {title}. {description}"
+                            },
+                            "noIssuePrompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "model",
+                            "issuePrompt",
+                            "noIssuePrompt"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "enabled",
+                        "critic"
+                      ],
+                      "additionalProperties": false
                     }
-                  },
-                  "required": [
-                    "name",
-                    "model",
-                    "issuePrompt",
-                    "noIssuePrompt"
-                  ],
-                  "additionalProperties": false
+                  ]
                 }
               },
               {
@@ -10165,55 +10689,105 @@
               {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "properties": {
-                    "command": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "npm"
-                    },
-                    "args": {
-                      "default": [],
-                      "example": [
-                        "test"
-                      ],
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "cwd": {
-                      "example": "packages/api",
-                      "type": "string"
-                    },
-                    "env": {
-                      "default": {},
-                      "example": {
-                        "CI": "1"
-                      },
+                  "oneOf": [
+                    {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "global"
+                        },
+                        "ref": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
                       },
-                      "additionalProperties": {
-                        "type": "string"
-                      }
+                      "required": [
+                        "kind",
+                        "ref",
+                        "enabled"
+                      ],
+                      "additionalProperties": false
                     },
-                    "timeoutSeconds": {
-                      "default": 600,
-                      "example": 600,
-                      "type": "integer",
-                      "exclusiveMinimum": 0,
-                      "maximum": 9007199254740991
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "local"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "command": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "cmd-lint"
+                            },
+                            "command": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "npm"
+                            },
+                            "args": {
+                              "default": [],
+                              "example": [
+                                "test"
+                              ],
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "cwd": {
+                              "example": "packages/api",
+                              "type": "string"
+                            },
+                            "env": {
+                              "default": {},
+                              "example": {
+                                "CI": "1"
+                              },
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "type": "string"
+                              }
+                            },
+                            "timeoutSeconds": {
+                              "default": 600,
+                              "example": 600,
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "command",
+                            "args",
+                            "env",
+                            "timeoutSeconds"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "enabled",
+                        "command"
+                      ],
+                      "additionalProperties": false
                     }
-                  },
-                  "required": [
-                    "command",
-                    "args",
-                    "env",
-                    "timeoutSeconds"
-                  ],
-                  "additionalProperties": false
+                  ]
                 }
               },
               {
@@ -10227,40 +10801,90 @@
               {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "default": "",
-                      "example": "Correctness",
-                      "type": "string"
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "global"
+                        },
+                        "ref": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "ref",
+                        "enabled"
+                      ],
+                      "additionalProperties": false
                     },
-                    "model": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "claude-opus-5"
-                    },
-                    "harness": {
-                      "example": "claude",
-                      "type": "string",
-                      "enum": [
-                        "claude",
-                        "codex",
-                        "copilot",
-                        "opencode"
-                      ]
-                    },
-                    "prompt": {
-                      "type": "string",
-                      "minLength": 1,
-                      "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "local"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "critic": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "critic-correctness"
+                            },
+                            "name": {
+                              "default": "",
+                              "example": "Correctness",
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "claude-opus-5"
+                            },
+                            "harness": {
+                              "example": "claude",
+                              "type": "string",
+                              "enum": [
+                                "claude",
+                                "codex",
+                                "copilot",
+                                "opencode"
+                              ]
+                            },
+                            "prompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "model",
+                            "prompt"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "enabled",
+                        "critic"
+                      ],
+                      "additionalProperties": false
                     }
-                  },
-                  "required": [
-                    "name",
-                    "model",
-                    "prompt"
-                  ],
-                  "additionalProperties": false
+                  ]
                 }
               },
               {
@@ -11013,6 +11637,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "cmd-lint"
+                            },
                             "command": {
                               "type": "string",
                               "minLength": 1,
@@ -11054,6 +11683,7 @@
                             }
                           },
                           "required": [
+                            "id",
                             "command",
                             "args",
                             "env",
@@ -11067,6 +11697,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "critic-correctness"
+                            },
                             "name": {
                               "default": "",
                               "example": "Correctness",
@@ -11099,6 +11734,7 @@
                             }
                           },
                           "required": [
+                            "id",
                             "name",
                             "model",
                             "issuePrompt",
@@ -11122,6 +11758,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "cmd-lint"
+                            },
                             "command": {
                               "type": "string",
                               "minLength": 1,
@@ -11163,6 +11804,7 @@
                             }
                           },
                           "required": [
+                            "id",
                             "command",
                             "args",
                             "env",
@@ -11176,6 +11818,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "critic-correctness"
+                            },
                             "name": {
                               "default": "",
                               "example": "Correctness",
@@ -11208,6 +11855,7 @@
                             }
                           },
                           "required": [
+                            "id",
                             "name",
                             "model",
                             "issuePrompt",
@@ -11237,6 +11885,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "cmd-lint"
+                            },
                             "command": {
                               "type": "string",
                               "minLength": 1,
@@ -11278,6 +11931,7 @@
                             }
                           },
                           "required": [
+                            "id",
                             "command",
                             "args",
                             "env",
@@ -11291,6 +11945,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "critic-correctness"
+                            },
                             "name": {
                               "default": "",
                               "example": "Correctness",
@@ -11318,6 +11977,7 @@
                             }
                           },
                           "required": [
+                            "id",
                             "name",
                             "model",
                             "prompt"
@@ -15006,50 +15666,102 @@
                       {
                         "type": "array",
                         "items": {
-                          "type": "object",
-                          "properties": {
-                            "command": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "npm"
-                            },
-                            "args": {
-                              "default": [],
-                              "example": [
-                                "test"
-                              ],
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "cwd": {
-                              "example": "packages/api",
-                              "type": "string"
-                            },
-                            "env": {
-                              "default": {},
-                              "example": {
-                                "CI": "1"
-                              },
+                          "oneOf": [
+                            {
                               "type": "object",
-                              "propertyNames": {
-                                "type": "string"
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "global"
+                                  ]
+                                },
+                                "ref": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                }
                               },
-                              "additionalProperties": {
-                                "type": "string"
-                              }
+                              "required": [
+                                "kind",
+                                "ref",
+                                "enabled"
+                              ]
                             },
-                            "timeoutSeconds": {
-                              "default": 600,
-                              "example": 600,
-                              "type": "integer",
-                              "exclusiveMinimum": 0,
-                              "maximum": 9007199254740991
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "local"
+                                  ]
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "command": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "cmd-lint"
+                                    },
+                                    "command": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "npm"
+                                    },
+                                    "args": {
+                                      "default": [],
+                                      "example": [
+                                        "test"
+                                      ],
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "cwd": {
+                                      "example": "packages/api",
+                                      "type": "string"
+                                    },
+                                    "env": {
+                                      "default": {},
+                                      "example": {
+                                        "CI": "1"
+                                      },
+                                      "type": "object",
+                                      "propertyNames": {
+                                        "type": "string"
+                                      },
+                                      "additionalProperties": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "timeoutSeconds": {
+                                      "default": 600,
+                                      "example": 600,
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "command"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "enabled",
+                                "command"
+                              ]
                             }
-                          },
-                          "required": [
-                            "command"
                           ]
                         }
                       },
@@ -15063,43 +15775,95 @@
                       {
                         "type": "array",
                         "items": {
-                          "type": "object",
-                          "properties": {
-                            "name": {
-                              "default": "",
-                              "example": "Correctness",
-                              "type": "string"
-                            },
-                            "model": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "claude-opus-5"
-                            },
-                            "harness": {
-                              "example": "claude",
-                              "type": "string",
-                              "enum": [
-                                "claude",
-                                "codex",
-                                "copilot",
-                                "opencode"
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "global"
+                                  ]
+                                },
+                                "ref": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "ref",
+                                "enabled"
                               ]
                             },
-                            "issuePrompt": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Review task {taskId} against issue {ref}: {title}. {description}"
-                            },
-                            "noIssuePrompt": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "local"
+                                  ]
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "critic": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "critic-correctness"
+                                    },
+                                    "name": {
+                                      "default": "",
+                                      "example": "Correctness",
+                                      "type": "string"
+                                    },
+                                    "model": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "claude-opus-5"
+                                    },
+                                    "harness": {
+                                      "example": "claude",
+                                      "type": "string",
+                                      "enum": [
+                                        "claude",
+                                        "codex",
+                                        "copilot",
+                                        "opencode"
+                                      ]
+                                    },
+                                    "issuePrompt": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "Review task {taskId} against issue {ref}: {title}. {description}"
+                                    },
+                                    "noIssuePrompt": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "model",
+                                    "issuePrompt",
+                                    "noIssuePrompt"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "enabled",
+                                "critic"
+                              ]
                             }
-                          },
-                          "required": [
-                            "model",
-                            "issuePrompt",
-                            "noIssuePrompt"
                           ]
                         }
                       },
@@ -15113,50 +15877,102 @@
                       {
                         "type": "array",
                         "items": {
-                          "type": "object",
-                          "properties": {
-                            "command": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "npm"
-                            },
-                            "args": {
-                              "default": [],
-                              "example": [
-                                "test"
-                              ],
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "cwd": {
-                              "example": "packages/api",
-                              "type": "string"
-                            },
-                            "env": {
-                              "default": {},
-                              "example": {
-                                "CI": "1"
-                              },
+                          "oneOf": [
+                            {
                               "type": "object",
-                              "propertyNames": {
-                                "type": "string"
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "global"
+                                  ]
+                                },
+                                "ref": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                }
                               },
-                              "additionalProperties": {
-                                "type": "string"
-                              }
+                              "required": [
+                                "kind",
+                                "ref",
+                                "enabled"
+                              ]
                             },
-                            "timeoutSeconds": {
-                              "default": 600,
-                              "example": 600,
-                              "type": "integer",
-                              "exclusiveMinimum": 0,
-                              "maximum": 9007199254740991
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "local"
+                                  ]
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "command": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "cmd-lint"
+                                    },
+                                    "command": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "npm"
+                                    },
+                                    "args": {
+                                      "default": [],
+                                      "example": [
+                                        "test"
+                                      ],
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "cwd": {
+                                      "example": "packages/api",
+                                      "type": "string"
+                                    },
+                                    "env": {
+                                      "default": {},
+                                      "example": {
+                                        "CI": "1"
+                                      },
+                                      "type": "object",
+                                      "propertyNames": {
+                                        "type": "string"
+                                      },
+                                      "additionalProperties": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "timeoutSeconds": {
+                                      "default": 600,
+                                      "example": 600,
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "command"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "enabled",
+                                "command"
+                              ]
                             }
-                          },
-                          "required": [
-                            "command"
                           ]
                         }
                       },
@@ -15170,43 +15986,95 @@
                       {
                         "type": "array",
                         "items": {
-                          "type": "object",
-                          "properties": {
-                            "name": {
-                              "default": "",
-                              "example": "Correctness",
-                              "type": "string"
-                            },
-                            "model": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "claude-opus-5"
-                            },
-                            "harness": {
-                              "example": "claude",
-                              "type": "string",
-                              "enum": [
-                                "claude",
-                                "codex",
-                                "copilot",
-                                "opencode"
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "global"
+                                  ]
+                                },
+                                "ref": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "ref",
+                                "enabled"
                               ]
                             },
-                            "issuePrompt": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Review task {taskId} against issue {ref}: {title}. {description}"
-                            },
-                            "noIssuePrompt": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "local"
+                                  ]
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "critic": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "critic-correctness"
+                                    },
+                                    "name": {
+                                      "default": "",
+                                      "example": "Correctness",
+                                      "type": "string"
+                                    },
+                                    "model": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "claude-opus-5"
+                                    },
+                                    "harness": {
+                                      "example": "claude",
+                                      "type": "string",
+                                      "enum": [
+                                        "claude",
+                                        "codex",
+                                        "copilot",
+                                        "opencode"
+                                      ]
+                                    },
+                                    "issuePrompt": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "Review task {taskId} against issue {ref}: {title}. {description}"
+                                    },
+                                    "noIssuePrompt": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "model",
+                                    "issuePrompt",
+                                    "noIssuePrompt"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "enabled",
+                                "critic"
+                              ]
                             }
-                          },
-                          "required": [
-                            "model",
-                            "issuePrompt",
-                            "noIssuePrompt"
                           ]
                         }
                       },
@@ -15220,50 +16088,102 @@
                       {
                         "type": "array",
                         "items": {
-                          "type": "object",
-                          "properties": {
-                            "command": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "npm"
-                            },
-                            "args": {
-                              "default": [],
-                              "example": [
-                                "test"
-                              ],
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "cwd": {
-                              "example": "packages/api",
-                              "type": "string"
-                            },
-                            "env": {
-                              "default": {},
-                              "example": {
-                                "CI": "1"
-                              },
+                          "oneOf": [
+                            {
                               "type": "object",
-                              "propertyNames": {
-                                "type": "string"
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "global"
+                                  ]
+                                },
+                                "ref": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                }
                               },
-                              "additionalProperties": {
-                                "type": "string"
-                              }
+                              "required": [
+                                "kind",
+                                "ref",
+                                "enabled"
+                              ]
                             },
-                            "timeoutSeconds": {
-                              "default": 600,
-                              "example": 600,
-                              "type": "integer",
-                              "exclusiveMinimum": 0,
-                              "maximum": 9007199254740991
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "local"
+                                  ]
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "command": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "cmd-lint"
+                                    },
+                                    "command": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "npm"
+                                    },
+                                    "args": {
+                                      "default": [],
+                                      "example": [
+                                        "test"
+                                      ],
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "cwd": {
+                                      "example": "packages/api",
+                                      "type": "string"
+                                    },
+                                    "env": {
+                                      "default": {},
+                                      "example": {
+                                        "CI": "1"
+                                      },
+                                      "type": "object",
+                                      "propertyNames": {
+                                        "type": "string"
+                                      },
+                                      "additionalProperties": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "timeoutSeconds": {
+                                      "default": 600,
+                                      "example": 600,
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "command"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "enabled",
+                                "command"
+                              ]
                             }
-                          },
-                          "required": [
-                            "command"
                           ]
                         }
                       },
@@ -15277,37 +16197,89 @@
                       {
                         "type": "array",
                         "items": {
-                          "type": "object",
-                          "properties": {
-                            "name": {
-                              "default": "",
-                              "example": "Correctness",
-                              "type": "string"
-                            },
-                            "model": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "claude-opus-5"
-                            },
-                            "harness": {
-                              "example": "claude",
-                              "type": "string",
-                              "enum": [
-                                "claude",
-                                "codex",
-                                "copilot",
-                                "opencode"
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "global"
+                                  ]
+                                },
+                                "ref": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "ref",
+                                "enabled"
                               ]
                             },
-                            "prompt": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "local"
+                                  ]
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "critic": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "critic-correctness"
+                                    },
+                                    "name": {
+                                      "default": "",
+                                      "example": "Correctness",
+                                      "type": "string"
+                                    },
+                                    "model": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "claude-opus-5"
+                                    },
+                                    "harness": {
+                                      "example": "claude",
+                                      "type": "string",
+                                      "enum": [
+                                        "claude",
+                                        "codex",
+                                        "copilot",
+                                        "opencode"
+                                      ]
+                                    },
+                                    "prompt": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "model",
+                                    "prompt"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "enabled",
+                                "critic"
+                              ]
                             }
-                          },
-                          "required": [
-                            "model",
-                            "prompt"
                           ]
                         }
                       },
@@ -17134,6 +18106,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "cmd-lint"
+                                      },
                                       "command": {
                                         "type": "string",
                                         "minLength": 1,
@@ -17175,6 +18152,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "command",
                                       "args",
                                       "env",
@@ -17188,6 +18166,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "critic-correctness"
+                                      },
                                       "name": {
                                         "default": "",
                                         "example": "Correctness",
@@ -17220,6 +18203,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "name",
                                       "model",
                                       "issuePrompt",
@@ -17243,6 +18227,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "cmd-lint"
+                                      },
                                       "command": {
                                         "type": "string",
                                         "minLength": 1,
@@ -17284,6 +18273,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "command",
                                       "args",
                                       "env",
@@ -17297,6 +18287,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "critic-correctness"
+                                      },
                                       "name": {
                                         "default": "",
                                         "example": "Correctness",
@@ -17329,6 +18324,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "name",
                                       "model",
                                       "issuePrompt",
@@ -17362,6 +18358,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "cmd-lint"
+                                      },
                                       "command": {
                                         "type": "string",
                                         "minLength": 1,
@@ -17403,6 +18404,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "command",
                                       "args",
                                       "env",
@@ -17416,6 +18418,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "critic-correctness"
+                                      },
                                       "name": {
                                         "default": "",
                                         "example": "Correctness",
@@ -17443,6 +18450,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "name",
                                       "model",
                                       "prompt"
@@ -17963,6 +18971,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "cmd-lint"
+                                      },
                                       "command": {
                                         "type": "string",
                                         "minLength": 1,
@@ -18004,6 +19017,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "command",
                                       "args",
                                       "env",
@@ -18017,6 +19031,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "critic-correctness"
+                                      },
                                       "name": {
                                         "default": "",
                                         "example": "Correctness",
@@ -18049,6 +19068,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "name",
                                       "model",
                                       "issuePrompt",
@@ -18072,6 +19092,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "cmd-lint"
+                                      },
                                       "command": {
                                         "type": "string",
                                         "minLength": 1,
@@ -18113,6 +19138,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "command",
                                       "args",
                                       "env",
@@ -18126,6 +19152,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "critic-correctness"
+                                      },
                                       "name": {
                                         "default": "",
                                         "example": "Correctness",
@@ -18158,6 +19189,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "name",
                                       "model",
                                       "issuePrompt",
@@ -18191,6 +19223,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "cmd-lint"
+                                      },
                                       "command": {
                                         "type": "string",
                                         "minLength": 1,
@@ -18232,6 +19269,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "command",
                                       "args",
                                       "env",
@@ -18245,6 +19283,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "critic-correctness"
+                                      },
                                       "name": {
                                         "default": "",
                                         "example": "Correctness",
@@ -18272,6 +19315,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "name",
                                       "model",
                                       "prompt"
@@ -18765,6 +19809,11 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "cmd-lint"
+                                    },
                                     "command": {
                                       "type": "string",
                                       "minLength": 1,
@@ -18806,6 +19855,7 @@
                                     }
                                   },
                                   "required": [
+                                    "id",
                                     "command"
                                   ]
                                 }
@@ -18815,6 +19865,11 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "critic-correctness"
+                                    },
                                     "name": {
                                       "default": "",
                                       "example": "Correctness",
@@ -18847,6 +19902,7 @@
                                     }
                                   },
                                   "required": [
+                                    "id",
                                     "model",
                                     "issuePrompt",
                                     "noIssuePrompt"
@@ -18867,6 +19923,11 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "cmd-lint"
+                                    },
                                     "command": {
                                       "type": "string",
                                       "minLength": 1,
@@ -18908,6 +19969,7 @@
                                     }
                                   },
                                   "required": [
+                                    "id",
                                     "command"
                                   ]
                                 }
@@ -18917,6 +19979,11 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "critic-correctness"
+                                    },
                                     "name": {
                                       "default": "",
                                       "example": "Correctness",
@@ -18949,6 +20016,7 @@
                                     }
                                   },
                                   "required": [
+                                    "id",
                                     "model",
                                     "issuePrompt",
                                     "noIssuePrompt"
@@ -18978,6 +20046,11 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "cmd-lint"
+                                    },
                                     "command": {
                                       "type": "string",
                                       "minLength": 1,
@@ -19019,6 +20092,7 @@
                                     }
                                   },
                                   "required": [
+                                    "id",
                                     "command"
                                   ]
                                 }
@@ -19028,6 +20102,11 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "critic-correctness"
+                                    },
                                     "name": {
                                       "default": "",
                                       "example": "Correctness",
@@ -19055,6 +20134,7 @@
                                     }
                                   },
                                   "required": [
+                                    "id",
                                     "model",
                                     "prompt"
                                   ]
@@ -19543,6 +20623,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "cmd-lint"
+                                      },
                                       "command": {
                                         "type": "string",
                                         "minLength": 1,
@@ -19584,6 +20669,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "command",
                                       "args",
                                       "env",
@@ -19597,6 +20683,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "critic-correctness"
+                                      },
                                       "name": {
                                         "default": "",
                                         "example": "Correctness",
@@ -19629,6 +20720,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "name",
                                       "model",
                                       "issuePrompt",
@@ -19652,6 +20744,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "cmd-lint"
+                                      },
                                       "command": {
                                         "type": "string",
                                         "minLength": 1,
@@ -19693,6 +20790,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "command",
                                       "args",
                                       "env",
@@ -19706,6 +20804,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "critic-correctness"
+                                      },
                                       "name": {
                                         "default": "",
                                         "example": "Correctness",
@@ -19738,6 +20841,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "name",
                                       "model",
                                       "issuePrompt",
@@ -19771,6 +20875,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "cmd-lint"
+                                      },
                                       "command": {
                                         "type": "string",
                                         "minLength": 1,
@@ -19812,6 +20921,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "command",
                                       "args",
                                       "env",
@@ -19825,6 +20935,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "critic-correctness"
+                                      },
                                       "name": {
                                         "default": "",
                                         "example": "Correctness",
@@ -19852,6 +20967,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "name",
                                       "model",
                                       "prompt"
@@ -20367,6 +21483,11 @@
                                       "items": {
                                         "type": "object",
                                         "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "cmd-lint"
+                                          },
                                           "command": {
                                             "type": "string",
                                             "minLength": 1,
@@ -20408,6 +21529,7 @@
                                           }
                                         },
                                         "required": [
+                                          "id",
                                           "command",
                                           "args",
                                           "env",
@@ -20421,6 +21543,11 @@
                                       "items": {
                                         "type": "object",
                                         "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "critic-correctness"
+                                          },
                                           "name": {
                                             "default": "",
                                             "example": "Correctness",
@@ -20453,6 +21580,7 @@
                                           }
                                         },
                                         "required": [
+                                          "id",
                                           "name",
                                           "model",
                                           "issuePrompt",
@@ -20476,6 +21604,11 @@
                                       "items": {
                                         "type": "object",
                                         "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "cmd-lint"
+                                          },
                                           "command": {
                                             "type": "string",
                                             "minLength": 1,
@@ -20517,6 +21650,7 @@
                                           }
                                         },
                                         "required": [
+                                          "id",
                                           "command",
                                           "args",
                                           "env",
@@ -20530,6 +21664,11 @@
                                       "items": {
                                         "type": "object",
                                         "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "critic-correctness"
+                                          },
                                           "name": {
                                             "default": "",
                                             "example": "Correctness",
@@ -20562,6 +21701,7 @@
                                           }
                                         },
                                         "required": [
+                                          "id",
                                           "name",
                                           "model",
                                           "issuePrompt",
@@ -20595,6 +21735,11 @@
                                       "items": {
                                         "type": "object",
                                         "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "cmd-lint"
+                                          },
                                           "command": {
                                             "type": "string",
                                             "minLength": 1,
@@ -20636,6 +21781,7 @@
                                           }
                                         },
                                         "required": [
+                                          "id",
                                           "command",
                                           "args",
                                           "env",
@@ -20649,6 +21795,11 @@
                                       "items": {
                                         "type": "object",
                                         "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "critic-correctness"
+                                          },
                                           "name": {
                                             "default": "",
                                             "example": "Correctness",
@@ -20676,6 +21827,7 @@
                                           }
                                         },
                                         "required": [
+                                          "id",
                                           "name",
                                           "model",
                                           "prompt"
@@ -21162,6 +22314,11 @@
                                       "items": {
                                         "type": "object",
                                         "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "cmd-lint"
+                                          },
                                           "command": {
                                             "type": "string",
                                             "minLength": 1,
@@ -21203,6 +22360,7 @@
                                           }
                                         },
                                         "required": [
+                                          "id",
                                           "command",
                                           "args",
                                           "env",
@@ -21216,6 +22374,11 @@
                                       "items": {
                                         "type": "object",
                                         "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "critic-correctness"
+                                          },
                                           "name": {
                                             "default": "",
                                             "example": "Correctness",
@@ -21248,6 +22411,7 @@
                                           }
                                         },
                                         "required": [
+                                          "id",
                                           "name",
                                           "model",
                                           "issuePrompt",
@@ -21271,6 +22435,11 @@
                                       "items": {
                                         "type": "object",
                                         "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "cmd-lint"
+                                          },
                                           "command": {
                                             "type": "string",
                                             "minLength": 1,
@@ -21312,6 +22481,7 @@
                                           }
                                         },
                                         "required": [
+                                          "id",
                                           "command",
                                           "args",
                                           "env",
@@ -21325,6 +22495,11 @@
                                       "items": {
                                         "type": "object",
                                         "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "critic-correctness"
+                                          },
                                           "name": {
                                             "default": "",
                                             "example": "Correctness",
@@ -21357,6 +22532,7 @@
                                           }
                                         },
                                         "required": [
+                                          "id",
                                           "name",
                                           "model",
                                           "issuePrompt",
@@ -21390,6 +22566,11 @@
                                       "items": {
                                         "type": "object",
                                         "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "cmd-lint"
+                                          },
                                           "command": {
                                             "type": "string",
                                             "minLength": 1,
@@ -21431,6 +22612,7 @@
                                           }
                                         },
                                         "required": [
+                                          "id",
                                           "command",
                                           "args",
                                           "env",
@@ -21444,6 +22626,11 @@
                                       "items": {
                                         "type": "object",
                                         "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "critic-correctness"
+                                          },
                                           "name": {
                                             "default": "",
                                             "example": "Correctness",
@@ -21471,6 +22658,7 @@
                                           }
                                         },
                                         "required": [
+                                          "id",
                                           "name",
                                           "model",
                                           "prompt"
@@ -22019,6 +23207,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "cmd-lint"
+                                      },
                                       "command": {
                                         "type": "string",
                                         "minLength": 1,
@@ -22060,6 +23253,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "command",
                                       "args",
                                       "env",
@@ -22073,6 +23267,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "critic-correctness"
+                                      },
                                       "name": {
                                         "default": "",
                                         "example": "Correctness",
@@ -22105,6 +23304,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "name",
                                       "model",
                                       "issuePrompt",
@@ -22128,6 +23328,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "cmd-lint"
+                                      },
                                       "command": {
                                         "type": "string",
                                         "minLength": 1,
@@ -22169,6 +23374,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "command",
                                       "args",
                                       "env",
@@ -22182,6 +23388,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "critic-correctness"
+                                      },
                                       "name": {
                                         "default": "",
                                         "example": "Correctness",
@@ -22214,6 +23425,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "name",
                                       "model",
                                       "issuePrompt",
@@ -22247,6 +23459,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "cmd-lint"
+                                      },
                                       "command": {
                                         "type": "string",
                                         "minLength": 1,
@@ -22288,6 +23505,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "command",
                                       "args",
                                       "env",
@@ -22301,6 +23519,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "example": "critic-correctness"
+                                      },
                                       "name": {
                                         "default": "",
                                         "example": "Correctness",
@@ -22328,6 +23551,7 @@
                                       }
                                     },
                                     "required": [
+                                      "id",
                                       "name",
                                       "model",
                                       "prompt"

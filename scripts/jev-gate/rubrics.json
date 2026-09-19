@@ -7,9 +7,9 @@
   },
   "code_smells": {
     "type": "score",
-    "instructions": "Rate this source code for Martin Fowler-style code smells such as long methods, large classes, feature envy, primitive obsession, data clumps, and shotgun surgery. Higher means fewer, less harmful smells.",
+    "instructions": "Rate this source code for Martin Fowler-style code smells such as long methods, large classes, feature envy, primitive obsession, data clumps, long parameter lists, speculative generality, and shotgun surgery. Also weight boolean/flag parameters that silently switch a function's behavior (control coupling) as a smell — a pattern that is easy to accumulate in TypeScript because optional booleans are cheap to add. Higher means fewer, less harmful smells.",
     "criteria": [
-      "Riddled with smells: bloated methods and classes, feature envy, primitive obsession, and shotgun surgery throughout",
+      "Riddled with smells: bloated methods and classes, feature envy, primitive obsession, shotgun surgery, and/or flag-parameter control coupling throughout",
       "Frequent smells that clearly hurt readability and make change unsafe",
       "Some smells present but localized and low impact",
       "Mostly clean; only minor, defensible smells remain",
@@ -18,43 +18,43 @@
   },
   "security": {
     "type": "score",
-    "instructions": "Rate this source code for security by EXPLOITABILITY, not by pattern-matching a checklist. For every candidate issue, ask: is there a concrete input an attacker or untrusted caller could supply that reaches a dangerous sink and causes real harm (auth bypass, code/command execution, cross-tenant data access, secret exposure, traversal outside an intended directory)? Weight heavily anything with a reachable, attacker-influenced path to a dangerous sink — including auth/access checks that fail OPEN (an error, missing token, or unknown case treated as authorized), command injection (untrusted data interpolated or spread into subprocess args or a shell:true call), path traversal (an unsanitized or unvalidated id/name joined into a filesystem path), unsafe deserialization, hardcoded secrets, and injection (SQL/NoSQL/template). Weight lightly, and do not conflate with the above, hardening nits with no plausible attack path: a validated/internal/numeric id used in a path, environment variables passed into a trusted subprocess with no attacker-controlled content, or a missing redundant defense-in-depth layer where the primary control already holds. Confidence calibration: report high confidence (>=0.6) ONLY when you can name the concrete attacker-controlled input and the dangerous sink it reaches; if the exploit path is speculative, framework-mediated, or you cannot tell whether the input is attacker-controlled, keep confidence below 0.6 so the finding routes to human sign-off rather than auto-blocking. Do NOT lower the score for framework-mediated safety that is clearly in force: parameterized or ORM-built queries, inputs already validated or type-narrowed at a trust boundary, auth/escaping middleware that is actually applied on the reachable path, and code reachable only by trusted internal callers with no untrusted entry point. Higher means safer against real, reachable attacks.",
+    "instructions": "Rate this source code for security by EXPLOITABILITY, not by pattern-matching a checklist. For every candidate issue, ask: is there a concrete input an attacker or untrusted caller could supply that reaches a dangerous sink and causes real harm (auth bypass, code/command execution, cross-tenant data access, secret exposure, traversal outside an intended directory)? Weight heavily anything with a reachable, attacker-influenced path to a dangerous sink — including auth/access checks that fail OPEN (an error, missing token, or unknown case treated as authorized), command injection (untrusted data interpolated or spread into subprocess args or a shell:true call), path traversal (an unsanitized or unvalidated id/name joined into a filesystem path), unsafe deserialization, hardcoded secrets, injection (SQL/NoSQL/template), and broken or predictable cryptography reachable by an attacker (a non-CSPRNG source used for tokens/session ids/nonces, a fast general-purpose hash used for passwords, a hardcoded or reused IV/key). Also weight heavily error handling that leaks internal detail to an untrusted caller through the error itself — a stack trace, file path, internal identifier, or secret returned in a response or a log an untrusted party can reach — even when the underlying failure is otherwise handled correctly. Weight lightly, and do not conflate with the above, hardening nits with no plausible attack path: a validated/internal/numeric id used in a path, environment variables passed into a trusted subprocess with no attacker-controlled content, or a missing redundant defense-in-depth layer where the primary control already holds. Confidence calibration: report high confidence (>=0.6) ONLY when you can name the concrete attacker-controlled input and the dangerous sink it reaches; if the exploit path is speculative, framework-mediated, or you cannot tell whether the input is attacker-controlled, keep confidence below 0.6 so the finding routes to human sign-off rather than auto-blocking. Do NOT lower the score for framework-mediated safety that is clearly in force: parameterized or ORM-built queries, inputs already validated or type-narrowed at a trust boundary, auth/escaping middleware that is actually applied on the reachable path, and code reachable only by trusted internal callers with no untrusted entry point. Higher means safer against real, reachable attacks.",
     "criteria": [
-      "A reachable, exploitable critical vulnerability is present: e.g. authentication or access control that fails open, command injection via unsanitized subprocess arguments, or path traversal from an unsanitized id/name joined into a filesystem path",
-      "A serious weakness is present and plausibly reachable by an untrusted caller, even if exploitation needs specific conditions",
+      "A reachable, exploitable critical vulnerability is present: e.g. authentication or access control that fails open, command injection via unsanitized subprocess arguments, path traversal from an unsanitized id/name joined into a filesystem path, or a broken/predictable cryptographic primitive protecting something sensitive (passwords, session tokens)",
+      "A serious weakness is present and plausibly reachable by an untrusted caller, even if exploitation needs specific conditions, including an error path that leaks internal detail (stack trace, path, secret) to an untrusted caller",
       "A real but harder-to-reach concern, or a risky pattern whose exploitability is genuinely unclear and needs human review",
       "Only defense-in-depth nits remain: patterns that look risky in isolation (e.g. env vars passed to a trusted subprocess, an id used in a path) but have no plausible attack path because the value is validated, internal, or not attacker-controlled",
-      "No apparent security issues; attacker-reachable input is validated or sanitized before use, auth fails closed, no secrets, safe APIs used"
+      "No apparent security issues; attacker-reachable input is validated or sanitized before use, auth fails closed, no secrets, safe APIs and cryptographic primitives used, and errors do not leak internal detail to untrusted callers"
     ]
   },
   "complexity_clean_code": {
     "type": "score",
-    "instructions": "Rate this source code for complexity and Robert C. Martin clean-code qualities: function size and single responsibility, nesting depth, cyclomatic complexity, and name clarity. Higher means simpler and cleaner.",
+    "instructions": "Rate this source code for complexity and Robert C. Martin clean-code qualities: function size and single responsibility, name clarity, and complexity as a reader would actually feel it. Judge complexity qualitatively, not by literal branch counting (exact counting is a known weak spot for this model). Prefer a cognitive-complexity lens over a cyclomatic one: nested control flow that forces a reader to hold multiple contexts at once (for example a loop containing a try/catch containing a conditional) is worse than the same number of sequential, early-return guard clauses, even when both have a similar number of branches. Higher means simpler and cleaner.",
     "criteria": [
-      "Very hard to follow: deep nesting, huge functions, unclear names, high cyclomatic complexity",
-      "Often complex or poorly named; frequent cognitive overload",
-      "Moderate complexity; several functions or names could be simpler",
-      "Mostly simple and well named; small focused functions",
-      "Clean and simple: small single-purpose functions, clear names, low complexity"
+      "Very hard to follow: deeply nested control flow that forces holding multiple contexts at once, huge functions, unclear names",
+      "Often complex or poorly named; frequent cognitive overload from nesting or mixed concerns, even where individual branch counts look modest",
+      "Moderate complexity; some nesting or nested error handling that could flatten into guard clauses, several functions or names could be simpler",
+      "Mostly simple and well named; small focused functions with shallow, mostly linear control flow",
+      "Clean and simple: small single-purpose functions, clear names, shallow linear control flow with no nested-context reading burden"
     ]
   },
   "comments": {
     "type": "score",
-    "instructions": "Rate the comment discipline of this source code. Good comments explain non-obvious why (hidden invariants, external constraints, justified lint or type suppressions, public API doc contracts). Bad comments narrate what the code already says, add banners, leave commented-out code, or preach about workarounds instead of fixing them. Higher means better discipline.",
+    "instructions": "Rate the comment discipline of this source code. Good comments explain non-obvious why (hidden invariants, external constraints, justified lint or type suppressions, public API doc contracts). Bad comments narrate what the code already says, add banners, leave commented-out code, or preach about workarounds instead of fixing them. A lint or type suppression is only 'justified' if the comment names the specific reason it is needed (a specific external constraint or a specific known false positive) — a suppression with no reason, or a vague one such as 'needed' or 'temp fix', counts as undisciplined. Higher means better discipline.",
     "criteria": [
       "Pervasive narration, banners, commented-out code, or unjustified lint or type suppressions",
       "Many comments restate the code or justify workarounds rather than fixing them",
       "Mixed: some useful comments alongside several redundant what-comments",
       "Mostly disciplined; only a rare redundant comment",
-      "Exemplary: comments explain only non-obvious why; no narration, no dead code, suppressions justified"
+      "Exemplary: comments explain only non-obvious why; no narration, no dead code; every suppression names its specific reason"
     ]
   },
   "testability": {
     "type": "score",
-    "instructions": "Rate how easily this source code can be unit tested: presence of seams, dependency injection, pure versus side-effecting logic, and avoidance of hidden global state. Higher means easier to test. First judge the file's role from its path, the state's `role_hint` (if present), and its content: testability is a category error for a fixture, mock/stub, type declaration, or story file — there is no logic to unit test, so score it near the top by default unless it does something that would genuinely make it awkward to use from a test (e.g. a hidden side effect on import). For a test file itself, judge only whether its own helpers/setup are testable, not whether the test needs testing. Apply the full bar only to application/business logic.",
+    "instructions": "Rate how easily this source code can be unit tested: presence of seams, dependency injection, pure versus side-effecting logic, and avoidance of hidden global state. The single sharpest signal is whether a collaborator — a service, client, repository, or other stateful dependency — is constructed inline inside the function or class under review (a bare `new X()` buried in business logic, with no way for a caller to substitute it) versus received as a parameter or constructor argument (a seam a test can use to inject a fake). Inline construction of a collaborator is a stronger testability smell than almost any other pattern, even when the rest of the function is otherwise pure. First judge the file's role from its path, the state's `role_hint` (if present), and its content: testability is a category error for a fixture, mock/stub, type declaration, or story file — there is no logic to unit test, so score it near the top by default unless it does something that would genuinely make it awkward to use from a test (e.g. a hidden side effect on import). For a test file itself, judge only whether its own helpers/setup are testable, not whether the test needs testing. Apply the full bar only to application/business logic.",
     "criteria": [
-      "Untestable: hidden dependencies, global state, side effects fused with logic",
-      "Hard to test; would need heavy mocking or refactoring first",
+      "Untestable: hidden dependencies, collaborators constructed inline with no injection seam, global state, side effects fused with logic",
+      "Hard to test; would need heavy mocking or refactoring first, including reaching inside the module to replace an inline-constructed collaborator",
       "Testable with some effort; a few seams missing",
       "Mostly testable; clear seams and injectable dependencies",
       "Highly testable: pure functions, injected dependencies, clean seams — or a non-logic file (fixture/mock/type/story) with nothing that would resist being used in a test"
@@ -62,24 +62,35 @@
   },
   "duplication": {
     "type": "score",
-    "instructions": "Rate this source code for duplication (the DRY principle): repeated logic or structure that should be factored into shared abstractions. Higher means less duplication.",
+    "instructions": "Rate this source code for duplication (the DRY principle): repeated logic or structure that should be factored into shared abstractions. Weight literal or renamed copy-paste (identical or near-identical blocks differing only in names or literals) heavily and with high confidence — it is cheap to verify and cheap to fix. Near-miss duplication (the same structure with a few statements added, removed, or changed) also counts and should be reported with reasonable confidence. Treat purely conceptual or semantic duplication — different code that arguably does the same thing but shares no structure or text — as a soft, lower-confidence flag only: semantic-only duplication is hard to verify reliably even for specialized tooling built for exactly this purpose, so keep confidence low rather than asserting it as a clear-cut finding. Higher means less duplication.",
     "criteria": [
-      "Extensive copy-paste; the same logic repeated in many places",
-      "Frequent duplication that should be factored out",
-      "Some repetition; a few blocks worth extracting",
+      "Extensive copy-paste (literal or renamed); the same logic repeated in many places",
+      "Frequent near-miss duplication (same structure, minor variations) that should be factored out",
+      "Some repetition; a few blocks worth extracting, or a plausible but unconfirmed conceptual duplication worth a human look",
       "Only minor, acceptable repetition",
       "No meaningful duplication; shared logic is well factored"
     ]
   },
   "error_handling": {
     "type": "score",
-    "instructions": "Rate this source code for error handling: validation at boundaries, meaningful error propagation, and absence of swallowed or ignored failures. Higher means more robust. First judge the file's role from its path, the state's `role_hint` (if present), and its content: a fixture, mock/stub, type declaration, story, or test file has no boundary to validate and no failure path of its own, so score it near the top by default rather than penalizing it for lacking try/catch or input validation it was never meant to have. Apply the full bar only to code that actually receives external or caller input — application/business logic, request handlers, parsers, and the like.",
+    "instructions": "Rate this source code for error handling: validation at boundaries, meaningful error propagation, and absence of swallowed or ignored failures. Also flag error handling that leaks internal detail to an untrusted caller through the error itself — a stack trace, file path, internal identifier, or secret returned in a response or written to a log an untrusted party can reach — even if the failure is otherwise handled; treat this as a boundary-validation gap, not only a robustness gap (it is also weighted under `security`, so it is fine to flag it in both). First judge the file's role from its path, the state's `role_hint` (if present), and its content: a fixture, mock/stub, type declaration, story, or test file has no boundary to validate and no failure path of its own, so score it near the top by default rather than penalizing it for lacking try/catch or input validation it was never meant to have. Apply the full bar only to code that actually receives external or caller input — application/business logic, request handlers, parsers, and the like. Higher means more robust.",
     "criteria": [
-      "Failure paths ignored or swallowed; no boundary validation; crashes on bad input",
+      "Failure paths ignored or swallowed; no boundary validation; crashes on bad input, or errors returned to an untrusted caller leak internal detail (stack trace, path, secret)",
       "Weak: broad catches, silent failures, little validation",
       "Partial: some paths handled but gaps remain at boundaries",
       "Mostly robust; only minor gaps",
-      "Robust: validates at boundaries, propagates meaningful errors, no swallowed exceptions — or a non-logic file (fixture/mock/type/story/test) with no boundary of its own to guard"
+      "Robust: validates at boundaries, propagates meaningful errors without leaking internal detail, no swallowed exceptions — or a non-logic file (fixture/mock/type/story/test) with no boundary of its own to guard"
+    ]
+  },
+  "concurrency_and_idempotency": {
+    "type": "score",
+    "instructions": "Rate this source code for event-loop discipline and idempotency under retries and partial failure. A background loop, periodic poll, reconcile pass, boot sweep, or fill job that iterates a collection whose size grows with the database or workload MUST chunk its synchronous work and yield the event loop between chunks (e.g. via a yield helper) — a tight synchronous loop over an unbounded or growing collection on the shared Node event loop is a critical violation, since it can freeze every other request the process serves. Commands, lifecycle steps, and processing loops must also be idempotent: they should converge to the same end state whether run once or replayed after a crash, restart, or retry, with no double-application of a side effect (e.g. double-charging, double-inserting, re-sending a notification) on a retried attempt. A retry loop or subprocess-spawn loop with no upper bound is also a smell here. First judge the file's role from its path, the state's `role_hint` (if present), and its content: MOST files have no background loop, no shared-state mutation, and no retryable command — pure functions, types, UI components, tests, fixtures, mocks, stories, and config have no such surface at all. Score these near the top (4) with high confidence by default; do not penalize a file for lacking yield points or idempotency guards it was never meant to have. Apply the full bar only to code that actually runs a loop over a growing collection, a periodic or background job, or a retryable command or lifecycle step.",
+    "criteria": [
+      "Has a background loop, poll, reconcile pass, or retry/spawn loop that is a critical risk: a tight synchronous loop over an unbounded/growing collection with no yield, or a side effect that clearly double-applies on retry",
+      "Same surface present but only partially mitigated: yields are missing on some paths, or idempotency holds for the common case but breaks under a plausible crash or retry",
+      "Has the surface and mostly handles it correctly, but a genuine gap remains (e.g. an unbounded retry with no cap, or a lifecycle step whose idempotency is unclear)",
+      "Has the surface and handles it correctly; only a minor, defensible gap remains",
+      "No background loop, retryable command, or shared-state mutation to worry about — or, where present, it chunks/yields correctly and converges to the same end state under crash, restart, or retry"
     ]
   }
 }

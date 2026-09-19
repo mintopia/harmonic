@@ -40,14 +40,15 @@ describe('verifyEpicIntegration', () => {
       verifiedHeadOid,
       verifiers: {
         commands: [{
+          id: 'cmd-cwd-check',
           command: process.execPath,
           args: ['-e', `if (process.cwd() !== ${JSON.stringify(worktreePath)}) process.exit(1)`],
           env: {},
           timeoutSeconds: 10,
         }],
         critics: [
-          { name: 'Test critic', prompt: 'Review the Epic.', model: 'stub-model' },
-          { name: 'Test critic', prompt: 'Review the integration.', model: 'stub-model' },
+          { id: 'critic-epic', name: 'Test critic', prompt: 'Review the Epic.', model: 'stub-model', timeoutSeconds: 300 },
+          { id: 'critic-integration', name: 'Test critic', prompt: 'Review the integration.', model: 'stub-model', timeoutSeconds: 300 },
         ],
       },
       runCritic: critic,
@@ -63,8 +64,8 @@ describe('verifyEpicIntegration', () => {
       verifiers: {
         commands: [],
         critics: [
-          { name: 'Test critic', prompt: 'Review the migration.', model: 'stub-model' },
-          { name: 'Test critic', prompt: 'Review the Epic.', model: 'stub-model' },
+          { id: 'critic-migration', name: 'Test critic', prompt: 'Review the migration.', model: 'stub-model', timeoutSeconds: 300 },
+          { id: 'critic-epic', name: 'Test critic', prompt: 'Review the Epic.', model: 'stub-model', timeoutSeconds: 300 },
         ],
       },
       runCritic: vi.fn()
@@ -97,6 +98,7 @@ describe('verifyEpicIntegration', () => {
       verifiedHeadOid: 'epic-head',
       verifiers: {
         commands: [{
+          id: 'cmd-fail-migration',
           command: process.execPath,
           args: ['-e', 'console.error("missing migration"); process.exit(1)'],
           env: {},

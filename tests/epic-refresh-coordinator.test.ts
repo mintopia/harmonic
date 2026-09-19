@@ -395,6 +395,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     await tasks.syncEpics(workspace.id, [{ ref: 5, kind: 'epic' }]);
     const config = baselineConfig();
     config.verify.epic.preMerge.commands = [{
+      id: 'cmd-exit-1',
       command: 'node',
       args: ['-e', 'process.exit(1)'],
       env: {},
@@ -438,7 +439,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     await tasks.syncEpics(workspace.id, [{ ref: 5, kind: 'epic' }]);
     const config = baselineConfig();
     config.maxAttempts = 1;
-    config.verify.epic.preMerge.commands = [{ command: 'node', args: ['-e', 'process.exit(1)'], env: {}, timeoutSeconds: 10 }];
+    config.verify.epic.preMerge.commands = [{ id: 'cmd-exit-1', command: 'node', args: ['-e', 'process.exit(1)'], env: {}, timeoutSeconds: 10 }];
     const guidance: string[] = [];
     const attempts = new AttemptStore(asyncDb);
     const service = new TrackerEpicService(

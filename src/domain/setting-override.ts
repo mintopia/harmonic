@@ -2,9 +2,12 @@ import type { WorkspaceRow } from '../db/schema.js';
 import {
   type AppConfig,
   type VerificationCommand,
+  type VerificationCommandOverlayEntry,
   type TaskVerificationCritic,
+  type TaskVerificationCriticOverlayEntry,
   type TaskVerificationStage,
   type EpicVerificationCritic,
+  type EpicVerificationCriticOverlayEntry,
   type EpicVerificationStage,
   type BudgetGuardrail,
   type MergeFate,
@@ -61,6 +64,55 @@ export function resolveVerifiers(
   };
 }
 
+/**
+ * Merge an ordered overlay of `global`/`local` entries against the current
+ * global list by id (ADR-0037). A `global` entry resolves against the live
+ * global by id — dropped if that global no longer exists — and a `local`
+ * entry inlines its own item; either kind is skipped when `enabled` is false.
+ * Any global not *named* by any entry, enabled or disabled, is appended,
+ * enabled, at the end, so a newly added global check reaches an
+ * already-customised Workspace. `null` inherits every global, in global
+ * order, enabled.
+ */
+function mergeOverlay<TItem extends { id: string }, TEntry extends { kind: 'global' | 'local'; enabled: boolean }>(
+  overlay: readonly TEntry[] | null,
+  globals: readonly TItem[],
+  ref: (entry: TEntry & { kind: 'global' }) => string,
+  local: (entry: TEntry & { kind: 'local' }) => TItem,
+): TItem[] {
+  if (overlay == null) return [...globals];
+  const globalById = new Map(globals.map((item) => [item.id, item] as const));
+  const named = new Set<string>();
+  const result: TItem[] = [];
+  for (const entry of overlay) {
+    if (entry.kind === 'global') {
+      const id = ref(entry as TEntry & { kind: 'global' });
+      named.add(id);
+      if (!entry.enabled) continue;
+      const item = globalById.get(id);
+      if (item) result.push(item);
+      continue;
+    }
+    if (!entry.enabled) continue;
+    result.push(local(entry as TEntry & { kind: 'local' }));
+  }
+  for (const item of globals) if (!named.has(item.id)) result.push(item);
+  return result;
+}
+
+/** {@link mergeOverlay}, but a `global-only` registry key ignores the Workspace overlay entirely. */
+function resolveOverlay<TItem extends { id: string }, TEntry extends { kind: 'global' | 'local'; enabled: boolean }>(
+  key: SettingKey,
+  stored: string | null,
+  globals: readonly TItem[],
+  ref: (entry: TEntry & { kind: 'global' }) => string,
+  local: (entry: TEntry & { kind: 'local' }) => TItem,
+): TItem[] {
+  if (!isOverridable(key)) return [...globals];
+  const overlay = stored == null ? null : (JSON.parse(stored) as TEntry[]);
+  return mergeOverlay(overlay, globals, ref, local);
+}
+
 function resolveTaskStage(
   commandsKey: SettingKey,
   commandsStored: string | null,
@@ -68,11 +120,15 @@ function resolveTaskStage(
   criticsStored: string | null,
   globalDefault: TaskVerificationStage,
 ): TaskVerificationStage {
-  const commands = commandsStored == null ? null : (JSON.parse(commandsStored) as VerificationCommand[]);
-  const critics = criticsStored == null ? null : (JSON.parse(criticsStored) as TaskVerificationCritic[]);
   return {
-    commands: resolveScoped(commandsKey, commands, globalDefault.commands),
-    critics: resolveScoped(criticsKey, critics, globalDefault.critics),
+    commands: resolveOverlay<VerificationCommand, VerificationCommandOverlayEntry>(
+      commandsKey, commandsStored, globalDefault.commands,
+      (e) => e.ref, (e) => e.command,
+    ),
+    critics: resolveOverlay<TaskVerificationCritic, TaskVerificationCriticOverlayEntry>(
+      criticsKey, criticsStored, globalDefault.critics,
+      (e) => e.ref, (e) => e.critic,
+    ),
   };
 }
 
@@ -83,11 +139,15 @@ function resolveEpicStage(
   criticsStored: string | null,
   globalDefault: EpicVerificationStage,
 ): EpicVerificationStage {
-  const commands = commandsStored == null ? null : (JSON.parse(commandsStored) as VerificationCommand[]);
-  const critics = criticsStored == null ? null : (JSON.parse(criticsStored) as EpicVerificationCritic[]);
   return {
-    commands: resolveScoped(commandsKey, commands, globalDefault.commands),
-    critics: resolveScoped(criticsKey, critics, globalDefault.critics),
+    commands: resolveOverlay<VerificationCommand, VerificationCommandOverlayEntry>(
+      commandsKey, commandsStored, globalDefault.commands,
+      (e) => e.ref, (e) => e.command,
+    ),
+    critics: resolveOverlay<EpicVerificationCritic, EpicVerificationCriticOverlayEntry>(
+      criticsKey, criticsStored, globalDefault.critics,
+      (e) => e.ref, (e) => e.critic,
+    ),
   };
 }
 

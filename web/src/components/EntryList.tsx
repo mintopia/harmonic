@@ -92,6 +92,16 @@ type EntryListProps<T> = {
   renderBody: (item: T, index: number, set: (item: T) => void) => ReactNode;
   /** Accessible verb for the reorder grip, e.g. "critic" → "Reorder critic 2". */
   itemNoun: string;
+  /** A locked row (e.g. an inherited global in a workspace overlay) keeps
+   * drag-reorder but swaps `renderBody` for `renderLockedBody` and hides
+   * Remove unless `canRemoveLocked` says otherwise. */
+  isLocked?: (item: T, index: number) => boolean;
+  canRemoveLocked?: (item: T, index: number) => boolean;
+  renderLockedBody?: (item: T, index: number) => ReactNode;
+  /** An extra control rendered as its own button, sibling to the title toggle
+   * — e.g. an enable/disable Switch. Never nest interactive controls inside
+   * `renderMeta`, which sits inside the row's toggle button. */
+  renderRowControl?: (item: T, index: number) => ReactNode;
 };
 
 type HeaderProps = {
@@ -105,6 +115,8 @@ type HeaderProps = {
   gripRef?: (el: HTMLElement | null) => void;
   gripProps?: Record<string, unknown>;
   overlay?: boolean;
+  control?: ReactNode;
+  canRemove?: boolean;
 };
 
 function RowHeader({
@@ -118,6 +130,8 @@ function RowHeader({
   gripRef,
   gripProps,
   overlay,
+  control,
+  canRemove = true,
 }: HeaderProps) {
   const [armed, setArmed] = useState(false);
   useEffect(() => {
@@ -166,7 +180,8 @@ function RowHeader({
           {content}
         </button>
       )}
-      {!overlay && (
+      {!overlay && control}
+      {!overlay && canRemove && (
         <button
           type="button"
           aria-label={armed ? `Confirm remove ${itemNoun} ${index + 1}` : `Remove ${itemNoun} ${index + 1}`}
@@ -209,11 +224,13 @@ function SortableRow<T>({
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
     useSortable({ id });
+  const locked = props.isLocked?.(item, index) ?? false;
+  const body = locked ? (props.renderLockedBody?.(item, index) ?? null) : props.renderBody(item, index, setItem);
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`overflow-hidden rounded-lg bg-surface shadow-card ${isDragging ? 'opacity-40' : ''}`}
+      className={`overflow-hidden rounded-lg bg-surface shadow-card ${isDragging ? 'opacity-40' : ''} ${locked ? 'opacity-80' : ''}`}
     >
       <RowHeader
         index={index}
@@ -225,10 +242,10 @@ function SortableRow<T>({
         onRemove={onRemove}
         gripRef={setActivatorNodeRef}
         gripProps={{ ...attributes, ...listeners }}
+        control={props.renderRowControl?.(item, index)}
+        canRemove={locked ? (props.canRemoveLocked?.(item, index) ?? false) : true}
       />
-      {open && (
-        <div className="flex flex-col gap-4 p-3.5">{props.renderBody(item, index, setItem)}</div>
-      )}
+      {open && body !== null && <div className="flex flex-col gap-4 p-3.5">{body}</div>}
     </div>
   );
 }

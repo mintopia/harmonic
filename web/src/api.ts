@@ -27,9 +27,9 @@ import type {
   Task,
   TicketTimelineEvent,
   VerificationAttempt,
-  VerificationCommand,
-  TaskVerificationCritic,
-  EpicVerificationCritic,
+  CommandOverlayEntry,
+  TaskCriticOverlayEntry,
+  EpicCriticOverlayEntry,
   VerifierStatus,
   Workspace,
   UpdateState,
@@ -174,12 +174,12 @@ export const api = {
       autoRunnerEnabled?: boolean | null;
       maxAttempts?: number | null;
       contextReuseTokenLimit?: number | null;
-      taskPreMergeCommands?: VerificationCommand[] | null;
-      taskPreMergeCritics?: TaskVerificationCritic[] | null;
-      taskPostMergeCommands?: VerificationCommand[] | null;
-      taskPostMergeCritics?: TaskVerificationCritic[] | null;
-      epicPreMergeCommands?: VerificationCommand[] | null;
-      epicPreMergeCritics?: EpicVerificationCritic[] | null;
+      taskPreMergeCommands?: CommandOverlayEntry[] | null;
+      taskPreMergeCritics?: TaskCriticOverlayEntry[] | null;
+      taskPostMergeCommands?: CommandOverlayEntry[] | null;
+      taskPostMergeCritics?: TaskCriticOverlayEntry[] | null;
+      epicPreMergeCommands?: CommandOverlayEntry[] | null;
+      epicPreMergeCritics?: EpicCriticOverlayEntry[] | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
       toolTimeoutMinutes?: number | null;
