@@ -1,18 +1,8 @@
-/**
- * Pure policy for the Jev quality gate: role exemptions, score-zone
- * classification, ratchet regression, and final report/exit-code assembly.
- * Zero I/O — the one thing that looks like I/O (the injected `now()` clock in
- * `buildReport`) is a seam for the caller to control, not a hidden side effect.
- */
 import { matchesGlob, sep as pathSep } from 'node:path';
 import { z } from 'zod';
 import { JEV_CATEGORIES, type JevCategory, type JevFileScore } from './types.js';
 
-// Jev's security axis is calibrated as unreliable (misses real vulnerabilities,
-// over-flags benign code, no exploitability model) and comments is inherently
-// subjective — both must stay advisory-only no matter what a config says. This
-// is the one place this pair is named; everything else references it.
-const NEVER_GATE_CATEGORIES: readonly JevCategory[] = ['security', 'comments'];
+const PERMANENTLY_ADVISORY_CATEGORIES: readonly JevCategory[] = ['security', 'comments'];
 
 // A "true" 0.5 drop can arrive as a float like 0.49999999999999994 (e.g.
 // 1.9 - 1.4). Without an epsilon that would wrongly fail to trip the ratchet.
@@ -100,7 +90,7 @@ export const gateConfigSchema = z
   })
   .strict()
   .superRefine((config, ctx) => {
-    for (const category of NEVER_GATE_CATEGORIES) {
+    for (const category of PERMANENTLY_ADVISORY_CATEGORIES) {
       if (config.gatedCategories.includes(category)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -263,7 +253,7 @@ function judgeCategory(
   const rawScore = score.categories[category];
   const rawConfidence = score.confidence[category];
   const exempt = classification.exemptCategories.includes(category);
-  const advisory = NEVER_GATE_CATEGORIES.includes(category) || !config.gatedCategories.includes(category);
+  const advisory = PERMANENTLY_ADVISORY_CATEGORIES.includes(category) || !config.gatedCategories.includes(category);
   const gated = !advisory && !exempt;
 
   const { zone, downgraded } = classifyScore(rawScore, rawConfidence, config.categoryZones, config.confidence.hardFailMin);
@@ -507,8 +497,6 @@ export function decideExitCode(args: {
   onInfrastructureError: GateConfig['onInfrastructureError'];
   files: FileJudgement[];
 }): number {
-  // Advisory is an absolute override: it must return 0 even given a
-  // blocking-shaped file, so it is checked first and short-circuits everything.
   if (args.mode === 'advisory') return 0;
   if ((args.status === 'skipped' || args.status === 'error') && args.onInfrastructureError === 'fail') return 1;
   if (args.files.some((file) => file.blocking)) return 1;

@@ -1,7 +1,3 @@
-/**
- * Jev network transport, ported from the jev-code-score skill's Python
- * reference (jev_score.py) — same wire protocol, this repo's own gate.
- */
 import { readFileSync } from 'node:fs';
 import {
   JEV_CATEGORIES,
@@ -118,6 +114,20 @@ interface JevAnswer {
   confidence?: number;
 }
 
+function assertCategoryScored(
+  answer: JevAnswer | undefined,
+  category: JevCategory,
+  path: string,
+): asserts answer is Required<JevAnswer> {
+  if (!answer || typeof answer.score !== 'number' || typeof answer.confidence !== 'number') {
+    throw new Error(`Jev response missing category "${category}" for ${path}`);
+  }
+}
+
+function extractAnswersTolerantOfMissingEnvelope(payload: JevResponsePayload): Record<string, JevAnswer> {
+  return payload.answers ?? (payload as unknown as Record<string, JevAnswer>);
+}
+
 interface JevResponsePayload {
   answers?: Record<string, JevAnswer>;
   usage?: { cost?: number; input_tokens?: number };
@@ -184,19 +194,12 @@ export function createHttpJevScorer(options: HttpJevScorerOptions = {}): JevScor
     async score(req: JevScoreRequest): Promise<JevFileScore> {
       const state = buildState(req.path, req.content);
       const { payload, latencyMs } = await callJev(state);
-      // The reference tolerates a bare answers map with no envelope for
-      // providers that skip the `{answers, usage}` wrapper — mirror that
-      // exact fallback rather than assuming a shape mismatch is an error.
-      const answers = payload.answers ?? (payload as unknown as Record<string, JevAnswer>);
+      const answers = extractAnswersTolerantOfMissingEnvelope(payload);
       const categories = {} as Record<JevCategory, number>;
       const confidence = {} as Record<JevCategory, number>;
       for (const category of JEV_CATEGORIES) {
         const answer = answers[category];
-        if (!answer || typeof answer.score !== 'number' || typeof answer.confidence !== 'number') {
-          // A missing/malformed category must fail loudly: defaulting to 0
-          // would let a broken response manufacture a fake FAIL gate-wide.
-          throw new Error(`Jev response missing category "${category}" for ${req.path}`);
-        }
+        assertCategoryScored(answer, category, req.path);
         categories[category] = answer.score;
         confidence[category] = answer.confidence;
       }

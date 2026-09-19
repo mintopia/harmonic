@@ -1,9 +1,3 @@
-/**
- * Orchestration + I/O for the Jev quality gate: CLI arg parsing, git/fs access,
- * and the run algorithm that ties gate-policy.ts (pure judging) to jev-client.ts
- * (scoring transport). Kept separate from scripts/jev-gate.ts so the algorithm
- * is testable without a subprocess per test.
- */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
@@ -124,20 +118,21 @@ export interface RunGateDeps {
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
+function resolveRepoRelativePath(repoRoot: string, relPath: string): string {
+  return resolve(repoRoot, relPath);
+}
+
 export function createRealDeps(overrides: Partial<RunGateDeps> = {}): RunGateDeps {
   const repoRoot = overrides.repoRoot ?? REPO_ROOT;
   const defaults: RunGateDeps = {
     repoRoot,
     git: (args) => execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8' }).trim(),
-    // `resolve` (not `join`) so an absolute --out/--config path (the docs
-    // example uses `--out /tmp/jev.json`) is honored as-is instead of being
-    // nested under repoRoot.
     readTextFile: (relPath) => {
-      const full = resolve(repoRoot, relPath);
+      const full = resolveRepoRelativePath(repoRoot, relPath);
       return existsSync(full) ? readFileSync(full, 'utf8') : undefined;
     },
-    writeTextFile: (relPath, content) => writeFileSync(resolve(repoRoot, relPath), content),
-    fileExists: (relPath) => existsSync(resolve(repoRoot, relPath)),
+    writeTextFile: (relPath, content) => writeFileSync(resolveRepoRelativePath(repoRoot, relPath), content),
+    fileExists: (relPath) => existsSync(resolveRepoRelativePath(repoRoot, relPath)),
     scorer: createHttpJevScorer(),
     now: () => new Date(),
     env: process.env,
@@ -316,16 +311,13 @@ export async function runGate(args: ParsedArgs, deps: RunGateDeps): Promise<RunG
     }
 
     let diffed: string[];
-    let untracked: string[];
+    let uncommittedNewFiles: string[];
     try {
       diffed = deps
         .git(['diff', '--name-only', '--diff-filter=d', mergeBase])
         .split('\n')
         .filter(Boolean);
-      // Untracked new files never appear in a `diff` against a committed ref, but
-      // an agent's Attempt regularly adds brand-new files that haven't been
-      // committed yet — the gate must still see them or "new file" review is a no-op.
-      untracked = deps
+      uncommittedNewFiles = deps
         .git(['ls-files', '--others', '--exclude-standard'])
         .split('\n')
         .filter(Boolean);
@@ -349,7 +341,7 @@ export async function runGate(args: ParsedArgs, deps: RunGateDeps): Promise<RunG
       });
       return { report, summary: renderSummary(report) };
     }
-    changed = [...new Set([...diffed, ...untracked])].sort();
+    changed = [...new Set([...diffed, ...uncommittedNewFiles])].sort();
     base = { requested, resolvedRef, mergeBase };
   } else {
     changed = args.positionals;
@@ -464,9 +456,6 @@ export async function runGate(args: ParsedArgs, deps: RunGateDeps): Promise<RunG
 const DEFAULT_SCAN_CONCURRENCY = 4;
 
 export async function writeBaseline(args: ParsedArgs, deps: RunGateDeps): Promise<string> {
-  // writeBaseline only needs config.scan.concurrency, so a broken/missing
-  // config falls back to a default rather than throwing — matching runGate's
-  // "advisory never fails the process" philosophy for --write-baseline too.
   let concurrencyFromConfig: number;
   let configFallbackNote: string | null = null;
   try {
@@ -511,9 +500,6 @@ export async function writeBaseline(args: ParsedArgs, deps: RunGateDeps): Promis
     }
   });
 
-  // Merge, never replace: --write-baseline is typically run against a subset
-  // of paths (e.g. one PR's files), and dropping every entry outside that
-  // subset would silently erase the rest of the repo's baseline.
   const merged: Record<string, BaselineEntry> = { ...existing.files, ...newEntries };
   const files: Record<string, BaselineEntry> = {};
   for (const key of Object.keys(merged).sort()) {

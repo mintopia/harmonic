@@ -1,10 +1,3 @@
-/**
- * Shared contract between gate-policy.ts (pure classification), jev-client.ts
- * (Jev transport), and gate-run.ts (orchestration/CLI). Fixed up front so the
- * three modules are built against the same shapes without importing each
- * other's internals.
- */
-
 export const JEV_CATEGORIES = [
   'code_smells',
   'security',
@@ -38,11 +31,6 @@ export interface JevScorerInfo {
   model: string;
 }
 
-/**
- * The injectable seam `gate-run.ts` calls through. `createHttpJevScorer()`
- * (in jev-client.ts) is the real implementation; tests supply a fake so no
- * unit test makes a live network call.
- */
 export interface JevScorer {
   /** Static info for the report, independent of availability. */
   readonly info: JevScorerInfo;

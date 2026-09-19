@@ -222,8 +222,6 @@ describe('role exemptions', () => {
   });
 
   it('overlapping globs union without duplicates', () => {
-    // matches both __tests__/** and test/** patterns is not realistic, so use
-    // a config with an overlapping custom rule to prove union+dedupe behavior.
     const customConfig = baseConfig({
       exemptions: [
         { glob: '**/dup/**', suppress: ['testability', 'duplication'] },
@@ -242,9 +240,6 @@ describe('advisory categories never block', () => {
       mode: 'enforcing',
       enforce: { newFileAbsolutes: true, modifiedFileAbsolutes: true, ratchet: true },
     });
-    // Baseline overall left null: only the advisory category's own hard-fail-shaped
-    // score is under test here, isolated from the (legitimate, separate) overall
-    // ratchet net that also folds in advisory categories.
     const judged = judgeFile({
       score: score({ categories: { [category]: 0.1 }, confidence: { [category]: 0.99 } }),
       classification: classifyPath('src/thing.ts', config),
@@ -304,7 +299,7 @@ describe('ratchet regressions', () => {
   });
 
   it('float epsilon case: 2.3 -> 1.8 trips despite the drop computing as 0.49999999999999978', () => {
-    expect(2.3 - 1.8).not.toBe(0.5); // documents the float representation gap this guards against
+    expect(2.3 - 1.8).not.toBe(0.5);
     const judged = judgeFile({
       score: score({ categories: { testability: 1.8 } }),
       classification: classifyPath('src/thing.ts', config),
@@ -444,7 +439,7 @@ describe('blocking decision across rollout phases', () => {
       enforce: { newFileAbsolutes: true, modifiedFileAbsolutes: false, ratchet: true },
     });
     const modifiedFile = judgeFile({
-      score: score({ categories: { testability: 2.0 } }), // warn zone, not absolute fail
+      score: score({ categories: { testability: 2.0 } }),
       classification: classifyPath('src/thing.ts', config),
       baselineEntry: { categories: { testability: 3.0 }, confidence: {}, overall: null },
       config,
@@ -549,7 +544,6 @@ describe('reasons text matches the specified format', () => {
   });
 
   it('overall fail sentence', () => {
-    // 1.5 mean = 38/100 (rounded); failBelow 2.0 = 50/100 -> below the fail threshold.
     const judged = judgeFile({
       score: score({ categories: Object.fromEntries(JEV_CATEGORIES.map((c) => [c, 1.5])) }),
       classification: classifyPath('src/thing.ts', config),
@@ -675,7 +669,6 @@ describe('buildReport shape', () => {
       'src/d-fail.ts',
       'src/e-errored.ts',
     ]);
-    // Rounded to 2dp on the way out.
     for (const file of report.files) {
       if (!file.categories) continue;
       for (const category of JEV_CATEGORIES) {
