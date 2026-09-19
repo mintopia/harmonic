@@ -7,6 +7,7 @@ const SOURCE = readFileSync(
   'utf8',
 );
 const TICKET_PAGE = readFileSync(fileURLToPath(new URL('../web/src/components/TicketPage.tsx', import.meta.url)), 'utf8');
+const TICKET_PAGE_DATA = readFileSync(fileURLToPath(new URL('../web/src/components/useTicketPageData.ts', import.meta.url)), 'utf8');
 
 describe('LifecycleTimeline', () => {
   it('is an explicitly chronological audit view, separate from the attempt selector', () => {
@@ -14,7 +15,7 @@ describe('LifecycleTimeline', () => {
     expect(SOURCE).toContain('Chronological lifecycle timeline');
     expect(SOURCE).toContain("Navigation is the sidebar's");
     expect(TICKET_PAGE).toContain('<LifecycleTimeline');
-    expect(TICKET_PAGE).toContain('api.taskTimeline(task.id)');
+    expect(TICKET_PAGE_DATA).toContain('loadTimeline(task.id)');
   });
 
   it('threads state-coloured nodes on a continuous connector rail with a time gutter', () => {
