@@ -1,10 +1,11 @@
-import { open } from 'node:fs/promises';
+import { open, stat } from 'node:fs/promises';
 import { forEachYielding } from '../reliability/yield.js';
 import { adapterFor } from './harness/registry.js';
 import type { TranscriptLogEvent } from './harness/transcript.js';
 
 const MAX_TRANSCRIPT_BYTES = 2 * 1024 * 1024;
 const MAX_EVENTS = 2_000;
+const MAX_SUBAGENTS = 50;
 
 export type { TranscriptLogEvent } from './harness/transcript.js';
 
@@ -73,7 +74,7 @@ export async function readTranscriptLog(input: { harness: string; path: string |
   if (!recognized) return { status: 'unavailable' };
 
   if (transcript.subagents) {
-    for (const sub of await transcript.subagents(input.path)) {
+    for (const sub of await mostRecentSubagents(await transcript.subagents(input.path))) {
       const subText = await readTail(sub.path);
       if (subText === null) continue;
       await forEachYielding(subText.split('\n'), (line) => {
@@ -92,6 +93,17 @@ export async function readTranscriptLog(input: { harness: string; path: string |
   }
 
   return { status: 'available', events: events.slice(-MAX_EVENTS) };
+}
+
+async function mostRecentSubagents<T extends { path: string }>(subagents: T[]): Promise<T[]> {
+  if (subagents.length <= MAX_SUBAGENTS) return subagents;
+  const withMtime = await Promise.all(
+    subagents.map(async (sub) => ({ sub, mtimeMs: (await stat(sub.path).catch(() => null))?.mtimeMs ?? 0 })),
+  );
+  return withMtime
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .slice(0, MAX_SUBAGENTS)
+    .map(({ sub }) => sub);
 }
 
 /** The bounded tail of a JSONL file; null when it cannot be read. */
