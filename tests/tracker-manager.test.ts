@@ -71,7 +71,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
         reopen: async () => {},
       };
     };
-    manager = new TrackerPollerManager(tasks, () => workspaces.list(), resolveAdapter);
+    manager = new TrackerPollerManager(tasks, () => workspaces.list(), { resolveAdapter });
   });
   afterEach(async () => {
     manager.stopAll();
@@ -162,8 +162,10 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await seedWorkspace(asyncDb);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     workspaces = new WorkspaceService(asyncDb, settingsStore);
-    manager = new TrackerPollerManager(tasks, () => workspaces.list(), async () => {
-      throw new Error('restart query must not resolve or poll the tracker');
+    manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+      resolveAdapter: async () => {
+        throw new Error('restart query must not resolve or poll the tracker');
+      },
     });
 
     expect(await manager.listEpics(workspace.id)).toEqual(beforeRestart);
@@ -201,8 +203,10 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await seedWorkspace(asyncDb);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     workspaces = new WorkspaceService(asyncDb, settingsStore);
-    manager = new TrackerPollerManager(tasks, () => workspaces.list(), async () => {
-      throw new Error('restart query must not resolve or poll the tracker');
+    manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+      resolveAdapter: async () => {
+        throw new Error('restart query must not resolve or poll the tracker');
+      },
     });
 
     expect(await manager.epicDetail(workspace.id, 10)).toEqual(beforeRestart);
@@ -243,8 +247,10 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await seedWorkspace(asyncDb);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     workspaces = new WorkspaceService(asyncDb, settingsStore);
-    manager = new TrackerPollerManager(tasks, () => workspaces.list(), async () => {
-      throw new Error('restart query must not resolve or poll the tracker');
+    manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+      resolveAdapter: async () => {
+        throw new Error('restart query must not resolve or poll the tracker');
+      },
     });
     expect((await manager.epicDetail(workspace.id, 19))?.members.map((m) => m.ref)).toEqual([20]);
   });
@@ -428,18 +434,19 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     let yields = 0;
     const order: string[] = [];
     const extraRepos: string[] = [];
-    manager = new TrackerPollerManager(tasks, () => workspaces.list(), async (repoRoot: string) => {
-      polled.push(repoRoot);
-      return {
-        name: 'stub',
-        scan: async () => [],
-        readTicket: async (r) => ticket(r.number),
-        claim: async () => {},
-        release: async () => {},
-        close: async () => {},
-        reopen: async () => {},
-      };
-    }, undefined, undefined, undefined, undefined, {
+    manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+      resolveAdapter: async (repoRoot: string) => {
+        polled.push(repoRoot);
+        return {
+          name: 'stub',
+          scan: async () => [],
+          readTicket: async (r) => ticket(r.number),
+          claim: async () => {},
+          release: async () => {},
+          close: async () => {},
+          reopen: async () => {},
+        };
+      },
       yieldOptions: {
         budgetMs: 0,
         now: () => tick++,
@@ -469,5 +476,47 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     expect(order.indexOf('immediate')).toBeLessThan(order.indexOf('done'));
     expect(polled.length).toBeGreaterThan(0);
     for (const workingDir of extraRepos) rmSync(workingDir, { recursive: true, force: true });
+  });
+
+  it('threads yieldOptions through maps() and reconcileEpics() (#663)', async () => {
+    manager.stopAll();
+    let tick = 0;
+    let yields = 0;
+    manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+      resolveAdapter: async (repoRoot: string) => {
+        if (unresolvable.has(repoRoot))
+          throw new TrackerResolutionError('no-declaration', `No tracker declaration at ${repoRoot}`);
+        polled.push(repoRoot);
+        return {
+          name: 'stub',
+          scan: async () => ticketsByRepo.get(repoRoot) ?? [],
+          readTicket: async (r) => ticket(r.number),
+          claim: async () => {},
+          release: async () => {},
+          close: async () => {},
+          reopen: async () => {},
+        };
+      },
+      yieldOptions: {
+        budgetMs: 0,
+        now: () => tick++,
+        yieldNow: async () => {
+          yields++;
+          await yieldToEventLoop();
+        },
+      },
+    });
+    ticketsByRepo.set(repoA, [ticket(30)]);
+    const workspace = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    await manager.sync();
+    await manager.pollNow(workspace.id);
+
+    yields = 0;
+    await manager.maps(workspace.id);
+    expect(yields).toBeGreaterThan(0);
+
+    yields = 0;
+    await manager.reconcileEpics();
+    expect(yields).toBeGreaterThan(0);
   });
 });
