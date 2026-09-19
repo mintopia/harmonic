@@ -5,7 +5,7 @@
  * encodes.
  */
 
-/** The 8 Jev rubric categories, 0 (worst) to 4 (best). */
+/** The 9 Jev rubric categories, 0 (worst) to 4 (best). */
 export const ALL_CATEGORIES = [
   'complexity_clean_code',
   'code_smells',
@@ -15,6 +15,7 @@ export const ALL_CATEGORIES = [
   'security',
   'comments',
   'concurrency_and_idempotency',
+  'ai_slop',
 ] as const;
 export type CategoryId = (typeof ALL_CATEGORIES)[number];
 

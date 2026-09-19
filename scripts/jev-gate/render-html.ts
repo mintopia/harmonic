@@ -32,6 +32,7 @@ const CAT_LABELS: Record<CategoryId, string> = {
   security: 'Security',
   comments: 'Comments',
   concurrency_and_idempotency: 'Concurrency',
+  ai_slop: 'AI slop',
 };
 
 const scoreZone = (v: number): string => (v < 1.5 ? 'fail' : v < 2.5 ? 'warn' : 'pass');
