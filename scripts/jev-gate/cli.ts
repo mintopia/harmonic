@@ -159,10 +159,13 @@ Options:
   --write-baseline     Score every tracked, in-scope source file in the project
                         and (re)write the baseline at --baseline. This is the
                         one-way ratchet seed; run it on a known-good commit.
-  --html               Also render the baseline to a self-contained HTML report
-                        next to it (jev.baseline.json -> jev.baseline.html). With
-                        --write-baseline it's emitted after scoring; on its own it
-                        renders the EXISTING baseline (no Jev calls, no API key).
+  --html               Render an HTML report next to the baseline. With
+                        --write-baseline: the whole-project baseline report
+                        (jev.baseline.html). On a gate run: a change report
+                        (jev.baseline.change.html) — the committed baseline as a
+                        grey backdrop with this run's changed files coloured. With
+                        --dry-run: re-render the EXISTING baseline only (no Jev
+                        calls, no API key).
   --repo-root <path>   Repo working tree to diff/read files from (default: cwd)
   --config <path>      Path to jev.gate.json (default: <repo-root>/jev.gate.json)
   --rubrics <path>     Path to rubrics.json (default: vendored copy next to this script)
@@ -425,11 +428,30 @@ function htmlPathFor(baselinePath: string): string {
   return baselinePath.endsWith('.json') ? `${baselinePath.slice(0, -'.json'.length)}.html` : `${baselinePath}.html`;
 }
 
-function writeBaselineHtml(baseline: Baseline, meta: BaselineMeta | null, baselinePath: string, repoRoot: string): string {
+function writeBaselineHtml(baseline: Baseline, meta: BaselineMeta | null, baselinePath: string, repoRoot: string, focus: readonly string[] | null = null): string {
   const htmlPath = htmlPathFor(baselinePath);
-  writeFileSync(htmlPath, renderBaselineHtml(baseline, meta));
+  writeFileSync(htmlPath, renderBaselineHtml(baseline, meta, focus));
   process.stderr.write(`jev-gate: baseline HTML written to ${relative(repoRoot, htmlPath)}\n`);
   return htmlPath;
+}
+
+/** Sibling `.change.html` path for a gate run's change report. */
+function changeHtmlPathFor(baselinePath: string): string {
+  return baselinePath.endsWith('.json') ? `${baselinePath.slice(0, -'.json'.length)}.change.html` : `${baselinePath}.change.html`;
+}
+
+/** A scored changed file as a baseline entry (raw scores + confidences), for the change report's coloured overlay. */
+function changedEntry(file: FileResult): BaselineEntry | null {
+  if (!file.categories || !file.overall) return null;
+  const categories: Partial<Record<CategoryId, number>> = {};
+  const confidences: Partial<Record<CategoryId, number>> = {};
+  for (const cat of ALL_CATEGORIES) {
+    const cr = file.categories[cat];
+    if (!cr) continue;
+    categories[cat] = cr.score;
+    confidences[cat] = cr.confidence;
+  }
+  return { categories, confidences, overall: file.overall.mean };
 }
 
 /** `--html` without `--write-baseline`: render the existing baseline file to HTML, no scoring. */
@@ -573,7 +595,7 @@ async function main(): Promise<number> {
     return runBaseline(opts);
   }
 
-  if (opts.html) {
+  if (opts.html && opts.dryRun) {
     return renderBaselineOnly(opts);
   }
 
@@ -660,6 +682,21 @@ async function main(): Promise<number> {
   } else {
     process.stdout.write(`${renderHuman(result)}\n`);
   }
+
+  if (opts.html) {
+    // Change report: the whole committed baseline is the grey backdrop; the run's
+    // scored changed files overlay it in colour (fresh scores win over baseline).
+    const changedEntries: Baseline = {};
+    for (const f of scored) {
+      const entry = changedEntry(f);
+      if (entry) changedEntries[f.path] = entry;
+    }
+    const background: Baseline = { ...(baseline ?? {}), ...changedEntries };
+    const htmlPath = changeHtmlPathFor(baselinePath);
+    writeFileSync(htmlPath, renderBaselineHtml(background, null, Object.keys(changedEntries)));
+    process.stderr.write(`jev-gate: change report written to ${relative(opts.repoRoot, htmlPath)}\n`);
+  }
+
   if (mode === 'advisory') {
     process.stderr.write(`jev-gate: GATE ${summary.verdict} — advisory mode, reporting only, exit 0\n`);
     return 0;

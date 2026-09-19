@@ -4,26 +4,25 @@
  * scatter charts, and a per-file score table. Used by cli.ts's optional `--html`
  * output.
  *
- * Charts are drawn by Chart.js loaded from a CDN (jsDelivr), so the report needs a
- * browser with network access to render them. The cards, table and footer are still
- * rendered server-side, so the full data stays readable with no JavaScript and no
- * network — the charts are enhancement over that table, and a small notice replaces
- * the chart grid when Chart.js cannot load.
+ * `baseline` is the whole-project grey backdrop for every chart; `focus` (when
+ * given) is the subset of paths drawn in colour — the files "in the change" — with
+ * every other project file left grey. A null `focus` colours every file (a plain
+ * whole-project render). Each chart is a per-metric scatter (confidence × raw
+ * score); the per-file expand renders the same eight charts with only that file
+ * coloured. Charts are drawn by Chart.js from a CDN, so they need a browser with
+ * network; the cards and table are server-rendered and stay readable without it.
  *
  * Confidence shapes the display: each category cell shows the confidence-weighted
- * score (`score·c + 2·(1-c)` — Jev's raw score pulled toward the neutral 2.0 as it
- * grows less sure, see thresholds.ts `weightByConfidence`), and a file's overall is
- * the mean of its weighted category values. The raw score and confidence stay
- * visible (cell subtext + tooltip). The persisted baseline stores raw scores plus
- * confidences; the gate and ratchet judge the same weighted value (thresholds.ts),
- * so this display and the gate agree.
+ * score (`score·c + 2·(1-c)` — see thresholds.ts `weightByConfidence`), and a
+ * file's overall is the mean of its weighted category values. The persisted
+ * baseline stores raw scores plus confidences; the gate and ratchet judge the same
+ * weighted value, so this display and the gate agree.
  */
 import type { Baseline, BaselineMeta, CategoryId } from './types.js';
 import { ALL_CATEGORIES } from './types.js';
 import { NEUTRAL_SCORE, weightByConfidence } from './thresholds.js';
 
 const CHARTJS_SRC = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js';
-const DATALABELS_SRC = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js';
 
 const CAT_LABELS: Record<CategoryId, string> = {
   complexity_clean_code: 'Complexity',
@@ -34,18 +33,6 @@ const CAT_LABELS: Record<CategoryId, string> = {
   security: 'Security',
   comments: 'Comments',
   concurrency_and_idempotency: 'Concurrency',
-};
-
-/** Short tags for labelling this file's points on the per-file scatter. */
-const CAT_SHORT: Record<CategoryId, string> = {
-  complexity_clean_code: 'Cx',
-  code_smells: 'Sm',
-  duplication: 'Dup',
-  testability: 'Test',
-  error_handling: 'Err',
-  security: 'Sec',
-  comments: 'Com',
-  concurrency_and_idempotency: 'Conc',
 };
 
 const catZone = (v: number | undefined): string => (v == null ? 'na' : v < 1.5 ? 'fail' : v < 2.5 ? 'warn' : 'pass');
@@ -83,7 +70,10 @@ const chipCell = (score: number | undefined, confidence: number | undefined): st
   return `<td><span class="chip ${catZone(w)}" title="${title}">${fmt(w)}</span>${sub}</td>`;
 };
 
-export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null = null): string {
+const scatterCell = (k: CategoryId, idPrefix: string): string =>
+  `<div class="scatter-cell"><div class="scatter-title">${CAT_LABELS[k]}</div><div class="chartbox"><canvas id="${idPrefix}-${k}"></canvas></div></div>`;
+
+export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null = null, focus: readonly string[] | null = null): string {
   const rows = Object.entries(baseline).map(([path, e]) => ({
     path,
     categories: e.categories,
@@ -91,34 +81,40 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
     overall: weightedOverall(e.categories, e.confidences),
   }));
   const n = rows.length;
-  const meanOverall = n ? rows.reduce((s, r) => s + r.overall, 0) / n : 0;
+  // The score table and its rollups show the focus set when there is one (the
+  // change), otherwise the whole project; the charts always keep the full
+  // project as their grey backdrop.
+  const focusSet = focus == null ? null : new Set(focus);
+  const tableRows = focusSet == null ? rows : rows.filter((r) => focusSet.has(r.path));
+  const tn = tableRows.length;
+  const meanOverall = tn ? tableRows.reduce((s, r) => s + r.overall, 0) / tn : 0;
   const catAverages = Object.fromEntries(
     ALL_CATEGORIES.map((k) => {
-      const vals = rows.map((r) => weighted(r.categories[k], r.confidences?.[k])).filter((v): v is number => v != null);
+      const vals = tableRows.map((r) => weighted(r.categories[k], r.confidences?.[k])).filter((v): v is number => v != null);
       return [k, vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0];
     }),
   ) as Record<CategoryId, number>;
-  const confVals = rows.flatMap((r) => ALL_CATEGORIES.map((k) => r.confidences?.[k]).filter((v): v is number => typeof v === 'number'));
+  const confVals = tableRows.flatMap((r) => ALL_CATEGORIES.map((k) => r.confidences?.[k]).filter((v): v is number => typeof v === 'number'));
   const meanConfidence = confVals.length ? confVals.reduce((a, b) => a + b, 0) / confVals.length : null;
 
   const stats = {
-    anyCatFail: rows.filter((r) => ALL_CATEGORIES.some((k) => catZone(weighted(r.categories[k], r.confidences?.[k])) === 'fail')).length,
-    overallFail: rows.filter((r) => overallZone(r.overall) === 'fail').length,
-    securityFail: rows.filter((r) => catZone(weighted(r.categories.security, r.confidences?.security)) === 'fail').length,
-    commentsFail: rows.filter((r) => catZone(weighted(r.categories.comments, r.confidences?.comments)) === 'fail').length,
+    anyCatFail: tableRows.filter((r) => ALL_CATEGORIES.some((k) => catZone(weighted(r.categories[k], r.confidences?.[k])) === 'fail')).length,
+    overallFail: tableRows.filter((r) => overallZone(r.overall) === 'fail').length,
+    securityFail: tableRows.filter((r) => catZone(weighted(r.categories.security, r.confidences?.security)) === 'fail').length,
   };
 
-  const catShort = Object.fromEntries(ALL_CATEGORIES.map((k) => [k, CAT_SHORT[k]])) as Record<CategoryId, string>;
-  const data = { rows, cats: ALL_CATEGORIES.map((k) => [k, CAT_LABELS[k]]), catShort, meanOverall, n, catAverages, stats, neutral: NEUTRAL_SCORE };
+  const data = { rows, cats: ALL_CATEGORIES.map((k) => [k, CAT_LABELS[k]]), n, neutral: NEUTRAL_SCORE, focus: focus == null ? null : [...focus] };
   const dataJson = JSON.stringify(data).replace(/</g, '\\u003c');
 
-  const scatterCellsHtml = ALL_CATEGORIES.map(
-    (k) => `<div class="scatter-cell"><div class="scatter-title">${CAT_LABELS[k]}</div><div class="chartbox"><canvas id="sc-${k}"></canvas></div></div>`,
-  ).join('');
+  const scatterCellsHtml = ALL_CATEGORIES.map((k) => scatterCell(k, 'sc')).join('');
 
-  const subText = n
-    ? `${n} files scored · mean overall ${pct(meanOverall)}/100 (${meanOverall.toFixed(2)}/4, confidence-weighted)`
+  const isChange = focusSet != null;
+  const subText = tn
+    ? `${tn}${isChange ? ` changed file${tn === 1 ? '' : 's'} of ${n} in project` : ' files'} scored · mean overall ${pct(meanOverall)}/100 (${meanOverall.toFixed(2)}/4, confidence-weighted)`
     : 'Baseline is empty — run --write-baseline to populate it.';
+  const scatterCaption = isChange
+    ? 'Per-category health: x = confidence (0–100%), y = raw score (0–4). Coloured = changed files, grey = the rest of the project.'
+    : 'Per-category health: x = confidence (0–100%), y = raw score (0–4), one point per file.';
 
   const cards: [string, string | number, string][] = [];
   if (meta) {
@@ -127,11 +123,11 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
     cards.push(['Cost', meta.totalCostUsd == null ? 'n/a' : `$${meta.totalCostUsd.toFixed(4)}`, meta.totalCostUsd == null ? 'provider silent' : 'this run']);
     cards.push(['Input tokens', meta.totalInputTokens == null ? 'n/a' : meta.totalInputTokens.toLocaleString('en-US'), meta.totalInputTokens == null ? 'provider silent' : '']);
   }
-  cards.push(['Files scored', n, '']);
+  cards.push([isChange ? 'Changed files' : 'Files scored', tn, isChange ? `of ${n} in project` : '']);
   cards.push(['Mean overall', `${pct(meanOverall)}/100`, `${meanOverall.toFixed(2)}/4`]);
   cards.push(['Mean confidence', meanConfidence == null ? 'n/a' : `${Math.round(meanConfidence * 100)}%`, meanConfidence == null ? 'no confidence data' : '']);
-  cards.push(['Any category FAIL', stats.anyCatFail, `of ${n}`]);
-  cards.push(['Overall FAIL (<50)', stats.overallFail, `of ${n}`]);
+  cards.push(['Any category FAIL', stats.anyCatFail, `of ${tn}`]);
+  cards.push(['Overall FAIL (<50)', stats.overallFail, `of ${tn}`]);
   cards.push(['Security FAIL', stats.securityFail, 'advisory']);
   const cardsHtml = cards
     .map(([k, v, s]) => `<div class="card"><div class="k">${k}</div><div class="v">${v}${s ? ` <small>${s}</small>` : ''}</div></div>`)
@@ -146,8 +142,7 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
     .map(([k, l]) => `<th data-k="${k}">${l}<span class="arrow">${k === 'overall' ? ' ▲' : ''}</span></th>`)
     .join('');
 
-  // Default view: worst-first by overall (most actionable), matching the client's default sort.
-  const sorted = [...rows].sort((a, b) => a.overall - b.overall);
+  const sorted = [...tableRows].sort((a, b) => a.overall - b.overall);
   const bodyHtml = sorted
     .map((r) => {
       const cells = ALL_CATEGORIES.map((k) => chipCell(r.categories[k], r.confidences?.[k])).join('');
@@ -156,8 +151,8 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
     })
     .join('');
 
-  const footHtml = n
-    ? `<td>Mean across ${n} files</td><td><span class="chip overall ${overallZone(meanOverall)}">${pct(meanOverall)}</span></td>` +
+  const footHtml = tn
+    ? `<td>Mean across ${tn} file${tn === 1 ? '' : 's'}</td><td><span class="chip overall ${overallZone(meanOverall)}">${pct(meanOverall)}</span></td>` +
       ALL_CATEGORIES.map((k) => `<td><span class="chip ${catZone(catAverages[k])}">${fmt(catAverages[k])}</span></td>`).join('')
     : '';
 
@@ -214,14 +209,12 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
   .scatter-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; margin-bottom:24px; }
   .scatter-cell { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px 12px; }
   .scatter-title { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:6px; }
-  .chartbox { position:relative; height:170px; }
+  .chartbox { position:relative; height:150px; }
   .chart-missing { grid-column:1/-1; color:var(--muted); font-size:13px; padding:16px; border:1px dashed var(--line); border-radius:10px; text-align:center; }
   tr.filerow { cursor:pointer; }
   .caret { display:inline-block; width:10px; color:var(--muted); }
   tr.detail-row td { background:var(--bg); border-bottom:1px solid var(--line); }
-  .detail-panel { padding:12px 4px; display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; white-space:normal; }
-  .detail-chartbox { position:relative; height:300px; width:min(520px,100%); flex:1 1 360px; }
-  .detail-hint { color:var(--muted); font-size:11px; max-width:220px; }
+  .detail-charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; padding:12px 4px; white-space:normal; }
 </style>
 </head>
 <body>
@@ -230,11 +223,11 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
   <p class="sub" id="sub">${subText}</p>
   <p class="metaline" id="metaline">${metaLine}</p>
   <div class="cards" id="cards">${cardsHtml}</div>
-  <p class="scatter-caption">Per-category health: x = confidence (0–100%), y = raw score (0–4), one point per file.</p>
+  <p class="scatter-caption">${scatterCaption}</p>
   <div class="scatter-grid" id="scatterGrid">${scatterCellsHtml}</div>
   <div class="controls">
     <input type="search" id="filter" placeholder="Filter by path… (needs JavaScript)" autocomplete="off">
-    <span class="hint" id="count">${n} of ${n} shown</span>
+    <span class="hint" id="count">${tn} of ${tn} shown</span>
   </div>
   <div class="tablewrap">
     <table>
@@ -253,12 +246,13 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
   </div>
 </div>
 <script src="${CHARTJS_SRC}"></script>
-<script src="${DATALABELS_SRC}"></script>
 <script type="application/json" id="data">${dataJson}</script>
 <script>
   const D = JSON.parse(document.getElementById('data').textContent);
   const CATS = D.cats;
   const NEUTRAL = D.neutral;
+  const FOCUS = D.focus ? new Set(D.focus) : null;
+  const inFocus = (path) => FOCUS == null || FOCUS.has(path);
   const catZone = (v) => v == null ? 'na' : v < 1.5 ? 'fail' : v < 2.5 ? 'warn' : 'pass';
   const overallZone = (v) => v < 2.0 ? 'fail' : v < 2.4 ? 'warn' : 'pass';
   const fmt = (v) => v == null ? '–' : v.toFixed(2);
@@ -271,94 +265,64 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
   };
   const esc = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-  // ---- Chart.js scatter charts (CDN) ----
   const hasChart = typeof Chart !== 'undefined';
-  const hasDL = typeof ChartDataLabels !== 'undefined';
   const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-  const palette = () => ({ pass: cssVar('--pass'), warn: cssVar('--warn'), fail: cssVar('--fail'), na: cssVar('--muted'), grid: cssVar('--line'), tick: cssVar('--muted'), ink: cssVar('--ink') });
+  const palette = () => ({ pass: cssVar('--pass'), warn: cssVar('--warn'), fail: cssVar('--fail'), na: cssVar('--muted'), grid: cssVar('--line'), tick: cssVar('--muted'), panel: cssVar('--panel') });
   const zoneColor = (P, z) => z === 'pass' ? P.pass : z === 'warn' ? P.warn : z === 'fail' ? P.fail : P.na;
 
+  // Every project file's point for one category (the grey backdrop pool).
   function catPoints(k) {
     return D.rows.filter(r => r.categories[k] != null).map(r => {
-      const score = r.categories[k];
-      const conf = r.confidences && r.confidences[k];
-      const known = conf != null;
-      return { x: known ? Math.round(clamp(conf) * 100) : 100, y: score, zone: known ? catZone(weight(score, conf)) : 'na', path: r.path, conf: known ? Math.round(clamp(conf) * 100) + '%' : 'n/a' };
+      const s = r.categories[k];
+      const c = r.confidences && r.confidences[k];
+      const known = c != null;
+      return { x: known ? Math.round(clamp(c) * 100) : 100, y: s, zone: known ? catZone(weight(s, c)) : 'na', path: r.path, conf: known ? Math.round(clamp(c) * 100) + '%' : 'n/a' };
     });
   }
-  function scales(P, axisLabels) {
+  function scales(P) {
     return {
-      x: { min: 0, max: 100, ...(axisLabels ? { title: { display: true, text: 'confidence %', color: P.tick, font: { size: 10 } } } : {}), ticks: { color: P.tick, font: { size: 9 }, stepSize: 25, callback: (v) => v + '%' }, grid: { color: P.grid } },
-      y: { min: 0, max: 4, ...(axisLabels ? { title: { display: true, text: 'score', color: P.tick, font: { size: 10 } } } : {}), ticks: { color: P.tick, font: { size: 9 }, stepSize: 1 }, grid: { color: P.grid } },
+      x: { min: 0, max: 100, ticks: { color: P.tick, font: { size: 9 }, stepSize: 25, callback: (v) => v + '%' }, grid: { color: P.grid } },
+      y: { min: 0, max: 4, ticks: { color: P.tick, font: { size: 9 }, stepSize: 1 }, grid: { color: P.grid } },
     };
+  }
+  // One per-metric scatter: colour the points whose path passes \`colored\`, grey the rest.
+  function metricChart(canvas, k, colored) {
+    const P = palette();
+    const pts = catPoints(k);
+    const grey = [], color = [];
+    for (const p of pts) (colored(p.path) ? color : grey).push(p);
+    return new Chart(canvas, {
+      type: 'scatter',
+      data: { datasets: [
+        { data: grey, pointRadius: 2.5, pointBackgroundColor: P.na + '4d', pointBorderWidth: 0, order: 2 },
+        { data: color, pointRadius: 4.5, pointHoverRadius: 6.5, pointBackgroundColor: color.map(p => zoneColor(P, p.zone)), pointBorderColor: P.panel, pointBorderWidth: 1, order: 1 },
+      ] },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: { legend: { display: false }, tooltip: { displayColors: false, callbacks: { title: () => '', label: (ctx) => { const p = ctx.raw; return p.path + '  ' + p.y.toFixed(2) + '/4 · ' + p.conf; } } } },
+        scales: scales(P),
+      },
+    });
   }
 
   const overviewCharts = [];
   function buildOverview() {
     if (!hasChart) return;
-    const P = palette();
     overviewCharts.forEach(c => c.destroy());
     overviewCharts.length = 0;
     for (const [k] of CATS) {
       const cv = document.getElementById('sc-' + k);
-      if (!cv) continue;
-      const pts = catPoints(k);
-      overviewCharts.push(new Chart(cv, {
-        type: 'scatter',
-        data: { datasets: [{ data: pts, pointRadius: 3.5, pointHoverRadius: 6, pointBackgroundColor: pts.map(p => zoneColor(P, p.zone)), pointBorderColor: cssVar('--panel'), pointBorderWidth: 1 }] },
-        options: {
-          responsive: true, maintainAspectRatio: false, animation: false,
-          plugins: { legend: { display: false }, tooltip: { displayColors: false, callbacks: { title: () => '', label: (ctx) => { const p = ctx.raw; return p.path + '  ' + p.y.toFixed(2) + '/4 · ' + p.conf; } } } },
-          scales: scales(P, false),
-        },
-      }));
+      if (cv) overviewCharts.push(metricChart(cv, k, inFocus));
     }
   }
 
-  const detailCharts = new Map();
-  function destroyDetailCharts() { detailCharts.forEach(c => c.destroy()); detailCharts.clear(); }
-  function cloudPoints() {
-    const pts = [];
-    for (const r of D.rows) for (const [k] of CATS) {
-      const s = r.categories[k];
-      if (s == null) continue;
-      const c = r.confidences && r.confidences[k];
-      pts.push({ x: c == null ? 100 : Math.round(clamp(c) * 100), y: s });
-    }
-    return pts;
-  }
-  function buildDetail(path, cv) {
+  const detailCharts = [];
+  function destroyDetailCharts() { detailCharts.forEach(c => c.destroy()); detailCharts.length = 0; }
+  function buildDetail(root, path) {
     if (!hasChart) return;
-    const P = palette();
-    const row = D.rows.find(r => r.path === path);
-    if (!row) return;
-    const filePts = CATS.map(([k, label]) => {
-      const s = row.categories[k];
-      if (s == null) return null;
-      const c = row.confidences && row.confidences[k];
-      const known = c != null;
-      return { x: known ? Math.round(clamp(c) * 100) : 100, y: s, zone: known ? catZone(weight(s, c)) : 'na', tag: D.catShort[k], label, conf: known ? Math.round(clamp(c) * 100) + '%' : 'n/a' };
-    }).filter(Boolean);
-    detailCharts.set(path, new Chart(cv, {
-      type: 'scatter',
-      data: { datasets: [
-        { label: 'all files', data: cloudPoints(), pointRadius: 2.5, pointBackgroundColor: P.na + '2e', pointBorderWidth: 0, order: 2 },
-        { label: 'this file', data: filePts, pointRadius: 7, pointHoverRadius: 9, pointBackgroundColor: filePts.map(p => zoneColor(P, p.zone)), pointBorderColor: cssVar('--panel'), pointBorderWidth: 1.5, order: 1 },
-      ] },
-      options: {
-        responsive: true, maintainAspectRatio: false, animation: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: { displayColors: false, filter: (ctx) => ctx.datasetIndex === 1, callbacks: { title: () => '', label: (ctx) => { const p = ctx.raw; return p.label + '  ' + p.y.toFixed(2) + '/4 · ' + p.conf; } } },
-          datalabels: hasDL ? { display: (ctx) => ctx.datasetIndex === 1, color: P.ink, font: { size: 10, weight: 'bold' }, align: 'right', offset: 5, formatter: (v) => v.tag } : undefined,
-        },
-        scales: scales(P, true),
-      },
-      plugins: hasDL ? [ChartDataLabels] : [],
-    }));
+    root.querySelectorAll('canvas[data-cat]').forEach((cv) => detailCharts.push(metricChart(cv, cv.dataset.cat, (p) => p === path)));
   }
 
-  // ---- table: sort, filter, expand ----
   let sortKey = 'overall', sortDir = 1;
   const head = document.getElementById('head');
   function renderHead() {
@@ -374,9 +338,10 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
     });
   }
   const filterEl = document.getElementById('filter');
+  const tableRows = FOCUS == null ? D.rows : D.rows.filter(r => FOCUS.has(r.path));
   function currentRows() {
     const q = filterEl.value.trim().toLowerCase();
-    const rows = D.rows.filter(r => !q || r.path.toLowerCase().includes(q));
+    const rows = tableRows.filter(r => !q || r.path.toLowerCase().includes(q));
     rows.sort((a,b) => {
       if (sortKey === 'path') return sortDir * a.path.localeCompare(b.path);
       const av = sortKey === 'overall' ? rowOverall(a) : (weight(a.categories[sortKey], a.confidences && a.confidences[sortKey]) ?? -1);
@@ -397,16 +362,16 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
   function renderBody() {
     destroyDetailCharts();
     const rows = currentRows();
-    document.getElementById('count').textContent = rows.length + ' of ' + D.n + ' shown';
+    document.getElementById('count').textContent = rows.length + ' of ' + tableRows.length + ' shown';
     body.innerHTML = rows.map(r => {
       const cells = CATS.map(([k]) => cell(r.categories[k], r.confidences && r.confidences[k])).join('');
       const ov = '<td><span class="chip overall '+overallZone(rowOverall(r))+'">'+pct(rowOverall(r))+'</span></td>';
       const isOpen = expanded.has(r.path);
       const caret = '<span class="caret">'+(isOpen ? '▾' : '▸')+'</span> ';
       const mainRow = '<tr class="filerow" data-path="'+esc(r.path)+'"><td>'+caret+esc(r.path)+'</td>'+ov+cells+'</tr>';
+      const detailCells = CATS.map(([k,l]) => '<div class="scatter-cell"><div class="scatter-title">'+l+'</div><div class="chartbox"><canvas data-cat="'+k+'"></canvas></div></div>').join('');
       const detail = isOpen
-        ? '<tr class="detail-row"><td colspan="'+(CATS.length+2)+'"><div class="detail-panel"><div class="detail-chartbox"><canvas data-detail="'+esc(r.path)+'"></canvas></div>'
-          + '<p class="detail-hint">Labelled points: this file’s '+CATS.length+' categories. Faint cloud: every file × category, for context.</p></div></td></tr>'
+        ? '<tr class="detail-row" data-detail="'+esc(r.path)+'"><td colspan="'+(CATS.length+2)+'"><div class="detail-charts">'+detailCells+'</div></td></tr>'
         : '';
       return mainRow + detail;
     }).join('');
@@ -417,7 +382,7 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
         renderBody();
       };
     });
-    body.querySelectorAll('canvas[data-detail]').forEach((cv) => buildDetail(cv.dataset.detail, cv));
+    body.querySelectorAll('tr.detail-row').forEach((tr) => buildDetail(tr, tr.dataset.detail));
   }
 
   filterEl.placeholder = 'Filter by path…';
