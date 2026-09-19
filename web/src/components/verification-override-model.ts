@@ -16,30 +16,21 @@ export function criticLabel(name: string): string {
   return name.trim() === '' ? 'Untitled critic' : name.trim();
 }
 
-/** An editable dimension of the command verifier. `args` is a whitespace-joined string in the UI. */
-export type CommandField = 'command' | 'args' | 'timeoutSeconds';
+/** An editable dimension of the command verifier. `args` is edited directly as an array, not through this. */
+export type CommandField = 'command' | 'timeoutSeconds';
 
 /**
  * Fold a raw text-input value into the command object. `command` keeps the prior
  * value on a blank input (it can never be a whitespace-only executable — the
  * server rejects it, but blanking mid-edit shouldn't silently drop it); a value
- * sets it. `args` splits on any run of whitespace, so a blank clears to `[]`.
- * `timeoutSeconds` takes a positive integer, keeping the prior value on a blank
- * or non-numeric input rather than dropping the only bound on a runaway verifier.
+ * sets it. `timeoutSeconds` takes a positive integer, keeping the prior value on
+ * a blank or non-numeric input rather than dropping the only bound on a runaway
+ * verifier.
  */
 export function setCommandField(cmd: VerificationCommand, field: CommandField, raw: string): VerificationCommand {
   if (field === 'command') return { ...cmd, command: raw };
-  if (field === 'args') {
-    const args = raw.trim() === '' ? [] : raw.trim().split(/\s+/);
-    return { ...cmd, args };
-  }
   const n = Number(raw.trim());
   return raw.trim() === '' || Number.isNaN(n) || n <= 0 ? cmd : { ...cmd, timeoutSeconds: n };
-}
-
-/** The command's `args` as the single whitespace-joined string the input edits. */
-export function argsText(cmd: VerificationCommand): string {
-  return cmd.args.join(' ');
 }
 
 /**

@@ -3,6 +3,7 @@ import type { AppConfig, ConfigLayers, HarnessConfig, ModelCatalogEntry } from '
 import { btnGhost, btnQuiet, field, selectField, tableHead, touchTarget, touchTargetInline } from '../ui';
 import { FieldError, fieldLabel } from './SettingsSection';
 import { Icon } from './Icon';
+import { ListEditor } from './EntryList';
 import { renameRecordKey } from './settings-rename';
 
 /**
@@ -27,29 +28,6 @@ function useKeyRename<V>(record: Record<string, V>, onChange: (next: Record<stri
       if (next !== record) onChange(next);
     },
   };
-}
-
-function ListEditor({ items, onChange, ariaLabel }: { items: string[]; onChange: (items: string[]) => void; ariaLabel: string }) {
-  const update = (i: number, value: string) => onChange(items.map((item, idx) => (idx === i ? value : item)));
-  const remove = (i: number) => onChange(items.filter((_, idx) => idx !== i));
-  const add = () => onChange([...items, '']);
-
-  return (
-    <div className="space-y-2.5">
-      {items.map((item, i) => (
-        <div key={i} className="flex items-center gap-2.5">
-          <input aria-label={ariaLabel} className={`${field} font-data`} value={item} onChange={(e) => update(i, e.target.value)} />
-          <button type="button" aria-label={`Remove ${ariaLabel}`} onClick={() => remove(i)} className={`${touchTarget} ${btnQuiet}`}>
-            ✕
-          </button>
-        </div>
-      ))}
-      {items.length === 0 && <p className="text-body text-muted">None set.</p>}
-      <button type="button" onClick={add} className={btnGhost}>
-        + Add
-      </button>
-    </div>
-  );
 }
 
 const catalogCols = 'grid-cols-[minmax(200px,340px)_repeat(4,minmax(0,88px))_minmax(0,104px)_auto]';

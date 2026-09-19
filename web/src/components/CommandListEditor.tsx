@@ -1,8 +1,8 @@
 import type { VerificationCommand } from '../types';
 import { field } from '../ui';
-import { EntryList } from './EntryList';
+import { EntryList, ListEditor } from './EntryList';
 import { FieldError, fieldLabel } from './SettingsSection';
-import { EMPTY_COMMAND, argsText, setCommandField } from './verification-override-model';
+import { EMPTY_COMMAND, setCommandField } from './verification-override-model';
 
 const cellUnit = 'font-normal normal-case tracking-normal text-muted';
 
@@ -46,7 +46,7 @@ export function CommandListEditor({
       renderMeta={(command) => <span className="tabular-nums">{command.timeoutSeconds}s</span>}
       renderBody={(command, index, set) => (
         <>
-          <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_6rem] gap-3">
+          <div className="grid grid-cols-[minmax(0,1.5fr)_6rem] gap-3">
             <div>
               <label className={fieldLabel} htmlFor={`${idPrefix}-command-${index}`}>
                 Command
@@ -61,18 +61,6 @@ export function CommandListEditor({
               <FieldError message={fieldErrors[`${errorPrefix}.${index}.command`]} />
             </div>
             <div>
-              <label className={fieldLabel} htmlFor={`${idPrefix}-args-${index}`}>
-                Arguments <span className={cellUnit}>space-sep</span>
-              </label>
-              <input
-                id={`${idPrefix}-args-${index}`}
-                className={`${field} font-data`}
-                placeholder="test"
-                value={argsText(command)}
-                onChange={(e) => set(setCommandField(command, 'args', e.target.value))}
-              />
-            </div>
-            <div>
               <label className={fieldLabel} htmlFor={`${idPrefix}-timeout-${index}`}>
                 Timeout <span className={cellUnit}>s</span>
               </label>
@@ -85,6 +73,10 @@ export function CommandListEditor({
                 onChange={(e) => set(setCommandField(command, 'timeoutSeconds', e.target.value))}
               />
             </div>
+          </div>
+          <div>
+            <label className={fieldLabel}>Arguments</label>
+            <ListEditor items={command.args} onChange={(args) => set({ ...command, args })} ariaLabel="Argument" />
           </div>
         </>
       )}

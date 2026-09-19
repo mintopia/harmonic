@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   EMPTY_COMMAND,
   EMPTY_CRITIC,
-  argsText,
   setCommandField,
   setCriticField,
   summarizeCommand,
@@ -19,14 +18,6 @@ describe('setCommandField (issue #165)', () => {
     expect(setCommandField(baseCommand, 'command', 'pnpm')).toEqual({ ...baseCommand, command: 'pnpm' });
   });
 
-  it('splits args on any run of whitespace', () => {
-    expect(setCommandField(baseCommand, 'args', 'run  lint --fix').args).toEqual(['run', 'lint', '--fix']);
-  });
-
-  it('clears args to an empty array on a blank input', () => {
-    expect(setCommandField(baseCommand, 'args', '   ').args).toEqual([]);
-  });
-
   it('sets a positive integer timeout', () => {
     expect(setCommandField(baseCommand, 'timeoutSeconds', '900')).toEqual({ ...baseCommand, timeoutSeconds: 900 });
   });
@@ -35,13 +26,6 @@ describe('setCommandField (issue #165)', () => {
     expect(setCommandField(baseCommand, 'timeoutSeconds', '')).toEqual(baseCommand);
     expect(setCommandField(baseCommand, 'timeoutSeconds', 'soon')).toEqual(baseCommand);
     expect(setCommandField(baseCommand, 'timeoutSeconds', '0')).toEqual(baseCommand);
-  });
-});
-
-describe('argsText (issue #165)', () => {
-  it('joins args back into the whitespace-separated string the input edits', () => {
-    expect(argsText({ ...baseCommand, args: ['run', 'lint'] })).toBe('run lint');
-    expect(argsText({ ...baseCommand, args: [] })).toBe('');
   });
 });
 
