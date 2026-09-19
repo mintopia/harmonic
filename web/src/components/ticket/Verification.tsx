@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api';
+import { errorText } from '../../error-text';
 import { harnessLabel } from '../../task-detail-model';
 import { criticUnavailableReason, overallDecision, verificationRows } from '../../verification-attempts-model';
 import type { AttemptLogEvent, AttemptSummary, Step, VerificationAttempt, VerifierStatus } from '../../types';
@@ -45,27 +46,37 @@ function mechanismName(mechanism: string, run: AttemptSummary): string {
 }
 
 function CriticSession({ attemptId, label, model, agent }: { attemptId: number; label: string; model: string; agent: string }) {
-  const [state, setState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+  const [state, setState] = useState<'loading' | 'ready' | 'empty' | 'unavailable' | 'error'>('loading');
   const [events, setEvents] = useState<AttemptLogEvent[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useLiveEffect((live) => {
     setState('loading');
+    setError(null);
     api.criticLog(attemptId).then(
       (log) => {
         if (!live()) return;
         if (log.status === 'available' && log.events.length > 0) {
           setEvents(log.events);
           setState('ready');
+        } else if (log.status === 'available') {
+          setState('empty');
         } else {
           setState('unavailable');
         }
       },
-      () => live() && setState('unavailable'),
+      (e) => {
+        if (!live()) return;
+        setError(errorText(e));
+        setState('error');
+      },
     );
   }, [attemptId]);
 
   if (state === 'loading') return <p className="mt-3 text-[12px] text-muted">Loading critic session…</p>;
+  if (state === 'empty') return <p className="mt-3 text-[12px] text-muted">No critic session events recorded.</p>;
   if (state === 'unavailable') return <p className="mt-3 text-[12px] text-muted">Critic session log could not be loaded.</p>;
+  if (state === 'error') return <p className="mt-3 text-[12px] text-fail">Failed to load critic session{error ? `: ${error}` : '.'}</p>;
   return <ChatTranscript events={events} unavailable={false} model={model} agent={agent} stepLabel={label} />;
 }
 
