@@ -1,9 +1,14 @@
 /**
  * Renders a Jev baseline (`path -> {categories, confidences, overall}`) plus the
- * run's {@link BaselineMeta} into a single self-contained HTML page: a run-summary
- * strip, then a per-file score table with zone colouring. No external assets (the
- * workspace network is filtered), so data and all CSS/JS are inlined. Used by
- * cli.ts's optional `--html` output.
+ * run's {@link BaselineMeta} into an HTML report: a run-summary strip, per-category
+ * scatter charts, and a per-file score table. Used by cli.ts's optional `--html`
+ * output.
+ *
+ * Charts are drawn by Chart.js loaded from a CDN (jsDelivr), so the report needs a
+ * browser with network access to render them. The cards, table and footer are still
+ * rendered server-side, so the full data stays readable with no JavaScript and no
+ * network — the charts are enhancement over that table, and a small notice replaces
+ * the chart grid when Chart.js cannot load.
  *
  * Confidence shapes the display: each category cell shows the confidence-weighted
  * score (`score·c + 2·(1-c)` — Jev's raw score pulled toward the neutral 2.0 as it
@@ -12,15 +17,13 @@
  * visible (cell subtext + tooltip). The persisted baseline stores raw scores plus
  * confidences; the gate and ratchet judge the same weighted value (thresholds.ts),
  * so this display and the gate agree.
- *
- * The table, cards and footer are rendered server-side into the markup so the
- * page is fully readable with JavaScript disabled (e.g. a sandboxed file
- * viewer that strips <script>). The inline script only *enhances* it —
- * click-to-sort and path filtering — re-rendering the same data when JS runs.
  */
 import type { Baseline, BaselineMeta, CategoryId } from './types.js';
 import { ALL_CATEGORIES } from './types.js';
 import { NEUTRAL_SCORE, weightByConfidence } from './thresholds.js';
+
+const CHARTJS_SRC = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js';
+const DATALABELS_SRC = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js';
 
 const CAT_LABELS: Record<CategoryId, string> = {
   complexity_clean_code: 'Complexity',
@@ -33,7 +36,7 @@ const CAT_LABELS: Record<CategoryId, string> = {
   concurrency_and_idempotency: 'Concurrency',
 };
 
-/** Short tags for labelling points on the per-file scatter. */
+/** Short tags for labelling this file's points on the per-file scatter. */
 const CAT_SHORT: Record<CategoryId, string> = {
   complexity_clean_code: 'Cx',
   code_smells: 'Sm',
@@ -80,64 +83,6 @@ const chipCell = (score: number | undefined, confidence: number | undefined): st
   return `<td><span class="chip ${catZone(w)}" title="${title}">${fmt(w)}</span>${sub}</td>`;
 };
 
-interface ScatterPoint {
-  x: number; // confidence, 0-100
-  y: number; // raw score, 0-4
-  zone: string; // 'pass' | 'warn' | 'fail' | 'na' — 'na' = no confidence for this cell
-  title: string;
-}
-
-type ScatterRow = { path: string; categories: Partial<Record<CategoryId, number>>; confidences?: Partial<Record<CategoryId, number>> };
-
-/** A file missing a confidence for this category plots at x=100%, zone 'na'. */
-function catScatterPoints(cat: CategoryId, rows: readonly ScatterRow[]): ScatterPoint[] {
-  const pts: ScatterPoint[] = [];
-  for (const r of rows) {
-    const score = r.categories[cat];
-    if (score == null) continue;
-    const conf = r.confidences?.[cat];
-    const known = conf != null;
-    const zone = known ? catZone(weighted(score, conf)) : 'na';
-    const confPct = known ? Math.round(conf * 100) : 100;
-    const confLabel = known ? `${confPct}%` : 'n/a';
-    pts.push({ x: confPct, y: score, zone, title: `${r.path} · ${score.toFixed(2)}/4 · confidence ${confLabel}` });
-  }
-  return pts;
-}
-
-interface ScatterGeometry {
-  w: number;
-  h: number;
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
-
-/** Small-multiple size used by the per-category overview plots. */
-const SM_GEOM: ScatterGeometry = { w: 200, h: 150, left: 24, right: 6, top: 8, bottom: 18 };
-
-/** Zero external assets; colour comes entirely from the `pt <zone>` CSS classes (theme-aware via CSS custom properties). */
-function renderScatterSvg(points: ScatterPoint[], geom: ScatterGeometry, pointR: number, extraMarkup: string, svgClass = 'scatter'): string {
-  const { w, h, left, right, top, bottom } = geom;
-  const pw = w - left - right;
-  const ph = h - top - bottom;
-  const gx = (confPct: number): number => left + (confPct / 100) * pw;
-  const gy = (score: number): number => top + ph - (score / 4) * ph;
-  const gridY = [0, 1, 2, 3, 4].map((s) => `<line x1="${left}" y1="${gy(s)}" x2="${left + pw}" y2="${gy(s)}" class="grid"/>`).join('');
-  const gridX = [0, 25, 50, 75, 100].map((c) => `<line x1="${gx(c)}" y1="${top}" x2="${gx(c)}" y2="${top + ph}" class="grid"/>`).join('');
-  const axisLabels =
-    `<text x="${left - 4}" y="${gy(4) + 3}" class="axislbl" text-anchor="end">4</text>` +
-    `<text x="${left - 4}" y="${gy(0) + 3}" class="axislbl" text-anchor="end">0</text>` +
-    `<text x="${left}" y="${top + ph + 12}" class="axislbl">0%</text>` +
-    `<text x="${left + pw}" y="${top + ph + 12}" class="axislbl" text-anchor="end">100%</text>`;
-  const dots = points
-    .map((p) => `<circle cx="${gx(p.x).toFixed(1)}" cy="${gy(p.y).toFixed(1)}" r="${pointR}" class="pt ${p.zone}"><title>${esc(p.title)}</title></circle>`)
-    .join('');
-  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" class="${svgClass}" role="img">` +
-    `<rect x="${left}" y="${top}" width="${pw}" height="${ph}" class="plotbox"/>${gridY}${gridX}${axisLabels}${extraMarkup}${dots}</svg>`;
-}
-
 export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null = null): string {
   const rows = Object.entries(baseline).map(([path, e]) => ({
     path,
@@ -167,11 +112,9 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
   const data = { rows, cats: ALL_CATEGORIES.map((k) => [k, CAT_LABELS[k]]), catShort, meanOverall, n, catAverages, stats, neutral: NEUTRAL_SCORE };
   const dataJson = JSON.stringify(data).replace(/</g, '\\u003c');
 
-  const scatterCellsHtml = ALL_CATEGORIES.map((k) => {
-    const pts = catScatterPoints(k, rows);
-    const svg = renderScatterSvg(pts, SM_GEOM, 2.4, '');
-    return `<div class="scatter-cell"><div class="scatter-title">${CAT_LABELS[k]}</div>${svg}</div>`;
-  }).join('');
+  const scatterCellsHtml = ALL_CATEGORIES.map(
+    (k) => `<div class="scatter-cell"><div class="scatter-title">${CAT_LABELS[k]}</div><div class="chartbox"><canvas id="sc-${k}"></canvas></div></div>`,
+  ).join('');
 
   const subText = n
     ? `${n} files scored · mean overall ${pct(meanOverall)}/100 (${meanOverall.toFixed(2)}/4, confidence-weighted)`
@@ -268,25 +211,16 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
   .legend { display:flex; gap:14px; margin:14px 0 0; flex-wrap:wrap; color:var(--muted); font-size:12px; align-items:center; }
   .legend .chip { min-width:0; }
   .scatter-caption { color:var(--muted); font-size:12px; margin:0 0 8px; }
-  .scatter-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin-bottom:24px; }
-  .scatter-cell { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px; }
-  .scatter-title { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:4px; }
-  svg.scatter { width:100%; height:auto; display:block; overflow:visible; }
-  svg.scatter .grid { stroke:var(--line); stroke-width:1; }
-  svg.scatter .plotbox { fill:none; stroke:var(--line); }
-  svg.scatter .axislbl { font-size:8px; fill:var(--muted); }
-  svg.scatter .ptlabel { font-size:9px; fill:var(--ink); font-weight:600; }
-  svg.scatter circle.pt { stroke:var(--panel); stroke-width:0.6; }
-  svg.scatter circle.pass { fill:var(--pass); }
-  svg.scatter circle.warn { fill:var(--warn); }
-  svg.scatter circle.fail { fill:var(--fail); }
-  svg.scatter circle.na { fill:var(--muted); opacity:.6; }
-  svg.scatter circle.cloud { fill:var(--muted); opacity:.18; stroke:none; }
-  svg.scatter-big { max-width:440px; }
+  .scatter-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; margin-bottom:24px; }
+  .scatter-cell { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px 12px; }
+  .scatter-title { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:6px; }
+  .chartbox { position:relative; height:170px; }
+  .chart-missing { grid-column:1/-1; color:var(--muted); font-size:13px; padding:16px; border:1px dashed var(--line); border-radius:10px; text-align:center; }
   tr.filerow { cursor:pointer; }
   .caret { display:inline-block; width:10px; color:var(--muted); }
   tr.detail-row td { background:var(--bg); border-bottom:1px solid var(--line); }
-  .detail-panel { padding:10px 4px; display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; white-space:normal; }
+  .detail-panel { padding:12px 4px; display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; white-space:normal; }
+  .detail-chartbox { position:relative; height:300px; width:min(520px,100%); flex:1 1 360px; }
   .detail-hint { color:var(--muted); font-size:11px; max-width:220px; }
 </style>
 </head>
@@ -318,6 +252,8 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
     <span style="margin-left:12px">Weighting: score·c + ${NEUTRAL_SCORE.toFixed(1)}·(1−c), c = confidence</span>
   </div>
 </div>
+<script src="${CHARTJS_SRC}"></script>
+<script src="${DATALABELS_SRC}"></script>
 <script type="application/json" id="data">${dataJson}</script>
 <script>
   const D = JSON.parse(document.getElementById('data').textContent);
@@ -333,57 +269,96 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
     const vs = CATS.map(([k]) => weight(r.categories[k], r.confidences && r.confidences[k])).filter(v => v != null);
     return vs.length ? vs.reduce((a,b)=>a+b,0)/vs.length : 0;
   };
+  const esc = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-  function buildCloud() {
+  // ---- Chart.js scatter charts (CDN) ----
+  const hasChart = typeof Chart !== 'undefined';
+  const hasDL = typeof ChartDataLabels !== 'undefined';
+  const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const palette = () => ({ pass: cssVar('--pass'), warn: cssVar('--warn'), fail: cssVar('--fail'), na: cssVar('--muted'), grid: cssVar('--line'), tick: cssVar('--muted'), ink: cssVar('--ink') });
+  const zoneColor = (P, z) => z === 'pass' ? P.pass : z === 'warn' ? P.warn : z === 'fail' ? P.fail : P.na;
+
+  function catPoints(k) {
+    return D.rows.filter(r => r.categories[k] != null).map(r => {
+      const score = r.categories[k];
+      const conf = r.confidences && r.confidences[k];
+      const known = conf != null;
+      return { x: known ? Math.round(clamp(conf) * 100) : 100, y: score, zone: known ? catZone(weight(score, conf)) : 'na', path: r.path, conf: known ? Math.round(clamp(conf) * 100) + '%' : 'n/a' };
+    });
+  }
+  function scales(P, axisLabels) {
+    return {
+      x: { min: 0, max: 100, ...(axisLabels ? { title: { display: true, text: 'confidence %', color: P.tick, font: { size: 10 } } } : {}), ticks: { color: P.tick, font: { size: 9 }, stepSize: 25, callback: (v) => v + '%' }, grid: { color: P.grid } },
+      y: { min: 0, max: 4, ...(axisLabels ? { title: { display: true, text: 'score', color: P.tick, font: { size: 10 } } } : {}), ticks: { color: P.tick, font: { size: 9 }, stepSize: 1 }, grid: { color: P.grid } },
+    };
+  }
+
+  const overviewCharts = [];
+  function buildOverview() {
+    if (!hasChart) return;
+    const P = palette();
+    overviewCharts.forEach(c => c.destroy());
+    overviewCharts.length = 0;
+    for (const [k] of CATS) {
+      const cv = document.getElementById('sc-' + k);
+      if (!cv) continue;
+      const pts = catPoints(k);
+      overviewCharts.push(new Chart(cv, {
+        type: 'scatter',
+        data: { datasets: [{ data: pts, pointRadius: 3.5, pointHoverRadius: 6, pointBackgroundColor: pts.map(p => zoneColor(P, p.zone)), pointBorderColor: cssVar('--panel'), pointBorderWidth: 1 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false, animation: false,
+          plugins: { legend: { display: false }, tooltip: { displayColors: false, callbacks: { title: () => '', label: (ctx) => { const p = ctx.raw; return p.path + '  ' + p.y.toFixed(2) + '/4 · ' + p.conf; } } } },
+          scales: scales(P, false),
+        },
+      }));
+    }
+  }
+
+  const detailCharts = new Map();
+  function destroyDetailCharts() { detailCharts.forEach(c => c.destroy()); detailCharts.clear(); }
+  function cloudPoints() {
     const pts = [];
-    for (const r of D.rows) {
-      for (const kv of CATS) {
-        const k = kv[0];
-        const score = r.categories[k];
-        if (score == null) continue;
-        const conf = r.confidences && r.confidences[k];
-        const confPct = conf == null ? 100 : Math.round(clamp(conf) * 100);
-        pts.push([confPct, score]);
-      }
+    for (const r of D.rows) for (const [k] of CATS) {
+      const s = r.categories[k];
+      if (s == null) continue;
+      const c = r.confidences && r.confidences[k];
+      pts.push({ x: c == null ? 100 : Math.round(clamp(c) * 100), y: s });
     }
     return pts;
   }
-  const CLOUD = buildCloud();
-
-  const expanded = new Set();
-
-  function fileScatterSvg(row) {
-    const W = 420, H = 280, L = 32, R = 12, T = 10, B = 26;
-    const PW = W - L - R, PH = H - T - B;
-    const gx = (c) => L + (c / 100) * PW;
-    const gy = (s) => T + PH - (s / 4) * PH;
-    const gridY = [0,1,2,3,4].map((s) => '<line x1="'+L+'" y1="'+gy(s)+'" x2="'+(L+PW)+'" y2="'+gy(s)+'" class="grid"/>').join('');
-    const gridX = [0,25,50,75,100].map((c) => '<line x1="'+gx(c)+'" y1="'+T+'" x2="'+gx(c)+'" y2="'+(T+PH)+'" class="grid"/>').join('');
-    const axisLbl = '<text x="'+(L-4)+'" y="'+(gy(4)+3)+'" class="axislbl" text-anchor="end">4</text>'
-      + '<text x="'+(L-4)+'" y="'+(gy(0)+3)+'" class="axislbl" text-anchor="end">0</text>'
-      + '<text x="'+L+'" y="'+(T+PH+14)+'" class="axislbl">0%</text>'
-      + '<text x="'+(L+PW)+'" y="'+(T+PH+14)+'" class="axislbl" text-anchor="end">100%</text>';
-    const cloud = CLOUD.map((pt) => '<circle cx="'+gx(pt[0]).toFixed(1)+'" cy="'+gy(pt[1]).toFixed(1)+'" r="2" class="pt cloud"/>').join('');
-    const pts = CATS.map((kv) => {
-      const k = kv[0], label = kv[1];
-      const score = row.categories[k];
-      if (score == null) return '';
-      const conf = row.confidences && row.confidences[k];
-      const known = conf != null;
-      const w = weight(score, conf);
-      const zone = known ? catZone(w) : 'na';
-      const confPct = known ? Math.round(clamp(conf) * 100) : 100;
-      const confLbl = known ? Math.round(clamp(conf) * 100) + '%' : 'n/a';
-      const cx = gx(confPct), cy = gy(score);
-      const short = D.catShort[k];
-      const title = label + ' · ' + score.toFixed(2) + '/4 · confidence ' + confLbl;
-      return '<circle cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="4.5" class="pt '+zone+'"><title>'+esc(title)+'</title></circle>'
-        + '<text x="'+(cx+6).toFixed(1)+'" y="'+(cy-6).toFixed(1)+'" class="ptlabel">'+short+'</text>';
-    }).join('');
-    return '<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" class="scatter scatter-big" role="img">'
-      + '<rect x="'+L+'" y="'+T+'" width="'+PW+'" height="'+PH+'" class="plotbox"/>' + gridY + gridX + axisLbl + cloud + pts + '</svg>';
+  function buildDetail(path, cv) {
+    if (!hasChart) return;
+    const P = palette();
+    const row = D.rows.find(r => r.path === path);
+    if (!row) return;
+    const filePts = CATS.map(([k, label]) => {
+      const s = row.categories[k];
+      if (s == null) return null;
+      const c = row.confidences && row.confidences[k];
+      const known = c != null;
+      return { x: known ? Math.round(clamp(c) * 100) : 100, y: s, zone: known ? catZone(weight(s, c)) : 'na', tag: D.catShort[k], label, conf: known ? Math.round(clamp(c) * 100) + '%' : 'n/a' };
+    }).filter(Boolean);
+    detailCharts.set(path, new Chart(cv, {
+      type: 'scatter',
+      data: { datasets: [
+        { label: 'all files', data: cloudPoints(), pointRadius: 2.5, pointBackgroundColor: P.na + '2e', pointBorderWidth: 0, order: 2 },
+        { label: 'this file', data: filePts, pointRadius: 7, pointHoverRadius: 9, pointBackgroundColor: filePts.map(p => zoneColor(P, p.zone)), pointBorderColor: cssVar('--panel'), pointBorderWidth: 1.5, order: 1 },
+      ] },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { displayColors: false, filter: (ctx) => ctx.datasetIndex === 1, callbacks: { title: () => '', label: (ctx) => { const p = ctx.raw; return p.label + '  ' + p.y.toFixed(2) + '/4 · ' + p.conf; } } },
+          datalabels: hasDL ? { display: (ctx) => ctx.datasetIndex === 1, color: P.ink, font: { size: 10, weight: 'bold' }, align: 'right', offset: 5, formatter: (v) => v.tag } : undefined,
+        },
+        scales: scales(P, true),
+      },
+      plugins: hasDL ? [ChartDataLabels] : [],
+    }));
   }
 
+  // ---- table: sort, filter, expand ----
   let sortKey = 'overall', sortDir = 1;
   const head = document.getElementById('head');
   function renderHead() {
@@ -410,7 +385,6 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
     });
     return rows;
   }
-  const esc = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const cell = (score, conf) => {
     const w = weight(score, conf);
     const c = conf == null ? '–' : Math.round(conf * 100) + '%';
@@ -418,8 +392,10 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
     const sub = score == null ? '' : '<span class="conf">' + c + '</span>';
     return '<td><span class="chip '+catZone(w)+'" title="'+title+'">'+fmt(w)+'</span>'+sub+'</td>';
   };
+  const expanded = new Set();
   const body = document.getElementById('body');
   function renderBody() {
+    destroyDetailCharts();
     const rows = currentRows();
     document.getElementById('count').textContent = rows.length + ' of ' + D.n + ' shown';
     body.innerHTML = rows.map(r => {
@@ -428,11 +404,11 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
       const isOpen = expanded.has(r.path);
       const caret = '<span class="caret">'+(isOpen ? '▾' : '▸')+'</span> ';
       const mainRow = '<tr class="filerow" data-path="'+esc(r.path)+'"><td>'+caret+esc(r.path)+'</td>'+ov+cells+'</tr>';
-      const detailRow = isOpen
-        ? '<tr class="detail-row"><td colspan="'+(CATS.length+2)+'"><div class="detail-panel">'+fileScatterSvg(r)
-          + '<p class="detail-hint">Bold labelled points: this file’s 8 categories. Faint cloud: every file × category, for context.</p></div></td></tr>'
+      const detail = isOpen
+        ? '<tr class="detail-row"><td colspan="'+(CATS.length+2)+'"><div class="detail-panel"><div class="detail-chartbox"><canvas data-detail="'+esc(r.path)+'"></canvas></div>'
+          + '<p class="detail-hint">Labelled points: this file’s '+CATS.length+' categories. Faint cloud: every file × category, for context.</p></div></td></tr>'
         : '';
-      return mainRow + detailRow;
+      return mainRow + detail;
     }).join('');
     body.querySelectorAll('tr.filerow').forEach((tr) => {
       tr.onclick = () => {
@@ -441,9 +417,16 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
         renderBody();
       };
     });
+    body.querySelectorAll('canvas[data-detail]').forEach((cv) => buildDetail(cv.dataset.detail, cv));
   }
+
   filterEl.placeholder = 'Filter by path…';
-  renderHead(); renderBody();
+  if (!hasChart) {
+    document.getElementById('scatterGrid').innerHTML = '<div class="chart-missing">Charts need a browser with network access to load Chart.js — the table below has the full data.</div>';
+  }
+  renderHead(); renderBody(); buildOverview();
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+  (mq.addEventListener ? mq.addEventListener.bind(mq, 'change') : mq.addListener.bind(mq))(() => { buildOverview(); renderBody(); });
 </script>
 </body>
 </html>`;
