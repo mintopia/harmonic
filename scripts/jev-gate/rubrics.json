@@ -1,0 +1,85 @@
+{
+  "_meta": {
+    "note": "Verbatim copy of the refined 7-category rubric from the jev-code-score skill (security-by-exploitability + role-awareness), vendored here so scripts/jev-gate is self-contained in CI and does not depend on the skill directory existing on the runner. Source: /home/workspace/.claude/skills/jev-code-score/scripts/rubrics.json. Keep in sync by hand; do not fork the wording.",
+    "scale": "Every question is a Jev `score`. Levels run 0 (worst) to 4 (best). Higher always means healthier code, so the overall score is a plain mean.",
+    "levels": 5,
+    "direction": "higher_is_better"
+  },
+  "code_smells": {
+    "type": "score",
+    "instructions": "Rate this source code for Martin Fowler-style code smells such as long methods, large classes, feature envy, primitive obsession, data clumps, and shotgun surgery. Higher means fewer, less harmful smells.",
+    "criteria": [
+      "Riddled with smells: bloated methods and classes, feature envy, primitive obsession, and shotgun surgery throughout",
+      "Frequent smells that clearly hurt readability and make change unsafe",
+      "Some smells present but localized and low impact",
+      "Mostly clean; only minor, defensible smells remain",
+      "No meaningful code smells; cohesive and well factored"
+    ]
+  },
+  "security": {
+    "type": "score",
+    "instructions": "Rate this source code for security by EXPLOITABILITY, not by pattern-matching a checklist. For every candidate issue, ask: is there a concrete input an attacker or untrusted caller could supply that reaches a dangerous sink and causes real harm (auth bypass, code/command execution, cross-tenant data access, secret exposure, traversal outside an intended directory)? Weight heavily anything with a reachable, attacker-influenced path to a dangerous sink — including auth/access checks that fail OPEN (an error, missing token, or unknown case treated as authorized), command injection (untrusted data interpolated or spread into subprocess args or a shell:true call), path traversal (an unsanitized or unvalidated id/name joined into a filesystem path), unsafe deserialization, hardcoded secrets, and injection (SQL/NoSQL/template). Weight lightly, and do not conflate with the above, hardening nits with no plausible attack path: a validated/internal/numeric id used in a path, environment variables passed into a trusted subprocess with no attacker-controlled content, or a missing redundant defense-in-depth layer where the primary control already holds. Higher means safer against real, reachable attacks.",
+    "criteria": [
+      "A reachable, exploitable critical vulnerability is present: e.g. authentication or access control that fails open, command injection via unsanitized subprocess arguments, or path traversal from an unsanitized id/name joined into a filesystem path",
+      "A serious weakness is present and plausibly reachable by an untrusted caller, even if exploitation needs specific conditions",
+      "A real but harder-to-reach concern, or a risky pattern whose exploitability is genuinely unclear and needs human review",
+      "Only defense-in-depth nits remain: patterns that look risky in isolation (e.g. env vars passed to a trusted subprocess, an id used in a path) but have no plausible attack path because the value is validated, internal, or not attacker-controlled",
+      "No apparent security issues; attacker-reachable input is validated or sanitized before use, auth fails closed, no secrets, safe APIs used"
+    ]
+  },
+  "complexity_clean_code": {
+    "type": "score",
+    "instructions": "Rate this source code for complexity and Robert C. Martin clean-code qualities: function size and single responsibility, nesting depth, cyclomatic complexity, and name clarity. Higher means simpler and cleaner.",
+    "criteria": [
+      "Very hard to follow: deep nesting, huge functions, unclear names, high cyclomatic complexity",
+      "Often complex or poorly named; frequent cognitive overload",
+      "Moderate complexity; several functions or names could be simpler",
+      "Mostly simple and well named; small focused functions",
+      "Clean and simple: small single-purpose functions, clear names, low complexity"
+    ]
+  },
+  "comments": {
+    "type": "score",
+    "instructions": "Rate the comment discipline of this source code. Good comments explain non-obvious why (hidden invariants, external constraints, justified lint or type suppressions, public API doc contracts). Bad comments narrate what the code already says, add banners, leave commented-out code, or preach about workarounds instead of fixing them. Higher means better discipline.",
+    "criteria": [
+      "Pervasive narration, banners, commented-out code, or unjustified lint or type suppressions",
+      "Many comments restate the code or justify workarounds rather than fixing them",
+      "Mixed: some useful comments alongside several redundant what-comments",
+      "Mostly disciplined; only a rare redundant comment",
+      "Exemplary: comments explain only non-obvious why; no narration, no dead code, suppressions justified"
+    ]
+  },
+  "testability": {
+    "type": "score",
+    "instructions": "Rate how easily this source code can be unit tested: presence of seams, dependency injection, pure versus side-effecting logic, and avoidance of hidden global state. Higher means easier to test. First judge the file's role from its path, the state's `role_hint` (if present), and its content: testability is a category error for a fixture, mock/stub, type declaration, or story file — there is no logic to unit test, so score it near the top by default unless it does something that would genuinely make it awkward to use from a test (e.g. a hidden side effect on import). For a test file itself, judge only whether its own helpers/setup are testable, not whether the test needs testing. Apply the full bar only to application/business logic.",
+    "criteria": [
+      "Untestable: hidden dependencies, global state, side effects fused with logic",
+      "Hard to test; would need heavy mocking or refactoring first",
+      "Testable with some effort; a few seams missing",
+      "Mostly testable; clear seams and injectable dependencies",
+      "Highly testable: pure functions, injected dependencies, clean seams — or a non-logic file (fixture/mock/type/story) with nothing that would resist being used in a test"
+    ]
+  },
+  "duplication": {
+    "type": "score",
+    "instructions": "Rate this source code for duplication (the DRY principle): repeated logic or structure that should be factored into shared abstractions. Higher means less duplication.",
+    "criteria": [
+      "Extensive copy-paste; the same logic repeated in many places",
+      "Frequent duplication that should be factored out",
+      "Some repetition; a few blocks worth extracting",
+      "Only minor, acceptable repetition",
+      "No meaningful duplication; shared logic is well factored"
+    ]
+  },
+  "error_handling": {
+    "type": "score",
+    "instructions": "Rate this source code for error handling: validation at boundaries, meaningful error propagation, and absence of swallowed or ignored failures. Higher means more robust. First judge the file's role from its path, the state's `role_hint` (if present), and its content: a fixture, mock/stub, type declaration, story, or test file has no boundary to validate and no failure path of its own, so score it near the top by default rather than penalizing it for lacking try/catch or input validation it was never meant to have. Apply the full bar only to code that actually receives external or caller input — application/business logic, request handlers, parsers, and the like.",
+    "criteria": [
+      "Failure paths ignored or swallowed; no boundary validation; crashes on bad input",
+      "Weak: broad catches, silent failures, little validation",
+      "Partial: some paths handled but gaps remain at boundaries",
+      "Mostly robust; only minor gaps",
+      "Robust: validates at boundaries, propagates meaningful errors, no swallowed exceptions — or a non-logic file (fixture/mock/type/story/test) with no boundary of its own to guard"
+    ]
+  }
+}
