@@ -153,6 +153,11 @@ type PermissionOutcome = { outcome: 'selected'; optionId: string } | { outcome: 
 // reads result.outcome.outcome. A bare PermissionOutcome is read as a reject.
 type PermissionResponse = { outcome: PermissionOutcome };
 
+function autoPermissionOutcome(request: PermissionRequest): PermissionOutcome {
+  const optionId = allowOptionId(request);
+  return optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
+}
+
 interface PendingPermission {
   conversationId: number;
   workingDir: string;
@@ -594,16 +599,14 @@ export class ConversationDriver {
   private async decidePermission(conversationId: number, workingDir: string, request: PermissionRequest): Promise<PermissionResponse> {
     const conversation = await this.store.get(conversationId);
     if (conversation.permissionMode === 'automatic') {
-      const optionId = allowOptionId(request);
-      const outcome: PermissionOutcome = optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
+      const outcome = autoPermissionOutcome(request);
       await this.record(conversationId, 'permission_request', { request, outcome, automatic: true });
       return { outcome };
     }
     const kind = permissionKind(request);
     const rule = kind ? ((await this.rules?.findMatch(kind, workingDir)) ?? null) : null;
     if (rule) {
-      const optionId = allowOptionId(request);
-      const outcome: PermissionOutcome = optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
+      const outcome = autoPermissionOutcome(request);
       await this.record(conversationId, 'permission_request', {
         request,
         outcome,
@@ -630,8 +633,7 @@ export class ConversationDriver {
     for (const [reqId, pending] of this.pendingPermissions) {
       if (pending.conversationId !== conversationId) continue;
       this.pendingPermissions.delete(reqId);
-      const optionId = allowOptionId(pending.request);
-      const outcome: PermissionOutcome = optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
+      const outcome = autoPermissionOutcome(pending.request);
       pending.resolve({ outcome });
       fireAndForget(() => this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId, automatic: true }), {
         op: 'conversationDriver.record',
