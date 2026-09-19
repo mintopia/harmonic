@@ -1,5 +1,6 @@
 import { open, type FileHandle } from 'node:fs/promises';
 import { StringDecoder } from 'node:string_decoder';
+import { reportFailure } from '../../error-handling.js';
 
 /**
  * A line-fold an incremental tail drives. The cursor re-folds the trailing
@@ -59,7 +60,13 @@ export class LineCursor<A extends LineAccumulator> {
         this.carry = text;
       }
       if (this.carry) this.current.fold(this.carry);
-    } catch {
+    } catch (err) {
+      reportFailure(err, {
+        op: 'harness.lineCursor.advance',
+        level: 'warn',
+        notFoundIf: (err) => (err as NodeJS.ErrnoException | null)?.code === 'ENOENT',
+        context: { file: this.file, offset: this.offset },
+      });
     } finally {
       await handle?.close().catch(() => {});
     }

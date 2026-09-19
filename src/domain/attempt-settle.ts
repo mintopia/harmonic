@@ -4,6 +4,7 @@ import type { AttemptStore } from './attempts.js';
 import { withTaskLock } from './task-lock.js';
 import type { SessionRetirementHook } from './session-retirement-coordinator.js';
 import type { RetirementCause } from './session-retirement.js';
+import { bestEffort } from '../error-handling.js';
 
 export interface AttemptBranchRetirementHook {
   onAttemptSettled(task: TaskRow, attempt: AttemptRow): Promise<void>;
@@ -93,14 +94,16 @@ export class AttemptSettleCoordinator {
         endedAt: before.endedAt ?? Date.now(),
       });
 
-      try {
-        await this.sessionRetirement?.onAttemptSettled(finished, this.retirementCause(type, projection));
-      } catch {
-      }
-      try {
-        await this.branchRetirement?.onAttemptSettled(task, finished);
-      } catch {
-      }
+      await bestEffort(() => this.sessionRetirement?.onAttemptSettled(finished, this.retirementCause(type, projection)), {
+        op: 'attemptSettle.sessionRetirement',
+        level: 'error',
+        context: { taskId: task.id, attemptId: finished.id, disposition: type, attemptState: finished.state },
+      });
+      await bestEffort(() => this.branchRetirement?.onAttemptSettled(task, finished), {
+        op: 'attemptSettle.branchRetirement',
+        level: 'error',
+        context: { taskId: task.id, attemptId: finished.id, disposition: type },
+      });
       await this.applySettleTaskAction(task.id, projection);
       this.onAttemptFinished?.(finished);
     });

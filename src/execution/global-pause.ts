@@ -6,6 +6,7 @@ import { settings } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { logger } from '../logger.js';
+import { reportFailure } from '../error-handling.js';
 
 const GLOBAL_PAUSE_KEY = 'global-pause';
 
@@ -41,8 +42,17 @@ export class GlobalPause {
     if (stored) {
       try {
         const parsed = persistedGlobalPauseSchema.safeParse(JSON.parse(stored.value));
-        if (parsed.success) persisted = parsed.data;
-      } catch {}
+        if (parsed.success) {
+          persisted = parsed.data;
+        } else {
+          reportFailure(new Error(`schema mismatch at ${parsed.error.issues.map((i) => i.path.join('.')).join(', ')}`), {
+            op: 'globalPause.rebuild',
+            context: { key: GLOBAL_PAUSE_KEY },
+          });
+        }
+      } catch (err) {
+        reportFailure(err, { op: 'globalPause.rebuild', context: { key: GLOBAL_PAUSE_KEY, bytes: stored.value.length } });
+      }
     }
     this.latched = persisted.latched;
     this.taskIds.clear();

@@ -1,5 +1,6 @@
 import { createInterface, type Interface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
+import { reportFailure } from '../error-handling.js';
 
 export interface AcpHandlers {
   /** ACP session/update notifications. */
@@ -87,7 +88,12 @@ export class AcpConnection {
     if (this.closed || !this.stdin.writable) return;
     try {
       this.stdin.write(JSON.stringify(msg) + '\n');
-    } catch {
+    } catch (err) {
+      reportFailure(err, {
+        op: 'acp.connection.write',
+        level: 'error',
+        context: { method: (msg as { method?: string }).method, id: (msg as { id?: number }).id },
+      });
     }
   }
 

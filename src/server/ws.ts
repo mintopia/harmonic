@@ -5,6 +5,7 @@ import { attemptTimelineToApi, conversationToApi, attemptToApi, attemptUsageToAp
 import { operationEventToApi, scheduledJobsToApi, worktreesToApi } from './dto.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { isTaskAttempt } from '../db/schema.js';
+import { fireAndForget } from '../error-handling.js';
 
 /** One firehose socket at /api/ws: every event is broadcast to every client; clients filter. */
 export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promise<void> {
@@ -14,9 +15,13 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(msg));
     };
     const sendAttemptTimeline = (taskId: number) => {
-      void attemptTimelineToApi(ctx, taskId)
-        .then(({ attempts, budgetBase }) => send({ type: 'attempt_timeline_changed', taskId, attempts, budgetBase }))
-        .catch(() => {});
+      fireAndForget(
+        async () => {
+          const { attempts, budgetBase } = await attemptTimelineToApi(ctx, taskId);
+          send({ type: 'attempt_timeline_changed', taskId, attempts, budgetBase });
+        },
+        { op: 'ws.sendAttemptTimeline', level: 'warn', context: { taskId } },
+      );
     };
     // ws echoes back the client's first offered subprotocol, so this is the token the client authenticated the upgrade with.
     const hasWriteScope = await requestIsOperator(req, ctx.auth, socket.protocol || undefined);
@@ -52,9 +57,11 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       unsubscribes.push(
         ctx.bus.on('conversation_event', (event) => send({ type: 'conversation_event', event })),
         ctx.bus.on('conversation_changed', (conversation) => {
-          void conversationToApi(ctx, conversation)
-            .then((c) => send({ type: 'conversation_changed', conversation: c }))
-            .catch(() => {});
+          fireAndForget(async () => send({ type: 'conversation_changed', conversation: await conversationToApi(ctx, conversation) }), {
+            op: 'ws.sendConversationChanged',
+            level: 'warn',
+            context: { conversationId: conversation.id },
+          });
         }),
         ctx.bus.on('conversation_commands', (payload) => send({ type: 'conversation_commands', ...payload })),
         ctx.bus.on('permission_request', (pending) => send({ type: 'permission_request', ...pending })),

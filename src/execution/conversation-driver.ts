@@ -19,6 +19,7 @@ import type { PermissionRuleStore } from '../domain/permission-rules.js';
 import type { ConversationRow } from '../db/schema.js';
 import { startOperation } from '../telemetry/operations.js';
 import { logger } from '../logger.js';
+import { reportFailure, fireAndForget } from '../error-handling.js';
 
 const NON_SECRET_CHILD_ENV_ALLOWLIST = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TERM', 'TMPDIR', 'SHELL'] as const;
 
@@ -288,11 +289,11 @@ export class ConversationDriver {
     const minutes = this.getConfig().conversationIdleTimeoutMinutes;
     if (!minutes || minutes <= 0) return;
     entry.idleTimer = setTimeout(() => {
-      void (async () => {
+      fireAndForget(async () => {
         if (!this.active.has(entry.conversationId)) return;
         await this.record(entry.conversationId, 'lifecycle', { event: 'idle_timeout' });
         await this.end(entry.conversationId);
-      })().catch(() => {});
+      }, { op: 'conversationDriver.idleTimeout', level: 'error', context: { conversationId: entry.conversationId } });
     }, minutes * 60_000);
     entry.idleTimer.unref?.();
   }
@@ -425,7 +426,11 @@ export class ConversationDriver {
           this.events.onCommandsUpdate?.({ conversationId: convo.id, commands: this.availableCommands(convo.id) });
         }
         if (replay) return;
-        void this.record(convo.id, 'session_update', update).catch(() => {});
+        fireAndForget(() => this.record(convo.id, 'session_update', update), {
+          op: 'conversationDriver.record',
+          level: 'warn',
+          context: { conversationId: convo.id, kind: 'session_update' },
+        });
       },
       onRequest: async (method, params) => {
         if (method === 'session/request_permission') {
@@ -555,7 +560,11 @@ export class ConversationDriver {
       const optionId = allowOptionId(pending.request);
       const outcome: PermissionOutcome = optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
       pending.resolve({ outcome });
-      void this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId, automatic: true }).catch(() => {});
+      fireAndForget(() => this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId, automatic: true }), {
+        op: 'conversationDriver.record',
+        level: 'warn',
+        context: { conversationId, kind: 'permission_request' },
+      });
     }
   }
 
@@ -575,14 +584,22 @@ export class ConversationDriver {
       this.pendingPermissions.delete(reqId);
       const outcome = { outcome: 'cancelled' as const };
       pending.resolve({ outcome });
-      void this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId }).catch(() => {});
+      fireAndForget(() => this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId }), {
+        op: 'conversationDriver.record',
+        level: 'warn',
+        context: { conversationId, kind: 'permission_request' },
+      });
     }
     for (const [reqId, pending] of this.pendingElicitations) {
       if (pending.conversationId !== conversationId) continue;
       this.pendingElicitations.delete(reqId);
       const answer = { action: 'cancel' as const };
       pending.resolve(answer);
-      void this.record(conversationId, 'elicitation_request', { request: pending.request, answer, reqId }).catch(() => {});
+      fireAndForget(() => this.record(conversationId, 'elicitation_request', { request: pending.request, answer, reqId }), {
+        op: 'conversationDriver.record',
+        level: 'warn',
+        context: { conversationId, kind: 'elicitation_request' },
+      });
     }
   }
 
@@ -605,7 +622,8 @@ export class ConversationDriver {
           events: (await this.store.listEvents(conversationId)) as unknown as Parameters<typeof collectUsageWithRetry>[0]['events'],
         });
       }
-    } catch {
+    } catch (err) {
+      reportFailure(err, { op: 'conversationDriver.accumulateTurnUsage', level: 'warn', context: { conversationId } });
     }
     const convo = await this.store.get(conversationId);
     const stored = convo.usage ? (JSON.parse(convo.usage) as AttemptUsage) : null;
@@ -637,10 +655,11 @@ export class ConversationDriver {
   }
 
   private revokeKey(conversationId: number): void {
-    try {
-      void Promise.resolve(this.keys?.revoke(conversationId)).catch(() => {});
-    } catch {
-    }
+    fireAndForget(() => this.keys?.revoke(conversationId), {
+      op: 'conversationDriver.revokeKey',
+      level: 'error',
+      context: { conversationId },
+    });
   }
 
   private kill(entry: ActiveConversation): void {
