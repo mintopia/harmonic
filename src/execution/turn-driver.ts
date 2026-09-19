@@ -169,7 +169,6 @@ export class TurnListeners {
 }
 
 export interface TurnDriverDeps {
-  // Stores / infrastructure (direct values)
   taskService: TaskService;
   attempts: AttemptStore;
   sessionStore: SessionStore;
@@ -178,13 +177,11 @@ export interface TurnDriverDeps {
   tailer: LiveUsageTailer;
   getConfig: () => AppConfig;
 
-  // Already-extracted collaborators (direct values)
   activeRuns: ActiveRuns;
   mergeCoordinator: MergeCoordinator;
   verification: VerificationCoordinator;
   sessionContinuation: SessionContinuation;
 
-  // RunnerOptions-derived (direct values)
   events: RunnerEvents;
   autoDrive: AutoDrive | undefined;
   keys: RunnerOptions['keys'];
@@ -195,7 +192,6 @@ export interface TurnDriverDeps {
   spendPollMs: number;
   spendGraceMs: number;
 
-  // Closures back into Runner
   mcpUrl: () => string | null;
   isShuttingDown: () => boolean;
   prepareWorkspace: (task: TaskRow, run: AttemptRow, resume?: boolean) => Promise<Workspace>;
