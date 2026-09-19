@@ -66,9 +66,9 @@ describe('loadGateConfig', () => {
 });
 
 describe('loadRubrics', () => {
-  it('loads the vendored rubric with all 8 categories', () => {
+  it('loads the vendored rubric with all 9 categories', () => {
     const rubrics = loadRubrics(join(process.cwd(), 'scripts/jev-gate/rubrics.json'));
-    expect(Object.keys(rubrics)).toHaveLength(8);
+    expect(Object.keys(rubrics)).toHaveLength(9);
     expect(rubrics.security.type).toBe('score');
     expect(Array.isArray(rubrics.comments.criteria)).toBe(true);
   });
