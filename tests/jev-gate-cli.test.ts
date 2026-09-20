@@ -234,3 +234,25 @@ describe('parseArgs html option', () => {
     expect(opts.dryRun).toBe(true);
   });
 });
+
+describe('parseArgs --mode', () => {
+  it('accepts the two-argv-token form', () => {
+    expect(parseArgs(['--mode', 'enforcing']).mode).toBe('enforcing');
+    expect(parseArgs(['--mode', 'advisory']).mode).toBe('advisory');
+  });
+
+  it('accepts a pre-joined single token, "--mode <value>"', () => {
+    expect(parseArgs(['--mode enforcing']).mode).toBe('enforcing');
+    expect(parseArgs(['--mode advisory', '--json']).mode).toBe('advisory');
+  });
+
+  it('accepts the "--mode=<value>" form', () => {
+    expect(parseArgs(['--mode=enforcing']).mode).toBe('enforcing');
+  });
+
+  it('rejects an invalid value in every form with the same message', () => {
+    expect(() => parseArgs(['--mode', 'bogus'])).toThrow('--mode must be "advisory" or "enforcing", got "bogus"');
+    expect(() => parseArgs(['--mode bogus'])).toThrow('--mode must be "advisory" or "enforcing", got "bogus"');
+    expect(() => parseArgs(['--mode=bogus'])).toThrow('--mode must be "advisory" or "enforcing", got "bogus"');
+  });
+});

@@ -69,6 +69,12 @@ interface CliOptions {
   help: boolean;
 }
 
+function splitPreJoinedModeFlag(arg: string): string | undefined {
+  if (arg.startsWith('--mode=')) return arg.slice('--mode='.length);
+  if (arg.startsWith('--mode ')) return arg.slice('--mode '.length);
+  return undefined;
+}
+
 export function parseArgs(argv: readonly string[]): CliOptions {
   const opts: CliOptions = {
     base: undefined,
@@ -85,8 +91,20 @@ export function parseArgs(argv: readonly string[]): CliOptions {
     signoffs: [],
     help: false,
   };
+  const MODE_VALUES = new Set<GateMode>(['advisory', 'enforcing']);
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    if (arg === undefined) continue;
+
+    const preJoinedMode = splitPreJoinedModeFlag(arg);
+    if (preJoinedMode !== undefined) {
+      if (!MODE_VALUES.has(preJoinedMode as GateMode)) {
+        throw new Error(`jev-gate: --mode must be "advisory" or "enforcing", got "${preJoinedMode}"`);
+      }
+      opts.mode = preJoinedMode as GateMode;
+      continue;
+    }
+
     switch (arg) {
       case '--base': {
         const val = argv[++i];
@@ -115,10 +133,10 @@ export function parseArgs(argv: readonly string[]): CliOptions {
       }
       case '--mode': {
         const raw = argv[++i];
-        if (raw !== 'advisory' && raw !== 'enforcing') {
+        if (!raw || !MODE_VALUES.has(raw as GateMode)) {
           throw new Error(`jev-gate: --mode must be "advisory" or "enforcing", got "${raw ?? ''}"`);
         }
-        opts.mode = raw;
+        opts.mode = raw as GateMode;
         break;
       }
       case '--json':
