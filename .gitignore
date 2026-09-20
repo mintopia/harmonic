@@ -14,6 +14,10 @@ core.*
 
 scratch_*
 
+# Generated Jev gate baseline view (regenerable via scripts/jev-gate.sh --html)
+jev.baseline.html
+jev.baseline.change.html
+
 # Local scratch/working notes — never published
 .scratch/
 .impeccable/critique/

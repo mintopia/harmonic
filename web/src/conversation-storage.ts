@@ -8,7 +8,8 @@ export function loadConversationId(storage: StorageLike): number | null {
     if (!raw) return null;
     const id = Number(raw);
     return Number.isFinite(id) ? id : null;
-  } catch {
+  } catch (error) {
+    console.warn('loadConversationId: storage unavailable', error);
     return null;
   }
 }
@@ -16,7 +17,8 @@ export function loadConversationId(storage: StorageLike): number | null {
 export function storeConversationId(storage: StorageLike, id: number): void {
   try {
     storage.setItem(CONVERSATION_ID_KEY, String(id));
-  } catch {
+  } catch (error) {
+    console.warn('storeConversationId: storage unavailable', error);
   }
 }
 
@@ -27,6 +29,7 @@ export function storeConversationId(storage: StorageLike, id: number): void {
 export function clearConversationId(storage: StorageLike): void {
   try {
     storage.removeItem(CONVERSATION_ID_KEY);
-  } catch {
+  } catch (error) {
+    console.warn('clearConversationId: storage unavailable', error);
   }
 }

@@ -9,7 +9,8 @@ export function loadActiveWorkspaceId(storage: StorageLike): number | null {
     const raw = storage.getItem(ACTIVE_WORKSPACE_KEY);
     const id = raw ? Number(raw) : NaN;
     return Number.isFinite(id) ? id : null;
-  } catch {
+  } catch (error) {
+    console.warn('loadActiveWorkspaceId: storage unavailable', error);
     return null;
   }
 }
@@ -17,7 +18,8 @@ export function loadActiveWorkspaceId(storage: StorageLike): number | null {
 export function storeActiveWorkspaceId(storage: StorageLike, id: number): void {
   try {
     storage.setItem(ACTIVE_WORKSPACE_KEY, String(id));
-  } catch {
+  } catch (error) {
+    console.warn('storeActiveWorkspaceId: storage unavailable', error);
   }
 }
 

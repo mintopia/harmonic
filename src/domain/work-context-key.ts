@@ -21,6 +21,7 @@ export function repoKey(dir: string): string {
   try {
     return realpathSync(resolve(dir));
   } catch {
+    // Documented fallback above: an unresolvable dir (not yet created, unreadable) still needs a stable key, so the normalised path stands in.
     return resolve(dir);
   }
 }

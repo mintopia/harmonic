@@ -15,7 +15,10 @@ export function SecuritySection() {
     fetch('/api/auth/me')
       .then((r) => r.json())
       .then((me: { passwordConfigured: boolean }) => setConfigured(me.passwordConfigured))
-      .catch(() => setConfigured(true));
+      .catch((e) => {
+        console.warn('failed to load auth status', e);
+        setConfigured(true);
+      });
   }, []);
 
   const run = async (fn: () => Promise<unknown>, thenReload: boolean) => {

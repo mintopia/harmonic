@@ -114,6 +114,7 @@ async function ticketNames(d: string): Promise<string[]> {
   try {
     return (await readdir(d)).filter((n) => n.endsWith('.md') && /^\d+/.test(n));
   } catch {
+    // A scope directory not existing means "no tickets here", not a failure.
     return [];
   }
 }
@@ -134,6 +135,7 @@ async function resolveScopes(root: string): Promise<Scope[]> {
   try {
     entries = await readdir(root);
   } catch {
+    // Missing tracker root means "no scopes configured yet", not a failure.
     return [];
   }
   const scopes: Scope[] = [];
@@ -237,6 +239,7 @@ async function parseSpec(path: string, base: number): Promise<Parsed | null> {
     raw = await readFile(path, 'utf8');
     mtime = (await stat(path)).mtime.toISOString();
   } catch {
+    // spec.md is optional per feature; its absence means "no Map", not a failure.
     return null;
   }
   const { heading, title } = headingTitle(raw, path);

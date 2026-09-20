@@ -17,6 +17,17 @@ An **epic** is a parent issue whose children are the implementation tickets. Add
 
 Label epics even though an epic is also recognised structurally (a parent with children): the label declares intent, while a root parent is also demoted structurally. Both appear only as an Epic.
 
+### Linking parents and blockers (native, UI-visible)
+
+Sub-issue and blocked-by links are **native GitHub relationships**, not just body text — set them so the graph shows in the UI and gates the frontier live. Two ways:
+
+- **At creation** (preferred when the parent/blockers already exist): `gh issue create` takes `--parent <n>` (link as a sub-issue of that parent), `--blocked-by <n,n>`, and `--blocking <n,n>`.
+- **After the fact** (linking issues that already exist), via `gh api` with the target's numeric **database id** (`gh api repos/<owner>/<repo>/issues/<n> --jq .id` — _not_ the `#number` or `node_id`):
+  - Sub-issue: `gh api --method POST repos/<owner>/<repo>/issues/<parent>/sub_issues -F sub_issue_id=<child-db-id>`
+  - Blocked-by: `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`
+
+Both routes write the same dependency; `issue_dependencies_summary.blocked_by` (open blockers only) is the live gate. Still keep the one-line `Blocked by: #<n>, #<n>` in each child body as a human-readable fallback.
+
 ## Ownership and human reclaim
 
 Harmonic decides whether it owns work from the local Task and Run state. Tracker

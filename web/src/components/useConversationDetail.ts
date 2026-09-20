@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { subscribe } from '../ws';
 import type { Conversation, ConversationEvent } from '../types';
@@ -18,7 +18,7 @@ import {
 } from '../conversation-elicitations-model';
 import type { ElicitationAnswer } from '../types';
 import { toastError } from '../toast';
-import { useLiveEffect } from '../useLiveEffect';
+import { useAsyncResource } from '../useAsyncResource';
 
 export function isConversationInWorkspace(
   conversation: Pick<Conversation, 'workspaceId'>,
@@ -61,17 +61,40 @@ export function useConversationDetail(
   const optimisticSeq = useRef(-1);
   const creatingConversation = useRef<{ workspaceId: number | null; promise: Promise<Conversation> } | null>(null);
 
-  useLiveEffect((live) => {
-    if (focusedId === null) {
+  const detail = useAsyncResource(
+    focusedId === null
+      ? null
+      : () =>
+          Promise.all([api.conversation(focusedId), api.conversationEvents(focusedId)]).then(
+            ([conversation, { events }]) => ({ conversation, events }),
+          ),
+    [focusedId],
+  );
+  const detailReloadRef = useRef(detail.reload);
+  useLayoutEffect(() => { detailReloadRef.current = detail.reload; });
+
+  useEffect(() => {
+    if (!detail.data) {
       setConversation(null);
       setEvents([]);
+      return;
+    }
+    if (!isConversationInWorkspace(detail.data.conversation, workspaceId)) {
+      openList();
+      return;
+    }
+    setConversation(detail.data.conversation);
+    setEvents(detail.data.events);
+    upsertConversationInList(detail.data.conversation);
+  }, [detail.data, workspaceId, openList, upsertConversationInList]);
+
+  useEffect(() => {
+    if (focusedId === null) {
       setPending({});
       return;
     }
     creatingConversation.current = null;
     const id = focusedId;
-    setConversation(null);
-    setEvents([]);
     setOptimisticTurns([]);
     setPending(
       pendingPermission?.conversationId === id
@@ -79,19 +102,6 @@ export function useConversationDetail(
         : {},
     );
     setPendingElicitations({});
-    const load = () => {
-      api.conversation(id).then((c) => {
-        if (!live()) return;
-        if (!isConversationInWorkspace(c, workspaceId)) {
-          openList();
-          return;
-        }
-        setConversation(c);
-        upsertConversationInList(c);
-        api.conversationEvents(id).then(({ events }) => live() && setEvents(events), toastError);
-      }, toastError);
-    };
-    load();
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'conversation_event' && msg.event.conversationId === id) {
         setEvents((current) =>
@@ -136,7 +146,7 @@ export function useConversationDetail(
       if (msg.type === 'conversation_commands' && msg.conversationId === id) {
         setConversation((current) => current ? { ...current, commands: msg.commands } : current);
       }
-    }, load);
+    }, () => detailReloadRef.current());
     return () => {
       unsubscribe();
     };
@@ -176,13 +186,15 @@ export function useConversationDetail(
     // Show the message in the transcript right away when steering the open
     // conversation. A brand-new conversation switches focus and reloads events,
     // which would discard an optimistic turn, so we skip it there.
+    let optimisticId: number | null = null;
     if (steering) {
-      const optimisticId = optimisticSeq.current;
+      const turnId = optimisticSeq.current;
       optimisticSeq.current -= 1;
+      optimisticId = turnId;
       setOptimisticTurns((current) => [
         ...current,
         {
-          id: optimisticId,
+          id: turnId,
           conversationId: id,
           seq: Number.MAX_SAFE_INTEGER,
           ts: Date.now(),
@@ -191,8 +203,15 @@ export function useConversationDetail(
         },
       ]);
     }
-    const { queued } = await api.sendTurn(id, text);
-    return { queued };
+    try {
+      const { queued } = await api.sendTurn(id, text);
+      return { queued };
+    } catch (e) {
+      if (optimisticId !== null) {
+        setOptimisticTurns((current) => current.filter((t) => t.id !== optimisticId));
+      }
+      throw e;
+    }
   };
 
   const end = () => {
@@ -270,5 +289,8 @@ export function useConversationDetail(
     pending,
     pendingElicitations,
     actions: { send, end, rename, setPermissionMode, deleteConversation, answerPermission, answerElicitation },
+    loadError: detail.error,
+    loading: detail.loading,
+    reload: detail.reload,
   };
 }

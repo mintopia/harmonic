@@ -3,6 +3,7 @@ import type { AttemptStore } from '../domain/attempts.js';
 import type { SettingsStore } from '../server/settings-store.js';
 import type { OperationSnapshot } from '../telemetry/operations.js';
 import type { ConversationDriver } from '../execution/conversation-driver.js';
+import { reportFailure } from '../error-handling.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import type { UpdateArmingStore, UpdateAvailabilityState } from './update-check.js';
 
@@ -128,7 +129,12 @@ export class UpgradeCoordinator {
     this.onIdleStartedFor = armed.armedVersion;
     try {
       await this.options.onIdle?.(armed.armedVersion);
-    } catch (_error) {
+    } catch (error) {
+      reportFailure(error, {
+        op: 'upgradeCoordinator.onIdle',
+        level: 'error',
+        context: { armedVersion: armed.armedVersion },
+      });
       this.onIdleStartedFor = null;
       await this.cancelOnce();
       return false;

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -65,6 +66,10 @@ export const harnessConfigSchema = z.object({
  * a frozen candidate in a disposable checkout.
  */
 export const verificationCommandSchema = z.object({
+  /** Stable identity, independent of argv (which can repeat); assigned once on
+   * create when absent (API/UI submit id-less), never regenerated for an item
+   * that already has one, never editable. */
+  id: z.string().min(1).default(() => randomUUID()).meta({ example: 'cmd-lint' }),
   /** The executable to spawn (argv[0]); args are passed separately, never a shell string. */
   command: z.string().min(1).meta({ example: 'npm' }),
   args: z.array(z.string()).default([]).meta({ example: ['test'] }),
@@ -81,11 +86,18 @@ export type VerificationCommand = z.infer<typeof verificationCommandSchema>;
  * model that judges the candidate diff.
  */
 const verificationCriticIdentitySchema = z.object({
+  /** Stable identity, independent of `name` (operator-facing, not guaranteed
+   * unique); assigned once on create when absent, never regenerated for an item
+   * that already has one. */
+  id: z.string().min(1).default(() => randomUUID()).meta({ example: 'critic-correctness' }),
   /** Operator-facing label; the critic's row title in settings. */
   name: z.string().default('').meta({ example: 'Correctness' }),
   model: z.string().min(1).meta({ example: 'claude-opus-5' }),
   /** Reviewer harness; omitted = reuse the builder task's harness. */
   harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),
+  /** Hard timeout in seconds for the critic's single review turn; a run that
+   * overruns is killed and reads inconclusive. Defaults to 300. */
+  timeoutSeconds: z.number().int().positive().default(300).meta({ example: 300 }),
 });
 
 export const taskVerificationCriticSchema = verificationCriticIdentitySchema.extend({
@@ -102,10 +114,37 @@ export const epicVerificationCriticSchema = verificationCriticIdentitySchema.ext
 });
 export type EpicVerificationCritic = z.infer<typeof epicVerificationCriticSchema>;
 
-/** List-grain override: `null`/absent inherits the global list, a non-empty array replaces it, an empty array runs no commands. */
-export const verificationCommandOverrideSchema = z.array(verificationCommandSchema);
-export const taskVerificationCriticOverrideSchema = z.array(taskVerificationCriticSchema);
-export const epicVerificationCriticOverrideSchema = z.array(epicVerificationCriticSchema);
+/**
+ * Additive, id-keyed Workspace overlay entry (ADR-0037): a `global` entry
+ * reorders/disables a global verifier by `ref` (its id) without editing it; a
+ * `local` entry inlines a Workspace-owned verifier, fully editable.
+ */
+function overlayEntrySchema<TItemKey extends string, TItem extends z.ZodType>(
+  itemKey: TItemKey,
+  itemSchema: TItem,
+) {
+  return z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('global'), ref: z.string().min(1), enabled: z.boolean() }),
+    z.object({ kind: z.literal('local'), enabled: z.boolean(), [itemKey]: itemSchema }) as z.ZodObject<{
+      kind: z.ZodLiteral<'local'>;
+      enabled: z.ZodBoolean;
+    } & { [K in TItemKey]: TItem }>,
+  ]);
+}
+
+export const verificationCommandOverlayEntrySchema = overlayEntrySchema('command', verificationCommandSchema);
+export type VerificationCommandOverlayEntry = z.infer<typeof verificationCommandOverlayEntrySchema>;
+
+export const taskVerificationCriticOverlayEntrySchema = overlayEntrySchema('critic', taskVerificationCriticSchema);
+export type TaskVerificationCriticOverlayEntry = z.infer<typeof taskVerificationCriticOverlayEntrySchema>;
+
+export const epicVerificationCriticOverlayEntrySchema = overlayEntrySchema('critic', epicVerificationCriticSchema);
+export type EpicVerificationCriticOverlayEntry = z.infer<typeof epicVerificationCriticOverlayEntrySchema>;
+
+/** Overlay array: `null`/absent inherits every global in global order, enabled; a present array is the ordered overlay (ADR-0037). */
+export const verificationCommandOverrideSchema = z.array(verificationCommandOverlayEntrySchema);
+export const taskVerificationCriticOverrideSchema = z.array(taskVerificationCriticOverlayEntrySchema);
+export const epicVerificationCriticOverrideSchema = z.array(epicVerificationCriticOverlayEntrySchema);
 
 /** One verification stage; commands run before its independent critic list. */
 const verificationStageSchema = <TCritic extends z.ZodType>(criticSchema: TCritic) => z.object({

@@ -1,0 +1,53 @@
+{
+  "_meta": "Jev code-quality gate policy. Implements /home/workspace/reports/jev-thresholds-proposal.md. Edit this, not scripts/jev-gate/*.ts, to retune. Consumed by scripts/jev-gate/cli.ts.",
+  "mode": "advisory",
+  "thresholds": {
+    "category": { "fail": 1.5, "warn": 2.5 },
+    "overall": { "fail": 2.0, "warn": 2.4 },
+    "confidence": { "blockingMin": 0.5 },
+    "ratchet": { "categoryDrop": 0.5, "overallDrop": 0.2 }
+  },
+  "gatingCategories": ["complexity_clean_code", "code_smells", "testability", "error_handling", "security", "comments", "concurrency_and_idempotency", "ai_slop"],
+  "advisoryCategories": [],
+  "roles": [
+    { "name": "type-declaration", "glob": ["**/*.d.ts"], "skip": true, "hint": "Ambient type declaration: no runtime behaviour to score." },
+    { "name": "generated", "glob": ["**/generated/**", "**/*.gen.ts"], "skip": true, "hint": "Generated code: not hand-written, not scored." },
+    {
+      "name": "story",
+      "glob": ["**/*.stories.@(ts|tsx|js|jsx)", "**/story/**"],
+      "exempt": ["testability", "error_handling", "security", "concurrency_and_idempotency"],
+      "hint": "Storybook story: illustrative component usage, not production runtime code."
+    },
+    {
+      "name": "test",
+      "glob": ["**/*.@(test|spec).@(ts|tsx|js|jsx)", "**/__tests__/**", "**/test/**", "**/tests/**"],
+      "exempt": ["testability", "error_handling", "security", "concurrency_and_idempotency"],
+      "hint": "Test code: exercises behaviour; light error handling is expected."
+    },
+    {
+      "name": "mock",
+      "glob": ["**/__mocks__/**", "**/mocks/**"],
+      "exempt": ["testability", "error_handling", "security", "concurrency_and_idempotency"],
+      "hint": "Mock/stub: stand-in for a real dependency, not production logic."
+    },
+    {
+      "name": "fixture",
+      "glob": ["**/fixtures/**", "**/*.fixture.@(ts|tsx)"],
+      "exempt": ["testability", "error_handling", "security", "concurrency_and_idempotency"],
+      "hint": "Fixture: static test input, not runtime logic."
+    },
+    {
+      "name": "migration",
+      "glob": ["**/migrations/**", "**/*.migration.ts"],
+      "exempt": ["testability"],
+      "hint": "DB migration: sequential and append-only, verified by running them, not unit tests."
+    }
+  ],
+  "sourceExtensions": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"],
+  "skipDirs": ["node_modules", "dist", "build", "generated", "coverage", ".git"],
+  "baselinePath": "jev.baseline.json",
+  "maxFileBytes": 400000,
+  "chunkChars": 40000,
+  "diffCharBudget": 20000,
+  "defaultConcurrency": 4
+}

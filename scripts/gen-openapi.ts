@@ -12,11 +12,33 @@ import { logger } from '../src/logger.js';
 
 const outPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'website', 'src', 'openapi.json');
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const PLACEHOLDER_UUID = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * Some schemas carry a runtime `.default(() => randomUUID())` (a server-assigned
+ * id). @fastify/swagger evaluates that factory when serialising, so a fresh UUID
+ * would land in the snapshot on every run and the stale-snapshot CI check could
+ * never pass. Pin any UUID-valued `default` to a fixed placeholder so the doc is
+ * deterministic; the runtime schema is untouched.
+ */
+function pinVolatileDefaults(node: unknown): void {
+  if (Array.isArray(node)) {
+    for (const item of node) pinVolatileDefaults(item);
+    return;
+  }
+  if (node === null || typeof node !== 'object') return;
+  const obj = node as Record<string, unknown>;
+  if (typeof obj.default === 'string' && UUID_RE.test(obj.default)) obj.default = PLACEHOLDER_UUID;
+  for (const value of Object.values(obj)) pinVolatileDefaults(value);
+}
+
 const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-openapi-'));
 try {
   const app = await buildApp({ dataDir });
   await app.ready();
   const spec = app.swagger();
+  pinVolatileDefaults(spec);
   writeFileSync(outPath, `${JSON.stringify(spec, null, 2)}\n`);
   await app.close();
   logger.info(`Wrote ${outPath}`);

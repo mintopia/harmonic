@@ -1,6 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '../api';
-import { subscribe } from '../ws';
+import { useEffect, useRef, useState } from 'react';
 import type { AppConfig, Conversation, ConversationEvent, Workspace } from '../types';
 import {
   chooseAlwaysAllowOptionId,
@@ -15,15 +13,8 @@ import {
   formatTokenBreakdown,
   lastConversationTurnAt,
 } from '../conversation-telemetry-model';
-import {
-  applyAttentionMessage,
-  clearAllAttention,
-  clearAttention,
-  hasAttention,
-  NO_ATTENTION,
-  type AttentionState,
-} from '../conversation-attention-model';
-import { conversationDisplayTitle, removeConversationById, upsertConversation } from '../conversation-list-model';
+import { clearAllAttention, hasAttention } from '../conversation-attention-model';
+import { conversationDisplayTitle } from '../conversation-list-model';
 import { formatCost } from '../cost';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ConversationList } from './ConversationList';
@@ -34,8 +25,8 @@ import { providerLabel } from './TaskIdentity';
 import { Icon } from './Icon';
 import { Composer, ContextMeter } from './conversation/Composer';
 import { StreamAnnouncer, Transcript } from './conversation/Transcript';
-import { useConversationDetail } from './useConversationDetail';
-import { toastError } from '../toast';
+import { useConversationLauncherState } from './useConversationLauncherState';
+import { LoadError } from './LoadError';
 import {
   btnQuiet,
   btnQuietDestructive,
@@ -478,7 +469,8 @@ function ConversationHeader(props: ConversationHeaderProps) {
   );
 }
 
-type LauncherView = { kind: 'list' } | { kind: 'detail'; conversationId: number | null };
+const persistFocusedConversation = (id: number | null) =>
+  id === null ? clearConversationId(localStorage) : storeConversationId(localStorage, id);
 
 export function ConversationLauncher({
   config,
@@ -500,13 +492,33 @@ export function ConversationLauncher({
   const workspaceId = workspace?.id ?? null;
   const [open, setOpen] = useState(false);
 
-  const [view, setView] = useState<LauncherView>(() => {
-    const persisted = loadConversationId(localStorage);
-    return persisted === null ? { kind: 'list' } : { kind: 'detail', conversationId: persisted };
+  const {
+    view,
+    focusedId,
+    attention,
+    setAttention,
+    list,
+    openList,
+    openConversation,
+    openCompose,
+    setOpenedPendingPermission,
+    conversation,
+    events,
+    pending,
+    pendingElicitations,
+    actions,
+    loadError,
+    reload,
+    composerReady,
+    ended,
+    resumable,
+  } = useConversationLauncherState({
+    workspaceId,
+    initialFocusedId: () => loadConversationId(localStorage),
+    onNavigate: persistFocusedConversation,
+    active: open,
   });
-  const focusedId = view.kind === 'detail' ? view.conversationId : null;
-  const [openedPendingPermission, setOpenedPendingPermission] = useState<PendingPermission | null>(null);
-  const clearOpenedPendingPermission = useCallback(() => setOpenedPendingPermission(null), []);
+
   // The route-driven auto-open must fire once per distinct deep-linked conversation, not on
   // every render, or a manual Close is re-opened on the next tick.
   const autoOpenedConversationId = useRef<number | null>(null);
@@ -515,8 +527,7 @@ export function ConversationLauncher({
     if (openConversationId !== null) {
       setOpenedPendingPermission(pendingPermission);
       setOpen(true);
-      setView({ kind: 'detail', conversationId: openConversationId });
-      storeConversationId(localStorage, openConversationId);
+      openConversation(openConversationId);
       autoOpenedConversationId.current = openConversationId;
       onConversationOpened();
       return;
@@ -528,76 +539,14 @@ export function ConversationLauncher({
       current?.conversationId === conversationId ? current : null,
     );
     setOpen(true);
-    setView({ kind: 'detail', conversationId });
-    storeConversationId(localStorage, conversationId);
-  }, [conversationId, openConversationId, onConversationOpened, pendingPermission]);
-
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-
-  const [attention, setAttention] = useState<AttentionState>(NO_ATTENTION);
-
-  const upsertConversationInList = useCallback((c: Conversation) => {
-    setConversations((current) => upsertConversation(current, c));
-  }, []);
-  const removeConversationFromList = useCallback((id: number) => {
-    setConversations((current) => removeConversationById(current, id));
-    setAttention((current) => clearAttention(current, id));
-  }, []);
-
-  const focusedRef = useRef<number | null>(null);
-  useEffect(() => {
-    focusedRef.current = open && view.kind === 'detail' ? view.conversationId : null;
-  }, [open, view]);
+    openConversation(conversationId);
+  }, [conversationId, openConversationId, onConversationOpened, pendingPermission, openConversation, setOpenedPendingPermission]);
 
   const wasOpenRef = useRef(false);
   useEffect(() => {
     if (open && !wasOpenRef.current) setAttention((current) => clearAllAttention(current));
     wasOpenRef.current = open;
-  }, [open]);
-
-  useEffect(() => {
-    if (open && view.kind === 'detail' && view.conversationId !== null) {
-      setAttention((current) => clearAttention(current, view.conversationId as number));
-    }
-  }, [open, view]);
-
-  useEffect(() => {
-    if (workspaceId === null) return;
-    setConversations([]);
-    const load = () =>
-      api.conversations(workspaceId).then(({ conversations }) => setConversations(conversations), toastError);
-    load();
-    const unsubscribe = subscribe((msg) => {
-      setAttention((current) => applyAttentionMessage(current, msg, focusedRef.current));
-      if (msg.type === 'conversation_changed' && msg.conversation.workspaceId === workspaceId) {
-        setConversations((current) => upsertConversation(current, msg.conversation));
-      }
-    }, load);
-    return unsubscribe;
-  }, [workspaceId]);
-
-  const openList = useCallback(() => {
-    setView({ kind: 'list' });
-    clearConversationId(localStorage);
-  }, []);
-  const openConversation = (id: number) => {
-    setView({ kind: 'detail', conversationId: id });
-    storeConversationId(localStorage, id);
-  };
-  const openCompose = () => {
-    setView({ kind: 'detail', conversationId: null });
-    clearConversationId(localStorage);
-  };
-
-  const { conversation, events, pending, pendingElicitations, actions } = useConversationDetail(focusedId, {
-    workspaceId,
-    upsertConversationInList,
-    removeConversationFromList,
-    openConversation,
-    openList,
-    pendingPermission: openedPendingPermission,
-    clearPendingPermission: clearOpenedPendingPermission,
-  });
+  }, [open, setAttention]);
 
   if (!open) {
     const needsAttention = hasAttention(attention);
@@ -622,10 +571,6 @@ export function ConversationLauncher({
     );
   }
 
-  const composerReady = view.kind === 'detail' && (view.conversationId === null || conversation !== null);
-  const ended = conversation?.state === 'ended';
-  const resumable = conversation?.sessionId != null;
-
   return (
     <div
       role="dialog"
@@ -635,15 +580,19 @@ export function ConversationLauncher({
       className="absolute inset-y-4 right-4 z-40 flex w-[26rem] max-w-[calc(100%-2rem)] flex-col rounded-lg bg-surface shadow-bar"
     >
       {view.kind === 'list' ? (
-        <ConversationList
-          conversations={conversations}
-          attention={attention}
-          onSelect={openConversation}
-          onNew={openCompose}
-          onDelete={actions.deleteConversation}
-          onExpand={() => onExpand(null)}
-          onClose={() => setOpen(false)}
-        />
+        list.error ? (
+          <LoadError message={list.error} onRetry={list.reload} className="m-2" />
+        ) : (
+          <ConversationList
+            conversations={list.conversations}
+            attention={attention}
+            onSelect={openConversation}
+            onNew={openCompose}
+            onDelete={actions.deleteConversation}
+            onExpand={() => onExpand(null)}
+            onClose={() => setOpen(false)}
+          />
+        )
       ) : (
         <>
           <ConversationHeader
@@ -657,6 +606,7 @@ export function ConversationLauncher({
             onClose={() => setOpen(false)}
           />
 
+          {loadError && <LoadError message={loadError} onRetry={reload} className="m-2" />}
           <Transcript events={events} conversation={conversation} />
           <StreamAnnouncer events={events} resetKey={conversation?.id ?? 'new'} />
 
@@ -713,72 +663,36 @@ export function ConversationsPage({
   onConversationChange: (conversationId: number | null) => void;
 }) {
   const workspaceId = workspace?.id ?? null;
-  const [view, setView] = useState<LauncherView>(() =>
-    conversationId === null ? { kind: 'list' } : { kind: 'detail', conversationId },
-  );
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [attention, setAttention] = useState<AttentionState>(NO_ATTENTION);
-  const [openedPendingPermission, setOpenedPendingPermission] = useState<PendingPermission | null>(null);
+  const {
+    view,
+    setView,
+    focusedId,
+    attention,
+    list,
+    openList,
+    openConversation,
+    openCompose,
+    conversation,
+    events,
+    pending,
+    pendingElicitations,
+    actions,
+    loadError,
+    reload,
+    composerReady,
+    ended,
+    resumable,
+  } = useConversationLauncherState({
+    workspaceId,
+    initialFocusedId: () => conversationId,
+    onNavigate: onConversationChange,
+  });
   const [contextOpen, setContextOpen] = useState(false);
-  const focusedId = view.kind === 'detail' ? view.conversationId : null;
-  const focusedRef = useRef<number | null>(focusedId);
-
-  useEffect(() => {
-    focusedRef.current = focusedId;
-    if (focusedId !== null) setAttention((current) => clearAttention(current, focusedId));
-  }, [focusedId]);
 
   useEffect(() => {
     setView(conversationId === null ? { kind: 'list' } : { kind: 'detail', conversationId });
-  }, [conversationId]);
+  }, [conversationId, setView]);
 
-  const upsertConversationInList = useCallback((conversation: Conversation) => {
-    setConversations((current) => upsertConversation(current, conversation));
-  }, []);
-  const removeConversationFromList = useCallback((id: number) => {
-    setConversations((current) => removeConversationById(current, id));
-    setAttention((current) => clearAttention(current, id));
-  }, []);
-
-  useEffect(() => {
-    if (workspaceId === null) return;
-    setConversations([]);
-    const load = () =>
-      api.conversations(workspaceId).then(({ conversations }) => setConversations(conversations), toastError);
-    load();
-    return subscribe((message) => {
-      setAttention((current) => applyAttentionMessage(current, message, focusedRef.current));
-      if (message.type === 'conversation_changed' && message.conversation.workspaceId === workspaceId) {
-        setConversations((current) => upsertConversation(current, message.conversation));
-      }
-    }, load);
-  }, [workspaceId]);
-
-  const openList = useCallback(() => {
-    setView({ kind: 'list' });
-    onConversationChange(null);
-  }, [onConversationChange]);
-  const openConversation = (id: number) => {
-    setView({ kind: 'detail', conversationId: id });
-    onConversationChange(id);
-  };
-  const openCompose = () => {
-    setView({ kind: 'detail', conversationId: null });
-    onConversationChange(null);
-  };
-  const clearPendingPermission = useCallback(() => setOpenedPendingPermission(null), []);
-  const { conversation, events, pending, pendingElicitations, actions } = useConversationDetail(focusedId, {
-    workspaceId,
-    upsertConversationInList,
-    removeConversationFromList,
-    openConversation,
-    openList,
-    pendingPermission: openedPendingPermission,
-    clearPendingPermission,
-  });
-  const composerReady = view.kind === 'detail' && (view.conversationId === null || conversation !== null);
-  const ended = conversation?.state === 'ended';
-  const resumable = conversation?.sessionId != null;
   const deleteConversation = (id: number) => {
     actions.deleteConversation(id);
     if (id === focusedId) openList();
@@ -790,15 +704,19 @@ export function ConversationsPage({
         aria-label="Conversations"
         className={`${view.kind === 'detail' ? 'hidden md:flex' : 'flex'} w-full shrink-0 border-r border-edge bg-shell md:w-64`}
       >
-        <ConversationList
-          conversations={conversations}
-          attention={attention}
-          selectedId={focusedId}
-          fullPage
-          onSelect={openConversation}
-          onNew={openCompose}
-          onDelete={deleteConversation}
-        />
+        {list.error ? (
+          <LoadError message={list.error} onRetry={list.reload} className="m-2" />
+        ) : (
+          <ConversationList
+            conversations={list.conversations}
+            attention={attention}
+            selectedId={focusedId}
+            fullPage
+            onSelect={openConversation}
+            onNew={openCompose}
+            onDelete={deleteConversation}
+          />
+        )}
       </aside>
       <section
         aria-label="Conversation transcript"
@@ -820,6 +738,7 @@ export function ConversationsPage({
               onDelete={() => conversation && deleteConversation(conversation.id)}
               onOpenContext={() => setContextOpen(true)}
             />
+            {loadError && <LoadError message={loadError} onRetry={reload} className="m-2" />}
             <Transcript events={events} conversation={conversation} />
             <StreamAnnouncer events={events} resetKey={conversation?.id ?? 'new'} />
             {!ended &&

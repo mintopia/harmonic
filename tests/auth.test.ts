@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { settings } from '../src/db/schema.js';
-import { startServer, TEST_PASSWORD, type TestServer } from './helpers.js';
+import { startServer, TEST_PASSWORD, connectFirehose, waitFor, type TestServer } from './helpers.js';
 
 describe('auth and api keys', () => {
   let server: TestServer;
@@ -145,7 +145,7 @@ describe('auth and api keys', () => {
     expect(revoked.status).toBe(401);
   });
 
-  it('accepts query tokens for WebSocket upgrades but not HTTP API requests', async () => {
+  it('authenticates WebSocket upgrades by subprotocol, never by query token', async () => {
     const apiWithQueryToken = await fetch(`${server.baseUrl}/api/keys?token=${server.sessionToken}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -153,15 +153,25 @@ describe('auth and api keys', () => {
     });
     expect(apiWithQueryToken.status).toBe(401);
 
-    const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
-    const opened = await new Promise<boolean>((resolve) => {
-      ws.addEventListener('error', () => resolve(false));
-      ws.addEventListener('open', () => {
-        ws.close();
-        resolve(true);
+    const wsUrl = `${server.baseUrl.replace('http', 'ws')}/api/ws`;
+    const opens = (protocols?: string[]) =>
+      new Promise<boolean>((resolve) => {
+        const ws = protocols ? new WebSocket(wsUrl, protocols) : new WebSocket(wsUrl);
+        ws.addEventListener('error', () => resolve(false));
+        ws.addEventListener('open', () => { ws.close(); resolve(true); });
       });
-    });
-    expect(opened).toBe(true);
+
+    expect(await opens([server.sessionToken])).toBe(true);
+    expect(await opens(['not-a-real-token'])).toBe(false);
+    expect(await opens()).toBe(false);
+  });
+
+  it('gives a full-scoped API key offered as a WS subprotocol the write-side firehose', async () => {
+    const fullKey = await server.api('POST', '/api/keys', { name: 'ws-full', scope: 'full' });
+    const client = await connectFirehose(server, fullKey.body.token);
+    server.app.ctx.bus.emit('permission_request', { conversationId: 2, requestId: 'r2' } as any);
+    await waitFor(async () => client.messages.some((m: any) => m.type === 'permission_request'));
+    client.close();
   });
 
   it('password-only login works even when a legacy auth record carries a username', async () => {

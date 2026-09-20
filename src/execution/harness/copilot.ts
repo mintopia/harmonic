@@ -5,8 +5,7 @@ import { join } from 'node:path';
 import { logger } from '../../logger.js';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode, type ProcessStatus } from '../usage.js';
 import { resolveUnattendedPermissionMode, type HarnessAdapter, type ModelUsage } from './adapter.js';
-
-const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
+import { num, usageBucket } from './model-usage.js';
 
 const COPILOT_AGENT_MODE = 'https://agentclientprotocol.com/protocol/session-modes#agent';
 const COPILOT_PLAN_MODE = 'https://agentclientprotocol.com/protocol/session-modes#plan';
@@ -46,7 +45,8 @@ function readUsageRows(dbPath: string, sessionId: string): UsageRow[] {
     } finally {
       db.close();
     }
-  } catch {
+  } catch (err) {
+    logger.debug('copilot: reading usage rows from session-store.db failed', { dbPath, sessionId, error: err instanceof Error ? err.message : String(err) });
     return [];
   }
 }
@@ -59,12 +59,7 @@ function rowsToModels(rows: UsageRow[]): Record<string, ModelUsage> {
   const models: Record<string, ModelUsage> = {};
   const nano: Record<string, number> = {};
   for (const r of rows) {
-    const bucket = (models[r.model] ??= {
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-    });
+    const bucket = usageBucket(models, r.model);
     const cacheRead = num(r.cache_read_tokens);
     const cacheWrite = num(r.cache_write_tokens);
     bucket.inputTokens += Math.max(0, num(r.input_tokens) - cacheRead - cacheWrite);
@@ -96,7 +91,8 @@ function readSubagents(eventsFile: string): Map<string, SubagentInfo> {
     let event: any;
     try {
       event = JSON.parse(line);
-    } catch {
+    } catch (err) {
+      logger.debug('copilot: skipping a malformed events.jsonl line', { eventsFile, error: err instanceof Error ? err.message : String(err) });
       continue;
     }
     const data = event?.data;

@@ -43,10 +43,10 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
     });
   });
 
-  describe('staged verifier settings', () => {
-    const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-    const globalCritic = { name: 'Test critic', issuePrompt: 'Review the issue.', noIssuePrompt: 'Review the Task.', model: 'claude-opus-5' };
-    const epicCritic = { name: 'Test critic', prompt: 'Review the epic.', model: 'claude-opus-5' };
+  describe('staged verifier settings — additive, id-keyed overlays (ADR-0037)', () => {
+    const globalCommand = { id: 'cmd-npm-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
+    const globalCritic = { id: 'critic-task', name: 'Test critic', issuePrompt: 'Review the issue.', noIssuePrompt: 'Review the Task.', model: 'claude-opus-5', timeoutSeconds: 300 };
+    const epicCritic = { id: 'critic-epic', name: 'Test critic', prompt: 'Review the epic.', model: 'claude-opus-5', timeoutSeconds: 300 };
     const config: Pick<AppConfig, 'verify'> = {
       verify: {
         task: {
@@ -65,7 +65,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       epicPreMergeCritics: null,
     };
 
-    it('inherits every global stage list when its Workspace override is null', () => {
+    it('inherits every global stage list, in global order, when its Workspace overlay is null', () => {
       expect(resolveVerifiers(inherited, config)).toEqual({
         task: {
           preMerge: { commands: [globalCommand], critics: [globalCritic] },
@@ -75,28 +75,52 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       });
     });
 
-    it('replaces only the explicitly configured Workspace lists', () => {
-      const command = { command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
-      const critic = { name: 'Test critic', prompt: 'Review the epic.', model: 'gpt-5.3-codex' };
+    it('adds a local entry alongside the inherited global, preserving overlay order', () => {
+      const local = { id: 'cmd-pnpm-lint', command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
       const resolved = resolveVerifiers(
         {
           ...inherited,
-          taskPreMergeCommands: JSON.stringify([command]),
-          epicPreMergeCritics: JSON.stringify([critic]),
+          taskPreMergeCommands: JSON.stringify([
+            { kind: 'local', enabled: true, command: local },
+            { kind: 'global', ref: globalCommand.id, enabled: true },
+          ]),
         },
         config,
       );
-      expect(resolved.task.preMerge).toEqual({ commands: [command], critics: [globalCritic] });
+      expect(resolved.task.preMerge.commands).toEqual([local, globalCommand]);
       expect(resolved.task.postMerge).toEqual({ commands: [globalCommand], critics: [globalCritic] });
-      expect(resolved.epic.preMerge).toEqual({ commands: [globalCommand], critics: [critic] });
     });
 
-    it('turns off an individual list with an explicit empty Workspace array', () => {
+    it('disabling a global ref entry removes it and does not re-append it', () => {
       const resolved = resolveVerifiers(
-        { ...inherited, taskPostMergeCommands: JSON.stringify([]), epicPreMergeCritics: JSON.stringify([]) },
+        { ...inherited, taskPostMergeCommands: JSON.stringify([{ kind: 'global', ref: globalCommand.id, enabled: false }]) },
         config,
       );
       expect(resolved.task.postMerge).toEqual({ commands: [], critics: [globalCritic] });
+    });
+
+    it('drops a global ref entry whose global no longer exists, appending the real one since it was never named', () => {
+      const resolved = resolveVerifiers(
+        { ...inherited, epicPreMergeCritics: JSON.stringify([{ kind: 'global', ref: 'critic-deleted', enabled: true }]) },
+        config,
+      );
+      expect(resolved.epic.preMerge.critics).toEqual([epicCritic]);
+    });
+
+    it('appends a global not named by any overlay entry, enabled, at the end', () => {
+      const local = { id: 'cmd-pnpm-lint', command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
+      const resolved = resolveVerifiers(
+        { ...inherited, taskPreMergeCommands: JSON.stringify([{ kind: 'local', enabled: true, command: local }]) },
+        config,
+      );
+      expect(resolved.task.preMerge.commands).toEqual([local, globalCommand]);
+    });
+
+    it('an empty overlay array runs nothing, distinct from null (which inherits)', () => {
+      const resolved = resolveVerifiers(
+        { ...inherited, epicPreMergeCritics: JSON.stringify([{ kind: 'global', ref: epicCritic.id, enabled: false }]) },
+        config,
+      );
       expect(resolved.epic.preMerge).toEqual({ commands: [globalCommand], critics: [] });
     });
   });
@@ -200,15 +224,15 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
     });
   });
 
-  describe('staged verifier overrides (#523)', () => {
-    const command = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-    const critic = { name: 'Test critic', issuePrompt: 'Review this issue change.', noIssuePrompt: 'Review this Task change.', model: 'claude-opus-5' };
+  describe('staged verifier overlays (#523, ADR-0037)', () => {
+    const command = { id: 'cmd-npm-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
+    const critic = { id: 'critic-task', name: 'Test critic', issuePrompt: 'Review this issue change.', noIssuePrompt: 'Review this Task change.', model: 'claude-opus-5', timeoutSeconds: 300 };
     const config = { verify: { task: { preMerge: { commands: [command], critics: [critic] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve it.' } } };
     const inherited = { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null };
-    it('inherits and replaces every list at its own stage grain', () => {
+    it('inherits at null and disables/adds at each stage grain independently', () => {
       expect(resolveVerifiers(inherited, config).task.preMerge).toEqual({ commands: [command], critics: [critic] });
-      expect(resolveVerifiers({ ...inherited, taskPreMergeCommands: JSON.stringify([]) }, config).task.preMerge).toEqual({ commands: [], critics: [critic] });
-      expect(resolveVerifiers({ ...inherited, epicPreMergeCritics: JSON.stringify([critic]) }, config).epic.preMerge.critics).toEqual([critic]);
+      expect(resolveVerifiers({ ...inherited, taskPreMergeCommands: JSON.stringify([{ kind: 'global', ref: command.id, enabled: false }]) }, config).task.preMerge).toEqual({ commands: [], critics: [critic] });
+      expect(resolveVerifiers({ ...inherited, epicPreMergeCritics: JSON.stringify([{ kind: 'local', enabled: true, critic }]) }, config).epic.preMerge.critics).toEqual([critic]);
     });
   });
 
@@ -229,9 +253,9 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
   });
 });
 
-describe('staged verifier overrides (#523)', () => {
-  const command = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-  const critic = { name: 'Test critic', issuePrompt: 'Review this issue change.', noIssuePrompt: 'Review this Task change.', model: 'claude-opus-5' };
+describe('staged verifier overlays (#523, ADR-0037)', () => {
+  const command = { id: 'cmd-npm-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
+  const critic = { id: 'critic-task', name: 'Test critic', issuePrompt: 'Review this issue change.', noIssuePrompt: 'Review this Task change.', model: 'claude-opus-5', timeoutSeconds: 300 };
   const config = {
     verify: {
       task: { preMerge: { commands: [command], critics: [critic] }, postMerge: { commands: [], critics: [] } },
@@ -244,9 +268,9 @@ describe('staged verifier overrides (#523)', () => {
     epicPreMergeCommands: null, epicPreMergeCritics: null,
   };
 
-  it('inherits and replaces every list at its own stage grain', () => {
+  it('inherits at null and disables/adds at each stage grain independently', () => {
     expect(resolveVerifiers(inherited, config).task.preMerge).toEqual({ commands: [command], critics: [critic] });
-    expect(resolveVerifiers({ ...inherited, taskPreMergeCommands: JSON.stringify([]) }, config).task.preMerge).toEqual({ commands: [], critics: [critic] });
-    expect(resolveVerifiers({ ...inherited, epicPreMergeCritics: JSON.stringify([critic]) }, config).epic.preMerge.critics).toEqual([critic]);
+    expect(resolveVerifiers({ ...inherited, taskPreMergeCommands: JSON.stringify([{ kind: 'global', ref: command.id, enabled: false }]) }, config).task.preMerge).toEqual({ commands: [], critics: [critic] });
+    expect(resolveVerifiers({ ...inherited, epicPreMergeCritics: JSON.stringify([{ kind: 'local', enabled: true, critic }]) }, config).epic.preMerge.critics).toEqual([critic]);
   });
 });

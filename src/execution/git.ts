@@ -652,7 +652,12 @@ export const Git = {
           const detail = err instanceof GitError ? err.message : String(err);
           try {
             await git(worktreeDir, 'merge', '--abort');
-          } catch {
+          } catch (abortErr) {
+            logger.debug('git: merge --abort failed after a non-conflict merge failure', {
+              'git.dir': worktreeDir,
+              'git.branch': branch,
+              error: failureReason(abortErr),
+            });
           }
           return { ok: false, detail };
         }
@@ -697,7 +702,13 @@ export const Git = {
       'git.rebase',
       { 'git.branch': 'HEAD', 'git.ref': ontoOid },
       async () => {
-        await git(worktreeDir, 'rebase', '--abort').catch(() => {});
+        await git(worktreeDir, 'rebase', '--abort').catch((abortErr) => {
+          logger.debug('git: pre-rebase abort of a stray in-progress rebase failed', {
+            'git.dir': worktreeDir,
+            'git.ref': ontoOid,
+            error: failureReason(abortErr),
+          });
+        });
         try {
           await git(worktreeDir, ...IDENTITY, 'rebase', ontoOid);
           const rebasedTip = await Git.revParse(worktreeDir, 'HEAD');
@@ -757,7 +768,12 @@ export const Git = {
           if (!conflict) {
             try {
               await git(worktreeDir, 'merge', '--abort');
-            } catch {
+            } catch (abortErr) {
+              logger.debug('git: merge --abort failed after a non-conflict merge failure', {
+                'git.dir': worktreeDir,
+                'git.branch': branch,
+                error: failureReason(abortErr),
+              });
             }
           }
           return { ok: false, conflict, detail };
@@ -804,7 +820,11 @@ export const Git = {
       logger.debug('git: aborting in-progress merge', { 'git.dir': worktreeDir });
       try {
         await git(worktreeDir, 'merge', '--abort');
-      } catch {
+      } catch (err) {
+        logger.debug('git: merge --abort found nothing to abort (or failed)', {
+          'git.dir': worktreeDir,
+          error: failureReason(err),
+        });
       }
     });
   },

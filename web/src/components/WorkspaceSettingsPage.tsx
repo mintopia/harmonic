@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { Workspace } from '../types';
 import { btnDestructive, btnGhost, displayTitle, field } from '../ui';
-import { parseFieldErrors } from './SettingsSection';
+import { humanizeSaveError, parseFieldErrors } from './SettingsSection';
 import { Modal } from './Modal';
 import { SettingsForm } from './SettingsForm';
 import type { AppConfig } from '../types';
@@ -96,7 +96,7 @@ export function WorkspaceSettingsPage({
       onSaved(updated);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      setError(message);
+      setError(humanizeSaveError(message));
       setFieldErrors(parseFieldErrors(message));
     } finally {
       setSaving(false);

@@ -7,6 +7,7 @@ import { totalsForRange } from '../domain/tool-call-aggregates.js';
 import { attemptEvents, attempts, guardrailEvents, isTaskAttempt, tasks, verificationAttempts, workspaces } from './schema.js';
 import * as schema from './schema.js';
 import {
+  invalidProbeIterationsReason,
   isStatsWorkerRequest,
   type GateReason,
   type StatsRange,
@@ -135,6 +136,8 @@ async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promis
 }
 
 async function probeHeavyRead(iterations: number): Promise<number> {
+  const invalidReason = invalidProbeIterationsReason(iterations);
+  if (invalidReason) throw new Error(invalidReason);
   const result = await client.execute({
     sql: `with recursive n(i) as (
       values(1)
@@ -152,7 +155,10 @@ async function probeHeavyRead(iterations: number): Promise<number> {
 
 let tail = Promise.resolve();
 port.on('message', (message: unknown) => {
-  if (!isStatsWorkerRequest(message)) throw new Error('Stats worker received an invalid request');
+  if (!isStatsWorkerRequest(message)) {
+    port.postMessage({ kind: 'invalid', message: 'Stats worker received an invalid request' } satisfies StatsWorkerResponse);
+    return;
+  }
   const request = message;
   tail = tail.then(async () => {
     if (request.kind === 'close') {

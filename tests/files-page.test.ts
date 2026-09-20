@@ -102,4 +102,23 @@ describe('FilesPage previews (issue #588)', () => {
     expect(host.querySelector('#commit-message')).not.toBeNull();
     expect(host.querySelector('[role="treeitem"]')).toBeNull();
   });
+
+  it('shows a distinct error state instead of a clean tree when gitStatus fails to load', async () => {
+    workspaceFiles.mockResolvedValue({ path: '', entries: [], total: 0, limit: 100, offset: 0 });
+    gitStatus.mockRejectedValue(new Error('workspace unreachable'));
+
+    host ??= document.body.appendChild(document.createElement('div'));
+    root ??= createRoot(host);
+    await act(async () => {
+      root?.render(createElement(FilesPage, { workspace, selectedPath: null, onSelectFile: () => {}, onWorkspaceSaved: () => {} }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const scmButton = host.querySelector('[aria-label="Source control"]');
+    await act(async () => scmButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('workspace unreachable');
+    expect(host.textContent).not.toContain('The working tree is clean.');
+  });
 });

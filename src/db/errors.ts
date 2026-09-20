@@ -27,3 +27,19 @@ export function isForeignKeyViolation(err: unknown): boolean {
   }
   return false;
 }
+
+/**
+ * Detect any SQLite CONSTRAINT violation (NOT NULL, UNIQUE, FOREIGN KEY, CHECK),
+ * walking the cause chain like {@link isUniqueViolation}. Unlike the narrower
+ * predicates above, this doesn't care which constraint tripped — only that
+ * SQLite itself rejected a statement because the data on hand can't satisfy a
+ * declared constraint, which SQLite never raises for an I/O error, a lock
+ * timeout, or a dropped connection.
+ */
+export function isConstraintViolation(err: unknown): boolean {
+  for (let e: unknown = err; e instanceof Error; e = (e as { cause?: unknown }).cause) {
+    const { code } = e as { code?: string };
+    if (code === 'SQLITE_CONSTRAINT') return true;
+  }
+  return false;
+}

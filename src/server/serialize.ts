@@ -12,6 +12,7 @@ import type { AttemptUsageSnapshot } from '../execution/usage.js';
 import { Git } from '../execution/git.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { adapterFor } from '../execution/harness/registry.js';
+import { logger } from '../logger.js';
 import {
   atRestWorkspaceId,
   parseUsage,
@@ -92,6 +93,14 @@ type PendingTicketTimelineEvent = ApiTicketTimelineEvent & { order: number };
 
 const TICKET_TIMELINE_SOURCE_LIMIT = 1_000;
 
+function parsePayload(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return { malformed: true };
+  }
+}
+
 export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Promise<{ events: ApiTicketTimelineEvent[] }> {
   const [taskAttempts, lifecycle, verification, skippedVerification, guardrails] = await Promise.all([
     ctx.asyncDb.read((db) => db.select().from(attempts).where(eq(attempts.taskId, taskId)).orderBy(desc(attempts.startedAt), desc(attempts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
@@ -132,13 +141,13 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
     const rejected = attemptsByNumber.get(attempt.number - 1);
     if (rejected?.state === 'escalated' && rejected.feedback !== null) add({ attemptId: rejected.id, ts: attempt.startedAt, kind: 'operator-reject', data: { attempt: rejected.number, feedback: rejected.feedback } }, 4);
   });
-  await forEachYielding(lifecycle, async ({ event }) => { add({ attemptId: event.attemptId, ts: event.ts, kind: 'lifecycle', data: { type: event.type, payload: JSON.parse(event.payload) } }, 3); });
+  await forEachYielding(lifecycle, async ({ event }) => { add({ attemptId: event.attemptId, ts: event.ts, kind: 'lifecycle', data: { type: event.type, payload: parsePayload(event.payload) } }, 3); });
   await forEachYielding(verification, async ({ attempt }) => { add({ attemptId: attempt.attemptId, ts: attempt.ts, kind: 'verification', data: { mechanism: attempt.mechanism, verdict: attempt.verdict, summary: attempt.summary, inputOid: attempt.inputOid } }, 2); });
   await forEachYielding(skippedVerification, async ({ step }) => {
     if (step.type !== 'verification' || step.state !== 'skipped' || step.endedAt === null) return;
     add({ attemptId: step.attemptId, ts: step.endedAt, kind: 'verification', data: { outcome: 'skipped', command: step.command, verdict: step.verdict } }, 2);
   });
-  await forEachYielding(guardrails, async ({ event }) => { add({ attemptId: event.attemptId, ts: event.ts, kind: 'guardrail', data: { dimension: event.dimension, limitValue: event.limitValue, observedValue: event.observedValue, configSource: event.configSource, payload: JSON.parse(event.payload) } }, 2); });
+  await forEachYielding(guardrails, async ({ event }) => { add({ attemptId: event.attemptId, ts: event.ts, kind: 'guardrail', data: { dimension: event.dimension, limitValue: event.limitValue, observedValue: event.observedValue, configSource: event.configSource, payload: parsePayload(event.payload) } }, 2); });
 
   add({ attemptId: null, ts: task.createdAt, kind: 'fact', data: { type: 'task-created', trackerRef: task.trackerRef != null ? String(task.trackerRef) : null, workspace: workspace?.name ?? null } }, -1);
 
@@ -395,7 +404,8 @@ export async function timelineAttempts(
     if (run.cost) {
       try {
         cost = JSON.parse(run.cost) as Cost;
-      } catch {
+      } catch (err) {
+        logger.warn('serialize: unparseable attempt cost, omitting from timeline', { attemptId: run.id, error: err instanceof Error ? err.message : String(err) });
         cost = null;
       }
     }

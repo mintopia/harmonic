@@ -11,6 +11,7 @@ async function gitlabRemote(repoRoot: string): Promise<string | null> {
     const { stdout } = await execFileAsync('git', ['-C', repoRoot, 'remote', 'get-url', 'origin']);
     url = stdout.trim();
   } catch {
+    // No `origin` remote (or `git` unavailable) just means the GitLab project can't be inferred; the caller falls back to requiring an explicit `Project:` line.
     return null;
   }
   const m = url.match(/^(?:git@|(?:https?|ssh):\/\/(?:[^@/]+@)?)[^:/]+[:/](?:\d+\/)?(.+?)(?:\.git)?$/);

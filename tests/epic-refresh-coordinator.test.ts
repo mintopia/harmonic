@@ -395,6 +395,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     await tasks.syncEpics(workspace.id, [{ ref: 5, kind: 'epic' }]);
     const config = baselineConfig();
     config.verify.epic.preMerge.commands = [{
+      id: 'cmd-exit-1',
       command: 'node',
       args: ['-e', 'process.exit(1)'],
       env: {},
@@ -406,21 +407,18 @@ describe('epic refresh corrective turn (issue #315)', () => {
     const service = new TrackerEpicService(
       tasks,
       async () => [workspace],
-      undefined,
-      undefined,
-      () => config,
-      undefined,
-      async () => ({ kind: 'merged', mergeOid: 'unused' }),
-      undefined,
-      undefined,
-      new AttemptStore(asyncDb),
-      async (input) => {
-        paths.push(input.worktreePath);
-        expect(git(input.worktreePath, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('epic/5');
-        expect(existsSync(input.worktreePath)).toBe(true);
+      {
+        getConfig: () => config,
+        mergeEpicIntegration: async () => ({ kind: 'merged', mergeOid: 'unused' }),
+        epicAttempts: new AttemptStore(asyncDb),
+        dispatchEpicResolution: async (input) => {
+          paths.push(input.worktreePath);
+          expect(git(input.worktreePath, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('epic/5');
+          expect(existsSync(input.worktreePath)).toBe(true);
+        },
+        worktreesDir,
+        onEpicAttemptChanged: (attempt) => { attemptStates.push(attempt.state); },
       },
-      worktreesDir,
-      (attempt) => { attemptStates.push(attempt.state); },
     );
     service.startWorkspace(workspace);
 
@@ -441,22 +439,19 @@ describe('epic refresh corrective turn (issue #315)', () => {
     await tasks.syncEpics(workspace.id, [{ ref: 5, kind: 'epic' }]);
     const config = baselineConfig();
     config.maxAttempts = 1;
-    config.verify.epic.preMerge.commands = [{ command: 'node', args: ['-e', 'process.exit(1)'], env: {}, timeoutSeconds: 10 }];
+    config.verify.epic.preMerge.commands = [{ id: 'cmd-exit-1', command: 'node', args: ['-e', 'process.exit(1)'], env: {}, timeoutSeconds: 10 }];
     const guidance: string[] = [];
     const attempts = new AttemptStore(asyncDb);
     const service = new TrackerEpicService(
       tasks,
       async () => [workspace],
-      undefined,
-      undefined,
-      () => config,
-      undefined,
-      async () => ({ kind: 'merged', mergeOid: 'unused' }),
-      undefined,
-      undefined,
-      attempts,
-      async (input) => { guidance.push(input.verificationReason); },
-      join(dir, 'worktrees'),
+      {
+        getConfig: () => config,
+        mergeEpicIntegration: async () => ({ kind: 'merged', mergeOid: 'unused' }),
+        epicAttempts: attempts,
+        dispatchEpicResolution: async (input) => { guidance.push(input.verificationReason); },
+        worktreesDir: join(dir, 'worktrees'),
+      },
     );
     service.startWorkspace(workspace);
 
@@ -481,16 +476,13 @@ describe('epic refresh corrective turn (issue #315)', () => {
     const service = new TrackerEpicService(
       tasks,
       async () => [workspace],
-      undefined,
-      undefined,
-      () => config,
-      undefined,
-      async () => ({ kind: 'merged', mergeOid: 'unused' }),
-      undefined,
-      undefined,
-      new AttemptStore(asyncDb),
-      async () => {},
-      worktreesDir,
+      {
+        getConfig: () => config,
+        mergeEpicIntegration: async () => ({ kind: 'merged', mergeOid: 'unused' }),
+        epicAttempts: new AttemptStore(asyncDb),
+        dispatchEpicResolution: async () => {},
+        worktreesDir,
+      },
     );
     service.startWorkspace(workspace);
 

@@ -231,12 +231,13 @@ describe('scope changes control live resolution (registry is the single authorit
     });
   });
 
-  it('resolveVerifiers: flipping a stage list to global-only ignores the Workspace verifier', () => {
-    const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-    const wsCommand = { command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
+  it('resolveVerifiers: a Workspace overlay is additive (local + globals); global-only ignores it (ADR-0037)', () => {
+    const globalCommand = { id: 'g1', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
+    const localCommand = { id: 'l1', command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
     const config = { verify: { task: { preMerge: { commands: [globalCommand], critics: [] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve it.' } } } as never;
     const ws = {
-      taskPreMergeCommands: JSON.stringify([wsCommand]),
+      // Overlay: one local verifier added; the global is unnamed, so it is appended enabled.
+      taskPreMergeCommands: JSON.stringify([{ kind: 'local', enabled: true, command: localCommand }]),
       taskPreMergeCritics: null,
       taskPostMergeCommands: null,
       taskPostMergeCritics: null,
@@ -244,7 +245,9 @@ describe('scope changes control live resolution (registry is the single authorit
       epicPreMergeCritics: null,
     };
 
-    expect(resolveVerifiers(ws, config).task.preMerge.commands).toEqual([wsCommand]);
+    // Additive: the local runs, and the untouched global still runs after it.
+    expect(resolveVerifiers(ws, config).task.preMerge.commands).toEqual([localCommand, globalCommand]);
+    // global-only reclassification ignores the Workspace overlay entirely — just the globals.
     withScope('taskPreMergeCommands', 'global-only', () => {
       expect(resolveVerifiers(ws, config).task.preMerge.commands).toEqual([globalCommand]);
     });

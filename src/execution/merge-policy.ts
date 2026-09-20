@@ -49,8 +49,14 @@ export type MergeStepEvent =
 function emitStep(deps: MergePolicyDeps, event: MergeStepEvent): void {
   try {
     deps.onStep?.(event);
-  } catch {
-    // A visibility sink must never break the merge it observes.
+  } catch (err) {
+    // A visibility sink must never break the merge it observes, but a
+    // throwing onStep is a bug in the caller's contract (it "must never
+    // throw") worth surfacing.
+    logger.warn('merge: onStep visibility sink threw', {
+      'merge.step': event.step,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
@@ -139,7 +145,13 @@ async function resolveConflict(
 }
 
 async function criticalSection(input: MergePolicyInput, deps: MergePolicyDeps): Promise<MergePolicyOutcome> {
-  const parkedBranch = await Git.currentBranch(input.baseDir).catch(() => null);
+  const parkedBranch = await Git.currentBranch(input.baseDir).catch((err) => {
+    logger.debug('merge: resolving the currently parked branch failed', {
+      'merge.repo': input.baseDir,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  });
   try {
     const started = await withRepoLock(
       input.baseDir,
@@ -191,7 +203,15 @@ async function criticalSection(input: MergePolicyInput, deps: MergePolicyDeps): 
     return { kind: 'merged', mergeOid };
   } finally {
     if (parkedBranch && parkedBranch !== input.baseBranch) {
-      await withRepoLock(input.baseDir, () => Git.checkout(input.baseDir, parkedBranch).catch(() => {}));
+      await withRepoLock(input.baseDir, () =>
+        Git.checkout(input.baseDir, parkedBranch).catch((err) => {
+          logger.warn('merge: restoring the parked branch after merging failed; checkout left on the base branch', {
+            'merge.repo': input.baseDir,
+            'merge.parked_branch': parkedBranch,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }),
+      );
     }
   }
 }

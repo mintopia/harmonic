@@ -1,5 +1,6 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn as spawnProcess, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { AcpDriver } from '../acp/driver.js';
 import { parsePermissionRequest, type PermissionRequest } from '../acp/permission-request.js';
 import {
@@ -11,12 +12,71 @@ import { adapterFor } from './harness/registry.js';
 import { accumulateUsage, collectUsageWithRetry, type AttemptUsage } from './usage.js';
 import { pricesForHarness } from '../domain/pricing.js';
 import { DomainError } from '../domain/errors.js';
-import type { AppConfig } from '../config.js';
+import { isInside } from '../domain/worktree-reconciler.js';
+import type { AppConfig, HarnessConfig } from '../config.js';
 import type { ConversationStore, PersistedConversationEvent } from '../domain/conversations.js';
 import type { PermissionRuleStore } from '../domain/permission-rules.js';
 import type { ConversationRow } from '../db/schema.js';
 import { startOperation } from '../telemetry/operations.js';
 import { logger } from '../logger.js';
+import { reportFailure, fireAndForget } from '../error-handling.js';
+
+export interface HarnessSpawnRequest {
+  command: string;
+  args: string[];
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+}
+
+export interface HarnessSpawn {
+  spawn(req: HarnessSpawnRequest): ChildProcess;
+}
+
+export function createHarnessProcessSpawn(): HarnessSpawn {
+  return {
+    spawn(req: HarnessSpawnRequest): ChildProcess {
+      return spawnProcess(req.command, req.args, {
+        cwd: req.cwd,
+        env: req.env,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    },
+  };
+}
+
+export interface WorkingDirProbe {
+  exists(path: string): boolean;
+}
+
+export function createFsWorkingDirProbe(): WorkingDirProbe {
+  return { exists: (path: string) => existsSync(path) };
+}
+
+export interface ConversationTimers {
+  setTimeout(fn: () => void, ms: number): ReturnType<typeof setTimeout>;
+  clearTimeout(handle: ReturnType<typeof setTimeout>): void;
+}
+
+export function createRealTimers(): ConversationTimers {
+  return { setTimeout, clearTimeout };
+}
+
+const NON_SECRET_CHILD_ENV_ALLOWLIST = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TERM', 'TMPDIR', 'SHELL'] as const;
+
+function filteredParentEnv(): Record<string, string | undefined> {
+  const filtered: Record<string, string | undefined> = {};
+  for (const key of NON_SECRET_CHILD_ENV_ALLOWLIST) {
+    if (process.env[key] !== undefined) filtered[key] = process.env[key];
+  }
+  return filtered;
+}
+
+function withinAllowedRoots(roots: string[], dir: string): boolean {
+  return roots.some((root) => {
+    const resolvedRoot = resolve(root);
+    return dir === resolvedRoot || isInside(resolvedRoot, dir);
+  });
+}
 
 export interface AdvertisedCommand {
   name: string;
@@ -93,6 +153,11 @@ type PermissionOutcome = { outcome: 'selected'; optionId: string } | { outcome: 
 // reads result.outcome.outcome. A bare PermissionOutcome is read as a reject.
 type PermissionResponse = { outcome: PermissionOutcome };
 
+function autoPermissionOutcome(request: PermissionRequest): PermissionOutcome {
+  const optionId = allowOptionId(request);
+  return optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
+}
+
 interface PendingPermission {
   conversationId: number;
   workingDir: string;
@@ -117,6 +182,11 @@ export interface ConversationDriverOptions {
   };
   /** Notifies lifecycle coordinators after a running Turn has fully settled. */
   onTurnSettled?: () => void;
+  /** Roots a Conversation's workingDir must resolve inside (or equal); undefined skips the check (e.g. in tests that don't wire it). */
+  allowedRoots?: () => Promise<string[]>;
+  processSpawn?: HarnessSpawn;
+  fs?: WorkingDirProbe;
+  timers?: ConversationTimers;
 }
 
 interface ActiveConversation {
@@ -147,6 +217,10 @@ export class ConversationDriver {
   private readonly rules: PermissionRuleStore | undefined;
   private readonly keys: ConversationDriverOptions['keys'];
   private readonly onTurnSettled: (() => void) | undefined;
+  private readonly allowedRoots: ConversationDriverOptions['allowedRoots'];
+  private readonly processSpawn: HarnessSpawn;
+  private readonly fs: WorkingDirProbe;
+  private readonly timers: ConversationTimers;
   /** The MCP endpoint agents call back to; set once the server listens. */
   mcpUrl: string | null = null;
 
@@ -159,6 +233,10 @@ export class ConversationDriver {
     this.rules = options.rules;
     this.keys = options.keys;
     this.onTurnSettled = options.onTurnSettled;
+    this.allowedRoots = options.allowedRoots;
+    this.processSpawn = options.processSpawn ?? createHarnessProcessSpawn();
+    this.fs = options.fs ?? createFsWorkingDirProbe();
+    this.timers = options.timers ?? createRealTimers();
   }
 
   get activeCount(): number {
@@ -264,19 +342,19 @@ export class ConversationDriver {
     this.clearIdle(entry);
     const minutes = this.getConfig().conversationIdleTimeoutMinutes;
     if (!minutes || minutes <= 0) return;
-    entry.idleTimer = setTimeout(() => {
-      void (async () => {
+    entry.idleTimer = this.timers.setTimeout(() => {
+      fireAndForget(async () => {
         if (!this.active.has(entry.conversationId)) return;
         await this.record(entry.conversationId, 'lifecycle', { event: 'idle_timeout' });
         await this.end(entry.conversationId);
-      })().catch(() => {});
+      }, { op: 'conversationDriver.idleTimeout', level: 'error', context: { conversationId: entry.conversationId } });
     }, minutes * 60_000);
     entry.idleTimer.unref?.();
   }
 
   private clearIdle(entry: ActiveConversation): void {
     if (entry.idleTimer) {
-      clearTimeout(entry.idleTimer);
+      this.timers.clearTimeout(entry.idleTimer);
       entry.idleTimer = undefined;
     }
   }
@@ -355,16 +433,29 @@ export class ConversationDriver {
     this.active.clear();
   }
 
-  private async spawn(convo: ConversationRow): Promise<ActiveConversation> {
-    if (!existsSync(convo.workingDir)) {
+  private async resolveHarnessConfig(convo: ConversationRow): Promise<HarnessConfig> {
+    if (!this.fs.exists(convo.workingDir)) {
       throw new DomainError('validation', `working directory '${convo.workingDir}' does not exist`);
+    }
+    const resolvedWorkingDir = resolve(convo.workingDir);
+    if (this.allowedRoots) {
+      const roots = await this.allowedRoots();
+      if (!withinAllowedRoots(roots, resolvedWorkingDir)) {
+        throw new DomainError('validation', `working directory '${convo.workingDir}' is outside the allowed roots`);
+      }
     }
     const config = this.getConfig();
     const harness = config.harnesses[convo.harness as keyof typeof config.harnesses];
     if (!harness) throw new DomainError('validation', `harness '${convo.harness}' is not configured`);
+    return harness;
+  }
 
+  private async buildSpawnContext(
+    convo: ConversationRow,
+    harness: HarnessConfig,
+  ): Promise<{ env: Record<string, string | undefined>; mcpServers: unknown[] }> {
     const env: Record<string, string | undefined> = {
-      ...process.env,
+      ...filteredParentEnv(),
       ...harness.env,
       HARMONIC_MODEL: convo.model,
       ...adapterFor(convo.harness).spawnEnv({
@@ -380,13 +471,20 @@ export class ConversationDriver {
       env.HARMONIC_MCP_URL = this.mcpUrl;
       mcpServers = adapterFor(convo.harness).mcpServers({ url: this.mcpUrl, token });
     }
-    const child = spawn(harness.command, harness.args, {
+    return { env, mcpServers };
+  }
+
+  private spawnHarnessChild(convo: ConversationRow, harness: HarnessConfig, env: Record<string, string | undefined>): ChildProcess {
+    return this.processSpawn.spawn({
+      command: harness.command,
+      args: harness.args,
       cwd: convo.workingDir,
       env: env as NodeJS.ProcessEnv,
-      stdio: ['pipe', 'pipe', 'pipe'],
     });
+  }
 
-    const driver = new AcpDriver(child, {
+  private createSessionDriver(convo: ConversationRow, child: ChildProcess): AcpDriver {
+    return new AcpDriver(child, {
       onSessionUpdate: (update, replay) => {
         const commands = availableCommands(update);
         const active = this.active.get(convo.id);
@@ -395,7 +493,11 @@ export class ConversationDriver {
           this.events.onCommandsUpdate?.({ conversationId: convo.id, commands: this.availableCommands(convo.id) });
         }
         if (replay) return;
-        void this.record(convo.id, 'session_update', update).catch(() => {});
+        fireAndForget(() => this.record(convo.id, 'session_update', update), {
+          op: 'conversationDriver.record',
+          level: 'warn',
+          context: { conversationId: convo.id, kind: 'session_update' },
+        });
       },
       onRequest: async (method, params) => {
         if (method === 'session/request_permission') {
@@ -417,41 +519,52 @@ export class ConversationDriver {
         return null;
       },
     });
+  }
 
+  private async establishSession(entry: ActiveConversation, convo: ConversationRow, mcpServers: unknown[]): Promise<void> {
+    const driver = entry.driver;
+    const modelId = adapterFor(convo.harness).sessionModelId?.(convo.model);
+    if (convo.sessionId) {
+      const outcome = await driver.load({
+        sessionId: convo.sessionId,
+        cwd: convo.workingDir,
+        mcpServers,
+        modelId,
+        clientCapabilities: { elicitation: { form: {} } },
+      });
+      if (!outcome.loaded) {
+        throw new DomainError('invalid_state', `conversation ${convo.id} cannot resume: ${outcome.detail}`);
+      }
+    } else {
+      await driver.handshake({
+        cwd: convo.workingDir,
+        mcpServers,
+        modelId,
+        clientCapabilities: { elicitation: { form: {} } },
+        onSessionCreated: async (sessionId) => {
+          await this.store.update(convo.id, { sessionId });
+        },
+      });
+    }
+    entry.initialMode = driver.currentModeId ?? (driver.availableModes.includes('default') ? 'default' : null);
+    await this.applyPermissionMode(entry, convo);
+  }
+
+  private abandonSpawn(entry: ActiveConversation, err: unknown): void {
+    this.finalizeConversation(entry, err instanceof Error ? err : new Error(String(err)));
+  }
+
+  private async spawn(convo: ConversationRow): Promise<ActiveConversation> {
+    const harness = await this.resolveHarnessConfig(convo);
+    const { env, mcpServers } = await this.buildSpawnContext(convo, harness);
+    const child = this.spawnHarnessChild(convo, harness, env);
+    const driver = this.createSessionDriver(convo, child);
     const entry: ActiveConversation = { conversationId: convo.id, child, driver, turning: false, queue: [], initialMode: null, commands: [] };
     this.active.set(convo.id, entry);
     try {
-      const modelId = adapterFor(convo.harness).sessionModelId?.(convo.model);
-      if (convo.sessionId) {
-        const outcome = await driver.load({
-          sessionId: convo.sessionId,
-          cwd: convo.workingDir,
-          mcpServers,
-          modelId,
-          clientCapabilities: { elicitation: { form: {} } },
-        });
-        if (!outcome.loaded) {
-          throw new DomainError('invalid_state', `conversation ${convo.id} cannot resume: ${outcome.detail}`);
-        }
-      } else {
-        await driver.handshake({
-          cwd: convo.workingDir,
-          mcpServers,
-          modelId,
-          clientCapabilities: { elicitation: { form: {} } },
-          onSessionCreated: async (sessionId) => {
-            await this.store.update(convo.id, { sessionId });
-          },
-        });
-      }
-      entry.initialMode = driver.currentModeId ?? (driver.availableModes.includes('default') ? 'default' : null);
-      await this.applyPermissionMode(entry, convo);
+      await this.establishSession(entry, convo, mcpServers);
     } catch (err) {
-      this.active.delete(convo.id);
-      this.kill(entry);
-      this.revokeKey(convo.id);
-      driver.fail(err instanceof Error ? err : new Error(String(err)));
-      driver.dispose();
+      this.abandonSpawn(entry, err);
       throw err;
     }
     return entry;
@@ -486,16 +599,14 @@ export class ConversationDriver {
   private async decidePermission(conversationId: number, workingDir: string, request: PermissionRequest): Promise<PermissionResponse> {
     const conversation = await this.store.get(conversationId);
     if (conversation.permissionMode === 'automatic') {
-      const optionId = allowOptionId(request);
-      const outcome: PermissionOutcome = optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
+      const outcome = autoPermissionOutcome(request);
       await this.record(conversationId, 'permission_request', { request, outcome, automatic: true });
       return { outcome };
     }
     const kind = permissionKind(request);
     const rule = kind ? ((await this.rules?.findMatch(kind, workingDir)) ?? null) : null;
     if (rule) {
-      const optionId = allowOptionId(request);
-      const outcome: PermissionOutcome = optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
+      const outcome = autoPermissionOutcome(request);
       await this.record(conversationId, 'permission_request', {
         request,
         outcome,
@@ -522,10 +633,13 @@ export class ConversationDriver {
     for (const [reqId, pending] of this.pendingPermissions) {
       if (pending.conversationId !== conversationId) continue;
       this.pendingPermissions.delete(reqId);
-      const optionId = allowOptionId(pending.request);
-      const outcome: PermissionOutcome = optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
+      const outcome = autoPermissionOutcome(pending.request);
       pending.resolve({ outcome });
-      void this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId, automatic: true }).catch(() => {});
+      fireAndForget(() => this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId, automatic: true }), {
+        op: 'conversationDriver.record',
+        level: 'warn',
+        context: { conversationId, kind: 'permission_request' },
+      });
     }
   }
 
@@ -545,14 +659,22 @@ export class ConversationDriver {
       this.pendingPermissions.delete(reqId);
       const outcome = { outcome: 'cancelled' as const };
       pending.resolve({ outcome });
-      void this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId }).catch(() => {});
+      fireAndForget(() => this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId }), {
+        op: 'conversationDriver.record',
+        level: 'warn',
+        context: { conversationId, kind: 'permission_request' },
+      });
     }
     for (const [reqId, pending] of this.pendingElicitations) {
       if (pending.conversationId !== conversationId) continue;
       this.pendingElicitations.delete(reqId);
       const answer = { action: 'cancel' as const };
       pending.resolve(answer);
-      void this.record(conversationId, 'elicitation_request', { request: pending.request, answer, reqId }).catch(() => {});
+      fireAndForget(() => this.record(conversationId, 'elicitation_request', { request: pending.request, answer, reqId }), {
+        op: 'conversationDriver.record',
+        level: 'warn',
+        context: { conversationId, kind: 'elicitation_request' },
+      });
     }
   }
 
@@ -575,7 +697,8 @@ export class ConversationDriver {
           events: (await this.store.listEvents(conversationId)) as unknown as Parameters<typeof collectUsageWithRetry>[0]['events'],
         });
       }
-    } catch {
+    } catch (err) {
+      reportFailure(err, { op: 'conversationDriver.accumulateTurnUsage', level: 'warn', context: { conversationId } });
     }
     const convo = await this.store.get(conversationId);
     const stored = convo.usage ? (JSON.parse(convo.usage) as AttemptUsage) : null;
@@ -599,23 +722,35 @@ export class ConversationDriver {
   private teardown(entry: ActiveConversation): void {
     this.clearIdle(entry);
     this.cancelPendingPermissions(entry.conversationId);
+    this.finalizeConversation(entry, new Error('conversation ended'));
+  }
+
+  private finalizeConversation(entry: ActiveConversation, error: Error): void {
     this.active.delete(entry.conversationId);
     this.kill(entry);
     this.revokeKey(entry.conversationId);
-    entry.driver.fail(new Error('conversation ended'));
+    entry.driver.fail(error);
     entry.driver.dispose();
   }
 
   private revokeKey(conversationId: number): void {
-    try {
-      void Promise.resolve(this.keys?.revoke(conversationId)).catch(() => {});
-    } catch {
-    }
+    fireAndForget(() => this.keys?.revoke(conversationId), {
+      op: 'conversationDriver.revokeKey',
+      level: 'error',
+      context: { conversationId },
+    });
   }
 
   private kill(entry: ActiveConversation): void {
     try {
       if (entry.child.exitCode === null && !entry.child.killed) entry.child.kill('SIGKILL');
-    } catch {}
+    } catch (err) {
+      reportFailure(err, {
+        op: 'conversationDriver.kill',
+        level: 'warn',
+        notFoundIf: (e) => (e as NodeJS.ErrnoException | null)?.code === 'ESRCH',
+        context: { conversationId: entry.conversationId },
+      });
+    }
   }
 }

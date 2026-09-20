@@ -3,6 +3,8 @@ import type { SessionStore } from './sessions.js';
 import type { AttemptStore } from './attempts.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
+import { logger } from '../logger.js';
+import { DomainError } from './errors.js';
 import {
   decideRetirement,
   DEFAULT_RETENTION,
@@ -48,7 +50,13 @@ export class SessionRetirementCoordinator {
     let session;
     try {
       session = await this.sessions.get(run.sessionRowId);
-    } catch {
+    } catch (error) {
+      if (!(error instanceof DomainError) || error.code !== 'not_found') {
+        logger.warn('session-retirement: failed to load session for settled run', {
+          sessionRowId: run.sessionRowId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       return;
     }
     if (session.status === 'retiring' || session.status === 'retired') return;
@@ -86,7 +94,14 @@ export class SessionRetirementCoordinator {
     await forEachYielding(await this.sessions.listRetiring(), async (session) => {
       if (await this.hasActiveRun(session.id)) return;
       if (session.worktreePath && session.worktreeRepoDir) {
-        await this.removeWorktree(session.worktreeRepoDir, session.worktreePath).catch(() => {});
+        const worktreePath = session.worktreePath;
+        await this.removeWorktree(session.worktreeRepoDir, worktreePath).catch((error) => {
+          logger.warn('session-retirement: failed to remove worktree, marking retired anyway', {
+            sessionId: session.id,
+            worktreePath,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
         const run = (await this.runs.listForSession(session.id)).at(-1);
         if (run) this.onRetired?.(run);
       }

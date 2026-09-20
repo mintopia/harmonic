@@ -68,6 +68,7 @@ tests/guardrail-trip-model.test.ts
 tests/heatmap-model.test.ts
 tests/id-format.test.ts
 tests/inherit-field-model.test.ts
+tests/jev-gate-policy.test.ts
 tests/lifecycle-timeline-model.test.ts
 tests/markdown.test.ts
 tests/md-feature-index.test.ts

@@ -3,6 +3,7 @@ import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat } fro
 import { extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
 import { DomainError } from './errors.js';
+import { logger } from '../logger.js';
 
 const MAX_PAGE_SIZE = 200;
 const DEFAULT_PAGE_SIZE = 100;
@@ -130,6 +131,8 @@ export async function moveWorkspaceEntry({ root, from, to }: { root: string; fro
     validation('a file or directory already exists at that path');
   } catch (err) {
     if (err instanceof DomainError) throw err;
+    const code = err instanceof Error && 'code' in err ? err.code : undefined;
+    if (code !== 'ENOENT') throw err;
   }
   await rename(source.target, dest.target);
   return entryFor(dest.target, dest.relPath, dest.base);
@@ -197,7 +200,8 @@ export async function listWorkspaceFiles({ root, path = '', excludedDirectories 
       entries.push(info.isDirectory() || info.isFile()
         ? { name: dirent.name, path: entryPath, type: info.isDirectory() ? 'directory' : 'file', size: info.size, excluded: info.isDirectory() && excludedDirectories.includes(entryPath) }
         : null);
-    } catch {
+    } catch (err) {
+      logger.debug('workspace-files: skipping unresolvable listing entry', { path: candidate, error: err instanceof Error ? err.message : String(err) });
       entries.push(null);
     }
   }

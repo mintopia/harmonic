@@ -29,19 +29,26 @@ export async function relaunchWhenLockIsFree({
   cliPath,
   serveArgs,
   pollMs = 100,
+  maxWaitMs = 5 * 60 * 1000,
   dependencies = productionDependencies,
 }: {
   dataDir: string;
   cliPath: string;
   serveArgs: string[];
   pollMs?: number;
+  maxWaitMs?: number;
   dependencies?: RelauncherDependencies;
 }): Promise<void> {
   const wait = startOperation({ type: 'upgrade.relauncher.wait', attributes: { 'upgrade.data_dir': dataDir } });
   try {
+    let waitedMs = 0;
     while (dependencies.isLocked(dataDir)) {
+      if (waitedMs >= maxWaitMs) {
+        throw new Error(`gave up waiting for upgrade lock release on ${dataDir} after ${maxWaitMs}ms`);
+      }
       logger.info('waiting for upgrade lock release', { dataDir });
       await dependencies.wait(pollMs);
+      waitedMs += pollMs;
     }
     wait.end();
   } catch (error) {
