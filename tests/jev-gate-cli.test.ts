@@ -12,7 +12,7 @@ vi.mock('../scripts/jev-gate/jev-client.js', async (importOriginal) => {
   return { ...actual, callJev };
 });
 
-import { renderHuman, resolveSubjects, scoreForBaseline, scoreSubject } from '../scripts/jev-gate/cli.js';
+import { parseArgs, renderHuman, resolveSubjects, scoreForBaseline, scoreSubject } from '../scripts/jev-gate/cli.js';
 import { JevFileTooBigError, resolveProviderConfig } from '../scripts/jev-gate/jev-client.js';
 import type { FileResult, GateResult } from '../scripts/jev-gate/types.js';
 
@@ -216,5 +216,21 @@ describe('renderHuman', () => {
     expect(output).toContain('src/execution/runner.ts');
     expect(output).toContain('skipped: jev-gate: Jev API rejected file as too big');
     expect(output).toContain('GATE: PASS — 1 scored, 0 skipped, 1 too big, 1 errored');
+  });
+});
+
+describe('parseArgs html option', () => {
+  it('writes HTML reports by default', () => {
+    expect(parseArgs([]).html).toBe('default');
+  });
+
+  it('--no-html turns reports off', () => {
+    expect(parseArgs(['--no-html']).html).toBe('off');
+  });
+
+  it('--html is an explicit request, which with --dry-run selects render-only', () => {
+    const opts = parseArgs(['--html', '--dry-run']);
+    expect(opts.html).toBe('requested');
+    expect(opts.dryRun).toBe(true);
   });
 });
