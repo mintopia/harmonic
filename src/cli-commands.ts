@@ -100,7 +100,8 @@ const userSystemdUsable = (): boolean => {
       timeout: 1_000,
     });
     return true;
-  } catch {
+  } catch (error) {
+    logger.debug('cli: user systemd unusable', { error: error instanceof Error ? error.message : String(error) });
     return false;
   }
 };

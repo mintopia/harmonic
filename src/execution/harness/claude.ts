@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { access, readdir, readFile, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
+import { logger } from '../../logger.js';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode, type UsageTurn } from '../usage.js';
 import { resolveUnattendedPermissionMode, serializedTailReader, type HarnessAdapter, type ModelUsage, type SessionTailReader } from './adapter.js';
 import { LineCursor, type LineAccumulator } from './incremental-log.js';
@@ -36,7 +37,8 @@ class TranscriptAcc implements LineAccumulator {
     let entry: any;
     try {
       entry = JSON.parse(line);
-    } catch {
+    } catch (err) {
+      logger.debug('claude: skipping a malformed transcript line', { error: err instanceof Error ? err.message : String(err) });
       return;
     }
     const message = entry?.message;
@@ -115,7 +117,8 @@ function readSubagents(subDir: string): Subagent[] {
     if (meta) {
       try {
         parsed = JSON.parse(readFileSync(meta, 'utf8'));
-      } catch {
+      } catch (err) {
+        logger.debug('claude: subagent meta.json failed to parse', { path: meta, error: err instanceof Error ? err.message : String(err) });
       }
     }
     subs.push({ id, meta: parsed, scan: jsonl ? scanTranscript(jsonl) : emptyTranscript() });
@@ -192,9 +195,14 @@ async function resolveTranscriptPath(sessionLogDir: string | undefined, sessionI
         await access(candidate);
         return await realpath(candidate);
       } catch {
+        // Expected: sessionId's transcript lives under a different project slug.
       }
     }
-  } catch {
+  } catch (err) {
+    logger.debug('claude: listing the projects dir to resolve the transcript path failed', {
+      root,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
   return null;
 }
@@ -219,7 +227,11 @@ function claudeTailReader(input: { sessionLogDir?: string | undefined; cwd: stri
     try {
       s.meta = JSON.parse(await readFile(s.metaPath, 'utf8'));
       s.metaResolved = true;
-    } catch {
+    } catch (err) {
+      logger.debug('claude: subagent meta.json not readable yet; will retry next poll', {
+        path: s.metaPath,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   };
 
@@ -291,7 +303,11 @@ async function transcriptSubagents(rootPath: string): Promise<Array<{ path: stri
       try {
         const parsed = asRecord(JSON.parse(await readFile(meta, 'utf8')));
         if (typeof parsed?.toolUseId === 'string') parentToolUseId = parsed.toolUseId;
-      } catch {
+      } catch (err) {
+        logger.debug('claude: subagent meta.json failed to parse while building transcript events', {
+          path: meta,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
     subagents.push({ path: jsonl, parentToolUseId });

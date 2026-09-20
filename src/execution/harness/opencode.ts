@@ -4,6 +4,7 @@ import { closeSync, mkdtempSync, openSync, rmSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
+import { logger } from '../../logger.js';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode } from '../usage.js';
 import type { HarnessAdapter, ModelUsage } from './adapter.js';
 import { addTokenCounts } from './model-usage.js';
@@ -52,7 +53,8 @@ function usageRow(value: unknown): UsageRow | null {
   if (typeof message === 'string') {
     try {
       message = JSON.parse(message);
-    } catch {
+    } catch (err) {
+      logger.debug('opencode: message row was not valid JSON', { error: err instanceof Error ? err.message : String(err) });
       return null;
     }
   }
@@ -101,7 +103,8 @@ function readUsageSessions(dbPath: string, sessionId: string): UsageSession[] {
     } finally {
       db.close();
     }
-  } catch {
+  } catch (err) {
+    logger.debug('opencode: reading usage sessions from opencode.db failed', { dbPath, sessionId, error: err instanceof Error ? err.message : String(err) });
     return [];
   }
 }
@@ -162,7 +165,8 @@ async function readJson(path: string): Promise<JsonRecord | null> {
   try {
     const value: unknown = JSON.parse(await readFile(path, 'utf8'));
     return isRecord(value) ? value : null;
-  } catch {
+  } catch (err) {
+    logger.debug('opencode: reading local metadata failed', { path, error: err instanceof Error ? err.message : String(err) });
     return null;
   }
 }
@@ -286,23 +290,32 @@ function runExport(sessionId: string): Promise<unknown> {
     const finish = (parsed: unknown): void => {
       try {
         closeSync(fd);
-      } catch {
+      } catch (err) {
+        logger.debug('opencode: closing the export temp file failed', { out, error: err instanceof Error ? err.message : String(err) });
       }
       try {
         rmSync(dir, { recursive: true, force: true });
-      } catch {
+      } catch (err) {
+        logger.debug('opencode: removing the export temp dir failed', { dir, error: err instanceof Error ? err.message : String(err) });
       }
       resolve(parsed);
     };
     const child = spawn('opencode', ['export', sessionId], { stdio: ['ignore', fd, 'ignore'] });
-    child.on('error', () => finish(null));
+    child.on('error', (err) => {
+      logger.debug('opencode: export process failed to start', { sessionId, error: err.message });
+      finish(null);
+    });
     child.on('close', (code) => {
-      if (code !== 0) return finish(null);
+      if (code !== 0) {
+        logger.debug('opencode: export process exited non-zero', { sessionId, code: code ?? undefined });
+        return finish(null);
+      }
       (async () => {
         try {
           if ((await stat(out)).size > EXPORT_MAX_BYTES) return finish(null);
           finish(JSON.parse(await readFile(out, 'utf8')));
-        } catch {
+        } catch (err) {
+          logger.debug('opencode: reading or parsing the export output failed', { sessionId, out, error: err instanceof Error ? err.message : String(err) });
           finish(null);
         }
       })();

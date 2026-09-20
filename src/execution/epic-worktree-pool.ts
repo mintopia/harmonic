@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { bestEffort } from '../error-handling.js';
+import { bestEffort, reportFailure } from '../error-handling.js';
 import { integrationBranchName } from './epic-coordinator.js';
 import { Git } from './git.js';
 
@@ -29,7 +29,12 @@ export class EpicWorktreePool {
     const path = join(parent, `epic-${this.deps.workspaceId}-${epicRef}`);
     try {
       await Git.addWorktreeCheckout(repoDir, path, integrationBranchName(epicRef));
-    } catch {
+    } catch (err) {
+      reportFailure(err, {
+        op: 'epicWorktreePool.acquire.reclaim',
+        level: 'debug',
+        context: { workspaceId: this.deps.workspaceId, epicRef, path },
+      });
       await Git.removeWorktree(repoDir, path).catch(() => rmSync(path, { recursive: true, force: true }));
       await Git.addWorktreeCheckout(repoDir, path, integrationBranchName(epicRef));
     }

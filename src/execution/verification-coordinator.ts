@@ -10,14 +10,14 @@ import type { RunnerEvents } from './runner.js';
 import type { ActiveRuns } from './active-runs.js';
 import type { PostMergeCheckResult } from './merge-policy.js';
 import type { TranscriptCapture } from './transcript-capture.js';
-import type { AppConfig, VerificationCommand } from '../config.js';
-import type { TaskRow, AttemptRow, WorkspaceRow, StepRow } from '../db/schema.js';
+import type { AppConfig, HarnessConfig, TaskVerificationCritic, VerificationCommand } from '../config.js';
+import type { TaskRow, AttemptRow, WorkspaceRow, StepRow, VerificationAttemptRow } from '../db/schema.js';
 import { DomainError } from '../domain/errors.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { SessionStore } from '../domain/sessions.js';
 import type { TaskService } from '../domain/tasks.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
-import { resolveVerifiers } from '../domain/setting-override.js';
+import { resolveVerifiers, type ResolvedVerifiers } from '../domain/setting-override.js';
 import { pricesForHarness } from '../domain/pricing.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { createAcpCriticDrive, runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
@@ -77,8 +77,67 @@ export interface VerificationCoordinatorDeps {
   ) => Promise<Awaited<ReturnType<AttemptStore['updateStep']>>>;
 }
 
+const DEFAULT_VERIFIER_WORKSPACE: VerifierWorkspace = {
+  taskPreMergeCommands: null,
+  taskPreMergeCritics: null,
+  taskPostMergeCommands: null,
+  taskPostMergeCritics: null,
+  epicPreMergeCommands: null,
+  epicPreMergeCritics: null,
+};
+
 export class VerificationCoordinator {
   constructor(private readonly deps: VerificationCoordinatorDeps) {}
+
+  /** A task's effective verifiers, with the Workspace's own overrides applied over the global defaults. */
+  private async resolveTaskVerifiers(task: TaskRow): Promise<{ config: AppConfig; resolvedTask: ResolvedVerifiers['task'] }> {
+    const config = this.deps.getConfig();
+    const ws = await this.deps.getWorkspace?.(task.workspaceId);
+    const { task: resolvedTask } = resolveVerifiers(ws ?? DEFAULT_VERIFIER_WORKSPACE, config);
+    return { config, resolvedTask };
+  }
+
+  private buildCriticInput(task: TaskRow, configuredCritic: TaskVerificationCritic): { prompt: string; model: string; harness?: string } {
+    return {
+      prompt: task.trackerRef == null ? configuredCritic.noIssuePrompt : configuredCritic.issuePrompt,
+      model: configuredCritic.model,
+      ...(configuredCritic.harness ? { harness: configuredCritic.harness } : {}),
+    };
+  }
+
+  private resolveCriticHarness(config: AppConfig, criticHarnessId: string): HarnessConfig {
+    const criticHarness = config.harnesses[criticHarnessId as keyof typeof config.harnesses];
+    if (!criticHarness) throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
+    return criticHarness;
+  }
+
+  /** The harness rarely has its transcript or usage flushed by the session-end
+   * boundary, so both are resolved off the hot path. */
+  private captureCriticArtifacts(input: {
+    persisted: VerificationAttemptRow;
+    sessionId: string | null;
+    transcriptPath: string | null;
+    criticHarnessId: string;
+    criticHarness: HarnessConfig;
+    cwd: string;
+  }): void {
+    const { persisted, sessionId, transcriptPath, criticHarnessId, criticHarness, cwd } = input;
+    if (!sessionId) return;
+    if (transcriptPath === null) {
+      void this.deps.transcripts.captureCriticTranscript({
+        attemptId: persisted.id,
+        sessionId,
+        harnessId: criticHarnessId,
+        sessionLogDir: criticHarness.sessionLogDir,
+      });
+    }
+    void this.deps.transcripts.captureCriticUsage({
+      attemptId: persisted.id,
+      sessionId,
+      harnessId: criticHarnessId,
+      cwd,
+    });
+  }
 
   private verificationOutputRelay(attemptId: number, mechanism: 'command' | 'critic', command: string | null): { push: (chunk: string) => void; flush: () => void } {
     let pending = '';
@@ -163,11 +222,7 @@ export class VerificationCoordinator {
   }
 
   async criticEnabledFor(task: TaskRow): Promise<boolean> {
-    const ws = await this.deps.getWorkspace?.(task.workspaceId);
-    const { task: resolvedTask } = resolveVerifiers(
-      ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null },
-      this.deps.getConfig(),
-    );
+    const { resolvedTask } = await this.resolveTaskVerifiers(task);
     return resolvedTask.preMerge.critics.length > 0;
   }
 
@@ -181,12 +236,7 @@ export class VerificationCoordinator {
     criticEnabled = true,
   ): Promise<{ decision: VerificationDecision; ran: boolean }> {
     run = await this.deps.attempts.get(run.id);
-    const config = this.deps.getConfig();
-    const ws = await this.deps.getWorkspace?.(task.workspaceId);
-    const { task: resolvedTask } = resolveVerifiers(
-      ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null },
-      config,
-    );
+    const { config, resolvedTask } = await this.resolveTaskVerifiers(task);
     const { commands, critics } = resolvedTask.preMerge;
 
     const verdicts: VerifierVerdict[] = [];
@@ -231,19 +281,12 @@ export class VerificationCoordinator {
       const criticCwd = run.branch ? this.deps.worktreePathForTask(task) : task.workingDir;
       if (run.branch && critics.length > 0) await indexWorktree(criticCwd);
       await Promise.all(critics.map(async (configuredCritic, index) => {
-      const critic = {
-        prompt: task.trackerRef == null ? configuredCritic.noIssuePrompt : configuredCritic.issuePrompt,
-        model: configuredCritic.model,
-        ...(configuredCritic.harness ? { harness: configuredCritic.harness } : {}),
-      };
+      const critic = this.buildCriticInput(task, configuredCritic);
       if (!oid) {
         verdicts.push(await this.noVerifiedHeadVerdict(task, 'critic', record));
       } else {
         const criticHarnessId = critic.harness ?? task.harness;
-        const criticHarness = config.harnesses[criticHarnessId as keyof typeof config.harnesses];
-        if (!criticHarness) {
-          throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
-        }
+        const criticHarness = this.resolveCriticHarness(config, criticHarnessId);
         const baseOid =
           run.branch && run.baseBranch
             ? await Git.mergeBase(task.workingDir, run.baseBranch, run.branch).catch(() => null)
@@ -268,24 +311,14 @@ export class VerificationCoordinator {
           onUpdate: this.relayCriticUpdateAsBuilderEvent(run.id),
         });
         const persisted = await this.deps.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
-        // The harness rarely has its transcript or usage flushed by the
-        // session-end boundary, so both are resolved off the hot path.
-        if (attempt.sessionId) {
-          if (attempt.transcriptPath === null) {
-            void this.deps.transcripts.captureCriticTranscript({
-              attemptId: persisted.id,
-              sessionId: attempt.sessionId,
-              harnessId: criticHarnessId,
-              sessionLogDir: criticHarness.sessionLogDir,
-            });
-          }
-          void this.deps.transcripts.captureCriticUsage({
-            attemptId: persisted.id,
-            sessionId: attempt.sessionId,
-            harnessId: criticHarnessId,
-            cwd: criticCwd,
-          });
-        }
+        this.captureCriticArtifacts({
+          persisted,
+          sessionId: attempt.sessionId,
+          transcriptPath: attempt.transcriptPath,
+          criticHarnessId,
+          criticHarness,
+          cwd: criticCwd,
+        });
         await this.deps.updateStep(task.id, timelineStep.id, {
           state: attempt.verdict === 'pass' ? 'passed' : 'failed',
           verdict: attempt.verdict,
@@ -347,12 +380,7 @@ export class VerificationCoordinator {
     record: LifecycleRecorder;
   }): Promise<PostMergeCheckResult> {
     const { task, run, mergeOid, baseDir, signal, record } = args;
-    const config = this.deps.getConfig();
-    const ws = await this.deps.getWorkspace?.(task.workspaceId);
-    const { task: resolvedTask } = resolveVerifiers(
-      ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null },
-      config,
-    );
+    const { config, resolvedTask } = await this.resolveTaskVerifiers(task);
     const { commands, critics } = resolvedTask.postMerge;
     const timelineAttempt = await this.deps.latestAttemptFor(task);
     for (const command of commands) {
@@ -370,16 +398,9 @@ export class VerificationCoordinator {
     const baseOid = await Git.revParse(baseDir, `${mergeOid}^1`).catch(() => null);
     if (critics.length > 0) await indexWorktree(baseDir);
     const criticAttempts = await Promise.all(critics.map(async (configuredCritic) => {
-      const critic = {
-        prompt: task.trackerRef == null ? configuredCritic.noIssuePrompt : configuredCritic.issuePrompt,
-        model: configuredCritic.model,
-        ...(configuredCritic.harness ? { harness: configuredCritic.harness } : {}),
-      };
+      const critic = this.buildCriticInput(task, configuredCritic);
       const criticHarnessId = critic.harness ?? task.harness;
-      const criticHarness = config.harnesses[criticHarnessId as keyof typeof config.harnesses];
-      if (!criticHarness) {
-        throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
-      }
+      const criticHarness = this.resolveCriticHarness(config, criticHarnessId);
       const attempt = await runCritic({
         cwd: baseDir,
         verifiedHeadOid: mergeOid,
@@ -394,22 +415,14 @@ export class VerificationCoordinator {
         onUpdate: this.relayCriticUpdateAsBuilderEvent(run.id),
       });
       const persisted = await this.deps.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
-      if (attempt.sessionId) {
-        if (attempt.transcriptPath === null) {
-          void this.deps.transcripts.captureCriticTranscript({
-            attemptId: persisted.id,
-            sessionId: attempt.sessionId,
-            harnessId: criticHarnessId,
-            sessionLogDir: criticHarness.sessionLogDir,
-          });
-        }
-        void this.deps.transcripts.captureCriticUsage({
-          attemptId: persisted.id,
-          sessionId: attempt.sessionId,
-          harnessId: criticHarnessId,
-          cwd: baseDir,
-        });
-      }
+      this.captureCriticArtifacts({
+        persisted,
+        sessionId: attempt.sessionId,
+        transcriptPath: attempt.transcriptPath,
+        criticHarnessId,
+        criticHarness,
+        cwd: baseDir,
+      });
       record('lifecycle', { event: 'verification', mechanism: 'critic', verdict: attempt.verdict, summary: attempt.summary });
       return attempt;
     }));

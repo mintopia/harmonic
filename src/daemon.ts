@@ -1,5 +1,6 @@
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
+import { logger } from './logger.js';
 
 /** What `harmonic start` records so status/stop can find the server later. */
 export interface DaemonInfo {
@@ -19,7 +20,9 @@ export function writeDaemon(dataDir: string, info: DaemonInfo): void {
 function readDaemon(dataDir: string): DaemonInfo | null {
   try {
     return JSON.parse(readFileSync(pidFilePath(dataDir), 'utf8')) as DaemonInfo;
-  } catch {
+  } catch (err) {
+    const code = err instanceof Error && 'code' in err ? err.code : undefined;
+    if (code !== 'ENOENT') logger.warn('daemon: unreadable pidfile, treating as not running', { dataDir, error: err instanceof Error ? err.message : String(err) });
     return null;
   }
 }
@@ -59,7 +62,8 @@ export function acquireLock(dataDir: string, self: { port: number; host: string 
     if (existing && existing.pid !== process.pid && isAlive(existing.pid)) return existing;
     try {
       unlinkSync(path);
-    } catch {
+    } catch (err) {
+      logger.debug('daemon: failed to clear stale pidfile', { path, error: err instanceof Error ? err.message : String(err) });
     }
   }
   return readDaemon(dataDir);

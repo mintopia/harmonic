@@ -49,6 +49,17 @@ interface TurnRuntime {
   finalize: () => Promise<void>;
 }
 
+// codex-acp can exit non-zero mid-handshake with no ACP error; the cause is
+// only on stderr. Draining the pipe also prevents backpressure.
+interface StderrTail {
+  tail: string;
+  flushed: Promise<void>;
+}
+
+type SpawnTurnResult =
+  | { ok: true; workspace: Workspace; mcpServers: unknown[]; child: ChildProcess; stderr: StderrTail; rebaseConflict: boolean }
+  | { ok: false; outcome: TurnOutcome };
+
 export interface TurnDriverDeps {
   taskService: TaskService;
   attempts: AttemptStore;
@@ -206,77 +217,9 @@ export class TurnDriver {
     let escalating: string | null = null;
     const autoDriven = this.deps.autoDrive?.handles(task) ?? false;
 
-    let child: ChildProcess;
-    let workspace: Workspace;
-    let mcpServers: unknown[] = [];
-    // codex-acp can exit non-zero mid-handshake with no ACP error; the cause is
-    // only on stderr. Draining the pipe also prevents backpressure.
-    let stderrTail = '';
-    let stderrFlushed: Promise<void> = Promise.resolve();
-    let rebaseConflict = false;
-    try {
-      workspace = await this.deps.prepareWorkspace(task, run, healCtx !== undefined);
-      if (opensAttempt && workspace.worktree) {
-        const baseBranch = (await this.deps.attempts.get(run.id)).baseBranch ?? await this.deps.mergeCoordinator.resolveBaseBranch(task);
-        const rebase = await this.deps.mergeCoordinator.runRebaseTask(task, attemptNumber, run.startedAt, workspace.worktree.path, baseBranch);
-        if (!rebase.ok) {
-          if (!rebase.conflict) throw new Error(`rebase onto ${baseBranch} failed: ${rebase.detail}`);
-          rebaseConflict = true;
-          record('lifecycle', { event: 'rebase-conflict', baseBranch });
-        }
-      }
-      const steps = await this.deps.attempts.listSteps(turn.attemptAtStart.id);
-      if (!steps.some((row) => row.type === 'implementation' && row.state === 'running')) {
-        const implementation = await this.deps.attempts.createStep(turn.attemptAtStart.id, { type: 'implementation', logLocator: 'session:pending' });
-        await this.deps.updateStep(task.id, implementation.id, { state: 'running', startedAt: Date.now() });
-      }
-      this.deps.gitBreaker?.recordSuccess(repoKey(task.workingDir));
-      const mcpUrl = this.deps.mcpUrl();
-      if (this.deps.keys && mcpUrl) {
-        const runKey = await this.deps.keys.mint(run.id);
-        workspace.env.HARMONIC_API_KEY = runKey;
-        workspace.env.HARMONIC_MCP_URL = mcpUrl;
-        mcpServers = adapterFor(task.harness).mcpServers({ url: mcpUrl, token: runKey });
-      }
-      if (this.deps.isShuttingDown()) return { kind: 'terminal' };
-      child = this.deps.spawnHarness(task, harness, workspace.cwd, workspace.env, autoDriven);
-      if (child.pid !== undefined) {
-        await this.deps.attempts.update(run.id, { pid: child.pid, pgid: child.pid, procStartToken: readProcStartToken(child.pid) });
-      }
-      const stderr = child.stderr;
-      if (stderr) {
-        stderr.setEncoding('utf8');
-        stderr.on('data', (chunk: string) => {
-          stderrTail = (stderrTail + chunk).slice(-STDERR_TAIL_CAP);
-        });
-        stderrFlushed = new Promise<void>((resolve) => {
-          stderr.on('end', resolve);
-          stderr.on('error', () => resolve());
-        });
-      }
-    } catch (err) {
-      fireAndForget(() => this.deps.keys?.revoke(run.id), { op: 'runner.revokeKeyOnStartError', level: 'error', context: { attemptId: run.id, taskId: task.id } });
-      if (err instanceof EpicBaseNotReady) {
-        await this.deps.coordinateSettle(task, run, 'failed', {
-          runState: 'failed',
-          taskAction: 'ready',
-          reason: err.reason,
-        });
-      } else if (err instanceof BaseBranchUnresolved) {
-        await this.deps.settleEscalated(task, run, err.reason, {});
-      } else if (err instanceof GitError) {
-        const cls = classifyGitFailure([err.stderr, err.message].filter(Boolean).join('\n'));
-        const failure = this.deps.gitBreaker?.recordFailure(repoKey(task.workingDir));
-        if (cls === 'permanent' || failure?.opened) {
-          await this.deps.settleEscalated(task, run, `git workspace preparation failed (${cls}): ${err.message}`, {});
-        } else {
-          await this.deps.coordinateSettle(task, run, 'failed', { runState: 'failed', taskAction: 'ready', reason: err.message });
-        }
-      } else {
-        return { kind: 'actionable-fail', reason: err instanceof Error ? err.message : String(err), output: '' };
-      }
-      return { kind: 'terminal' };
-    }
+    const spawned = await this.spawnTurn({ task, run, harness, healCtx, attemptNumber, opensAttempt, turn, autoDriven, record });
+    if (!spawned.ok) return spawned.outcome;
+    const { workspace, mcpServers, child, stderr, rebaseConflict } = spawned;
 
     const { active, driver, guardrails, listeners, finalize } = this.createTurnRuntime({
       task,
@@ -362,8 +305,8 @@ export class TurnDriver {
       });
     } catch (err) {
       const base = err instanceof Error ? err.message : String(err);
-      await Promise.race([stderrFlushed, new Promise((r) => setTimeout(r, 500))]);
-      const tail = stderrTail.trim();
+      await Promise.race([stderr.flushed, new Promise((r) => setTimeout(r, 500))]);
+      const tail = stderr.tail.trim();
       const reason = tail ? `${base}\n\nharness stderr:\n${tail}` : base;
       await finalize();
       if (active.externallySettled) return { kind: 'terminal' };
@@ -388,6 +331,89 @@ export class TurnDriver {
       driver.dispose();
       this.deps.activeRuns.delete(run.id);
       await finalize();
+    }
+  }
+
+  /** Prepare the workspace, rebase if needed, and spawn the harness process. On
+   * failure, settles the run appropriately and returns the outcome to bubble up. */
+  private async spawnTurn(input: {
+    task: TaskRow;
+    run: AttemptRow;
+    harness: HarnessConfig;
+    healCtx: HealContext | undefined;
+    attemptNumber: number;
+    opensAttempt: boolean;
+    turn: TurnState;
+    autoDriven: boolean;
+    record: RunEventRecorder;
+  }): Promise<SpawnTurnResult> {
+    const { task, run, harness, healCtx, attemptNumber, opensAttempt, turn, autoDriven, record } = input;
+    const stderr: StderrTail = { tail: '', flushed: Promise.resolve() };
+    let rebaseConflict = false;
+    try {
+      const workspace = await this.deps.prepareWorkspace(task, run, healCtx !== undefined);
+      if (opensAttempt && workspace.worktree) {
+        const baseBranch = (await this.deps.attempts.get(run.id)).baseBranch ?? await this.deps.mergeCoordinator.resolveBaseBranch(task);
+        const rebase = await this.deps.mergeCoordinator.runRebaseTask(task, attemptNumber, run.startedAt, workspace.worktree.path, baseBranch);
+        if (!rebase.ok) {
+          if (!rebase.conflict) throw new Error(`rebase onto ${baseBranch} failed: ${rebase.detail}`);
+          rebaseConflict = true;
+          record('lifecycle', { event: 'rebase-conflict', baseBranch });
+        }
+      }
+      const steps = await this.deps.attempts.listSteps(turn.attemptAtStart.id);
+      if (!steps.some((row) => row.type === 'implementation' && row.state === 'running')) {
+        const implementation = await this.deps.attempts.createStep(turn.attemptAtStart.id, { type: 'implementation', logLocator: 'session:pending' });
+        await this.deps.updateStep(task.id, implementation.id, { state: 'running', startedAt: Date.now() });
+      }
+      this.deps.gitBreaker?.recordSuccess(repoKey(task.workingDir));
+      let mcpServers: unknown[] = [];
+      const mcpUrl = this.deps.mcpUrl();
+      if (this.deps.keys && mcpUrl) {
+        const runKey = await this.deps.keys.mint(run.id);
+        workspace.env.HARMONIC_API_KEY = runKey;
+        workspace.env.HARMONIC_MCP_URL = mcpUrl;
+        mcpServers = adapterFor(task.harness).mcpServers({ url: mcpUrl, token: runKey });
+      }
+      if (this.deps.isShuttingDown()) return { ok: false, outcome: { kind: 'terminal' } };
+      const child = this.deps.spawnHarness(task, harness, workspace.cwd, workspace.env, autoDriven);
+      if (child.pid !== undefined) {
+        await this.deps.attempts.update(run.id, { pid: child.pid, pgid: child.pid, procStartToken: readProcStartToken(child.pid) });
+      }
+      const childStderr = child.stderr;
+      if (childStderr) {
+        childStderr.setEncoding('utf8');
+        childStderr.on('data', (chunk: string) => {
+          stderr.tail = (stderr.tail + chunk).slice(-STDERR_TAIL_CAP);
+        });
+        stderr.flushed = new Promise<void>((resolve) => {
+          childStderr.on('end', resolve);
+          childStderr.on('error', () => resolve());
+        });
+      }
+      return { ok: true, workspace, mcpServers, child, stderr, rebaseConflict };
+    } catch (err) {
+      fireAndForget(() => this.deps.keys?.revoke(run.id), { op: 'runner.revokeKeyOnStartError', level: 'error', context: { attemptId: run.id, taskId: task.id } });
+      if (err instanceof EpicBaseNotReady) {
+        await this.deps.coordinateSettle(task, run, 'failed', {
+          runState: 'failed',
+          taskAction: 'ready',
+          reason: err.reason,
+        });
+      } else if (err instanceof BaseBranchUnresolved) {
+        await this.deps.settleEscalated(task, run, err.reason, {});
+      } else if (err instanceof GitError) {
+        const cls = classifyGitFailure([err.stderr, err.message].filter(Boolean).join('\n'));
+        const failure = this.deps.gitBreaker?.recordFailure(repoKey(task.workingDir));
+        if (cls === 'permanent' || failure?.opened) {
+          await this.deps.settleEscalated(task, run, `git workspace preparation failed (${cls}): ${err.message}`, {});
+        } else {
+          await this.deps.coordinateSettle(task, run, 'failed', { runState: 'failed', taskAction: 'ready', reason: err.message });
+        }
+      } else {
+        return { ok: false, outcome: { kind: 'actionable-fail', reason: err instanceof Error ? err.message : String(err), output: '' } };
+      }
+      return { ok: false, outcome: { kind: 'terminal' } };
     }
   }
 

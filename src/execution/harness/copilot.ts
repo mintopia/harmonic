@@ -45,7 +45,8 @@ function readUsageRows(dbPath: string, sessionId: string): UsageRow[] {
     } finally {
       db.close();
     }
-  } catch {
+  } catch (err) {
+    logger.debug('copilot: reading usage rows from session-store.db failed', { dbPath, sessionId, error: err instanceof Error ? err.message : String(err) });
     return [];
   }
 }
@@ -90,7 +91,8 @@ function readSubagents(eventsFile: string): Map<string, SubagentInfo> {
     let event: any;
     try {
       event = JSON.parse(line);
-    } catch {
+    } catch (err) {
+      logger.debug('copilot: skipping a malformed events.jsonl line', { eventsFile, error: err instanceof Error ? err.message : String(err) });
       continue;
     }
     const data = event?.data;

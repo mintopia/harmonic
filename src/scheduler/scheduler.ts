@@ -4,6 +4,11 @@ import { scheduledJobs, type ScheduledJobRow } from '../db/schema.js';
 import { forEachYielding, yieldToEventLoop } from '../reliability/yield.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import { startOperation } from '../telemetry/operations.js';
+import { logger } from '../logger.js';
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export type ScheduledJobStatus = 'active' | 'disabled';
 
@@ -68,12 +73,12 @@ export class Scheduler {
     job.tick = singleFlight(() => this.tickOnce(job));
     this.jobs.set(key, job);
     if (this.started) this.startJob(job);
-    void this.emitChanged().catch(() => {});
+    void this.emitChanged().catch((error) => logger.warn('scheduler: emitChanged failed after register', { job: key, error: errorMessage(error) }));
     return () => {
       if (this.jobs.get(key) !== job) return;
       if (job.timer) clearInterval(job.timer);
       this.jobs.delete(key);
-      void this.emitChanged().catch(() => {});
+      void this.emitChanged().catch((error) => logger.warn('scheduler: emitChanged failed after unregister', { job: key, error: errorMessage(error) }));
     };
   }
 
@@ -81,7 +86,7 @@ export class Scheduler {
     if (this.started) return;
     this.started = true;
     for (const job of this.jobs.values()) this.startJob(job);
-    void this.emitChanged().catch(() => {});
+    void this.emitChanged().catch((error) => logger.warn('scheduler: emitChanged failed after start', { error: errorMessage(error) }));
   }
 
   stop(): void {
@@ -120,7 +125,7 @@ export class Scheduler {
     if (job.timer) return;
     job.timer = setInterval(() => this.fire(job), job.intervalMs);
     job.timer.unref?.();
-    void this.runIfDueOnStart(job).catch(() => {});
+    void this.runIfDueOnStart(job).catch((error) => logger.warn('scheduler: runIfDueOnStart failed', { job: job.jobKey, error: errorMessage(error) }));
   }
 
   private async tickOnce(job: RegisteredJob): Promise<void> {
@@ -176,7 +181,7 @@ export class Scheduler {
   }
 
   private fire(job: RegisteredJob): void {
-    void job.tick().catch(() => {});
+    void job.tick().catch((error) => logger.warn('scheduler: job tick failed', { job: job.jobKey, error: errorMessage(error) }));
   }
 
   private async isEnabled(job: RegisteredJob): Promise<boolean> {

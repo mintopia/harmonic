@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
+import { logger } from '../logger.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -19,7 +20,11 @@ async function cli(args: string[], timeoutMs: number): Promise<string | null> {
       killSignal: 'SIGKILL',
     });
     return stdout;
-  } catch {
+  } catch (err) {
+    logger.debug('code-index: jCodeMunch CLI call failed', {
+      'code_index.args': args.join(' '),
+      error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }
@@ -50,7 +55,11 @@ async function repoIdForPath(absPath: string): Promise<string | null> {
   try {
     const parsed = JSON.parse(out) as { repos?: RepoListRow[] } | RepoListRow[];
     rows = Array.isArray(parsed) ? parsed : (parsed.repos ?? []);
-  } catch {
+  } catch (err) {
+    logger.debug('code-index: list-repos output was not valid JSON', {
+      'code_index.path': absPath,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
   const want = resolve(absPath);

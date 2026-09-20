@@ -9,12 +9,12 @@ import { UsageSampler } from './usage-sampler.js';
 import { TranscriptCapture } from './transcript-capture.js';
 import { ActiveRuns, type ActiveRun } from './active-runs.js';
 import { LIVE_RUN_LOG_EVENT_ID_OFFSET } from './live-events.js';
-import { VerificationCoordinator, type EpicVerificationResolutionInput } from './verification-coordinator.js';
-import { TurnDriver } from './turn-driver.js';
-import { EpicRefreshResolver } from './epic-refresh-resolver.js';
-import { WorkspaceProvisioner } from './workspace-provisioner.js';
-import { RunControl } from './run-control.js';
-import { UsageBackfiller } from './usage-backfiller.js';
+import { VerificationCoordinator, type EpicVerificationResolutionInput, type VerificationCoordinatorDeps } from './verification-coordinator.js';
+import { TurnDriver, type TurnDriverDeps } from './turn-driver.js';
+import { EpicRefreshResolver, type EpicRefreshResolverDeps } from './epic-refresh-resolver.js';
+import { WorkspaceProvisioner, type WorkspaceProvisionerDeps } from './workspace-provisioner.js';
+import { RunControl, type RunControlDeps } from './run-control.js';
+import { UsageBackfiller, type UsageBackfillerDeps } from './usage-backfiller.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig } from '../config.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
@@ -29,7 +29,7 @@ import { resolveGuardrails } from '../domain/setting-override.js';
 import { SessionContinuation } from './session-continuation.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
-import { MergeCoordinator, BaseBranchUnresolved, EpicBaseNotReady, type EpicIntegrationMergeInput } from './merge-coordinator.js';
+import { MergeCoordinator, BaseBranchUnresolved, EpicBaseNotReady, type EpicIntegrationMergeInput, type MergeCoordinatorDeps } from './merge-coordinator.js';
 export { BaseBranchUnresolved, EpicBaseNotReady };
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { pricesForHarness } from '../domain/pricing.js';
@@ -149,7 +149,17 @@ export class Runner {
       },
       options.tailerCadence,
     );
-    this.mergeCoordinator = new MergeCoordinator({
+    this.mergeCoordinator = new MergeCoordinator(this.mergeCoordinatorDeps());
+    this.epicRefreshResolver = new EpicRefreshResolver(this.epicRefreshResolverDeps());
+    this.workspaceProvisioner = new WorkspaceProvisioner(this.workspaceProvisionerDeps());
+    this.verification = new VerificationCoordinator(this.verificationCoordinatorDeps());
+    this.turnDriver = new TurnDriver(this.turnDriverDeps());
+    this.runControl = new RunControl(this.runControlDeps());
+    this.usageBackfiller = new UsageBackfiller(this.usageBackfillerDeps());
+  }
+
+  private mergeCoordinatorDeps(): MergeCoordinatorDeps {
+    return {
       getConfig: this.getConfig,
       attempts: this.attempts,
       verificationAttempts: this.verificationAttempts,
@@ -166,14 +176,20 @@ export class Runner {
       recordRunEvent: (task, run, type, payload) => this.recordRunEvent(task, run, type, payload),
       settleEscalated: (task, run, reason, patch) => this.settleEscalated(task, run, reason, patch),
       onEpicMergeStep: (payload) => this.events.onEpicMergeStep?.(payload),
-    });
-    this.epicRefreshResolver = new EpicRefreshResolver({
+    };
+  }
+
+  private epicRefreshResolverDeps(): EpicRefreshResolverDeps {
+    return {
       taskService: this.taskService,
       getConfig: this.getConfig,
       worktreesDir: this.worktreesDir,
       criticDrive: this.criticDrive,
-    });
-    this.workspaceProvisioner = new WorkspaceProvisioner({
+    };
+  }
+
+  private workspaceProvisionerDeps(): WorkspaceProvisionerDeps {
+    return {
       attempts: this.attempts,
       sessionStore: this.sessionStore,
       mergeCoordinator: this.mergeCoordinator,
@@ -181,8 +197,11 @@ export class Runner {
       sessionRetirement: this.sessionRetirement,
       events: this.events,
       worktreesDir: this.worktreesDir,
-    });
-    this.verification = new VerificationCoordinator({
+    };
+  }
+
+  private verificationCoordinatorDeps(): VerificationCoordinatorDeps {
+    return {
       taskService: this.taskService,
       attempts: this.attempts,
       verificationAttempts: this.verificationAttempts,
@@ -197,8 +216,11 @@ export class Runner {
       worktreePathForTask: (task) => this.workspaceProvisioner.worktreePathForTask(task),
       latestAttemptFor: (task) => this.latestAttemptFor(task),
       updateStep: (taskId, id, patch) => this.updateStep(taskId, id, patch),
-    });
-    this.turnDriver = new TurnDriver({
+    };
+  }
+
+  private turnDriverDeps(): TurnDriverDeps {
+    return {
       taskService: this.taskService,
       attempts: this.attempts,
       sessionStore: this.sessionStore,
@@ -233,8 +255,11 @@ export class Runner {
       settleAutoCompleted: (task, run, patch) => this.settleAutoCompleted(task, run, patch),
       diffSnapshotFor: (task, attemptId) => this.diffSnapshotFor(task, attemptId),
       kill: (active) => this.kill(active),
-    });
-    this.runControl = new RunControl({
+    };
+  }
+
+  private runControlDeps(): RunControlDeps {
+    return {
       taskService: this.taskService,
       attempts: this.attempts,
       activeRuns: this.activeRuns,
@@ -249,14 +274,17 @@ export class Runner {
       start: (taskId) => this.start(taskId),
       launchClaimed: (taskId) => this.launchClaimed(taskId),
       beginRun: (task, parent, resumedAttempt) => this.beginRun(task, parent, resumedAttempt),
-    });
-    this.usageBackfiller = new UsageBackfiller({
+    };
+  }
+
+  private usageBackfillerDeps(): UsageBackfillerDeps {
+    return {
       attempts: this.attempts,
       taskService: this.taskService,
       getConfig: this.getConfig,
       usage: this.usage,
       worktreePathForTask: (task) => this.workspaceProvisioner.worktreePathForTask(task),
-    });
+    };
   }
 
   get activeCount(): number {

@@ -72,7 +72,8 @@ export function shouldShowEscalationHint(tasks: Pick<Task, 'state'>[], dismissed
 export function loadDismissed(storage: StorageLike, key: string): boolean {
   try {
     return storage.getItem(key) === '1';
-  } catch {
+  } catch (error) {
+    console.warn('loadDismissed: storage unavailable', error);
     return false;
   }
 }
@@ -80,6 +81,7 @@ export function loadDismissed(storage: StorageLike, key: string): boolean {
 export function storeDismissed(storage: StorageLike, key: string): void {
   try {
     storage.setItem(key, '1');
-  } catch {
+  } catch (error) {
+    console.warn('storeDismissed: storage unavailable', error);
   }
 }

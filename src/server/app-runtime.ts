@@ -35,6 +35,120 @@ import type { WorktreeServices } from './app-worktrees.js';
 import { createPostMergeCheck } from '../verification/post-merge-check.js';
 import type { DistributionMode } from '../distribution-mode.js';
 
+function createLifecycleTracking(
+  bus: EventBus,
+  attempts: Stores['attempts'],
+  sessionStore: Stores['sessions'],
+): {
+  recordAttemptLifecycleBestEffort: (run: AttemptRow, payload: Record<string, unknown>) => void;
+  sessionRetirement: SessionRetirementCoordinator;
+  drainRetirement: () => Promise<number>;
+} {
+  const recordAttemptLifecycleBestEffort = (run: AttemptRow, payload: Record<string, unknown>): void => {
+    fireAndForget(async () => bus.emit('attempt_event', await attempts.appendEvent(run.id, { type: 'lifecycle', payload })), {
+      op: 'app.recordAttemptLifecycle',
+      level: 'debug',
+      context: { attemptId: run.id, event: String(payload.event) },
+    });
+  };
+  const sessionRetirement = new SessionRetirementCoordinator(
+    sessionStore,
+    attempts,
+    (repoDir, worktreePath) =>
+      Git.removeWorktree(repoDir, worktreePath)
+        .then(() => dropIndexForPath(worktreePath)),
+    undefined,
+    undefined,
+    (run) => recordAttemptLifecycleBestEffort(run, { event: 'retired' }),
+  );
+  const drainRetirement = singleFlight(() => sessionRetirement.drain());
+  return { recordAttemptLifecycleBestEffort, sessionRetirement, drainRetirement };
+}
+
+/** Reconcile crash-interrupted Attempts, requeue orphaned working Tasks, and sweep dangling keys. */
+async function runStartupRecovery(deps: {
+  attempts: Stores['attempts'];
+  tasks: Stores['tasks'];
+  auth: Stores['auth'];
+  operatorSettle: AttemptSettleCoordinator;
+  postMergeCheck: ReturnType<typeof createPostMergeCheck>;
+  postMerge: PostMergeHook;
+  bus: EventBus;
+}): Promise<void> {
+  const { attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus } = deps;
+  const crashRecovery = new CrashRecoveryCoordinator(attempts, tasks, operatorSettle, {
+    runPostMergeCheck: postMergeCheck,
+    postMerge,
+    onEpicAttemptInterrupted: (attempt) => { bus.emit('attempt_changed', attempt); },
+  });
+  await crashRecovery.reconcile();
+  for (const orphan of await tasks.list({ state: 'working' })) {
+    await tasks.setState(orphan.id, 'ready');
+  }
+  await auth.sweepOrphanedAttemptKeys();
+  await auth.sweepOrphanedConversationKeys();
+}
+
+function createObservability(
+  opts: AppOptions,
+  bus: EventBus,
+  settingsStore: Stores['settingsStore'],
+): { loopMonitor: EventLoopMonitor | undefined; hostLoad: HostLoadSampler; workspaceWatcher: WorkspaceWatcher } {
+  const eventLoopTuning = opts.reliabilityTuning?.eventLoop;
+  const loopMonitor =
+    eventLoopTuning?.enabled === false
+      ? undefined
+      : new EventLoopMonitor({ probeMs: eventLoopTuning?.probeMs, stallMs: eventLoopTuning?.stallMs });
+  const hostLoad = new HostLoadSampler(bus);
+  const workspaceWatcher = new WorkspaceWatcher(
+    () => settingsStore.getGlobal().fileWatcherDebounceMs,
+    {
+      fsChanged: (workspaceId) => bus.emit('fs_changed', { workspaceId }),
+      gitStatus: (workspaceId, entries) => bus.emit('git_status', { workspaceId, entries }),
+    },
+  );
+  return { loopMonitor, hostLoad, workspaceWatcher };
+}
+
+function createUpgrade(deps: {
+  opts: AppOptions;
+  runningVersion: string;
+  asyncDb: AsyncDbHandle;
+  settingsStore: Stores['settingsStore'];
+  attempts: Stores['attempts'];
+  conversationDriver: ConversationDriver;
+  notifier: Stores['notifier'];
+}): UpgradeCoordinator {
+  const { opts, runningVersion, asyncDb, settingsStore, attempts, conversationDriver, notifier } = deps;
+  const onUpgradeIdle = opts.onUpgradeIdle === undefined
+    ? undefined
+    : async (version: string): Promise<void> => {
+      try {
+        await opts.onUpgradeIdle?.(version);
+      } catch (error) {
+        const abort = startOperation({ type: 'upgrade.abort', attributes: { 'upgrade.version': version } });
+        try {
+          logger.error(`upgrade to ${version} aborted: ${String(error)}`, { version });
+          await notifier.notify('update.failed');
+          abort.end();
+        } catch (abortError) {
+          abort.fail(abortError);
+          throw abortError;
+        }
+        throw error;
+      }
+    };
+  return new UpgradeCoordinator({
+    version: runningVersion,
+    store: new SettingsUpdateAvailabilityStore(asyncDb),
+    settings: settingsStore,
+    attempts,
+    operations: () => operationRegistry.list(),
+    conversations: conversationDriver,
+    ...(onUpgradeIdle === undefined ? {} : { onIdle: onUpgradeIdle }),
+  });
+}
+
 export interface Runtime {
   conversationDriver: ConversationDriver;
   sessionRetirement: SessionRetirementCoordinator;
@@ -84,24 +198,7 @@ export async function createRuntime(deps: {
     onTurnSettled: () => { void upgradeRef?.reconcile().catch((error: unknown) => logger.error(`upgrade reconciliation failed: ${String(error)}`)); },
     allowedRoots: async () => [...(await workspaces.list()).map((w) => w.workingDir), managedWorktreesRoot],
   });
-  const recordAttemptLifecycleBestEffort = (run: AttemptRow, payload: Record<string, unknown>): void => {
-    fireAndForget(async () => bus.emit('attempt_event', await attempts.appendEvent(run.id, { type: 'lifecycle', payload })), {
-      op: 'app.recordAttemptLifecycle',
-      level: 'debug',
-      context: { attemptId: run.id, event: String(payload.event) },
-    });
-  };
-  const sessionRetirement = new SessionRetirementCoordinator(
-    sessionStore,
-    attempts,
-    (repoDir, worktreePath) =>
-      Git.removeWorktree(repoDir, worktreePath)
-        .then(() => dropIndexForPath(worktreePath)),
-    undefined,
-    undefined,
-    (run) => recordAttemptLifecycleBestEffort(run, { event: 'retired' }),
-  );
-  const drainRetirement = singleFlight(() => sessionRetirement.drain());
+  const { recordAttemptLifecycleBestEffort, sessionRetirement, drainRetirement } = createLifecycleTracking(bus, attempts, sessionStore);
   let runnerRef: Runner | undefined;
   let globalPauseRef: GlobalPause | undefined;
   let trackerManagerRef: TrackerPollerManager | undefined;
@@ -135,17 +232,7 @@ export async function createRuntime(deps: {
     verificationAttempts,
     criticDrive: opts.criticDrive,
   });
-  const crashRecovery = new CrashRecoveryCoordinator(attempts, tasks, operatorSettle, {
-    runPostMergeCheck: postMergeCheck,
-    postMerge,
-    onEpicAttemptInterrupted: (attempt) => { bus.emit('attempt_changed', attempt); },
-  });
-  await crashRecovery.reconcile();
-  for (const orphan of await tasks.list({ state: 'working' })) {
-    await tasks.setState(orphan.id, 'ready');
-  }
-  await auth.sweepOrphanedAttemptKeys();
-  await auth.sweepOrphanedConversationKeys();
+  await runStartupRecovery({ attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus });
   const getWorkspaceRow = async (id: number | null) => {
     if (id == null) return undefined;
     try {
@@ -238,19 +325,7 @@ export async function createRuntime(deps: {
     candidateHead: (task, run) => runner.candidateHead(task, run),
   });
   await drainRetirement();
-  const eventLoopTuning = opts.reliabilityTuning?.eventLoop;
-  const loopMonitor =
-    eventLoopTuning?.enabled === false
-      ? undefined
-      : new EventLoopMonitor({ probeMs: eventLoopTuning?.probeMs, stallMs: eventLoopTuning?.stallMs });
-  const hostLoad = new HostLoadSampler(bus);
-  const workspaceWatcher = new WorkspaceWatcher(
-    () => settingsStore.getGlobal().fileWatcherDebounceMs,
-    {
-      fsChanged: (workspaceId) => bus.emit('fs_changed', { workspaceId }),
-      gitStatus: (workspaceId, entries) => bus.emit('git_status', { workspaceId, entries }),
-    },
-  );
+  const { loopMonitor, hostLoad, workspaceWatcher } = createObservability(opts, bus, settingsStore);
   const mirror: MirrorClaim = {
     advertiseClaim: async (task) => {
       await trackerManagerRef?.coordinatorFor(task.workspaceId)?.advertiseClaim(task);
@@ -268,34 +343,7 @@ export async function createRuntime(deps: {
       gitBreaker,
     },
   );
-  let upgrade: UpgradeCoordinator;
-  const onUpgradeIdle = opts.onUpgradeIdle === undefined
-    ? undefined
-    : async (version: string): Promise<void> => {
-      try {
-        await opts.onUpgradeIdle?.(version);
-      } catch (error) {
-        const abort = startOperation({ type: 'upgrade.abort', attributes: { 'upgrade.version': version } });
-        try {
-          logger.error(`upgrade to ${version} aborted: ${String(error)}`, { version });
-          await notifier.notify('update.failed');
-          abort.end();
-        } catch (abortError) {
-          abort.fail(abortError);
-          throw abortError;
-        }
-        throw error;
-      }
-    };
-  upgrade = new UpgradeCoordinator({
-    version: runningVersion,
-    store: new SettingsUpdateAvailabilityStore(asyncDb),
-    settings: settingsStore,
-    attempts,
-    operations: () => operationRegistry.list(),
-    conversations: conversationDriver,
-    ...(onUpgradeIdle === undefined ? {} : { onIdle: onUpgradeIdle }),
-  });
+  const upgrade = createUpgrade({ opts, runningVersion, asyncDb, settingsStore, attempts, conversationDriver, notifier });
   upgradeRef = upgrade;
   if (distributionMode === 'packaged') {
     await upgrade.complete();

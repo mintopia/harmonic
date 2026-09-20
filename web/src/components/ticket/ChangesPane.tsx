@@ -10,6 +10,10 @@ import { toastError } from '../../toast';
 import { splitPathTail } from '../../path';
 import { describeGuardrailTrip } from '../../guardrail-trip-model';
 
+const DIFF_POLL_MS = 2_000;
+const MAX_DIFF_POLL_MS = 30_000;
+const MAX_DIFF_LOAD_FAILURES = 5;
+
 function ChangesPane({
   task,
   attemptId,
@@ -30,15 +34,31 @@ function ChangesPane({
     }
     setFiles(null);
     setFailed(false);
+    let consecutiveFailures = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleNext = () => {
+      if (!running || consecutiveFailures >= MAX_DIFF_LOAD_FAILURES) return;
+      const delay = Math.min(DIFF_POLL_MS * 2 ** consecutiveFailures, MAX_DIFF_POLL_MS);
+      timer = setTimeout(load, delay);
+    };
     const load = () =>
       api.attemptDiffFiles(attemptId).then(
-        ({ files }) => live() && setFiles(files),
-        () => live() && setFailed(true),
+        ({ files }) => {
+          if (!live()) return;
+          consecutiveFailures = 0;
+          setFiles(files);
+          scheduleNext();
+        },
+        () => {
+          if (!live()) return;
+          consecutiveFailures += 1;
+          setFailed(true);
+          scheduleNext();
+        },
       );
     load();
-    const timer = running ? window.setInterval(load, 2_000) : undefined;
     return () => {
-      if (timer) window.clearInterval(timer);
+      if (timer) clearTimeout(timer);
     };
   }, [attemptId, running]);
 

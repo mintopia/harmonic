@@ -5,7 +5,8 @@ export const RAIL_COLLAPSED_KEY = 'harmonic.rail-collapsed';
 export function loadRailCollapsed(storage: StorageLike): boolean {
   try {
     return storage.getItem(RAIL_COLLAPSED_KEY) === '1';
-  } catch {
+  } catch (error) {
+    console.warn('loadRailCollapsed: storage unavailable', error);
     return false;
   }
 }
@@ -13,7 +14,8 @@ export function loadRailCollapsed(storage: StorageLike): boolean {
 export function storeRailCollapsed(storage: StorageLike, collapsed: boolean): void {
   try {
     storage.setItem(RAIL_COLLAPSED_KEY, collapsed ? '1' : '0');
-  } catch {
+  } catch (error) {
+    console.warn('storeRailCollapsed: storage unavailable', error);
   }
 }
 

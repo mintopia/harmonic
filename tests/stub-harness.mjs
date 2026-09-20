@@ -80,6 +80,32 @@ let promptInFlight = false;
 // never races the turn boundary.
 let steerInjectedThisTurn = false;
 
+// Shared by every scenario that simulates the agent calling back into
+// Harmonic over MCP: connect, call one tool, close, and notify the outcome
+// (success or connection/tool error) as a chunk the test can assert on.
+async function callMcpTool(msg, tool, args, formatSuccess) {
+  try {
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+    const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+    const client = new Client({ name: 'stub-harness', version: '0.0.0' });
+    const transport = new StreamableHTTPClientTransport(new URL(process.env.HARMONIC_MCP_URL), {
+      requestInit: { headers: { authorization: `Bearer ${process.env.HARMONIC_API_KEY}` } },
+    });
+    await client.connect(transport);
+    const result = await client.callTool({ name: tool, arguments: args });
+    await client.close();
+    notify('session/update', {
+      sessionId: msg.params.sessionId,
+      update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: formatSuccess(result) } },
+    });
+  } catch (err) {
+    notify('session/update', {
+      sessionId: msg.params.sessionId,
+      update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `mcp-error:${err.message}` } },
+    });
+  }
+}
+
 async function handlePrompt(msg) {
   // Harmonic appends an "unattended" reminder (carrying taskId=<n>) to every
   // auto-driven prompt. Capture the id, then strip the reminder so a JSON
@@ -274,34 +300,7 @@ async function handlePrompt(msg) {
   // Simulate an agent scheduling follow-up work over MCP, using the
   // scoped key + endpoint injected into its environment.
   if (scenario.mcpCreateTask) {
-    try {
-      const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
-      const { StreamableHTTPClientTransport } = await import(
-        '@modelcontextprotocol/sdk/client/streamableHttp.js'
-      );
-      const client = new Client({ name: 'stub-harness', version: '0.0.0' });
-      const transport = new StreamableHTTPClientTransport(new URL(process.env.HARMONIC_MCP_URL), {
-        requestInit: { headers: { authorization: `Bearer ${process.env.HARMONIC_API_KEY}` } },
-      });
-      await client.connect(transport);
-      const result = await client.callTool({ name: 'create_task', arguments: scenario.mcpCreateTask });
-      await client.close();
-      notify('session/update', {
-        sessionId: msg.params.sessionId,
-        update: {
-          sessionUpdate: 'agent_message_chunk',
-          content: { type: 'text', text: `mcp-created:${result.content[0].text}` },
-        },
-      });
-    } catch (err) {
-      notify('session/update', {
-        sessionId: msg.params.sessionId,
-        update: {
-          sessionUpdate: 'agent_message_chunk',
-          content: { type: 'text', text: `mcp-error:${err.message}` },
-        },
-      });
-    }
+    await callMcpTool(msg, 'create_task', scenario.mcpCreateTask, (result) => `mcp-created:${result.content[0].text}`);
   }
 
   // Simulate the agent signalling finish/escalate over MCP mid-turn, using the
@@ -311,26 +310,7 @@ async function handlePrompt(msg) {
     ['mcpEscalate', 'escalate_task', { reason: scenario.mcpEscalate?.reason ?? 'need a human' }],
   ]) {
     if (!scenario[field]) continue;
-    try {
-      const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
-      const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
-      const client = new Client({ name: 'stub-harness', version: '0.0.0' });
-      const transport = new StreamableHTTPClientTransport(new URL(process.env.HARMONIC_MCP_URL), {
-        requestInit: { headers: { authorization: `Bearer ${process.env.HARMONIC_API_KEY}` } },
-      });
-      await client.connect(transport);
-      const result = await client.callTool({ name: tool, arguments: { taskId: stubTaskId, ...extra } });
-      await client.close();
-      notify('session/update', {
-        sessionId: msg.params.sessionId,
-        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `${tool}:${result.content[0].text}` } },
-      });
-    } catch (err) {
-      notify('session/update', {
-        sessionId: msg.params.sessionId,
-        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `mcp-error:${err.message}` } },
-      });
-    }
+    await callMcpTool(msg, tool, { taskId: stubTaskId, ...extra }, (result) => `${tool}:${result.content[0].text}`);
   }
 
   const exit = scenario.exit ?? 'clean';

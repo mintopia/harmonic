@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Attributes, SpanContext } from '@opentelemetry/api';
 import { Git } from './git.js';
+import { logger } from '../logger.js';
 import { startOperation } from '../telemetry/operations.js';
 
 export interface MergeIntoBaseArgs {
@@ -108,7 +109,14 @@ export async function mergeIntoBase(args: MergeIntoBaseArgs): Promise<MergeIntoB
 
 async function mergeIntoBaseUnchecked(args: MergeIntoBaseArgs): Promise<MergeIntoBaseOutcome> {
   const { repoDir, baseBranch, branch, expectedOid } = args;
-  const branchOid = await Git.revParse(repoDir, branch).catch(() => null);
+  const branchOid = await Git.revParse(repoDir, branch).catch((err) => {
+    logger.debug('branch-merge: resolving branch tip failed; treating as stale-head', {
+      'merge.repo': repoDir,
+      'merge.branch': branch,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  });
   if (branchOid !== expectedOid) {
     return { ok: false, reason: 'stale-head', detail: `branch '${branch}' moved after verification` };
   }
@@ -126,7 +134,13 @@ async function mergeIntoBaseUnchecked(args: MergeIntoBaseArgs): Promise<MergeInt
       }
       newOid = await Git.revParse(adminPath, 'HEAD');
     } finally {
-      await Git.removeWorktree(repoDir, adminPath).catch(() => {});
+      await Git.removeWorktree(repoDir, adminPath).catch((err) => {
+        logger.debug('branch-merge: removing the admin worktree failed', {
+          'merge.repo': repoDir,
+          'merge.admin_path': adminPath,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
       rmSync(parent, { recursive: true, force: true });
     }
   } else if (await Git.isAncestor(repoDir, expectedOid, expectedOld)) {

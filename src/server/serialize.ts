@@ -12,6 +12,7 @@ import type { AttemptUsageSnapshot } from '../execution/usage.js';
 import { Git } from '../execution/git.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { adapterFor } from '../execution/harness/registry.js';
+import { logger } from '../logger.js';
 import {
   atRestWorkspaceId,
   parseUsage,
@@ -403,7 +404,8 @@ export async function timelineAttempts(
     if (run.cost) {
       try {
         cost = JSON.parse(run.cost) as Cost;
-      } catch {
+      } catch (err) {
+        logger.warn('serialize: unparseable attempt cost, omitting from timeline', { attemptId: run.id, error: err instanceof Error ? err.message : String(err) });
         cost = null;
       }
     }

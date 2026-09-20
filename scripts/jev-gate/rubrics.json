@@ -6,7 +6,8 @@
     "levels": 5,
     "direction": "higher_is_better",
     "aggregation": "`min`: the category takes the lowest sub-score and that sub-question's confidence — right for defect categories, where one injection must fail security however clean the crypto is. `mean`: the category takes the mean of sub-scores and of confidences — right for a graded quality made of facets (complexity). code_smells stays one holistic question: its facets (god units, parameter smells, primitive obsession) each measured far less certain than the whole (2026-09-20: 30-80% low-confidence vs 3%).",
-    "dropped": "2026-09-20, after the first whole-repo baseline: `security.unconfined_paths`, `concurrency_and_idempotency.rerun_safety` and `ai_slop.duplicate_helpers` were removed. Each decided most of its category's low-confidence files (42/67, 36/59, 67/75): whether a path is confined, whether a step gets re-run, and whether two helpers truly duplicate each other are all arguable from one file. Cost: the gate no longer flags unconfined filesystem paths (the known `claude.ts` sessionId traversal scored 1.8 on that sub-question)."
+    "dropped": "2026-09-20, after the first whole-repo baseline: `security.unconfined_paths`, `concurrency_and_idempotency.rerun_safety` and `ai_slop.duplicate_helpers` were removed. Each decided most of its category's low-confidence files (42/67, 36/59, 67/75): whether a path is confined, whether a step gets re-run, and whether two helpers truly duplicate each other are all arguable from one file. Cost: the gate no longer flags unconfined filesystem paths (the known `claude.ts` sessionId traversal scored 1.8 on that sub-question).",
+    "role_recognition": "2026-09-20: the three testability sub-questions recognise production roles where low testability is the correct design, not a defect — a composition root / entrypoint that only wires collaborators (inline_collaborators), a single intentional process-wide resource reached through an accessor/subscribe/reset (module_state), and an adapter module whose whole job is to wrap one external facility (ambient_io). Each cue is visible in the file itself (a wiring-only body, one shared resource behind an accessor, a thin facility wrapper with little logic of its own), so it stays per-file-decidable; a file that mixes real business logic with these patterns still scores low. This replaces a glob-based role-exemption list, which would rot as files move."
   },
   "code_smells": {
     "aggregate": "min",
@@ -143,35 +144,35 @@
     "questions": {
       "ambient_io": {
         "type": "score",
-        "instructions": "Look only at what this file's logic touches DIRECTLY: the filesystem (node:fs), child processes, network (fetch/http), process.env/argv/exit, the clock (Date.now, new Date() used in logic), timers, Math.random, and browser globals (window, document, localStorage). It is NOT a direct touch when the dependency arrives as a parameter, constructor argument, options field, prop or context — including a parameter with a production default. Calls to imported project functions are out of scope: you cannot see what they do. Rate how much of the logic directly touches these.",
+        "instructions": "Look only at what this file's logic touches DIRECTLY: the filesystem (node:fs), child processes, network (fetch/http), process.env/argv/exit, the clock (Date.now, new Date() used in logic), timers, Math.random, and browser globals (window, document, localStorage). It is NOT a direct touch when the dependency arrives as a parameter, constructor argument, options field, prop or context — including a parameter with a production default. Calls to imported project functions are out of scope: you cannot see what they do. It also does NOT count against the file when the module's ENTIRE job is to be the adapter for one such facility — a thin, cohesive wrapper (over the filesystem, a subprocess, the network, the clock or a browser global) that holds little logic of its own beyond exposing that facility to the rest of the app: such a module IS the substitutable seam other code depends on, so its direct touches are its purpose, not a hidden dependency. A file that mixes substantial branching business logic WITH direct touches is not such an adapter. Rate how much of the logic directly touches these.",
         "criteria": [
           "Nearly all logic directly touches ambient I/O or globals, with no way to substitute them",
           "Most logic directly touches them",
           "Some logic directly touches them; the rest is pure or parameterized",
           "Only a thin edge touches them directly (an entry point or default argument)",
-          "Nothing touches them directly: pure logic, injected dependencies, or no logic at all — or the file is itself a test, fixture, mock, story or type declaration"
+          "Nothing touches them directly: pure logic, injected dependencies, or no logic at all — or the file is a test, fixture, mock, story or type declaration, or an adapter module whose whole job is to wrap one external facility for the rest of the app"
         ]
       },
       "module_state": {
         "type": "score",
-        "instructions": "Look only at the top level of this module. Find module-level MUTABLE state (a top-level `let`, or a top-level Map/Set/array/object that functions in this file mutate) and IMPORT-TIME side effects (top-level statements that touch the filesystem, network, database, timers, process or DOM when the module is imported). These do NOT count: top-level constants and frozen lookup tables; function, class and type definitions; state created inside a factory function and returned; React component state. Rate how much the file has.",
+        "instructions": "Look only at the top level of this module. Find module-level MUTABLE state (a top-level `let`, or a top-level Map/Set/array/object that functions in this file mutate) and IMPORT-TIME side effects (top-level statements that touch the filesystem, network, database, timers, process or DOM when the module is imported). These do NOT count: top-level constants and frozen lookup tables; function, class and type definitions; state created inside a factory function and returned; React component state; a single intentional process-wide resource that is meant to exist exactly once for the whole process — one shared client, connection, socket, store, SDK controller or loaded config — reached through an accessor, subscribe or reset function, which is the module deliberately owning one shared thing rather than scattered mutable variables that logic reads and writes ad hoc. Rate how much the file has.",
         "criteria": [
           "Several pieces of module-level mutable state or import-time side effects that logic depends on",
           "One piece of module-level mutable state or one import-time side effect that logic depends on, with no reset hook",
           "One piece, with a reset or injection hook provided for tests",
           "None that are clear; at most a cache or registry that does not change behaviour",
-          "No module-level mutable state and no import-time side effects — or the file is itself a test, fixture, mock, story or type declaration"
+          "No module-level mutable state and no import-time side effects — or the only such state is a single intentional process-wide resource exposed through an accessor/subscribe/reset API — or the file is itself a test, fixture, mock, story or type declaration"
         ]
       },
       "inline_collaborators": {
         "type": "score",
-        "instructions": "Look only for stateful collaborators CONSTRUCTED inside this file's logic: `new` of a client, service, repository, connection, server, watcher or queue inside a function or class body, where a caller has no way to pass in a substitute. These do NOT count: `new Map/Set/Date/Error/URL/RegExp/AbortController/Promise` and other plain values; construction inside a factory whose whole job is to build that object; construction used as the default for an injectable parameter. Rate how many inline-constructed collaborators the file has.",
+        "instructions": "Look only for stateful collaborators CONSTRUCTED inside this file's logic: `new` of a client, service, repository, connection, server, watcher or queue inside a function or class body, where a caller has no way to pass in a substitute. These do NOT count: `new Map/Set/Date/Error/URL/RegExp/AbortController/Promise` and other plain values; construction inside a factory whose whole job is to build that object; construction used as the default for an injectable parameter; construction inside a composition root — a function or module whose whole job is to assemble and wire the application's collaborators together (a bootstrap / buildApp / entrypoint factory that carries no business logic of its own, only wiring) — where building the real collaborators is the declared purpose, not a hidden un-substitutable dependency. Rate how many inline-constructed collaborators the file has.",
         "criteria": [
           "Many collaborators are constructed inline with no seam",
           "Several collaborators are constructed inline with no seam",
           "One collaborator is constructed inline with no seam",
           "Collaborators are constructed only in factories or as injectable defaults",
-          "No stateful collaborator is constructed in this file — or the file is itself a test, fixture, mock, story or type declaration"
+          "No stateful collaborator is constructed in this file — or the file's only job is to compose and wire the application (a bootstrap/entrypoint that carries no business logic of its own) — or the file is itself a test, fixture, mock, story or type declaration"
         ]
       }
     }

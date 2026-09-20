@@ -1,13 +1,11 @@
 import { BrandMark } from './BrandMark';
 import { Icon } from './Icon';
 import { NavRail } from './NavRail';
-import { OperatorControls } from './OperatorControls';
+import { OperatorControls, type OperatorControlsProps } from './OperatorControls';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
-import type { AppConfig, Workspace } from '../types';
-import type { HostLoad } from '../ws';
+import type { Workspace } from '../types';
 import type { View } from '../rail-model';
 import type { Scope } from '../router-model';
-import type { ThemePref } from '../theme';
 
 interface AppSidebarProps {
   railCollapsed: boolean;
@@ -25,24 +23,8 @@ interface AppSidebarProps {
   needsYouCount: number;
   onPickView: (v: View) => void;
   onToggleRail: () => void;
-  config: AppConfig | null;
-  globalRunningCount: number;
-  cost24h: string | null;
-  hostLoad: HostLoad | null;
-  theme: ThemePref;
-  passwordSet: boolean;
-  globalPaused: boolean | null;
-  globalPausePending: boolean;
-  trackerEnabled: boolean;
-  refreshingTracker: boolean;
-  onAutoRunnerChange: (enabled: boolean) => void;
-  onGlobalPauseChange: (paused: boolean) => void;
-  onRefreshTracker: () => void;
-  onThemeCycle: () => void;
-  onSettingsClick: () => void;
-  onLogout: () => void;
-  onOpenAbout: () => void;
-  onOpenActivity: () => void;
+  /** Forwarded as-is to the drawer-layout {@link OperatorControls}. */
+  operatorControls: Omit<OperatorControlsProps, 'layout' | 'view'>;
 }
 
 export function AppSidebar({
@@ -61,24 +43,7 @@ export function AppSidebar({
   needsYouCount,
   onPickView,
   onToggleRail,
-  config,
-  globalRunningCount,
-  cost24h,
-  hostLoad,
-  theme,
-  passwordSet,
-  globalPaused,
-  globalPausePending,
-  trackerEnabled,
-  refreshingTracker,
-  onAutoRunnerChange,
-  onGlobalPauseChange,
-  onRefreshTracker,
-  onThemeCycle,
-  onSettingsClick,
-  onLogout,
-  onOpenAbout,
-  onOpenActivity,
+  operatorControls,
 }: AppSidebarProps) {
   return (
     <aside
@@ -132,28 +97,7 @@ export function AppSidebar({
         />
       </div>
       <div className="mt-auto rail:hidden">
-        <OperatorControls
-          layout="drawer"
-          config={config}
-          runningCount={globalRunningCount}
-          cost24h={cost24h}
-          hostLoad={hostLoad}
-          theme={theme}
-          view={view}
-          passwordSet={passwordSet}
-          globalPaused={globalPaused}
-          globalPausePending={globalPausePending}
-          trackerEnabled={trackerEnabled}
-          refreshingTracker={refreshingTracker}
-          onAutoRunnerChange={onAutoRunnerChange}
-          onGlobalPauseChange={onGlobalPauseChange}
-          onRefreshTracker={onRefreshTracker}
-          onThemeCycle={onThemeCycle}
-          onSettingsClick={onSettingsClick}
-          onLogout={onLogout}
-          onOpenAbout={onOpenAbout}
-          onOpenActivity={onOpenActivity}
-        />
+        <OperatorControls layout="drawer" view={view} {...operatorControls} />
       </div>
     </aside>
   );

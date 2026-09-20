@@ -25,6 +25,140 @@ import type { NavigateFn } from '../useRoute';
 
 const GraphView = lazy(() => import('./GraphView').then((m) => ({ default: m.GraphView })));
 
+interface MainViewContentProps {
+  view: View;
+  route: Route;
+  navigate: NavigateFn;
+  activeWorkspaceId: number | null;
+  activeWorkspace: Workspace | null;
+  epics: Epic[];
+  taskList: Task[];
+  tasks: Task[] | null;
+  hasHistory: boolean | null;
+  config: AppConfig | null;
+  hostLoad: HostLoad | null;
+  pendingPermissionAlerts: PendingPermissionAlert[];
+  workspaces: Workspace[];
+  runningCount: number;
+  onEdit: (task: Task | 'new' | null) => void;
+  onOpenTask: (taskId: number) => void;
+  onOpenRow: (task: Task) => void;
+  onOpenEpic: (ref: number) => void;
+  pickView: (v: View) => void;
+  switchWorkspace: (id: number) => void;
+  setTableFilters: (table: TableFilters) => void;
+  setConfig: (config: AppConfig) => void;
+  handleWorkspaceSaved: (workspace: Workspace) => void;
+  handleWorkspaceDeleted: (id: number) => void;
+  pickConversation: (conversationId: number | null) => void;
+}
+
+/** The routed page content for the current rail `view` — everything under the
+ * chrome (error banner, hints) that `AppContent` renders around it. */
+function MainViewContent({
+  view,
+  route,
+  navigate,
+  activeWorkspaceId,
+  activeWorkspace,
+  epics,
+  taskList,
+  tasks,
+  hasHistory,
+  config,
+  hostLoad,
+  pendingPermissionAlerts,
+  workspaces,
+  runningCount,
+  onEdit,
+  onOpenTask,
+  onOpenRow,
+  onOpenEpic,
+  pickView,
+  switchWorkspace,
+  setTableFilters,
+  setConfig,
+  handleWorkspaceSaved,
+  handleWorkspaceDeleted,
+  pickConversation,
+}: MainViewContentProps) {
+  return (
+    <>
+      {view === 'board' && activeWorkspaceId === null && (
+        <GlobalDashboard
+          pendingPermissions={pendingPermissionAlerts.length}
+          hostLoad={hostLoad}
+          onNavigate={(view) => pickView(view)}
+          onOpenWorkspace={switchWorkspace}
+        />
+      )}
+      {view === 'board' && activeWorkspaceId !== null && (
+        <Board
+          tasks={taskList}
+          loading={tasks === null}
+          epics={epics}
+          hasHistory={hasHistory}
+          onOpen={onOpenRow}
+          onOpenTask={onOpenTask}
+          onNewTask={() => onEdit('new')}
+          onOpenEpic={(epic) => onOpenEpic(epic.ref)}
+        />
+      )}
+      {view === 'activity' && <ActivityView config={config} workspaceId={activeWorkspaceId} />}
+      {view === 'conversations' && (
+        <ConversationsPage
+          config={config}
+          workspace={activeWorkspace}
+          conversationId={route.conversation ?? null}
+          onConversationChange={pickConversation}
+        />
+      )}
+      {view === 'table' && (
+        <TableView
+          workspaceId={route.scope.kind === 'global' ? null : activeWorkspaceId}
+          workspaces={workspaces}
+          epics={route.scope.kind === 'global' ? [] : epics}
+          onOpen={onOpenRow}
+          onOpenEpic={onOpenEpic}
+          filters={route.table}
+          onFiltersChange={setTableFilters}
+          onNewTask={() => onEdit('new')}
+        />
+      )}
+      {view === 'graph' && (
+        <Suspense
+          fallback={
+            <div className="flex h-full items-center justify-center text-muted">Loading graph…</div>
+          }
+        >
+          <GraphView workspaceId={activeWorkspaceId} epics={epics} onOpen={onOpenRow} />
+        </Suspense>
+      )}
+      {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
+      {view === 'files' && activeWorkspace && (
+        <FilesPage workspace={activeWorkspace} selectedPath={route.file ?? null} onSelectFile={(file) => navigate({ ...route, file })} onWorkspaceSaved={handleWorkspaceSaved} />
+      )}
+      {view === 'timeline' && (
+        <TimelinePage workspaceId={activeWorkspaceId} onOpenTask={onOpenTask} />
+      )}
+      {view === 'operations' && (
+        <OperationsPage workspaceId={activeWorkspaceId} tasks={taskList} epics={epics} onOpenTask={onOpenTask} onOpenEpic={onOpenEpic} />
+      )}
+      {view === 'api' && <ApiPage />}
+      {view === 'settings' && <SettingsPage onSaved={setConfig} />}
+      {view === 'workspace' && config && activeWorkspace && (
+        <WorkspaceSettingsPage
+          workspace={activeWorkspace}
+          config={config}
+          blockedByRunningTask={runningCount > 0}
+          onSaved={handleWorkspaceSaved}
+          onDeleted={handleWorkspaceDeleted}
+        />
+      )}
+    </>
+  );
+}
+
 interface AppContentProps {
   route: Route;
   navigate: NavigateFn;
@@ -188,79 +322,33 @@ export function AppContent({
                 scope to it. Open one to get started.
               </EmptyState>
             ) : (
-              <>
-                {view === 'board' && activeWorkspaceId === null && (
-                  <GlobalDashboard
-                    pendingPermissions={pendingPermissionAlerts.length}
-                    hostLoad={hostLoad}
-                    onNavigate={(view) => pickView(view)}
-                    onOpenWorkspace={switchWorkspace}
-                  />
-                )}
-                {view === 'board' && activeWorkspaceId !== null && (
-                  <Board
-                    tasks={taskList}
-                    loading={tasks === null}
-                    epics={epics}
-                    hasHistory={hasHistory}
-                    onOpen={onOpenRow}
-                    onOpenTask={onOpenTask}
-                    onNewTask={() => onEdit('new')}
-                    onOpenEpic={(epic) => onOpenEpic(epic.ref)}
-                  />
-                )}
-              {view === 'activity' && <ActivityView config={config} workspaceId={activeWorkspaceId} />}
-              {view === 'conversations' && (
-                <ConversationsPage
-                  config={config}
-                  workspace={activeWorkspace}
-                  conversationId={route.conversation ?? null}
-                  onConversationChange={pickConversation}
-                />
-              )}
-              {view === 'table' && (
-                <TableView
-                  workspaceId={route.scope.kind === 'global' ? null : activeWorkspaceId}
-                  workspaces={workspaces}
-                  epics={route.scope.kind === 'global' ? [] : epics}
-                  onOpen={onOpenRow}
-                  onOpenEpic={onOpenEpic}
-                  filters={route.table}
-                  onFiltersChange={setTableFilters}
-                  onNewTask={() => onEdit('new')}
-                />
-              )}
-              {view === 'graph' && (
-                <Suspense
-                  fallback={
-                    <div className="flex h-full items-center justify-center text-muted">Loading graph…</div>
-                  }
-                >
-                  <GraphView workspaceId={activeWorkspaceId} epics={epics} onOpen={onOpenRow} />
-                </Suspense>
-              )}
-              {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
-              {view === 'files' && activeWorkspace && (
-                <FilesPage workspace={activeWorkspace} selectedPath={route.file ?? null} onSelectFile={(file) => navigate({ ...route, file })} onWorkspaceSaved={handleWorkspaceSaved} />
-              )}
-              {view === 'timeline' && (
-                <TimelinePage workspaceId={activeWorkspaceId} onOpenTask={onOpenTask} />
-              )}
-              {view === 'operations' && (
-                <OperationsPage workspaceId={activeWorkspaceId} tasks={taskList} epics={epics} onOpenTask={onOpenTask} onOpenEpic={onOpenEpic} />
-              )}
-              {view === 'api' && <ApiPage />}
-              {view === 'settings' && <SettingsPage onSaved={setConfig} />}
-              {view === 'workspace' && config && activeWorkspace && (
-                <WorkspaceSettingsPage
-                  workspace={activeWorkspace}
-                  config={config}
-                  blockedByRunningTask={runningCount > 0}
-                  onSaved={handleWorkspaceSaved}
-                  onDeleted={handleWorkspaceDeleted}
-                />
-              )}
-              </>
+              <MainViewContent
+                view={view}
+                route={route}
+                navigate={navigate}
+                activeWorkspaceId={activeWorkspaceId}
+                activeWorkspace={activeWorkspace}
+                epics={epics}
+                taskList={taskList}
+                tasks={tasks}
+                hasHistory={hasHistory}
+                config={config}
+                hostLoad={hostLoad}
+                pendingPermissionAlerts={pendingPermissionAlerts}
+                workspaces={workspaces}
+                runningCount={runningCount}
+                onEdit={onEdit}
+                onOpenTask={onOpenTask}
+                onOpenRow={onOpenRow}
+                onOpenEpic={onOpenEpic}
+                pickView={pickView}
+                switchWorkspace={switchWorkspace}
+                setTableFilters={setTableFilters}
+                setConfig={setConfig}
+                handleWorkspaceSaved={handleWorkspaceSaved}
+                handleWorkspaceDeleted={handleWorkspaceDeleted}
+                pickConversation={pickConversation}
+              />
             )}
           </main>
         </div>

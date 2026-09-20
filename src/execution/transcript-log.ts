@@ -1,5 +1,6 @@
 import { open, stat } from 'node:fs/promises';
 import { forEachYielding } from '../reliability/yield.js';
+import { logger } from '../logger.js';
 import { adapterFor } from './harness/registry.js';
 import type { TranscriptLogEvent } from './harness/transcript.js';
 
@@ -98,7 +99,19 @@ export async function readTranscriptLog(input: { harness: string; path: string |
 async function mostRecentSubagents<T extends { path: string }>(subagents: T[]): Promise<T[]> {
   if (subagents.length <= MAX_SUBAGENTS) return subagents;
   const withMtime = await Promise.all(
-    subagents.map(async (sub) => ({ sub, mtimeMs: (await stat(sub.path).catch(() => null))?.mtimeMs ?? 0 })),
+    subagents.map(async (sub) => ({
+      sub,
+      mtimeMs:
+        (
+          await stat(sub.path).catch((err) => {
+            logger.debug('transcript-log: stat failed while ranking subagent transcripts by recency', {
+              path: sub.path,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            return null;
+          })
+        )?.mtimeMs ?? 0,
+    })),
   );
   return withMtime
     .sort((a, b) => b.mtimeMs - a.mtimeMs)
@@ -122,7 +135,11 @@ async function readTail(path: string): Promise<string | null> {
     } finally {
       await file.close();
     }
-  } catch {
+  } catch (err) {
+    logger.debug('transcript-log: reading the transcript tail failed', {
+      path,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { logger } from '../../logger.js';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode, type UsageTurn } from '../usage.js';
 import { forEachYielding } from '../../reliability/yield.js';
 import { serializedTailReader, type HarnessAdapter, type ModelUsage, type SessionTailReader } from './adapter.js';
@@ -59,7 +60,8 @@ class RolloutAcc implements LineAccumulator {
     let entry: any;
     try {
       entry = JSON.parse(line);
-    } catch {
+    } catch (err) {
+      logger.debug('codex: skipping a malformed rollout line', { error: err instanceof Error ? err.message : String(err) });
       return;
     }
     if (this.subagent && !this.started) {
@@ -220,7 +222,8 @@ function rolloutHeader(file: string): Pick<Rollout, 'id' | 'parentId' | 'name'> 
                 ? payload.agent_nickname
                 : 'subagent',
     };
-  } catch {
+  } catch (err) {
+    logger.debug('codex: rollout header failed to parse', { file, error: err instanceof Error ? err.message : String(err) });
     return null;
   }
 }

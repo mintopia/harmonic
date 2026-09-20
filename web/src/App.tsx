@@ -277,26 +277,27 @@ export function App() {
         needsYouCount={needsYouCount}
         onPickView={pickView}
         onToggleRail={toggleRail}
-        config={config}
-        globalRunningCount={globalRunningCount}
-        cost24h={cost24h}
-        hostLoad={hostLoad}
-        theme={theme}
-        passwordSet={passwordSet}
-        globalPaused={globalPaused}
-        globalPausePending={globalPausePending}
-        trackerEnabled={activeWorkspace?.trackerEnabled ?? false}
-        refreshingTracker={refreshingTracker}
-        onAutoRunnerChange={(enabled) =>
-          api.updateConfig({ autoRunner: { enabled } }).then(setConfig, toastError)
-        }
-        onGlobalPauseChange={setFleetPaused}
-        onRefreshTracker={refreshTracker}
-        onThemeCycle={cycleTheme}
-        onSettingsClick={() => pickView('settings')}
-        onLogout={logout}
-        onOpenAbout={() => setAboutOpen(true)}
-        onOpenActivity={openGlobalActivity}
+        operatorControls={{
+          config,
+          runningCount: globalRunningCount,
+          cost24h,
+          hostLoad,
+          theme,
+          passwordSet,
+          globalPaused,
+          globalPausePending,
+          trackerEnabled: activeWorkspace?.trackerEnabled ?? false,
+          refreshingTracker,
+          onAutoRunnerChange: (enabled) =>
+            api.updateConfig({ autoRunner: { enabled } }).then(setConfig, toastError),
+          onGlobalPauseChange: setFleetPaused,
+          onRefreshTracker: refreshTracker,
+          onThemeCycle: cycleTheme,
+          onSettingsClick: () => pickView('settings'),
+          onLogout: logout,
+          onOpenAbout: () => setAboutOpen(true),
+          onOpenActivity: openGlobalActivity,
+        }}
       />
 
       <div className="group/shell flex min-h-0 min-w-0 flex-1 flex-col">

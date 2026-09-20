@@ -142,38 +142,11 @@ export class TurnCompletion {
     record('lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
     const afkUnresolved = autoDriven && !escalating && !listeners.stoppedShort && !active.agentFinished;
     if (afkUnresolved) record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal; verifying anyway' });
-    let implementationHead: string | null = null;
-    let noChangeFinishHead: string | null = null;
-    if (!escalating && !listeners.stoppedShort) {
-      if (!connectionGone && !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
-        const nudge = 'Your implementation left uncommitted changes. Commit the completed work now, then finish.';
-        record('lifecycle', { event: 'commit-nudge' });
-        active.idle = false;
-        const turn = await promptTurn(active.driver, nudge, record);
-        connectionGone ||= turn.connectionGone;
-        if (turn.result) result = turn.result;
-        active.idle = true;
-      }
-      if (workspace.worktree && !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
-        await bestEffort(() => Git.commitAll(workspace.cwd, `harmonic: task ${task.id} attempt ${attemptNumber}`), {
-          op: 'runner.finishDrivenTurn.commitAll',
-          level: 'error',
-          context: { taskId: task.id, attemptId: run.id, attemptNumber },
-        });
-      }
-      const [head, base] = await Promise.all([
-        Git.revParse(workspace.cwd, 'HEAD').catch(() => null),
-        workspace.baseRev ? Git.revParse(workspace.cwd, workspace.baseRev).catch(() => null) : Promise.resolve(null),
-      ]);
-      if (head && head !== base) {
-        implementationHead = head;
-        await this.deps.attempts.update(run.id, { verifiedHeadOid: head });
-      } else if (run.verifiedHeadOid) {
-        implementationHead = run.verifiedHeadOid;
-      } else if (active.agentFinished && head) {
-        noChangeFinishHead = head;
-      }
-    }
+    const resolvedHead = await this.resolveImplementationHead({
+      task, run, workspace, active, attemptNumber, escalating, stoppedShort: listeners.stoppedShort, connectionGone, result, record,
+    });
+    ({ connectionGone, result } = resolvedHead);
+    let { implementationHead, noChangeFinishHead } = resolvedHead;
     await finalize();
     const usage = await this.deps.usage.collectUsageSafe({
       harnessId: task.harness,
@@ -238,6 +211,68 @@ export class TurnCompletion {
       record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal and no verifier vouched for the work' });
       return { kind: 'actionable-fail', reason: 'attempt ended without an execution-complete (finish_task) signal', output: '' };
     }
+    return this.mergeAndSettle({ task, run, record, active, patch, autoDriven, noChange, advanceTask });
+  }
+
+  private async resolveImplementationHead(input: {
+    task: TaskRow;
+    run: AttemptRow;
+    workspace: Workspace;
+    active: ActiveRun;
+    attemptNumber: number;
+    escalating: string | null;
+    stoppedShort: string | null;
+    connectionGone: boolean;
+    result: PromptResult;
+    record: RunEventRecorder;
+  }): Promise<{ connectionGone: boolean; result: PromptResult; implementationHead: string | null; noChangeFinishHead: string | null }> {
+    const { task, run, workspace, active, attemptNumber, escalating, stoppedShort, record } = input;
+    let { connectionGone, result } = input;
+    let implementationHead: string | null = null;
+    let noChangeFinishHead: string | null = null;
+    if (escalating || stoppedShort) return { connectionGone, result, implementationHead, noChangeFinishHead };
+    if (!connectionGone && !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
+      const nudge = 'Your implementation left uncommitted changes. Commit the completed work now, then finish.';
+      record('lifecycle', { event: 'commit-nudge' });
+      active.idle = false;
+      const turn = await promptTurn(active.driver, nudge, record);
+      connectionGone ||= turn.connectionGone;
+      if (turn.result) result = turn.result;
+      active.idle = true;
+    }
+    if (workspace.worktree && !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
+      await bestEffort(() => Git.commitAll(workspace.cwd, `harmonic: task ${task.id} attempt ${attemptNumber}`), {
+        op: 'runner.finishDrivenTurn.commitAll',
+        level: 'error',
+        context: { taskId: task.id, attemptId: run.id, attemptNumber },
+      });
+    }
+    const [head, base] = await Promise.all([
+      Git.revParse(workspace.cwd, 'HEAD').catch(() => null),
+      workspace.baseRev ? Git.revParse(workspace.cwd, workspace.baseRev).catch(() => null) : Promise.resolve(null),
+    ]);
+    if (head && head !== base) {
+      implementationHead = head;
+      await this.deps.attempts.update(run.id, { verifiedHeadOid: head });
+    } else if (run.verifiedHeadOid) {
+      implementationHead = run.verifiedHeadOid;
+    } else if (active.agentFinished && head) {
+      noChangeFinishHead = head;
+    }
+    return { connectionGone, result, implementationHead, noChangeFinishHead };
+  }
+
+  private async mergeAndSettle(input: {
+    task: TaskRow;
+    run: AttemptRow;
+    record: RunEventRecorder;
+    active: ActiveRun;
+    patch: Partial<AttemptRow>;
+    autoDriven: boolean;
+    noChange: boolean;
+    advanceTask: (to: 'verifying' | 'merging') => Promise<void>;
+  }): Promise<TurnOutcome> {
+    const { task, run, record, active, patch, autoDriven, noChange, advanceTask } = input;
     const diff = await this.deps.diffSnapshotFor(task, run.id);
     const current = await this.deps.attempts.get(run.id);
     const worktreeMerge = task.isolationMode === 'worktree';

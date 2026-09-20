@@ -9,15 +9,17 @@ export function loadTheme(storage: StorageLike): ThemePref {
   try {
     const raw = storage.getItem(THEME_KEY);
     return THEME_PREFS.includes(raw as ThemePref) ? (raw as ThemePref) : 'system';
-  } catch {
-    return 'system'; // private browsing etc. — follow the OS
+  } catch (error) {
+    console.warn('loadTheme: storage unavailable, following the OS', error); // private browsing etc.
+    return 'system';
   }
 }
 
 export function storeTheme(storage: StorageLike, pref: ThemePref): void {
   try {
     storage.setItem(THEME_KEY, pref);
-  } catch {
+  } catch (error) {
+    console.warn('storeTheme: storage unavailable', error);
   }
 }
 

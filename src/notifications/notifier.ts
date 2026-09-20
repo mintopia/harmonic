@@ -115,7 +115,6 @@ export class Notifier {
           port: config.smtp.port,
           secure: config.smtp.secure ?? false,
           ...(config.smtp.user ? { auth: { user: config.smtp.user, pass: config.smtp.pass ?? '' } } : {}),
-          tls: { rejectUnauthorized: false },
         });
         await transport.sendMail({
           from: config.from,

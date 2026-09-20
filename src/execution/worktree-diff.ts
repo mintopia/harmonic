@@ -1,4 +1,5 @@
 import { Git } from './git.js';
+import { logger } from '../logger.js';
 import { parseUnifiedDiff, type DiffFile } from '../domain/unified-diff.js';
 
 /**
@@ -15,9 +16,24 @@ export async function liveWorktreeDiff(
   baseBranch: string | null,
 ): Promise<{ worktree: string; baseOid: string } | null> {
   if (!branch || !baseBranch) return null;
-  const worktree = await Git.branchCheckedOutAt(workingDir, branch).catch(() => null);
+  const worktree = await Git.branchCheckedOutAt(workingDir, branch).catch((err) => {
+    logger.debug('worktree-diff: resolving the checked-out worktree for the branch failed', {
+      'diff.repo': workingDir,
+      'diff.branch': branch,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  });
   if (!worktree) return null;
-  const baseOid = await Git.mergeBase(workingDir, baseBranch, branch).catch(() => null);
+  const baseOid = await Git.mergeBase(workingDir, baseBranch, branch).catch((err) => {
+    logger.debug('worktree-diff: resolving the merge base failed', {
+      'diff.repo': workingDir,
+      'diff.base_branch': baseBranch,
+      'diff.branch': branch,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  });
   if (!baseOid) return null;
   return { worktree, baseOid };
 }

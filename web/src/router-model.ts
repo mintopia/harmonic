@@ -82,9 +82,11 @@ export function serializeRoute(route: Route): string {
   const query = params.toString();
   return query ? `${base}?${query}` : base;
 }
-export function storeLastRoute(storage: StorageLike, route: Route): void { try { storage.setItem(LAST_ROUTE_KEY, serializeRoute(route)); } catch {} }
+export function storeLastRoute(storage: StorageLike, route: Route): void {
+  try { storage.setItem(LAST_ROUTE_KEY, serializeRoute(route)); } catch (error) { console.warn('storeLastRoute: storage unavailable', error); }
+}
 export function loadLastRoute(storage: StorageLike): Route {
-  try { const value = storage.getItem(LAST_ROUTE_KEY); if (!value?.startsWith('/')) return DEFAULT_ROUTE; const url = new URL(value, 'http://harmonic.local'); return parseRoute(url.pathname, url.search); } catch { return DEFAULT_ROUTE; }
+  try { const value = storage.getItem(LAST_ROUTE_KEY); if (!value?.startsWith('/')) return DEFAULT_ROUTE; const url = new URL(value, 'http://harmonic.local'); return parseRoute(url.pathname, url.search); } catch (error) { console.warn('loadLastRoute: storage unavailable', error); return DEFAULT_ROUTE; }
 }
 export function scopeSwitchRoute(route: Route, scope: Scope): Route {
   if (scope.kind === 'global') return { ...route, scope, view: GLOBAL_RAIL_VIEWS.includes(route.view) ? route.view : 'board', task: null, epic: null, conversation: null, panel: NO_SELECTION, file: null };

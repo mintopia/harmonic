@@ -20,6 +20,8 @@ import { subscribe } from './ws';
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 
 const BOARD_PAGE = 100;
+const POLL_INTERVAL_MS = 10_000;
+const MAX_POLL_INTERVAL_MS = 60_000;
 
 async function fetchAllPages<T>(loadPage: (offset: number) => Promise<{ items: T[]; total: number }>): Promise<T[]> {
   const all: T[] = [];
@@ -104,21 +106,28 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
   }, [activeWorkspaceId, apiImpl]);
 
   const refreshGlobalPause = useCallback(() => {
-    apiImpl.globalPause().then(({ paused }) => setGlobalPaused(paused)).catch(() => {});
+    apiImpl
+      .globalPause()
+      .then(({ paused }) => setGlobalPaused(paused))
+      .catch((error) => console.warn('refreshGlobalPause: fetch failed, keeping last-known state', error));
   }, [apiImpl]);
 
   const refreshEpics = useCallback(async () => {
     if (activeWorkspaceId === null) return;
     try {
       setEpics(await fetchAllEpics(apiImpl, activeWorkspaceId));
-    } catch {
+    } catch (error) {
+      console.warn('refreshEpics: fetch failed, keeping last-known epics', error);
     }
   }, [activeWorkspaceId, apiImpl]);
 
   useLiveEffect((live) => {
     if (!authed) return;
-    apiImpl.config().then((next) => live() && setConfig(next)).catch(() => {});
-    apiImpl.globalPause().then(({ paused }) => live() && setGlobalPaused(paused)).catch(() => {});
+    apiImpl.config().then((next) => live() && setConfig(next), (error) => live() && toastError(error));
+    apiImpl
+      .globalPause()
+      .then(({ paused }) => live() && setGlobalPaused(paused))
+      .catch((error) => live() && console.warn('useAppSync: initial globalPause fetch failed', error));
     apiImpl.workspaces().then(({ workspaces }) => {
       if (!live()) return;
       setWorkspaces(workspaces);
@@ -150,7 +159,7 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
     setHasHistory(null);
     apiImpl.tasks({ workspaceId: activeWorkspaceId, limit: 1 }).then(
       ({ total }) => live() && setHasHistory(total > 0),
-      () => {},
+      (error) => live() && console.warn('useAppSync: hasHistory probe failed', error),
     );
   }, [authed, activeWorkspaceId, apiImpl]);
 
@@ -198,14 +207,20 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
       refreshEpics();
       refreshGlobalPause();
     });
-    const timer = setInterval(() => {
-      refresh();
-      refreshEpics();
-      refreshGlobalPause();
-    }, 10_000);
+    let pollTimer: ReturnType<typeof setTimeout> | undefined;
+    const schedulePoll = () => {
+      const delay = Math.min(POLL_INTERVAL_MS * 2 ** failStreak.current, MAX_POLL_INTERVAL_MS);
+      pollTimer = setTimeout(() => {
+        refresh();
+        refreshEpics();
+        refreshGlobalPause();
+        schedulePoll();
+      }, delay);
+    };
+    schedulePoll();
     return () => {
       unsubscribe();
-      clearInterval(timer);
+      if (pollTimer !== undefined) clearTimeout(pollTimer);
       debouncedRefreshEpics.cancel();
     };
   }, [refresh, refreshEpics, refreshGlobalPause, authed, activeWorkspaceId, navigate]);
