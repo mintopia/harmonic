@@ -58,15 +58,15 @@ describe('classifyRole', () => {
   const config = makeConfig({
     roles: [
       { name: 'type-declaration', glob: ['**/*.d.ts'], skip: true },
-      { name: 'test', glob: ['**/*.@(test|spec).ts', '**/__tests__/**'], exempt: ['testability', 'duplication', 'error_handling'] },
-      { name: 'migration', glob: ['**/migrations/**'], exempt: ['duplication', 'testability'] },
+      { name: 'test', glob: ['**/*.@(test|spec).ts', '**/__tests__/**'], exempt: ['testability', 'error_handling'] },
+      { name: 'migration', glob: ['**/migrations/**'], exempt: ['testability'] },
     ],
   });
 
   it('matches the first role in order (first match wins)', () => {
     const r = classifyRole('src/foo.test.ts', config);
     expect(r.roleName).toBe('test');
-    expect(r.exempt.has('duplication')).toBe(true);
+    expect(r.exempt.has('error_handling')).toBe(true);
     expect(r.skip).toBe(false);
   });
 

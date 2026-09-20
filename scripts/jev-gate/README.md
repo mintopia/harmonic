@@ -116,17 +116,18 @@ said no" from "the gate couldn't run".
   `gatingCategories` and not role-exempt). Anything left in `advisoryCategories`
   keeps its true zone for display but can never produce a FAIL verdict; a low
   `security` score there is surfaced as a "flagged for human security review"
-  advisory note. **This workspace's `jev.gate.json` gates all 7 axes, including
+  advisory note. **This workspace's `jev.gate.json` gates all 8 axes, including
   `security` and `comments`** — see `docs/jev-gate.md` for the reliability
   caveat that comes with gating `security`.
 - **Zones**: FAIL `<1.5`, WARN `1.5–<2.5`, PASS `>=2.5` per category; overall
   FAIL `<2.0` (50/100), WARN `2.0–<2.4` (proposal §2). Both are config-driven
   in `jev.gate.json`.
-- **Confidence as a second axis** (proposal §3): a category FAIL only blocks
-  when `confidence >= 0.6`; below that it becomes `NEEDS_SIGNOFF`, which still
-  fails the gate (exit 1) until cleared with `--signoff`/`$JEV_GATE_SIGNOFF` —
-  this is the CI-side stand-in for the proposal's "human reviewer clears the
-  flag" step. Confidence never upgrades a score.
+- **Confidence as a second axis** (proposal §3): confidence is the model's own
+  certainty in its verdict — the rubric never instructs or nudges it. A category
+  FAIL only blocks when `confidence >= 0.5`; below that it becomes
+  `NEEDS_SIGNOFF`, which still fails the gate (exit 1) until cleared with
+  `--signoff`/`$JEV_GATE_SIGNOFF` — the CI-side stand-in for the proposal's
+  "human reviewer clears the flag" step. Confidence never upgrades a score.
 - **Role exemptions** (proposal §4): `jev.gate.json`'s `roles` array, matched
   in order (first match wins), suppresses listed categories from gating for
   stories/tests/fixtures/mocks/migrations, and skips `.d.ts` and

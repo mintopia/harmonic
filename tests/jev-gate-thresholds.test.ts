@@ -146,15 +146,15 @@ describe('evaluateCategory — non-gating & exemptions', () => {
   });
 
   it('a role-exempted gating category is not gated (FAIL zone => WARN verdict)', () => {
-    const role: RoleMatch = { roleName: 'test', skip: false, exempt: new Set<CategoryId>(['duplication']), hint: undefined };
-    const r = evalCat('duplication', 1.0, 0.9, { role });
+    const role: RoleMatch = { roleName: 'test', skip: false, exempt: new Set<CategoryId>(['error_handling']), hint: undefined };
+    const r = evalCat('error_handling', 1.0, 0.9, { role });
     expect(r.gated).toBe(false);
     expect(r.verdict).toBe('WARN');
   });
 });
 
 describe('evaluateCategory — ratchet regression', () => {
-  const baseline: Baseline[string] = { categories: { code_smells: 3.0, duplication: 3.0 }, overall: 3.0 };
+  const baseline: Baseline[string] = { categories: { code_smells: 3.0, testability: 3.0 }, overall: 3.0 };
 
   it('flags a drop >= categoryDrop on a gated axis (raw current vs raw baseline)', () => {
     const r = evalCat('code_smells', 2.4, 0.9, { baseline }); // raw 2.4 vs baseline 3.0 -> drop 0.6
@@ -202,13 +202,13 @@ describe('reason / note builders', () => {
   it('blockingReasons lists FAIL, NEEDS_SIGNOFF and ratchet', () => {
     const c = cats({
       code_smells: { score: 1.0, confidence: 0.9, unsure: false, zone: 'FAIL', gated: true, verdict: 'FAIL' },
-      duplication: { score: 1.0, confidence: 0.3, unsure: true, zone: 'FAIL', gated: true, verdict: 'NEEDS_SIGNOFF' },
+      error_handling: { score: 1.0, confidence: 0.3, unsure: true, zone: 'FAIL', gated: true, verdict: 'NEEDS_SIGNOFF' },
       testability: { score: 2.4, confidence: 0.9, unsure: false, zone: 'WARN', gated: true, verdict: 'WARN', ratchetRegression: { baseline: 3.0, drop: 0.6 } },
     });
     const overall = { mean: 1.9, mean100: 48, zone: 'FAIL' as const };
     const reasons = blockingReasons(c, overall, config);
     expect(reasons.some((r) => r.includes('code_smells: FAIL'))).toBe(true);
-    expect(reasons.some((r) => r.includes('duplication: unsure — needs human sign-off'))).toBe(true);
+    expect(reasons.some((r) => r.includes('error_handling: unsure — needs human sign-off'))).toBe(true);
     expect(reasons.some((r) => r.includes('testability: ratchet regression'))).toBe(true);
     expect(reasons.some((r) => r.includes('overall: FAIL'))).toBe(true);
   });

@@ -21,12 +21,11 @@ import type { Baseline, BaselineMeta, CategoryId } from './types.js';
 import { ALL_CATEGORIES } from './types.js';
 
 const CHARTJS_SRC = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js';
-const DEFAULT_CONFIDENCE_FLOOR = 0.6;
+const DEFAULT_CONFIDENCE_FLOOR = 0.5;
 
 const CAT_LABELS: Record<CategoryId, string> = {
   complexity_clean_code: 'Complexity',
   code_smells: 'Smells',
-  duplication: 'Duplication',
   testability: 'Testability',
   error_handling: 'Errors',
   security: 'Security',
@@ -105,11 +104,24 @@ export function renderBaselineHtml(
   const confVals = tableRows.flatMap((r) => ALL_CATEGORIES.map((k) => r.confidences?.[k]).filter((v): v is number => typeof v === 'number'));
   const meanConfidence = confVals.length ? confVals.reduce((a, b) => a + b, 0) / confVals.length : null;
 
-  const stats = {
-    anyCatFail: tableRows.filter((r) => ALL_CATEGORIES.some((k) => zoneOf(r.categories[k], r.confidences?.[k], floor) === 'fail')).length,
-    unsure: tableRows.filter((r) => ALL_CATEGORIES.some((k) => zoneOf(r.categories[k], r.confidences?.[k], floor) === 'unsure')).length,
-    overallFail: tableRows.filter((r) => overallZone(r.overall) === 'fail').length,
-  };
+  // Bucket each file by its worst category cell (fail > unsure > warn > pass), so the
+  // counts sum to the files scored and surface what needs attention.
+  const buckets = { fail: 0, warn: 0, unsure: 0, pass: 0 };
+  for (const r of tableRows) {
+    let hasWarn = false;
+    let hasUnsure = false;
+    let hasFail = false;
+    for (const k of ALL_CATEGORIES) {
+      const z = zoneOf(r.categories[k], r.confidences?.[k], floor);
+      if (z === 'fail') hasFail = true;
+      else if (z === 'unsure') hasUnsure = true;
+      else if (z === 'warn') hasWarn = true;
+    }
+    if (hasFail) buckets.fail++;
+    else if (hasUnsure) buckets.unsure++;
+    else if (hasWarn) buckets.warn++;
+    else buckets.pass++;
+  }
 
   const data = { rows, cats: ALL_CATEGORIES.map((k) => [k, CAT_LABELS[k]]), n, floorPct, focus: focus == null ? null : [...focus] };
   const dataJson = JSON.stringify(data).replace(/</g, '\\u003c');
@@ -117,28 +129,37 @@ export function renderBaselineHtml(
   const scatterCellsHtml = ALL_CATEGORIES.map((k) => scatterCell(k)).join('');
 
   const isChange = focusSet != null;
+  const scoreCls = tn ? overallZone(meanOverall) : '';
+  const heroFigure = tn ? `${pct(meanOverall)}<span class="denom">/100</span>` : '–';
   const subText = tn
-    ? `${tn}${isChange ? ` changed file${tn === 1 ? '' : 's'} of ${n} in project` : ' files'} scored · mean overall ${pct(meanOverall)}/100 (${meanOverall.toFixed(2)}/4)`
+    ? `${isChange ? `${tn} changed file${tn === 1 ? '' : 's'} of ${n} in project` : `${tn} file${tn === 1 ? '' : 's'} scored`} · mean ${meanOverall.toFixed(2)}/4`
     : 'Baseline is empty — run --write-baseline to populate it.';
   const scatterCaption = isChange
     ? `Per-category health: x = confidence (0–100%), y = raw score (0–4). Coloured = changed files, grey = the rest of the project. Slate = unsure (below ${floorPct}% confidence).`
     : `Per-category health: x = confidence (0–100%), y = raw score (0–4), one point per file. Slate = unsure (below ${floorPct}% confidence).`;
 
-  const cards: [string, string | number, string][] = [];
+  const keyMetrics: [string, number, string][] = tn
+    ? [
+        ['Failing', buckets.fail, 'fail'],
+        ['Warning', buckets.warn, 'warn'],
+        ['Unsure', buckets.unsure, 'unsure'],
+        ['Passing', buckets.pass, 'pass'],
+      ]
+    : [];
+  const keyMetricsHtml = keyMetrics
+    .map(([k, v, z]) => `<div class="km ${z}${v === 0 ? ' zero' : ''}"><div class="kmv">${v}</div><div class="kmk">${k}</div></div>`)
+    .join('');
+
+  const figures: [string, string | number, string][] = [];
   if (meta) {
-    cards.push(['Duration', fmtDuration(meta.durationMs), `${meta.concurrency}× concurrency`]);
-    cards.push(['API calls', meta.apiCalls, `${meta.filesScored} files`]);
-    cards.push(['Cost', meta.totalCostUsd == null ? 'n/a' : `$${meta.totalCostUsd.toFixed(4)}`, meta.totalCostUsd == null ? 'provider silent' : 'this run']);
-    cards.push(['Input tokens', meta.totalInputTokens == null ? 'n/a' : meta.totalInputTokens.toLocaleString('en-US'), meta.totalInputTokens == null ? 'provider silent' : '']);
+    figures.push(['Duration', fmtDuration(meta.durationMs), `${meta.concurrency}× concurrency`]);
+    figures.push(['API calls', meta.apiCalls, `${meta.filesScored} files`]);
+    figures.push(['Cost', meta.totalCostUsd == null ? 'n/a' : `$${meta.totalCostUsd.toFixed(4)}`, meta.totalCostUsd == null ? 'provider silent' : '']);
+    figures.push(['Input tokens', meta.totalInputTokens == null ? 'n/a' : meta.totalInputTokens.toLocaleString('en-US'), '']);
   }
-  cards.push([isChange ? 'Changed files' : 'Files scored', tn, isChange ? `of ${n} in project` : '']);
-  cards.push(['Mean overall', `${pct(meanOverall)}/100`, `${meanOverall.toFixed(2)}/4`]);
-  cards.push(['Mean confidence', meanConfidence == null ? 'n/a' : `${Math.round(meanConfidence * 100)}%`, meanConfidence == null ? 'no confidence data' : '']);
-  cards.push(['Any category FAIL', stats.anyCatFail, `of ${tn}`]);
-  cards.push(['Unsure (any cat)', stats.unsure, `of ${tn}`]);
-  cards.push(['Overall FAIL (<50)', stats.overallFail, `of ${tn}`]);
-  const cardsHtml = cards
-    .map(([k, v, s]) => `<div class="card"><div class="k">${k}</div><div class="v">${v}${s ? ` <small>${s}</small>` : ''}</div></div>`)
+  figures.push(['Mean confidence', meanConfidence == null ? 'n/a' : `${Math.round(meanConfidence * 100)}%`, meanConfidence == null ? 'no data' : '']);
+  const runmetaHtml = figures
+    .map(([k, v, s]) => `<div class="m"><div class="mk">${k}</div><div class="mv">${v}${s ? ` <small>${s}</small>` : ''}</div></div>`)
     .join('');
 
   const metaLine = meta
@@ -171,33 +192,78 @@ export function renderBaselineHtml(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Jev Baseline</title>
 <style>
+  /* Paper tokens — mirrored from web/src/index.css (the app's authoritative source);
+     keep in sync if the app palette moves. Light in :root, dark under both data-theme
+     and prefers-color-scheme, exactly as the app scopes them. */
   :root {
-    --bg:#f7f8fa; --panel:#fff; --ink:#1a1d23; --muted:#6b7280; --line:#e5e7eb;
-    --pass:#128a4d; --pass-bg:#e5f6ec; --warn:#9a6700; --warn-bg:#fdf3d7; --fail:#b3261e; --fail-bg:#fce8e6;
-    --unsure:#4b5b74; --unsure-bg:#e7ecf3; --accent:#2f6feb;
+    color-scheme: light;
+    --hm-canvas:#edeeeb; --hm-surface:#ffffff; --hm-sunken:#f5f5f3; --hm-raised:#ededea;
+    --hm-hairline:#e0e0db; --hm-edge:#d0d0ca; --hm-ink:#1b1e24; --hm-muted:#656b73; --hm-faint:#61676f;
+    --hm-accent:#077067; --hm-accent-hot:#0a6f66; --hm-accent-tint:#b6ece4;
+    --hm-running:#a74d08; --hm-running-tint:#fdeacc; --hm-done:#0d7734; --hm-done-tint:#d2f4db;
+    --hm-fail:#b3253f; --hm-fail-tint:#ffccd6; --hm-blocked:#5b616a; --hm-blocked-tint:#ecedea;
+    --hm-shadow-card:0 1px 2px rgb(27 30 36 / 0.06), 0 6px 18px rgb(27 30 36 / 0.07);
+  }
+  :root[data-theme="dark"] { color-scheme: dark;
+    --hm-canvas:#141416; --hm-surface:#1e1f22; --hm-sunken:#141416; --hm-raised:#292a2e;
+    --hm-hairline:#2f3035; --hm-edge:#414248; --hm-ink:#e9e9ec; --hm-muted:#a5a6ab; --hm-faint:#949599;
+    --hm-accent:#2ed3c4; --hm-accent-hot:#5fe6da; --hm-accent-tint:#0f3e38;
+    --hm-running:#ffb524; --hm-running-tint:#51360a; --hm-done:#2bf58e; --hm-done-tint:#0d5531;
+    --hm-fail:#ff5570; --hm-fail-tint:#4d121f; --hm-blocked:#9aa0a9; --hm-blocked-tint:#292a2e;
+    --hm-shadow-card:0 0 0 1px var(--hm-hairline), 0 2px 10px rgb(0 0 0 / 0.4);
   }
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg:#0f1216; --panel:#171b21; --ink:#e6e8eb; --muted:#9aa3ae; --line:#2a303a;
-      --pass:#4ec98a; --pass-bg:#122a1e; --warn:#e0b341; --warn-bg:#2c2410; --fail:#f28b82; --fail-bg:#2c1614;
-      --unsure:#9db2d0; --unsure-bg:#1b2331; --accent:#6ea0ff;
+    :root:not([data-theme="light"]) { color-scheme: dark;
+      --hm-canvas:#141416; --hm-surface:#1e1f22; --hm-sunken:#141416; --hm-raised:#292a2e;
+      --hm-hairline:#2f3035; --hm-edge:#414248; --hm-ink:#e9e9ec; --hm-muted:#a5a6ab; --hm-faint:#949599;
+      --hm-accent:#2ed3c4; --hm-accent-hot:#5fe6da; --hm-accent-tint:#0f3e38;
+      --hm-running:#ffb524; --hm-running-tint:#51360a; --hm-done:#2bf58e; --hm-done-tint:#0d5531;
+      --hm-fail:#ff5570; --hm-fail-tint:#4d121f; --hm-blocked:#9aa0a9; --hm-blocked-tint:#292a2e;
+      --hm-shadow-card:0 0 0 1px var(--hm-hairline), 0 2px 10px rgb(0 0 0 / 0.4);
     }
   }
+  /* Report-semantic aliases onto the Paper state family (var refs resolve per theme). */
+  :root {
+    --bg:var(--hm-canvas); --panel:var(--hm-surface); --ink:var(--hm-ink); --muted:var(--hm-muted);
+    --faint:var(--hm-faint); --line:var(--hm-hairline); --accent:var(--hm-accent);
+    --pass:var(--hm-done); --pass-bg:var(--hm-done-tint);
+    --warn:var(--hm-running); --warn-bg:var(--hm-running-tint);
+    --fail:var(--hm-fail); --fail-bg:var(--hm-fail-tint);
+    --unsure:var(--hm-blocked); --unsure-bg:var(--hm-blocked-tint);
+  }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; font-variant-numeric:tabular-nums; }
   .wrap { margin:0; padding:24px 24px 64px; }
-  h1 { font-size:22px; margin:0 0 4px; }
-  .sub { color:var(--muted); margin:0 0 4px; }
-  .metaline { color:var(--muted); font-size:12px; margin:0 0 20px; }
-  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:24px; }
-  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
-  .card .k { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
-  .card .v { font-size:24px; font-weight:600; margin-top:4px; }
-  .card .v small { font-size:13px; font-weight:400; color:var(--muted); }
+  .report-head { display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between; gap:22px 44px; margin-bottom:26px; padding-bottom:20px; border-bottom:1px solid var(--line); }
+  .verdict { display:flex; align-items:center; gap:18px; min-width:min(100%,300px); }
+  .score { font-size:2.75rem; font-weight:800; line-height:1; letter-spacing:-0.03em; font-variant-numeric:tabular-nums; white-space:nowrap; flex:none; }
+  .score .denom { font-size:1rem; font-weight:700; opacity:.5; letter-spacing:-0.01em; margin-left:1px; }
+  .score.pass, .score.warn, .score.fail { background:none; }
+  .score.pass { color:var(--pass); } .score.warn { color:var(--warn); } .score.fail { color:var(--fail); }
+  .verdict-text { min-width:0; }
+  h1 { font-size:1.0625rem; font-weight:700; margin:0 0 3px; letter-spacing:-0.01em; }
+  .sub { color:var(--muted); font-size:13px; margin:0; }
+  .keymetrics { display:flex; gap:30px; flex-wrap:wrap; align-content:flex-start; }
+  .km.fail, .km.warn, .km.unsure, .km.pass { background:none; }
+  .km .kmv { font-size:1.875rem; font-weight:800; line-height:1; letter-spacing:-0.02em; font-variant-numeric:tabular-nums; }
+  .km .kmk { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-top:6px; }
+  .km.fail .kmv { color:var(--fail); }
+  .km.warn .kmv { color:var(--warn); }
+  .km.unsure .kmv { color:var(--unsure); }
+  .km.pass .kmv { color:var(--pass); }
+  .km.zero .kmv { color:var(--faint); }
+  .metaline { color:var(--faint); font-size:11.5px; margin:8px 0 0; }
+  .runmeta { display:flex; flex-wrap:wrap; row-gap:14px; }
+  .runmeta .m { padding:0 18px; border-left:1px solid var(--line); }
+  .runmeta .m:first-child { padding-left:0; border-left:0; }
+  .runmeta .mk { color:var(--muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
+  .runmeta .mv { font-size:15px; font-weight:600; font-variant-numeric:tabular-nums; margin-top:4px; white-space:nowrap; }
+  .runmeta .mv small { color:var(--muted); font-weight:400; font-size:11px; }
   .controls { display:flex; gap:12px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
-  input[type=search]{ flex:1; min-width:200px; padding:9px 12px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink); font-size:14px; }
+  input[type=search]{ flex:1; min-width:200px; padding:9px 12px; border:1px solid var(--line); border-radius:3px; background:var(--panel); color:var(--ink); font-size:14px; }
+  input[type=search]:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-color:var(--accent); }
   .hint { color:var(--muted); font-size:12px; }
-  .tablewrap { overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--panel); }
+  .tablewrap { overflow-x:auto; border-radius:4px; background:var(--panel); box-shadow:var(--hm-shadow-card); }
   table { border-collapse:collapse; width:100%; }
   th, td { padding:8px 10px; text-align:right; white-space:nowrap; border-bottom:1px solid var(--line); vertical-align:top; }
   th:first-child, td:first-child { text-align:left; white-space:normal; word-break:break-all; min-width:260px; }
@@ -205,7 +271,7 @@ export function renderBaselineHtml(
   thead th:hover { color:var(--ink); }
   th .arrow { opacity:.6; font-size:10px; }
   tbody tr:hover { background:color-mix(in srgb, var(--accent) 7%, transparent); }
-  .chip { display:inline-block; min-width:44px; padding:2px 8px; border-radius:6px; font-variant-numeric:tabular-nums; font-weight:600; }
+  .chip { display:inline-block; min-width:44px; padding:2px 8px; border-radius:3px; font-variant-numeric:tabular-nums; font-weight:600; }
   .conf { display:block; margin-top:2px; font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; }
   .pass { color:var(--pass); background:var(--pass-bg); }
   .warn { color:var(--warn); background:var(--warn-bg); }
@@ -218,10 +284,10 @@ export function renderBaselineHtml(
   .legend .chip { min-width:0; }
   .scatter-caption { color:var(--muted); font-size:12px; margin:0 0 8px; }
   .scatter-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(max(230px, calc((100% - 3 * 14px) / 4)),1fr)); gap:14px; margin-bottom:24px; }
-  .scatter-cell { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px 12px; }
+  .scatter-cell { background:var(--panel); border-radius:4px; padding:10px 12px 12px; box-shadow:var(--hm-shadow-card); }
   .scatter-title { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:6px; }
   .chartbox { position:relative; height:150px; }
-  .chart-missing { grid-column:1/-1; color:var(--muted); font-size:13px; padding:16px; border:1px dashed var(--line); border-radius:10px; text-align:center; }
+  .chart-missing { grid-column:1/-1; color:var(--muted); font-size:13px; padding:16px; border:1px dashed var(--line); border-radius:4px; text-align:center; }
   tr.filerow { cursor:pointer; }
   .caret { display:inline-block; width:10px; color:var(--muted); }
   tr.detail-row td { background:var(--bg); border-bottom:1px solid var(--line); }
@@ -230,10 +296,18 @@ export function renderBaselineHtml(
 </head>
 <body>
 <div class="wrap">
-  <h1>Jev code-quality baseline</h1>
-  <p class="sub" id="sub">${subText}</p>
-  <p class="metaline" id="metaline">${metaLine}</p>
-  <div class="cards" id="cards">${cardsHtml}</div>
+  <header class="report-head">
+    <div class="verdict">
+      <div class="score ${scoreCls}">${heroFigure}</div>
+      <div class="verdict-text">
+        <h1>Jev code-quality ${isChange ? 'change report' : 'baseline'}</h1>
+        <p class="sub" id="sub">${subText}</p>
+        <p class="metaline" id="metaline">${metaLine}</p>
+      </div>
+    </div>
+    <div class="keymetrics" id="keymetrics">${keyMetricsHtml}</div>
+    <div class="runmeta" id="runmeta">${runmetaHtml}</div>
+  </header>
   <p class="scatter-caption">${scatterCaption}</p>
   <div class="scatter-grid" id="scatterGrid">${scatterCellsHtml}</div>
   <div class="controls">
@@ -278,7 +352,9 @@ export function renderBaselineHtml(
 
   const hasChart = typeof Chart !== 'undefined';
   const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-  const palette = () => ({ pass: cssVar('--pass'), warn: cssVar('--warn'), fail: cssVar('--fail'), unsure: cssVar('--unsure'), na: cssVar('--muted'), grid: cssVar('--line'), tick: cssVar('--muted'), panel: cssVar('--panel'), passBg: cssVar('--pass-bg'), warnBg: cssVar('--warn-bg'), failBg: cssVar('--fail-bg'), unsureBg: cssVar('--unsure-bg') });
+  // Read the --hm-* Paper tokens directly (they hold literal hex; the semantic
+  // aliases hold var() refs that getPropertyValue would return unresolved).
+  const palette = () => ({ pass: cssVar('--hm-done'), warn: cssVar('--hm-running'), fail: cssVar('--hm-fail'), unsure: cssVar('--hm-blocked'), na: cssVar('--hm-muted'), grid: cssVar('--hm-hairline'), tick: cssVar('--hm-muted'), panel: cssVar('--hm-surface'), passBg: cssVar('--hm-done-tint'), warnBg: cssVar('--hm-running-tint'), failBg: cssVar('--hm-fail-tint'), unsureBg: cssVar('--hm-blocked-tint') });
   const zoneColor = (P, z) => z === 'pass' ? P.pass : z === 'warn' ? P.warn : z === 'fail' ? P.fail : z === 'unsure' ? P.unsure : P.na;
 
   // Zone regions behind each plot, matching the gate: a vertical UNSURE band left of
@@ -294,7 +370,7 @@ export function renderBaselineHtml(
       const xFloor = Math.max(chartArea.left, Math.min(chartArea.right, sc.x.getPixelForValue(FLOOR * 100)));
       const y15 = sc.y.getPixelForValue(1.5), y25 = sc.y.getPixelForValue(2.5);
       ctx.save();
-      ctx.globalAlpha = 0.5;
+      ctx.globalAlpha = 0.22;
       ctx.fillStyle = P.unsureBg; ctx.fillRect(chartArea.left, yTop, xFloor - chartArea.left, yBot - yTop);
       const rx = xFloor, rw = chartArea.right - xFloor;
       ctx.fillStyle = P.passBg; ctx.fillRect(rx, yTop, rw, y25 - yTop);
