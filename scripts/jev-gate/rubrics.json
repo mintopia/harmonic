@@ -1,96 +1,303 @@
 {
   "_meta": {
-    "note": "The 8 Jev rubric categories, one Jev `score` question each. This file is the source of truth (scripts/jev-gate is self-contained in CI). Instructions describe ONLY what to score and the level criteria — say NOTHING about confidence: confidence is the model's own axis (its certainty in the verdict), so the rubric must never instruct, calibrate, or nudge it; a low-confidence score already routes to human sign-off. Duplication was dropped 2026-09-19 — it needs cross-file context the per-file gate cannot supply, so its scores were never decidable.",
+    "note": "The 8 Jev rubric categories. Each category is a set of narrow sub-questions (one Jev `score` question each, sent as `category.sub`) plus an `aggregate` rule that folds the sub-answers into the category score. This file is the source of truth (scripts/jev-gate is self-contained in CI). Instructions describe ONLY what to score and the level criteria — say NOTHING about confidence: confidence is the model's own axis (its certainty in the verdict), so the rubric must never instruct, calibrate, or nudge it; a low-confidence score already routes to human sign-off. Duplication was dropped 2026-09-19 — it needs cross-file context the per-file gate cannot supply, so its scores were never decidable.",
+    "authoring": "Jev returns a probability per level; `score` is the mean of that distribution and `confidence` is how peaked it is. A rubric earns high confidence when a reader could settle on ONE level from this file alone. Rules measured on this repo (2026-09-20): (1) one dimension per question — a level that is an OR-list of unrelated defects spreads the distribution; (2) open with 'Look only at X' and name the observable thing; (3) settle every definitional edge in a 'these do NOT count' list (log-and-continue is not swallowing, argument arrays are not injection); (4) do not let one ambiguous find drop a file from level 4 to level 0 — that yields a bimodal 0-vs-4 split and a meaningless mean; reserve such cliffs for finds that are unmistakable when present; (5) put role handling (test/fixture/mock/story/type rate 4) in the level-4 criterion as well as the instructions, never as an opening clause; (6) ask nothing that needs another file (whether an import exists, whether a caller catches); (7) avoid numeric thresholds — Jev counts badly.",
     "scale": "Every question is a Jev `score`. Levels run 0 (worst) to 4 (best). Higher always means healthier code, so the overall score is a plain mean.",
     "levels": 5,
-    "direction": "higher_is_better"
+    "direction": "higher_is_better",
+    "aggregation": "`min`: the category takes the lowest sub-score and that sub-question's confidence — right for defect categories, where one injection must fail security however clean the crypto is. `mean`: the category takes the mean of sub-scores and of confidences — right for a graded quality made of facets (complexity). code_smells stays one holistic question: its facets (god units, parameter smells, primitive obsession) each measured far less certain than the whole (2026-09-20: 30-80% low-confidence vs 3%)."
   },
   "code_smells": {
-    "type": "score",
-    "instructions": "Rate this source code for Martin Fowler-style code smells that are OBSERVABLE IN THIS FILE ALONE — each file is judged independently, so do not consider smells that require seeing other files. In scope: long methods, large classes, primitive obsession, data clumps, long parameter lists, speculative generality, and boolean/flag parameters that silently switch a function's behavior (control coupling) — a pattern easy to accumulate in TypeScript because optional booleans are cheap to add. Do NOT judge cross-file smells you cannot see from a single file, such as shotgun surgery (one change rippling across many files) or feature envy (a method more interested in another class not shown here). Higher means fewer, less harmful smells.",
-    "criteria": [
-      "Riddled with smells: bloated methods and classes, primitive obsession, data clumps, long parameter lists, and/or flag-parameter control coupling throughout",
-      "Frequent smells that clearly hurt readability and make change unsafe",
-      "Some smells present but localized and low impact",
-      "Mostly clean; only minor, defensible smells remain",
-      "No meaningful code smells; cohesive and well factored"
-    ]
+    "aggregate": "min",
+    "questions": {
+      "overall": {
+        "type": "score",
+        "instructions": "Rate this source code for Martin Fowler-style code smells that are OBSERVABLE IN THIS FILE ALONE — each file is judged independently, so do not consider smells that require seeing other files. In scope: long methods, large classes, primitive obsession, data clumps, long parameter lists, speculative generality, and boolean/flag parameters that silently switch a function's behavior (control coupling) — a pattern easy to accumulate in TypeScript because optional booleans are cheap to add. Do NOT judge cross-file smells you cannot see from a single file, such as shotgun surgery (one change rippling across many files) or feature envy (a method more interested in another class not shown here). Higher means fewer, less harmful smells.",
+        "criteria": [
+          "Riddled with smells: bloated methods and classes, primitive obsession, data clumps, long parameter lists, and/or flag-parameter control coupling throughout",
+          "Frequent smells that clearly hurt readability and make change unsafe",
+          "Some smells present but localized and low impact",
+          "Mostly clean; only minor, defensible smells remain",
+          "No meaningful code smells; cohesive and well factored"
+        ]
+      }
+    }
   },
   "security": {
-    "type": "score",
-    "instructions": "Rate this source code for security by the dangerous patterns VISIBLE IN THIS FILE — judge what is written here, never whether some caller you cannot see supplies attacker-controlled input. Weight heavily concrete in-file hazards that are dangerous regardless of the caller: a hardcoded secret, API key, password, or a hardcoded or reused crypto key or IV; a non-CSPRNG source (e.g. Math.random) used to generate tokens, session ids, nonces, or salts; a fast general-purpose hash (e.g. MD5/SHA-1) used for passwords; a subprocess spawned with `shell: true`, or a command or argument built by interpolating variables in this file; a SQL/NoSQL query or a filesystem path built by string-concatenating variables instead of via parameters, an allowlist, or path APIs; unsafe deserialization, or `eval`/dynamic code built from a non-literal; and an auth or permission check in this file that fails OPEN (an error, missing value, or unknown case falls through to allowed). Do NOT try to guess whether an input is attacker-controlled or whether a caller is trusted — that needs call sites you cannot see; judge only the hazard visible here. Do NOT lower the score for framework-mediated safety clearly in force in this file: parameterized or ORM-built queries, inputs validated or type-narrowed here before use, an allowlist or escaping applied on the path. First judge the file's role from its path, the state's `role_hint` (if present), and its content: a fixture, mock/stub, type declaration, story, or test file has no security surface of its own, so score it near the top by default. Higher means fewer dangerous patterns visible in this file.",
-    "criteria": [
-      "A critical in-file hazard: a hardcoded secret or crypto key/IV, a non-CSPRNG used for a token or session id, `shell: true` or a command built from interpolated variables, a query or path built by string-concatenating variables, unsafe deserialization or eval from a non-literal, or an auth check that fails open",
-      "A serious in-file weakness, even if it needs specific conditions: e.g. a fast general-purpose hash used for passwords, or an error path here that puts a stack trace, path, or secret into a returned value or a log call",
-      "A risky in-file pattern whose severity depends on context this file does not show (e.g. a value used in a path or query whose origin is not visible here)",
-      "Only defense-in-depth nits: patterns that look risky in isolation but are validated, parameterized, or use safe APIs within this file",
-      "No dangerous patterns visible: no secrets, safe crypto and query/path APIs used, validation or escaping applied here, and errors do not embed internal detail into returned values or logs"
-    ]
+    "aggregate": "min",
+    "questions": {
+      "injection": {
+        "type": "score",
+        "instructions": "Look only for injection-prone construction in this file: a shell command STRING built by interpolating or concatenating variables; a subprocess spawned with `shell: true`; a SQL/NoSQL query STRING built by concatenating variables; `eval`/`new Function` on a non-literal; unsafe deserialization of a non-literal; HTML set from a variable via innerHTML/dangerouslySetInnerHTML. These do NOT count: argument arrays passed to spawn/execFile without a shell; parameterized or ORM-built queries; template literals used only for log or error messages. Rate how many injection-prone constructions the file contains.",
+        "criteria": [
+          "Several injection-prone constructions",
+          "One clear injection-prone construction",
+          "A borderline construction: variables reach a command, query, or HTML sink with partial validation or escaping in this file",
+          "Sinks are present and always used in the safe form: argument arrays, parameters, escaping",
+          "No command, query, eval, deserialization or HTML sink is built from variables in this file — or the file is itself a test, fixture, mock, story or type declaration"
+        ]
+      },
+      "secrets_crypto": {
+        "type": "score",
+        "instructions": "Look only for hardcoded credentials and weak cryptography in this file: a literal API key, password, token, private key, or crypto key/IV assigned in non-test code; Math.random used to make a token, session id, nonce or salt; MD5/SHA-1 used for passwords or signatures; TLS/certificate verification disabled. These do NOT count: obvious placeholders and dummy values; environment-variable or config lookups; Math.random used for jitter, sampling or UI; hashes used for cache keys or checksums. Rate what the file contains.",
+        "criteria": [
+          "A real-looking hardcoded credential or key in non-test code",
+          "Non-CSPRNG randomness or a weak hash used for a security purpose, or TLS verification disabled",
+          "A suspicious literal, random use or hash whose purpose is unclear from this file",
+          "Only placeholders, dummies, or non-security randomness and hashing",
+          "No hardcoded credentials and no security-relevant randomness, hashing or TLS settings in this file — or the file is itself a test, fixture, mock, story or type declaration"
+        ]
+      },
+      "unconfined_paths": {
+        "type": "score",
+        "instructions": "Look only at filesystem paths built in this file. A path is UNCONFINED when an id, name or other string variable is inserted into a path segment or filename and nothing in this file confines it (no allowlist, pattern test, basename, or startsWith(root) check). Paths built only from constants, configured roots, or values checked in this file are fine. Rate how many unconfined paths the file builds.",
+        "criteria": [
+          "Several unconfined paths",
+          "One clearly unconfined path",
+          "A borderline case: a variable reaches a path with only partial checking in this file",
+          "Paths are built from variables, and every one is confined or checked in this file",
+          "No filesystem path is built from a variable in this file — or the file is itself a test, fixture, mock, story or type declaration"
+        ]
+      },
+      "auth_fail_open": {
+        "type": "score",
+        "instructions": "Look only at server-side authentication and permission checks written in this file: request handlers, middleware, socket upgrade handlers. A check FAILS OPEN when an error, a missing value, or an unrecognised case results in the request being allowed. Client-side UI state, and checks delegated to a function defined in another file, are out of scope. Rate the checks written here.",
+        "criteria": [
+          "A check written here plainly fails open",
+          "A check written here allows access on one unusual path (an error or a missing value)",
+          "A borderline case: a check whose failure behaviour is unclear from this file",
+          "Checks are written here and all deny by default",
+          "No server-side authentication or permission check is written in this file"
+        ]
+      }
+    }
   },
   "complexity_clean_code": {
-    "type": "score",
-    "instructions": "Rate this source code for complexity and Robert C. Martin clean-code qualities: function size and single responsibility, name clarity, and complexity as a reader would actually feel it. Judge complexity qualitatively, not by literal branch counting (exact counting is a known weak spot for this model). Prefer a cognitive-complexity lens over a cyclomatic one: nested control flow that forces a reader to hold multiple contexts at once (for example a loop containing a try/catch containing a conditional) is worse than the same number of sequential, early-return guard clauses, even when both have a similar number of branches. Higher means simpler and cleaner.",
-    "criteria": [
-      "Very hard to follow: deeply nested control flow that forces holding multiple contexts at once, huge functions, unclear names",
-      "Often complex or poorly named; frequent cognitive overload from nesting or mixed concerns, even where individual branch counts look modest",
-      "Moderate complexity; some nesting or nested error handling that could flatten into guard clauses, several functions or names could be simpler",
-      "Mostly simple and well named; small focused functions with shallow, mostly linear control flow",
-      "Clean and simple: small single-purpose functions, clear names, shallow linear control flow with no nested-context reading burden"
-    ]
+    "aggregate": "mean",
+    "questions": {
+      "nesting": {
+        "type": "score",
+        "instructions": "Look only at the control flow in this file. Rate how deeply it nests and how many contexts a reader must hold at once: a loop containing a try/catch containing a conditional is worse than the same branches written as sequential early-return guard clauses. Judge qualitatively; do not count branches. Flat JSX markup and data literals are not control flow.",
+        "criteria": [
+          "Deeply nested control flow throughout; a reader must hold many contexts at once",
+          "Frequent deep nesting",
+          "Some nested stretches that could flatten into guard clauses",
+          "Mostly shallow and linear; an occasional second level",
+          "Shallow, linear control flow throughout, or no control flow at all"
+        ]
+      },
+      "function_focus": {
+        "type": "score",
+        "instructions": "Look only at the functions, methods and components in this file. Rate whether each does one job at a size a reader can hold in their head, versus long functions that mix several responsibilities (fetching, validating, transforming, persisting and formatting in one body). A file of types, constants or data has no functions to judge.",
+        "criteria": [
+          "Huge functions mixing many responsibilities throughout",
+          "Several long functions that mix responsibilities",
+          "One or two long or mixed-responsibility functions",
+          "Functions are mostly small and focused",
+          "Every function is small and does one job, or the file has no functions"
+        ]
+      },
+      "naming": {
+        "type": "score",
+        "instructions": "Look only at the names in this file: functions, variables, parameters, types. Rate whether a name tells a reader what the thing is or does without reading its body. Misleading names, cryptic abbreviations and names that say nothing (handle, process, doStuff, data, info, manager) are bad. Conventional short names in small scopes (i, e, err, ctx) are fine.",
+        "criteria": [
+          "Names are misleading or meaningless throughout",
+          "Many unclear or generic names",
+          "A few unclear or generic names",
+          "Names are clear; one or two could be sharper",
+          "Every name is clear and specific"
+        ]
+      }
+    }
   },
   "comments": {
-    "type": "score",
-    "instructions": "Rate the comment discipline of this source code. Good comments explain non-obvious why (hidden invariants, external constraints, justified lint or type suppressions, public API doc contracts). Bad comments narrate what the code already says, add banners, leave commented-out code, or preach about workarounds instead of fixing them. A lint or type suppression is only 'justified' if the comment names the specific reason it is needed (a specific external constraint or a specific known false positive) — a suppression with no reason, or a vague one such as 'needed' or 'temp fix', counts as undisciplined. Higher means better discipline.",
-    "criteria": [
-      "Pervasive narration, banners, commented-out code, or unjustified lint or type suppressions",
-      "Many comments restate the code or justify workarounds rather than fixing them",
-      "Mixed: some useful comments alongside several redundant what-comments",
-      "Mostly disciplined; only a rare redundant comment",
-      "Exemplary: comments explain only non-obvious why; no narration, no dead code; every suppression names its specific reason"
-    ]
+    "aggregate": "min",
+    "questions": {
+      "narration": {
+        "type": "score",
+        "instructions": "Look only at the comments in this file. A NARRATING comment restates what the adjacent code plainly does ('increment counter', 'loop over items', 'return the result'), or is a banner or divider. Comments that explain why, state a constraint or invariant, or document an exported API contract are NOT narration. Rate how many narrating comments the file contains.",
+        "criteria": [
+          "Narrating comments throughout the file",
+          "Many narrating comments",
+          "A few narrating comments",
+          "One or two narrating comments",
+          "No narrating comments, or no comments at all"
+        ]
+      },
+      "dead_code": {
+        "type": "score",
+        "instructions": "Look only for commented-out code in this file: statements, functions, imports or JSX that have been disabled by commenting them out. Code samples inside doc comments that illustrate usage do NOT count. Rate how much commented-out code the file contains.",
+        "criteria": [
+          "Commented-out code throughout the file",
+          "Several blocks of commented-out code",
+          "One block of commented-out code",
+          "A single commented-out line",
+          "No commented-out code"
+        ]
+      },
+      "suppressions": {
+        "type": "score",
+        "instructions": "Look only at lint and type suppressions in this file: eslint-disable, oxlint-disable, @ts-ignore, @ts-expect-error, @ts-nocheck. A suppression is JUSTIFIED when its comment names the specific reason (a named external constraint or a known false positive). A bare suppression, or a vague reason such as 'needed' or 'temp fix', is UNJUSTIFIED. Rate how many unjustified suppressions the file contains.",
+        "criteria": [
+          "Many unjustified suppressions, or a file-wide @ts-nocheck / blanket disable with no reason",
+          "Several unjustified suppressions",
+          "One unjustified suppression",
+          "Suppressions exist and every one names its specific reason",
+          "No lint or type suppressions in this file"
+        ]
+      }
+    }
   },
   "testability": {
-    "type": "score",
-    "instructions": "Rate how easily this source code can be unit tested: presence of seams, dependency injection, pure versus side-effecting logic, and avoidance of hidden global state. The single sharpest signal is whether a collaborator — a service, client, repository, or other stateful dependency — is constructed inline inside the function or class under review (a bare `new X()` buried in business logic, with no way for a caller to substitute it) versus received as a parameter or constructor argument (a seam a test can use to inject a fake). Inline construction of a collaborator is a stronger testability smell than almost any other pattern, even when the rest of the function is otherwise pure. First judge the file's role from its path, the state's `role_hint` (if present), and its content: testability is a category error for a fixture, mock/stub, type declaration, or story file — there is no logic to unit test, so score it near the top by default unless it does something that would genuinely make it awkward to use from a test (e.g. a hidden side effect on import). For a test file itself, judge only whether its own helpers/setup are testable, not whether the test needs testing. Apply the full bar only to application/business logic.",
-    "criteria": [
-      "Untestable: hidden dependencies, collaborators constructed inline with no injection seam, global state, side effects fused with logic",
-      "Hard to test; would need heavy mocking or refactoring first, including reaching inside the module to replace an inline-constructed collaborator",
-      "Testable with some effort; a few seams missing",
-      "Mostly testable; clear seams and injectable dependencies",
-      "Highly testable: pure functions, injected dependencies, clean seams — or a non-logic file (fixture/mock/type/story) with nothing that would resist being used in a test"
-    ]
+    "aggregate": "min",
+    "questions": {
+      "ambient_io": {
+        "type": "score",
+        "instructions": "Look only at what this file's logic touches DIRECTLY: the filesystem (node:fs), child processes, network (fetch/http), process.env/argv/exit, the clock (Date.now, new Date() used in logic), timers, Math.random, and browser globals (window, document, localStorage). It is NOT a direct touch when the dependency arrives as a parameter, constructor argument, options field, prop or context — including a parameter with a production default. Calls to imported project functions are out of scope: you cannot see what they do. Rate how much of the logic directly touches these.",
+        "criteria": [
+          "Nearly all logic directly touches ambient I/O or globals, with no way to substitute them",
+          "Most logic directly touches them",
+          "Some logic directly touches them; the rest is pure or parameterized",
+          "Only a thin edge touches them directly (an entry point or default argument)",
+          "Nothing touches them directly: pure logic, injected dependencies, or no logic at all — or the file is itself a test, fixture, mock, story or type declaration"
+        ]
+      },
+      "module_state": {
+        "type": "score",
+        "instructions": "Look only at the top level of this module. Find module-level MUTABLE state (a top-level `let`, or a top-level Map/Set/array/object that functions in this file mutate) and IMPORT-TIME side effects (top-level statements that touch the filesystem, network, database, timers, process or DOM when the module is imported). These do NOT count: top-level constants and frozen lookup tables; function, class and type definitions; state created inside a factory function and returned; React component state. Rate how much the file has.",
+        "criteria": [
+          "Several pieces of module-level mutable state or import-time side effects that logic depends on",
+          "One piece of module-level mutable state or one import-time side effect that logic depends on, with no reset hook",
+          "One piece, with a reset or injection hook provided for tests",
+          "None that are clear; at most a cache or registry that does not change behaviour",
+          "No module-level mutable state and no import-time side effects — or the file is itself a test, fixture, mock, story or type declaration"
+        ]
+      },
+      "inline_collaborators": {
+        "type": "score",
+        "instructions": "Look only for stateful collaborators CONSTRUCTED inside this file's logic: `new` of a client, service, repository, connection, server, watcher or queue inside a function or class body, where a caller has no way to pass in a substitute. These do NOT count: `new Map/Set/Date/Error/URL/RegExp/AbortController/Promise` and other plain values; construction inside a factory whose whole job is to build that object; construction used as the default for an injectable parameter. Rate how many inline-constructed collaborators the file has.",
+        "criteria": [
+          "Many collaborators are constructed inline with no seam",
+          "Several collaborators are constructed inline with no seam",
+          "One collaborator is constructed inline with no seam",
+          "Collaborators are constructed only in factories or as injectable defaults",
+          "No stateful collaborator is constructed in this file — or the file is itself a test, fixture, mock, story or type declaration"
+        ]
+      }
+    }
   },
   "error_handling": {
-    "type": "score",
-    "instructions": "Rate the error handling that is FULLY SELF-CONTAINED IN THIS FILE. Each file is scored alone, so never depend on callers, callees, or other files — judge only the handling written here and the failure paths of operations this file itself performs. Look for: catch blocks that swallow the error (an empty catch, a catch that only logs and continues past a genuine failure, or one that discards the error and returns a success-shaped or default value); over-broad catches that collapse clearly distinct failures into one; promise rejections left unhandled in this file (a floating async call or promise with no await and no .catch, or a .then with no rejection handler); and the result of an operation THIS file performs that can fail — a JSON.parse, Number()/parseInt, a file read, a network or DB call, a deserialize — used directly with no guard on its failure path. Also flag an error that places internal detail — a stack trace, file path, internal identifier, or secret — into a value this file returns or into a log/response call written here (also weighted under `security`; flagging it in both is fine). Do NOT penalize a function for not validating its plain parameters: whether a parameter is external or trusted depends on callers you cannot see, so it is out of scope. Judge validation only at boundaries THIS file itself crosses (where it parses, reads I/O, deserializes, or reads env). First judge the file's role from its path, the state's `role_hint` (if present), and its content: a fixture, mock/stub, type declaration, story, or test file has no failure path of its own, so score it near the top by default. Higher means the error handling written in this file is more robust.",
-    "criteria": [
-      "Failures swallowed or ignored in this file: empty or silent catches, unhandled promise rejections, or the result of an in-file parse/IO/deserialize used with no failure handling; or an error path here puts a stack trace, path, or secret into a returned value or a log call",
-      "Weak: broad catch-alls and several silent failures in the handling written here",
-      "Partial: some in-file failure paths handled, but clear gaps remain (an in-file parse or IO whose failure is unguarded, a swallowed catch)",
-      "Mostly robust; only minor gaps in the handling written here",
-      "Robust: the operations this file performs that can fail are guarded, errors propagate without leaking internal detail, and no exception is swallowed — or a non-logic file (fixture/mock/type/story/test) with no failure path of its own"
-    ]
+    "aggregate": "min",
+    "questions": {
+      "swallowed_catches": {
+        "type": "score",
+        "instructions": "Look only at catch blocks and .catch() handlers in this file. A catch SWALLOWS when it is empty, or discards the error and carries on or returns a default/success-shaped value, with no log, no report, no rethrow, and no comment saying why ignoring is safe. A catch does NOT swallow when it logs, reports, rethrows, converts the error into a typed result or error state, or carries a comment documenting a deliberate best-effort ignore. Errors that simply propagate to the caller, and unvalidated parameters, are out of scope. Rate how many swallowing catches the file contains.",
+        "criteria": [
+          "Most catches in this file swallow the error",
+          "Several catches swallow the error",
+          "One catch swallows the error",
+          "Catches exist and every one logs, reports, rethrows, converts, or documents a deliberate ignore",
+          "The file has no catch blocks at all — or the file is itself a test, fixture, mock, story or type declaration"
+        ]
+      },
+      "floating_promises": {
+        "type": "score",
+        "instructions": "Look only at calls in this file that return a promise. A promise FLOATS when it is not awaited, not returned, not stored for a later await, and has no .catch or rejection handler — so a rejection would be silently lost. These do NOT float: awaited or returned calls; promises passed to Promise.all/allSettled/race that is itself awaited; a call explicitly marked `void` that has its own .catch; calls inside an async function that are awaited. Rate how many floating promises the file contains.",
+        "criteria": [
+          "Many floating promises",
+          "Several floating promises",
+          "One floating promise",
+          "None that are clear; at most an explicitly void-marked fire-and-forget",
+          "No floating promises, or the file has no promise-returning calls — or the file is itself a test, fixture, mock, story or type declaration"
+        ]
+      }
+    }
   },
   "concurrency_and_idempotency": {
-    "type": "score",
-    "instructions": "Rate this source code for event-loop discipline and idempotency under retries and partial failure. A background loop, periodic poll, reconcile pass, boot sweep, or fill job that iterates a collection whose size grows with the database or workload MUST chunk its synchronous work and yield the event loop between chunks (e.g. via a yield helper) — a tight synchronous loop over an unbounded or growing collection on the shared Node event loop is a critical violation, since it can freeze every other request the process serves. Commands, lifecycle steps, and processing loops must also be idempotent: they should converge to the same end state whether run once or replayed after a crash, restart, or retry, with no double-application of a side effect (e.g. double-charging, double-inserting, re-sending a notification) on a retried attempt. A retry loop or subprocess-spawn loop with no upper bound is also a smell here. First judge the file's role from its path, the state's `role_hint` (if present), and its content: MOST files have no background loop, no shared-state mutation, and no retryable command — pure functions, types, UI components, tests, fixtures, mocks, stories, and config have no such surface at all. Score these near the top (4) by default; do not penalize a file for lacking yield points or idempotency guards it was never meant to have. Apply the full bar only to code that actually runs a loop over a growing collection, a periodic or background job, or a retryable command or lifecycle step.",
-    "criteria": [
-      "Has a background loop, poll, reconcile pass, or retry/spawn loop that is a critical risk: a tight synchronous loop over an unbounded/growing collection with no yield, or a side effect that clearly double-applies on retry",
-      "Same surface present but only partially mitigated: yields are missing on some paths, or idempotency holds for the common case but breaks under a plausible crash or retry",
-      "Has the surface and mostly handles it correctly, but a genuine gap remains (e.g. an unbounded retry with no cap, or a lifecycle step whose idempotency is unclear)",
-      "Has the surface and handles it correctly; only a minor, defensible gap remains",
-      "No background loop, retryable command, or shared-state mutation to worry about — or, where present, it chunks/yields correctly and converges to the same end state under crash, restart, or retry"
-    ]
+    "aggregate": "min",
+    "questions": {
+      "loop_yield": {
+        "type": "score",
+        "instructions": "Look only for loops in this file that run in the background, on a timer, at boot, as a poll, or as a reconcile or sweep over every row of a table or every item of a collection that grows with the workload. Such a loop must chunk its synchronous work and await or yield between chunks so it cannot freeze the event loop. Ordinary loops over small in-memory arrays, array methods in pure functions, React rendering, event handlers and single-shot request handlers do NOT count. Rate the loops of that kind in this file.",
+        "criteria": [
+          "Such a loop does unbounded synchronous work with no await or yield",
+          "Such a loop yields on some paths only",
+          "Such a loop exists with one arguable gap in chunking or yielding",
+          "Such loops exist and all chunk and yield correctly",
+          "No background, timer, boot, poll, reconcile or sweep loop in this file"
+        ]
+      },
+      "retry_bounds": {
+        "type": "score",
+        "instructions": "Look only for retry loops, reconnect loops, respawn loops and recursive re-scheduling (a function that re-arms its own timer) in this file. Each needs an upper bound: a maximum attempt count, a deadline, or a backoff with a cap and a stop condition. Rate the retry-style loops in this file.",
+        "criteria": [
+          "A retry, reconnect or respawn loop has no bound and no backoff",
+          "Such a loop has backoff but no cap or stop condition",
+          "Such a loop exists and its bound is arguable or partial",
+          "Such loops exist and all are bounded",
+          "No retry, reconnect, respawn or self-rescheduling loop in this file"
+        ]
+      },
+      "rerun_safety": {
+        "type": "score",
+        "instructions": "Look only for code in this file that is EXPLICITLY a retry, recovery, resume, reconcile, boot-sweep or crash-recovery path: it sits inside a retry loop, or its name or comment says it re-runs after a failure, restart or crash. Inside such a path, look at writes to durable or external state: DB inserts/updates/deletes, file writes, git commands, process spawns, outbound notifications. A write is GUARDED when repeating it converges to the same state: upsert, existence check, unique key, status compare-and-set, idempotency key, atomic rename, delete-if-exists. Code that is not explicitly a re-run path is out of scope, because whether it gets re-run depends on callers you cannot see. Rate the writes inside explicit re-run paths.",
+        "criteria": [
+          "A write inside an explicit re-run path plainly repeats its side effect",
+          "A write inside an explicit re-run path is unguarded on one branch",
+          "A write inside an explicit re-run path has an arguable or partial guard",
+          "Explicit re-run paths exist and every write in them is guarded",
+          "This file has no explicit retry, recovery, resume, reconcile or boot-sweep path that writes state"
+        ]
+      }
+    }
   },
   "ai_slop": {
-    "type": "score",
-    "instructions": "Rate this source code for tells that it was produced by an LLM coding agent without a human editing pass — a distinct axis from the other categories, which judge whether the code is good; this one judges whether it reads like nobody looked at it twice. Weight, in roughly this order of severity: (1) hallucinated or non-existent imports, packages, or API calls that would fail at build or runtime — the single most damning tell; (2) leftover assistant chatter or meta-commentary embedded in the file itself, e.g. 'As an AI...', 'Here is the updated function', 'I've refactored this to...', apologetic hedges ('this is a simplified version', 'note that this may not be perfect'), or a first-person voice narrating the change rather than describing the code; (3) proliferation of near-identical, differently-named helpers doing the same job (e.g. formatCurrency/formatMoney/displayPrice) instead of reusing or extending one — a machine-scale variant of copy-paste; (4) needless speculative abstraction added with no second caller or driving requirement — an interface, strategy, or config knob behind a single implementation, justified only as 'for future use' or 'for flexibility'; (5) reflexive, blanket defensiveness: a try/catch wrapped around an operation that cannot throw, or the same null/array-length guard repeated verbatim many times instead of validated once at a boundary; (6) generic placeholder naming and unfinished stubs left as if forgotten — data/result/temp/foo/item1, or a TODO/FIXME describing work the surrounding code claims is already done; (7) tutorial-density comments narrating nearly every line at a rate no working human engineer would bother with, even where an individual comment might pass a why-vs-what test in isolation — this can overlap with `comments`; flag it in both when it does, the same way an error that leaks internal detail is flagged under both `security` and `error_handling`. Calibrate decisively: a single instance of the two most damning tells — a hallucinated or non-existent import/API, or leftover assistant chatter — scores 0–1 on its own; do not wait for tells to stack. Conversely, do NOT manufacture tells: plain, terse, or unremarkable code that simply carries no tell is not slop and scores 4, and most human-edited files should land at 4 — reserve the lower bands for code where a specific tell is actually present. First judge the file's role from its path, the state's `role_hint` (if present), and its content: a generated file, fixture, mock, type declaration, or plain data file has no authorial voice to judge, so score it near the top by default. Higher means the code reads like a deliberate human wrote and edited it, with no AI-agent tells.",
-    "criteria": [
-      "One or more damning tells: a hallucinated or non-existent import/API that would fail at build or runtime, or leftover assistant chatter/apology in the file ('Here is the updated…', 'As an AI…') — either alone lands here, no stacking required",
-      "Frequent tells a careful human editing pass would have caught, appearing more than once: renamed-duplicate helpers, speculative single-implementation abstractions, or blanket defensive wrapping",
-      "One clear, localized tell: a single placeholder name (data2/temp/foo), one try/catch around code that cannot throw, one narrated stretch of comments, or one unneeded single-use abstraction",
-      "Mostly clean; only a faint, easy-to-miss tell (one slightly generic name or a single redundant guard)",
-      "Reads as deliberately human-written and edited: naming, abstraction, and defensiveness all proportionate, no tell present — or a non-authorial file (generated/fixture/mock/type/data). Do not invent tells; clean code belongs here"
-    ]
+    "aggregate": "min",
+    "questions": {
+      "assistant_chatter": {
+        "type": "score",
+        "instructions": "Look only at the comments in this file for leftover LLM-assistant chatter: first-person change narration ('Here is the updated function', 'I've refactored this', 'Now we handle the edge case'), apologetic hedges ('this is a simplified version', 'in a real app you would'), or references to a conversation or request ('as requested', 'per your instructions'). Text inside string literals, fixtures or test data does NOT count. Ordinary comments, however verbose, do NOT count. Rate how much chatter the file contains.",
+        "criteria": [
+          "Assistant chatter in several comments",
+          "Assistant chatter in one comment",
+          "A comment that faintly reads like change narration",
+          "Comments are impersonal and describe the code, not the act of writing it",
+          "No assistant chatter — or the file is generated, a fixture, a mock, a type declaration or plain data"
+        ]
+      },
+      "placeholders_stubs": {
+        "type": "score",
+        "instructions": "Look only for placeholder identifiers and unfinished stubs in this file's own code: names like data2, temp, foo, item1, myFunction, result2; a TODO/FIXME for work the code already does; a function left as a stub ('implement later', `throw new Error('not implemented')` with no caller contract). These do NOT count: conventional short names (i, e, err, res, ctx, acc); legitimate TODOs for future work; test dummy values. Rate how many the file contains.",
+        "criteria": [
+          "Placeholder names or forgotten stubs throughout the file",
+          "Several placeholder names or forgotten stubs",
+          "One or two placeholder names or stale TODOs",
+          "None that are clear; at most one slightly generic name",
+          "No placeholder names and no forgotten stubs — or the file is generated, a fixture, a mock, a type declaration or plain data"
+        ]
+      },
+      "needless_defense": {
+        "type": "score",
+        "instructions": "Look only for two things in this file: a try/catch whose try block contains only operations that cannot throw (plain arithmetic, property reads on known objects, string formatting); and the identical null, undefined or length guard written out again and again for the same value within one function. Guards around parsing, I/O, network, DB, child processes, user or external input, and optional values are legitimate and do NOT count. Optional chaining does NOT count. Rate how many of these the file contains.",
+        "criteria": [
+          "Pointless try/catch blocks or verbatim repeated guards throughout the file",
+          "Several pointless try/catch blocks or verbatim repeated guards",
+          "One pointless try/catch block or one verbatim repeated guard",
+          "Every try/catch wraps something that can throw and guards are not repeated",
+          "The file has no try/catch around non-throwing code and no verbatim repeated guards — or the file is generated, a fixture, a mock, a type declaration or plain data"
+        ]
+      },
+      "duplicate_helpers": {
+        "type": "score",
+        "instructions": "Look only for helpers defined in THIS file that duplicate each other: two or more functions with different names and near-identical bodies doing the same job (for example formatCurrency, formatMoney and displayPrice). Duplication of code in other files is out of scope. Overloads, thin named wrappers that add meaning, and test cases with similar shape do NOT count. Rate how many duplicate helpers the file contains.",
+        "criteria": [
+          "Several groups of duplicate helpers",
+          "One group of three or more duplicate helpers",
+          "One pair of duplicate helpers",
+          "None that are clear; at most two helpers with overlapping but distinct jobs",
+          "No duplicate helpers in this file — or the file is generated, a fixture, a mock, a type declaration or plain data"
+        ]
+      }
+    }
   }
 }

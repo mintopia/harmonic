@@ -127,6 +127,55 @@ describe('scoreForBaseline', () => {
   });
 });
 
+describe('sub-question aggregation', () => {
+  const subIds = Object.keys(rubrics.security.questions);
+
+  it('scoreForBaseline aggregates security to the min of its sub scores and stores subs', async () => {
+    callJev.mockReset();
+    const answers: Record<string, { score: number; confidence: number }> = {};
+    subIds.forEach((id, i) => {
+      answers[`security.${id}`] = { score: i === 0 ? 1 : 3, confidence: i === 0 ? 0.4 : 0.9 };
+    });
+    callJev.mockResolvedValueOnce({ answers, usage: {} });
+    const config = makeConfig();
+    const result = await scoreForBaseline(makeSubject(), { config, rubrics, jevCfg: resolveProviderConfig() });
+
+    if ('error' in result) throw new Error(`expected success, got error: ${result.error}`);
+    expect(result.entry.categories.security).toBe(1);
+    expect(result.entry.confidences?.security).toBe(0.4);
+    expect(result.entry.subs?.security).toEqual(
+      Object.fromEntries(subIds.map((id, i) => [id, { score: i === 0 ? 1 : 3, confidence: i === 0 ? 0.4 : 0.9 }])),
+    );
+    expect(result.entry.decidedBy?.security).toBe(subIds[0]);
+    expect(result.entry.decidedBy?.complexity_clean_code).toBeUndefined();
+  });
+
+  it('scoreSubject attaches subs and decidedBy to the category result', async () => {
+    callJev.mockReset();
+    const answers: Record<string, { score: number; confidence: number }> = {};
+    subIds.forEach((id, i) => {
+      answers[`security.${id}`] = { score: i === 0 ? 1 : 3, confidence: i === 0 ? 0.4 : 0.9 };
+    });
+    callJev.mockResolvedValueOnce({ answers, usage: {} });
+    const config = makeConfig();
+    const result = await scoreSubject(makeSubject(), {
+      config,
+      rubrics,
+      mergeBaseSha: 'HEAD',
+      repoRoot: process.cwd(),
+      jevCfg: resolveProviderConfig(),
+      baseline: null,
+      signoffs: new Set(),
+      dryRun: false,
+    });
+
+    const security = result.categories?.security;
+    expect(security?.score).toBe(1);
+    expect(security?.decidedBy).toBe(subIds[0]);
+    expect(security?.subs?.[subIds[0] as string]).toEqual({ score: 1, confidence: 0.4 });
+  });
+});
+
 describe('renderHuman', () => {
   it('surfaces a too-big file in its own section and counts it apart from scored/errored in the GATE line', () => {
     function makeFile(overrides: Partial<FileResult>): FileResult {

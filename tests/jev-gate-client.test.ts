@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callJev, JevFileTooBigError, type JevProviderConfig, type JevState } from '../scripts/jev-gate/jev-client.js';
-import type { Rubrics } from '../scripts/jev-gate/types.js';
+import type { RubricQuestion } from '../scripts/jev-gate/types.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -15,7 +15,7 @@ const cfg: JevProviderConfig = {
 };
 
 const state: JevState = { path: 'src/foo.ts', content: 'const x = 1;\n', diff: '' };
-const questions = {} as Rubrics;
+const questions = {} as Record<string, RubricQuestion>;
 
 describe('callJev', () => {
   it('rejects with JevFileTooBigError on a 413, calling fetch exactly once', async () => {

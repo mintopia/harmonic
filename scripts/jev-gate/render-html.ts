@@ -16,6 +16,11 @@
  * sign-off (thresholds.ts). At or above the floor the raw score decides
  * fail/warn/pass. The report shows the raw score and marks the unsure ones, matching
  * the gate exactly.
+ *
+ * A category absent from a file's `categories` was never asked (the file's role
+ * exempts it — see jev.gate.json's `roles[].exempt`), not scored 0: it renders as a
+ * muted "n/a", is left out of the file's own scatter point, its detail card, its
+ * column mean, and the mean-confidence figure.
  */
 import type { Baseline, BaselineMeta, CategoryId } from './types.js';
 import { ALL_CATEGORIES } from './types.js';
@@ -36,12 +41,13 @@ const CAT_LABELS: Record<CategoryId, string> = {
 
 const scoreZone = (v: number): string => (v < 1.5 ? 'fail' : v < 2.5 ? 'warn' : 'pass');
 const overallZone = (v: number): string => (v < 2.0 ? 'fail' : v < 2.4 ? 'warn' : 'pass');
-const fmt = (v: number | undefined): string => (v == null ? '–' : v.toFixed(2));
+const fmt = (v: number | undefined): string => (v == null ? 'n/a' : v.toFixed(2));
 const pct = (v: number): number => Math.round((v / 4) * 100);
 const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/** Display zone for a cell/point: no score → 'na'; confidence below the floor (or
- * missing) → 'unsure'; otherwise the raw score's zone. */
+/** Display zone for a cell/point: no score → 'na' (the file's role never asked this
+ * category — distinct from `unsure`, which means Jev answered but wasn't confident);
+ * confidence below the floor (or missing) → 'unsure'; otherwise the raw score's zone. */
 function zoneOf(score: number | undefined, confidence: number | undefined, floor: number): string {
   if (score == null) return 'na';
   if (confidence == null || confidence < floor) return 'unsure';
@@ -68,7 +74,7 @@ function fmtDuration(ms: number): string {
 const chipCell = (score: number | undefined, confidence: number | undefined, floor: number): string => {
   const zone = zoneOf(score, confidence, floor);
   const conf = confidence == null ? '–' : `${Math.round(confidence * 100)}%`;
-  const title = score == null ? 'not scored' : zone === 'unsure' ? `unsure — ${score.toFixed(2)}/4, low confidence ${conf}` : `${score.toFixed(2)}/4 · confidence ${conf}`;
+  const title = score == null ? 'not asked — this file’s role is exempt for this category' : zone === 'unsure' ? `unsure — ${score.toFixed(2)}/4, low confidence ${conf}` : `${score.toFixed(2)}/4 · confidence ${conf}`;
   const sub = score == null ? '' : `<span class="conf">${conf}</span>`;
   return `<td><span class="chip ${zone}" title="${title}">${fmt(score)}</span>${sub}</td>`;
 };
@@ -88,6 +94,8 @@ export function renderBaselineHtml(
     path,
     categories: e.categories,
     confidences: e.confidences,
+    subs: e.subs,
+    decidedBy: e.decidedBy,
     overall: rawOverall(e.categories),
   }));
   const n = rows.length;
@@ -98,9 +106,9 @@ export function renderBaselineHtml(
   const catAverages = Object.fromEntries(
     ALL_CATEGORIES.map((k) => {
       const vals = tableRows.map((r) => r.categories[k]).filter((v): v is number => v != null);
-      return [k, vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0];
+      return [k, vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : undefined];
     }),
-  ) as Record<CategoryId, number>;
+  ) as Record<CategoryId, number | undefined>;
   const confVals = tableRows.flatMap((r) => ALL_CATEGORIES.map((k) => r.confidences?.[k]).filter((v): v is number => typeof v === 'number'));
   const meanConfidence = confVals.length ? confVals.reduce((a, b) => a + b, 0) / confVals.length : null;
 
@@ -182,7 +190,10 @@ export function renderBaselineHtml(
 
   const footHtml = tn
     ? `<td>Mean across ${tn} file${tn === 1 ? '' : 's'}</td><td><span class="chip overall ${overallZone(meanOverall)}">${pct(meanOverall)}</span></td>` +
-      ALL_CATEGORIES.map((k) => `<td><span class="chip ${scoreZone(catAverages[k])}">${fmt(catAverages[k])}</span></td>`).join('')
+      ALL_CATEGORIES.map((k) => {
+        const avg = catAverages[k];
+        return `<td><span class="chip ${avg == null ? 'na' : scoreZone(avg)}">${fmt(avg)}</span></td>`;
+      }).join('')
     : '';
 
   return `<!doctype html>
@@ -287,11 +298,17 @@ export function renderBaselineHtml(
   .scatter-cell { background:var(--panel); border-radius:4px; padding:10px 12px 12px; box-shadow:var(--hm-shadow-card); }
   .scatter-title { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:6px; }
   .chartbox { position:relative; height:150px; }
+  .chartbox.na-box { display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:12px; border:1px dashed var(--line); border-radius:4px; }
   .chart-missing { grid-column:1/-1; color:var(--muted); font-size:13px; padding:16px; border:1px dashed var(--line); border-radius:4px; text-align:center; }
   tr.filerow { cursor:pointer; }
   .caret { display:inline-block; width:10px; color:var(--muted); }
   tr.detail-row td { background:var(--bg); border-bottom:1px solid var(--line); }
   .detail-charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(max(180px, calc((100% - 3 * 12px) / 4)),1fr)); gap:12px; padding:12px 4px; white-space:normal; }
+  .subs-list { list-style:none; margin:8px 0 0; padding:8px 0 0; border-top:1px solid var(--line); font-size:11px; }
+  .subs-list li { display:flex; justify-content:space-between; gap:8px; padding:2px 0; color:var(--muted); }
+  .subs-list li.decided { color:var(--ink); font-weight:700; }
+  .subs-list .sub-name { white-space:normal; word-break:break-word; }
+  .subs-list .sub-score { flex:none; font-variant-numeric:tabular-nums; }
 </style>
 </head>
 <body>
@@ -341,7 +358,7 @@ export function renderBaselineHtml(
   const scoreZone = (v) => v < 1.5 ? 'fail' : v < 2.5 ? 'warn' : 'pass';
   const overallZone = (v) => v < 2.0 ? 'fail' : v < 2.4 ? 'warn' : 'pass';
   const zoneOf = (score, conf) => score == null ? 'na' : (conf == null || conf < FLOOR) ? 'unsure' : scoreZone(score);
-  const fmt = (v) => v == null ? '–' : v.toFixed(2);
+  const fmt = (v) => v == null ? 'n/a' : v.toFixed(2);
   const pct = (v) => Math.round((v / 4) * 100);
   const clamp = (c) => Math.max(0, Math.min(1, c));
   const rowOverall = (r) => {
@@ -433,6 +450,21 @@ export function renderBaselineHtml(
     root.querySelectorAll('canvas[data-cat]').forEach((cv) => detailCharts.push(metricChart(cv, cv.dataset.cat, (p) => p === path)));
   }
 
+  function subsListHtml(k, row) {
+    const catSubs = row.subs && row.subs[k];
+    if (!catSubs) return '';
+    const ids = Object.keys(catSubs);
+    if (ids.length === 0) return '';
+    const decided = (row.decidedBy && row.decidedBy[k]) || null;
+    const items = ids.map((id) => {
+      const a = catSubs[id];
+      const cls = id === decided ? ' class="decided"' : '';
+      const conf = Math.round(clamp(a.confidence) * 100);
+      return '<li' + cls + '><span class="sub-name">' + esc(id) + (id === decided ? ' *' : '') + '</span><span class="sub-score">' + a.score.toFixed(2) + ' (' + conf + '%)</span></li>';
+    }).join('');
+    return '<ul class="subs-list">' + items + '</ul>';
+  }
+
   let sortKey = 'overall', sortDir = 1;
   const head = document.getElementById('head');
   function renderHead() {
@@ -463,7 +495,7 @@ export function renderBaselineHtml(
   const cell = (score, conf) => {
     const zone = zoneOf(score, conf);
     const c = conf == null ? '–' : Math.round(conf * 100) + '%';
-    const title = score == null ? 'not scored' : zone === 'unsure' ? 'unsure — ' + score.toFixed(2) + '/4, low confidence ' + c : score.toFixed(2) + '/4 · confidence ' + c;
+    const title = score == null ? 'not asked — this file’s role is exempt for this category' : zone === 'unsure' ? 'unsure — ' + score.toFixed(2) + '/4, low confidence ' + c : score.toFixed(2) + '/4 · confidence ' + c;
     const sub = score == null ? '' : '<span class="conf">' + c + '</span>';
     return '<td><span class="chip '+zone+'" title="'+title+'">'+fmt(score)+'</span>'+sub+'</td>';
   };
@@ -479,7 +511,12 @@ export function renderBaselineHtml(
       const isOpen = expanded.has(r.path);
       const caret = '<span class="caret">'+(isOpen ? '▾' : '▸')+'</span> ';
       const mainRow = '<tr class="filerow" data-path="'+esc(r.path)+'"><td>'+caret+esc(r.path)+'</td>'+ov+cells+'</tr>';
-      const detailCells = CATS.map(([k,l]) => '<div class="scatter-cell"><div class="scatter-title">'+l+'</div><div class="chartbox"><canvas data-cat="'+k+'"></canvas></div></div>').join('');
+      const detailCells = CATS.map(([k,l]) => {
+        if (r.categories[k] == null) {
+          return '<div class="scatter-cell"><div class="scatter-title">'+l+'</div><div class="chartbox na-box">n/a — role exempt</div></div>';
+        }
+        return '<div class="scatter-cell"><div class="scatter-title">'+l+'</div><div class="chartbox"><canvas data-cat="'+k+'"></canvas></div>'+subsListHtml(k, r)+'</div>';
+      }).join('');
       const detail = isOpen
         ? '<tr class="detail-row" data-detail="'+esc(r.path)+'"><td colspan="'+(CATS.length+2)+'"><div class="detail-charts">'+detailCells+'</div></td></tr>'
         : '';

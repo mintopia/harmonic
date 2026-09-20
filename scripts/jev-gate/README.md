@@ -18,9 +18,34 @@ not a hard guarantee for a score sitting exactly on a threshold line.
 | `scripts/jev-gate/cli.ts` | Entrypoint. |
 | `scripts/jev-gate/{types,config,glob,git,jev-client,thresholds}.ts` | Implementation modules. |
 | `scripts/jev-gate/render-html.ts` | Renders a baseline to a self-contained HTML report (the optional `--html` output). |
-| `scripts/jev-gate/rubrics.json` | Vendored copy of the 7-category Jev rubric (security-by-exploitability + role-awareness). Self-contained — does not depend on `.claude/skills/jev-code-score` existing on the CI runner. |
+| `scripts/jev-gate/aggregate.ts` | Flattens each category's sub-questions into the flat map sent to Jev, and folds sub-answers back into one category score (`min` or `mean`). |
+| `scripts/jev-gate/rubrics.json` | The 8-category Jev rubric, each category split into narrow sub-questions (in-file signals only, role-aware). Its `_meta.authoring` lists the measured rules for writing a question Jev answers with high confidence. Self-contained — does not depend on `.claude/skills/jev-code-score` existing on the CI runner. |
 | `jev.gate.json` (repo root) | Committed, tunable policy: thresholds, gating vs. advisory categories, path-based role exemptions, source-file filters. Edit this, not the code, to retune the gate. |
-| `jev.baseline.json` (repo root) | One-way ratchet baseline: `path -> {categories, overall}`. Generate/regenerate it with `--write-baseline`. The gate runs fine without it, just with a reduced (absolute-only) check. |
+| `jev.baseline.json` (repo root) | One-way ratchet baseline: `path -> {categories, confidences, subs, decidedBy, overall}`. Generate/regenerate it with `--write-baseline`. The gate runs fine without it, just with a reduced (absolute-only) check. |
+
+### Sub-questions and aggregation
+
+Each rubric category is no longer a single Jev question — `rubrics.json` nests
+narrow sub-questions under it (e.g. `security` has `injection`,
+`secrets_crypto`, `unconfined_paths`, `auth_fail_open`), because Jev reports a
+far more peaked (confident) distribution when a question can be settled from
+one dimension. `aggregate.ts`'s `toJevQuestions` flattens every sub-question
+to a `category.sub` id before the Jev call; `aggregateCategory` folds the
+per-id answers back into one category score per the category's `aggregate`:
+
+- `min` — the category score/confidence is its lowest-scoring sub-question's
+  answer (ties broken by the lower confidence). The gate's blocking-reason and
+  advisory text names this sub-question, e.g.
+  `security: FAIL (1.2/4, confidence 0.81, decided by unconfined_paths)`.
+- `mean` — the category score/confidence is the arithmetic mean across its
+  sub-questions; no single sub-question "decides" it.
+
+A missing or non-numeric sub-answer counts as score 0, confidence 0, mirroring
+the previous single-question behaviour. `CategoryResult.subs` and
+`BaselineEntry.subs` carry the raw per-sub answers through to the CLI output
+and baseline file; the HTML report's per-file detail row lists them per
+category. `BaselineEntry.decidedBy` records, per `min` category, which sub-question
+decided the score; the report bolds that one.
 
 ## Running it
 
@@ -129,10 +154,16 @@ said no" from "the gate couldn't run".
   `--signoff`/`$JEV_GATE_SIGNOFF` — the CI-side stand-in for the proposal's
   "human reviewer clears the flag" step. Confidence never upgrades a score.
 - **Role exemptions** (proposal §4): `jev.gate.json`'s `roles` array, matched
-  in order (first match wins), suppresses listed categories from gating for
-  stories/tests/fixtures/mocks/migrations, and skips `.d.ts` and
-  generated/vendored files entirely (never sent to Jev). Each matched file
-  gets a `role_hint` attached to the Jev call, mirroring `jev_score.py`'s
+  in order (first match wins), makes a matched file's `exempt` categories not
+  asked at all for stories/tests/fixtures/mocks/migrations — no sub-question
+  for them reaches Jev, and they're absent from `FileResult.categories` /
+  the baseline entry, contributing nothing to `overall` (they used to still be
+  sent and scored, just excluded from gating; a role's `exempt` list is now
+  the honest "this role makes the question meaningless" signal, not "score it
+  but ignore the answer"). A role's `skip: true` still skips every category
+  and sends nothing to Jev; a role whose `exempt` covers all 8 categories is
+  treated the same way (nothing left to ask). Each matched, non-fully-exempt
+  file gets a `role_hint` attached to the Jev call, mirroring `jev_score.py`'s
   `build_state()`.
 - **Diff mode + ratchet** (proposal §5): only files changed vs. the merge-base
   are scored. If `jev.baseline.json` exists and has an entry for a file, a

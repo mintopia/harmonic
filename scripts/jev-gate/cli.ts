@@ -19,6 +19,7 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { aggregateCategory, toJevQuestions } from './aggregate.js';
 import { loadGateConfig, loadRubrics } from './config.js';
 import { changedFiles, fileDiff, GitError, mergeBase, resolveBaseRef, trackedFiles } from './git.js';
 import { classifyRole, isInSkipDir, isSourceFile } from './glob.js';
@@ -46,6 +47,7 @@ import {
   type GateResult,
   type GateSummary,
   type JevUsage,
+  type SubAnswers,
 } from './types.js';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -246,6 +248,18 @@ export function resolveSubjects(
       });
       continue;
     }
+    if (role.exempt.size === ALL_CATEGORIES.length) {
+      skipped.push({
+        path: relPath,
+        role: role.roleName,
+        verdict: 'SKIPPED',
+        skipReason: `role "${role.roleName}" exempts every category: nothing to ask Jev`,
+        reasons: [],
+        advisories: [],
+        hasBaseline: false,
+      });
+      continue;
+    }
 
     const absPath = join(repoRoot, relPath);
     let size: number;
@@ -329,7 +343,7 @@ export async function scoreSubject(
 
   let answers: Record<string, { score: number; confidence: number }>;
   try {
-    const result = await callJev(jevCfg, state, rubrics);
+    const result = await callJev(jevCfg, state, toJevQuestions(rubrics, subject.exempt));
     answers = result.answers;
   } catch (err) {
     if (err instanceof JevFileTooBigError) {
@@ -356,19 +370,26 @@ export async function scoreSubject(
     };
   }
 
-  const categories = {} as Record<CategoryId, CategoryResult>;
+  const categories: Partial<Record<CategoryId, CategoryResult>> = {};
   for (const cat of ALL_CATEGORIES) {
-    categories[cat] = evaluateCategory({
+    if (subject.exempt.has(cat)) continue;
+    const agg = aggregateCategory(rubrics[cat], cat, answers);
+    const evaluated = evaluateCategory({
       path: subject.relPath,
       category: cat,
-      answer: answers[cat],
+      answer: agg.answer,
       role: roleForEval,
       config,
       baseline: baselineEntry,
       signoffs,
     });
+    categories[cat] = { ...evaluated, subs: agg.subs, ...(agg.decidedBy !== undefined ? { decidedBy: agg.decidedBy } : {}) };
   }
-  const scores = Object.fromEntries(ALL_CATEGORIES.map((c) => [c, categories[c].score])) as Record<CategoryId, number>;
+  const scores: Partial<Record<CategoryId, number>> = {};
+  for (const cat of ALL_CATEGORIES) {
+    const c = categories[cat];
+    if (c) scores[cat] = c.score;
+  }
   const overall = evaluateOverall(scores, config, baselineEntry);
 
   const reasons = blockingReasons(categories, overall, config);
@@ -406,20 +427,27 @@ export async function scoreForBaseline(
   let answers: Record<string, { score: number; confidence: number }>;
   let usage: JevUsage;
   try {
-    ({ answers, usage } = await callJev(jevCfg, state, rubrics));
+    ({ answers, usage } = await callJev(jevCfg, state, toJevQuestions(rubrics, subject.exempt)));
   } catch (err) {
     return { path: subject.relPath, error: (err as Error).message, tooBig: err instanceof JevFileTooBigError };
   }
 
   const categories: Partial<Record<CategoryId, number>> = {};
   const confidences: Partial<Record<CategoryId, number>> = {};
+  const subs: Partial<Record<CategoryId, SubAnswers>> = {};
+  const decidedBy: Partial<Record<CategoryId, string>> = {};
   for (const cat of ALL_CATEGORIES) {
-    categories[cat] = typeof answers[cat]?.score === 'number' ? answers[cat]!.score : 0;
-    if (typeof answers[cat]?.confidence === 'number') confidences[cat] = answers[cat]!.confidence;
+    if (subject.exempt.has(cat)) continue;
+    const agg = aggregateCategory(rubrics[cat], cat, answers);
+    categories[cat] = agg.answer.score;
+    confidences[cat] = agg.answer.confidence;
+    subs[cat] = agg.subs;
+    if (agg.decidedBy !== undefined) decidedBy[cat] = agg.decidedBy;
   }
-  // Persisted overall is the raw-score mean, matching the live gate (evaluateOverall).
-  const overall = ALL_CATEGORIES.reduce((sum, c) => sum + (categories[c] ?? 0), 0) / ALL_CATEGORIES.length;
-  return { path: subject.relPath, entry: { categories, confidences, overall }, usage };
+  // Persisted overall is the raw-score mean of the categories asked, matching the live gate (evaluateOverall).
+  const askedScores = Object.values(categories);
+  const overall = askedScores.length ? askedScores.reduce((sum, s) => sum + s, 0) / askedScores.length : 0;
+  return { path: subject.relPath, entry: { categories, confidences, overall, subs, decidedBy }, usage };
 }
 
 /** Sibling `.html` path for a baseline JSON file (foo.json -> foo.html, else foo + .html). */
@@ -427,7 +455,14 @@ function htmlPathFor(baselinePath: string): string {
   return baselinePath.endsWith('.json') ? `${baselinePath.slice(0, -'.json'.length)}.html` : `${baselinePath}.html`;
 }
 
-function writeBaselineHtml(baseline: Baseline, meta: BaselineMeta | null, baselinePath: string, repoRoot: string, focus: readonly string[] | null, confidenceFloor: number): string {
+function writeBaselineHtml(
+  baseline: Baseline,
+  meta: BaselineMeta | null,
+  baselinePath: string,
+  repoRoot: string,
+  focus: readonly string[] | null,
+  confidenceFloor: number,
+): string {
   const htmlPath = htmlPathFor(baselinePath);
   writeFileSync(htmlPath, renderBaselineHtml(baseline, meta, focus, confidenceFloor));
   process.stderr.write(`jev-gate: baseline HTML written to ${relative(repoRoot, htmlPath)}\n`);
@@ -444,13 +479,17 @@ function changedEntry(file: FileResult): BaselineEntry | null {
   if (!file.categories || !file.overall) return null;
   const categories: Partial<Record<CategoryId, number>> = {};
   const confidences: Partial<Record<CategoryId, number>> = {};
+  const subs: Partial<Record<CategoryId, SubAnswers>> = {};
+  const decidedBy: Partial<Record<CategoryId, string>> = {};
   for (const cat of ALL_CATEGORIES) {
     const cr = file.categories[cat];
     if (!cr) continue;
     categories[cat] = cr.score;
     confidences[cat] = cr.confidence;
+    if (cr.subs) subs[cat] = cr.subs;
+    if (cr.decidedBy !== undefined) decidedBy[cat] = cr.decidedBy;
   }
-  return { categories, confidences, overall: file.overall.mean };
+  return { categories, confidences, overall: file.overall.mean, subs, decidedBy };
 }
 
 /** `--html` without `--write-baseline`: render the existing baseline file to HTML, no scoring. */

@@ -8,7 +8,7 @@ All 8 axes gate in this workspace: `complexity_clean_code`, `code_smells`, `test
 
 > **Note on `security`.** Jev's security axis has no exploitability model and is calibrated as noisy: it both misses real vulnerabilities and over-flags benign code. This workspace deliberately gates on it anyway (a low score blocks or, at low confidence, requires a human sign-off). Expect false positives; use `--signoff` / advisory mode during rollout, and keep a human in the loop rather than trusting the score as a verdict.
 
-Role exemptions (`roles` in `jev.gate.json`) suppress specific axes for tests, mocks, fixtures, stories, and migrations, and skip `.d.ts` / generated files entirely.
+Role exemptions (`roles` in `jev.gate.json`) mean a matched file's `exempt` categories are never asked — no sub-question for them reaches Jev, and they're absent from that file's scores and its `overall` mean — for tests, mocks, fixtures, stories, and migrations; `skip: true` (or a role that exempts all 8 categories) skips the file entirely, `.d.ts` and generated files included.
 
 ## Running it locally
 
@@ -73,7 +73,9 @@ Advancing a phase is a judgment call once the advisory reports look trustworthy 
 
 ## The baseline
 
-`jev.baseline.json` (repo root) is the one-way ratchet floor: `path -> {categories, overall}`. It ships empty (`{}`). Until it's populated, every changed file is judged on absolute thresholds only (Phase 0/1 behavior).
+`jev.baseline.json` (repo root) is the one-way ratchet floor: `path -> {categories, confidences, subs, decidedBy, overall}`. It ships empty (`{}`). Until it's populated, every changed file is judged on absolute thresholds only (Phase 0/1 behavior).
+
+`subs` carries each category's raw sub-question answers (`scripts/jev-gate/rubrics.json` splits every category into several narrow sub-questions Jev answers separately, then folds back into one category score/confidence via `min` or `mean` — see `scripts/jev-gate/README.md`'s "Sub-questions and aggregation"). It's optional: baselines written before sub-questions existed omit it and the gate/report fall back to the plain category score.
 
 Populate or refresh it with `./scripts/jev-gate.sh --write-baseline` (or `npm run jev:baseline`) once a key is available — this scores every tracked, in-scope source file (role skips/exemptions and size limits apply) and overwrites the file. It's a deliberate, reviewed commit; the gate never writes the baseline as a side effect of a normal run.
 

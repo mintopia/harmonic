@@ -15,7 +15,6 @@ import type {
   RoleMatch,
   Zone,
 } from './types.js';
-import { ALL_CATEGORIES } from './types.js';
 
 export function categoryZone(score: number, t: GateConfig['thresholds']['category']): Zone {
   if (score < t.fail) return 'FAIL';
@@ -90,15 +89,16 @@ export function evaluateCategory(input: CategoryEvalInput): CategoryResult {
   return result;
 }
 
-/** The overall is the mean of the raw category scores; the ratchet compares it
- * against the baseline's stored overall. */
+/** The overall is the mean of the raw scores for categories that were asked
+ * (role-exempt categories are absent from `scores` and excluded from the mean);
+ * the ratchet compares it against the baseline's stored overall. */
 export function evaluateOverall(
-  scores: Record<CategoryId, number>,
+  scores: Partial<Record<CategoryId, number>>,
   config: GateConfig,
   baseline: Baseline[string] | undefined,
 ): OverallResult {
-  const values = ALL_CATEGORIES.map((c) => scores[c]);
-  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  const values = Object.values(scores);
+  const mean = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
   const zone = overallZone(mean, config.thresholds.overall);
   const result: OverallResult = { mean, mean100: Math.round((mean / 4) * 100), zone };
   if (baseline && mean <= baseline.overall - config.thresholds.ratchet.overallDrop) {
@@ -109,7 +109,7 @@ export function evaluateOverall(
 
 /** Zones that must block a file, and why — used to build the human-readable reasons list. */
 export function blockingReasons(
-  categories: Record<CategoryId, CategoryResult>,
+  categories: Partial<Record<CategoryId, CategoryResult>>,
   overall: OverallResult,
   config: GateConfig,
 ): string[] {
@@ -117,8 +117,9 @@ export function blockingReasons(
   for (const cat of config.gatingCategories) {
     const c = categories[cat];
     if (!c) continue;
-    if (c.verdict === 'FAIL') reasons.push(`${cat}: FAIL (${c.score.toFixed(1)}/4, confidence ${c.confidence.toFixed(2)})`);
-    if (c.verdict === 'NEEDS_SIGNOFF') reasons.push(`${cat}: unsure — needs human sign-off (${c.score.toFixed(1)}/4, low confidence ${c.confidence.toFixed(2)})`);
+    const decidedSuffix = c.decidedBy ? `, decided by ${c.decidedBy}` : '';
+    if (c.verdict === 'FAIL') reasons.push(`${cat}: FAIL (${c.score.toFixed(1)}/4, confidence ${c.confidence.toFixed(2)}${decidedSuffix})`);
+    if (c.verdict === 'NEEDS_SIGNOFF') reasons.push(`${cat}: unsure — needs human sign-off (${c.score.toFixed(1)}/4, low confidence ${c.confidence.toFixed(2)}${decidedSuffix})`);
     if (c.ratchetRegression) {
       reasons.push(`${cat}: ratchet regression, dropped ${c.ratchetRegression.drop.toFixed(2)} vs baseline ${c.ratchetRegression.baseline.toFixed(2)}`);
     }
@@ -130,7 +131,7 @@ export function blockingReasons(
   return reasons;
 }
 
-export function warnNotes(categories: Record<CategoryId, CategoryResult>, overall: OverallResult, config: GateConfig): string[] {
+export function warnNotes(categories: Partial<Record<CategoryId, CategoryResult>>, overall: OverallResult, config: GateConfig): string[] {
   const notes: string[] = [];
   for (const cat of config.gatingCategories) {
     const c = categories[cat];
@@ -141,15 +142,16 @@ export function warnNotes(categories: Record<CategoryId, CategoryResult>, overal
 }
 
 /** Security/comments never gate; `security` additionally raises a human-review flag on a low score. */
-export function advisoryNotes(categories: Record<CategoryId, CategoryResult>, config: GateConfig): string[] {
+export function advisoryNotes(categories: Partial<Record<CategoryId, CategoryResult>>, config: GateConfig): string[] {
   const notes: string[] = [];
   for (const cat of config.advisoryCategories) {
     const c = categories[cat];
     if (!c) continue;
+    const decidedSuffix = c.decidedBy ? `, decided by ${c.decidedBy}` : '';
     if (cat === 'security' && c.zone !== 'PASS') {
-      notes.push(`security: ${c.zone} (${c.score.toFixed(1)}/4) — advisory only, flagged for human security review, does not block`);
+      notes.push(`security: ${c.zone} (${c.score.toFixed(1)}/4${decidedSuffix}) — advisory only, flagged for human security review, does not block`);
     } else if (c.zone !== 'PASS') {
-      notes.push(`${cat}: ${c.zone} (${c.score.toFixed(1)}/4) — advisory only, does not block`);
+      notes.push(`${cat}: ${c.zone} (${c.score.toFixed(1)}/4${decidedSuffix}) — advisory only, does not block`);
     }
   }
   return notes;
