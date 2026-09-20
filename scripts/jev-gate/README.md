@@ -27,7 +27,7 @@ not a hard guarantee for a score sitting exactly on a threshold line.
 
 Each rubric category is no longer a single Jev question — `rubrics.json` nests
 narrow sub-questions under it (e.g. `security` has `injection`,
-`secrets_crypto`, `unconfined_paths`, `auth_fail_open`), because Jev reports a
+`secrets_crypto`, `auth_fail_open`), because Jev reports a
 far more peaked (confident) distribution when a question can be settled from
 one dimension. `aggregate.ts`'s `toJevQuestions` flattens every sub-question
 to a `category.sub` id before the Jev call; `aggregateCategory` folds the
@@ -36,7 +36,7 @@ per-id answers back into one category score per the category's `aggregate`:
 - `min` — the category score/confidence is its lowest-scoring sub-question's
   answer (ties broken by the lower confidence). The gate's blocking-reason and
   advisory text names this sub-question, e.g.
-  `security: FAIL (1.2/4, confidence 0.81, decided by unconfined_paths)`.
+  `security: FAIL (1.2/4, confidence 0.81, decided by injection)`.
 - `mean` — the category score/confidence is the arithmetic mean across its
   sub-questions; no single sub-question "decides" it.
 

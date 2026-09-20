@@ -5,7 +5,8 @@
     "scale": "Every question is a Jev `score`. Levels run 0 (worst) to 4 (best). Higher always means healthier code, so the overall score is a plain mean.",
     "levels": 5,
     "direction": "higher_is_better",
-    "aggregation": "`min`: the category takes the lowest sub-score and that sub-question's confidence — right for defect categories, where one injection must fail security however clean the crypto is. `mean`: the category takes the mean of sub-scores and of confidences — right for a graded quality made of facets (complexity). code_smells stays one holistic question: its facets (god units, parameter smells, primitive obsession) each measured far less certain than the whole (2026-09-20: 30-80% low-confidence vs 3%)."
+    "aggregation": "`min`: the category takes the lowest sub-score and that sub-question's confidence — right for defect categories, where one injection must fail security however clean the crypto is. `mean`: the category takes the mean of sub-scores and of confidences — right for a graded quality made of facets (complexity). code_smells stays one holistic question: its facets (god units, parameter smells, primitive obsession) each measured far less certain than the whole (2026-09-20: 30-80% low-confidence vs 3%).",
+    "dropped": "2026-09-20, after the first whole-repo baseline: `security.unconfined_paths`, `concurrency_and_idempotency.rerun_safety` and `ai_slop.duplicate_helpers` were removed. Each decided most of its category's low-confidence files (42/67, 36/59, 67/75): whether a path is confined, whether a step gets re-run, and whether two helpers truly duplicate each other are all arguable from one file. Cost: the gate no longer flags unconfined filesystem paths (the known `claude.ts` sessionId traversal scored 1.8 on that sub-question)."
   },
   "code_smells": {
     "aggregate": "min",
@@ -46,17 +47,6 @@
           "A suspicious literal, random use or hash whose purpose is unclear from this file",
           "Only placeholders, dummies, or non-security randomness and hashing",
           "No hardcoded credentials and no security-relevant randomness, hashing or TLS settings in this file — or the file is itself a test, fixture, mock, story or type declaration"
-        ]
-      },
-      "unconfined_paths": {
-        "type": "score",
-        "instructions": "Look only at filesystem paths built in this file. A path is UNCONFINED when an id, name or other string variable is inserted into a path segment or filename and nothing in this file confines it (no allowlist, pattern test, basename, or startsWith(root) check). Paths built only from constants, configured roots, or values checked in this file are fine. Rate how many unconfined paths the file builds.",
-        "criteria": [
-          "Several unconfined paths",
-          "One clearly unconfined path",
-          "A borderline case: a variable reaches a path with only partial checking in this file",
-          "Paths are built from variables, and every one is confined or checked in this file",
-          "No filesystem path is built from a variable in this file — or the file is itself a test, fixture, mock, story or type declaration"
         ]
       },
       "auth_fail_open": {
@@ -237,17 +227,6 @@
           "Such loops exist and all are bounded",
           "No retry, reconnect, respawn or self-rescheduling loop in this file"
         ]
-      },
-      "rerun_safety": {
-        "type": "score",
-        "instructions": "Look only for code in this file that is EXPLICITLY a retry, recovery, resume, reconcile, boot-sweep or crash-recovery path: it sits inside a retry loop, or its name or comment says it re-runs after a failure, restart or crash. Inside such a path, look at writes to durable or external state: DB inserts/updates/deletes, file writes, git commands, process spawns, outbound notifications. A write is GUARDED when repeating it converges to the same state: upsert, existence check, unique key, status compare-and-set, idempotency key, atomic rename, delete-if-exists. Code that is not explicitly a re-run path is out of scope, because whether it gets re-run depends on callers you cannot see. Rate the writes inside explicit re-run paths.",
-        "criteria": [
-          "A write inside an explicit re-run path plainly repeats its side effect",
-          "A write inside an explicit re-run path is unguarded on one branch",
-          "A write inside an explicit re-run path has an arguable or partial guard",
-          "Explicit re-run paths exist and every write in them is guarded",
-          "This file has no explicit retry, recovery, resume, reconcile or boot-sweep path that writes state"
-        ]
       }
     }
   },
@@ -285,17 +264,6 @@
           "One pointless try/catch block or one verbatim repeated guard",
           "Every try/catch wraps something that can throw and guards are not repeated",
           "The file has no try/catch around non-throwing code and no verbatim repeated guards — or the file is generated, a fixture, a mock, a type declaration or plain data"
-        ]
-      },
-      "duplicate_helpers": {
-        "type": "score",
-        "instructions": "Look only for helpers defined in THIS file that duplicate each other: two or more functions with different names and near-identical bodies doing the same job (for example formatCurrency, formatMoney and displayPrice). Duplication of code in other files is out of scope. Overloads, thin named wrappers that add meaning, and test cases with similar shape do NOT count. Rate how many duplicate helpers the file contains.",
-        "criteria": [
-          "Several groups of duplicate helpers",
-          "One group of three or more duplicate helpers",
-          "One pair of duplicate helpers",
-          "None that are clear; at most two helpers with overlapping but distinct jobs",
-          "No duplicate helpers in this file — or the file is generated, a fixture, a mock, a type declaration or plain data"
         ]
       }
     }
