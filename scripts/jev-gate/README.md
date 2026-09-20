@@ -18,7 +18,7 @@ not a hard guarantee for a score sitting exactly on a threshold line.
 | `scripts/jev-gate/cli.ts` | Entrypoint. |
 | `scripts/jev-gate/{types,config,glob,git,jev-client,thresholds}.ts` | Implementation modules. |
 | `scripts/jev-gate/render-html.ts` | Renders a baseline to a self-contained HTML report (the optional `--html` output). |
-| `scripts/jev-gate/rubrics.json` | Vendored copy of the 7-category Jev rubric (security-by-exploitability + role-awareness). Self-contained — does not depend on `.claude/skills/jev-code-score` existing on the CI runner. |
+| `scripts/jev-gate/rubrics.json` | The 8-category Jev rubric (in-file signals only, role-aware). Its `_meta.authoring` lists the measured rules for writing a question Jev answers with high confidence. Self-contained — does not depend on `.claude/skills/jev-code-score` existing on the CI runner. |
 | `jev.gate.json` (repo root) | Committed, tunable policy: thresholds, gating vs. advisory categories, path-based role exemptions, source-file filters. Edit this, not the code, to retune the gate. |
 | `jev.baseline.json` (repo root) | One-way ratchet baseline: `path -> {categories, overall}`. Generate/regenerate it with `--write-baseline`. The gate runs fine without it, just with a reduced (absolute-only) check. |
 
