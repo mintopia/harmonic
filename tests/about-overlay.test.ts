@@ -140,6 +140,17 @@ describe('AboutOverlay', () => {
     expect(host!.textContent).toContain('Checking');
   });
 
+  it('renders a decorative, inert layer of floating note motes behind the clef', async () => {
+    await renderAbout({});
+
+    const motes = host!.querySelectorAll('.note-mote');
+    expect(motes.length).toBe(7);
+
+    const layer = motes[0]!.parentElement!;
+    expect(layer.getAttribute('aria-hidden')).toBe('true');
+    expect(layer.className).toContain('pointer-events-none');
+  });
+
   it('calls onClose when the modal is closed', async () => {
     const onClose = vi.fn();
     await renderAbout({ onClose });
