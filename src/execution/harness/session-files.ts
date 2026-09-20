@@ -6,6 +6,7 @@ function entriesNewestFirstOrEmpty(dir: string): string[] {
   try {
     return readdirSync(dir).sort().reverse();
   } catch {
+    // Missing/unreadable dir is an expected "no entries yet" state, not a failure.
     return [];
   }
 }
@@ -65,6 +66,7 @@ export function agentFilesSync(dir: string): Map<string, AgentFilePair> {
     const entries = readdirSync(dir, { recursive: true }) as string[];
     return pairAgentFiles(entries.map((rel) => join(dir, rel)));
   } catch {
+    // Missing/unreadable dir is an expected "no entries yet" state, not a failure.
     return new Map();
   }
 }
@@ -78,6 +80,7 @@ export async function agentFiles(dir: string): Promise<Map<string, AgentFilePair
     const entries = (await readdir(dir, { recursive: true })) as string[];
     return pairAgentFiles(entries.map((rel) => join(dir, rel)));
   } catch {
+    // Missing/unreadable dir is an expected "no entries yet" state, not a failure.
     return new Map();
   }
 }

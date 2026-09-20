@@ -12,7 +12,7 @@ import {
 } from '../domain/session-continuation.js';
 import { assessResumeEligibility, sessionFacts, type ResumeEnvironment } from '../domain/session-resume.js';
 import type { SessionStore } from '../domain/sessions.js';
-import { bestEffort, fireAndForget, reportFailure } from '../error-handling.js';
+import { bestEffort, fireAndForget, orFallback, reportFailure } from '../error-handling.js';
 import { adapterFor, adapterVersion } from './harness/registry.js';
 import { repoKey } from './repo-lock.js';
 import type { TranscriptCapture } from './transcript-capture.js';
@@ -61,7 +61,13 @@ export class SessionContinuation {
       try {
         const session = await this.sessionStore.get(prior.sessionRowId);
         return { prior, session, trigger: 'manual-resume' };
-      } catch {
+      } catch (err) {
+        // This prior's Session row is gone/unreadable; fall through and try the next-older prior instead of failing the whole lookup.
+        reportFailure(err, {
+          op: 'runner.resolveContinuationSource.getSession',
+          level: 'debug',
+          context: { taskId: task.id, sessionRowId: prior.sessionRowId },
+        });
         continue;
       }
     }
@@ -116,7 +122,15 @@ export class SessionContinuation {
     workspace: Awaited<ReturnType<NonNullable<RunnerOptions['getWorkspace']>>>,
   ): Promise<DeterministicContinuation> {
     const now = Date.now();
-    const session = run.sessionRowId === null ? null : await this.sessionStore.get(run.sessionRowId).catch(() => null);
+    const sessionRowId = run.sessionRowId;
+    const session =
+      sessionRowId === null
+        ? null
+        : await orFallback(() => this.sessionStore.get(sessionRowId), {
+            op: 'runner.decideContinuation.getSession',
+            level: 'warn',
+            context: { attemptId: run.id, sessionRowId },
+          }, null);
     const persisted = run.usage ? (JSON.parse(run.usage) as AttemptUsage).contextTokens ?? null : null;
     const contextTokens = (await this.usage.latestSnapshot(run.id))?.contextTokens ?? this.getLastTurnContextTokens(run.id) ?? persisted;
     return decideAttemptContinuation({
@@ -129,8 +143,13 @@ export class SessionContinuation {
   }
 
   async condensedContext(run: AttemptRow): Promise<string | null> {
-    if (run.sessionRowId === null) return null;
-    const session = await this.sessionStore.get(run.sessionRowId).catch(() => null);
+    const sessionRowId = run.sessionRowId;
+    if (sessionRowId === null) return null;
+    const session = await orFallback(() => this.sessionStore.get(sessionRowId), {
+      op: 'runner.condensedContext.getSession',
+      level: 'warn',
+      context: { attemptId: run.id, sessionRowId },
+    }, null);
     if (!session) return null;
     const current = await this.attempts.get(run.id);
     const events = await this.attempts.listEvents(run.id);

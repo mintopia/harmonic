@@ -13,6 +13,7 @@ export async function withDetachedWorktree<T>(
   try {
     return await fn(worktreePath);
   } finally {
+    // Best-effort cleanup: `fn`'s own result/error already propagates above; a stray worktree left behind is a disk-space nit, not a caller-visible failure.
     await Git.removeWorktree(repoDir, worktreePath).catch(() => {});
   }
 }

@@ -59,6 +59,7 @@ function inputValue(input: string | null, keys: readonly string[]): string | nul
       return String(value);
     }
   } catch {
+    // tool input isn't always JSON (e.g. shell commands) — not worth a warning
     return null;
   }
   return null;

@@ -30,6 +30,17 @@ const verdictStates: Record<Verdict, Extract<VerifierStatusState, 'passed' | 'fa
   inconclusive: 'inconclusive',
 };
 
+/** A configured-but-unattempted verifier's state: `running` on its own live Step, else `planned` before that Step or `skipped` after it. */
+function configuredVerifierState(
+  ownStep: StepType,
+  stepType: StepType | null | undefined,
+  attemptCount: number,
+): Extract<VerifierStatusState, 'running' | 'planned' | 'skipped'> {
+  if (stepType === ownStep) return 'running';
+  const pending = stepType == null ? attemptCount === 0 : STEP_TYPES.indexOf(stepType) < STEP_TYPES.indexOf(ownStep);
+  return pending ? 'planned' : 'skipped';
+}
+
 /**
  * Build the always-visible verification read model. Commands reconcile as one
  * category even when more than one is configured (attempts persist only the
@@ -62,22 +73,22 @@ export function verifierStatuses({
       ...verifiers.commands.map((_, index): VerifierStatus => {
         const attempt = attemptsFor('command')[index];
         if (attempt) return { mechanism: 'command', verifier: `command:${index}`, state: verdictStates[attempt.verdict], reason: null, commands: [commandLabels[index]!] };
-        const pending = stepType == null ? attempts.length === 0 : STEP_TYPES.indexOf(stepType) < STEP_TYPES.indexOf('verification');
+        const state = configuredVerifierState('verification', stepType, attempts.length);
         return {
           mechanism: 'command', verifier: `command:${index}`,
-          state: stepType === 'verification' ? 'running' : pending ? 'planned' : 'skipped',
-          reason: stepType === 'verification' ? 'Running the command check now.' : pending ? 'Configured to run — the attempt has not reached verification yet.' : 'No command verification attempt was recorded for this attempt.',
+          state,
+          reason: state === 'running' ? 'Running the command check now.' : state === 'planned' ? 'Configured to run — the attempt has not reached verification yet.' : 'No command verification attempt was recorded for this attempt.',
           commands: [commandLabels[index]!],
         };
       }),
       ...verifiers.critics.map((critic, index): VerifierStatus => {
         const attempt = attemptsFor('critic')[index];
         if (attempt) return { mechanism: 'critic', verifier: `critic:${index}`, state: verdictStates[attempt.verdict], reason: null, ...(critic.harness ? { harness: critic.harness } : {}) };
-        const pending = stepType == null ? attempts.length === 0 : STEP_TYPES.indexOf(stepType) < STEP_TYPES.indexOf('review');
+        const state = configuredVerifierState('review', stepType, attempts.length);
         return {
           mechanism: 'critic', verifier: `critic:${index}`,
-          state: stepType === 'review' ? 'running' : pending ? 'planned' : 'skipped',
-          reason: stepType === 'review' ? 'The critic is reviewing the candidate now.' : pending ? 'Configured to run — the attempt has not reached verification yet.' : 'No critic verification attempt was recorded for this attempt.',
+          state,
+          reason: state === 'running' ? 'The critic is reviewing the candidate now.' : state === 'planned' ? 'Configured to run — the attempt has not reached verification yet.' : 'No critic verification attempt was recorded for this attempt.',
           ...(critic.harness ? { harness: critic.harness } : {}),
         };
       }),
@@ -102,15 +113,13 @@ export function verifierStatuses({
       // (`stepType` null with no attempt at all is the same no-evidence case).
       // Past it, or once verification is over, with nothing recorded: skipped.
       const ownStep: StepType = mechanism === 'command' ? 'verification' : 'review';
-      if (stepType === ownStep) {
-        return decorate({ mechanism, state: 'running', reason: mechanism === 'command' ? 'Running the command checks now.' : 'The critic is reviewing the candidate now.' });
-      }
-      const pending = stepType == null ? attempts.length === 0 : STEP_TYPES.indexOf(stepType) < STEP_TYPES.indexOf(ownStep);
-      const state = pending ? 'planned' : 'skipped';
+      const state = configuredVerifierState(ownStep, stepType, attempts.length);
       const reason =
-        state === 'planned'
-          ? 'Configured to run — the attempt has not reached verification yet.'
-          : `No ${mechanism} verification attempt was recorded for this attempt.`;
+        state === 'running'
+          ? mechanism === 'command' ? 'Running the command checks now.' : 'The critic is reviewing the candidate now.'
+          : state === 'planned'
+            ? 'Configured to run — the attempt has not reached verification yet.'
+            : `No ${mechanism} verification attempt was recorded for this attempt.`;
       return decorate({ mechanism, state, reason });
     }
     return {

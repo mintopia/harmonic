@@ -14,7 +14,9 @@ function errorText(error: unknown): string {
 
 /**
  * Loads `load()` on mount, on every `deps` change, and (if `options.pollMs` is set) on that
- * interval after each settle, exposing `{ data, error, loading, reload }` with stale-but-shown
+ * interval after each settle — a run of failures backs that interval off exponentially (capped),
+ * resetting to `pollMs` on the next success or an explicit `reload`, so a down endpoint is not
+ * polled at full rate forever. It exposes `{ data, error, loading, reload }` with stale-but-shown
  * semantics: a failed load/poll/retry never clears the last-good `data`, it only sets `error`
  * (cleared again on the next success) while `loading` flags the in-flight window. `reload()` has a
  * stable identity and is a no-op while a request is already in flight or while `load` is `null` —
@@ -49,6 +51,7 @@ export function useAsyncResource<T>(
   useLiveEffect((live) => {
     let inFlight = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let failures = 0;
 
     const run = () => {
       const current = loadRef.current;
@@ -59,12 +62,14 @@ export function useAsyncResource<T>(
         (data) => {
           inFlight = false;
           if (!live()) return;
+          failures = 0;
           setState({ data, error: null, loading: false });
           schedulePoll();
         },
         (error: unknown) => {
           inFlight = false;
           if (!live()) return;
+          failures += 1;
           setState((s) => ({ ...s, error: errorText(error), loading: false }));
           schedulePoll();
         },
@@ -74,10 +79,11 @@ export function useAsyncResource<T>(
     const schedulePoll = () => {
       const pollMs = pollMsRef.current;
       if (pollMs == null) return;
+      const delay = failures === 0 ? pollMs : Math.min(pollMs * 2 ** failures, Math.max(pollMs * 8, 30_000));
       timer = setTimeout(() => {
         timer = null;
         run();
-      }, pollMs);
+      }, delay);
     };
 
     reloadImplRef.current = () => {
@@ -86,6 +92,7 @@ export function useAsyncResource<T>(
         clearTimeout(timer);
         timer = null;
       }
+      failures = 0;
       run();
     };
 

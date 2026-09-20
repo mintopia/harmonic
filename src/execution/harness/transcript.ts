@@ -50,6 +50,7 @@ export function withTarget(name: string, rawInput: unknown): string {
     try {
       value = JSON.parse(trimmed);
     } catch {
+      // Not JSON: fall back to the raw trimmed text itself rather than treating a plain-string input as a failure.
       return `${name} ${oneLine(trimmed)}`;
     }
   }

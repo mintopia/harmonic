@@ -95,6 +95,7 @@ export class SettingsUpdateAvailabilityStore implements UpdateArmingStore {
         dismissedVersion: parsed.data.dismissedVersion ?? null,
       };
     } catch {
+      // Corrupt/legacy stored JSON degrades to "no known update" rather than crashing the update check.
       return { version: null, armedVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null };
     }
   }

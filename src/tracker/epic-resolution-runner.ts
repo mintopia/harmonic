@@ -24,13 +24,7 @@ export class EpicResolutionRunner {
     if (!attempt) throw new Error(`Epic #${epicRef} has no running Attempt to resolve`);
     const maxAttempts = workspace.maxAttempts ?? getConfig().maxAttempts;
     if (!attempt.feedback && attempt.number >= maxAttempts) {
-      this.publishEpicAttempt(await epicAttempts.updateWithFrozenCost(attempt.id, {
-        state: 'escalated',
-        reason: 'epic-verification',
-        detail: `Epic verification failed after ${maxAttempts} Attempt${maxAttempts === 1 ? '' : 's'}: ${verification.reason}`,
-        endedAt: Date.now(),
-        verifiedHeadOid,
-      }));
+      await this.settleEpicAttempt(attempt.id, 'escalated', 'epic-verification', `Epic verification failed after ${maxAttempts} Attempt${maxAttempts === 1 ? '' : 's'}: ${verification.reason}`, verifiedHeadOid);
       throw new Error(`Epic verification exhausted its ${maxAttempts}-Attempt limit: ${verification.reason}`);
     }
     try {
@@ -50,25 +44,17 @@ export class EpicResolutionRunner {
         resolvePrompt: getConfig().verify.epic.resolvePrompt,
         ...(continuationSessionId && continuationSessionRowId !== undefined ? { continuationSessionId, continuationSessionRowId } : {}),
       });
-      this.publishEpicAttempt(await epicAttempts.updateWithFrozenCost(attempt.id, {
-        state: 'failed',
-        reason: 'epic-verification',
-        detail: verification.reason,
-        endedAt: Date.now(),
-        verifiedHeadOid,
-      }));
+      await this.settleEpicAttempt(attempt.id, 'failed', 'epic-verification', verification.reason, verifiedHeadOid);
     } catch (error) {
-      this.publishEpicAttempt(await epicAttempts.updateWithFrozenCost(attempt.id, {
-        state: 'escalated',
-        reason: 'epic-resolution',
-        detail: error instanceof Error ? error.message : String(error),
-        endedAt: Date.now(),
-        verifiedHeadOid,
-      }));
+      await this.settleEpicAttempt(attempt.id, 'escalated', 'epic-resolution', error instanceof Error ? error.message : String(error), verifiedHeadOid);
       throw error;
     } finally {
       this.deps.verification.clearTrackedAttempt(epicRef);
     }
+  }
+
+  private async settleEpicAttempt(id: number, state: AttemptRow['state'], reason: string, detail: string, verifiedHeadOid: string): Promise<void> {
+    this.publishEpicAttempt(await this.deps.epicAttempts.updateWithFrozenCost(id, { state, reason, detail, endedAt: Date.now(), verifiedHeadOid }));
   }
 
   private publishEpicAttempt(attempt: AttemptRow): void {

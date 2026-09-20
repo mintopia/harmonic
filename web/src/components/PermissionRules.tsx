@@ -10,7 +10,7 @@ export function PermissionRules() {
 
   const load = () => api.permissionRules().then(({ rules }) => setRules(rules));
   useEffect(() => {
-    load().catch(() => {});
+    load().catch((e) => console.warn('failed to load permission rules', e));
   }, []);
 
   if (rules.length === 0) {

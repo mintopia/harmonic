@@ -29,7 +29,8 @@ export function RejectDialog({
       .then((preview) => {
         if (live()) setWarm(preview.available && preview.continueFull.estimate.warm);
       })
-      .catch(() => {
+      .catch((e) => {
+        console.warn('failed to load continuation preview', e);
         if (live()) setWarm(false);
       });
   }, [loadPreview]);

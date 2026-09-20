@@ -55,6 +55,7 @@ export function createPostMergeCheck(deps: {
       await verificationAttempts.append(run.id, commandAttemptToInput(cmdAttempt));
       if (cmdAttempt.verdict !== 'pass') return { pass: false, output: cmdAttempt.output };
     }
+    // A merge with no first parent (root commit, or a rewritten history) just means no base-diff context for the critic; the critic falls back to its no-baseOid prompt.
     const baseOid = await Git.revParse(baseDir, `${mergeOid}^1`).catch(() => null);
     if (critics.length > 0) await indexWorktree(baseDir);
     const criticAttempts = await Promise.all(critics.map(async (configuredCritic) => {

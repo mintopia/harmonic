@@ -54,7 +54,9 @@ function CopyButton({ text, label, className = '' }: { text: string; label: stri
       setCopied(true);
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), 1200);
-    } catch {}
+    } catch (e) {
+      console.warn('clipboard copy failed', e);
+    }
   };
   return (
     <button

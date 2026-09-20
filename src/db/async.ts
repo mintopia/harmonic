@@ -100,12 +100,14 @@ export class AsyncDbHandle {
   #enqueueWrite<T>(fn: (db: AsyncDb) => Promise<T>, kind: QueryKind, opts?: QueryTimeoutOptions): Promise<T> {
     // The tail chains on the real work, not the timeout race: a caller timeout never lets a second writer onto the single connection.
     const real = this.#writeTail.then(() => fn(this.db));
+    // `real`'s rejection is returned to this call's own caller via `withTimeout` below; `#writeTail` only needs to know the slot is free, so its error is discarded here on purpose.
     this.#writeTail = real.then(noop, noop);
     return withTimeout(real, this.#timeoutFor(opts), kind);
   }
 
   /** Drain the write queue, then close the underlying client. */
   async close(): Promise<void> {
+    // The queued write's own caller already observed/reported its rejection; this wait is only for ordering, so the error is discarded here on purpose.
     await this.#writeTail.catch(noop);
     this.#client.close();
   }

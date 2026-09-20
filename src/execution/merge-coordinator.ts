@@ -21,6 +21,18 @@ import type { RunnerOptions } from './runner.js';
 
 export const RESOLVE_TURN_TIMEOUT_MS = 10 * 60 * 1000;
 
+/** The shared body of a conflict-resolution turn prompt: the unmerged-paths list plus resolution instructions, appended after a caller-supplied intro. */
+function conflictResolutionPrompt(intro: string, ctx: { baseBranch: string; taskBranch: string; unmergedPaths: string[]; baseDir: string }): string {
+  return (
+    intro +
+    ctx.unmergedPaths.map((path) => `- ${path}`).join('\n') +
+    `\n\nThis checkout (\`${ctx.baseDir}\`) has \`${ctx.baseBranch}\` checked out with that merge in progress — conflict ` +
+    `markers are present in the listed paths. Resolve the conflicts so the result keeps both \`${ctx.baseBranch}\`'s and ` +
+    `\`${ctx.taskBranch}\`'s work, then \`git add\` the resolved paths. Do not run \`git commit\`, do not create or switch ` +
+    `branches, do not push, and do not change anything beyond what resolving this merge requires.`
+  );
+}
+
 /**
  * Thrown by {@link MergeCoordinator.resolveBaseBranch} when a worktree Attempt's base branch
  * cannot be resolved to a real branch name: the base repo is on a detached HEAD
@@ -197,14 +209,11 @@ export class MergeCoordinator {
         try {
           if (!harness) return;
           const drive = this.deps.criticDrive ?? createAcpCriticDrive();
-          const prompt =
+          const prompt = conflictResolutionPrompt(
             `## Epic integration merge conflict resolution (turn ${ctx.turn})\n` +
-            `Merging the Epic integration branch \`${ctx.taskBranch}\` into \`${ctx.baseBranch}\` conflicted in:\n` +
-            ctx.unmergedPaths.map((path) => `- ${path}`).join('\n') +
-            `\n\nThis checkout (\`${ctx.baseDir}\`) has \`${ctx.baseBranch}\` checked out with that merge in progress — conflict ` +
-            `markers are present in the listed paths. Resolve the conflicts so the result keeps both \`${ctx.baseBranch}\`'s and ` +
-            `\`${ctx.taskBranch}\`'s work, then \`git add\` the resolved paths. Do not run \`git commit\`, do not create or switch ` +
-            `branches, do not push, and do not change anything beyond what resolving this merge requires.`;
+              `Merging the Epic integration branch \`${ctx.taskBranch}\` into \`${ctx.baseBranch}\` conflicted in:\n`,
+            ctx,
+          );
           await drive.run({
             harness,
             harnessId,
@@ -277,14 +286,11 @@ export class MergeCoordinator {
           const harness = config.harnesses[harnessId as keyof typeof config.harnesses];
           if (!harness) return;
           const drive = this.deps.criticDrive ?? createAcpCriticDrive();
-          const prompt =
+          const prompt = conflictResolutionPrompt(
             `## Merge conflict resolution (turn ${ctx.turn})\n` +
-            `Merging \`${ctx.taskBranch}\` into \`${ctx.baseBranch}\` conflicted in:\n` +
-            ctx.unmergedPaths.map((path) => `- ${path}`).join('\n') +
-            `\n\nThis checkout (\`${ctx.baseDir}\`) has \`${ctx.baseBranch}\` checked out with that merge in progress — conflict ` +
-            `markers are present in the listed paths. Resolve the conflicts so the result keeps both \`${ctx.baseBranch}\`'s and ` +
-            `\`${ctx.taskBranch}\`'s work, then \`git add\` the resolved paths. Do not run \`git commit\`, do not create or switch ` +
-            `branches, do not push, and do not change anything beyond what resolving this merge requires.`;
+              `Merging \`${ctx.taskBranch}\` into \`${ctx.baseBranch}\` conflicted in:\n`,
+            ctx,
+          );
           await drive.run({
             harness,
             harnessId,

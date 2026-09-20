@@ -36,6 +36,7 @@ function keyedMutex<K>(): <T>(key: K, fn: () => Promise<T>) => Promise<T> {
     const tail = prev.then(() => gate);
     chains.set(key, tail);
 
+    // `prev` is the previous holder's release gate, not its `fn()` result — that rejection already reached its own caller — so it's discarded here on purpose; this await only waits for the slot to free up.
     await prev.catch(() => {});
     const nested = new Set(outer ?? []);
     nested.add(key);

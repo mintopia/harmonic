@@ -27,6 +27,14 @@ export interface TaskMirrorOptions {
   blockerGraph: TaskBlockerGraph;
 }
 
+/** Whether the existing Task's `state` should resolve to `closed`→`done`, a stale-open snapshot ignored, a genuine reopen, or left alone. */
+function resolveMirroredState(existing: RawTaskRow, input: MirrorInput, reopenFromDone: boolean, observedAfterClose: boolean): TaskState {
+  if (existing.state === 'working' || existing.state === 'escalated') return existing.state;
+  if (input.closed) return 'done';
+  if (reopenFromDone && observedAfterClose) return 'ready';
+  return existing.state;
+}
+
 function trackerFactColumns(facts: TrackerFacts) {
   return {
     trackerState: facts.state,
@@ -68,13 +76,7 @@ export class TaskMirror {
             closedAt: existing.updatedAt,
           });
         }
-        const state: TaskState = existing.state === 'working' || existing.state === 'escalated'
-          ? existing.state
-          : input.closed
-            ? 'done'
-            : reopenFromDone && observedAfterClose
-              ? 'ready'
-              : existing.state;
+        const state = resolveMirroredState(existing, input, reopenFromDone, observedAfterClose);
         const factCols = input.facts ? trackerFactColumns(input.facts) : {};
         const factUnchanged = ([column, value]: [string, unknown]) => {
           const current = existing[column as keyof typeof existing];

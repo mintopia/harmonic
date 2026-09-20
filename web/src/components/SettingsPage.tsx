@@ -39,7 +39,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
         setPristineChannels(channels);
         setLocalChannels(channels);
       })
-      .catch(() => {});
+      .catch((e) => console.warn('failed to load channels', e));
   }, []);
 
   if (!local || !pristine || !baseline) return null;

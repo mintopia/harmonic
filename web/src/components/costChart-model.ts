@@ -32,12 +32,12 @@ export function dayKey(ms: number): number {
  * Ranges must still be small enough to label honestly.
  * A day already present with an unpriceable (null) total is preserved as-is:
  * it is *not* a quiet day, so it must never be flattened to $0. */
-export function fillSeries(series: DayCost[], from: number, to: number): DayCost[] {
+export function fillSeries(series: DayCost[], from: number, to: number, now: number = Date.now()): DayCost[] {
   const first = series[0];
   if (!first) return [];
   const DAY = 24 * 3600_000;
   const start = dayKey(from);
-  const end = dayKey(Math.min(to, Date.now()));
+  const end = dayKey(Math.min(to, now));
   const span = Math.round((end - start) / DAY) + 1;
   if (span < 2 || span > 62) return series;
   const byDay = new Map(series.map((s) => [dayKey(s.day), s]));

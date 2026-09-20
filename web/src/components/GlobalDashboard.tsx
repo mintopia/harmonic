@@ -22,6 +22,16 @@ type View = 'table' | 'activity' | 'stats';
 type SortKey = 'name' | 'cost' | 'needs' | 'flight' | 'io' | 'cache' | 'week';
 type Row = WorkspaceStats & { needs: number; flight: number; weekCost: WorkspaceStats['cost'] };
 
+const SORT_VALUE: Record<SortKey, (row: Row) => string | number> = {
+  name: (row) => row.name,
+  cost: (row) => row.cost?.totalUsd ?? -1,
+  needs: (row) => row.needs,
+  flight: (row) => row.flight,
+  io: (row) => row.inputTokens + row.outputTokens,
+  cache: (row) => cacheHitRate(row) ?? -1,
+  week: (row) => row.weekCost?.totalUsd ?? -1,
+};
+
 async function allTasks(): Promise<Task[]> {
   const tasks: Task[] = [];
   for (let offset = 0; ; offset += 100) {
@@ -87,7 +97,7 @@ export function GlobalDashboard({ pendingPermissions, hostLoad, onNavigate, onOp
   const escalated = tasks.filter((task) => task.state === 'escalated').length;
   const totals = rows.reduce((total, row) => ({ needs: total.needs + row.needs, flight: total.flight + row.flight, input: total.input + row.inputTokens, output: total.output + row.outputTokens, read: total.read + row.cacheReadTokens, write: total.write + row.cacheWriteTokens }), { needs: 0, flight: 0, input: 0, output: 0, read: 0, write: 0 });
   const ordered = [...rows].sort((a, b) => {
-    const value = (row: Row): string | number => sort.key === 'name' ? row.name : sort.key === 'cost' ? row.cost?.totalUsd ?? -1 : sort.key === 'needs' ? row.needs : sort.key === 'flight' ? row.flight : sort.key === 'io' ? row.inputTokens + row.outputTokens : sort.key === 'cache' ? cacheHitRate(row) ?? -1 : row.weekCost?.totalUsd ?? -1;
+    const value = SORT_VALUE[sort.key];
     const left = value(a); const right = value(b);
     const compared = typeof left === 'string' && typeof right === 'string' ? left.localeCompare(right) : Number(left) - Number(right);
     return sort.desc ? -compared : compared;
