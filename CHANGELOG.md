@@ -1,5 +1,50 @@
 # Changelog
 
+## [2.15.0](https://github.com/mintopia/harmonic/compare/v2.14.0...v2.15.0) (2026-09-20)
+
+
+### Features
+
+* add ai_slop as a 9th Jev rubric category ([cbc8421](https://github.com/mintopia/harmonic/commit/cbc8421c2467bb1184b07b996932f046c0dccb04))
+* add Jev quality gate script for the verify stage ([98337bb](https://github.com/mintopia/harmonic/commit/98337bbd92e7a453875cc2986b7a746c00c3d3dc))
+* fail/warn/pass zone bands behind Jev report graphs ([dc45ad7](https://github.com/mintopia/harmonic/commit/dc45ad7c50a82986b17a4b8b83c17ebce3e57cc0))
+* **jev-gate:** drop duplication, decouple confidence from scoring, redesign report ([290a505](https://github.com/mintopia/harmonic/commit/290a5054d7e0800cdd2c68ff9a054c2de557ed93))
+* **jev-gate:** rewrite rubrics as single-dimension in-file questions ([ad6576a](https://github.com/mintopia/harmonic/commit/ad6576a0c64be37a58d314507df5e544128ce9c7))
+* **jev-gate:** sharpen rubrics to what a single file can answer ([bcfb6f6](https://github.com/mintopia/harmonic/commit/bcfb6f698b941e84f3eab01505cb5e40e869c97c))
+* **jev-gate:** split categories into sub-questions with min/mean aggregation ([7491fe2](https://github.com/mintopia/harmonic/commit/7491fe2fb20e1bd2c1d5decffe411d3f38f3ea65))
+* **jev-gate:** write the HTML report by default ([71bef5b](https://github.com/mintopia/harmonic/commit/71bef5beb2608a03515e2249753b21747c203cde))
+* per-metric change graphs — colour the change, grey the project ([46f3282](https://github.com/mintopia/harmonic/commit/46f3282421b78884ceaeb473bad96c0bfdb91d09))
+* render Jev report scatter charts with Chart.js (CDN) ([6311aa8](https://github.com/mintopia/harmonic/commit/6311aa835d03399453ecd3b96e536272c2e28ab3))
+* replace confidence weighting with an Unsure zone ([babf533](https://github.com/mintopia/harmonic/commit/babf533dc3a3a1dcdb4a602d3160b5530c393a1b))
+* shared async-resource hook, migrate swallowed-fetch sites ([#654](https://github.com/mintopia/harmonic/issues/654)) ([50b0c11](https://github.com/mintopia/harmonic/commit/50b0c112e0d2caf4bb01cbde681a4f4a25c1c740))
+* verifier overlays, configurable critic timeout, and Jev gate upgrades ([fd8b017](https://github.com/mintopia/harmonic/commit/fd8b0170a85f4d7fd6e53bdc9635dd6d8c6643ba))
+
+
+### Bug Fixes
+
+* bound event-loop and memory use in execution I/O ([3a0237d](https://github.com/mintopia/harmonic/commit/3a0237d66728ab97296ba8d3dea9238ea27d6e92)), closes [#652](https://github.com/mintopia/harmonic/issues/652)
+* deny WebSocket write access by default, drop token-in-query-string ([3023e33](https://github.com/mintopia/harmonic/commit/3023e3351d1640b94a19651f85c1d35a621f7dc5)), closes [#648](https://github.com/mintopia/harmonic/issues/648)
+* drop narration comment and correct a false doc claim ([#677](https://github.com/mintopia/harmonic/issues/677)) ([27ea2e3](https://github.com/mintopia/harmonic/commit/27ea2e3176cb020a97a62388aa9bf6da0350947d))
+* drop narration comments flagged by comment-check on [#665](https://github.com/mintopia/harmonic/issues/665) refactor ([ccca1fa](https://github.com/mintopia/harmonic/commit/ccca1fad8cbc1ae955d93788936eff47f9c99304))
+* eliminate silent catch blocks with a shared log-then-flag helper ([9e526ea](https://github.com/mintopia/harmonic/commit/9e526eabadc96671942758eed70c598c8d00120a)), closes [#655](https://github.com/mintopia/harmonic/issues/655)
+* gate schema-sync clean-break on a real constraint violation, not any error ([1e6060d](https://github.com/mintopia/harmonic/commit/1e6060d6cce28d3dccdac4e1e13a35d3fa42df90)), closes [#650](https://github.com/mintopia/harmonic/issues/650)
+* harden untrusted values reaching the filesystem and subprocesses ([7176f14](https://github.com/mintopia/harmonic/commit/7176f1434dd586cbe450804bc38d65262fa04e8f)), closes [#649](https://github.com/mintopia/harmonic/issues/649)
+* human-readable settings save errors in the save bar ([adaedda](https://github.com/mintopia/harmonic/commit/adaedda21ce0c4da340bcfaea4b3c42cf4c6b430))
+* Jev report uses full browser width, graphs cap at 4 per row ([2fcf381](https://github.com/mintopia/harmonic/commit/2fcf381f6fefce3f81f7aa6b0d2866583febf408))
+* **jev-gate:** remediate failing baseline files and teach testability rubric production roles ([3975dc0](https://github.com/mintopia/harmonic/commit/3975dc0f52abeaf39ad49295584cfb09e6508b14))
+* **jev-gate:** work the baseline warnings — logging, retry backoff, targeted refactors ([48f3543](https://github.com/mintopia/harmonic/commit/48f35431d8267dfe6b37554efbcc09531a1440ef))
+* keep stats worker alive on malformed input, cap heavy-read probe ([5ba5fb1](https://github.com/mintopia/harmonic/commit/5ba5fb1b610d460b1a4b0032d921b3586bdd7dbb)), closes [#651](https://github.com/mintopia/harmonic/issues/651)
+* **openapi:** make the snapshot deterministic by pinning UUID-valued defaults ([f59f365](https://github.com/mintopia/harmonic/commit/f59f36533df23db765676052134e903f1cc08cb4))
+* roll back optimistic steering turns and surface fetch failures correctly ([a29c1af](https://github.com/mintopia/harmonic/commit/a29c1afbaf3270cab4479aa243091ec49bf416c5))
+* stop dropping spaces in verification command args ([#677](https://github.com/mintopia/harmonic/issues/677)) ([2f8214c](https://github.com/mintopia/harmonic/commit/2f8214c341599c7c419b9ee6706063bf975f50f2))
+* surface oversized files in Jev gate instead of dropping them ([#675](https://github.com/mintopia/harmonic/issues/675)) ([4be003f](https://github.com/mintopia/harmonic/commit/4be003fd5bfad25bdbb0923cf44d5d8549b2dd5f))
+* surface oversized files in Jev gate instead of dropping them ([#675](https://github.com/mintopia/harmonic/issues/675)) ([7155f0f](https://github.com/mintopia/harmonic/commit/7155f0f0f3e7db422c563434d0665857caa65be5))
+* tidy critic runtime-field layout (harness/model/timeout in one row) ([29e7a39](https://github.com/mintopia/harmonic/commit/29e7a39fc46ce990de70668e360d56981c93f3b5))
+* type-check story API stub against the real API surface ([6357500](https://github.com/mintopia/harmonic/commit/635750025cf0e6d0200fc4e5edeff8d75e408d6d)), closes [#666](https://github.com/mintopia/harmonic/issues/666)
+* update docs site logo and favicon to treble clef ([4977d05](https://github.com/mintopia/harmonic/commit/4977d0562b0ae837668d7f17d19ca710360f1517))
+* update workspace verification intro copy for additive overlays (ADR-0037) ([c301b40](https://github.com/mintopia/harmonic/commit/c301b4002433dca9b86ecf3ef0577c27738ea8ce))
+* zone bands follow the weighted (confidence×score) zones, not raw score ([5774f3f](https://github.com/mintopia/harmonic/commit/5774f3f6a7185e20e425f2cd552795330e0b6ef7))
+
 ## [2.14.0](https://github.com/mintopia/harmonic/compare/v2.13.0...v2.14.0) (2026-09-17)
 
 
