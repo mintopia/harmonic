@@ -56,7 +56,11 @@ export interface RoleRule {
   glob: string[];
   /** When true every category is skipped: the file is never sent to Jev. */
   skip?: boolean;
-  /** Categories suppressed from gating for this role (still scored/shown advisory). */
+  /** Categories this role's file is never asked about: no sub-question for them
+   * is sent to Jev, they are absent from `FileResult.categories` / the baseline
+   * entry, and they contribute nothing to `overall`. Distinct from
+   * `GateConfig.advisoryCategories`, which ARE asked and scored, just never
+   * block. If a role exempts every category the file needs no Jev call at all. */
   exempt?: CategoryId[];
   /** Text attached to the Jev call as `state.role_hint`. */
   hint?: string;
@@ -86,7 +90,18 @@ export interface RubricQuestion {
   criteria: string[];
 }
 
-export type Rubrics = Record<CategoryId, RubricQuestion>;
+/** How a category's sub-question scores combine into one category score. */
+export type Aggregate = 'min' | 'mean';
+
+export interface CategoryRubric {
+  aggregate: Aggregate;
+  questions: Record<string, RubricQuestion>;
+}
+
+export type Rubrics = Record<CategoryId, CategoryRubric>;
+
+/** One category's sub-question answers, keyed by sub id (not the `cat.sub` question id). */
+export type SubAnswers = Record<string, JevAnswer>;
 
 export interface RoleMatch {
   roleName: string;
@@ -111,7 +126,14 @@ export interface BaselineEntry {
    * Optional: baselines written before confidence was captured omit it, and the
    * renderer/weighting fall back to raw scores when it is absent. */
   confidences?: Partial<Record<CategoryId, number>>;
-  /** Mean of the raw category scores. */
+  /** Per-category sub-question answers, keyed by sub id. Optional: baselines
+   * written before sub-questions existed omit it. A category the file's role
+   * exempts is absent here too, not zero. */
+  subs?: Partial<Record<CategoryId, SubAnswers>>;
+  /** Per `min`-aggregated category: the sub id whose score decided it. */
+  decidedBy?: Partial<Record<CategoryId, string>>;
+  /** Mean of the raw scores for the categories that were actually asked
+   * (role-exempt categories are absent from `categories` and excluded). */
   overall: number;
 }
 
@@ -158,6 +180,10 @@ export interface CategoryResult {
     drop: number;
   };
   signoffAcknowledged?: boolean;
+  /** Sub-question answers this category's score was aggregated from. */
+  subs?: SubAnswers;
+  /** For a `min`-aggregated category: the sub id whose score decided it. */
+  decidedBy?: string;
 }
 
 export interface OverallResult {
@@ -177,7 +203,8 @@ export interface FileResult {
   verdict: FileVerdict;
   skipReason?: string;
   error?: string;
-  categories?: Record<CategoryId, CategoryResult>;
+  /** Absent keys are categories the file's role exempted — never asked, not scored 0. */
+  categories?: Partial<Record<CategoryId, CategoryResult>>;
   overall?: OverallResult;
   reasons: string[];
   advisories: string[];

@@ -6,7 +6,7 @@
  * exponential backoff honouring `Retry-After` on 429/5xx.
  * See `.claude/skills/jev-code-score/references/api.md`.
  */
-import type { JevAnswer, JevUsage, Rubrics } from './types.js';
+import type { JevAnswer, JevUsage, RubricQuestion } from './types.js';
 
 export interface JevProviderConfig {
   provider: 'openrouter' | 'typesafe';
@@ -61,7 +61,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function callJev(cfg: JevProviderConfig, state: JevState, questions: Rubrics): Promise<JevCallResult> {
+export async function callJev(cfg: JevProviderConfig, state: JevState, questions: Record<string, RubricQuestion>): Promise<JevCallResult> {
   const body = JSON.stringify({ state, model: cfg.model, questions });
   let lastError: Error = new Error('jev-gate: Jev API unreachable');
 

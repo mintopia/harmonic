@@ -5,7 +5,17 @@
  * doc this implements.
  */
 import { readFileSync } from 'node:fs';
-import { ALL_CATEGORIES, type CategoryId, type GateConfig, type GateMode, type RoleRule, type Rubrics } from './types.js';
+import {
+  ALL_CATEGORIES,
+  type Aggregate,
+  type CategoryId,
+  type CategoryRubric,
+  type GateConfig,
+  type GateMode,
+  type RoleRule,
+  type RubricQuestion,
+  type Rubrics,
+} from './types.js';
 
 function readJson(path: string): unknown {
   let raw: string;
@@ -104,19 +114,58 @@ export function loadGateConfig(path: string): GateConfig {
   };
 }
 
+function isAggregate(value: unknown): value is Aggregate {
+  return value === 'min' || value === 'mean';
+}
+
+function parseRubricQuestion(raw: unknown, where: string): RubricQuestion {
+  if (typeof raw !== 'object' || raw === null) {
+    throw new Error(`jev-gate: rubrics.json ${where} must be an object`);
+  }
+  const q = raw as Record<string, unknown>;
+  if (q['type'] !== 'score') {
+    throw new Error(`jev-gate: rubrics.json ${where}.type must be "score"`);
+  }
+  if (typeof q['instructions'] !== 'string' || q['instructions'].length === 0) {
+    throw new Error(`jev-gate: rubrics.json ${where}.instructions must be a non-empty string`);
+  }
+  if (!Array.isArray(q['criteria']) || q['criteria'].length < 2 || !q['criteria'].every((c) => typeof c === 'string')) {
+    throw new Error(`jev-gate: rubrics.json ${where}.criteria must be an array of at least 2 strings`);
+  }
+  return { type: 'score', instructions: q['instructions'], criteria: q['criteria'] as string[] };
+}
+
+function parseCategoryRubric(raw: unknown, cat: CategoryId): CategoryRubric {
+  if (typeof raw !== 'object' || raw === null) {
+    throw new Error(`jev-gate: rubrics.json is missing category "${cat}"`);
+  }
+  const e = raw as Record<string, unknown>;
+  if (!isAggregate(e['aggregate'])) {
+    throw new Error(`jev-gate: rubrics.json "${cat}".aggregate must be "min" or "mean", got "${String(e['aggregate'])}"`);
+  }
+  const questionsRaw = e['questions'];
+  if (typeof questionsRaw !== 'object' || questionsRaw === null || Array.isArray(questionsRaw)) {
+    throw new Error(`jev-gate: rubrics.json "${cat}".questions must be an object`);
+  }
+  const entries = Object.entries(questionsRaw as Record<string, unknown>);
+  if (entries.length === 0) {
+    throw new Error(`jev-gate: rubrics.json "${cat}".questions must not be empty`);
+  }
+  const questions: Record<string, RubricQuestion> = {};
+  for (const [subId, q] of entries) {
+    if (subId.includes('.')) {
+      throw new Error(`jev-gate: rubrics.json "${cat}".questions has an id containing "." ("${subId}")`);
+    }
+    questions[subId] = parseRubricQuestion(q, `"${cat}".questions."${subId}"`);
+  }
+  return { aggregate: e['aggregate'], questions };
+}
+
 export function loadRubrics(path: string): Rubrics {
   const data = readJson(path) as Record<string, unknown>;
-  const rubrics = {} as Record<CategoryId, { type: 'score'; instructions: string; criteria: string[] }>;
+  const rubrics = {} as Record<CategoryId, CategoryRubric>;
   for (const cat of ALL_CATEGORIES) {
-    const entry = data[cat];
-    if (typeof entry !== 'object' || entry === null) {
-      throw new Error(`jev-gate: rubrics.json is missing category "${cat}"`);
-    }
-    const e = entry as Record<string, unknown>;
-    if (typeof e['instructions'] !== 'string' || !Array.isArray(e['criteria'])) {
-      throw new Error(`jev-gate: rubrics.json entry "${cat}" is malformed`);
-    }
-    rubrics[cat] = { type: 'score', instructions: e['instructions'], criteria: e['criteria'] as string[] };
+    rubrics[cat] = parseCategoryRubric(data[cat], cat);
   }
   return rubrics;
 }
