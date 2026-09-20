@@ -1,10 +1,10 @@
 # Jev quality gate
 
-A deterministic, config-driven quality gate (`scripts/jev-gate/cli.ts`, run via `./scripts/jev-gate.sh` or `npm run jev:gate`) that scores git-changed source files against TypeSafe's Jev code-quality model across 7 categories, applies committed thresholds and role-based exemptions, and exits 0 (pass / advisory) or non-zero (enforcing-mode failure or setup error). The thresholds and phase strategy were originally proposed as part of the Jev code-quality remediation initiative (issue #647); this doc summarizes the operational parts, the full rationale lives in the threshold proposal referenced from that issue.
+A deterministic, config-driven quality gate (`scripts/jev-gate/cli.ts`, run via `./scripts/jev-gate.sh` or `npm run jev:gate`) that scores git-changed source files against TypeSafe's Jev code-quality model across 8 categories, applies committed thresholds and role-based exemptions, and exits 0 (pass / advisory) or non-zero (enforcing-mode failure or setup error). The thresholds and phase strategy were originally proposed as part of the Jev code-quality remediation initiative (issue #647); this doc summarizes the operational parts, the full rationale lives in the threshold proposal referenced from that issue.
 
 ## What it gates
 
-All 7 axes gate in this workspace: `complexity_clean_code`, `code_smells`, `duplication`, `testability`, `error_handling`, **`security`, and `comments`**. Gating vs. advisory is set purely by `jev.gate.json`'s `gatingCategories` / `advisoryCategories` — move a category between those lists to change what can block.
+All 8 axes gate in this workspace: `complexity_clean_code`, `code_smells`, `testability`, `error_handling`, `security`, `comments`, `concurrency_and_idempotency`, and `ai_slop`. Gating vs. advisory is set purely by `jev.gate.json`'s `gatingCategories` / `advisoryCategories` — move a category between those lists to change what can block. (`duplication` was dropped 2026-09-19: it needs cross-file context the per-file gate cannot supply, so its scores were never decidable.)
 
 > **Note on `security`.** Jev's security axis has no exploitability model and is calibrated as noisy: it both misses real vulnerabilities and over-flags benign code. This workspace deliberately gates on it anyway (a low score blocks or, at low confidence, requires a human sign-off). Expect false positives; use `--signoff` / advisory mode during rollout, and keep a human in the loop rather than trusting the score as a verdict.
 

@@ -4,10 +4,10 @@
   "thresholds": {
     "category": { "fail": 1.5, "warn": 2.5 },
     "overall": { "fail": 2.0, "warn": 2.4 },
-    "confidence": { "blockingMin": 0.6 },
+    "confidence": { "blockingMin": 0.5 },
     "ratchet": { "categoryDrop": 0.5, "overallDrop": 0.2 }
   },
-  "gatingCategories": ["complexity_clean_code", "code_smells", "duplication", "testability", "error_handling", "security", "comments", "concurrency_and_idempotency", "ai_slop"],
+  "gatingCategories": ["complexity_clean_code", "code_smells", "testability", "error_handling", "security", "comments", "concurrency_and_idempotency", "ai_slop"],
   "advisoryCategories": [],
   "roles": [
     { "name": "type-declaration", "glob": ["**/*.d.ts"], "skip": true, "hint": "Ambient type declaration: no runtime behaviour to score." },
@@ -15,32 +15,32 @@
     {
       "name": "story",
       "glob": ["**/*.stories.@(ts|tsx|js|jsx)"],
-      "exempt": ["error_handling", "testability", "duplication"],
+      "exempt": ["error_handling", "testability"],
       "hint": "Storybook story: illustrative component usage, not production runtime code."
     },
     {
       "name": "test",
       "glob": ["**/*.@(test|spec).@(ts|tsx|js|jsx)", "**/__tests__/**", "**/test/**", "**/tests/**"],
-      "exempt": ["testability", "duplication", "error_handling"],
-      "hint": "Test code: exercises behaviour; test-shaped duplication and light error handling are expected."
+      "exempt": ["testability", "error_handling"],
+      "hint": "Test code: exercises behaviour; light error handling is expected."
     },
     {
       "name": "mock",
       "glob": ["**/__mocks__/**", "**/mocks/**"],
-      "exempt": ["error_handling", "testability", "duplication"],
+      "exempt": ["error_handling", "testability"],
       "hint": "Mock/stub: stand-in for a real dependency, not production logic."
     },
     {
       "name": "fixture",
       "glob": ["**/fixtures/**", "**/*.fixture.@(ts|tsx)"],
-      "exempt": ["error_handling", "testability", "duplication"],
+      "exempt": ["error_handling", "testability"],
       "hint": "Fixture: static test input, not runtime logic."
     },
     {
       "name": "migration",
       "glob": ["**/migrations/**", "**/*.migration.ts"],
-      "exempt": ["duplication", "testability"],
-      "hint": "DB migration: sequential and append-only; repetition across migrations is expected and they are verified by running them, not unit tests."
+      "exempt": ["testability"],
+      "hint": "DB migration: sequential and append-only, verified by running them, not unit tests."
     }
   ],
   "sourceExtensions": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"],

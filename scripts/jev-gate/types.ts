@@ -5,11 +5,10 @@
  * encodes.
  */
 
-/** The 9 Jev rubric categories, 0 (worst) to 4 (best). */
+/** The 8 Jev rubric categories, 0 (worst) to 4 (best). */
 export const ALL_CATEGORIES = [
   'complexity_clean_code',
   'code_smells',
-  'duplication',
   'testability',
   'error_handling',
   'security',
