@@ -63,12 +63,13 @@ interface CliOptions {
   json: boolean;
   dryRun: boolean;
   writeBaseline: boolean;
-  html: boolean;
+  /** `default`: reports are written on any scoring run. `requested`: `--html` was passed, which with `--dry-run` also selects render-only. */
+  html: 'default' | 'requested' | 'off';
   signoffs: string[];
   help: boolean;
 }
 
-function parseArgs(argv: readonly string[]): CliOptions {
+export function parseArgs(argv: readonly string[]): CliOptions {
   const opts: CliOptions = {
     base: undefined,
     repoRoot: process.cwd(),
@@ -80,7 +81,7 @@ function parseArgs(argv: readonly string[]): CliOptions {
     json: false,
     dryRun: false,
     writeBaseline: false,
-    html: false,
+    html: 'default',
     signoffs: [],
     help: false,
   };
@@ -130,7 +131,10 @@ function parseArgs(argv: readonly string[]): CliOptions {
         opts.writeBaseline = true;
         break;
       case '--html':
-        opts.html = true;
+        opts.html = 'requested';
+        break;
+      case '--no-html':
+        opts.html = 'off';
         break;
       case '--signoff':
         opts.signoffs.push(argv[++i] ?? '');
@@ -160,13 +164,14 @@ Options:
   --write-baseline     Score every tracked, in-scope source file in the project
                         and (re)write the baseline at --baseline. This is the
                         one-way ratchet seed; run it on a known-good commit.
-  --html               Render an HTML report next to the baseline. With
-                        --write-baseline: the whole-project baseline report
-                        (jev.baseline.html). On a gate run: a change report
-                        (jev.baseline.change.html) — the committed baseline as a
-                        grey backdrop with this run's changed files coloured. With
-                        --dry-run: re-render the EXISTING baseline only (no Jev
-                        calls, no API key).
+  --no-html            Skip the HTML report. By default every scoring run writes
+                        one next to the baseline. With --write-baseline: the
+                        whole-project baseline report (jev.baseline.html). On a
+                        gate run: a change report (jev.baseline.change.html) —
+                        the committed baseline as a grey backdrop with this
+                        run's changed files coloured. Both are gitignored.
+  --html               With --dry-run: re-render the EXISTING baseline only (no
+                        Jev calls, no API key). Otherwise the default already.
   --repo-root <path>   Repo working tree to diff/read files from (default: cwd)
   --config <path>      Path to jev.gate.json (default: <repo-root>/jev.gate.json)
   --rubrics <path>     Path to rubrics.json (default: vendored copy next to this script)
@@ -591,7 +596,7 @@ async function runBaseline(opts: CliOptions): Promise<number> {
   process.stderr.write(
     `jev-gate: baseline written to ${relative(opts.repoRoot, baselinePath)} — ${entries.length} file(s) scored, ${tooBig} too big${tooBigSuffix}, ${errored} errored\n`,
   );
-  if (opts.html) writeBaselineHtml(baseline, meta, baselinePath, opts.repoRoot, null, config.thresholds.confidence.blockingMin);
+  if (opts.html !== 'off') writeBaselineHtml(baseline, meta, baselinePath, opts.repoRoot, null, config.thresholds.confidence.blockingMin);
   return errored > 0 ? 1 : 0;
 }
 
@@ -633,7 +638,7 @@ async function main(): Promise<number> {
     return runBaseline(opts);
   }
 
-  if (opts.html && opts.dryRun) {
+  if (opts.html === 'requested' && opts.dryRun) {
     return renderBaselineOnly(opts);
   }
 
@@ -721,7 +726,7 @@ async function main(): Promise<number> {
     process.stdout.write(`${renderHuman(result)}\n`);
   }
 
-  if (opts.html) {
+  if (opts.html !== 'off' && !opts.dryRun) {
     // Change report: the whole committed baseline is the grey backdrop; the run's
     // scored changed files overlay it in colour (fresh scores win over baseline).
     const changedEntries: Baseline = {};

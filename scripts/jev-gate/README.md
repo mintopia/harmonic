@@ -17,7 +17,7 @@ not a hard guarantee for a score sitting exactly on a threshold line.
 | --- | --- |
 | `scripts/jev-gate/cli.ts` | Entrypoint. |
 | `scripts/jev-gate/{types,config,glob,git,jev-client,thresholds}.ts` | Implementation modules. |
-| `scripts/jev-gate/render-html.ts` | Renders a baseline to a self-contained HTML report (the optional `--html` output). |
+| `scripts/jev-gate/render-html.ts` | Renders a baseline to a self-contained HTML report (written by default; `--no-html` skips it). |
 | `scripts/jev-gate/aggregate.ts` | Flattens each category's sub-questions into the flat map sent to Jev, and folds sub-answers back into one category score (`min` or `mean`). |
 | `scripts/jev-gate/rubrics.json` | The 8-category Jev rubric, each category split into narrow sub-questions (in-file signals only, role-aware). Its `_meta.authoring` lists the measured rules for writing a question Jev answers with high confidence. Self-contained — does not depend on `.claude/skills/jev-code-score` existing on the CI runner. |
 | `jev.gate.json` (repo root) | Committed, tunable policy: thresholds, gating vs. advisory categories, path-based role exemptions, source-file filters. Edit this, not the code, to retune the gate. |
@@ -59,11 +59,11 @@ OPENROUTER_API_KEY=... npm run jev:gate -- --base develop
 
 # Seed / regenerate the whole-project baseline (the ratchet floor):
 OPENROUTER_API_KEY=... ./scripts/jev-gate.sh --write-baseline        # or: npm run jev:baseline
-OPENROUTER_API_KEY=... ./scripts/jev-gate.sh --write-baseline --html # also emit jev.baseline.html
+OPENROUTER_API_KEY=... ./scripts/jev-gate.sh --write-baseline --no-html # skip jev.baseline.html
 ./scripts/jev-gate.sh --write-baseline --dry-run                     # list files, no API key, writes nothing
 
 # Render the EXISTING baseline to HTML (no scoring, no API key):
-./scripts/jev-gate.sh --html                                         # writes jev.baseline.html next to the json
+./scripts/jev-gate.sh --html --dry-run                               # writes jev.baseline.html next to the json
 ```
 
 ### As a Harmonic verify-stage command
@@ -104,6 +104,10 @@ explicitly if an epic's integration branch needs to be named.
                       overridable by $JEV_GATE_MODE.
 --write-baseline     Score the whole tracked project into --baseline (ratchet seed)
 --json               Emit structured JSON to stdout (default: human report)
+--no-html            Skip the HTML report (written by default next to the baseline:
+                      jev.baseline.html on --write-baseline, jev.baseline.change.html
+                      on a gate run; both gitignored)
+--html               With --dry-run: re-render the existing baseline, no Jev calls
 --dry-run            Resolve files/roles, skip Jev calls (no API key needed);
                       with --write-baseline, lists files and writes nothing
 --signoff <p::cat>   Acknowledge a low-confidence FAIL (repeatable); or $JEV_GATE_SIGNOFF
