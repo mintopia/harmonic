@@ -34,6 +34,56 @@ function isIdle(update: UpdateState): boolean {
   return update.idle.runningAttempts === 0 && !update.idle.mergingOrIntegrating && !update.idle.conversationMidTurn;
 }
 
+interface NoteMoteConfig {
+  left: number;
+  bottom: number;
+  size: number;
+  opacity: number;
+  duration: number;
+  delay: number;
+}
+
+const HAND_TUNED_NOTE_MOTES: NoteMoteConfig[] = [
+  { left: 6, bottom: -14, size: 10, opacity: 0.22, duration: 9, delay: 0 },
+  { left: 20, bottom: -30, size: 8, opacity: 0.16, duration: 7.4, delay: 1.6 },
+  { left: 35, bottom: -6, size: 13, opacity: 0.26, duration: 10.8, delay: 3.1 },
+  { left: 50, bottom: -22, size: 9, opacity: 0.18, duration: 8.1, delay: 0.5 },
+  { left: 66, bottom: -12, size: 12, opacity: 0.2, duration: 11.2, delay: 4.4 },
+  { left: 80, bottom: -28, size: 8, opacity: 0.15, duration: 7.9, delay: 2.3 },
+  { left: 92, bottom: -8, size: 11, opacity: 0.24, duration: 9.6, delay: 5.2 },
+];
+
+function NoteGlyph({ size }: { size: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill={BAND_TEAL} aria-hidden="true">
+      <ellipse cx="8.5" cy="17.5" rx="4" ry="3" transform="rotate(-18 8.5 17.5)" />
+      <rect x="11.7" y="3" width="1.7" height="15" />
+    </svg>
+  );
+}
+
+function NoteMotes() {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
+      {HAND_TUNED_NOTE_MOTES.map((mote, i) => (
+        <span
+          key={i}
+          className="note-mote absolute"
+          style={{
+            left: `${mote.left}%`,
+            bottom: `${mote.bottom}%`,
+            opacity: mote.opacity,
+            animationDuration: `${mote.duration}s`,
+            animationDelay: `${mote.delay}s`,
+          }}
+        >
+          <NoteGlyph size={mote.size} />
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function ClefMark() {
   return (
     <svg
@@ -107,6 +157,7 @@ export function AboutOverlay({ appName, currentVersion, update, pending, onArm, 
           className="pointer-events-none absolute inset-0"
           style={{ background: 'radial-gradient(70% 160% at 14% 50%, rgb(46 211 196 / 0.16), transparent 60%)' }}
         />
+        <NoteMotes />
         <ClefMark />
         <h2 className="relative z-10 font-display text-display font-display-weight text-white">{appName}</h2>
         <span className="absolute bottom-3 right-4 z-10 inline-flex items-center gap-1.5 font-code text-[11px] text-white/55">

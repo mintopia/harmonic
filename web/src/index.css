@@ -404,6 +404,23 @@
     }
   }
 
+  /* translateY() percentages resolve against the mote's own glyph box, not the
+     header, so a fixed px is used instead of a %. */
+  @keyframes note-mote-rise {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      transform: translateY(-100px);
+    }
+  }
+
+  .note-mote {
+    animation-name: note-mote-rise;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+  }
+
   @keyframes indeterminate-progress {
     from {
       transform: translateX(-100%);
@@ -443,6 +460,10 @@
     }
 
     .animate-dot-pulse {
+      animation: none;
+    }
+
+    .note-mote {
       animation: none;
     }
   }
