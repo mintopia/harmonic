@@ -4255,7 +4255,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "42b29eca-464a-4af1-aba6-ef07dc63ddaf",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "cmd-lint",
                               "type": "string",
                               "minLength": 1
@@ -4361,7 +4361,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "a283c84d-be29-48cd-be99-4ec024f9eb2c",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "critic-correctness",
                               "type": "string",
                               "minLength": 1
@@ -4467,7 +4467,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "42b29eca-464a-4af1-aba6-ef07dc63ddaf",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "cmd-lint",
                               "type": "string",
                               "minLength": 1
@@ -4573,7 +4573,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "a283c84d-be29-48cd-be99-4ec024f9eb2c",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "critic-correctness",
                               "type": "string",
                               "minLength": 1
@@ -4679,7 +4679,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "42b29eca-464a-4af1-aba6-ef07dc63ddaf",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "cmd-lint",
                               "type": "string",
                               "minLength": 1
@@ -4785,7 +4785,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "a283c84d-be29-48cd-be99-4ec024f9eb2c",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "critic-correctness",
                               "type": "string",
                               "minLength": 1
@@ -5570,7 +5570,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "42b29eca-464a-4af1-aba6-ef07dc63ddaf",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "cmd-lint",
                               "type": "string",
                               "minLength": 1
@@ -5626,7 +5626,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "a283c84d-be29-48cd-be99-4ec024f9eb2c",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "critic-correctness",
                               "type": "string",
                               "minLength": 1
@@ -5691,7 +5691,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "42b29eca-464a-4af1-aba6-ef07dc63ddaf",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "cmd-lint",
                               "type": "string",
                               "minLength": 1
@@ -5747,7 +5747,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "a283c84d-be29-48cd-be99-4ec024f9eb2c",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "critic-correctness",
                               "type": "string",
                               "minLength": 1
@@ -5817,7 +5817,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "42b29eca-464a-4af1-aba6-ef07dc63ddaf",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "cmd-lint",
                               "type": "string",
                               "minLength": 1
@@ -5873,7 +5873,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "a283c84d-be29-48cd-be99-4ec024f9eb2c",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "critic-correctness",
                               "type": "string",
                               "minLength": 1
@@ -10338,7 +10338,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "eca131e5-1556-48c6-827a-64c53a6dae11",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "cmd-lint",
                               "type": "string",
                               "minLength": 1
@@ -10451,7 +10451,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "62c56c46-54ce-421c-902d-292b832cd947",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "critic-correctness",
                               "type": "string",
                               "minLength": 1
@@ -10563,7 +10563,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "eca131e5-1556-48c6-827a-64c53a6dae11",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "cmd-lint",
                               "type": "string",
                               "minLength": 1
@@ -10676,7 +10676,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "62c56c46-54ce-421c-902d-292b832cd947",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "critic-correctness",
                               "type": "string",
                               "minLength": 1
@@ -10788,7 +10788,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "eca131e5-1556-48c6-827a-64c53a6dae11",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "cmd-lint",
                               "type": "string",
                               "minLength": 1
@@ -10901,7 +10901,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "62c56c46-54ce-421c-902d-292b832cd947",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "critic-correctness",
                               "type": "string",
                               "minLength": 1
@@ -11710,7 +11710,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "eca131e5-1556-48c6-827a-64c53a6dae11",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "cmd-lint",
                               "type": "string",
                               "minLength": 1
@@ -11771,7 +11771,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "62c56c46-54ce-421c-902d-292b832cd947",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "critic-correctness",
                               "type": "string",
                               "minLength": 1
@@ -11841,7 +11841,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "eca131e5-1556-48c6-827a-64c53a6dae11",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "cmd-lint",
                               "type": "string",
                               "minLength": 1
@@ -11902,7 +11902,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "62c56c46-54ce-421c-902d-292b832cd947",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "critic-correctness",
                               "type": "string",
                               "minLength": 1
@@ -11978,7 +11978,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "eca131e5-1556-48c6-827a-64c53a6dae11",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "cmd-lint",
                               "type": "string",
                               "minLength": 1
@@ -12039,7 +12039,7 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "default": "62c56c46-54ce-421c-902d-292b832cd947",
+                              "default": "00000000-0000-0000-0000-000000000000",
                               "example": "critic-correctness",
                               "type": "string",
                               "minLength": 1
@@ -15808,7 +15808,7 @@
                                   "type": "object",
                                   "properties": {
                                     "id": {
-                                      "default": "74744015-b919-42d6-8ddc-574faac6a5e4",
+                                      "default": "00000000-0000-0000-0000-000000000000",
                                       "example": "cmd-lint",
                                       "type": "string",
                                       "minLength": 1
@@ -15917,7 +15917,7 @@
                                   "type": "object",
                                   "properties": {
                                     "id": {
-                                      "default": "7acca37a-1b06-49f7-ac23-10eec044fb5c",
+                                      "default": "00000000-0000-0000-0000-000000000000",
                                       "example": "critic-correctness",
                                       "type": "string",
                                       "minLength": 1
@@ -16026,7 +16026,7 @@
                                   "type": "object",
                                   "properties": {
                                     "id": {
-                                      "default": "74744015-b919-42d6-8ddc-574faac6a5e4",
+                                      "default": "00000000-0000-0000-0000-000000000000",
                                       "example": "cmd-lint",
                                       "type": "string",
                                       "minLength": 1
@@ -16135,7 +16135,7 @@
                                   "type": "object",
                                   "properties": {
                                     "id": {
-                                      "default": "7acca37a-1b06-49f7-ac23-10eec044fb5c",
+                                      "default": "00000000-0000-0000-0000-000000000000",
                                       "example": "critic-correctness",
                                       "type": "string",
                                       "minLength": 1
@@ -16244,7 +16244,7 @@
                                   "type": "object",
                                   "properties": {
                                     "id": {
-                                      "default": "74744015-b919-42d6-8ddc-574faac6a5e4",
+                                      "default": "00000000-0000-0000-0000-000000000000",
                                       "example": "cmd-lint",
                                       "type": "string",
                                       "minLength": 1
@@ -16353,7 +16353,7 @@
                                   "type": "object",
                                   "properties": {
                                     "id": {
-                                      "default": "7acca37a-1b06-49f7-ac23-10eec044fb5c",
+                                      "default": "00000000-0000-0000-0000-000000000000",
                                       "example": "critic-correctness",
                                       "type": "string",
                                       "minLength": 1
@@ -18230,7 +18230,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "147d3784-d4ba-4f4e-afd1-81798e790cd8",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "cmd-lint",
                                         "type": "string",
                                         "minLength": 1
@@ -18291,7 +18291,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "fbf11ba9-c883-4f5f-930c-3fff2d3ece5b",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "critic-correctness",
                                         "type": "string",
                                         "minLength": 1
@@ -18361,7 +18361,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "147d3784-d4ba-4f4e-afd1-81798e790cd8",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "cmd-lint",
                                         "type": "string",
                                         "minLength": 1
@@ -18422,7 +18422,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "fbf11ba9-c883-4f5f-930c-3fff2d3ece5b",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "critic-correctness",
                                         "type": "string",
                                         "minLength": 1
@@ -18502,7 +18502,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "147d3784-d4ba-4f4e-afd1-81798e790cd8",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "cmd-lint",
                                         "type": "string",
                                         "minLength": 1
@@ -18563,7 +18563,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "fbf11ba9-c883-4f5f-930c-3fff2d3ece5b",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "critic-correctness",
                                         "type": "string",
                                         "minLength": 1
@@ -19125,7 +19125,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "dca1ab64-d2c9-4f74-a4b1-1580fb7a2b4c",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "cmd-lint",
                                         "type": "string",
                                         "minLength": 1
@@ -19186,7 +19186,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "a41484b3-97a5-464b-9638-657a5b1fd05a",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "critic-correctness",
                                         "type": "string",
                                         "minLength": 1
@@ -19256,7 +19256,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "dca1ab64-d2c9-4f74-a4b1-1580fb7a2b4c",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "cmd-lint",
                                         "type": "string",
                                         "minLength": 1
@@ -19317,7 +19317,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "a41484b3-97a5-464b-9638-657a5b1fd05a",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "critic-correctness",
                                         "type": "string",
                                         "minLength": 1
@@ -19397,7 +19397,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "dca1ab64-d2c9-4f74-a4b1-1580fb7a2b4c",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "cmd-lint",
                                         "type": "string",
                                         "minLength": 1
@@ -19458,7 +19458,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "a41484b3-97a5-464b-9638-657a5b1fd05a",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "critic-correctness",
                                         "type": "string",
                                         "minLength": 1
@@ -19993,7 +19993,7 @@
                                   "type": "object",
                                   "properties": {
                                     "id": {
-                                      "default": "1c30d5a1-f13d-49f9-b684-27de25d8504b",
+                                      "default": "00000000-0000-0000-0000-000000000000",
                                       "example": "cmd-lint",
                                       "type": "string",
                                       "minLength": 1
@@ -20049,7 +20049,7 @@
                                   "type": "object",
                                   "properties": {
                                     "id": {
-                                      "default": "0e857aa1-6793-4455-a5c8-93caa9527261",
+                                      "default": "00000000-0000-0000-0000-000000000000",
                                       "example": "critic-correctness",
                                       "type": "string",
                                       "minLength": 1
@@ -20114,7 +20114,7 @@
                                   "type": "object",
                                   "properties": {
                                     "id": {
-                                      "default": "1c30d5a1-f13d-49f9-b684-27de25d8504b",
+                                      "default": "00000000-0000-0000-0000-000000000000",
                                       "example": "cmd-lint",
                                       "type": "string",
                                       "minLength": 1
@@ -20170,7 +20170,7 @@
                                   "type": "object",
                                   "properties": {
                                     "id": {
-                                      "default": "0e857aa1-6793-4455-a5c8-93caa9527261",
+                                      "default": "00000000-0000-0000-0000-000000000000",
                                       "example": "critic-correctness",
                                       "type": "string",
                                       "minLength": 1
@@ -20244,7 +20244,7 @@
                                   "type": "object",
                                   "properties": {
                                     "id": {
-                                      "default": "1c30d5a1-f13d-49f9-b684-27de25d8504b",
+                                      "default": "00000000-0000-0000-0000-000000000000",
                                       "example": "cmd-lint",
                                       "type": "string",
                                       "minLength": 1
@@ -20300,7 +20300,7 @@
                                   "type": "object",
                                   "properties": {
                                     "id": {
-                                      "default": "0e857aa1-6793-4455-a5c8-93caa9527261",
+                                      "default": "00000000-0000-0000-0000-000000000000",
                                       "example": "critic-correctness",
                                       "type": "string",
                                       "minLength": 1
@@ -20828,7 +20828,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "b764278b-caea-4855-997b-84bdfbcc056a",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "cmd-lint",
                                         "type": "string",
                                         "minLength": 1
@@ -20889,7 +20889,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "ede95e8c-3914-4bc0-a598-098d119a1aba",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "critic-correctness",
                                         "type": "string",
                                         "minLength": 1
@@ -20959,7 +20959,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "b764278b-caea-4855-997b-84bdfbcc056a",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "cmd-lint",
                                         "type": "string",
                                         "minLength": 1
@@ -21020,7 +21020,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "ede95e8c-3914-4bc0-a598-098d119a1aba",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "critic-correctness",
                                         "type": "string",
                                         "minLength": 1
@@ -21100,7 +21100,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "b764278b-caea-4855-997b-84bdfbcc056a",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "cmd-lint",
                                         "type": "string",
                                         "minLength": 1
@@ -21161,7 +21161,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "ede95e8c-3914-4bc0-a598-098d119a1aba",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "critic-correctness",
                                         "type": "string",
                                         "minLength": 1
@@ -21718,7 +21718,7 @@
                                         "type": "object",
                                         "properties": {
                                           "id": {
-                                            "default": "8be2c153-135c-4e09-b308-afb05e87e9e0",
+                                            "default": "00000000-0000-0000-0000-000000000000",
                                             "example": "cmd-lint",
                                             "type": "string",
                                             "minLength": 1
@@ -21779,7 +21779,7 @@
                                         "type": "object",
                                         "properties": {
                                           "id": {
-                                            "default": "1580fbe0-62cb-4198-8f69-589395a66247",
+                                            "default": "00000000-0000-0000-0000-000000000000",
                                             "example": "critic-correctness",
                                             "type": "string",
                                             "minLength": 1
@@ -21849,7 +21849,7 @@
                                         "type": "object",
                                         "properties": {
                                           "id": {
-                                            "default": "8be2c153-135c-4e09-b308-afb05e87e9e0",
+                                            "default": "00000000-0000-0000-0000-000000000000",
                                             "example": "cmd-lint",
                                             "type": "string",
                                             "minLength": 1
@@ -21910,7 +21910,7 @@
                                         "type": "object",
                                         "properties": {
                                           "id": {
-                                            "default": "1580fbe0-62cb-4198-8f69-589395a66247",
+                                            "default": "00000000-0000-0000-0000-000000000000",
                                             "example": "critic-correctness",
                                             "type": "string",
                                             "minLength": 1
@@ -21990,7 +21990,7 @@
                                         "type": "object",
                                         "properties": {
                                           "id": {
-                                            "default": "8be2c153-135c-4e09-b308-afb05e87e9e0",
+                                            "default": "00000000-0000-0000-0000-000000000000",
                                             "example": "cmd-lint",
                                             "type": "string",
                                             "minLength": 1
@@ -22051,7 +22051,7 @@
                                         "type": "object",
                                         "properties": {
                                           "id": {
-                                            "default": "1580fbe0-62cb-4198-8f69-589395a66247",
+                                            "default": "00000000-0000-0000-0000-000000000000",
                                             "example": "critic-correctness",
                                             "type": "string",
                                             "minLength": 1
@@ -22579,7 +22579,7 @@
                                         "type": "object",
                                         "properties": {
                                           "id": {
-                                            "default": "8be2c153-135c-4e09-b308-afb05e87e9e0",
+                                            "default": "00000000-0000-0000-0000-000000000000",
                                             "example": "cmd-lint",
                                             "type": "string",
                                             "minLength": 1
@@ -22640,7 +22640,7 @@
                                         "type": "object",
                                         "properties": {
                                           "id": {
-                                            "default": "1580fbe0-62cb-4198-8f69-589395a66247",
+                                            "default": "00000000-0000-0000-0000-000000000000",
                                             "example": "critic-correctness",
                                             "type": "string",
                                             "minLength": 1
@@ -22710,7 +22710,7 @@
                                         "type": "object",
                                         "properties": {
                                           "id": {
-                                            "default": "8be2c153-135c-4e09-b308-afb05e87e9e0",
+                                            "default": "00000000-0000-0000-0000-000000000000",
                                             "example": "cmd-lint",
                                             "type": "string",
                                             "minLength": 1
@@ -22771,7 +22771,7 @@
                                         "type": "object",
                                         "properties": {
                                           "id": {
-                                            "default": "1580fbe0-62cb-4198-8f69-589395a66247",
+                                            "default": "00000000-0000-0000-0000-000000000000",
                                             "example": "critic-correctness",
                                             "type": "string",
                                             "minLength": 1
@@ -22851,7 +22851,7 @@
                                         "type": "object",
                                         "properties": {
                                           "id": {
-                                            "default": "8be2c153-135c-4e09-b308-afb05e87e9e0",
+                                            "default": "00000000-0000-0000-0000-000000000000",
                                             "example": "cmd-lint",
                                             "type": "string",
                                             "minLength": 1
@@ -22912,7 +22912,7 @@
                                         "type": "object",
                                         "properties": {
                                           "id": {
-                                            "default": "1580fbe0-62cb-4198-8f69-589395a66247",
+                                            "default": "00000000-0000-0000-0000-000000000000",
                                             "example": "critic-correctness",
                                             "type": "string",
                                             "minLength": 1
@@ -23502,7 +23502,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "a7ed298a-04a2-4487-afa5-f30e49b0722c",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "cmd-lint",
                                         "type": "string",
                                         "minLength": 1
@@ -23563,7 +23563,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "2a886fe0-cdaa-482d-9d5f-45600715a248",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "critic-correctness",
                                         "type": "string",
                                         "minLength": 1
@@ -23633,7 +23633,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "a7ed298a-04a2-4487-afa5-f30e49b0722c",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "cmd-lint",
                                         "type": "string",
                                         "minLength": 1
@@ -23694,7 +23694,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "2a886fe0-cdaa-482d-9d5f-45600715a248",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "critic-correctness",
                                         "type": "string",
                                         "minLength": 1
@@ -23774,7 +23774,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "a7ed298a-04a2-4487-afa5-f30e49b0722c",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "cmd-lint",
                                         "type": "string",
                                         "minLength": 1
@@ -23835,7 +23835,7 @@
                                     "type": "object",
                                     "properties": {
                                       "id": {
-                                        "default": "2a886fe0-cdaa-482d-9d5f-45600715a248",
+                                        "default": "00000000-0000-0000-0000-000000000000",
                                         "example": "critic-correctness",
                                         "type": "string",
                                         "minLength": 1
