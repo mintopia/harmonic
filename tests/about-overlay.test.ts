@@ -30,7 +30,6 @@ async function renderAbout(props: {
 }) {
   host = await mountComponent(
     createElement(AboutOverlay, {
-      appName: 'Harmonic',
       currentVersion: 'currentVersion' in props ? props.currentVersion! : '2.12.1',
       update: props.update === undefined ? makeUpdate() : props.update,
       pending: props.pending ?? false,
@@ -144,11 +143,16 @@ describe('AboutOverlay', () => {
     await renderAbout({});
 
     const motes = host!.querySelectorAll('.note-mote');
-    expect(motes.length).toBe(7);
+    expect(motes.length).toBe(8);
 
     const layer = motes[0]!.parentElement!;
     expect(layer.getAttribute('aria-hidden')).toBe('true');
     expect(layer.className).toContain('pointer-events-none');
+  });
+
+  it('renders the scrolling stave backdrop alongside the motes', async () => {
+    await renderAbout({});
+    expect(host!.querySelector('.stave-scroll')).toBeTruthy();
   });
 
   it('calls onClose when the modal is closed', async () => {

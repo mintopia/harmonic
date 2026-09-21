@@ -421,6 +421,34 @@
     animation-iteration-count: infinite;
   }
 
+  @keyframes note-mote-sway {
+    from {
+      transform: translateX(-3px);
+    }
+    to {
+      transform: translateX(3px);
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .mote-sway {
+      animation: note-mote-sway var(--sway-dur, 5s) ease-in-out var(--sway-delay, 0s) infinite alternate;
+    }
+  }
+
+  @keyframes stave-scroll {
+    to {
+      transform: translateX(calc(-1 * var(--loop-w)));
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .stave-scroll {
+      animation: stave-scroll var(--loop-dur, 13s) linear infinite;
+      will-change: transform;
+    }
+  }
+
   @keyframes indeterminate-progress {
     from {
       transform: translateX(-100%);
@@ -463,8 +491,14 @@
       animation: none;
     }
 
-    .note-mote {
+    .note-mote,
+    .mote-sway {
       animation: none;
+    }
+
+    .stave-scroll {
+      animation: none;
+      transform: translateX(calc(-1 * var(--static-x, 308px)));
     }
   }
 }
