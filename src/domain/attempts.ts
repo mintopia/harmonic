@@ -295,6 +295,17 @@ export class AttemptStore {
           .run(),
       );
     }
+    // A crash mid-Step would otherwise leave it forever `running`, reading as still-active in the timeline.
+    if (orphans.length > 0) {
+      const ids = orphans.map((attempt) => attempt.id);
+      await this.db.write((db) =>
+        db
+          .update(steps)
+          .set({ state: 'failed', endedAt: Date.now() })
+          .where(and(inArray(steps.attemptId, ids), eq(steps.state, 'running')))
+          .run(),
+      );
+    }
     return orphans;
   }
 

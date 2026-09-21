@@ -336,7 +336,6 @@ export function App() {
         />
         {aboutOpen && (
           <AboutOverlay
-            appName={instanceName}
             currentVersion={update?.currentVersion ?? null}
             update={update}
             pending={updatePending}
