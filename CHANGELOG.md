@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.16.0](https://github.com/mintopia/harmonic/compare/v2.15.0...v2.16.0) (2026-09-20)
+
+
+### Features
+
+* **about:** float muted note motes behind the treble clef ([c6913c8](https://github.com/mintopia/harmonic/commit/c6913c846ee3f8600c6a82441f3e91b7e6d9bc2b)), closes [#680](https://github.com/mintopia/harmonic/issues/680)
+
+
+### Bug Fixes
+
+* **jev-gate:** accept a pre-joined --mode value in parseArgs ([4dbf186](https://github.com/mintopia/harmonic/commit/4dbf1861c153a1035840d77ce64b49b82992cb80))
+
 ## [2.15.0](https://github.com/mintopia/harmonic/compare/v2.14.0...v2.15.0) (2026-09-20)
 
 
