@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.17.0](https://github.com/mintopia/harmonic/compare/v2.16.0...v2.17.0) (2026-09-21)
+
+
+### Features
+
+* **about:** reveal a scrolling musical stave on hover ([f6c09c2](https://github.com/mintopia/harmonic/commit/f6c09c28765222ad7a80e232cb7c714a8bba80d0))
+* **about:** swap easter-egg melodies to Dies Irae and Toccata ([806f383](https://github.com/mintopia/harmonic/commit/806f383be93298d93e6a93f7a937e0d8454c2a4e))
+
+
+### Bug Fixes
+
+* **execution:** keep a failed attempt's implementation step failed ([fbdb704](https://github.com/mintopia/harmonic/commit/fbdb70415ad070dc89687c80222152c4e995056b))
+* **execution:** snapshot a reused worktree before rebasing ([861dc0d](https://github.com/mintopia/harmonic/commit/861dc0dd669a8c7b1e8b25102aad91e989b517ea))
+* **web:** show an attempt's pinned model, not the token-dominant one ([eedacea](https://github.com/mintopia/harmonic/commit/eedacea1552783c3688bc43788f089f7a5bb6d10))
+
 ## [2.16.0](https://github.com/mintopia/harmonic/compare/v2.15.0...v2.16.0) (2026-09-20)
 
 
