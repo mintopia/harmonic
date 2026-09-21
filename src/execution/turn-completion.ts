@@ -40,6 +40,9 @@ export interface TurnCompletionDeps {
   diffSnapshotFor: (
     task: TaskRow, attemptId: number,
   ) => Promise<Pick<AttemptRow, 'stat' | 'diffBaseOid' | 'diffHeadOid'>>;
+  updateStep: (
+    taskId: number, id: number, patch: Parameters<AttemptStore['updateStep']>[1],
+  ) => Promise<Awaited<ReturnType<AttemptStore['updateStep']>>>;
 }
 
 export class TurnCompletion {
@@ -209,9 +212,17 @@ export class TurnCompletion {
     }
     if (afkUnresolved && (!verifierRan || (await this.deps.attempts.get(run.id)).verifiedHeadOid == null)) {
       record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal and no verifier vouched for the work' });
+      // advanceTask('verifying') optimistically passed the implementation step; this turn never actually resolved.
+      await this.failImplementationStep(task.id, run.id);
       return { kind: 'actionable-fail', reason: 'attempt ended without an execution-complete (finish_task) signal', output: '' };
     }
     return this.mergeAndSettle({ task, run, record, active, patch, autoDriven, noChange, advanceTask });
+  }
+
+  private async failImplementationStep(taskId: number, attemptId: number): Promise<void> {
+    const rows = await this.deps.attempts.listSteps(attemptId);
+    const implementation = [...rows].reverse().find((row) => row.type === 'implementation');
+    if (implementation) await this.deps.updateStep(taskId, implementation.id, { state: 'failed', endedAt: Date.now() });
   }
 
   private async resolveImplementationHead(input: {
