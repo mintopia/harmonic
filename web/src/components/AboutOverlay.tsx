@@ -205,30 +205,29 @@ const TETRIS: Melody = {
   ],
 };
 
-const FF7_THEME: Melody = {
-  title: 'Final Fantasy VII — Main Theme',
+const DIES_IRAE: Melody = {
+  title: 'Dies Irae',
   timeSig: [4, 4],
-  tempoBpm: 100,
+  tempoBpm: 92,
   notes: [
-    ['C4', 2], ['D4', 1], ['E4', 1], ['B4', 2], ['A4', 2], ['r', 1], ['C4', 1], ['D4', 1], ['E4', 1], ['G4', 1], ['F4', 1], ['C4', 1], ['D4', 1],
-    ['C4', 2], ['D4', 1], ['E4', 1], ['B4', 2], ['A4', 2], ['r', 1], ['C4', 1], ['D4', 1], ['E4', 1], ['G4', 1], ['F4', 1], ['C4', 1], ['D4', 1],
-    ['E4', 5], ['E4', 1], ['G4', 1], ['E4', 1], ['F4', 8],
+    ['F4', 1], ['E4', 1], ['F4', 1], ['D4', 1],
+    ['E4', 1], ['C4', 1], ['D4', 2],
+    ['D4', 1], ['C4', 1], ['D4', 1], ['E4', 1],
+    ['F4', 1], ['E4', 1], ['D4', 2],
   ],
 };
 
-const LECHUCK: Melody = {
-  title: "LeChuck's Theme",
+const TOCCATA: Melody = {
+  title: 'Toccata and Fugue in D minor',
   timeSig: [4, 4],
-  tempoBpm: 89,
+  tempoBpm: 76,
   notes: [
-    ['C5', 0.75], ['C5', 0.25], ['Eb5', 0.5], ['G5', 0.5], ['F#5', 0.5], ['F#5', 0.5], ['D5', 1],
-    ['Ab4', 0.5], ['Ab4', 0.5], ['Ab4', 1], ['G4', 0.5], ['G4', 0.5], ['G4', 1],
-    ['C5', 0.75], ['C5', 0.25], ['Eb5', 0.5], ['G5', 0.5], ['A5', 0.5], ['A5', 0.5], ['F#5', 1],
-    ['F4', 0.5], ['F4', 0.5], ['F4', 0.5], ['F4', 0.5], ['G4', 2],
+    ['A4', 0.5], ['G4', 0.5], ['A4', 3],
+    ['A4', 0.5], ['G4', 0.5], ['F4', 0.5], ['E4', 0.5], ['D4', 0.5], ['C#4', 0.5], ['D4', 1],
   ],
 };
 
-const MELODIES: Melody[] = [ODE_TO_JOY, TETRIS, FF7_THEME, LECHUCK];
+const MELODIES: Melody[] = [ODE_TO_JOY, TETRIS, DIES_IRAE, TOCCATA];
 
 function pitchStep(pitch: string): number {
   return LETTER_STEP[pitch[0]!]! + (Number(pitch[pitch.length - 1]) - 4) * 7;

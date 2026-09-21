@@ -13,6 +13,7 @@ import { EmptyState } from '../EmptyState';
 import { Icon } from '../Icon';
 import { stateTone } from '../../attempt-timeline-model';
 import {
+  attemptIdentityModel,
   attemptStepTabs,
   defaultStepTab,
   latestCriticPrompt,
@@ -148,7 +149,7 @@ export function AttemptPanel({
   const active = picked && tabs.some((tab) => tab.id === picked) ? picked : defaultStepTab(tabs);
   const activeTab = tabs.find((tab) => tab.id === active);
 
-  const topModel = stats.byModel[0]?.model ?? primaryModel;
+  const topModel = attemptIdentityModel(primaryModel, stats.byModel);
   const chat = (
     <ChatTranscript
       events={events}

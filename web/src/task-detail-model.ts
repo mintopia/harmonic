@@ -19,6 +19,20 @@ export function harnessLabel(harness: string): string {
   return harness.charAt(0).toUpperCase() + harness.slice(1);
 }
 
+/** Copilot's router sentinel (`src/config.ts`'s `AUTO_MODEL_SENTINEL`),
+ * duplicated here rather than imported: that module reads the baseline
+ * config file from disk at import time, which the browser bundle can't do. */
+const AUTO_MODEL_SENTINEL = 'auto';
+
+/** The model identity to show for an Attempt: the task's pinned model, since
+ * that's what was promised, not whichever model (root or subagent) happened
+ * to spend the most tokens. A task pinned to `auto` delegated the choice, so
+ * the token-dominant model IS the honest answer there. */
+export function attemptIdentityModel(primaryModel: string, byModel: readonly { model: string }[]): string {
+  if (primaryModel && primaryModel !== AUTO_MODEL_SENTINEL) return primaryModel;
+  return byModel[0]?.model ?? primaryModel;
+}
+
 /** The content-panel kind the selection resolves to. `stats` is the default
  * whole-Task view; `attempt` an Attempt's own content; `diff` a changed-file
  * diff; `timeline` the lifecycle stream. */

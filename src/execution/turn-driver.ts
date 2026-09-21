@@ -131,6 +131,7 @@ export class TurnDriver {
       settleEscalated: deps.settleEscalated,
       settleAutoCompleted: deps.settleAutoCompleted,
       diffSnapshotFor: deps.diffSnapshotFor,
+      updateStep: deps.updateStep,
     };
     this.completion = new TurnCompletion(completionDeps);
   }
