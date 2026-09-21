@@ -125,6 +125,17 @@ export class WorkspaceProvisioner {
       await Git.discardOrphanWorktree(task.workingDir, path);
     }
 
+    // A killed prior attempt skips finalizeWorkspace's commitAll, so a reused
+    // worktree can still be dirty here; the rebase step below refuses to run
+    // on a dirty tree, so snapshot any leftovers first (no-op if clean).
+    if (existsSync(path)) {
+      await bestEffort(() => Git.commitAll(path, `harmonic: task ${task.id} recovered leftover work`), {
+        op: 'runner.prepareWorkspace.commitAll',
+        level: 'error',
+        context: { taskId: task.id, attemptId: run.id, path },
+      });
+    }
+
     if (resume) {
       const persisted = await this.deps.attempts.get(run.id);
       const branch = persisted.branch ?? this.branchForTask(task);
