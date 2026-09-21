@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attemptStepTabs, contentPanel, defaultSelection, defaultStepTab, taskLifecycle, taskStats, verificationOutputTail, type LifecycleStepKey, type LifecycleStepStatus, type StatsAttempt } from '../web/src/task-detail-model.js';
+import { attemptIdentityModel, attemptStepTabs, contentPanel, defaultSelection, defaultStepTab, taskLifecycle, taskStats, verificationOutputTail, type LifecycleStepKey, type LifecycleStepStatus, type StatsAttempt } from '../web/src/task-detail-model.js';
 import type { AttemptSummary, Cost, ModelUsage, Step, StepState, StepType, TaskState } from '../web/src/types.js';
 
 const STEP_ORDER: LifecycleStepKey[] = [
@@ -543,5 +543,19 @@ describe('verificationOutputTail', () => {
 
   it('is null before anything streamed', () => {
     expect(verificationOutputTail([], 'command')).toBeNull();
+  });
+});
+
+describe('attemptIdentityModel', () => {
+  it('stays pinned to the primary model even when a subagent out-spends it', () => {
+    expect(attemptIdentityModel('sonnet-5', [{ model: 'sonnet-4.5' }, { model: 'sonnet-5' }])).toBe('sonnet-5');
+  });
+
+  it('falls back to the token-dominant model when the task is pinned to auto', () => {
+    expect(attemptIdentityModel('auto', [{ model: 'sonnet-4.5' }, { model: 'sonnet-5' }])).toBe('sonnet-4.5');
+  });
+
+  it('falls back to the token-dominant model when no primary model is set', () => {
+    expect(attemptIdentityModel('', [{ model: 'sonnet-4.5' }])).toBe('sonnet-4.5');
   });
 });
