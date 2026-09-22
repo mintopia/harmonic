@@ -38,6 +38,7 @@ import { ModelLabel, ProviderChip } from './TaskIdentity';
 import { ChangedFilesNav, changedFileKind } from './ticket/ChangedFilesNav';
 import { Fact } from './Fact';
 import { CriticSessions } from './ticket/Verification';
+import { EpicTimeline } from './EpicTimeline';
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
 
@@ -743,6 +744,8 @@ export function EpicPage({
                       <div className={`${card} px-[22px] py-5 text-muted`}>Loading…</div>
                     )}
                   </section>
+
+                  {epic && <div className="mb-6"><EpicTimeline epic={epic} /></div>}
 
                   <div className="mb-6">
                     <div className={`${sectionCaps} mb-3`}>Usage &amp; statistics</div>

@@ -44,6 +44,12 @@ export interface EpicIntegrateState {
   held: string | null;
 }
 
+export interface EpicTimelineEvent {
+  seq: number;
+  at: number;
+  step: MergeStepEvent;
+}
+
 export interface Epic {
   ref: number;
   title: string;
@@ -69,6 +75,7 @@ export interface Epic {
   integrate: EpicIntegrateState;
   /** Steps of the current integration merge, in order; empty until an integration runs. */
   mergeSteps: MergeStepEvent[];
+  timelineEvents: EpicTimelineEvent[];
   /** members with mergeStatus === 'completed' */
   foldedCount: number;
   /** members.length */

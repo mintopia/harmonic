@@ -47,6 +47,12 @@ export interface EpicIntegrateState {
   phase: { phase: 'verifying' | 'merging'; sinceMs: number } | null;
 }
 
+export interface EpicTimelineEvent {
+  seq: number;
+  at: number;
+  step: MergeStepEvent;
+}
+
 export interface Epic {
   ref: number;
   title: string;
@@ -73,6 +79,7 @@ export interface Epic {
   integrate: EpicIntegrateState;
   /** Steps of the current integration merge, in order; empty until an integration runs. */
   mergeSteps: MergeStepEvent[];
+  timelineEvents: EpicTimelineEvent[];
   /** Members with `mergeStatus === 'completed'`. */
   foldedCount: number;
   memberCount: number;
@@ -96,6 +103,7 @@ export interface EpicFacts {
   verification: EpicVerification;
   integrate: EpicIntegrateState;
   mergeSteps: MergeStepEvent[];
+  timelineEvents: EpicTimelineEvent[];
 }
 
 /**
@@ -146,6 +154,7 @@ export function composeEpicView(
     verification: facts.verification,
     integrate: facts.integrate,
     mergeSteps: facts.mergeSteps,
+    timelineEvents: facts.timelineEvents,
     foldedCount: members.filter((m) => m.mergeStatus === 'completed').length,
     memberCount: members.length,
   };

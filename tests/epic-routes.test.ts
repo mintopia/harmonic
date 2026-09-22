@@ -521,6 +521,7 @@ describe('epic-routes', () => {
         verification: { status: null, configured: false },
         integrate: { inFlight: false, held: null, phase: null },
         mergeSteps: [],
+        timelineEvents: [],
         foldedCount: 1,
         memberCount: 2,
         ...over,
