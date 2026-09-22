@@ -30,6 +30,7 @@ const mergedSteps: MergeStepEvent[] = [
   { step: 'resolve-turn', turn: 1, unmergedCount: 2 },
   { step: 'post-check-skipped', mergeOid: '4f7a1c9e2b3d5a6f8091' },
   { step: 'merged', mergeOid: '4f7a1c9e2b3d5a6f8091' },
+  { step: 'checkout-synced', mergeOid: '4f7a1c9e2b3d5a6f8091', mergedPaths: ['src/App.tsx'], keptPaths: ['README.md'] },
 ];
 
 const revertedSteps: MergeStepEvent[] = [

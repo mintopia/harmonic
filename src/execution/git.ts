@@ -37,6 +37,24 @@ async function gitEnv(cwd: string, env: Record<string, string>, ...args: string[
   }
 }
 
+/** Like {@link git}, but never `.trim()`s stdout — required for `-z` porcelain
+ * output, whose first record can legitimately start with a space (a blank
+ * index-status column), which `.trim()` would silently eat and misalign every
+ * `slice()` offset downstream. */
+async function gitUntrimmed(cwd: string, args: string[]): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', cwd, ...args], {
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: GIT_TIMEOUT_MS,
+      killSignal: 'SIGKILL',
+    });
+    return stdout;
+  } catch (err: any) {
+    const output = [err.stderr?.trim(), err.stdout?.trim()].filter(Boolean).join('\n');
+    throw new GitError(`git ${args.join(' ')} failed: ${output || err.message}`, err.stderr ?? '');
+  }
+}
+
 function failureReason(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -838,5 +856,120 @@ export const Git = {
       await git(worktreeDir, ...IDENTITY, 'revert', '-m', '1', '--no-edit', mergeOid);
       return Git.revParse(worktreeDir, 'HEAD');
     });
+  },
+
+  /**
+   * Every path `git status --porcelain=v1 -z --untracked-files=all` reports at
+   * `dir` — staged, unstaged AND untracked, each file individually (never a
+   * collapsed directory). A rename/copy record contributes both its old and
+   * new path, since either side of it is worth treating as operator-dirty.
+   */
+  async dirtyPathsSnapshot(dir: string): Promise<Set<string>> {
+    const out = await gitUntrimmed(dir, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
+    const records = out.split('\0');
+    const paths = new Set<string>();
+    for (let i = 0; i < records.length; i++) {
+      const record = records[i];
+      if (!record) continue;
+      paths.add(record.slice(3));
+      if (record[0] === 'R' || record[0] === 'C') {
+        const orig = records[++i];
+        if (orig) paths.add(orig);
+      }
+    }
+    return paths;
+  },
+
+  /** Per-path `A`/`M`/`D` status between two commit-ish revisions, straight
+   * from the object store (`--no-renames`, so a rename never hides as one
+   * combined record). Works without a checkout of either revision. */
+  async changedPaths(dir: string, oldRev: string, newRev: string): Promise<Array<{ status: 'A' | 'M' | 'D'; path: string }>> {
+    const out = await git(dir, 'diff', '--name-status', '--no-renames', '-z', oldRev, newRev);
+    const records = out.split('\0').filter((record) => record.length > 0);
+    const result: Array<{ status: 'A' | 'M' | 'D'; path: string }> = [];
+    for (let i = 0; i < records.length; i += 2) {
+      const status = records[i]!.charAt(0) as 'A' | 'M' | 'D';
+      const path = records[i + 1];
+      if (path) result.push({ status, path });
+    }
+    return result;
+  },
+
+  /** The tree entry for `path` at `rev` — its mode (`100644`/`100755` regular,
+   * `120000` symlink, `160000` gitlink) and blob/tree oid — or `null` when
+   * `path` does not exist at `rev`. */
+  async lsTreeEntry(dir: string, rev: string, path: string): Promise<{ mode: string; oid: string } | null> {
+    const out = await git(dir, 'ls-tree', '-z', rev, '--', `:(literal)${path}`);
+    const record = out.split('\0').find((r) => r.length > 0);
+    if (!record) return null;
+    const meta = record.slice(0, record.indexOf('\t')).split(' ');
+    const mode = meta[0];
+    const oid = meta[2];
+    return mode && oid ? { mode, oid } : null;
+  },
+
+  /** Raw bytes of blob `oid` (`git cat-file -p`), unlike the string-returning
+   * helpers above — safe for binary content. */
+  async blobBytes(dir: string, oid: string): Promise<Buffer> {
+    const { stdout } = await execFileAsync('git', ['-C', dir, 'cat-file', '-p', oid], {
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: GIT_TIMEOUT_MS,
+      killSignal: 'SIGKILL',
+      encoding: 'buffer',
+    });
+    return stdout as unknown as Buffer;
+  },
+
+  /**
+   * Update the index AND working tree for `paths` to their content at `rev`
+   * (`git checkout <rev> -- <paths>`), batched to keep argv bounded. Only
+   * coherent for paths whose worktree content already matches the index (the
+   * caller's responsibility) — unlike {@link checkoutForce} this never touches
+   * paths outside the given list.
+   */
+  async checkoutPathsFromRev(dir: string, rev: string, paths: string[]): Promise<void> {
+    const CHUNK = 200;
+    for (let i = 0; i < paths.length; i += CHUNK) {
+      await git(dir, 'checkout', rev, '--', ...literalPaths(paths.slice(i, i + CHUNK)));
+    }
+  },
+
+  /** Remove `paths` from the index AND working tree (`git rm -q`), batched to
+   * keep argv bounded. */
+  async removePaths(dir: string, paths: string[]): Promise<void> {
+    const CHUNK = 200;
+    for (let i = 0; i < paths.length; i += CHUNK) {
+      await git(dir, 'rm', '-q', '--', ...literalPaths(paths.slice(i, i + CHUNK)));
+    }
+  },
+
+  /** Point the index entry for `path` at blob `oid` with mode `mode`
+   * (`git update-index --add --cacheinfo`) WITHOUT touching the working tree. */
+  setIndexBlob: (dir: string, path: string, mode: string, oid: string) =>
+    git(dir, 'update-index', '--add', '--cacheinfo', `${mode},${oid},${path}`),
+
+  /** Remove `path` from the index only (`git update-index --force-remove`),
+   * leaving whatever is on disk at `path` untouched. */
+  removeIndexEntry: (dir: string, path: string) => git(dir, 'update-index', '--force-remove', '--', path),
+
+  /**
+   * A three-way textual merge of `oursPath` against `basePath` and
+   * `theirsPath` (`git merge-file -p`), printed rather than written in place.
+   * `ok: false` on any conflict OR non-text-mergeable input (binary, etc) —
+   * the caller decides what to do; nothing is ever written by this call.
+   */
+  async mergeFileResult(oursPath: string, basePath: string, theirsPath: string): Promise<{ ok: true; content: Buffer } | { ok: false }> {
+    try {
+      const { stdout } = await execFileAsync('git', ['merge-file', '-p', oursPath, basePath, theirsPath], {
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: GIT_TIMEOUT_MS,
+        killSignal: 'SIGKILL',
+        encoding: 'buffer',
+      });
+      return { ok: true, content: stdout as unknown as Buffer };
+    } catch (err: any) {
+      if (typeof err.code === 'number') return { ok: false };
+      throw new GitError(`git merge-file failed: ${err.message}`, '');
+    }
   },
 };

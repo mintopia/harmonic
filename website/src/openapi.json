@@ -3365,6 +3365,39 @@
             "properties": {
               "step": {
                 "type": "string",
+                "const": "checkout-synced"
+              },
+              "mergeOid": {
+                "type": "string"
+              },
+              "mergedPaths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "keptPaths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid",
+              "mergedPaths",
+              "keptPaths"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
                 "const": "retired"
               },
               "branch": {
@@ -9477,6 +9510,40 @@
             "required": [
               "step",
               "mergeOid"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "checkout-synced"
+              },
+              "mergeOid": {
+                "type": "string"
+              },
+              "mergedPaths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "keptPaths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid",
+              "mergedPaths",
+              "keptPaths"
             ],
             "additionalProperties": false
           },

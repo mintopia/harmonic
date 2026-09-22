@@ -82,6 +82,7 @@ const mergeStepSchema = z
     z.object({ step: z.literal('post-check-passed'), mergeOid: z.string() }),
     z.object({ step: z.literal('reverted'), mergeOid: z.string(), revertOid: z.string() }),
     z.object({ step: z.literal('merged'), mergeOid: z.string() }),
+    z.object({ step: z.literal('checkout-synced'), mergeOid: z.string(), mergedPaths: z.array(z.string()), keptPaths: z.array(z.string()), error: z.string().optional() }),
     z.object({ step: z.literal('retired'), branch: z.string(), baseBranch: z.string() }),
     z.object({ step: z.literal('escalated'), reason: z.enum(['conflict', 'post-merge-red', 'target-advanced']), message: z.string() }),
   ])
