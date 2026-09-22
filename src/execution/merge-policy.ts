@@ -205,7 +205,8 @@ async function criticalSection(input: MergePolicyInput, deps: MergePolicyDeps): 
 
 type PublishResult =
   | { kind: 'published'; mergeOid: string }
-  | { kind: 'reconcile-conflict'; currentTip: string; paths: string[]; unsupported: boolean };
+  | { kind: 'reconcile-conflict'; currentTip: string; paths: string[]; unsupported: boolean }
+  | { kind: 'write-failed'; detail: string };
 
 /**
  * Publish `mergeOid` (built off `snapshotOid`) onto the base branch. Runs
@@ -239,11 +240,19 @@ async function publish(input: MergePolicyInput, deps: MergePolicyDeps, mergeOid:
     const dirtyPaths = checkoutDir !== null ? await captureDirtyPaths(checkoutDir) : null;
     const cas = await Git.casUpdateRef(input.baseDir, input.baseBranch, toPublish, tip);
     if (!cas.ok) {
-      logger.warn('merge: lost the publish race to a writer outside the lock; re-reading the tip and reconciling again', {
-        'merge.repo': input.baseDir,
-        'merge.base_branch': input.baseBranch,
-      });
-      continue;
+      const tipAfter = await Git.revParse(input.baseDir, input.baseBranch);
+      if (tipAfter !== tip) {
+        logger.warn('merge: lost the publish race to a writer outside the lock; re-reading the tip and reconciling again', {
+          'merge.repo': input.baseDir,
+          'merge.base_branch': input.baseBranch,
+        });
+        continue;
+      }
+      // The tip didn't move, so the write failed for a reason other than a lost
+      // race (a stale lock file, a permissions error, a corrupt ref) — looping
+      // would spin forever holding the base-checkout lock. Stop and escalate;
+      // nothing was published, so the merge stays retryable.
+      return { kind: 'write-failed', detail: cas.detail ?? 'update-ref failed' };
     }
 
     if (tip !== snapshotOid) emitStep(deps, { step: 'reconciled', fromBase: snapshotOid, toBase: tip, mergeOid: toPublish });
@@ -303,6 +312,10 @@ async function mergeUnderLock(input: MergePolicyInput, deps: MergePolicyDeps): P
       }
     });
     if (published.kind === 'published') return { kind: 'merged', mergeOid: published.mergeOid };
+
+    if (published.kind === 'write-failed') {
+      return { kind: 'escalated', reason: 'conflict', message: `Couldn't update ${input.baseBranch}: ${published.detail}` };
+    }
 
     emitStep(deps, { step: 'rebuilding', fromBase: baseTipOid, toBase: published.currentTip, paths: published.paths });
     logger.warn('merge: reconcile conflict; rebuilding onto the new base tip', {

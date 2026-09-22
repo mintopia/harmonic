@@ -469,6 +469,31 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     }
   });
 
+  it('escalates instead of spinning when the ref write fails for a reason other than a lost race', async () => {
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-write-fail', (wt) => writeFileSync(join(wt, 'feature.txt'), 'feature\n'));
+    const baseTip = git(repo, 'rev-parse', 'main');
+
+    const casSpy = vi.spyOn(Git, 'casUpdateRef').mockImplementation(async () => ({ ok: false, detail: 'cannot lock ref' }));
+    const escalate = vi.fn(async () => {});
+
+    try {
+      const outcome = await runMergePolicy(
+        { baseDir: repo, baseBranch: 'main', taskBranch: 'task-write-fail', conflictResolveTurns: 0, postMergeCheck: false },
+        { resolveConflictTurn: neverCalled('resolveConflictTurn'), runPostMergeCheck: neverCalled('runPostMergeCheck'), escalate },
+      );
+
+      expect(outcome).toMatchObject({ kind: 'escalated', reason: 'conflict' });
+      if (outcome.kind !== 'escalated') throw new Error('unreachable');
+      expect(outcome.message).toContain('cannot lock ref');
+      expect(escalate).toHaveBeenCalledTimes(1);
+      expect(casSpy).toHaveBeenCalledTimes(1);
+      expect(git(repo, 'rev-parse', 'main')).toBe(baseTip);
+    } finally {
+      casSpy.mockRestore();
+    }
+  });
+
   it('rebuilds on a reconcile conflict and resolves it on the rebuild', async () => {
     const repo = makeRepo();
     await makeTaskBranch(repo, 'task-rebuild-resolve', (wt) => writeFileSync(join(wt, 'base.txt'), 'task version\n'));
