@@ -54,6 +54,7 @@ export interface AppOptions {
   /** Test-only running-version override, so Update Check tests don't track the release version. */
   version?: string | undefined;
   onUpgradeIdle?: ((version: string) => Promise<void> | void) | undefined;
+  migrationRequired?: boolean | undefined;
 }
 
 export interface AppContext {

@@ -174,6 +174,7 @@ const updateState: UpdateState = {
   availableVersion: null,
   armedVersion: null,
   dismissedVersion: null,
+  migrationRequired: false,
   idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false },
 };
 

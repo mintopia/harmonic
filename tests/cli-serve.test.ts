@@ -1,9 +1,48 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createShutdownHandler,
+  detectSystemdInstallMigration,
   installSystemdUpgrade,
   readSystemdInstalledVersion,
+  requiresSystemdInstallMigration,
 } from '../src/cli-serve.js';
+
+describe('requiresSystemdInstallMigration', () => {
+  it('recognizes an npm-global CLI as a legacy systemd install and accepts the stable application path', () => {
+    expect(requiresSystemdInstallMigration({
+      managedBy: 'systemd',
+      dataDir: '/var/lib/harmonic',
+      cliPath: '/usr/lib/node_modules/@mintopia/harmonic/dist/cli-serve.js',
+    })).toBe(true);
+    expect(requiresSystemdInstallMigration({
+      managedBy: 'systemd',
+      dataDir: '/var/lib/harmonic',
+      cliPath: '/var/lib/harmonic/app/current/dist/cli.js',
+    })).toBe(false);
+    expect(requiresSystemdInstallMigration({
+      managedBy: undefined,
+      dataDir: '/var/lib/harmonic',
+      cliPath: '/usr/lib/node_modules/@mintopia/harmonic/dist/cli.js',
+    })).toBe(false);
+  });
+});
+
+describe('detectSystemdInstallMigration', () => {
+  it('logs the operator notice for an old-style systemd ExecStart path', () => {
+    const warnings: string[] = [];
+
+    expect(detectSystemdInstallMigration({
+      managedBy: 'systemd',
+      dataDir: '/var/lib/harmonic',
+      cliPath: '/usr/lib/node_modules/@mintopia/harmonic/dist/cli.js',
+      warn: (message) => warnings.push(message),
+    })).toBe(true);
+
+    expect(warnings).toEqual([
+      'Auto-upgrade is disabled until you re-run sudo harmonic install; your data is untouched.',
+    ]);
+  });
+});
 
 describe('createShutdownHandler', () => {
   it('calls release then exit(0), in that order', async () => {
