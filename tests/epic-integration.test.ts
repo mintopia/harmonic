@@ -724,7 +724,10 @@ describe('EpicLifecycle direct-mode Epics (isolationMode "direct", ADR-0001 dire
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-direct-'));
     asyncDb = await openAsyncDb(dir);
-    await seedWorkspace(asyncDb);
+    // isInPlace scopes to a mirrored Task's own workingDir, so the seeded
+    // Workspace's workingDir must match the EpicLifecycle under test (`dir`),
+    // not the default `process.cwd()`.
+    await seedWorkspace(asyncDb, dir);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
@@ -767,6 +770,21 @@ describe('EpicLifecycle direct-mode Epics (isolationMode "direct", ADR-0001 dire
     expect(m11.baseBranch).toBeNull();
     expect(coord.awaitsBase(m11)).toBe(false);
     expect(await coord.memberBaseNotReady(m11)).toBe(false);
+  });
+
+  it('scopes isInPlace to its own Workspace: a same-ref worktree Task in another Workspace never demotes it', async () => {
+    const tickets = epicTickets();
+    await mscan(tickets);
+    const otherDir = mkdtempSync(join(tmpdir(), 'harmonic-epic-other-'));
+    const otherWorkspace = await new WorkspaceService(asyncDb, settingsStore).create({ name: 'Other', workingDir: otherDir });
+    const otherTask = await mirrorScan(tasks, [ticket({ number: 11, title: 'Same ref, other repo' })], otherWorkspace.id);
+    await tasks.update(otherTask[0]!.id, { isolationMode: 'worktree' });
+    const git = new FakeGit([], 'develop');
+    const coord = new EpicLifecycle(tasks, dir, git);
+
+    expect(coord.isInPlace(10, await tasks.list(), [11, 12])).toBe(true);
+
+    rmSync(otherDir, { recursive: true, force: true });
   });
 
   it('a mixed Epic cuts the branch and sets it only on the worktree member', async () => {

@@ -670,11 +670,14 @@ export class EpicLifecycle {
   /** Whether every member of `epicRef` is a mirrored Task with resolved
    * `isolationMode === 'direct'` — the sole decider of an Epic's in-place
    * status. `members`, when given, skips the (open-leaf-only) re-derivation
-   * `membersOf` would otherwise do, so a closed Epic's members are still seen. */
+   * `membersOf` would otherwise do, so a closed Epic's members are still seen.
+   * `rows` scopes to this Workspace's own `workingDir` — a tracker ref is only
+   * unique within a repo, so an unfiltered cross-Workspace `rows` list could
+   * otherwise borrow another Workspace's same-numbered issue. */
   isInPlace(epicRef: number, rows: readonly TaskRow[], members: readonly number[] = this.membersOf(epicRef)): boolean {
     if (members.length === 0) return false;
     const byRef = new Map<number, TaskRow>();
-    for (const row of rows) if (row.trackerRef != null) byRef.set(row.trackerRef, row);
+    for (const row of rows) if (row.trackerRef != null && row.workingDir === this.workingDir) byRef.set(row.trackerRef, row);
     return members.every((ref) => byRef.get(ref)?.isolationMode === 'direct');
   }
 
