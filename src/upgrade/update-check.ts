@@ -62,13 +62,16 @@ const persistedAvailability = z.object({
   dismissedVersion: z.string().nullable().optional(),
 });
 
-export interface UpdateAvailabilityState {
+type UpdatePhase =
+  | { kind: 'unarmed' }
+  | { kind: 'armed'; targetVersion: string; autoRunnerWasEnabled: boolean }
+  | { kind: 'upgrading'; targetVersion: string; autoRunnerWasEnabled: boolean };
+
+export type UpdateAvailabilityState = {
   version: string | null;
-  armedVersion: string | null;
-  upgradingVersion: string | null;
-  autoRunnerWasEnabled: boolean | null;
   dismissedVersion: string | null;
-}
+  phase: UpdatePhase;
+};
 
 export interface UpdateArmingStore extends UpdateAvailabilityStore {
   getState(): Promise<UpdateAvailabilityState>;
@@ -86,20 +89,23 @@ export class SettingsUpdateAvailabilityStore implements UpdateArmingStore {
     const row = await this.db.read((db) =>
       db.select({ value: settings.value }).from(settings).where(eq(settings.key, UPDATE_AVAILABILITY_KEY)).get(),
     );
-    if (row === undefined) return { version: null, armedVersion: null, upgradingVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null };
+    if (row === undefined) return { version: null, dismissedVersion: null, phase: { kind: 'unarmed' } };
     try {
       const parsed = persistedAvailability.safeParse(JSON.parse(row.value));
-      if (!parsed.success) return { version: null, armedVersion: null, upgradingVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null };
-      return {
+      if (!parsed.success) return { version: null, dismissedVersion: null, phase: { kind: 'unarmed' } };
+      const state = {
         version: parsed.data.version,
-        armedVersion: parsed.data.armedVersion ?? null,
-        upgradingVersion: parsed.data.upgradingVersion ?? null,
-        autoRunnerWasEnabled: parsed.data.autoRunnerWasEnabled ?? null,
         dismissedVersion: parsed.data.dismissedVersion ?? null,
       };
+      const armedVersion = parsed.data.armedVersion ?? null;
+      if (armedVersion === null) return { ...state, phase: { kind: 'unarmed' } };
+      const autoRunnerWasEnabled = parsed.data.autoRunnerWasEnabled ?? false;
+      const upgradingVersion = parsed.data.upgradingVersion;
+      if (upgradingVersion === armedVersion) return { ...state, phase: { kind: 'upgrading', targetVersion: armedVersion, autoRunnerWasEnabled } };
+      return { ...state, phase: { kind: 'armed', targetVersion: armedVersion, autoRunnerWasEnabled } };
     } catch {
       // Corrupt/legacy stored JSON degrades to "no known update" rather than crashing the update check.
-      return { version: null, armedVersion: null, upgradingVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null };
+      return { version: null, dismissedVersion: null, phase: { kind: 'unarmed' } };
     }
   }
 
@@ -109,7 +115,14 @@ export class SettingsUpdateAvailabilityStore implements UpdateArmingStore {
   }
 
   async setState(state: UpdateAvailabilityState): Promise<void> {
-    const value = JSON.stringify(state satisfies z.infer<typeof persistedAvailability>);
+    const phase = state.phase;
+    const value = JSON.stringify({
+      version: state.version,
+      dismissedVersion: state.dismissedVersion,
+      armedVersion: phase.kind === 'unarmed' ? null : phase.targetVersion,
+      upgradingVersion: phase.kind === 'upgrading' ? phase.targetVersion : null,
+      autoRunnerWasEnabled: phase.kind === 'unarmed' ? null : phase.autoRunnerWasEnabled,
+    } satisfies z.infer<typeof persistedAvailability>);
     await this.db.write((db) =>
       db
         .insert(settings)

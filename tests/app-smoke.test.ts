@@ -271,11 +271,28 @@ describe('App smoke (issue #452)', () => {
     });
 
     expect(el.textContent).toContain('Updating to v2.7.0');
-    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
     expect(el.textContent).toContain('Updating to v2.7.0');
     await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
     expect(el.textContent).not.toContain('Updating to v2.7.0');
     vi.useRealTimers();
+  });
+
+  it('polls immediately after arming so the server-reported handoff reaches the takeover', async () => {
+    const available = { availableVersion: '2.7.0', armedVersion: null, upgradingVersion: null, dismissedVersion: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } };
+    const upgrading = { ...available, armedVersion: '2.7.0', upgradingVersion: '2.7.0' };
+    const el = await renderApp({
+      authenticated: true,
+      passwordConfigured: true,
+      workspaces: [makeWorkspace()],
+      updateResponses: [available, upgrading],
+    });
+
+    const upgrade = [...el.querySelectorAll('button')].find((button) => button.textContent === 'Upgrade');
+    await act(async () => upgrade?.click());
+    await flush();
+
+    expect(el.textContent).toContain('Updating to v2.7.0');
   });
 
   it('arms and cancels an update from the banner', async () => {

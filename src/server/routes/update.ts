@@ -29,11 +29,12 @@ export async function updateRoutes(
   const app = fastify.withTypeProvider<ZodTypeProvider>();
   const response = async () => {
     const [state, idle] = await Promise.all([ctx.upgrade.state(), ctx.upgrade.idleState()]);
+    const phase = state.phase;
     return {
       currentVersion: ctx.runningVersion,
       availableVersion: state.version,
-      armedVersion: state.armedVersion,
-      upgradingVersion: state.upgradingVersion,
+      armedVersion: phase.kind === 'unarmed' ? null : phase.targetVersion,
+      upgradingVersion: phase.kind === 'upgrading' ? phase.targetVersion : null,
       dismissedVersion: state.dismissedVersion,
       idle,
     };

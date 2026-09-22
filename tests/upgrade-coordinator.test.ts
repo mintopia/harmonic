@@ -24,7 +24,7 @@ function coordinator(input: {
   onIdle?: (version: string) => Promise<void> | void;
 } = {}) {
   let config: AppConfig = { ...baselineConfig(), autoRunner: { ...baselineConfig().autoRunner, enabled: input.autoRunnerEnabled ?? true } };
-  const store = new MemoryStore({ version: input.version ?? '2.6.0', armedVersion: null, upgradingVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null });
+  const store = new MemoryStore({ version: input.version ?? '2.6.0', dismissedVersion: null, phase: { kind: 'unarmed' } });
   let runningAttempts = input.runningAttempts ?? 0;
   let conversationMidTurn = input.conversationMidTurn ?? false;
   let operations = input.operations ?? [];
@@ -63,10 +63,10 @@ describe('UpgradeCoordinator', () => {
   it('pins the offered version, turns off the master switch, and restores its prior value on cancel', async () => {
     const subject = coordinator();
 
-    await expect(subject.upgrade.arm()).resolves.toMatchObject({ armedVersion: '2.6.0', autoRunnerWasEnabled: true });
+    await expect(subject.upgrade.arm()).resolves.toMatchObject({ phase: { kind: 'armed', targetVersion: '2.6.0', autoRunnerWasEnabled: true } });
     expect(subject.config().autoRunner.enabled).toBe(false);
 
-    await expect(subject.upgrade.cancel()).resolves.toMatchObject({ armedVersion: null, autoRunnerWasEnabled: null });
+    await expect(subject.upgrade.cancel()).resolves.toMatchObject({ phase: { kind: 'unarmed' } });
     expect(subject.config().autoRunner.enabled).toBe(true);
   });
 
@@ -115,26 +115,37 @@ describe('UpgradeCoordinator', () => {
     const subject = coordinator({ onIdle: async () => { entered?.(); return handoff; } });
 
     const arm = subject.upgrade.arm();
+    await expect(arm).resolves.toMatchObject({ phase: { kind: 'armed', targetVersion: '2.6.0' } });
     await enteredHandoff;
-    await expect(subject.upgrade.state()).resolves.toMatchObject({ armedVersion: '2.6.0', upgradingVersion: '2.6.0' });
+    await expect(subject.upgrade.state()).resolves.toMatchObject({ phase: { kind: 'upgrading', targetVersion: '2.6.0' } });
 
     release?.();
-    await arm;
   });
 
   it('unarms and restores the master switch when the idle handoff fails', async () => {
     const subject = coordinator({ onIdle: () => { throw new Error('install failed'); } });
 
     await subject.upgrade.arm();
+    await subject.upgrade.reconcile();
 
     await expect(subject.upgrade.state()).resolves.toEqual({
       version: '2.6.0',
-      armedVersion: null,
-      upgradingVersion: null,
-      autoRunnerWasEnabled: null,
       dismissedVersion: null,
+      phase: { kind: 'unarmed' },
     });
     expect(subject.config().autoRunner.enabled).toBe(true);
+  });
+
+  it('does not hand off an upgrade after cancellation wins the arm race', async () => {
+    const handoffs: string[] = [];
+    const subject = coordinator({ onIdle: (version) => { handoffs.push(version); } });
+
+    await subject.upgrade.arm();
+    await subject.upgrade.cancel();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(handoffs).toEqual([]);
+    await expect(subject.upgrade.state()).resolves.toMatchObject({ phase: { kind: 'unarmed' } });
   });
 
   it('clears the arming and restores the master switch once relaunched onto the armed version', async () => {
@@ -142,7 +153,7 @@ describe('UpgradeCoordinator', () => {
     await subject.upgrade.arm();
     expect(subject.config().autoRunner.enabled).toBe(false);
 
-    await expect(subject.upgrade.complete()).resolves.toMatchObject({ armedVersion: null, upgradingVersion: null, autoRunnerWasEnabled: null });
+    await expect(subject.upgrade.complete()).resolves.toMatchObject({ phase: { kind: 'unarmed' } });
     expect(subject.config().autoRunner.enabled).toBe(true);
   });
 
@@ -150,7 +161,7 @@ describe('UpgradeCoordinator', () => {
     const subject = coordinator({ runningVersion: '2.0.0' });
     await subject.upgrade.arm();
 
-    await expect(subject.upgrade.complete()).resolves.toMatchObject({ armedVersion: '2.6.0' });
+    await expect(subject.upgrade.complete()).resolves.toMatchObject({ phase: { kind: 'armed', targetVersion: '2.6.0' } });
     expect(subject.config().autoRunner.enabled).toBe(false);
   });
 });

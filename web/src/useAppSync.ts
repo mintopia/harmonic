@@ -82,6 +82,7 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
   const [globalPausePending, setGlobalPausePending] = useState(false);
   const [update, setUpdate] = useState<UpdateState | null>(null);
   const [updatePending, setUpdatePending] = useState(false);
+  const [updatePollKey, setUpdatePollKey] = useState(0);
   const updateRequest = useRef(0);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
@@ -145,7 +146,7 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
         (next) => {
           if (!live() || request !== updateRequest.current) return;
           setUpdate(next);
-          timer = setTimeout(load, 15_000);
+          timer = setTimeout(load, next.armedVersion === null ? 15_000 : 1_000);
         },
         () => {
           if (!live() || request !== updateRequest.current) return;
@@ -155,7 +156,7 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
     };
     load();
     return () => timer !== undefined && clearTimeout(timer);
-  }, [authed, apiImpl]);
+  }, [authed, apiImpl, updatePollKey]);
 
   useLiveEffect((live) => {
     if (!authed || activeWorkspaceId === null) return;
@@ -288,7 +289,11 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
       const request = ++updateRequest.current;
       setUpdatePending(true);
       action().then(
-        (next) => request === updateRequest.current && setUpdate(next),
+        (next) => {
+          if (request !== updateRequest.current) return;
+          setUpdate(next);
+          if (next.armedVersion !== null) setUpdatePollKey((key) => key + 1);
+        },
         toastError,
       ).finally(() => setUpdatePending(false));
     },
