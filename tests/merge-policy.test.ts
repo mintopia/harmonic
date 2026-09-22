@@ -356,7 +356,7 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     await expect(Git.revParse(repo, 'MERGE_HEAD')).rejects.toThrow();
   });
 
-  it('accommodates a base advance before the CAS by rebuilding the merge on the new tip (issue #121)', async () => {
+  it('reconciles a base advance without rebuilding or re-verifying (issue #121)', async () => {
     const repo = makeRepo();
     await makeTaskBranch(repo, 'task-race', (wt) => {
       writeFileSync(join(wt, 'feature.txt'), 'feature\n');
@@ -367,52 +367,260 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     git(repo, 'commit', '-m', 'racing update');
     const racerTip = git(repo, 'rev-parse', 'HEAD');
     let raced = false;
-    const deps: MergePolicyDeps = {
-      resolveConflictTurn: neverCalled('resolveConflictTurn'),
-      runPostMergeCheck: vi.fn(async () => {
-        // The base races ahead once, under the first build; the policy must
-        // rebuild onto the new tip and merge there rather than escalating.
-        if (!raced) {
-          raced = true;
-          git(repo, 'update-ref', 'refs/heads/main', racerTip);
-        }
-        return { pass: true, output: '' };
-      }),
-      escalate: vi.fn(async () => {}),
-    };
+    const steps: MergeStepEvent[] = [];
+    const runPostMergeCheck = vi.fn(async () => {
+      if (!raced) {
+        raced = true;
+        git(repo, 'update-ref', 'refs/heads/main', racerTip);
+      }
+      return { pass: true, output: '' };
+    });
 
     const outcome = await runMergePolicy(
       { baseDir: repo, baseBranch: 'main', taskBranch: 'task-race', conflictResolveTurns: 0, postMergeCheck: true },
-      deps,
+      { resolveConflictTurn: neverCalled('resolveConflictTurn'), runPostMergeCheck, escalate: vi.fn(async () => {}), onStep: (e) => steps.push(e) },
     );
 
     expect(outcome.kind).toBe('merged');
+    expect(runPostMergeCheck).toHaveBeenCalledOnce();
+    expect(git(repo, 'rev-parse', 'main^1')).toBe(racerTip);
+    expect(git(repo, 'rev-parse', 'main^2')).toBe(git(repo, 'rev-parse', 'task-race'));
     expect(git(repo, 'ls-tree', '--name-only', 'main', 'racer.txt')).toBe('racer.txt');
     expect(git(repo, 'ls-tree', '--name-only', 'main', 'feature.txt')).toBe('feature.txt');
+    expect(steps.some((s) => s.step === 'reconciled')).toBe(true);
+    expect(steps.some((s) => s.step === 'rebuilding')).toBe(false);
   });
 
-  it('escalates target-advanced when the base keeps advancing past the retry bound', async () => {
+  it('concurrent merges both merge with no escalation', async () => {
     const repo = makeRepo();
-    await makeTaskBranch(repo, 'task-race', (wt) => {
-      writeFileSync(join(wt, 'feature.txt'), 'feature\n');
+    await makeTaskBranch(repo, 'task-concurrent-a', (wt) => writeFileSync(join(wt, 'a.txt'), 'a\n'));
+    await makeTaskBranch(repo, 'task-concurrent-b', (wt) => writeFileSync(join(wt, 'b.txt'), 'b\n'));
+
+    const postChecksA: string[] = [];
+    const postChecksB: string[] = [];
+    const escalateA = vi.fn(async () => {});
+    const escalateB = vi.fn(async () => {});
+
+    const [outcomeA, outcomeB] = await Promise.all([
+      runMergePolicy(
+        { baseDir: repo, baseBranch: 'main', taskBranch: 'task-concurrent-a', conflictResolveTurns: 0, postMergeCheck: true },
+        {
+          resolveConflictTurn: neverCalled('resolveConflictTurn'),
+          runPostMergeCheck: vi.fn(async (mergeOid) => {
+            postChecksA.push(mergeOid);
+            return { pass: true, output: '' };
+          }),
+          escalate: escalateA,
+        },
+      ),
+      runMergePolicy(
+        { baseDir: repo, baseBranch: 'main', taskBranch: 'task-concurrent-b', conflictResolveTurns: 0, postMergeCheck: true },
+        {
+          resolveConflictTurn: neverCalled('resolveConflictTurn'),
+          runPostMergeCheck: vi.fn(async (mergeOid) => {
+            postChecksB.push(mergeOid);
+            return { pass: true, output: '' };
+          }),
+          escalate: escalateB,
+        },
+      ),
+    ]);
+
+    expect(outcomeA.kind).toBe('merged');
+    expect(outcomeB.kind).toBe('merged');
+    expect(escalateA).not.toHaveBeenCalled();
+    expect(escalateB).not.toHaveBeenCalled();
+    expect(postChecksA).toHaveLength(1);
+    expect(postChecksB).toHaveLength(1);
+    expect(git(repo, 'ls-tree', '--name-only', 'main', 'a.txt')).toBe('a.txt');
+    expect(git(repo, 'ls-tree', '--name-only', 'main', 'b.txt')).toBe('b.txt');
+    expect(git(repo, 'rev-list', '--count', '--merges', '--first-parent', 'main')).toBe('2');
+  });
+
+  it('preserves an external commit that arrives in the publish window', async () => {
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-external', (wt) => writeFileSync(join(wt, 'feature.txt'), 'feature\n'));
+
+    let externalOid = '';
+    const originalCas = Git.casUpdateRef.bind(Git);
+    const casSpy = vi.spyOn(Git, 'casUpdateRef').mockImplementationOnce(async (dir, branch, newOid, expectedOld) => {
+      git(repo, 'commit', '--allow-empty', '-m', 'external commit arrives mid-publish');
+      externalOid = git(repo, 'rev-parse', 'main');
+      return originalCas(dir, branch, newOid, expectedOld);
     });
-    const deps: MergePolicyDeps = {
-      resolveConflictTurn: neverCalled('resolveConflictTurn'),
-      runPostMergeCheck: vi.fn(async () => {
-        // The base advances to a brand-new commit on every build, so the CAS can
-        // never win — the policy gives up after the bound and reports target-advanced.
-        git(repo, 'commit', '--allow-empty', '-m', `race ${Date.now()}-${Math.random()}`);
-        return { pass: true, output: '' };
-      }),
-      escalate: vi.fn(async () => {}),
-    };
+    const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
+
+    try {
+      const outcome = await runMergePolicy(
+        { baseDir: repo, baseBranch: 'main', taskBranch: 'task-external', conflictResolveTurns: 0, postMergeCheck: true },
+        { resolveConflictTurn: neverCalled('resolveConflictTurn'), runPostMergeCheck, escalate: vi.fn(async () => {}) },
+      );
+
+      expect(outcome.kind).toBe('merged');
+      expect(runPostMergeCheck).toHaveBeenCalledOnce();
+      expect(externalOid).toBeTruthy();
+      expect(() => git(repo, 'merge-base', '--is-ancestor', externalOid, 'main')).not.toThrow();
+      expect(git(repo, 'ls-tree', '--name-only', 'main', 'feature.txt')).toBe('feature.txt');
+    } finally {
+      casSpy.mockRestore();
+    }
+  });
+
+  it('escalates instead of spinning when the ref write fails for a reason other than a lost race', async () => {
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-write-fail', (wt) => writeFileSync(join(wt, 'feature.txt'), 'feature\n'));
+    const baseTip = git(repo, 'rev-parse', 'main');
+
+    const casSpy = vi.spyOn(Git, 'casUpdateRef').mockImplementation(async () => ({ ok: false, detail: 'cannot lock ref' }));
+    const escalate = vi.fn(async () => {});
+
+    try {
+      const outcome = await runMergePolicy(
+        { baseDir: repo, baseBranch: 'main', taskBranch: 'task-write-fail', conflictResolveTurns: 0, postMergeCheck: false },
+        { resolveConflictTurn: neverCalled('resolveConflictTurn'), runPostMergeCheck: neverCalled('runPostMergeCheck'), escalate },
+      );
+
+      expect(outcome).toMatchObject({ kind: 'escalated', reason: 'conflict' });
+      if (outcome.kind !== 'escalated') throw new Error('unreachable');
+      expect(outcome.message).toContain('cannot lock ref');
+      expect(escalate).toHaveBeenCalledTimes(1);
+      expect(casSpy).toHaveBeenCalledTimes(1);
+      expect(git(repo, 'rev-parse', 'main')).toBe(baseTip);
+    } finally {
+      casSpy.mockRestore();
+    }
+  });
+
+  it('rebuilds on a reconcile conflict and resolves it on the rebuild', async () => {
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-rebuild-resolve', (wt) => writeFileSync(join(wt, 'base.txt'), 'task version\n'));
+    let raced = false;
+    let racerTip = '';
+    const resolveConflictTurn = vi.fn(async (ctx) => {
+      writeFileSync(join(ctx.baseDir, 'base.txt'), 'resolved version\n');
+      git(ctx.baseDir, 'add', 'base.txt');
+    });
+    const runPostMergeCheck = vi.fn(async () => {
+      if (!raced) {
+        raced = true;
+        writeFileSync(join(repo, 'base.txt'), 'racer version\n');
+        git(repo, 'commit', '-am', 'racer edits base.txt');
+        racerTip = git(repo, 'rev-parse', 'main');
+      }
+      return { pass: true, output: '' };
+    });
+    const steps: MergeStepEvent[] = [];
 
     const outcome = await runMergePolicy(
-      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-race', conflictResolveTurns: 0, postMergeCheck: true },
-      deps,
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-rebuild-resolve', conflictResolveTurns: 1, postMergeCheck: true },
+      { resolveConflictTurn, runPostMergeCheck, escalate: vi.fn(async () => {}), onStep: (e) => steps.push(e) },
     );
 
-    expect(outcome).toMatchObject({ kind: 'escalated', reason: 'target-advanced' });
+    expect(outcome.kind).toBe('merged');
+    expect(steps.map((s) => s.step)).toEqual([
+      'started', 'post-check-passed', 'rebuilding', 'conflict', 'resolve-turn', 'post-check-passed', 'checkout-synced', 'merged',
+    ]);
+    expect(resolveConflictTurn).toHaveBeenCalledTimes(1);
+    expect(runPostMergeCheck).toHaveBeenCalledTimes(2);
+    expect(git(repo, 'rev-parse', 'main^1')).toBe(racerTip);
+  });
+
+  it('escalates a reconcile conflict that outlasts the rebuild bound', async () => {
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-rebuild-fail', (wt) => writeFileSync(join(wt, 'base.txt'), 'task version\n'));
+    let racerCount = 0;
+    const resolveConflictTurn = vi.fn(async (ctx) => {
+      writeFileSync(join(ctx.baseDir, 'base.txt'), `resolved version ${racerCount}\n`);
+      git(ctx.baseDir, 'add', 'base.txt');
+    });
+    const runPostMergeCheck = vi.fn(async () => {
+      racerCount += 1;
+      writeFileSync(join(repo, 'base.txt'), `racer version ${racerCount}\n`);
+      git(repo, 'commit', '-am', `racer edit ${racerCount}`);
+      return { pass: true, output: '' };
+    });
+    const steps: MergeStepEvent[] = [];
+
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-rebuild-fail', conflictResolveTurns: 1, postMergeCheck: true },
+      { resolveConflictTurn, runPostMergeCheck, escalate: vi.fn(async () => {}), onStep: (e) => steps.push(e) },
+    );
+
+    expect(outcome).toMatchObject({ kind: 'escalated', reason: 'conflict' });
+    if (outcome.kind !== 'escalated') throw new Error('unreachable');
+    expect(outcome.message).toMatch(/rebuilt 2 times/);
+    expect(outcome.message).not.toContain('<<<<<<<');
+    expect(steps.filter((s) => s.step === 'rebuilding')).toHaveLength(3);
+    expect(git(repo, 'log', '--merges', 'main')).toBe('');
+  });
+
+  it('falls back to rebuilding when git cannot reconcile a moved base', async () => {
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-unsupported', (wt) => writeFileSync(join(wt, 'feature.txt'), 'feature\n'));
+    git(repo, 'checkout', '-b', 'parked');
+    writeFileSync(join(repo, 'racer.txt'), 'racer\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-m', 'racing update');
+    const racerTip = git(repo, 'rev-parse', 'HEAD');
+
+    let raced = false;
+    const runPostMergeCheck = vi.fn(async () => {
+      if (!raced) {
+        raced = true;
+        git(repo, 'update-ref', 'refs/heads/main', racerTip);
+      }
+      return { pass: true, output: '' };
+    });
+    const reconcileSpy = vi.spyOn(Git, 'reconcileMerge').mockResolvedValueOnce({ ok: false, unsupported: true });
+    const steps: MergeStepEvent[] = [];
+
+    try {
+      const outcome = await runMergePolicy(
+        { baseDir: repo, baseBranch: 'main', taskBranch: 'task-unsupported', conflictResolveTurns: 0, postMergeCheck: true },
+        { resolveConflictTurn: neverCalled('resolveConflictTurn'), runPostMergeCheck, escalate: vi.fn(async () => {}), onStep: (e) => steps.push(e) },
+      );
+
+      expect(outcome.kind).toBe('merged');
+      expect(steps.some((s) => s.step === 'rebuilding')).toBe(true);
+      expect(steps.some((s) => s.step === 'reconciled')).toBe(false);
+      expect(runPostMergeCheck).toHaveBeenCalledTimes(2);
+      expect(git(repo, 'ls-tree', '--name-only', 'main', 'racer.txt')).toBe('racer.txt');
+      expect(git(repo, 'ls-tree', '--name-only', 'main', 'feature.txt')).toBe('feature.txt');
+    } finally {
+      reconcileSpy.mockRestore();
+    }
+  });
+
+  it("syncs the base checkout from the tip actually replaced, keeping the operator's dirty file", async () => {
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-sync-reconcile', (wt) => writeFileSync(join(wt, 'feature.txt'), 'feature\n'));
+    writeFileSync(join(repo, 'operator.txt'), 'operator dirty\n');
+
+    let raced = false;
+    const runPostMergeCheck = vi.fn(async () => {
+      if (!raced) {
+        raced = true;
+        writeFileSync(join(repo, 'racer.txt'), 'racer\n');
+        git(repo, 'add', 'racer.txt');
+        git(repo, 'commit', '-m', 'racer commit');
+      }
+      return { pass: true, output: '' };
+    });
+    const steps: MergeStepEvent[] = [];
+
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-sync-reconcile', conflictResolveTurns: 0, postMergeCheck: true },
+      { resolveConflictTurn: neverCalled('resolveConflictTurn'), runPostMergeCheck, escalate: vi.fn(async () => {}), onStep: (e) => steps.push(e) },
+    );
+
+    expect(outcome.kind).toBe('merged');
+    expect(readFileSync(join(repo, 'racer.txt'), 'utf8')).toBe('racer\n');
+    expect(readFileSync(join(repo, 'feature.txt'), 'utf8')).toBe('feature\n');
+    expect(readFileSync(join(repo, 'operator.txt'), 'utf8')).toBe('operator dirty\n');
+    expect(git(repo, 'status', '--porcelain')).toContain('?? operator.txt');
+    const sync = steps.find((s) => s.step === 'checkout-synced');
+    if (!sync || sync.step !== 'checkout-synced') throw new Error('no checkout-synced step emitted');
+    expect(sync.error).toBeUndefined();
   });
 
   it('does not hold the base-checkout lock while a conflict resolve turn runs', async () => {
@@ -435,6 +643,40 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     );
     expect(outcome.kind).toBe('merged');
     expect(entered).toBe(true);
+  });
+
+  it('does not hold the base-checkout lock while a resolve turn runs on a rebuild', async () => {
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-rebuild-turn-lock', (wt) => writeFileSync(join(wt, 'base.txt'), 'task version\n'));
+    let raced = false;
+    const runPostMergeCheck = vi.fn(async () => {
+      if (!raced) {
+        raced = true;
+        writeFileSync(join(repo, 'base.txt'), 'racer version\n');
+        git(repo, 'commit', '-am', 'racer edits base.txt');
+      }
+      return { pass: true, output: '' };
+    });
+    let entered = false;
+    const resolveConflictTurn = vi.fn(async (ctx) => {
+      entered = true;
+      const wt = mkdtempSync(join(tmpdir(), 'harmonic-sibling-wt-'));
+      tmpDirs.push(wt);
+      const checkout = join(wt, 'check');
+      await Git.addDetachedWorktree(repo, checkout, await Git.revParse(repo, 'main'));
+      await Git.removeWorktree(repo, checkout);
+      writeFileSync(join(ctx.baseDir, 'base.txt'), 'resolved\n');
+      git(ctx.baseDir, 'add', 'base.txt');
+    });
+
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-rebuild-turn-lock', conflictResolveTurns: 1, postMergeCheck: true },
+      { resolveConflictTurn, runPostMergeCheck, escalate: vi.fn(async () => {}) },
+    );
+
+    expect(outcome.kind).toBe('merged');
+    expect(entered).toBe(true);
+    expect(resolveConflictTurn).toHaveBeenCalledTimes(1);
   });
 
   it('drops the metadata repo lock around each agentic turn so sibling worktree ops proceed (issue #455)', async () => {

@@ -112,6 +112,20 @@ function warnOnceIfMergeTreeUnsupported(err: unknown): void {
   );
 }
 
+function isMergeTreeUnsupportedError(stderr: string): boolean {
+  return /write-tree/.test(stderr) && /unknown option|unknown switch|usage:|not a git command/i.test(stderr);
+}
+
+let warnedReconcileMergeUnsupported = false;
+function warnOnceIfReconcileMergeUnsupported(): void {
+  if (warnedReconcileMergeUnsupported) return;
+  warnedReconcileMergeUnsupported = true;
+  process.emitWarning(
+    'git is older than 2.38 (no `merge-tree --write-tree`): reconciling a moved base by rebuilding the merge instead (ADR-0040).',
+    { code: 'HARMONIC_GIT_TOO_OLD' },
+  );
+}
+
 export const Git = {
   currentBranch: (dir: string) => git(dir, 'rev-parse', '--abbrev-ref', 'HEAD'),
 
@@ -649,6 +663,53 @@ export const Git = {
     } catch (err) {
       return { ok: false, detail: err instanceof GitError ? err.message : String(err) };
     }
+  },
+
+  /**
+   * Reconcile a merge `builtOid` (built off a snapshot `builtOid^1`) onto a
+   * base that has since moved to `tipOid`, without re-running the agentic
+   * build: `git merge-tree --write-tree` treats `builtOid^1` as the merge
+   * base of `tipOid` and `builtOid`, so the resulting tree is `tipOid` plus
+   * exactly what the build changed (including any conflict resolutions
+   * already baked into `builtOid`'s tree). The new commit's parents are
+   * `tipOid` (the live base) and `builtOid^2` (the task tip) — never
+   * `builtOid` itself, which would make the discarded build an ancestor.
+   * `{ ok: false, unsupported: true }` on git < 2.38 (no `--write-tree`);
+   * `{ ok: false, paths }` on a real reconcile conflict OR a base that
+   * rewound past the build's snapshot (paths empty in the rewind case).
+   * Never throws.
+   */
+  async reconcileMerge(
+    dir: string,
+    tipOid: string,
+    builtOid: string,
+  ): Promise<{ ok: true; mergeOid: string } | { ok: false; paths: string[] } | { ok: false; unsupported: true }> {
+    return withGitOperation('git.reconcile', { 'git.ref': tipOid }, async () => {
+      const snapshotOid = await git(dir, 'rev-parse', `${builtOid}^1`);
+      if (!(await Git.isAncestor(dir, tipOid, snapshotOid))) return { ok: false, paths: [] };
+      try {
+        const { stdout } = await execFileAsync(
+          'git',
+          ['-C', dir, 'merge-tree', '--write-tree', '--name-only', '--no-messages', tipOid, builtOid],
+          { maxBuffer: 10 * 1024 * 1024, timeout: GIT_TIMEOUT_MS, killSignal: 'SIGKILL' },
+        );
+        const treeOid = stdout.split('\n', 1)[0]?.trim();
+        if (!treeOid) return { ok: false, paths: [] };
+        const taskTip = await git(dir, 'rev-parse', `${builtOid}^2`);
+        const message = await git(dir, 'log', '-1', '--format=%B', builtOid);
+        const mergeOid = await git(dir, ...IDENTITY, 'commit-tree', treeOid, '-p', tipOid, '-p', taskTip, '-m', message);
+        return { ok: true, mergeOid };
+      } catch (err: any) {
+        const stderr = String(err?.stderr ?? '');
+        if (isMergeTreeUnsupportedError(stderr)) {
+          warnOnceIfReconcileMergeUnsupported();
+          return { ok: false, unsupported: true };
+        }
+        const stdout = String(err?.stdout ?? '');
+        const paths = stdout.split('\n').slice(1).map((line) => line.trim()).filter(Boolean);
+        return { ok: false, paths };
+      }
+    });
   },
 
   /**

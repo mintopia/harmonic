@@ -19,6 +19,10 @@ review gate you accept or reject before anything merges.
 
 ## Run
 
+Needs Node.js 22+ and git — 2.38+ recommended so Harmonic can reconcile a
+moved base branch without rebuilding the merge; an older git still works, it
+just rebuilds on every base advance instead.
+
 Install it from npm once, then run it in the background — that's the
 recommended way to keep Harmonic on hand:
 

@@ -10,6 +10,10 @@ through them.
 
 ## 1. Install and start it
 
+Needs Node.js 22+ and git — 2.38+ recommended so merges can reconcile a moved
+base branch without rebuilding; an older git still works, it just rebuilds on
+every base advance instead.
+
 ```sh
 npm install -g @mintopia/harmonic
 harmonic start          # runs in the background; logs to ~/.harmonic/harmonic.log

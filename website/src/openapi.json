@@ -3453,6 +3453,57 @@
             "properties": {
               "step": {
                 "type": "string",
+                "const": "reconciled"
+              },
+              "fromBase": {
+                "type": "string"
+              },
+              "toBase": {
+                "type": "string"
+              },
+              "mergeOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "fromBase",
+              "toBase",
+              "mergeOid"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "rebuilding"
+              },
+              "fromBase": {
+                "type": "string"
+              },
+              "toBase": {
+                "type": "string"
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "step",
+              "fromBase",
+              "toBase",
+              "paths"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
                 "const": "escalated"
               },
               "reason": {
@@ -9640,6 +9691,59 @@
             "required": [
               "step",
               "baseBranch"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "reconciled"
+              },
+              "fromBase": {
+                "type": "string"
+              },
+              "toBase": {
+                "type": "string"
+              },
+              "mergeOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "fromBase",
+              "toBase",
+              "mergeOid"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "rebuilding"
+              },
+              "fromBase": {
+                "type": "string"
+              },
+              "toBase": {
+                "type": "string"
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "step",
+              "fromBase",
+              "toBase",
+              "paths"
             ],
             "additionalProperties": false
           },

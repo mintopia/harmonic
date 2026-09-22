@@ -36,4 +36,15 @@ describe('mergeStepRows', () => {
     const rows = mergeStepRows([{ step: 'completed-in-place', baseBranch: 'develop', leftBranch: 'epic/42' }]);
     expect(rows[0]).toMatchObject({ label: 'Completed in place', detail: 'develop', log: 'epic/42 left untouched; Harmonic no longer uses it', tone: 'passed' });
   });
+
+  it('shows a reconciled base advance as a passed step with the base movement short hashes', () => {
+    const rows = mergeStepRows([{ step: 'reconciled', fromBase: 'a1b2c3d4e5f6', toBase: 'b2c3d4e5f6a1', mergeOid: '7a1b2c3d4e5f60718293' }]);
+    expect(rows[0]).toMatchObject({ label: 'Reconciled onto moved base', detail: 'a1b2c3d → b2c3d4e', tone: 'passed' });
+    expect(rows[0]!.log).toContain('7a1b2c3');
+  });
+
+  it('shows a reconcile conflict as a running rebuild with the conflicting paths as the log', () => {
+    const rows = mergeStepRows([{ step: 'rebuilding', fromBase: 'a1b2c3d4e5f6', toBase: 'c3d4e5f6a1b2', paths: ['src/a.ts', 'src/b.ts'] }]);
+    expect(rows[0]).toMatchObject({ label: 'Rebuilding on moved base', detail: '2 conflicting files', log: 'src/a.ts\nsrc/b.ts', tone: 'running' });
+  });
 });

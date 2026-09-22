@@ -469,15 +469,15 @@ The Ticket-level step after a passing verdict, one policy on every path
 (ADR-0001): under an in-process mutex per Workspace repository, an ordinary merge commit of the ticket
 branch — onto the Integration branch for an Epic Member, onto develop
 otherwise — then the deterministic verify commands once on the merged base
-tip. Green releases the mutex; red reverts the merge commit and escalates. A
-textual conflict gets bounded agentic resolve-turns, then escalates. Base
-movement since the verdict is irrelevant — the merge commit reconciles the
-trees, and a verdict attaches to the Attempt, never to a SHA. There is no
-freshness gate, no SHA assertion, and no re-verification loop. When the merged
-branch is checked out in the base checkout, Harmonic brings its files forward
-path by path. It never switches that checkout's branch, overwrites the
-operator's uncommitted work, or lets a dirty checkout block the merge
-(ADR-0039).
+tip. Green releases the mutex; red discards the merge and escalates. A
+textual conflict gets bounded agentic resolve-turns, then escalates. There is
+no freshness gate and no re-verification loop: a base that moved during the
+merge is reconciled onto, never rejected, and the ref write is atomic only so
+no one's commit is overwritten (ADR-0040). A verdict attaches to the Attempt,
+never to a SHA. When the merged branch is checked out in the base checkout,
+Harmonic brings its files forward path by path. It never switches that
+checkout's branch, overwrites the operator's uncommitted work, or lets a dirty
+checkout block the merge (ADR-0039).
 _Avoid_: accept, merge gate, land (banned)
 
 ### Pause and Resume
