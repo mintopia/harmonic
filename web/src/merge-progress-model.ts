@@ -7,7 +7,7 @@ export type MergeStepEvent =
   | { step: 'post-check-passed'; mergeOid: string }
   | { step: 'reverted'; mergeOid: string; revertOid: string }
   | { step: 'merged'; mergeOid: string }
-  | { step: 'escalated'; reason: 'conflict' | 'post-merge-red'; message: string };
+  | { step: 'escalated'; reason: 'conflict' | 'post-merge-red' | 'target-advanced'; message: string };
 
 export type MergeStepTone = 'neutral' | 'running' | 'passed' | 'failed' | 'awaiting';
 
@@ -62,7 +62,7 @@ export function mergeStepRow(step: MergeStepEvent, index: number): MergeStepRow 
     case 'escalated':
       return {
         key,
-        label: step.reason === 'conflict' ? 'Escalated — merge conflict' : 'Escalated — post-merge check failed',
+        label: step.reason === 'conflict' ? 'Escalated — merge conflict' : step.reason === 'target-advanced' ? 'Escalated — base advanced' : 'Escalated — post-merge check failed',
         detail: null,
         log: step.message,
         tone: 'awaiting',

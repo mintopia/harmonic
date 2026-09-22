@@ -205,7 +205,7 @@ describe('epic-routes', () => {
         expect(git(repo, 'status', '--porcelain')).toBe(parkedStatus);
       });
 
-      it('reverts and escalates (post-merge-red) when the post-merge check fails, leaving develop green', async () => {
+      it('discards and escalates (post-merge-red) when the post-merge check fails, leaving develop unchanged', async () => {
         const runner = makeRunner();
         const before = git(repo, 'rev-parse', 'develop');
 
@@ -220,7 +220,7 @@ describe('epic-routes', () => {
 
         expect(outcome).toMatchObject({ kind: 'escalated', reason: 'post-merge-red' });
         expect(() => git(repo, 'cat-file', '-e', 'develop:epic.txt')).toThrow();
-        expect(git(repo, 'rev-parse', 'develop')).not.toBe(before);
+        expect(git(repo, 'rev-parse', 'develop')).toBe(before);
       });
 
       it('escalates (conflict) when the epic and develop conflict and resolution is disabled', async () => {
@@ -1346,7 +1346,7 @@ describe('epic-integrate-git', () => {
 
     it('escalates (with the revert recorded) when the post-merge check is red', async () => {
       const { coord, escalate } = build({
-        integrate: async () => ({ kind: 'escalated', reason: 'post-merge-red', message: 'the merge was reverted so the base stays green', revertOid: 'revert-oid' }),
+        integrate: async () => ({ kind: 'escalated', reason: 'post-merge-red', message: 'the merge was discarded and the base is unchanged' }),
       });
       const out = await coord.submit({ ref: 42, members: members('completed') });
       expect(out.status).toBe('escalated');
