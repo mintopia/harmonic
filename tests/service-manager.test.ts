@@ -236,6 +236,23 @@ describe('systemd ServiceManager', () => {
     expect(deps.calls).toContainEqual(['ln', '-sfn', 'versions/3.1.4', '/srv/harmonic/app/current']);
   });
 
+  it('reinstalls an old systemd service into the stable layout without changing data files', async () => {
+    const deps = dependencies();
+    deps.files.set('/srv/harmonic/settings.yaml', 'existing data');
+    const manager = createServiceManager(environment({ isRoot: true, systemdRunning: true }), deps);
+    const options = { startSelfManaged: vi.fn(), serve: { port: '4700', host: '0.0.0.0', dataDir: '/srv/harmonic' } };
+
+    await manager.install(options);
+    await manager.install(options);
+
+    expect(deps.files.get('/srv/harmonic/settings.yaml')).toBe('existing data');
+    expect(deps.dirs).toContain('/srv/harmonic/app/versions/2.16.0');
+    expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain(
+      'ExecStart=/usr/bin/node /srv/harmonic/app/current/dist/cli.js serve',
+    );
+    expect(deps.calls.filter(([command, action]) => command === 'systemctl' && action === 'daemon-reload')).toHaveLength(2);
+  });
+
   it('rejects a version that could escape the app versions directory', async () => {
     const deps = { ...dependencies(), currentVersion: '../outside' };
     const manager = createServiceManager(environment({ isRoot: true, systemdRunning: true }), deps);

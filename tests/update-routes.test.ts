@@ -22,6 +22,20 @@ describe('Update routes (issue #638)', () => {
     expect(res.body).toMatchObject({ currentVersion: '1.2.3', availableVersion: null });
   });
 
+  it('reports a required systemd migration and refuses to arm an update', async () => {
+    server = await startServer(undefined, {
+      distributionMode: 'packaged',
+      version: '1.0.0',
+      migrationRequired: true,
+      updateCheckLatest: async () => '1.1.0',
+    });
+
+    expect((await server.api('GET', '/api/update')).body).toMatchObject({ migrationRequired: true });
+    const arm = await server.api('POST', '/api/update/arm');
+    expect(arm.status).toBe(409);
+    expect(arm.body.error.message).toContain('Auto-upgrade is disabled until you re-run sudo harmonic install');
+  });
+
   it('POST /api/update/check finds and persists a newer version on demand', async () => {
     server = await startServer(undefined, {
       distributionMode: 'packaged',

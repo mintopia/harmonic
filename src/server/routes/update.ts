@@ -10,6 +10,7 @@ const updateStateSchema = z.object({
   availableVersion: z.string().nullable(),
   armedVersion: z.string().nullable(),
   dismissedVersion: z.string().nullable(),
+  migrationRequired: z.boolean(),
   idle: z.object({
     runningAttempts: z.number().int().nonnegative(),
     mergingOrIntegrating: z.boolean(),
@@ -27,12 +28,13 @@ export async function updateRoutes(
 ): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
   const response = async () => {
-    const [state, idle] = await Promise.all([ctx.upgrade.state(), ctx.upgrade.idleState()]);
+    const [state, idle, migrationRequired] = await Promise.all([ctx.upgrade.state(), ctx.upgrade.idleState(), ctx.upgrade.migrationRequired()]);
     return {
       currentVersion: ctx.runningVersion,
       availableVersion: state.version,
       armedVersion: state.armedVersion,
       dismissedVersion: state.dismissedVersion,
+      migrationRequired,
       idle,
     };
   };

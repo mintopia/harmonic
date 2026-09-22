@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { join } from 'node:path';
+import { isAbsolute, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './server/app.js';
 import { defaultDataDir, verifyChannelsUnconfigured } from './config.js';
@@ -13,6 +13,12 @@ import { type ServeValues } from './cli-dispatch.js';
 import { UpgradeSwap } from './upgrade/upgrade-swap.js';
 import { startOperation } from './telemetry/operations.js';
 import { displayUrl, type CliOutcome } from './cli-commands.js';
+
+export function requiresSystemdInstallMigration({ dataDir, cliPath }: { dataDir: string; cliPath: string }): boolean {
+  const current = join(dataDir, 'app', 'current');
+  const pathFromCurrent = relative(current, cliPath);
+  return pathFromCurrent === '' || pathFromCurrent.startsWith('..') || isAbsolute(pathFromCurrent);
+}
 
 const execFileAsync = promisify(execFile);
 
@@ -50,6 +56,13 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
   const dataDir = values['data-dir'] ?? defaultDataDir();
   const port = Number(values.port);
   const host = values.host!;
+  const migrationRequired = process.env.HARMONIC_MANAGED_BY === 'systemd' && requiresSystemdInstallMigration({
+    dataDir,
+    cliPath: fileURLToPath(import.meta.url),
+  });
+  if (migrationRequired) {
+    logger.warn('Auto-upgrade is disabled until you re-run sudo harmonic install; your data is untouched.');
+  }
   const holder = acquireLock(dataDir, { port, host });
   if (holder) {
     logger.error(
@@ -74,10 +87,12 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
     app = await buildApp({
       dataDir,
       password,
+      migrationRequired,
       metricsSummary: { intervalMs: telemetryOptions.metricExportIntervalMillis, flush: () => telemetry.flushMetricSummary() },
       onUpgradeIdle: async (version) => {
         const swap = new UpgradeSwap({
           ...(process.env.HARMONIC_MANAGED_BY === undefined ? {} : { managedBy: process.env.HARMONIC_MANAGED_BY }),
+          ...(migrationRequired ? { migrationRequired: true } : {}),
           install: async (target) => {
             if (process.env.HARMONIC_MANAGED_BY === 'systemd') {
               await installSystemdUpgrade({

@@ -145,6 +145,7 @@ function createUpgrade(deps: {
     attempts,
     operations: () => operationRegistry.list(),
     conversations: conversationDriver,
+    ...(opts.migrationRequired === undefined ? {} : { migrationRequired: opts.migrationRequired }),
     ...(onUpgradeIdle === undefined ? {} : { onIdle: onUpgradeIdle }),
   });
 }

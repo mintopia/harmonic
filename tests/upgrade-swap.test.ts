@@ -49,6 +49,15 @@ describe('UpgradeSwap', () => {
     ]);
   });
 
+  it('does not install or restart while a legacy systemd layout requires migration', async () => {
+    const { swap, calls, dependencies } = subject({ managedBy: 'systemd', migrationRequired: true });
+
+    await expect(swap.execute({ version: '2.6.0' })).resolves.toEqual({ kind: 'migration-required' });
+
+    expect(dependencies.install).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+  });
+
   it('keeps the relauncher for init.d', async () => {
     const { swap, dependencies } = subject({ managedBy: 'init.d' });
 

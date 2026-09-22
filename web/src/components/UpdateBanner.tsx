@@ -16,6 +16,14 @@ function isIdle(update: UpdateState): boolean {
 export function UpdateBanner({ update, pending, onArm, onCancel, onDismiss }: UpdateBannerProps) {
   if (update === null) return null;
 
+  if (update.migrationRequired) {
+    return (
+      <div role="alert" className="shrink-0 border-b border-await bg-await-tint px-6 py-2.5 text-small text-ink">
+        Auto-upgrade is disabled until you re-run <code>sudo harmonic install</code>; your data is untouched.
+      </div>
+    );
+  }
+
   if (update.armedVersion !== null) {
     if (isIdle(update)) {
       return (

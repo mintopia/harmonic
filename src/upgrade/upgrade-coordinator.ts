@@ -22,7 +22,10 @@ export interface UpgradeCoordinatorOptions {
   operations: () => readonly OperationSnapshot[];
   conversations: Pick<ConversationDriver, 'hasInFlightTurn'>;
   onIdle?: (version: string) => Promise<void> | void;
+  migrationRequired?: boolean;
 }
+
+export const SYSTEMD_MIGRATION_NOTICE = 'Auto-upgrade is disabled until you re-run sudo harmonic install; your data is untouched.';
 
 /** Durable arming state for an offered in-place upgrade. */
 export class UpgradeCoordinator {
@@ -40,6 +43,10 @@ export class UpgradeCoordinator {
     return this.exclusively(() => this.armOnce());
   }
 
+  async migrationRequired(): Promise<boolean> {
+    return this.options.migrationRequired === true;
+  }
+
   dismiss(): Promise<UpdateAvailabilityState> {
     return this.exclusively(() => this.dismissOnce());
   }
@@ -53,6 +60,7 @@ export class UpgradeCoordinator {
   }
 
   private async armOnce(): Promise<UpdateAvailabilityState> {
+    if (this.options.migrationRequired) throw new DomainError('invalid_state', SYSTEMD_MIGRATION_NOTICE);
     const current = await this.options.store.getState();
     if (current.armedVersion !== null) return current;
     if (current.version === null) throw new DomainError('invalid_state', 'there is no available update to arm');

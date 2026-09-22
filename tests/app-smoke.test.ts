@@ -120,7 +120,7 @@ function stubFetch(opts: {
   passwordConfigured: boolean;
   workspaces?: Workspace[];
   conversation?: Conversation;
-  update?: { availableVersion: string | null; armedVersion: string | null; dismissedVersion: string | null; idle: { runningAttempts: number; mergingOrIntegrating: boolean; conversationMidTurn: boolean } };
+  update?: { availableVersion: string | null; armedVersion: string | null; dismissedVersion: string | null; migrationRequired?: boolean; idle: { runningAttempts: number; mergingOrIntegrating: boolean; conversationMidTurn: boolean } };
 }) {
   const workspaces = opts.workspaces ?? [];
   let update = opts.update ?? { availableVersion: null, armedVersion: null, dismissedVersion: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } };
@@ -197,7 +197,7 @@ async function renderApp(opts: {
   passwordConfigured: boolean;
   workspaces?: Workspace[];
   conversation?: Conversation;
-  update?: { availableVersion: string | null; armedVersion: string | null; dismissedVersion: string | null; idle: { runningAttempts: number; mergingOrIntegrating: boolean; conversationMidTurn: boolean } };
+  update?: { availableVersion: string | null; armedVersion: string | null; dismissedVersion: string | null; migrationRequired?: boolean; idle: { runningAttempts: number; mergingOrIntegrating: boolean; conversationMidTurn: boolean } };
 }) {
   stubMatchMedia();
   vi.stubGlobal('WebSocket', IdleWebSocket);
@@ -225,6 +225,17 @@ describe('App smoke (issue #452)', () => {
     expect(dismiss).toBeDefined();
     await act(async () => dismiss?.click());
     expect(el.textContent).not.toContain('Version 2.7.0 is available');
+  });
+
+  it('shows the systemd migration notice', async () => {
+    const el = await renderApp({
+      authenticated: true,
+      passwordConfigured: true,
+      workspaces: [makeWorkspace()],
+      update: { availableVersion: '2.7.0', armedVersion: null, dismissedVersion: null, migrationRequired: true, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } },
+    });
+
+    expect(el.textContent).toContain('Auto-upgrade is disabled until you re-run sudo harmonic install; your data is untouched.');
   });
 
   it('shows the agent-drain notice and cancel action for an armed update', async () => {

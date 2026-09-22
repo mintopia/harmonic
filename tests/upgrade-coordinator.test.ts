@@ -22,6 +22,7 @@ function coordinator(input: {
   conversationMidTurn?: boolean;
   operations?: OperationSnapshot[];
   onIdle?: (version: string) => void;
+  migrationRequired?: boolean;
 } = {}) {
   let config: AppConfig = { ...baselineConfig(), autoRunner: { ...baselineConfig().autoRunner, enabled: input.autoRunnerEnabled ?? true } };
   const store = new MemoryStore({ version: input.version ?? '2.6.0', armedVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null });
@@ -42,6 +43,7 @@ function coordinator(input: {
     operations: () => operations,
     conversations: { hasInFlightTurn: () => conversationMidTurn },
     onIdle: input.onIdle,
+    migrationRequired: input.migrationRequired,
   });
   return {
     upgrade,
@@ -53,6 +55,16 @@ function coordinator(input: {
 }
 
 describe('UpgradeCoordinator', () => {
+  it('refuses to arm an upgrade until a legacy systemd install is migrated', async () => {
+    const subject = coordinator({ migrationRequired: true });
+
+    await expect(subject.upgrade.arm()).rejects.toThrow(
+      'Auto-upgrade is disabled until you re-run sudo harmonic install; your data is untouched.',
+    );
+    await expect(subject.upgrade.migrationRequired()).resolves.toBe(true);
+    expect(subject.config().autoRunner.enabled).toBe(true);
+  });
+
   it('dismisses only the current offered version without changing the master switch', async () => {
     const subject = coordinator();
 
