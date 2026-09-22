@@ -9,13 +9,8 @@ function within<T>(operation: Operation | undefined, work: () => Promise<T>): Pr
   return operation ? operation.run(work) : work();
 }
 
-// How many times a reconcile conflict (the moved base textually clashes with
-// the build) triggers a rebuild before escalating (ADR-0040). An ordinary
-// base advance never rebuilds at all — it reconciles under the lock.
 const MAX_RECONCILE_REBUILDS = 2;
 
-// Same bound, but generous, for the git < 2.38 fallback where every base
-// advance forces a rebuild (no worktree-free reconcile primitive available).
 const UNSUPPORTED_GIT_MAX_REBUILDS = 8;
 
 export interface ConflictResolveContext {
@@ -248,10 +243,6 @@ async function publish(input: MergePolicyInput, deps: MergePolicyDeps, mergeOid:
         });
         continue;
       }
-      // The tip didn't move, so the write failed for a reason other than a lost
-      // race (a stale lock file, a permissions error, a corrupt ref) — looping
-      // would spin forever holding the base-checkout lock. Stop and escalate;
-      // nothing was published, so the merge stays retryable.
       return { kind: 'write-failed', detail: cas.detail ?? 'update-ref failed' };
     }
 

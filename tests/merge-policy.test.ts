@@ -369,9 +369,6 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     let raced = false;
     const steps: MergeStepEvent[] = [];
     const runPostMergeCheck = vi.fn(async () => {
-      // The base races ahead once, under the build; the policy must reconcile
-      // the already-built (and already-verified) merge onto the new tip
-      // rather than rebuilding or re-verifying.
       if (!raced) {
         raced = true;
         git(repo, 'update-ref', 'refs/heads/main', racerTip);
@@ -537,8 +534,6 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
       git(ctx.baseDir, 'add', 'base.txt');
     });
     const runPostMergeCheck = vi.fn(async () => {
-      // A racer that keeps landing a conflicting edit on every build's
-      // post-check outlasts the bounded rebuild loop.
       racerCount += 1;
       writeFileSync(join(repo, 'base.txt'), `racer version ${racerCount}\n`);
       git(repo, 'commit', '-am', `racer edit ${racerCount}`);
