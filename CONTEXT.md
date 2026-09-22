@@ -198,7 +198,9 @@ it to base (a **no-op** when branch and base already match) and **closes the
 tracker issue**. An Epic whose Members are all direct-mode has no Integration
 branch and **completes in place**: once every Member is done it is recorded
 integrated (no merge commit) and its tracker issue closed, with no Epic
-Pre-Merge Verification, Epic Attempt, or Whole-Epic integrate. An Epic is a
+Pre-Merge Verification, Epic Attempt, or Whole-Epic integrate. A leftover
+`epic/<ref>` from before this rule is left untouched: never refreshed, merged,
+or retired. An Epic is a
 **container**: it neither **blocks** its children (a `Blocked by: #<epic>` edge
 is never projected — an Epic contains, it does not gate) nor **runs** (it is
 never agent-workable, so the Auto-Runner never executes the container itself).

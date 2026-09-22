@@ -75,8 +75,11 @@ Epic whose Members all run in direct mode has no Integration branch. Harmonic
 never creates, checks out, or switches a branch for it. It completes in place:
 once every Member is done it is recorded as integrated with no merge commit,
 its ticket is closed, and its timeline records the completion. It has no Epic
-Pre-Merge Verification, Epic Attempt, integration merge, or retirement. An Epic
-with worktree-mode Members keeps its Integration branch and everything above.
+Pre-Merge Verification, Epic Attempt, integration merge, or retirement. A
+pre-existing `epic/<ref>` for such an Epic is never refreshed, merged, or
+retired. Harmonic leaves it untouched, and the completion record notes it. An
+Epic with any worktree-mode Member keeps its Integration branch and everything
+above.
 
 The existing ephemeral Task-merge path in `src/execution/branch-merge.ts` is
 covered by this decision. Task and Epic integration therefore share both the
