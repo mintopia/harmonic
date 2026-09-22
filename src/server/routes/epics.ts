@@ -82,16 +82,21 @@ const mergeStepSchema = z
     z.object({ step: z.literal('post-check-passed'), mergeOid: z.string() }),
     z.object({ step: z.literal('reverted'), mergeOid: z.string(), revertOid: z.string() }),
     z.object({ step: z.literal('merged'), mergeOid: z.string() }),
+    z.object({ step: z.literal('retired'), branch: z.string(), baseBranch: z.string() }),
     z.object({ step: z.literal('escalated'), reason: z.enum(['conflict', 'post-merge-red', 'target-advanced']), message: z.string() }),
   ])
   .meta({ id: 'MergeStepEvent' });
+
+const epicTimelineEventSchema = z
+  .object({ seq: z.number().int(), at: z.number().int(), step: mergeStepSchema })
+  .meta({ id: 'EpicTimelineEvent' });
 
 const epicSchema = z
   .object({
     ref: z.number().int().meta({ example: 42 }),
     title: z.string().meta({ example: 'Parallel Epic operator UI' }),
     kind: z.enum(['map', 'spec']),
-    state: z.enum(['open', 'integrated']),
+    state: z.enum(['open', 'integrating', 'integrated']),
     description: z.string().meta({ example: 'Build the parallel-Epic operator UI …' }),
     createdAt: z.number().int().meta({ example: 1_756_000_000_000 }),
     updatedAt: z.number().int().nullable().meta({ example: 1_756_100_000_000 }),
@@ -103,6 +108,7 @@ const epicSchema = z
     verification: epicVerificationSchema,
     integrate: epicIntegrateStateSchema,
     mergeSteps: z.array(mergeStepSchema),
+    timelineEvents: z.array(epicTimelineEventSchema),
     foldedCount: z.number().int(),
     memberCount: z.number().int(),
   })

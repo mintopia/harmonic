@@ -78,6 +78,7 @@ describe('derived-rollup pagination (epics, maps)', () => {
     verification: { status: null, configured: false },
     integrate: { inFlight: false, held: null, phase: null },
     mergeSteps: [],
+    timelineEvents: [],
     foldedCount: 0,
     memberCount: 0,
   });

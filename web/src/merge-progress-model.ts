@@ -7,6 +7,7 @@ export type MergeStepEvent =
   | { step: 'post-check-passed'; mergeOid: string }
   | { step: 'reverted'; mergeOid: string; revertOid: string }
   | { step: 'merged'; mergeOid: string }
+  | { step: 'retired'; branch: string; baseBranch: string }
   | { step: 'escalated'; reason: 'conflict' | 'post-merge-red' | 'target-advanced'; message: string };
 
 export type MergeStepTone = 'neutral' | 'running' | 'passed' | 'failed' | 'awaiting';
@@ -59,6 +60,8 @@ export function mergeStepRow(step: MergeStepEvent, index: number): MergeStepRow 
       };
     case 'merged':
       return { key, label: 'Merged', detail: shortOid(step.mergeOid), log: null, tone: 'passed' };
+    case 'retired':
+      return { key, label: 'Integration branch retired', detail: step.branch, log: `Merged into ${step.baseBranch}`, tone: 'passed' };
     case 'escalated':
       return {
         key,

@@ -37,6 +37,7 @@ const noFacts: EpicFacts = {
   verification: { status: null, configured: false },
   integrate: { inFlight: false, held: null, phase: null },
   mergeSteps: [],
+  timelineEvents: [],
 };
 
 const noMeta: EpicMeta = { description: '', createdAt: 0, baseBranch: null, dependsOn: [], kind: 'spec', state: 'open' };
@@ -111,6 +112,7 @@ describe('composeEpicView', () => {
       verification: { status: null, configured: false },
       integrate: { inFlight: false, held: null, phase: null },
       mergeSteps: [],
+      timelineEvents: [],
     };
     const epic = composeEpicView(derived({ members: [], ready: [] }), new Map(), new Map(), facts, noMeta);
     expect(epic.integration).toEqual({ branch: 'epic/10', exists: false, tip: null });
@@ -126,11 +128,23 @@ describe('composeEpicView', () => {
       verification: { status: 'pass', configured: true },
       integrate: { inFlight: true, held: 'already escalated for this member state; awaiting operator or a state change', phase: null },
       mergeSteps: [],
+      timelineEvents: [],
     };
     const epic = composeEpicView(derived({ members: [], ready: [] }), new Map(), new Map(), facts, noMeta);
     expect(epic.integration).toEqual({ branch: 'epic/10', exists: true, tip: 'a1b2c3d' });
     expect(epic.verification).toEqual({ status: 'pass', configured: true });
     expect(epic.integrate).toEqual({ inFlight: true, held: expect.stringContaining('escalated'), phase: null });
+  });
+
+  it('keeps timestamped integration events for the Epic timeline', () => {
+    const facts: EpicFacts = {
+      ...noFacts,
+      timelineEvents: [{ seq: 1, at: 1_700_000_000_000, step: { step: 'retired', branch: 'epic/10', baseBranch: 'develop' } }],
+    };
+
+    const epic = composeEpicView(derived({ members: [], ready: [] }), new Map(), new Map(), facts, noMeta);
+
+    expect(epic.timelineEvents).toEqual(facts.timelineEvents);
   });
 
   it('carries ref/title from the DerivedEpic and kind from the meta record', () => {

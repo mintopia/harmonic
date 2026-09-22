@@ -1,4 +1,5 @@
 import { Git } from './git.js';
+import { withEphemeralMergeWorktree } from './ephemeral-merge-worktree.js';
 import type { MergePolicyOutcome } from './merge-policy.js';
 import { decideEpicIntegrate, reduceMemberState, type MemberMergeState } from '../domain/epic-integrate-decision.js';
 import type { VerificationDecision } from '../verification/combine.js';
@@ -126,6 +127,9 @@ export type EpicRecordIntegration = (input: {
   memberRefs: number[];
 }) => Promise<void>;
 
+/** Persist the point at which the whole-Epic verification and merge gate starts. */
+export type EpicMarkIntegrating = (epicRef: number) => Promise<void>;
+
 export type EpicIntegrateOutcome =
   | { status: 'integrated'; oid: string }
   | { status: 'blocked'; reason: string }
@@ -148,6 +152,8 @@ export class EpicCoordinator {
   private readonly onError: (msg: string) => void;
   private readonly operations: EpicOperations;
   private readonly recordIntegrationFn: EpicRecordIntegration | undefined;
+  private readonly markIntegratingFn: EpicMarkIntegrating | undefined;
+  private readonly onIntegrated: ((event: { epicRef: number }) => void) | undefined;
 
   private readonly inFlight = new Set<number>();
 
@@ -195,6 +201,10 @@ export class EpicCoordinator {
     operations?: EpicOperations;
     /** Persist the integration snapshot onto the stored Epic record; absent ⇒ nothing is recorded. */
     recordIntegration?: EpicRecordIntegration;
+    /** Persist the non-terminal integrating lifecycle state before whole-Epic verification. */
+    markIntegrating?: EpicMarkIntegrating;
+    /** Notify clients after the integrated Epic has a durable record. */
+    onIntegrated?: (event: { epicRef: number }) => void;
   }) {
     this.repoDir = deps.repoDir;
     this.git = deps.git ?? Git;
@@ -209,6 +219,8 @@ export class EpicCoordinator {
     this.onError = deps.onError ?? logger.error;
     this.operations = deps.operations ?? new EpicOperations();
     this.recordIntegrationFn = deps.recordIntegration;
+    this.markIntegratingFn = deps.markIntegrating;
+    this.onIntegrated = deps.onIntegrated;
   }
 
   /**
@@ -290,6 +302,7 @@ export class EpicCoordinator {
     }
 
     const verifiedHeadOid = await this.git.revParse(this.repoDir, branch);
+    await this.markIntegratingFn?.(target.ref);
     this.lastVerification.set(target.ref, 'pending');
     this.phaseInFlight.set(target.ref, { phase: 'verifying', since: this.now() });
     let verification: VerificationDecision;
@@ -357,7 +370,10 @@ export class EpicCoordinator {
     const recorded = await this.recordIntegrationQuietly(target, integrated.mergeOid);
 
     this.clearMergeGuards(target.ref);
-    if (recorded) await this.retireQuietly(target.ref, target.title, 'after integrate');
+    if (recorded) {
+      this.onIntegrated?.({ epicRef: target.ref });
+      await this.retireQuietly(target.ref, target.title, 'after integrate');
+    }
     this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
     return { status: 'integrated', oid: integrated.mergeOid };
   }
@@ -437,7 +453,10 @@ export class EpicCoordinator {
     const tip = await this.git.revParse(this.repoDir, branch);
     this.settledEscalated.delete(target.ref);
     const recorded = await this.recordIntegrationQuietly(target, null);
-    if (recorded) await this.retireQuietly(target.ref, target.title, 'already-contained');
+    if (recorded) {
+      this.onIntegrated?.({ epicRef: target.ref });
+      await this.retireQuietly(target.ref, target.title, 'already-contained');
+    }
     this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
     return { status: 'integrated', oid: tip };
   }
@@ -552,11 +571,12 @@ export class EpicLifecycle {
   private leafEpicRefs = new Set<number>();
   private latestTickets: Ticket[] = [];
   private operations = new EpicOperations();
+  private onIntegrationBranchRetired: ((event: { epicRef: number; branch: string; baseBranch: string }) => Promise<void>) | undefined;
 
   constructor(
     private readonly tasks: TaskService,
     private readonly workingDir: string,
-    private readonly git: Pick<EpicGit, 'symbolicBranch' | 'branchExists' | 'createBranch' | 'deleteBranch' | 'branchCheckedOutAt' | 'isAncestor'> = Git,
+    private readonly git: Pick<EpicGit, 'symbolicBranch' | 'branchExists' | 'revParse' | 'createBranch' | 'deleteBranch' | 'branchCheckedOutAt' | 'isAncestor'> = Git,
     private readonly onError: (msg: string) => void = logger.error,
     private epicIntegrate?: EpicIntegrateTrigger,
     private epicRefresh?: EpicRefreshTrigger,
@@ -572,6 +592,10 @@ export class EpicLifecycle {
 
   attachOperations(operations: EpicOperations): void {
     this.operations = operations;
+  }
+
+  attachIntegrationBranchRetired(listener: (event: { epicRef: number; branch: string; baseBranch: string }) => Promise<void>): void {
+    this.onIntegrationBranchRetired = listener;
   }
 
   async refreshAfterDefaultBranchAdvance(defaultBranch: string): Promise<void> {
@@ -736,12 +760,36 @@ export class EpicLifecycle {
     await this.git.createBranch(this.workingDir, branch, defaultBranch);
   }
 
-  async retireIntegrationBranch(epicRef: number): Promise<void> {
+  async retireIntegrationBranch(epicRef: number): Promise<boolean> {
     const branch = integrationBranchName(epicRef);
     const defaultBranch = await this.git.symbolicBranch(this.workingDir);
-    if (defaultBranch === null || !(await this.git.branchExists(this.workingDir, branch))) return;
-    if ((await this.git.branchCheckedOutAt(this.workingDir, branch)) !== null) return;
-    if (!(await this.git.isAncestor(this.workingDir, defaultBranch, branch))) return;
-    await this.git.deleteBranch(this.workingDir, branch);
+    if (defaultBranch === null || !(await this.git.branchExists(this.workingDir, branch))) return false;
+    if ((await this.git.branchCheckedOutAt(this.workingDir, branch)) !== null) return false;
+    if (!(await this.git.isAncestor(this.workingDir, defaultBranch, branch))) return false;
+    const baseTipOid = await this.git.revParse(this.workingDir, defaultBranch);
+    let retired = false;
+    await withEphemeralMergeWorktree(
+      {
+        repoDir: this.workingDir,
+        baseTipOid,
+        onRemoveError: ({ error, worktreeDir }) => {
+          logger.warn('epic: removing the retirement worktree failed', {
+            'epic.ref': epicRef,
+            'epic.worktree': worktreeDir,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        },
+      },
+      async (worktreeDir) => {
+        if (!(await this.git.branchExists(worktreeDir, branch))) return;
+        if ((await this.git.branchCheckedOutAt(worktreeDir, branch)) !== null) return;
+        if (!(await this.git.isAncestor(worktreeDir, defaultBranch, branch))) return;
+        await this.git.deleteBranch(worktreeDir, branch);
+        retired = true;
+      },
+    );
+    if (!retired) return false;
+    await this.onIntegrationBranchRetired?.({ epicRef, branch, baseBranch: defaultBranch });
+    return true;
   }
 }

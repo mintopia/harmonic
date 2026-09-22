@@ -22,6 +22,7 @@ function epic(overrides: Partial<Epic> = {}): Epic {
     verification: { status: 'pass', configured: true },
     integrate: { inFlight: false, held: null },
     mergeSteps: [],
+    timelineEvents: [],
     foldedCount: 2,
     memberCount: 2,
     ...overrides,
@@ -29,6 +30,19 @@ function epic(overrides: Partial<Epic> = {}): Epic {
 }
 
 describe('EpicBand whole-Epic integration progress (issue #424)', () => {
+  it('renders an integrating lifecycle Epic as a visible board band', () => {
+    const html = renderToStaticMarkup(
+      createElement(EpicBand, {
+        epic: epic({ state: 'integrating' }),
+        columns: [],
+        onOpenTask: () => {},
+      }),
+    );
+
+    expect(html).toContain('bg-running-tint text-running">integrating</span>');
+    expect(html).toContain('Post-merge check');
+  });
+
   it("makes the main-board band's content the shared integration bar while the Epic is integrating", () => {
     const html = renderToStaticMarkup(
       createElement(EpicBand, {

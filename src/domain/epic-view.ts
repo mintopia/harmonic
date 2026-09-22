@@ -47,12 +47,18 @@ export interface EpicIntegrateState {
   phase: { phase: 'verifying' | 'merging'; sinceMs: number } | null;
 }
 
+export interface EpicTimelineEvent {
+  seq: number;
+  at: number;
+  step: MergeStepEvent;
+}
+
 export interface Epic {
   ref: number;
   title: string;
   kind: 'map' | 'spec';
-  /** Lifecycle from the stored record: `integrated` once the whole-Epic gate finished. */
-  state: 'open' | 'integrated';
+  /** Lifecycle from the stored record. */
+  state: 'open' | 'integrating' | 'integrated';
   /** The Epic container ticket's body — the summary page's description. */
   description: string;
   /** Epic container ticket creation time (ms). */
@@ -73,6 +79,7 @@ export interface Epic {
   integrate: EpicIntegrateState;
   /** Steps of the current integration merge, in order; empty until an integration runs. */
   mergeSteps: MergeStepEvent[];
+  timelineEvents: EpicTimelineEvent[];
   /** Members with `mergeStatus === 'completed'`. */
   foldedCount: number;
   memberCount: number;
@@ -86,7 +93,7 @@ export interface EpicMeta {
   baseBranch: string | null;
   dependsOn: number[];
   kind: 'map' | 'spec';
-  state: 'open' | 'integrated';
+  state: 'open' | 'integrating' | 'integrated';
 }
 
 /** The server-only facts the impure accessor gathers (git branch/tip,
@@ -96,6 +103,7 @@ export interface EpicFacts {
   verification: EpicVerification;
   integrate: EpicIntegrateState;
   mergeSteps: MergeStepEvent[];
+  timelineEvents: EpicTimelineEvent[];
 }
 
 /**
@@ -146,6 +154,7 @@ export function composeEpicView(
     verification: facts.verification,
     integrate: facts.integrate,
     mergeSteps: facts.mergeSteps,
+    timelineEvents: facts.timelineEvents,
     foldedCount: members.filter((m) => m.mergeStatus === 'completed').length,
     memberCount: members.length,
   };

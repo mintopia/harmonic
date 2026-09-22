@@ -21,4 +21,9 @@ describe('mergeStepRows', () => {
     expect(rows[0]).toMatchObject({ label: 'Reverted to keep base green', detail: 'bbbbbbb', tone: 'failed' });
     expect(rows[0]!.log).toContain('reverted as bbbbbbb');
   });
+
+  it('records the retired integration branch in the timeline', () => {
+    const rows = mergeStepRows([{ step: 'retired', branch: 'epic/42', baseBranch: 'develop' }]);
+    expect(rows[0]).toMatchObject({ label: 'Integration branch retired', detail: 'epic/42', tone: 'passed' });
+  });
 });

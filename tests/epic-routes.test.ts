@@ -521,6 +521,7 @@ describe('epic-routes', () => {
         verification: { status: null, configured: false },
         integrate: { inFlight: false, held: null, phase: null },
         mergeSteps: [],
+        timelineEvents: [],
         foldedCount: 1,
         memberCount: 2,
         ...over,
@@ -1179,6 +1180,7 @@ describe('epic-integrate-git', () => {
     now?: () => number;
     verifyBackoffMs?: number;
     operationTimeoutMs?: number;
+    onIntegrated?: (event: { epicRef: number }) => void;
   } = {}) => {
     const git = opts.git ?? new FakeGit();
     const verify = vi.fn<VerifyFn>(opts.verify ?? (async () => proceed));
@@ -1186,8 +1188,10 @@ describe('epic-integrate-git', () => {
     const integrate = vi.fn<EpicIntegrate>(opts.integrate ?? (async () => merged()));
     const retire = vi.fn(async (_ref: number) => {});
     const escalate = vi.fn<(epicRef: number, reason: string) => void>();
+    const markIntegrating = vi.fn(async (_epicRef: number) => {});
     const recordIntegration = vi.fn(async (_input: { epicRef: number; mergeCommit: string | null; memberRefs: number[] }) => {});
     const onError = vi.fn<(msg: string) => void>();
+    const onIntegrated = vi.fn<(event: { epicRef: number }) => void>(opts.onIntegrated);
     let t = 0;
     const coord = new EpicCoordinator({
       repoDir: '/repo',
@@ -1200,10 +1204,12 @@ describe('epic-integrate-git', () => {
       now: opts.now ?? (() => (t += 600_000)),
       ...(opts.verifyBackoffMs !== undefined ? { verifyBackoffMs: opts.verifyBackoffMs } : {}),
       ...(opts.operationTimeoutMs !== undefined ? { operationTimeoutMs: opts.operationTimeoutMs } : {}),
+      markIntegrating,
       recordIntegration,
+      onIntegrated,
       onError,
     });
-    return { coord, git, verify, resolve, integrate, retire, escalate, recordIntegration, onError };
+    return { coord, git, verify, resolve, integrate, retire, escalate, markIntegrating, recordIntegration, onIntegrated, onError };
   };
 
   const members = (...m: MemberMergeState[]): MemberMergeState[] => m;
@@ -1244,11 +1250,33 @@ describe('epic-integrate-git', () => {
       expect(escalate).not.toHaveBeenCalled();
     });
 
+    it('persists integrating before whole-Epic verification begins', async () => {
+      const { coord, markIntegrating, verify } = build();
+      await coord.submit({ ref: 42, members: members('completed') });
+      expect(markIntegrating).toHaveBeenCalledWith(42);
+      expect(markIntegrating).toHaveBeenCalledBefore(verify);
+    });
+
     it('records the real merge-commit + member snapshot on a successful integrate (#438)', async () => {
       const { coord, recordIntegration } = build();
       const out = await coord.submit({ ref: 42, members: members('completed', 'completed'), memberRefs: [11, 12] });
       expect(out).toEqual({ status: 'integrated', oid: 'integrated-oid' });
       expect(recordIntegration).toHaveBeenCalledWith({ epicRef: 42, mergeCommit: 'integrated-oid', memberRefs: [11, 12] });
+    });
+
+    it('notifies clients only after recording the integrated Epic', async () => {
+      const order: string[] = [];
+      const { coord, recordIntegration, onIntegrated } = build({
+        onIntegrated: () => order.push('notified'),
+      });
+      recordIntegration.mockImplementationOnce(async () => {
+        order.push('recorded');
+      });
+
+      await coord.submit({ ref: 42, members: members('completed') });
+
+      expect(onIntegrated).toHaveBeenCalledWith({ epicRef: 42 });
+      expect(order).toEqual(['recorded', 'notified']);
     });
 
     it('records a null merge-commit (no-op) when the branch is already contained in base (#438)', async () => {

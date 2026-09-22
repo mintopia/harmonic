@@ -428,8 +428,8 @@ export type TrackerContainerRow = typeof trackerContainers.$inferSelect;
 export const STORED_EPIC_KINDS = ['map', 'spec', 'epic'] as const;
 export type StoredEpicKind = (typeof STORED_EPIC_KINDS)[number];
 
-/** `open` while the Epic is live; `integrated` once its branch is merged to base (or a no-op finish settles it). */
-export const EPIC_LIFECYCLE_STATES = ['open', 'integrated'] as const;
+/** `open` while members are working; `integrating` during the whole-Epic gate; `integrated` once its branch reaches base. */
+export const EPIC_LIFECYCLE_STATES = ['open', 'integrating', 'integrated'] as const;
 export type EpicLifecycleState = (typeof EPIC_LIFECYCLE_STATES)[number];
 
 /** The leaf-most Epic as a stored resource, keyed `(workspaceId, trackerRef)`; survives the tracker issue closing, removed only on Dismiss. `mergeCommit`/`memberRefs` are null while live. */
