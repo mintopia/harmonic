@@ -11,6 +11,7 @@ import { logger } from './logger.js';
 import { installProcessSafetyNet } from './reliability/process-safety-net.js';
 import { type ServeValues } from './cli-dispatch.js';
 import { UpgradeSwap } from './upgrade/upgrade-swap.js';
+import { SYSTEMD_MIGRATION_NOTICE } from './upgrade/upgrade-coordinator.js';
 import { startOperation } from './telemetry/operations.js';
 import { displayUrl, type CliOutcome } from './cli-commands.js';
 
@@ -19,6 +20,22 @@ export function requiresSystemdInstallMigration({ managedBy, dataDir, cliPath }:
   const current = join(dataDir, 'app', 'current');
   const pathFromCurrent = relative(current, cliPath);
   return pathFromCurrent === '' || pathFromCurrent.startsWith('..') || isAbsolute(pathFromCurrent);
+}
+
+export function detectSystemdInstallMigration({
+  managedBy,
+  dataDir,
+  cliPath,
+  warn,
+}: {
+  managedBy: string | undefined;
+  dataDir: string;
+  cliPath: string;
+  warn: (message: string) => void;
+}): boolean {
+  const migrationRequired = requiresSystemdInstallMigration({ managedBy, dataDir, cliPath });
+  if (migrationRequired) warn(SYSTEMD_MIGRATION_NOTICE);
+  return migrationRequired;
 }
 
 const execFileAsync = promisify(execFile);
@@ -57,14 +74,12 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
   const dataDir = values['data-dir'] ?? defaultDataDir();
   const port = Number(values.port);
   const host = values.host!;
-  const migrationRequired = requiresSystemdInstallMigration({
+  const migrationRequired = detectSystemdInstallMigration({
     managedBy: process.env.HARMONIC_MANAGED_BY,
     dataDir,
     cliPath: process.argv[1] ?? fileURLToPath(import.meta.url),
+    warn: logger.warn,
   });
-  if (migrationRequired) {
-    logger.warn('Auto-upgrade is disabled until you re-run sudo harmonic install; your data is untouched.');
-  }
   const holder = acquireLock(dataDir, { port, host });
   if (holder) {
     logger.error(
