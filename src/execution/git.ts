@@ -153,7 +153,7 @@ export const Git = {
 
   /** Paths whose working-tree changes a forced cleanup would discard. */
   async dirtyFiles(dir: string): Promise<string[]> {
-    const records = (await git(dir, 'status', '--porcelain', '-z')).split('\0');
+    const records = (await gitUntrimmed(dir, ['status', '--porcelain', '-z'])).split('\0');
     const files: string[] = [];
     for (let index = 0; index < records.length - 1; index += 1) {
       const record = records[index]!;
