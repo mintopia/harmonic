@@ -232,6 +232,7 @@ describe('boardSections — Attention / Running / Paused / Pending', () => {
 
   it('keeps a fully-folded, actively-integrating Epic on the board with an empty band', () => {
     const integrating = epic(70, [member(1, 701, { mergeStatus: 'completed', state: 'done' })], {
+      state: 'integrating',
       integrate: { inFlight: true, held: null },
     });
     const sections = boardSections([task(701, 'done')], [integrating]);

@@ -126,6 +126,9 @@ export type EpicRecordIntegration = (input: {
   memberRefs: number[];
 }) => Promise<void>;
 
+/** Persist the point at which the whole-Epic verification and merge gate starts. */
+export type EpicMarkIntegrating = (epicRef: number) => Promise<void>;
+
 export type EpicIntegrateOutcome =
   | { status: 'integrated'; oid: string }
   | { status: 'blocked'; reason: string }
@@ -148,6 +151,7 @@ export class EpicCoordinator {
   private readonly onError: (msg: string) => void;
   private readonly operations: EpicOperations;
   private readonly recordIntegrationFn: EpicRecordIntegration | undefined;
+  private readonly markIntegratingFn: EpicMarkIntegrating | undefined;
 
   private readonly inFlight = new Set<number>();
 
@@ -195,6 +199,8 @@ export class EpicCoordinator {
     operations?: EpicOperations;
     /** Persist the integration snapshot onto the stored Epic record; absent ⇒ nothing is recorded. */
     recordIntegration?: EpicRecordIntegration;
+    /** Persist the non-terminal integrating lifecycle state before whole-Epic verification. */
+    markIntegrating?: EpicMarkIntegrating;
   }) {
     this.repoDir = deps.repoDir;
     this.git = deps.git ?? Git;
@@ -209,6 +215,7 @@ export class EpicCoordinator {
     this.onError = deps.onError ?? logger.error;
     this.operations = deps.operations ?? new EpicOperations();
     this.recordIntegrationFn = deps.recordIntegration;
+    this.markIntegratingFn = deps.markIntegrating;
   }
 
   /**
@@ -290,6 +297,7 @@ export class EpicCoordinator {
     }
 
     const verifiedHeadOid = await this.git.revParse(this.repoDir, branch);
+    await this.markIntegratingFn?.(target.ref);
     this.lastVerification.set(target.ref, 'pending');
     this.phaseInFlight.set(target.ref, { phase: 'verifying', since: this.now() });
     let verification: VerificationDecision;

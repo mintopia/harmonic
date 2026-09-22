@@ -91,7 +91,7 @@ const epicSchema = z
     ref: z.number().int().meta({ example: 42 }),
     title: z.string().meta({ example: 'Parallel Epic operator UI' }),
     kind: z.enum(['map', 'spec']),
-    state: z.enum(['open', 'integrated']),
+    state: z.enum(['open', 'integrating', 'integrated']),
     description: z.string().meta({ example: 'Build the parallel-Epic operator UI …' }),
     createdAt: z.number().int().meta({ example: 1_756_000_000_000 }),
     updatedAt: z.number().int().nullable().meta({ example: 1_756_100_000_000 }),
