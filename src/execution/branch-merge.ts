@@ -143,7 +143,7 @@ async function mergeIntoBaseUnchecked(args: MergeIntoBaseArgs): Promise<MergeInt
         const merged = await Git.mergeNoEdit(adminPath, expectedOid);
         return merged.ok
           ? { kind: 'merged', oid: await Git.revParse(adminPath, 'HEAD') }
-          : { kind: 'conflict', detail: merged.detail };
+          : { kind: 'conflict', ...(merged.detail === undefined ? {} : { detail: merged.detail }) };
       },
     );
     if (mergeResult.kind === 'conflict') {
