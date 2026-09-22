@@ -502,6 +502,7 @@ function ChildTasksTable({
 
 const PHASE_WORD: Record<EpicStage['key'], string> = {
   build: 'building',
+  complete: 'completing',
   verify: 'verifying',
   merge: 'merging',
   check: 'checking',
@@ -661,7 +662,7 @@ export function EpicPage({
 
   const title = epic?.title || `Epic ${epicRef}`;
   const selectedFile = selection.kind === 'file' ? selection.path : null;
-  const showChanges = selection.kind === 'file' || selection.kind === 'changes';
+  const showChanges = !epic?.inPlace && (selection.kind === 'file' || selection.kind === 'changes');
   const rejectEpic = async (continuation: 'continue' | 'fresh') => {
     if (!guidance.trim()) return;
     setRejecting(true);
@@ -690,7 +691,9 @@ export function EpicPage({
           <div className="px-[30px]">
             <div className="flex flex-wrap items-start gap-2.5 pb-1 pt-7">
               <span className={`${chip} shrink-0 bg-accent-tint text-accent`}>Epic</span>
-              <span className="mt-1 shrink-0 font-data text-[12.5px] text-muted max-md:mt-0.5">epic/{epicRef}</span>
+              <span className="mt-1 shrink-0 font-data text-[12.5px] text-muted max-md:mt-0.5">
+                {epic?.inPlace ? `direct · in place on ${epic.baseBranch ?? 'base'}` : `epic/${epicRef}`}
+              </span>
               <h1 className="max-w-[680px] flex-1 text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em] max-md:order-last max-md:basis-full max-md:text-[22px]">{cardTitle(title)}</h1>
               {epic && <span className="mt-1.5 max-md:mt-0"><EpicLifecycleChip epic={epic} /></span>}
             </div>
@@ -757,7 +760,7 @@ export function EpicPage({
                   </div>
 
                   <div className="mb-8">
-                    {epic && <EpicVerificationStages epic={epic} />}
+                    {epic && !epic.inPlace && <EpicVerificationStages epic={epic} />}
                     {epicAttempts ? (
                       <EpicAttemptsTimeline attempts={epicAttempts} />
                     ) : (
@@ -789,15 +792,17 @@ export function EpicPage({
               selected={!showChanges}
               onSelect={() => onSelect(NO_SELECTION)}
             />
-            <section className="px-3.5 py-3.5" aria-label="Changed files">
-              <ChangedFilesNav
-                files={diffFiles ?? []}
-                selectedFile={selectedFile}
-                onSelectFile={(path) => onSelect({ kind: 'file', path })}
-                onSelectChanges={() => onSelect({ kind: 'changes' })}
-                emptyCopy={diffFailed ? 'Couldn’t load changes.' : diffFiles === null ? 'Loading changes…' : 'No changed files.'}
-              />
-            </section>
+            {!epic?.inPlace && (
+              <section className="px-3.5 py-3.5" aria-label="Changed files">
+                <ChangedFilesNav
+                  files={diffFiles ?? []}
+                  selectedFile={selectedFile}
+                  onSelectFile={(path) => onSelect({ kind: 'file', path })}
+                  onSelectChanges={() => onSelect({ kind: 'changes' })}
+                  emptyCopy={diffFailed ? 'Couldn’t load changes.' : diffFiles === null ? 'Loading changes…' : 'No changed files.'}
+                />
+              </section>
+            )}
           </div>
         </aside>
       </div>

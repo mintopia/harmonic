@@ -81,6 +81,7 @@ describe('derived-rollup pagination (epics, maps)', () => {
     timelineEvents: [],
     foldedCount: 0,
     memberCount: 0,
+    inPlace: false,
   });
 
   const map = (ref: number, workspaceId: number, title = `Map ${ref}`): DerivedMap => ({

@@ -1,6 +1,7 @@
 import { Git } from './git.js';
 import { withEphemeralMergeWorktree } from './ephemeral-merge-worktree.js';
 import { withBaseCheckoutLock } from './repo-lock.js';
+import { captureDirtyPaths, syncBaseCheckout } from './base-checkout-sync.js';
 import { startActiveChildOperation, type Operation } from '../telemetry/operations.js';
 import { logger } from '../logger.js';
 
@@ -50,7 +51,9 @@ export type MergeStepEvent =
   | { step: 'post-check-passed'; mergeOid: string }
   | { step: 'reverted'; mergeOid: string; revertOid: string }
   | { step: 'merged'; mergeOid: string }
+  | { step: 'checkout-synced'; mergeOid: string; mergedPaths: string[]; keptPaths: string[]; error?: string }
   | { step: 'retired'; branch: string; baseBranch: string }
+  | { step: 'completed-in-place'; baseBranch: string; leftBranch?: string }
   | { step: 'escalated'; reason: 'conflict' | 'post-merge-red' | 'target-advanced'; message: string };
 
 function emitStep(deps: MergePolicyDeps, event: MergeStepEvent): void {
@@ -215,16 +218,23 @@ async function mergeUnderLock(input: MergePolicyInput, deps: MergePolicyDeps): P
       const holdOp = startActiveChildOperation('merge.lock-hold', { 'merge.repo': input.baseDir });
       try {
         return await within(holdOp, async () => {
-          // Capture the base checkout's cleanliness BEFORE the ref moves — once
-          // casUpdateRef advances the branch, a clean tree that still reflects the
-          // old tip looks "dirty" (phantom deletions).
           const checkoutDir = await Git.branchCheckedOutAt(input.baseDir, input.baseBranch);
-          const checkoutClean = checkoutDir !== null && !(await Git.isDirty(checkoutDir));
+          const dirtyPaths = checkoutDir !== null ? await captureDirtyPaths(checkoutDir) : null;
           const result = await Git.casUpdateRef(input.baseDir, input.baseBranch, outcome.mergeOid, expectedBaseOid);
-          // Fast-forward a clean checkout to the merged tip so the operator never
-          // sees an invisible half-merge (#696); a dirty checkout is left untouched
-          // to preserve their uncommitted work (ADR-0001).
-          if (result.ok && checkoutClean) await Git.checkoutForce(checkoutDir!, input.baseBranch);
+          if (result.ok && checkoutDir !== null) {
+            try {
+              const sync = await syncBaseCheckout(checkoutDir, dirtyPaths!, expectedBaseOid, outcome.mergeOid);
+              emitStep(deps, { step: 'checkout-synced', mergeOid: outcome.mergeOid, mergedPaths: sync.mergedPaths, keptPaths: sync.keptPaths });
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              logger.warn('merge: syncing the base checkout after a successful merge failed', {
+                'merge.repo': input.baseDir,
+                'merge.oid': outcome.mergeOid,
+                error: message,
+              });
+              emitStep(deps, { step: 'checkout-synced', mergeOid: outcome.mergeOid, mergedPaths: [], keptPaths: [], error: message });
+            }
+          }
           return result;
         });
       } finally {

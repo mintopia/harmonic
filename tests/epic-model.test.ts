@@ -9,6 +9,7 @@ const member = (overrides: Partial<EpicMember> & { ref: number }): EpicMember =>
   escalated: false,
   mergeStatus: 'pending',
   ready: false,
+  isolationMode: 'worktree',
   ...overrides,
 });
 
@@ -33,6 +34,7 @@ const epic = (overrides: Partial<Epic> = {}): Epic => {
     timelineEvents: [],
     foldedCount: members.filter((m) => m.mergeStatus === 'completed').length,
     memberCount: members.length,
+    inPlace: false,
     ...overrides,
   };
 };
@@ -298,6 +300,12 @@ describe('isEpicIntegrating', () => {
     const e = epic({ members: [], integrate: { inFlight: false, held: null } });
     expect(isEpicIntegrating(e)).toBe(false);
   });
+
+  it('is false for an in-place Epic even with every member folded (no gate to show)', () => {
+    const m1 = member({ ref: 1, mergeStatus: 'completed', isolationMode: 'direct' });
+    const e = epic({ members: [m1], inPlace: true });
+    expect(isEpicIntegrating(e)).toBe(false);
+  });
 });
 
 describe('integrationSteps', () => {
@@ -370,6 +378,24 @@ describe('finished (integrated) epics', () => {
     );
     expect(steps.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done', 'done']);
     expect(steps.find((s) => s.key === 'verify')?.sublabel).toBe('passed');
+  });
+});
+
+describe('epicLifecycleSteps for an in-place Epic', () => {
+  it('stages just build + complete, sublabelled with the base branch', () => {
+    const m1 = member({ ref: 1, mergeStatus: 'pending', isolationMode: 'direct' });
+    const e = epic({ members: [m1], inPlace: true, baseBranch: 'develop' });
+    const steps = epicLifecycleSteps(e);
+    expect(steps.map((s) => s.key)).toEqual(['build', 'complete']);
+    expect(steps.find((s) => s.key === 'build')).toMatchObject({ label: 'Build', sublabel: '0/1 done' });
+    expect(steps.find((s) => s.key === 'complete')).toMatchObject({ label: 'Done', sublabel: 'committed on develop', state: 'pending' });
+  });
+
+  it('marks both stages done once integrated', () => {
+    const m1 = member({ ref: 1, mergeStatus: 'completed', isolationMode: 'direct' });
+    const e = epic({ members: [m1], inPlace: true, baseBranch: 'develop', state: 'integrated', foldedCount: 1, memberCount: 1 });
+    const steps = epicLifecycleSteps(e);
+    expect(steps.map((s) => s.state)).toEqual(['done', 'done']);
   });
 });
 

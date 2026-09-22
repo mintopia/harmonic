@@ -15,6 +15,7 @@ function member(overrides: Partial<EpicMember> = {}): EpicMember {
     escalated: false,
     mergeStatus: 'completed',
     ready: false,
+    isolationMode: 'worktree',
     ...overrides,
   };
 }
@@ -44,6 +45,7 @@ function epic(overrides: Partial<Epic> = {}): Epic {
     timelineEvents: [],
     foldedCount: 1,
     memberCount: 2,
+    inPlace: false,
     ...overrides,
   };
 }

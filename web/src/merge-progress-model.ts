@@ -7,7 +7,9 @@ export type MergeStepEvent =
   | { step: 'post-check-passed'; mergeOid: string }
   | { step: 'reverted'; mergeOid: string; revertOid: string }
   | { step: 'merged'; mergeOid: string }
+  | { step: 'checkout-synced'; mergeOid: string; mergedPaths: string[]; keptPaths: string[]; error?: string }
   | { step: 'retired'; branch: string; baseBranch: string }
+  | { step: 'completed-in-place'; baseBranch: string; leftBranch?: string }
   | { step: 'escalated'; reason: 'conflict' | 'post-merge-red' | 'target-advanced'; message: string };
 
 export type MergeStepTone = 'neutral' | 'running' | 'passed' | 'failed' | 'awaiting';
@@ -60,8 +62,34 @@ export function mergeStepRow(step: MergeStepEvent, index: number): MergeStepRow 
       };
     case 'merged':
       return { key, label: 'Merged', detail: shortOid(step.mergeOid), log: null, tone: 'passed' };
+    case 'checkout-synced': {
+      if (step.error) {
+        return { key, label: 'Checkout sync failed', detail: null, log: step.error, tone: 'failed' };
+      }
+      const detailParts: string[] = [];
+      if (step.mergedPaths.length > 0) detailParts.push(step.mergedPaths.length === 1 ? '1 file merged' : `${step.mergedPaths.length} files merged`);
+      if (step.keptPaths.length > 0) {
+        detailParts.push(step.keptPaths.length === 1 ? '1 file kept your local version — reconcile it' : `${step.keptPaths.length} files kept your local version — reconcile them`);
+      }
+      const log = step.mergedPaths.length + step.keptPaths.length > 0 ? [...step.mergedPaths.map((p) => `merged: ${p}`), ...step.keptPaths.map((p) => `kept: ${p}`)].join('\n') : null;
+      return {
+        key,
+        label: 'Checkout synced',
+        detail: detailParts.length > 0 ? detailParts.join(', ') : 'no local changes to reconcile',
+        log,
+        tone: step.keptPaths.length > 0 ? 'awaiting' : 'passed',
+      };
+    }
     case 'retired':
       return { key, label: 'Integration branch retired', detail: step.branch, log: `Merged into ${step.baseBranch}`, tone: 'passed' };
+    case 'completed-in-place':
+      return {
+        key,
+        label: 'Completed in place',
+        detail: step.baseBranch,
+        log: step.leftBranch ? `${step.leftBranch} left untouched; Harmonic no longer uses it` : null,
+        tone: 'passed',
+      };
     case 'escalated':
       return {
         key,

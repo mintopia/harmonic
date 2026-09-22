@@ -81,6 +81,7 @@ const member = (ref: number, taskId: number | null, extra: Partial<EpicMember> =
   escalated: false,
   mergeStatus: 'pending',
   ready: false,
+  isolationMode: 'worktree',
   ...extra,
 });
 
@@ -103,6 +104,7 @@ const epic = (ref: number, members: EpicMember[], extra: Partial<Epic> = {}): Ep
   timelineEvents: [],
   foldedCount: members.filter((entry) => entry.mergeStatus === 'completed').length,
   memberCount: members.length,
+  inPlace: false,
   ...extra,
 });
 

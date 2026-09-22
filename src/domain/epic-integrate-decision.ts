@@ -35,6 +35,12 @@ export interface EpicIntegrateFacts {
   verification: VerificationDecision | null;
   /** The operator's explicit force-integrate-the-ready-subset override. Never set by the automatic poll trigger. */
   force: boolean;
+  /** Every member is a direct-isolation Task: the Epic completes in place on
+   * its base branch instead of merging one, whether or not a leftover
+   * `epic/<ref>` still exists (direct mode never isolates and never merges).
+   * `force` never bypasses the member gate for an in-place Epic. Takes
+   * precedence over `integrationExists`. */
+  inPlace: boolean;
 }
 
 /** The action the coordinator must execute for this Epic's integrate attempt. */
@@ -55,20 +61,41 @@ export type EpicIntegrateDecision =
   | { action: 'integrate'; reason: string }
   /** Verification failed/inconclusive on the integrated whole: block the integrate
    * and escalate, fail-safe. */
-  | { action: 'escalate'; reason: string };
+  | { action: 'escalate'; reason: string }
+  /** An in-place Epic (every member direct, no Integration branch) with every
+   * member completed: settle it in place, no merge. */
+  | { action: 'complete'; reason: string };
 
 /**
  * Decide the whole-Epic integrate action. Precedence:
  *
- *  1. no integration branch → `noop`;
- *  2. (automatic path only) no members → `noop`; any `blocked` member →
+ *  1. in-place (every member direct) → the member gate (no members → `noop`;
+ *     any `blocked` → `blocked`; any `pending` → `wait`; else `complete`),
+ *     never bypassed by `force`, regardless of `integrationExists` — a
+ *     leftover `epic/<ref>` from before an Epic went (or stayed) direct is
+ *     never merged, never refreshed, never deleted;
+ *  2. not in-place, no integration branch → `noop`;
+ *  3. (automatic path only) no members → `noop`; any `blocked` member →
  *     `blocked`; any `pending` member → `wait`; else the gate opens;
- *  3. `force` opens the gate unconditionally, skipping step 2 but not Verification;
- *  4. gate open, Verification not yet run → `verify`;
- *  5. gate open, Verification `proceed` → `integrate`; any other outcome →
+ *  4. `force` opens the gate unconditionally, skipping step 3 but not Verification;
+ *  5. gate open, Verification not yet run → `verify`;
+ *  6. gate open, Verification `proceed` → `integrate`; any other outcome →
  *     `escalate`, fail-safe.
  */
 export function decideEpicIntegrate(facts: EpicIntegrateFacts): EpicIntegrateDecision {
+  if (facts.inPlace) {
+    if (facts.members.length === 0) {
+      return { action: 'noop', reason: 'epic has no members to integrate' };
+    }
+    if (facts.members.some((m) => m === 'blocked')) {
+      return { action: 'blocked', reason: 'a member cannot merge; the whole Epic is held back until it clears or the operator force-integrates' };
+    }
+    if (facts.members.some((m) => m === 'pending')) {
+      return { action: 'wait', reason: 'members are still in progress' };
+    }
+    return { action: 'complete', reason: 'all direct members are done: completing the Epic in place' };
+  }
+
   if (!facts.integrationExists) {
     return { action: 'noop', reason: 'no integration branch to integrate (already integrated, retired, or never cut)' };
   }

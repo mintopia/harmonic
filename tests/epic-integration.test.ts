@@ -4,10 +4,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
+import { workspaces } from '../src/db/schema.js';
 import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
+import { WorkspaceService } from '../src/domain/workspaces.js';
 import { EpicMergeEventStore } from '../src/domain/epic-merge-events.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
+import { TrackerEpicService } from '../src/tracker/epic-service.js';
 import { EPIC_LABEL, type Ticket } from '../src/tracker/adapter.js';
 import {
   EpicLifecycle,
@@ -144,6 +147,7 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
+    await new WorkspaceService(asyncDb, settingsStore).update(wsId, { isolationMode: 'worktree' });
   });
   afterEach(async () => {
     await asyncDb.close();
@@ -485,6 +489,7 @@ describe('EpicLifecycle whole-Epic integrate trigger (issue #161)', () => {
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
+    await new WorkspaceService(asyncDb, settingsStore).update(wsId, { isolationMode: 'worktree' });
   });
   afterEach(async () => {
     await asyncDb.close();
@@ -701,5 +706,164 @@ describe('TaskService.setBaseBranch (issue #159)', () => {
     expect(again.updatedAt).toBe(before);
 
     expect((await tasks.setBaseBranch(t.id, null)).baseBranch).toBeNull();
+  });
+});
+
+describe('EpicLifecycle direct-mode Epics (isolationMode "direct", ADR-0001 direct-mode epics)', () => {
+  let dir: string;
+  let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
+  let tasks: TaskService;
+  let wsId: number;
+  const mscan = (tickets: Ticket[]) => mirrorScan(tasks, tickets, wsId);
+  const baseOf = async (ref: number) => (await tasks.list()).find((t) => t.trackerRef === ref)?.baseBranch;
+  const idOf = async (ref: number) => (await tasks.list()).find((t) => t.trackerRef === ref)!.id;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-direct-'));
+    asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb, dir);
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
+    wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
+  });
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const epicTickets = (): Ticket[] => [
+    ticket({ number: 10, title: 'Epic' }),
+    ticket({ number: 11, parent: 10, labels: ['ready-for-agent'] }),
+    ticket({ number: 12, parent: 10, labels: ['ready-for-agent'] }),
+  ];
+
+  it('cuts no epic/<ref> branch and sets no base branch for an all-direct Epic', async () => {
+    const tickets = epicTickets();
+    const mirrored = await mscan(tickets);
+    const git = new FakeGit([], 'develop');
+    const coord = new EpicLifecycle(tasks, dir, git);
+
+    await coord.reconcile(tickets, mirrored);
+
+    expect(git.created).toEqual([]);
+    expect(await baseOf(11)).toBeNull();
+    expect(await baseOf(12)).toBeNull();
+  });
+
+  it('a direct member with a null base is never base-gated', async () => {
+    const tickets = epicTickets();
+    const mirrored = await mscan(tickets);
+    const git = new FakeGit([], 'develop');
+    const coord = new EpicLifecycle(tasks, dir, git);
+    await coord.reconcile(tickets, mirrored);
+
+    const m11 = (await tasks.list()).find((t) => t.trackerRef === 11)!;
+    expect(m11.isolationMode).toBe('direct');
+    expect(m11.baseBranch).toBeNull();
+    expect(coord.awaitsBase(m11)).toBe(false);
+    expect(await coord.memberBaseNotReady(m11)).toBe(false);
+  });
+
+  it('a mixed Epic cuts the branch and sets it only on the worktree member', async () => {
+    const tickets = epicTickets();
+    await mscan(tickets);
+    await tasks.update(await idOf(11), { isolationMode: 'worktree' });
+    const git = new FakeGit([], 'develop');
+    const coord = new EpicLifecycle(tasks, dir, git);
+
+    await coord.reconcile(tickets, await tasks.list());
+
+    expect(git.created).toEqual(['epic/10']);
+    expect(await baseOf(11)).toBe('epic/10');
+    expect(await baseOf(12)).toBeNull();
+  });
+
+  it('resets a legacy pre-spawn direct member of a MIXED Epic whose base still points at epic/<ref>', async () => {
+    const tickets = epicTickets();
+    await mscan(tickets);
+    await tasks.update(await idOf(11), { isolationMode: 'worktree' });
+    await tasks.setBaseBranch(await idOf(12), 'epic/10');
+    const git = new FakeGit(['epic/10'], 'develop');
+    const coord = new EpicLifecycle(tasks, dir, git);
+
+    await coord.reconcile(tickets, await tasks.list());
+
+    expect(await baseOf(12)).toBeNull();
+  });
+
+  it('leaves a legacy all-direct Epic\'s member base untouched — an in-place Epic never reconciles epic/<ref> either way', async () => {
+    const tickets = epicTickets();
+    await mscan(tickets);
+    await tasks.setBaseBranch(await idOf(11), 'epic/10');
+    const git = new FakeGit(['epic/10'], 'develop');
+    const coord = new EpicLifecycle(tasks, dir, git);
+
+    await coord.reconcile(tickets, await tasks.list());
+
+    expect(git.created).toEqual([]);
+    expect(await baseOf(11)).toBe('epic/10');
+    const m11 = (await tasks.list()).find((t) => t.trackerRef === 11)!;
+    expect(coord.awaitsBase(m11)).toBe(false);
+    expect(await coord.memberBaseNotReady(m11)).toBe(false);
+    expect(coord.isInPlace(10, await tasks.list())).toBe(true);
+  });
+
+  it('offers a legacy all-direct Epic for whole-Epic integrate with inPlace and leftBranch set once its members are done', async () => {
+    const tickets = epicTickets();
+    await mscan(tickets);
+    await tasks.setState(await idOf(11), 'done');
+    await tasks.setState(await idOf(12), 'done');
+    const git = new FakeGit(['epic/10'], 'develop');
+    const trigger = new (class implements EpicIntegrateTrigger {
+      calls: { ref: number; inPlace?: boolean; leftBranch?: string }[] = [];
+      async submit(target: { ref: number; inPlace?: boolean; leftBranch?: string }) {
+        this.calls.push({ ref: target.ref, inPlace: target.inPlace, leftBranch: target.leftBranch });
+        return { status: 'noop' as const };
+      }
+    })();
+    const coord = new EpicLifecycle(tasks, dir, git);
+    coord.attachIntegrateTrigger(trigger);
+
+    await coord.reconcile(tickets, await tasks.list());
+
+    expect(trigger.calls).toEqual([{ ref: 10, inPlace: true, leftBranch: 'epic/10' }]);
+    expect(git.created).toEqual([]);
+  });
+
+  it('develop advance does not refresh an in-place Epic\'s legacy branch, even with a same-ref worktree Task in another Workspace', async () => {
+    const tickets = epicTickets();
+    const mirrored = await mscan(tickets);
+    const now = Date.now();
+    const otherWsId = (
+      await asyncDb.write((db) =>
+        db.insert(workspaces).values({ name: 'Other', workingDir: '/other-repo', createdAt: now, updatedAt: now }).returning().get(),
+      )
+    ).id;
+    const otherTask = await mirrorScan(tasks, [ticket({ number: 11, title: 'Same ref, other repo' })], otherWsId);
+    await tasks.update(otherTask[0]!.id, { isolationMode: 'worktree' });
+    const git = new FakeGit(['epic/10'], 'develop');
+    git.contained.delete('epic/10');
+    const refresh = new FakeRefresh();
+    const coord = new EpicLifecycle(tasks, dir, git);
+    coord.attachWorkspace(wsId);
+    coord.attachRefreshTrigger(refresh);
+
+    await coord.reconcile(tickets, mirrored);
+
+    expect(refresh.calls).toEqual([]);
+  });
+
+  it('force-integrate on an in-place Epic returns noop and never touches the coordinator/git', async () => {
+    const tickets = epicTickets();
+    const mirrored = await mscan(tickets);
+    const workspace = (await allWorkspaces(asyncDb, settingsStore)()).find((w) => w.id === wsId)!;
+    const service = new TrackerEpicService(tasks, async () => [workspace], {});
+    const epics = service.startWorkspace(workspace);
+    await epics.reconcile(tickets, mirrored);
+
+    const outcome = await service.forceIntegrateEpic(wsId, 10);
+
+    expect(outcome).toEqual({ status: 'noop', reason: 'direct-mode epic completes in place; nothing to integrate' });
   });
 });

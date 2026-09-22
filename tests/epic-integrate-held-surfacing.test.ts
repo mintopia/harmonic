@@ -27,6 +27,7 @@ function epic(overrides: Partial<Epic> = {}): Epic {
     timelineEvents: [],
     foldedCount: 2,
     memberCount: 2,
+    inPlace: false,
     ...overrides,
   };
 }
