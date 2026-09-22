@@ -112,6 +112,10 @@ export interface EpicIntegrateTarget {
   /** The Epic's member refs, snapshotted onto the stored Epic record at integration.
    * Absent ⇒ an empty snapshot. */
   memberRefs?: number[];
+  /** Every member is a direct-isolation mirrored Task: this Epic has no
+   * `epic/<ref>` and, once done, completes in place rather than merging.
+   * Defaults `false` (a force-integrate submit never sets it). */
+  inPlace?: boolean;
 }
 
 function withEpicTitle(title: string | undefined): { epicTitle?: string } {
@@ -154,6 +158,8 @@ export class EpicCoordinator {
   private readonly recordIntegrationFn: EpicRecordIntegration | undefined;
   private readonly markIntegratingFn: EpicMarkIntegrating | undefined;
   private readonly onIntegrated: ((event: { epicRef: number }) => void) | undefined;
+  private readonly epicStateFn: ((epicRef: number) => Promise<'open' | 'integrating' | 'integrated' | null>) | undefined;
+  private readonly onCompletedInPlace: ((event: { epicRef: number; baseBranch: string }) => void) | undefined;
 
   private readonly inFlight = new Set<number>();
 
@@ -205,6 +211,10 @@ export class EpicCoordinator {
     markIntegrating?: EpicMarkIntegrating;
     /** Notify clients after the integrated Epic has a durable record. */
     onIntegrated?: (event: { epicRef: number }) => void;
+    /** The stored Epic lifecycle state, for `complete`'s idempotency check. */
+    epicState?: (epicRef: number) => Promise<'open' | 'integrating' | 'integrated' | null>;
+    /** Notify clients that an in-place Epic settled without an Integration branch. */
+    onCompletedInPlace?: (event: { epicRef: number; baseBranch: string }) => void;
   }) {
     this.repoDir = deps.repoDir;
     this.git = deps.git ?? Git;
@@ -221,6 +231,8 @@ export class EpicCoordinator {
     this.recordIntegrationFn = deps.recordIntegration;
     this.markIntegratingFn = deps.markIntegrating;
     this.onIntegrated = deps.onIntegrated;
+    this.epicStateFn = deps.epicState;
+    this.onCompletedInPlace = deps.onCompletedInPlace;
   }
 
   /**
@@ -259,7 +271,7 @@ export class EpicCoordinator {
       this.forget(target.ref);
     }
 
-    const gate = decideEpicIntegrate({ integrationExists, members: target.members, verification: null, force });
+    const gate = decideEpicIntegrate({ integrationExists, members: target.members, verification: null, force, inPlace: target.inPlace ?? false });
     switch (gate.action) {
       case 'noop':
         this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
@@ -269,6 +281,8 @@ export class EpicCoordinator {
       case 'blocked':
         this.operations.fail({ repoDir: this.repoDir, epicRef: target.ref, reason: gate.reason });
         return { status: 'blocked', reason: gate.reason };
+      case 'complete':
+        return await this.completeInPlace(target);
       case 'verify':
         break;
       default:
@@ -320,7 +334,7 @@ export class EpicCoordinator {
       return this.escalate(target, `whole-Epic verification could not run: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    const verdict = decideEpicIntegrate({ integrationExists: true, members: target.members, verification, force });
+    const verdict = decideEpicIntegrate({ integrationExists: true, members: target.members, verification, force, inPlace: false });
     if (verdict.action === 'escalate') {
       this.lastVerification.set(target.ref, 'fail');
       if (this.resolve) {
@@ -447,6 +461,29 @@ export class EpicCoordinator {
     this.settledEscalated.delete(ref);
     this.lastVerifyAttemptAt.delete(ref);
     this.resumes.delete(ref);
+  }
+
+  /** Settle an all-direct Epic once every member is done: no branch, no merge,
+   * just a durable "integrated" record with `mergeCommit: null` and an event on
+   * the timeline. `epicState` guards re-entry — a second poll after the record
+   * lands is a no-op, never a duplicate `completed-in-place` event. */
+  private async completeInPlace(target: EpicIntegrateTarget): Promise<EpicIntegrateOutcome> {
+    if ((await this.epicStateFn?.(target.ref)) === 'integrated') {
+      this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
+      return { status: 'noop', reason: 'Epic already completed in place' };
+    }
+    const defaultBranch = await this.git.symbolicBranch(this.repoDir);
+    if (defaultBranch === null) {
+      return { status: 'waiting', reason: 'default branch is detached; deferring the in-place completion' };
+    }
+    const tip = await this.git.revParse(this.repoDir, defaultBranch);
+    const recorded = await this.recordIntegrationQuietly(target, null);
+    if (recorded) {
+      this.onCompletedInPlace?.({ epicRef: target.ref, baseBranch: defaultBranch });
+      this.onIntegrated?.({ epicRef: target.ref });
+    }
+    this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
+    return { status: 'integrated', oid: tip };
   }
 
   private async retireContained(target: EpicIntegrateTarget, branch: string): Promise<EpicIntegrateOutcome> {
@@ -654,8 +691,9 @@ export class EpicLifecycle {
     if (defaultBranch === null) return;
 
     for (const epic of epics) {
-      if (epic.ready.length > 0) {
-        const branch = integrationBranchName(epic.ref);
+      const branch = integrationBranchName(epic.ref);
+      const readyWorktreeRefs = epic.ready.filter((ref) => byRef.get(ref)?.isolationMode === 'worktree');
+      if (readyWorktreeRefs.length > 0) {
         try {
           await this.operations.run({
             repoDir: this.workingDir,
@@ -665,7 +703,7 @@ export class EpicLifecycle {
             attributes: { 'epic.integration_branch': branch },
             work: () => this.ensureIntegrationBranch(branch, defaultBranch),
           });
-          for (const memberRef of epic.ready) {
+          for (const memberRef of readyWorktreeRefs) {
             const task = byRef.get(memberRef);
             if (!task) continue;
             const live = await this.tasks.get(task.id);
@@ -676,6 +714,15 @@ export class EpicLifecycle {
           this.operations.fail({ repoDir: this.workingDir, epicRef: epic.ref, reason });
           this.onError(`epic ${epic.ref} ${reason}`);
         }
+      }
+      // A direct-isolation Member never gets an Integration branch base; reset a
+      // legacy pre-spawn one still pointed at epic/<ref> (a direct Epic whose
+      // branch was cut before this policy existed) so it spawns in place.
+      for (const memberRef of epic.members) {
+        const task = byRef.get(memberRef);
+        if (!task || task.isolationMode !== 'direct') continue;
+        const live = await this.tasks.get(task.id);
+        if (PRE_SPAWN.has(live.state) && live.baseBranch === branch) await this.tasks.setBaseBranch(live.id, null);
       }
       await this.submitWholeEpicIntegrate(epic, byRef);
     }
@@ -707,6 +754,7 @@ export class EpicLifecycle {
         return reduceMemberState(task ? await this.tasks.get(task.id) : undefined);
       }),
     );
+    const inPlace = epic.members.length > 0 && epic.members.every((ref) => byRef.get(ref)?.isolationMode === 'direct');
     void trigger
       .submit({
         ref: epic.ref,
@@ -715,6 +763,7 @@ export class EpicLifecycle {
         ...(epic.url !== undefined ? { url: epic.url } : {}),
         members,
         memberRefs: epic.members,
+        inPlace,
       })
       .catch((err) => this.onError(`epic ${epic.ref} whole-Epic integrate attempt failed: ${String(err)}`));
   }
@@ -724,10 +773,12 @@ export class EpicLifecycle {
   }
 
   awaitsBase(task: TaskRow): boolean {
+    if (task.isolationMode === 'direct') return false;
     return task.origin === 'mirrored' && task.baseBranch == null && task.trackerRef != null && this.readyMemberRefs.has(task.trackerRef);
   }
 
   async memberBaseNotReady(task: TaskRow): Promise<boolean> {
+    if (task.isolationMode === 'direct') return false;
     if (task.origin !== 'mirrored') return false;
     if (this.awaitsBase(task)) return true;
     const epicRef = task.mapRef ?? parseIntegrationBranch(task.baseBranch);

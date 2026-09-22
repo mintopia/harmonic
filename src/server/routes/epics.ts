@@ -47,6 +47,7 @@ const epicMemberSchema = z
     escalated: z.boolean(),
     mergeStatus: z.enum(['completed', 'blocked', 'pending']).meta({ example: 'pending' }),
     ready: z.boolean(),
+    isolationMode: z.enum(['direct', 'worktree']).nullable().meta({ example: 'worktree' }),
   })
   .meta({ id: 'EpicMember' });
 
@@ -83,6 +84,7 @@ const mergeStepSchema = z
     z.object({ step: z.literal('reverted'), mergeOid: z.string(), revertOid: z.string() }),
     z.object({ step: z.literal('merged'), mergeOid: z.string() }),
     z.object({ step: z.literal('retired'), branch: z.string(), baseBranch: z.string() }),
+    z.object({ step: z.literal('completed-in-place'), baseBranch: z.string() }),
     z.object({ step: z.literal('escalated'), reason: z.enum(['conflict', 'post-merge-red', 'target-advanced']), message: z.string() }),
   ])
   .meta({ id: 'MergeStepEvent' });
@@ -111,6 +113,7 @@ const epicSchema = z
     timelineEvents: z.array(epicTimelineEventSchema),
     foldedCount: z.number().int(),
     memberCount: z.number().int(),
+    inPlace: z.boolean(),
   })
   .meta({ id: 'Epic' });
 

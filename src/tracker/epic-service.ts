@@ -190,6 +190,13 @@ export class TrackerEpicService implements EpicService {
         markIntegrating: (epicRef) => this.tasks.markEpicIntegrating(workspace.id, epicRef),
         recordIntegration: (input) => this.recordEpicIntegration(workspace, input),
         onIntegrated: ({ epicRef }) => this.onEpicIntegrated?.({ workspaceId: workspace.id, epicRef }),
+        epicState: (epicRef) => this.tasks.epicState(workspace.id, epicRef),
+        onCompletedInPlace: ({ epicRef, baseBranch }) => {
+          if (!this.epicMergeEvents) return;
+          void this.epicMergeEvents.append(workspace.id, epicRef, { step: 'completed-in-place', baseBranch }).then(() => {
+            this.onEpicMergeStep?.({ workspaceId: workspace.id, epicRef });
+          });
+        },
       });
       entry.epicIntegrate = epicIntegrate;
       epics.attachIntegrateTrigger(epicIntegrate);
