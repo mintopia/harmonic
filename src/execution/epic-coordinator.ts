@@ -4,6 +4,7 @@ import type { MergePolicyOutcome } from './merge-policy.js';
 import { decideEpicIntegrate, reduceMemberState, type MemberMergeState } from '../domain/epic-integrate-decision.js';
 import type { VerificationDecision } from '../verification/combine.js';
 import { logger } from '../logger.js';
+import { errorMessage } from '../error-handling.js';
 import { EpicOperations } from './epic-operations.js';
 import type { TaskRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
@@ -12,6 +13,7 @@ import type { Ticket } from '../tracker/adapter.js';
 import { persistedTickets } from '../tracker/persisted.js';
 import { mergeIntoBase, type MergeIntoBaseArgs, type MergeIntoBaseOutcome } from './branch-merge.js';
 import { withBaseCheckoutLock, withRepoLock } from './repo-lock.js';
+import type { EpicBranchStep } from '../domain/epic-merge-events.js';
 
 export { reduceMemberState };
 
@@ -625,6 +627,7 @@ export class EpicLifecycle {
   private latestTickets: Ticket[] = [];
   private operations = new EpicOperations();
   private onIntegrationBranchRetired: ((event: { epicRef: number; branch: string; baseBranch: string }) => Promise<void>) | undefined;
+  private onIntegrationBranchEvent: ((event: EpicBranchStep) => Promise<void> | void) | undefined;
   private workspaceId: number | undefined;
 
   constructor(
@@ -654,6 +657,10 @@ export class EpicLifecycle {
 
   attachIntegrationBranchRetired(listener: (event: { epicRef: number; branch: string; baseBranch: string }) => Promise<void>): void {
     this.onIntegrationBranchRetired = listener;
+  }
+
+  attachIntegrationBranchEvent(listener: (event: EpicBranchStep) => Promise<void> | void): void {
+    this.onIntegrationBranchEvent = listener;
   }
 
   async refreshAfterDefaultBranchAdvance(defaultBranch: string): Promise<void> {
@@ -846,9 +853,17 @@ export class EpicLifecycle {
     return this.leafEpicRefs.has(epicRef);
   }
 
-  private async ensureIntegrationBranch(branch: string, defaultBranch: string): Promise<void> {
-    if (await this.git.branchExists(this.workingDir, branch)) return;
-    await this.git.createBranch(this.workingDir, branch, defaultBranch);
+  private async ensureIntegrationBranch(branch: string, defaultBranch: string): Promise<{ oid: string } | null> {
+    if (await this.git.branchExists(this.workingDir, branch)) return null;
+    try {
+      await this.git.createBranch(this.workingDir, branch, defaultBranch);
+      const oid = await this.git.revParse(this.workingDir, branch);
+      await this.onIntegrationBranchEvent?.({ step: 'branch-created', branch, fromBranch: defaultBranch, oid });
+      return { oid };
+    } catch (err) {
+      await this.onIntegrationBranchEvent?.({ step: 'branch-create-failed', branch, fromBranch: defaultBranch, error: errorMessage(err) });
+      throw err;
+    }
   }
 
   async retireIntegrationBranch(epicRef: number): Promise<boolean> {

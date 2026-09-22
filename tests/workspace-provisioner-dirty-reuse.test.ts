@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -88,8 +88,178 @@ describe('WorkspaceProvisioner.prepareWorkspace reusing a worktree left dirty by
     expect(workspace.cwd).toBe(worktreePath);
     expect(git(worktreePath, 'status', '--porcelain')).toBe('');
     expect(git(worktreePath, 'log', '-1', '--format=%s')).toBe(`harmonic: task ${task.id} recovered leftover work`);
+    const recoveredOid = git(worktreePath, 'rev-parse', 'HEAD');
 
     expect(() => git(worktreePath, 'rebase', 'main')).not.toThrow();
     expect(git(worktreePath, 'log', '--format=%s').split('\n')).toContain('main advanced externally');
+
+    const events = (await attempts.listEvents(run.id)).map((e) => e.payload as Record<string, unknown>);
+    expect(events).toContainEqual({ event: 'work-committed', oid: recoveredOid, reason: 'recovered' });
+  });
+});
+
+describe('WorkspaceProvisioner git-visibility events', () => {
+  let dir: string;
+  let repo: string;
+  let worktreesDir: string;
+  let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
+  let tasks: TaskService;
+  let attempts: AttemptStore;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'harmonic-provisioner-events-'));
+    repo = makeRepo();
+    worktreesDir = mkdtempSync(join(tmpdir(), 'harmonic-provisioner-events-worktrees-'));
+    asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb, repo);
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
+    attempts = new AttemptStore(asyncDb);
+  });
+
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(worktreesDir, { recursive: true, force: true });
+  });
+
+  const provisioner = () =>
+    new WorkspaceProvisioner({
+      attempts,
+      sessionStore: new SessionStore(asyncDb),
+      mergeCoordinator: { resolveBaseBranch: async () => 'main' } as unknown as MergeCoordinator,
+      autoDrive: undefined,
+      sessionRetirement: undefined,
+      events: {},
+      worktreesDir,
+    });
+
+  const eventsFor = async (attemptId: number) => (await attempts.listEvents(attemptId)).map((e) => e.payload as Record<string, unknown>);
+
+  it('records worktree-created for a fresh worktree cut from the base branch', async () => {
+    const task = await tasks.create({ prompt: 'p', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
+    const run = await attempts.create(task.id);
+
+    await provisioner().prepareWorkspace(task, run, false);
+
+    expect(await eventsFor(run.id)).toContainEqual({
+      event: 'worktree-created',
+      worktree: `task-${task.id}`,
+      branch: `harmonic/task-${task.id}`,
+      baseBranch: 'main',
+      fromExistingBranch: false,
+    });
+  });
+
+  it('records worktree-created (fromExistingBranch) when checking out an already-cut branch', async () => {
+    const task = await tasks.create({ prompt: 'p', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
+    const branch = `harmonic/task-${task.id}`;
+    git(repo, 'branch', branch, 'main');
+    const run = await attempts.create(task.id);
+
+    await provisioner().prepareWorkspace(task, run, false);
+
+    expect(await eventsFor(run.id)).toContainEqual({
+      event: 'worktree-created',
+      worktree: `task-${task.id}`,
+      branch,
+      baseBranch: null,
+      fromExistingBranch: true,
+    });
+  });
+
+  it('records worktree-create-failed and rethrows when git cannot cut the worktree', async () => {
+    const task = await tasks.create({ prompt: 'p', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
+    const run = await attempts.create(task.id);
+    const broken = new WorkspaceProvisioner({
+      attempts,
+      sessionStore: new SessionStore(asyncDb),
+      mergeCoordinator: { resolveBaseBranch: async () => 'does-not-exist' } as unknown as MergeCoordinator,
+      autoDrive: undefined,
+      sessionRetirement: undefined,
+      events: {},
+      worktreesDir,
+    });
+
+    await expect(broken.prepareWorkspace(task, run, false)).rejects.toThrow();
+
+    const events = await eventsFor(run.id);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ event: 'worktree-create-failed', worktree: `task-${task.id}`, branch: `harmonic/task-${task.id}`, baseBranch: 'does-not-exist' });
+  });
+
+  it('records worktree-discarded for an orphaned worktree path reused on resume', async () => {
+    const task = await tasks.create({ prompt: 'p', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
+    const branch = `harmonic/task-${task.id}`;
+    const run = await attempts.update((await attempts.create(task.id)).id, { branch, baseBranch: 'main' });
+    git(repo, 'branch', branch, 'main');
+    const worktreePath = join(worktreesDir, `task-${task.id}`);
+    // A stale directory at the worktree path that git never registered as a worktree.
+    execFileSync('mkdir', ['-p', worktreePath]);
+    writeFileSync(join(worktreePath, 'stray.txt'), 'orphaned\n');
+
+    await provisioner().prepareWorkspace(task, run, true);
+
+    expect(await eventsFor(run.id)).toContainEqual({ event: 'worktree-discarded', worktree: `task-${task.id}` });
+  });
+
+  it('finalizeWorkspace records worktree-removed when the worktree is not retained', async () => {
+    const task = await tasks.create({ prompt: 'p', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
+    const run = await attempts.create(task.id);
+    const provisionerInstance = provisioner();
+    const workspace = await provisionerInstance.prepareWorkspace(task, run, false);
+
+    await provisionerInstance.finalizeWorkspace(task, run, 1, workspace);
+
+    expect(await eventsFor(run.id)).toContainEqual({ event: 'worktree-removed', worktree: `task-${task.id}` });
+    expect(existsSync(workspace.cwd)).toBe(false);
+  });
+
+  it('finalizeWorkspace records worktree-retained when a Session binds the worktree', async () => {
+    const task = await tasks.create({ prompt: 'p', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
+    const sessionStore = new SessionStore(asyncDb);
+    const session = await sessionStore.recordDispatch({
+      harness: 'claude',
+      harnessSessionId: 'sess-1',
+      model: 'm',
+      cwd: '/tmp/work',
+      workspaceId: (await allWorkspaces(asyncDb, settingsStore)())[0]!.id,
+      mcpTemplates: [],
+      capabilities: undefined,
+      adapterVersion: 'claude@1',
+      now: Date.now(),
+    });
+    const run = await attempts.update((await attempts.create(task.id)).id, { sessionRowId: session.id });
+    const provisionerInstance = new WorkspaceProvisioner({
+      attempts,
+      sessionStore,
+      mergeCoordinator: { resolveBaseBranch: async () => 'main' } as unknown as MergeCoordinator,
+      autoDrive: undefined,
+      sessionRetirement: undefined,
+      events: {},
+      worktreesDir,
+    });
+    const workspace = await provisionerInstance.prepareWorkspace(task, run, false);
+
+    await provisionerInstance.finalizeWorkspace(task, run, 1, workspace);
+
+    expect(await eventsFor(run.id)).toContainEqual({ event: 'worktree-retained', worktree: `task-${task.id}` });
+    expect(existsSync(workspace.cwd)).toBe(true);
+  });
+
+  it('finalizeWorkspace records work-committed with the Attempt number for uncommitted work at attempt end', async () => {
+    const task = await tasks.create({ prompt: 'p', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
+    const run = await attempts.create(task.id);
+    const provisionerInstance = provisioner();
+    const workspace = await provisionerInstance.prepareWorkspace(task, run, false);
+    writeFileSync(join(workspace.cwd, 'work.txt'), 'uncommitted\n');
+
+    await provisionerInstance.finalizeWorkspace(task, run, 3, workspace);
+
+    const events = await eventsFor(run.id);
+    const committed = events.find((e) => e.event === 'work-committed');
+    expect(committed).toMatchObject({ reason: 'attempt-end', attempt: 3 });
   });
 });

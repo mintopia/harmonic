@@ -30,8 +30,13 @@ export class AutoDrive {
     private readonly getEpicKind?: (workspaceId: number, ref: number) => Promise<StoredEpicKind | null>,
     /** Notified when {@link closeTicket} issues a genuine tracker close (a real
      * ref that was open) — the hook that records the Timeline's ticket-closed
-     * event. Not fired for the no-op paths (no ref, or already closed). */
-    private readonly onTicketClosed?: (task: TaskRow) => void,
+     * event. Not fired for the no-op paths (no ref, or already closed). `commit`
+     * carries the base-checkout commit for a file-backed tracker's status
+     * write, or `null` when the tracker doesn't persist in the working tree. */
+    private readonly onTicketClosed?: (task: TaskRow, commit: { oid: string; paths: string[] } | null) => void,
+    /** Notified when a close attempt throws — the hook that records the
+     * Timeline's ticket-close-failed event. */
+    private readonly onTicketCloseFailed?: (task: TaskRow, error: unknown) => void,
   ) {}
 
   /** The auto-driven path: a mirrored Task Harmonic runs unattended. */
@@ -156,14 +161,16 @@ export class AutoDrive {
       const ref = { number: task.trackerRef, title, state: 'open' as const };
       // Closing an already-closed issue errors on some trackers (`gh issue close`).
       if ((await adapter.readTicket(ref)).state === 'closed') return true;
+      let commit: { oid: string; paths: string[] } | null = null;
       if (adapter.persistsInWorkingTree) {
-        await this.commitLifecycleWrite(task, ref, () => adapter.close!(ref, comment), comment);
+        commit = await this.commitLifecycleWrite(task, ref, () => adapter.close!(ref, comment), comment);
       } else {
         await adapter.close(ref, comment);
       }
-      this.onTicketClosed?.(task);
+      this.onTicketClosed?.(task, commit);
       return true;
-    } catch {
+    } catch (err) {
+      this.onTicketCloseFailed?.(task, err);
       return false;
     }
   }
@@ -180,17 +187,19 @@ export class AutoDrive {
     ref: TicketRef,
     write: () => Promise<{ changedPaths?: string[] } | void>,
     message: string,
-  ): Promise<void> {
-    await withBaseCheckoutLock(task.workingDir, async () => {
+  ): Promise<{ oid: string; paths: string[] } | null> {
+    return withBaseCheckoutLock(task.workingDir, async () => {
       const result = await write();
       const paths = result?.changedPaths ?? [];
-      if (paths.length === 0) return;
-      await Git.commitPaths(task.workingDir, paths, message);
+      if (paths.length === 0) return null;
+      const oid = await Git.commitPaths(task.workingDir, paths, message);
+      if (oid === null) return null;
       logger.info('tracker: committed lifecycle change to base', {
         'tracker.ref': ref.number,
         'tracker.paths': paths.length,
         'repo.dir': task.workingDir,
       });
+      return { oid, paths };
     });
   }
 }

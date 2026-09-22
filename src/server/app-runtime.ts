@@ -15,7 +15,7 @@ import { EventLoopMonitor } from '../reliability/event-loop-monitor.js';
 import { HostLoadSampler } from '../host-load.js';
 import { WorkspaceWatcher } from '../domain/workspace-watcher.js';
 import { logger } from '../logger.js';
-import { fireAndForget } from '../error-handling.js';
+import { errorMessage, fireAndForget } from '../error-handling.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import type { Scheduler } from '../scheduler/scheduler.js';
 import { AutoDrive } from '../execution/auto-drive.js';
@@ -40,11 +40,11 @@ function createLifecycleTracking(
   attempts: Stores['attempts'],
   sessionStore: Stores['sessions'],
 ): {
-  recordAttemptLifecycleBestEffort: (run: AttemptRow, payload: Record<string, unknown>) => void;
+  recordAttemptLifecycleBestEffort: (run: Pick<AttemptRow, 'id'>, payload: Record<string, unknown>) => void;
   sessionRetirement: SessionRetirementCoordinator;
   drainRetirement: () => Promise<number>;
 } {
-  const recordAttemptLifecycleBestEffort = (run: AttemptRow, payload: Record<string, unknown>): void => {
+  const recordAttemptLifecycleBestEffort = (run: Pick<AttemptRow, 'id'>, payload: Record<string, unknown>): void => {
     fireAndForget(async () => bus.emit('attempt_event', await attempts.appendEvent(run.id, { type: 'lifecycle', payload })), {
       op: 'app.recordAttemptLifecycle',
       level: 'debug',
@@ -59,7 +59,7 @@ function createLifecycleTracking(
         .then(() => dropIndexForPath(worktreePath)),
     undefined,
     undefined,
-    (run) => recordAttemptLifecycleBestEffort(run, { event: 'retired' }),
+    (run, info) => recordAttemptLifecycleBestEffort(run, { event: 'retired', worktree: info.worktree, ...(info.error !== undefined ? { error: info.error } : {}) }),
   );
   const drainRetirement = singleFlight(() => sessionRetirement.drain());
   return { recordAttemptLifecycleBestEffort, sessionRetirement, drainRetirement };
@@ -248,10 +248,28 @@ export async function createRuntime(deps: {
     undefined,
     getWorkspaceRow,
     (workspaceId, ref) => tasks.epicKind(workspaceId, ref),
-    (task) => {
+    (task, commit) => {
       void (async () => {
         const run = (await attempts.listForTask(task.id)).at(-1);
-        if (run) recordAttemptLifecycleBestEffort(run, { event: 'ticket-closed', trackerRef: task.trackerRef != null ? String(task.trackerRef) : null });
+        if (run) {
+          recordAttemptLifecycleBestEffort(run, {
+            event: 'ticket-closed',
+            trackerRef: task.trackerRef != null ? String(task.trackerRef) : null,
+            ...(commit ? { commitOid: commit.oid, paths: commit.paths } : {}),
+          });
+        }
+      })();
+    },
+    (task, error) => {
+      void (async () => {
+        const run = (await attempts.listForTask(task.id)).at(-1);
+        if (run) {
+          recordAttemptLifecycleBestEffort(run, {
+            event: 'ticket-close-failed',
+            trackerRef: task.trackerRef != null ? String(task.trackerRef) : null,
+            error: errorMessage(error),
+          });
+        }
       })();
     },
   );

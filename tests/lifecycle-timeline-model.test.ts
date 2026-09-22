@@ -121,6 +121,54 @@ describe('lifecycleTimelineRows', () => {
     expect(rows[1]).toMatchObject({ label: 'Ticket fact recorded', detail: null });
   });
 
+  it('gives every git side-effect its own GIT-tagged row, failures included', () => {
+    const rows = lifecycleTimelineRows([
+      lifecycle(10, { event: 'worktree-created', worktree: 'task-42', branch: 'harmonic/task-42', baseBranch: 'develop', fromExistingBranch: false }),
+      lifecycle(20, { event: 'worktree-created', worktree: 'task-42', branch: 'harmonic/task-42', baseBranch: null, fromExistingBranch: true }),
+      lifecycle(30, { event: 'worktree-create-failed', worktree: 'task-42', branch: 'harmonic/task-42', baseBranch: 'develop', error: 'disk full' }),
+      lifecycle(40, { event: 'worktree-discarded', worktree: 'task-42' }),
+      lifecycle(50, { event: 'work-committed', oid: 'abcdef1234567', reason: 'recovered' }),
+      lifecycle(60, { event: 'work-committed', oid: 'abcdef1234567', reason: 'attempt-end', attempt: 2 }),
+      lifecycle(70, { event: 'commit-failed', error: 'lock held' }),
+      lifecycle(80, { event: 'worktree-retained', worktree: 'task-42' }),
+      lifecycle(90, { event: 'worktree-removed', worktree: 'task-42' }),
+      lifecycle(100, { event: 'worktree-remove-failed', worktree: 'task-42', error: 'busy' }),
+      lifecycle(110, { event: 'branch-deleted', branch: 'harmonic/task-42', containedIn: 'develop' }),
+      lifecycle(120, { event: 'branch-delete-failed', branch: 'harmonic/task-42', error: 'ref lock held' }),
+    ]);
+
+    expect(rows.map((row) => [row.label, row.detail, row.tone, row.tag])).toEqual([
+      ['Created worktree task-42 on harmonic/task-42 from develop', null, 'neutral', 'GIT'],
+      ['Checked out harmonic/task-42 into worktree task-42', null, 'neutral', 'GIT'],
+      ['Worktree task-42 could not be created', 'disk full', 'failed', 'GIT'],
+      ['Discarded orphaned worktree task-42', null, 'neutral', 'GIT'],
+      ['Committed leftover work', 'abcdef1', 'neutral', 'GIT'],
+      ["Committed Attempt 2's uncommitted work", 'abcdef1', 'neutral', 'GIT'],
+      ["Couldn't commit leftover work", 'lock held', 'failed', 'GIT'],
+      ['Kept worktree task-42 for the warm session', null, 'neutral', 'GIT'],
+      ['Removed worktree task-42', null, 'neutral', 'GIT'],
+      ['Worktree task-42 could not be removed', 'busy', 'failed', 'GIT'],
+      ['Deleted branch harmonic/task-42 (already merged into develop)', null, 'neutral', 'GIT'],
+      ['Branch harmonic/task-42 could not be deleted', 'ref lock held', 'failed', 'GIT'],
+    ]);
+  });
+
+  it('renders retirement, ticket-close and ticket-close-failure git rows', () => {
+    const rows = lifecycleTimelineRows([
+      lifecycle(10, { event: 'retired', worktree: 'task-42' }),
+      lifecycle(20, { event: 'retired', worktree: 'task-42', error: 'already gone' }),
+      lifecycle(30, { event: 'ticket-closed', trackerRef: '185', commitOid: 'a1b2c3d4e5', paths: ['.scratch/issues/07.md'] }),
+      lifecycle(40, { event: 'ticket-close-failed', trackerRef: '185', error: 'no permission' }),
+    ]);
+
+    expect(rows.map((row) => [row.label, row.detail, row.tone, row.tag])).toEqual([
+      ['Removed worktree task-42 (session retired)', null, 'neutral', 'GIT'],
+      ['Worktree task-42 could not be removed', 'already gone', 'failed', 'GIT'],
+      ['Issue #185 closed', 'Committed a1b2c3d to the base checkout (1 file)', 'passed', 'GITHUB'],
+      ['Issue #185 could not be closed', 'no permission', 'failed', 'GITHUB'],
+    ]);
+  });
+
   it('tags rows by source/mechanism and reads task-creation as a GITHUB row', () => {
     const rows = lifecycleTimelineRows([
       event('fact', 1, { type: 'task-created', trackerRef: '185', workspace: 'harmonic-core' }),

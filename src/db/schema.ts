@@ -445,14 +445,16 @@ export const epics = sqliteTable('epics', {
 }, (t) => [primaryKey({ columns: [t.workspaceId, t.trackerRef] })]);
 export type EpicRow = typeof epics.$inferSelect;
 
-/** Append-only log of one Epic's current integration-merge steps, for merge visibility; one total order per Epic via `seq`, cleared when a fresh integration starts. */
+/** Append-only log of an Epic's integration-branch cuts and merge steps, for
+ * merge visibility; one total order per Epic via `seq`, never cleared —
+ * readers slice from the current integration's last `started` row. */
 export const epicMergeEvents = sqliteTable('epic_merge_events', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   workspaceId: integer('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
   epicRef: integer('epic_ref').notNull(),
   seq: integer('seq').notNull(),
   ts: integer('ts').notNull(),
-  /** JSON `MergeStepEvent` payload. */
+  /** JSON `EpicTimelineStep` payload. */
   payload: text('payload').notNull(),
 }, (t) => [uniqueIndex('epic_merge_events_epic_seq_unique').on(t.workspaceId, t.epicRef, t.seq)]);
 export type EpicMergeEventRow = typeof epicMergeEvents.$inferSelect;

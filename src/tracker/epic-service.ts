@@ -16,15 +16,17 @@ import {
   EpicLifecycle,
   EpicRefresh,
   integrationBranchName,
+  parseIntegrationBranch,
   type EpicIntegrateOutcome,
   type EpicRefreshResolveDispatchOutcome,
   type EpicRefreshTarget,
   type EpicResolve,
 } from '../execution/epic-coordinator.js';
+import type { EpicTimelineStep } from '../domain/epic-merge-events.js';
 import { EpicWorktreePool } from '../execution/epic-worktree-pool.js';
 import { Git } from '../execution/git.js';
 import type { CriticHarnessDrive } from '../verification/critic.js';
-import type { MergePolicyOutcome, PostMergeCheckResult } from '../execution/merge-policy.js';
+import type { MergePolicyOutcome, MergeStepEvent, PostMergeCheckResult } from '../execution/merge-policy.js';
 import { logger } from '../logger.js';
 import type { EpicIntegrationSync } from './poller.js';
 import { recordAndCloseIntegratedEpic } from './epic-close.js';
@@ -152,6 +154,20 @@ export class TrackerEpicService implements EpicService {
     epics.attachIntegrationBranchRetired(async ({ epicRef, branch, baseBranch }) => {
       if (!this.epicMergeEvents) return;
       await this.epicMergeEvents.append(workspace.id, epicRef, { step: 'retired', branch, baseBranch });
+      this.onEpicMergeStep?.({ workspaceId: workspace.id, epicRef });
+    });
+    epics.attachIntegrationBranchEvent(async (step) => {
+      if (!this.epicMergeEvents) return;
+      const epicRef = parseIntegrationBranch(step.branch);
+      if (epicRef === null) return;
+      if (step.step === 'branch-create-failed') {
+        const rows = await this.epicMergeEvents.list(workspace.id, epicRef);
+        const last = rows.at(-1)?.step;
+        // Every poll retries a still-unmet integration branch cut; skip the
+        // repeat so an ongoing failure doesn't spam the timeline.
+        if (last?.step === 'branch-create-failed' && last.branch === step.branch && last.error === step.error) return;
+      }
+      await this.epicMergeEvents.append(workspace.id, epicRef, step);
       this.onEpicMergeStep?.({ workspaceId: workspace.id, epicRef });
     });
     const entry: WorkspaceEpicEntry = { epics };
@@ -370,7 +386,9 @@ export class TrackerEpicService implements EpicService {
     const timelineEvents: EpicTimelineEvent[] = this.epicMergeEvents
       ? (await this.epicMergeEvents.list(workspaceId, epicRef)).map(({ seq, ts, step }) => ({ seq, at: ts, step }))
       : [];
-    const mergeSteps = timelineEvents.map((event) => event.step);
+    const lastStartedIndex = timelineEvents.map((event) => event.step.step).lastIndexOf('started');
+    const currentIntegration = lastStartedIndex === -1 ? timelineEvents : timelineEvents.slice(lastStartedIndex);
+    const mergeSteps = currentIntegration.map((event) => event.step).filter(isMergeStepEvent);
     const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId);
     const verifiers = workspace && this.getConfig ? resolveVerifiers(workspace, this.getConfig()).epic.preMerge : { commands: [], critics: [] };
     const status = integrate?.verificationStatus(epicRef) ?? null;
@@ -379,6 +397,10 @@ export class TrackerEpicService implements EpicService {
   }
   private async epicBaseBranch(workspaceId: number): Promise<string | null> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return workspace ? resolveRepositoryDefaultBranch(workspace.workingDir).catch(() => null) : null; }
   private async verificationConfigured(workspaceId: number): Promise<boolean> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return !!workspace && !!this.getConfig && resolveVerifiers(workspace, this.getConfig()).epic.preMerge.commands.length > 0; }
+}
+
+function isMergeStepEvent(step: EpicTimelineStep): step is MergeStepEvent {
+  return step.step !== 'branch-created' && step.step !== 'branch-create-failed';
 }
 
 function historicalEpicTicket(epic: DerivedEpic): Ticket {

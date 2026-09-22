@@ -3,32 +3,32 @@ import type { AsyncDbHandle } from '../db/async.js';
 import { epicMergeEvents, type EpicMergeEventRow } from '../db/schema.js';
 import type { MergeStepEvent } from '../execution/merge-policy.js';
 
+/** One integration-branch cut, observed outside a merge (fired from
+ * `EpicLifecycle.ensureIntegrationBranch`, not `runMergePolicy`). */
+export type EpicBranchStep =
+  | { step: 'branch-created'; branch: string; fromBranch: string; oid: string }
+  | { step: 'branch-create-failed'; branch: string; fromBranch: string; error: string };
+
+/** Every step this Epic's timeline can hold, merge steps and branch-cut steps alike. */
+export type EpicTimelineStep = MergeStepEvent | EpicBranchStep;
+
 export interface PersistedEpicMergeEvent {
   seq: number;
   ts: number;
-  step: MergeStepEvent;
+  step: EpicTimelineStep;
 }
 
 function deserialize(row: EpicMergeEventRow): PersistedEpicMergeEvent {
-  return { seq: row.seq, ts: row.ts, step: JSON.parse(row.payload) as MergeStepEvent };
+  return { seq: row.seq, ts: row.ts, step: JSON.parse(row.payload) as EpicTimelineStep };
 }
 
-/** The persisted step log of one Epic's current integration merge, for merge visibility. */
+/** The persisted, append-only step log of an Epic's integration-branch and
+ * merge activity, for merge visibility. */
 export class EpicMergeEventStore {
   constructor(private readonly db: AsyncDbHandle) {}
 
-  /** Drop the prior integration's steps so a fresh integration starts a clean log. */
-  clear(workspaceId: number, epicRef: number): Promise<void> {
-    return this.db.write(async (db) => {
-      await db
-        .delete(epicMergeEvents)
-        .where(and(eq(epicMergeEvents.workspaceId, workspaceId), eq(epicMergeEvents.epicRef, epicRef)))
-        .run();
-    });
-  }
-
   /** Append one step, assigning the next monotonic `seq` (1-based). */
-  append(workspaceId: number, epicRef: number, step: MergeStepEvent): Promise<PersistedEpicMergeEvent> {
+  append(workspaceId: number, epicRef: number, step: EpicTimelineStep): Promise<PersistedEpicMergeEvent> {
     return this.db.write(async (db) => {
       const seq =
         ((

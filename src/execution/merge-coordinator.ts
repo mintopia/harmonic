@@ -247,7 +247,6 @@ export class MergeCoordinator {
     const persistStep = (step: MergeStepEvent): void => {
       persistChain = persistChain
         .then(async () => {
-          if (step.step === 'started') await this.deps.epicMergeEvents.clear(input.workspaceId, input.epicRef);
           await this.deps.epicMergeEvents.append(input.workspaceId, input.epicRef, step);
           this.deps.onEpicMergeStep({ workspaceId: input.workspaceId, epicRef: input.epicRef });
         })

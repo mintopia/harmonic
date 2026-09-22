@@ -1,3 +1,4 @@
+import { basename } from 'node:path';
 import type { AttemptRow } from '../db/schema.js';
 import type { SessionStore } from './sessions.js';
 import type { AttemptStore } from './attempts.js';
@@ -35,9 +36,10 @@ export class SessionRetirementCoordinator {
     private readonly removeWorktree: RemoveWorktree,
     private readonly config: RetentionConfig = DEFAULT_RETENTION,
     private readonly clock: () => number = Date.now,
-    /** Notified with the Session's latest Attempt when its worktree is actually
-     * removed — the hook that records the Timeline's `retired` event. */
-    private readonly onRetired?: (run: AttemptRow) => void,
+    /** Notified with the Session's latest Attempt when its worktree removal is
+     * attempted — the hook that records the Timeline's `retired` event. `error`
+     * is set when the removal itself failed (the Session still retires). */
+    private readonly onRetired?: (run: AttemptRow, info: { worktree: string; error?: string }) => void,
   ) {}
 
   /**
@@ -95,15 +97,17 @@ export class SessionRetirementCoordinator {
       if (await this.hasActiveRun(session.id)) return;
       if (session.worktreePath && session.worktreeRepoDir) {
         const worktreePath = session.worktreePath;
+        let removeError: string | undefined;
         await this.removeWorktree(session.worktreeRepoDir, worktreePath).catch((error) => {
+          removeError = error instanceof Error ? error.message : String(error);
           logger.warn('session-retirement: failed to remove worktree, marking retired anyway', {
             sessionId: session.id,
             worktreePath,
-            error: error instanceof Error ? error.message : String(error),
+            error: removeError,
           });
         });
         const run = (await this.runs.listForSession(session.id)).at(-1);
-        if (run) this.onRetired?.(run);
+        if (run) this.onRetired?.(run, { worktree: basename(worktreePath), ...(removeError !== undefined ? { error: removeError } : {}) });
       }
       await this.sessions.markRetired(session.id, now);
       retired++;

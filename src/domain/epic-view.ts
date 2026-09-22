@@ -1,5 +1,6 @@
 import type { TaskRow } from '../db/schema.js';
 import type { MergeStepEvent } from '../execution/merge-policy.js';
+import type { EpicTimelineStep } from './epic-merge-events.js';
 import type { DerivedEpic } from './epic-derivation.js';
 import { reduceMemberState, type MemberMergeState } from './epic-integrate-decision.js';
 
@@ -52,7 +53,7 @@ export interface EpicIntegrateState {
 export interface EpicTimelineEvent {
   seq: number;
   at: number;
-  step: MergeStepEvent;
+  step: EpicTimelineStep;
 }
 
 export interface Epic {

@@ -3,6 +3,15 @@
 import type { MergeStepEvent } from './merge-progress-model.js';
 import type { Task } from './types.js';
 
+/** Mirrors `EpicBranchStep` in `src/domain/epic-merge-events.ts`; an
+ * integration-branch cut observed outside a merge. */
+export type EpicBranchStep =
+  | { step: 'branch-created'; branch: string; fromBranch: string; oid: string }
+  | { step: 'branch-create-failed'; branch: string; fromBranch: string; error: string };
+
+/** Mirrors `EpicTimelineStep`: every step an Epic's timeline can hold. */
+export type EpicTimelineStep = MergeStepEvent | EpicBranchStep;
+
 /** Mirrors `reduceMemberState` server-side. */
 export type MemberMergeStatus = 'completed' | 'blocked' | 'pending';
 
@@ -49,7 +58,7 @@ export interface EpicIntegrateState {
 export interface EpicTimelineEvent {
   seq: number;
   at: number;
-  step: MergeStepEvent;
+  step: EpicTimelineStep;
 }
 
 export interface Epic {

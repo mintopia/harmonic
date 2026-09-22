@@ -444,28 +444,32 @@ export const Git = {
     }
   },
 
-  /** Snapshot everything in the worktree onto its branch; no-op when clean. */
-  async commitAll(worktreePath: string, message: string): Promise<void> {
+  /** Snapshot everything in the worktree onto its branch; no-op when clean.
+   * Returns the new HEAD oid, or `null` when nothing was committed. */
+  async commitAll(worktreePath: string, message: string): Promise<string | null> {
     await git(worktreePath, 'add', '-A');
     const status = await git(worktreePath, 'status', '--porcelain');
-    if (status.length === 0) return;
+    if (status.length === 0) return null;
     await git(worktreePath, ...IDENTITY, 'commit', '-m', message);
+    return git(worktreePath, 'rev-parse', 'HEAD');
   },
 
   /** Stage only `paths` and commit them onto the checkout's current branch; no-op
    * when they introduce no staged change (so re-closing an already-closed ticket
    * commits nothing). Unlike {@link commitAll} this never sweeps up unrelated
-   * working-tree changes. */
-  async commitPaths(dir: string, paths: string[], message: string): Promise<void> {
-    if (paths.length === 0) return;
+   * working-tree changes. Returns the new HEAD oid, or `null` when nothing was
+   * committed. */
+  async commitPaths(dir: string, paths: string[], message: string): Promise<string | null> {
+    if (paths.length === 0) return null;
     await git(dir, 'add', '--', ...paths);
     try {
       await git(dir, 'diff', '--cached', '--quiet');
-      return;
+      return null;
     } catch {
       // A non-zero exit means there are staged changes to commit.
     }
     await git(dir, ...IDENTITY, 'commit', '-m', message);
+    return git(dir, 'rev-parse', 'HEAD');
   },
 
   stage: (dir: string, paths: string[]) =>

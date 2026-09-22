@@ -458,6 +458,103 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
   });
 });
 
+describe('EpicLifecycle integration-branch cut visibility (git-visibility)', () => {
+  let dir: string;
+  let repo: string;
+  let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
+  let tasks: TaskService;
+  let wsId: number;
+  const mscan = (tickets: Ticket[]) => mirrorScan(tasks, tickets, wsId);
+
+  const rawGit = (rd: string, ...args: string[]) => execFileSync('git', ['-C', rd, ...args], { encoding: 'utf8' }).trim();
+
+  function makeRepo(defaultBranch = 'develop'): string {
+    const d = mkdtempSync(join(tmpdir(), 'harmonic-epic-branch-event-repo-'));
+    execFileSync('git', ['init', '-b', defaultBranch, d], { encoding: 'utf8' });
+    rawGit(d, 'config', 'user.name', 'Test');
+    rawGit(d, 'config', 'user.email', 'test@example.com');
+    writeFileSync(join(d, 'README.md'), '# repo\n');
+    rawGit(d, 'add', '-A');
+    rawGit(d, 'commit', '-m', 'init');
+    return d;
+  }
+
+  const epicTickets = (): Ticket[] => [
+    ticket({ number: 10, title: 'Epic' }),
+    ticket({ number: 11, parent: 10, labels: ['ready-for-agent'] }),
+    ticket({ number: 12, parent: 10, labels: ['ready-for-agent'] }),
+  ];
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-branch-event-'));
+    repo = makeRepo();
+    asyncDb = await openAsyncDb(dir);
+    wsId = await seedWorkspace(asyncDb, repo);
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
+    await new WorkspaceService(asyncDb, settingsStore).update(wsId, { isolationMode: 'worktree' });
+  });
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+  });
+
+  it('fires branch-created once on the Epic timeline; a later idempotent reconcile does not repeat it', async () => {
+    const epicMergeEvents = new EpicMergeEventStore(asyncDb);
+    const workspace = (await allWorkspaces(asyncDb, settingsStore)()).find((w) => w.id === wsId)!;
+    const service = new TrackerEpicService(tasks, async () => [workspace], { epicMergeEvents });
+    const epics = service.startWorkspace(workspace);
+    const tickets = epicTickets();
+    const mirrored = await mscan(tickets);
+
+    await epics.reconcile(tickets, mirrored);
+    await epics.reconcile(tickets, mirrored);
+
+    const rows = await epicMergeEvents.list(wsId, 10);
+    expect(rows.map((row) => row.step.step)).toEqual(['branch-created']);
+    expect(rows[0]!.step).toMatchObject({ step: 'branch-created', branch: 'epic/10', fromBranch: 'develop' });
+  });
+
+  it('keeps branch-created on the timeline through a fresh "started" row, but slices mergeSteps to the current integration only', async () => {
+    const epicMergeEvents = new EpicMergeEventStore(asyncDb);
+    const workspace = (await allWorkspaces(asyncDb, settingsStore)()).find((w) => w.id === wsId)!;
+    const service = new TrackerEpicService(tasks, async () => [workspace], { epicMergeEvents });
+    const epics = service.startWorkspace(workspace);
+    const tickets = epicTickets();
+    const mirrored = await mscan(tickets);
+    await epics.reconcile(tickets, mirrored);
+
+    await epicMergeEvents.append(wsId, 10, { step: 'started', baseBranch: 'develop', taskBranch: 'epic/10' });
+    await epicMergeEvents.append(wsId, 10, { step: 'merged', mergeOid: 'deadbeef' });
+
+    const detail = await service.epicDetail(wsId, 10);
+
+    expect(detail!.timelineEvents.map((event) => event.step.step)).toEqual(['branch-created', 'started', 'merged']);
+    expect(detail!.mergeSteps.map((step) => step.step)).toEqual(['started', 'merged']);
+  });
+
+  it('dedupes a repeated branch-create-failed across polls — the same failure is recorded once', async () => {
+    // A branch literally named "epic" collides with the "epic/<ref>" namespace,
+    // so every attempt to cut epic/10 fails the same way, every poll.
+    rawGit(repo, 'branch', 'epic');
+    const epicMergeEvents = new EpicMergeEventStore(asyncDb);
+    const workspace = (await allWorkspaces(asyncDb, settingsStore)()).find((w) => w.id === wsId)!;
+    const service = new TrackerEpicService(tasks, async () => [workspace], { epicMergeEvents });
+    const epics = service.startWorkspace(workspace);
+    const tickets = epicTickets();
+    const mirrored = await mscan(tickets);
+
+    await epics.reconcile(tickets, mirrored);
+    await epics.reconcile(tickets, mirrored);
+    await epics.reconcile(tickets, mirrored);
+
+    const rows = await epicMergeEvents.list(wsId, 10);
+    expect(rows.map((row) => row.step.step)).toEqual(['branch-create-failed']);
+  });
+});
+
 describe('reduceMemberState (issue #161)', () => {
   const row = (over: Partial<{ state: string; escalated: boolean }>) =>
     ({ state: 'ready', escalated: false, ...over }) as never;
