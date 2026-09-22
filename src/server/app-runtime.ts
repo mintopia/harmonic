@@ -363,6 +363,8 @@ export async function createRuntime(deps: {
       dispatchEpicResolution: (input) => runnerRef!.resolveEpicVerification(input),
       worktreesDir,
       onEpicAttemptChanged: (attempt) => bus.emit('attempt_changed', attempt),
+      onEpicMergeStep: (payload) => bus.emit('epic_changed', payload),
+      onEpicIntegrated: (payload) => bus.emit('epic_integrated', payload),
       verificationAttemptStore: verificationAttempts,
       criticDrive: opts.criticDrive,
     },

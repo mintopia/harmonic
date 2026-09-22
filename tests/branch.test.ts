@@ -88,6 +88,17 @@ describe('branch-retirement', () => {
       expect(branchGit.deleteBranch).toHaveBeenCalledWith('/repo', 'harmonic/task-2-run-1');
     });
 
+    it('notifies the Epic lifecycle only after retiring its integration branch', async () => {
+      const branchGit = git();
+      const onRetired = vi.fn(async () => {});
+      const coordinator = new BranchRetirementCoordinator({ listAll: async () => [] }, { get: async () => task }, branchGit);
+
+      await coordinator.retireEpic('/repo', 'epic/42', 'develop', onRetired);
+
+      expect(branchGit.deleteBranch).toHaveBeenCalledWith('/repo', 'epic/42');
+      expect(onRetired).toHaveBeenCalledOnce();
+    });
+
     it('retires a drifted branch after equivalent content merges under another SHA', async () => {
       const repo = makeRepo();
       try {

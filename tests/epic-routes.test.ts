@@ -1179,6 +1179,7 @@ describe('epic-integrate-git', () => {
     now?: () => number;
     verifyBackoffMs?: number;
     operationTimeoutMs?: number;
+    onIntegrated?: (event: { epicRef: number }) => void;
   } = {}) => {
     const git = opts.git ?? new FakeGit();
     const verify = vi.fn<VerifyFn>(opts.verify ?? (async () => proceed));
@@ -1189,6 +1190,7 @@ describe('epic-integrate-git', () => {
     const markIntegrating = vi.fn(async (_epicRef: number) => {});
     const recordIntegration = vi.fn(async (_input: { epicRef: number; mergeCommit: string | null; memberRefs: number[] }) => {});
     const onError = vi.fn<(msg: string) => void>();
+    const onIntegrated = vi.fn<(event: { epicRef: number }) => void>(opts.onIntegrated);
     let t = 0;
     const coord = new EpicCoordinator({
       repoDir: '/repo',
@@ -1203,9 +1205,10 @@ describe('epic-integrate-git', () => {
       ...(opts.operationTimeoutMs !== undefined ? { operationTimeoutMs: opts.operationTimeoutMs } : {}),
       markIntegrating,
       recordIntegration,
+      onIntegrated,
       onError,
     });
-    return { coord, git, verify, resolve, integrate, retire, escalate, markIntegrating, recordIntegration, onError };
+    return { coord, git, verify, resolve, integrate, retire, escalate, markIntegrating, recordIntegration, onIntegrated, onError };
   };
 
   const members = (...m: MemberMergeState[]): MemberMergeState[] => m;
@@ -1258,6 +1261,21 @@ describe('epic-integrate-git', () => {
       const out = await coord.submit({ ref: 42, members: members('completed', 'completed'), memberRefs: [11, 12] });
       expect(out).toEqual({ status: 'integrated', oid: 'integrated-oid' });
       expect(recordIntegration).toHaveBeenCalledWith({ epicRef: 42, mergeCommit: 'integrated-oid', memberRefs: [11, 12] });
+    });
+
+    it('notifies clients only after recording the integrated Epic', async () => {
+      const order: string[] = [];
+      const { coord, recordIntegration, onIntegrated } = build({
+        onIntegrated: () => order.push('notified'),
+      });
+      recordIntegration.mockImplementationOnce(async () => {
+        order.push('recorded');
+      });
+
+      await coord.submit({ ref: 42, members: members('completed') });
+
+      expect(onIntegrated).toHaveBeenCalledWith({ epicRef: 42 });
+      expect(order).toEqual(['recorded', 'notified']);
     });
 
     it('records a null merge-commit (no-op) when the branch is already contained in base (#438)', async () => {

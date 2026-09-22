@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
+import { EpicMergeEventStore } from '../src/domain/epic-merge-events.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
 import { EPIC_LABEL, type Ticket } from '../src/tracker/adapter.js';
 import {
@@ -598,15 +599,23 @@ describe('EpicLifecycle.retireIntegrationBranch (issue #159)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('deletes the branch when it exists and is idempotent when it is already gone', async () => {
+  it('records branch retirement only after deleting the integration branch', async () => {
     const git = new FakeGit(['epic/10']);
+    const events = new EpicMergeEventStore(asyncDb);
     const coord = new EpicLifecycle(tasks, dir, git);
+    coord.attachIntegrationBranchRetired(async ({ epicRef, branch, baseBranch }) => {
+      await events.append(1, epicRef, { step: 'retired', branch, baseBranch });
+    });
 
     await coord.retireIntegrationBranch(10);
     expect(git.deleted).toEqual(['epic/10']);
+    expect((await events.list(1, 10)).map((event) => event.step)).toEqual([
+      { step: 'retired', branch: 'epic/10', baseBranch: 'develop' },
+    ]);
 
     await coord.retireIntegrationBranch(10);
     expect(git.deleted).toEqual(['epic/10']);
+    expect(await events.list(1, 10)).toHaveLength(1);
   });
 
   it('keeps an uncontained or checked-out integration branch', async () => {
