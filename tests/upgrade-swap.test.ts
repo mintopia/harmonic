@@ -70,14 +70,16 @@ describe('UpgradeSwap', () => {
     ]);
   });
 
-  it('aborts without releasing the lock or exiting when the installed version differs from the pin', async () => {
-    const { swap, calls, dependencies } = subject({ installedVersion: async () => '2.6.1' });
+  it('aborts a systemd handoff without releasing the lock or exiting when the installed version differs from the pin', async () => {
+    const { swap, calls, dependencies } = subject({ managedBy: 'systemd', installedVersion: async () => '2.6.1' });
 
     const result = await swap.execute({ version: '2.6.0' });
 
     expect(result.kind).toBe('aborted');
     if (result.kind === 'aborted') expect(result.error.message).toBe('installed version 2.6.1 does not match pinned version 2.6.0');
     expect(dependencies.abort).toHaveBeenCalledOnce();
+    expect(dependencies.releaseLock).not.toHaveBeenCalled();
+    expect(dependencies.exit).not.toHaveBeenCalled();
     expect(calls).toEqual([
       'log:install:started', 'operation:upgrade.install', 'install:2.6.0', 'log:install:succeeded',
       'log:verify:started', 'operation:upgrade.verify', 'log:verify:failed',

@@ -16,6 +16,36 @@ import { displayUrl, type CliOutcome } from './cli-commands.js';
 
 const execFileAsync = promisify(execFile);
 
+export type UpgradeCommand = (file: string, args: string[]) => Promise<unknown>;
+
+export async function installSystemdUpgrade({
+  dataDir,
+  target,
+  run,
+}: {
+  dataDir: string;
+  target: string;
+  run: UpgradeCommand;
+}): Promise<void> {
+  const appDir = join(dataDir, 'app');
+  const versionDir = join(appDir, 'versions', target);
+  await run('npm', ['i', '--prefix', versionDir, `@mintopia/harmonic@${target}`]);
+  await run('ln', ['-sfn', `versions/${target}`, join(appDir, 'current')]);
+}
+
+export function readSystemdInstalledVersion({
+  dataDir,
+  readFile,
+}: {
+  dataDir: string;
+  readFile: (path: string, encoding: 'utf8') => string;
+}): string {
+  const packagePath = `${join(dataDir, 'app', 'current', 'dist')}/../package.json`;
+  const packageJson: unknown = JSON.parse(readFile(packagePath, 'utf8'));
+  if (typeof packageJson !== 'object' || packageJson === null || !('version' in packageJson)) return 'unknown';
+  return typeof packageJson.version === 'string' ? packageJson.version : 'unknown';
+}
+
 export async function runServer(values: ServeValues, rest: string[]): Promise<CliOutcome> {
   const dataDir = values['data-dir'] ?? defaultDataDir();
   const port = Number(values.port);
@@ -49,9 +79,20 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
         const swap = new UpgradeSwap({
           ...(process.env.HARMONIC_MANAGED_BY === undefined ? {} : { managedBy: process.env.HARMONIC_MANAGED_BY }),
           install: async (target) => {
+            if (process.env.HARMONIC_MANAGED_BY === 'systemd') {
+              await installSystemdUpgrade({
+                dataDir,
+                target,
+                run: async (file, args) => execFileAsync(file, args),
+              });
+              return;
+            }
             await execFileAsync('npm', ['i', '-g', `@mintopia/harmonic@${target}`]);
           },
           installedVersion: async () => {
+            if (process.env.HARMONIC_MANAGED_BY === 'systemd') {
+              return readSystemdInstalledVersion({ dataDir, readFile: readFileSync });
+            }
             const { stdout } = await execFileAsync('npm', ['root', '-g']);
             const packageDir = join(stdout.trim(), '@mintopia', 'harmonic');
             const pkg = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as { version?: unknown };
