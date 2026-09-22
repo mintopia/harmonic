@@ -16,7 +16,7 @@
     "jev:gate": "tsx scripts/jev-gate/cli.ts",
     "jev:baseline": "tsx scripts/jev-gate/cli.ts --write-baseline",
     "build": "tsc -p tsconfig.json && cp src/baseline.yaml dist/baseline.yaml && vite build --config web/vite.config.ts",
-    "typecheck": "tsc -p tsconfig.test.json && tsc -p web/tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && tsc -p web/tsconfig.json",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix"
   },

@@ -26,7 +26,7 @@ export interface WorkspaceProvisionerDeps {
   events: RunnerEvents;
   worktreesDir: string;
   /** Absent → a Close with no Attempt drops its cleanup row. */
-  taskEvents?: TaskEventAppender;
+  taskEvents?: TaskEventAppender | undefined;
 }
 
 export class WorkspaceProvisioner {
