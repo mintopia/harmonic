@@ -236,7 +236,7 @@ class SystemdServiceManager implements ServiceManager {
     await this.dependencies.run('npm', ['pack', '--pack-destination', versionDir, `@mintopia/harmonic@${version}`]);
     await this.dependencies.run('tar', ['-xzf', join(versionDir, `mintopia-harmonic-${version}.tgz`), '--strip-components=1', '-C', versionDir]);
     await this.dependencies.run('npm', ['i', '--prefix', versionDir, '--omit=dev']);
-    await this.dependencies.run('chown', ['-R', user ?? this.dependencies.userName, appDir]);
+    if (user !== undefined) await this.dependencies.run('chown', ['-R', user, appDir]);
     await this.dependencies.run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
     await this.dependencies.mkdir(this.unitDirectory);
     if (options.serve.password === undefined) {

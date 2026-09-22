@@ -304,7 +304,6 @@ describe('systemd ServiceManager', () => {
       ['npm', 'pack', '--pack-destination', '/home/ada/.harmonic/app/versions/2.16.0', '@mintopia/harmonic@2.16.0'],
       ['tar', '-xzf', '/home/ada/.harmonic/app/versions/2.16.0/mintopia-harmonic-2.16.0.tgz', '--strip-components=1', '-C', '/home/ada/.harmonic/app/versions/2.16.0'],
       ['npm', 'i', '--prefix', '/home/ada/.harmonic/app/versions/2.16.0', '--omit=dev'],
-      ['chown', '-R', 'ada', '/home/ada/.harmonic/app'],
       ['ln', '-sfn', 'versions/2.16.0', '/home/ada/.harmonic/app/current'],
       ['systemctl', '--user', 'daemon-reload'],
       ['systemctl', '--user', 'enable', 'harmonic'],
@@ -313,7 +312,7 @@ describe('systemd ServiceManager', () => {
     ]);
   });
 
-  it('keeps the data directory owner but gives the user unit ownership of its app tree', async () => {
+  it('does not chown the app tree for a user-level unit', async () => {
     const deps = dependencies();
     const manager = createServiceManager(environment({ userSystemdUsable: true }), deps);
 
@@ -323,7 +322,7 @@ describe('systemd ServiceManager', () => {
     });
 
     expect(deps.dirs).toContain('/home/ada/.harmonic');
-    expect(deps.calls).toContainEqual(['chown', '-R', 'ada', '/home/ada/.harmonic/app']);
+    expect(deps.calls.some(([command]) => command === 'chown')).toBe(false);
   });
 
   it('ignores --user for a user-level systemd unit and warns', async () => {
@@ -338,7 +337,7 @@ describe('systemd ServiceManager', () => {
 
     const unit = deps.files.get('/home/ada/.config/systemd/user/harmonic.service') ?? '';
     expect(unit).not.toContain('User=');
-    expect(deps.calls).toContainEqual(['chown', '-R', 'ada', '/home/ada/.harmonic/app']);
+    expect(deps.calls.some(([command]) => command === 'chown')).toBe(false);
     expect(deps.warn).toHaveBeenCalledWith(expect.stringContaining('ignored'));
   });
 
