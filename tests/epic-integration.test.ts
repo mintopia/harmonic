@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
@@ -16,6 +17,7 @@ import {
   type EpicIntegrateTrigger,
   type EpicRefreshTrigger,
 } from '../src/execution/epic-coordinator.js';
+import { Git } from '../src/execution/git.js';
 import type { MemberMergeState } from '../src/domain/epic-integrate-decision.js';
 import type { EpicRefreshOutcome } from '../src/execution/epic-coordinator.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -39,10 +41,11 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
   ...over,
 });
 
-class FakeGit implements Pick<EpicGit, 'symbolicBranch' | 'branchExists' | 'createBranch' | 'deleteBranch' | 'branchCheckedOutAt' | 'isAncestor'> {
+class FakeGit implements Pick<EpicGit, 'symbolicBranch' | 'branchExists' | 'revParse' | 'createBranch' | 'deleteBranch' | 'branchCheckedOutAt' | 'isAncestor'> {
   readonly branches: Set<string>;
   readonly created: string[] = [];
   readonly deleted: string[] = [];
+  readonly deleteDirs: string[] = [];
   readonly checkedOut = new Set<string>();
   readonly contained = new Set<string>();
   symbolicBranchCalls = 0;
@@ -60,15 +63,19 @@ class FakeGit implements Pick<EpicGit, 'symbolicBranch' | 'branchExists' | 'crea
   async branchExists(_dir: string, name: string): Promise<boolean> {
     return this.branches.has(name);
   }
+  async revParse(): Promise<string> {
+    return 'base-oid';
+  }
   async createBranch(_dir: string, name: string, _startPoint: string): Promise<unknown> {
     if (this.branches.has(name)) throw new Error(`branch ${name} already exists`);
     this.branches.add(name);
     this.created.push(name);
     return undefined;
   }
-  async deleteBranch(_dir: string, name: string): Promise<unknown> {
+  async deleteBranch(dir: string, name: string): Promise<unknown> {
     this.branches.delete(name);
     this.deleted.push(name);
+    this.deleteDirs.push(dir);
     return undefined;
   }
   async branchCheckedOutAt(_dir: string, branch: string): Promise<string | null> {
@@ -601,12 +608,19 @@ describe('EpicLifecycle.retireIntegrationBranch (issue #159)', () => {
   it('deletes the branch when it exists and is idempotent when it is already gone', async () => {
     const git = new FakeGit(['epic/10']);
     const coord = new EpicLifecycle(tasks, dir, git);
+    const addWorktree = vi.spyOn(Git, 'addDetachedWorktree').mockResolvedValue('');
+    const removeWorktree = vi.spyOn(Git, 'removeWorktree').mockResolvedValue(undefined);
 
     await coord.retireIntegrationBranch(10);
     expect(git.deleted).toEqual(['epic/10']);
+    expect(git.deleteDirs[0]).not.toBe(dir);
+    expect(addWorktree).toHaveBeenCalledOnce();
+    expect(removeWorktree).toHaveBeenCalledOnce();
 
     await coord.retireIntegrationBranch(10);
     expect(git.deleted).toEqual(['epic/10']);
+    addWorktree.mockRestore();
+    removeWorktree.mockRestore();
   });
 
   it('keeps an uncontained or checked-out integration branch', async () => {
@@ -621,6 +635,29 @@ describe('EpicLifecycle.retireIntegrationBranch (issue #159)', () => {
     git.checkedOut.add('epic/10');
     await coord.retireIntegrationBranch(10);
     expect(git.deleted).toEqual([]);
+  });
+
+  it('retires in a disposable worktree without changing the base checkout (#700)', async () => {
+    const repo = join(dir, 'repo');
+    const git = (...args: string[]) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim();
+    execFileSync('git', ['init', '-b', 'develop', repo], { encoding: 'utf8' });
+    git('config', 'user.name', 'Test');
+    git('config', 'user.email', 'test@example.com');
+    writeFileSync(join(repo, 'base.txt'), 'base\n');
+    git('add', 'base.txt');
+    git('commit', '-m', 'init');
+    git('branch', 'epic/10');
+    git('checkout', '-b', 'parked');
+    const baseHead = git('rev-parse', 'HEAD');
+    const baseStatus = git('status', '--porcelain');
+
+    await new EpicLifecycle(tasks, repo).retireIntegrationBranch(10);
+
+    expect(git('rev-parse', '--abbrev-ref', 'HEAD')).toBe('parked');
+    expect(git('rev-parse', 'HEAD')).toBe(baseHead);
+    expect(git('status', '--porcelain')).toBe(baseStatus);
+    expect(git('branch', '--list', 'epic/10')).toBe('');
+    expect(git('worktree', 'list', '--porcelain')).not.toContain('harmonic-merge-');
   });
 });
 
