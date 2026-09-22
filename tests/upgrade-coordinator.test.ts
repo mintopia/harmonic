@@ -21,10 +21,10 @@ function coordinator(input: {
   runningAttempts?: number;
   conversationMidTurn?: boolean;
   operations?: OperationSnapshot[];
-  onIdle?: (version: string) => void;
+  onIdle?: (version: string) => Promise<void> | void;
 } = {}) {
   let config: AppConfig = { ...baselineConfig(), autoRunner: { ...baselineConfig().autoRunner, enabled: input.autoRunnerEnabled ?? true } };
-  const store = new MemoryStore({ version: input.version ?? '2.6.0', armedVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null });
+  const store = new MemoryStore({ version: input.version ?? '2.6.0', armedVersion: null, upgradingVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null });
   let runningAttempts = input.runningAttempts ?? 0;
   let conversationMidTurn = input.conversationMidTurn ?? false;
   let operations = input.operations ?? [];
@@ -107,6 +107,21 @@ describe('UpgradeCoordinator', () => {
     expect(ready).toEqual(['2.6.0']);
   });
 
+  it('records the real upgrade-in-progress state before handing the swap to the service manager', async () => {
+    let release: (() => void) | undefined;
+    const handoff = new Promise<void>((resolve) => { release = resolve; });
+    let entered: (() => void) | undefined;
+    const enteredHandoff = new Promise<void>((resolve) => { entered = resolve; });
+    const subject = coordinator({ onIdle: async () => { entered?.(); return handoff; } });
+
+    const arm = subject.upgrade.arm();
+    await enteredHandoff;
+    await expect(subject.upgrade.state()).resolves.toMatchObject({ armedVersion: '2.6.0', upgradingVersion: '2.6.0' });
+
+    release?.();
+    await arm;
+  });
+
   it('unarms and restores the master switch when the idle handoff fails', async () => {
     const subject = coordinator({ onIdle: () => { throw new Error('install failed'); } });
 
@@ -115,6 +130,7 @@ describe('UpgradeCoordinator', () => {
     await expect(subject.upgrade.state()).resolves.toEqual({
       version: '2.6.0',
       armedVersion: null,
+      upgradingVersion: null,
       autoRunnerWasEnabled: null,
       dismissedVersion: null,
     });
@@ -126,7 +142,7 @@ describe('UpgradeCoordinator', () => {
     await subject.upgrade.arm();
     expect(subject.config().autoRunner.enabled).toBe(false);
 
-    await expect(subject.upgrade.complete()).resolves.toMatchObject({ armedVersion: null, autoRunnerWasEnabled: null });
+    await expect(subject.upgrade.complete()).resolves.toMatchObject({ armedVersion: null, upgradingVersion: null, autoRunnerWasEnabled: null });
     expect(subject.config().autoRunner.enabled).toBe(true);
   });
 

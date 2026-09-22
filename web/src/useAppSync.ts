@@ -147,7 +147,10 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
           setUpdate(next);
           timer = setTimeout(load, 15_000);
         },
-        () => live() && request === updateRequest.current && setUpdate(null),
+        () => {
+          if (!live() || request !== updateRequest.current) return;
+          timer = setTimeout(load, 1_000);
+        },
       );
     };
     load();

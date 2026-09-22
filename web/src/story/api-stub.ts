@@ -173,6 +173,7 @@ const updateState: UpdateState = {
   currentVersion: '2.14.0',
   availableVersion: null,
   armedVersion: null,
+  upgradingVersion: null,
   dismissedVersion: null,
   idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false },
 };

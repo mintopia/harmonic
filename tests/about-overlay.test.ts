@@ -14,6 +14,7 @@ function makeUpdate(overrides: Partial<UpdateState> = {}): UpdateState {
     currentVersion: '2.12.1',
     availableVersion: null,
     armedVersion: null,
+    upgradingVersion: null,
     dismissedVersion: null,
     idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false },
     ...overrides,

@@ -57,6 +57,7 @@ const UPDATE_AVAILABILITY_KEY = 'update-availability';
 const persistedAvailability = z.object({
   version: z.string().nullable(),
   armedVersion: z.string().nullable().optional(),
+  upgradingVersion: z.string().nullable().optional(),
   autoRunnerWasEnabled: z.boolean().nullable().optional(),
   dismissedVersion: z.string().nullable().optional(),
 });
@@ -64,6 +65,7 @@ const persistedAvailability = z.object({
 export interface UpdateAvailabilityState {
   version: string | null;
   armedVersion: string | null;
+  upgradingVersion: string | null;
   autoRunnerWasEnabled: boolean | null;
   dismissedVersion: string | null;
 }
@@ -84,19 +86,20 @@ export class SettingsUpdateAvailabilityStore implements UpdateArmingStore {
     const row = await this.db.read((db) =>
       db.select({ value: settings.value }).from(settings).where(eq(settings.key, UPDATE_AVAILABILITY_KEY)).get(),
     );
-    if (row === undefined) return { version: null, armedVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null };
+    if (row === undefined) return { version: null, armedVersion: null, upgradingVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null };
     try {
       const parsed = persistedAvailability.safeParse(JSON.parse(row.value));
-      if (!parsed.success) return { version: null, armedVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null };
+      if (!parsed.success) return { version: null, armedVersion: null, upgradingVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null };
       return {
         version: parsed.data.version,
         armedVersion: parsed.data.armedVersion ?? null,
+        upgradingVersion: parsed.data.upgradingVersion ?? null,
         autoRunnerWasEnabled: parsed.data.autoRunnerWasEnabled ?? null,
         dismissedVersion: parsed.data.dismissedVersion ?? null,
       };
     } catch {
       // Corrupt/legacy stored JSON degrades to "no known update" rather than crashing the update check.
-      return { version: null, armedVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null };
+      return { version: null, armedVersion: null, upgradingVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null };
     }
   }
 

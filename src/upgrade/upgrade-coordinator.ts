@@ -60,7 +60,7 @@ export class UpgradeCoordinator {
     const autoRunnerWasEnabled = this.options.settings.getGlobal().autoRunner.enabled;
     await this.options.settings.updateGlobal({ autoRunner: { enabled: false } });
     try {
-      const armed = { ...current, armedVersion: current.version, autoRunnerWasEnabled };
+      const armed = { ...current, armedVersion: current.version, upgradingVersion: null, autoRunnerWasEnabled };
       await this.options.store.setState(armed);
       await this.reconcile();
       return armed;
@@ -78,7 +78,7 @@ export class UpgradeCoordinator {
     const current = await this.options.store.getState();
     if (current.armedVersion === null) return current;
     const restored = current.autoRunnerWasEnabled ?? false;
-    const cancelled = { ...current, armedVersion: null, autoRunnerWasEnabled: null };
+    const cancelled = { ...current, armedVersion: null, upgradingVersion: null, autoRunnerWasEnabled: null };
     await this.options.store.setState(cancelled);
     try {
       await this.options.settings.updateGlobal({ autoRunner: { enabled: restored } });
@@ -99,7 +99,7 @@ export class UpgradeCoordinator {
     const current = await this.options.store.getState();
     if (current.armedVersion === null || current.armedVersion !== this.options.version) return current;
     const restored = current.autoRunnerWasEnabled ?? false;
-    const completed = { ...current, armedVersion: null, autoRunnerWasEnabled: null };
+    const completed = { ...current, armedVersion: null, upgradingVersion: null, autoRunnerWasEnabled: null };
     await this.options.store.setState(completed);
     try {
       await this.options.settings.updateGlobal({ autoRunner: { enabled: restored } });
@@ -128,6 +128,7 @@ export class UpgradeCoordinator {
     if (this.onIdleStartedFor === armed.armedVersion) return true;
     this.onIdleStartedFor = armed.armedVersion;
     try {
+      await this.options.store.setState({ ...armed, upgradingVersion: armed.armedVersion });
       await this.options.onIdle?.(armed.armedVersion);
     } catch (error) {
       reportFailure(error, {

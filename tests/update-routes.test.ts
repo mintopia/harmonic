@@ -19,7 +19,7 @@ describe('Update routes (issue #638)', () => {
     const res = await server.api('GET', '/api/update');
 
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ currentVersion: '1.2.3', availableVersion: null });
+    expect(res.body).toMatchObject({ currentVersion: '1.2.3', availableVersion: null, upgradingVersion: null });
   });
 
   it('POST /api/update/check finds and persists a newer version on demand', async () => {

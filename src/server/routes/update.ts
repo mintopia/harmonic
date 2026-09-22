@@ -9,6 +9,7 @@ const updateStateSchema = z.object({
   currentVersion: z.string(),
   availableVersion: z.string().nullable(),
   armedVersion: z.string().nullable(),
+  upgradingVersion: z.string().nullable(),
   dismissedVersion: z.string().nullable(),
   idle: z.object({
     runningAttempts: z.number().int().nonnegative(),
@@ -32,6 +33,7 @@ export async function updateRoutes(
       currentVersion: ctx.runningVersion,
       availableVersion: state.version,
       armedVersion: state.armedVersion,
+      upgradingVersion: state.upgradingVersion,
       dismissedVersion: state.dismissedVersion,
       idle,
     };
