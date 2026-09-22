@@ -53,7 +53,7 @@ export class UpgradeCoordinator {
 
   private async dismissOnce(): Promise<UpdateAvailabilityState> {
     const current = await this.options.store.getState();
-    if (current.version === null || current.armedVersion !== null) return current;
+    if (current.version === null || current.phase.kind !== 'unarmed') return current;
     const dismissed = { ...current, dismissedVersion: current.version };
     await this.options.store.setState(dismissed);
     return dismissed;
@@ -62,15 +62,20 @@ export class UpgradeCoordinator {
   private async armOnce(): Promise<UpdateAvailabilityState> {
     if (this.options.migrationRequired) throw new DomainError('invalid_state', SYSTEMD_MIGRATION_NOTICE);
     const current = await this.options.store.getState();
-    if (current.armedVersion !== null) return current;
+    if (current.phase.kind !== 'unarmed') return current;
     if (current.version === null) throw new DomainError('invalid_state', 'there is no available update to arm');
 
+    const targetVersion = current.version;
     const autoRunnerWasEnabled = this.options.settings.getGlobal().autoRunner.enabled;
     await this.options.settings.updateGlobal({ autoRunner: { enabled: false } });
     try {
-      const armed = { ...current, armedVersion: current.version, autoRunnerWasEnabled };
+      const armed: UpdateAvailabilityState = {
+        version: current.version,
+        dismissedVersion: current.dismissedVersion,
+        phase: { kind: 'armed', targetVersion, autoRunnerWasEnabled },
+      };
       await this.options.store.setState(armed);
-      await this.reconcile();
+      setImmediate(() => this.reconcileAfterArming(targetVersion));
       return armed;
     } catch (error) {
       await this.options.settings.updateGlobal({ autoRunner: { enabled: autoRunnerWasEnabled } });
@@ -84,9 +89,13 @@ export class UpgradeCoordinator {
 
   private async cancelOnce(): Promise<UpdateAvailabilityState> {
     const current = await this.options.store.getState();
-    if (current.armedVersion === null) return current;
-    const restored = current.autoRunnerWasEnabled ?? false;
-    const cancelled = { ...current, armedVersion: null, autoRunnerWasEnabled: null };
+    if (current.phase.kind === 'unarmed') return current;
+    const restored = current.phase.autoRunnerWasEnabled;
+    const cancelled: UpdateAvailabilityState = {
+      version: current.version,
+      dismissedVersion: current.dismissedVersion,
+      phase: { kind: 'unarmed' },
+    };
     await this.options.store.setState(cancelled);
     try {
       await this.options.settings.updateGlobal({ autoRunner: { enabled: restored } });
@@ -105,9 +114,13 @@ export class UpgradeCoordinator {
    * reconcile stops re-triggering the swap, and restore the Auto-Runner switch. */
   private async completeOnce(): Promise<UpdateAvailabilityState> {
     const current = await this.options.store.getState();
-    if (current.armedVersion === null || current.armedVersion !== this.options.version) return current;
-    const restored = current.autoRunnerWasEnabled ?? false;
-    const completed = { ...current, armedVersion: null, autoRunnerWasEnabled: null };
+    if (current.phase.kind === 'unarmed' || current.phase.targetVersion !== this.options.version) return current;
+    const restored = current.phase.autoRunnerWasEnabled;
+    const completed: UpdateAvailabilityState = {
+      version: current.version,
+      dismissedVersion: current.dismissedVersion,
+      phase: { kind: 'unarmed' },
+    };
     await this.options.store.setState(completed);
     try {
       await this.options.settings.updateGlobal({ autoRunner: { enabled: restored } });
@@ -125,27 +138,29 @@ export class UpgradeCoordinator {
   }
 
   reconcile(): Promise<boolean> {
-    return this.reconcileIdle();
+    return this.exclusively(() => this.reconcileIdle());
   }
 
   private async reconcileOnce(): Promise<boolean> {
     const armed = await this.options.store.getState();
-    if (armed.armedVersion === null) return false;
+    if (armed.phase.kind === 'unarmed') return false;
     if (this.options.migrationRequired) {
       await this.cancelOnce();
       return false;
     }
+    const targetVersion = armed.phase.targetVersion;
     const idle = await this.idleState();
     if (idle.runningAttempts !== 0 || idle.mergingOrIntegrating || idle.conversationMidTurn) return false;
-    if (this.onIdleStartedFor === armed.armedVersion) return true;
-    this.onIdleStartedFor = armed.armedVersion;
+    if (this.onIdleStartedFor === targetVersion) return true;
+    this.onIdleStartedFor = targetVersion;
     try {
-      await this.options.onIdle?.(armed.armedVersion);
+      await this.options.store.setState({ ...armed, phase: { ...armed.phase, kind: 'upgrading' } });
+      await this.options.onIdle?.(targetVersion);
     } catch (error) {
       reportFailure(error, {
         op: 'upgradeCoordinator.onIdle',
         level: 'error',
-        context: { armedVersion: armed.armedVersion },
+        context: { armedVersion: targetVersion },
       });
       this.onIdleStartedFor = null;
       await this.cancelOnce();
@@ -155,7 +170,7 @@ export class UpgradeCoordinator {
   }
 
   async assertManualLaunchAllowed(): Promise<void> {
-    if ((await this.options.store.getState()).armedVersion !== null) {
+    if ((await this.options.store.getState()).phase.kind !== 'unarmed') {
       throw new DomainError('invalid_state', 'the instance is waiting to upgrade; cancel the upgrade before starting new work');
     }
   }
@@ -170,5 +185,22 @@ export class UpgradeCoordinator {
     } finally {
       release?.();
     }
+  }
+
+  private reconcileAfterArming(targetVersion: string): void {
+    void this.reconcile().catch((error: unknown) => {
+      reportFailure(error, {
+        op: 'upgradeCoordinator.reconcile',
+        level: 'error',
+        context: { armedVersion: targetVersion },
+      });
+      void this.cancel().catch((cancelError: unknown) => {
+        reportFailure(cancelError, {
+          op: 'upgradeCoordinator.cancelAfterReconcileFailure',
+          level: 'error',
+          context: { armedVersion: targetVersion },
+        });
+      });
+    });
   }
 }
