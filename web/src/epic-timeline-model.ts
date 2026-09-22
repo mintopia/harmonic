@@ -10,7 +10,6 @@ export interface EpicTimelineRow {
   tag: 'LIFECYCLE' | 'INTEGRATION';
 }
 
-/** Projects the Epic record and its persisted integration log into one audit trail. */
 export function epicTimelineRows(epic: Epic): EpicTimelineRow[] {
   const integrationRows = epic.timelineEvents
     .map((event, index) => {
