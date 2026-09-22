@@ -3,6 +3,7 @@ import {
   SIGNAL,
   STATE_LABEL,
   edgePath,
+  filterByEpic,
   fitTransform,
   graphEdges,
   isTerminalState,
@@ -100,6 +101,28 @@ describe('terminal-state visibility', () => {
   it('reveals terminal Tasks when the toggle is on, preserving order', () => {
     const tasks = [task(1, 'working'), task(2, 'done'), task(4, 'ready')];
     expect(visibleTasks(tasks, true).map((t) => t.id)).toEqual([1, 2, 4]);
+  });
+});
+
+describe('epic filter', () => {
+  it('passes every Task through when no epic is chosen', () => {
+    const tasks = [task(1, 'ready', { mapRef: 52 }), task(2, 'ready', { mapRef: null })];
+    expect(filterByEpic(tasks, null)).toEqual(tasks);
+  });
+
+  it('narrows to the chosen epic\'s members by mapRef', () => {
+    const tasks = [
+      task(1, 'ready', { mapRef: 52 }),
+      task(2, 'ready', { mapRef: 30 }),
+      task(3, 'ready', { mapRef: 52 }),
+      task(4, 'ready', { mapRef: null }),
+    ];
+    expect(filterByEpic(tasks, 52).map((t) => t.id)).toEqual([1, 3]);
+  });
+
+  it('renders an empty set, not a crash, for an epic with no members', () => {
+    const tasks = [task(1, 'ready', { mapRef: 30 })];
+    expect(filterByEpic(tasks, 999)).toEqual([]);
   });
 });
 

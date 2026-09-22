@@ -42,6 +42,10 @@ export function visibleTasks(tasks: Task[], showTerminal: boolean): Task[] {
   );
 }
 
+export function filterByEpic(tasks: Task[], epicRef: number | null): Task[] {
+  return epicRef == null ? tasks : tasks.filter((t) => t.mapRef === epicRef);
+}
+
 /**
  * The DAG's directed edges over the Dependency relation, restricted to the
  * given (visible) Task set. `dependsOn` is already unified across native and

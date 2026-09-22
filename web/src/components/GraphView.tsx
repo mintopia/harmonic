@@ -10,6 +10,7 @@ import {
   type Layout,
   type Transform,
   edgePath,
+  filterByEpic,
   fitTransform,
   graphEdges,
   graphNodeState,
@@ -23,7 +24,7 @@ import { ticketRowId } from '../id-format.js';
 import { useLiveEffect } from '../useLiveEffect';
 import { Switch } from './Switch';
 import { EmptyState } from './EmptyState';
-import { touchTarget, touchTargetInline } from '../ui';
+import { selectField, touchTarget, touchTargetInline } from '../ui';
 import { PageHeader } from './PageHeader';
 
 const NODE_W = 196;
@@ -55,6 +56,7 @@ export function GraphView({
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [showTerminal, setShowTerminal] = useState(false);
+  const [epicFilter, setEpicFilter] = useState<number | null>(null);
 
   useEffect(() => {
     if (workspaceId === null) return;
@@ -66,7 +68,15 @@ export function GraphView({
       .finally(() => setLoading(false));
   }, [workspaceId, epics]);
 
-  const visible = useMemo(() => visibleTasks(tasks, showTerminal), [tasks, showTerminal]);
+  // Reset a stale filter (e.g. the chosen Epic closed and dropped out of the
+  // Workspace's Epic list) so the control never points at an option that no
+  // longer exists.
+  useEffect(() => {
+    if (epicFilter != null && !epics.some((e) => e.ref === epicFilter)) setEpicFilter(null);
+  }, [epics, epicFilter]);
+
+  const scoped = useMemo(() => filterByEpic(tasks, epicFilter), [tasks, epicFilter]);
+  const visible = useMemo(() => visibleTasks(scoped, showTerminal), [scoped, showTerminal]);
   const edges = useMemo(() => graphEdges(visible), [visible]);
   const badges = useMemo(() => mapBadges(visible), [visible]);
   const byId = useMemo(() => new Map(visible.map((t) => [t.id, t])), [visible]);
@@ -155,9 +165,14 @@ export function GraphView({
   };
 
   const emptyMessage =
-    tasks.length === 0
-      ? { title: 'No tasks yet', body: 'Create a task on the Board — it shows up here once it has dependencies to graph.' }
-      : { title: 'Nothing active', body: 'Every task on this workspace is completed, failed, or cancelled. Turn on “Show terminal” to reveal them.' };
+    epicFilter != null && scoped.length === 0
+      ? { title: 'No tasks in this epic', body: 'This epic has no member tasks yet. Pick “All epics” to see the rest of the workspace.' }
+      : tasks.length === 0
+        ? { title: 'No tasks yet', body: 'Create a task on the Board — it shows up here once it has dependencies to graph.' }
+        : {
+            title: 'Nothing active',
+            body: `Every task ${epicFilter != null ? 'in this epic' : 'on this workspace'} is completed, failed, or cancelled. Turn on “Show terminal” to reveal them.`,
+          };
 
   const showEmpty = !loading && !layoutError && visible.length === 0;
 
@@ -168,6 +183,21 @@ export function GraphView({
         description="What blocks what across this workspace"
         actions={
           <>
+            {epics.length > 0 && (
+              <select
+                aria-label="Filter by epic"
+                className={selectField}
+                value={epicFilter ?? ''}
+                onChange={(e) => setEpicFilter(e.target.value === '' ? null : Number(e.target.value))}
+              >
+                <option value="">All epics</option>
+                {epics.map((epic) => (
+                  <option key={epic.ref} value={epic.ref}>
+                    {epic.title}
+                  </option>
+                ))}
+              </select>
+            )}
             <span className="flex items-baseline gap-1.5 text-small">
               <span className={`tabular-nums ${visible.length > 0 || loading ? 'text-ink' : 'text-faint'}`}>
                 {loading ? '…' : visible.length}
