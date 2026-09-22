@@ -361,7 +361,7 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     await expect(Git.revParse(repo, 'MERGE_HEAD')).rejects.toThrow();
   });
 
-  it('reports target-advanced when another merge updates the base before the CAS', async () => {
+  it('accommodates a base advance before the CAS by rebuilding the merge on the new tip (issue #121)', async () => {
     const repo = makeRepo();
     await makeTaskBranch(repo, 'task-race', (wt) => {
       writeFileSync(join(wt, 'feature.txt'), 'feature\n');
@@ -371,10 +371,42 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     git(repo, 'add', '-A');
     git(repo, 'commit', '-m', 'racing update');
     const racerTip = git(repo, 'rev-parse', 'HEAD');
+    let raced = false;
     const deps: MergePolicyDeps = {
       resolveConflictTurn: neverCalled('resolveConflictTurn'),
       runPostMergeCheck: vi.fn(async () => {
-        git(repo, 'update-ref', 'refs/heads/main', racerTip);
+        // The base races ahead once, under the first build; the policy must
+        // rebuild onto the new tip and merge there rather than escalating.
+        if (!raced) {
+          raced = true;
+          git(repo, 'update-ref', 'refs/heads/main', racerTip);
+        }
+        return { pass: true, output: '' };
+      }),
+      escalate: vi.fn(async () => {}),
+    };
+
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-race', conflictResolveTurns: 0, postMergeCheck: true },
+      deps,
+    );
+
+    expect(outcome.kind).toBe('merged');
+    expect(git(repo, 'ls-tree', '--name-only', 'main', 'racer.txt')).toBe('racer.txt');
+    expect(git(repo, 'ls-tree', '--name-only', 'main', 'feature.txt')).toBe('feature.txt');
+  });
+
+  it('escalates target-advanced when the base keeps advancing past the retry bound', async () => {
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-race', (wt) => {
+      writeFileSync(join(wt, 'feature.txt'), 'feature\n');
+    });
+    const deps: MergePolicyDeps = {
+      resolveConflictTurn: neverCalled('resolveConflictTurn'),
+      runPostMergeCheck: vi.fn(async () => {
+        // The base advances to a brand-new commit on every build, so the CAS can
+        // never win — the policy gives up after the bound and reports target-advanced.
+        git(repo, 'commit', '--allow-empty', '-m', `race ${Date.now()}-${Math.random()}`);
         return { pass: true, output: '' };
       }),
       escalate: vi.fn(async () => {}),
@@ -386,7 +418,6 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     );
 
     expect(outcome).toMatchObject({ kind: 'escalated', reason: 'target-advanced' });
-    expect(git(repo, 'rev-parse', 'main')).toBe(racerTip);
   });
 
   it('does not hold the base-checkout lock while a conflict resolve turn runs', async () => {

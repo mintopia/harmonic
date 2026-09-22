@@ -65,22 +65,20 @@ describe('warm-Session reuse across reject "start now" (worktree isolation)', ()
     expect(prior.state).toBe('escalated');
     expect(prior.sessionRowId).not.toBeNull();
     expect((JSON.parse(prior.usage!) as { contextTokens?: number }).contextTokens).toBe(5000);
-    const priorImpl = (await server.app.ctx.attempts.listSteps(prior.id)).filter((step) => step.type === 'implementation').length;
 
     const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'do not escalate this time', start: true });
     expect(rejected.status).toBe(200);
 
-    // Unified manual resume (issue #506): the corrective run resumes the escalated
-    // Attempt in place — no new Attempt row — reloading its warm worktree Session
-    // rather than starting a cold one.
+    // ADR-0038 supersedes #506's same-Attempt reuse: reject spawns a NEW Attempt
+    // that reloads the escalated Attempt's warm worktree Session rather than
+    // starting a cold one; the prior escalated Attempt is retained as evidence.
     const corrective = await waitFor(async () => {
       const all = await server.app.ctx.attempts.listForTask(taskId);
-      if (all.length !== 1) return undefined;
-      const latest = all[0]!;
-      const impl = (await server.app.ctx.attempts.listSteps(latest.id)).filter((step) => step.type === 'implementation').length;
-      return latest.id === prior.id && impl > priorImpl && latest.sessionRowId != null ? latest : undefined;
+      const latest = all.find((a) => a.number > prior.number);
+      return latest && latest.sessionRowId != null ? latest : undefined;
     });
-    expect(corrective.id).toBe(prior.id);
+    expect(corrective.id).not.toBe(prior.id);
+    expect(corrective.number).toBe(prior.number + 1);
     expect(corrective.sessionRowId).toBe(prior.sessionRowId);
   });
 });

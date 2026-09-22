@@ -8,6 +8,11 @@ function within<T>(operation: Operation | undefined, work: () => Promise<T>): Pr
   return operation ? operation.run(work) : work();
 }
 
+// How many times to rebuild an isolated merge onto the current base tip when the
+// base branch advances under it (concurrent merges on the same base, issue #121)
+// before giving up and escalating as target-advanced.
+const MAX_MERGE_ATTEMPTS = 8;
+
 export interface ConflictResolveContext {
   baseDir: string;
   baseBranch: string;
@@ -180,44 +185,67 @@ async function criticalSection(input: MergePolicyInput, deps: MergePolicyDeps): 
 }
 
 async function mergeUnderLock(input: MergePolicyInput, deps: MergePolicyDeps): Promise<MergePolicyOutcome> {
-  const expectedBaseOid = await Git.revParse(input.baseDir, input.baseBranch);
-  const outcome = await withEphemeralMergeWorktree(
-    {
-      repoDir: input.baseDir,
-      baseTipOid: expectedBaseOid,
-      onRemoveError: ({ error, worktreeDir: adminPath }) => {
-        logger.warn('merge: removing the isolated worktree failed', {
-          'merge.repo': input.baseDir,
-          'merge.admin_path': adminPath,
-          error: error instanceof Error ? error.message : String(error),
-        });
+  // The base can move between building the isolated merge and committing it to
+  // the base branch (a concurrent merge on the same base branch, issue #121).
+  // Accommodate it: rebuild the merge onto the new tip and retry, bounded,
+  // rather than escalating. Only a real conflict or a red post-merge check escalates.
+  for (let attempt = 1; ; attempt++) {
+    const expectedBaseOid = await Git.revParse(input.baseDir, input.baseBranch);
+    const outcome = await withEphemeralMergeWorktree(
+      {
+        repoDir: input.baseDir,
+        baseTipOid: expectedBaseOid,
+        onRemoveError: ({ error, worktreeDir: adminPath }) => {
+          logger.warn('merge: removing the isolated worktree failed', {
+            'merge.repo': input.baseDir,
+            'merge.admin_path': adminPath,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        },
       },
-    },
-    (adminPath) => criticalSection({ ...input, baseDir: adminPath }, deps),
-  );
-  if (outcome.kind === 'escalated') return outcome;
+      (adminPath) => criticalSection({ ...input, baseDir: adminPath }, deps),
+    );
+    if (outcome.kind === 'escalated') return outcome;
 
-  const waitOp = startActiveChildOperation('merge.lock-wait', { 'merge.repo': input.baseDir });
-  logger.debug('merge: awaiting base checkout lock', { 'merge.repo': input.baseDir });
-  return withBaseCheckoutLock(input.baseDir, async (): Promise<MergePolicyOutcome> => {
-    waitOp?.end();
-    logger.debug('merge: base checkout lock acquired', { 'merge.repo': input.baseDir });
-    const holdOp = startActiveChildOperation('merge.lock-hold', { 'merge.repo': input.baseDir });
-    try {
-      return await within(holdOp, async () => {
-        const landed = await Git.casUpdateRef(input.baseDir, input.baseBranch, outcome.mergeOid, expectedBaseOid);
-        if (landed.ok) return outcome;
-        return {
-          kind: 'escalated',
-          reason: 'target-advanced',
-          message: `The base branch '${input.baseBranch}' advanced before the isolated merge could land: ${landed.detail ?? 'CAS update failed'}`,
-        };
-      });
-    } finally {
-      holdOp?.end();
-      logger.debug('merge: base checkout lock released', { 'merge.repo': input.baseDir });
+    const waitOp = startActiveChildOperation('merge.lock-wait', { 'merge.repo': input.baseDir });
+    logger.debug('merge: awaiting base checkout lock', { 'merge.repo': input.baseDir });
+    const committed = await withBaseCheckoutLock(input.baseDir, async (): Promise<{ ok: boolean; detail?: string }> => {
+      waitOp?.end();
+      logger.debug('merge: base checkout lock acquired', { 'merge.repo': input.baseDir });
+      const holdOp = startActiveChildOperation('merge.lock-hold', { 'merge.repo': input.baseDir });
+      try {
+        return await within(holdOp, async () => {
+          // Capture the base checkout's cleanliness BEFORE the ref moves — once
+          // casUpdateRef advances the branch, a clean tree that still reflects the
+          // old tip looks "dirty" (phantom deletions).
+          const checkoutDir = await Git.branchCheckedOutAt(input.baseDir, input.baseBranch);
+          const checkoutClean = checkoutDir !== null && !(await Git.isDirty(checkoutDir));
+          const result = await Git.casUpdateRef(input.baseDir, input.baseBranch, outcome.mergeOid, expectedBaseOid);
+          // Fast-forward a clean checkout to the merged tip so the operator never
+          // sees an invisible half-merge (#696); a dirty checkout is left untouched
+          // to preserve their uncommitted work (ADR-0001).
+          if (result.ok && checkoutClean) await Git.checkoutForce(checkoutDir!, input.baseBranch);
+          return result;
+        });
+      } finally {
+        holdOp?.end();
+        logger.debug('merge: base checkout lock released', { 'merge.repo': input.baseDir });
+      }
+    });
+    if (committed.ok) return outcome;
+    if (attempt >= MAX_MERGE_ATTEMPTS) {
+      return {
+        kind: 'escalated',
+        reason: 'target-advanced',
+        message: `The base branch '${input.baseBranch}' advanced before the isolated merge could be committed after ${attempt} attempts: ${committed.detail ?? 'CAS update failed'}`,
+      };
     }
-  });
+    logger.info('merge: base advanced before the merge could be committed; rebuilding on the new tip', {
+      'merge.repo': input.baseDir,
+      'merge.base_branch': input.baseBranch,
+      'merge.attempt': attempt,
+    });
+  }
 }
 
 export async function runMergePolicy(input: MergePolicyInput, deps: MergePolicyDeps): Promise<MergePolicyOutcome> {
