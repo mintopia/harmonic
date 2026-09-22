@@ -1,6 +1,6 @@
 # Decision: The merge reconciles base movement by re-merging, not by a SHA assertion
 
-Status: proposed
+Status: accepted
 Date: 2026-09-22
 
 ## Context
@@ -45,16 +45,35 @@ discourages.
 Align the merge mechanism to the domain model: reconcile base movement by
 **merging onto the current base**, not by asserting the base SHA.
 
-Under the base-checkout mutex, read the *current* base tip and reconcile the
-already-built (and already-verified) merge onto it:
-
-- If the base has not moved since the build snapshot, publish the built merge
-  commit directly.
-- If it has moved, reconcile the built merge onto the current base with a plain,
-  non-agentic merge (`git merge-tree`-style, worktree-free where possible),
-  producing the final merge commit. A genuine textual conflict against the new
-  base escalates; a clean reconcile publishes without re-running the verify
-  commands (the verdict attaches to the Attempt, not to a SHA).
+1. **Reconcile.** Snapshot the base tip `S`, build the merge `M = merge(S, T)`
+   off the mutex in an ephemeral worktree exactly as before — `--no-ff`,
+   bounded agentic resolve turns, then the post-merge check once. Under the
+   base-checkout mutex, read the *current* base tip `B`. If `B == S`, publish
+   `M` directly. If `B != S` and `S` is no longer an ancestor of `B` (the base
+   rewound), treat it as a reconcile conflict (step 3). Otherwise reconcile:
+   `S` is the merge base of `B` and `M`, so a plain, non-agentic
+   `git merge-tree --write-tree` of `B` and `M` yields a tree that is `B` plus
+   exactly what the build changed, including any conflict resolutions already
+   baked into `M`. The final commit's parents are `B` (the live base) and `T`
+   (`M`'s own second parent) — never `M` itself, which would make the
+   discarded build an ancestor of history.
+2. **Publish.** The ref write is git's atomic `update-ref <new> <old>`, where
+   `<old>` is the tip just reconciled onto. It guards writers outside the
+   mutex (the operator, a direct-mode agent) against overwrite. It is not a
+   freshness gate: a miss never rejects, escalates, or re-verifies — it
+   re-reads the tip and reconciles the *original* build onto it again,
+   unbounded. The verdict never attaches to a SHA.
+3. **Reconcile conflict.** A genuine textual conflict at reconcile, or a
+   rewound base, releases the mutex and rebuilds: a fresh `criticalSection`
+   (new `--no-ff` merge, bounded resolve turns, post-check) runs on a snapshot
+   of the new tip, then the mutex and reconcile run again. Bounded to 2
+   rebuilds; the 3rd reconcile conflict escalates. A rebuild is a new build,
+   so its post-check runs; an ordinary clean reconcile is not a build and
+   never re-runs it.
+4. **Old git fallback.** `git merge-tree --write-tree` needs git ≥ 2.38. On an
+   older git the flag is unsupported, so every base advance takes the rebuild
+   path instead of reconciling, bounded generously (8) before escalating with
+   a message to upgrade.
 
 This keeps the agentic conflict-resolution turns off the mutex (preserving the
 `b92f6702` behavior and its test) while removing the SHA-assertion CAS and the
@@ -63,13 +82,19 @@ re-verification retry loop.
 ## Consequences
 
 - Removes the `target-advanced` escalation path for ordinary concurrent merges;
-  a moving base is reconciled, not rejected.
+  a moving base is reconciled, not rejected. `target-advanced` is kept only as
+  a readable value for pre-ADR-0040 persisted rows; nothing emits it anymore.
 - Removes the `MAX_MERGE_ATTEMPTS` rebuild loop and the `casUpdateRef` SHA gate
   from the task-merge path; the mutex plus the reconcile merge provide
   correctness without a compare-and-swap.
-- Requires a worktree-free reconcile primitive (`git merge-tree`, git ≥ 2.38) or
-  an equivalent, and a decision on how a conflict *at reconcile* (base moved into
-  the candidate's changes) surfaces — escalate vs. a bounded resolve turn.
+- Requires git ≥ 2.38 for the worktree-free reconcile; older git falls back to
+  rebuilding on every base advance instead (bounded to 8, then escalates).
+- A reconcile conflict rebuilds at most twice before escalating.
+- Adds `reconciled` and `rebuilding` merge-visibility steps alongside the
+  existing ones.
+- A clean reconcile is never re-verified, so a semantic (non-textual) clash
+  between the moved base and the task merges unchecked — this is ADR-0001's
+  accepted "verify once" tradeoff, not new to this decision.
 - Git history is unchanged in shape: one merge commit per ticket, first parent
   the live base.
 

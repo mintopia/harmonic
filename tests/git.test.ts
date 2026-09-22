@@ -383,6 +383,13 @@ describe('git-operations', () => {
 
       await expect(Git.dirtyFiles(repo)).resolves.toEqual(['renamed.txt', 'untracked.txt']);
     });
+
+    it('keeps the full path when the first record is an unstaged modification (" M")', async () => {
+      const repo = makeRepo();
+      writeFileSync(join(repo, 'base.txt'), 'changed\n');
+
+      await expect(Git.dirtyFiles(repo)).resolves.toEqual(['base.txt']);
+    });
   });
 
   describe('worktreeDiff — live diff of a running Run against its fork point', () => {

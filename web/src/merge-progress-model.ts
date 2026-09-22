@@ -10,6 +10,8 @@ export type MergeStepEvent =
   | { step: 'checkout-synced'; mergeOid: string; mergedPaths: string[]; keptPaths: string[]; error?: string }
   | { step: 'retired'; branch: string; baseBranch: string }
   | { step: 'completed-in-place'; baseBranch: string; leftBranch?: string }
+  | { step: 'reconciled'; fromBase: string; toBase: string; mergeOid: string }
+  | { step: 'rebuilding'; fromBase: string; toBase: string; paths: string[] }
   | { step: 'escalated'; reason: 'conflict' | 'post-merge-red' | 'target-advanced'; message: string };
 
 export type MergeStepTone = 'neutral' | 'running' | 'passed' | 'failed' | 'awaiting';
@@ -89,6 +91,22 @@ export function mergeStepRow(step: MergeStepEvent, index: number): MergeStepRow 
         detail: step.baseBranch,
         log: step.leftBranch ? `${step.leftBranch} left untouched; Harmonic no longer uses it` : null,
         tone: 'passed',
+      };
+    case 'reconciled':
+      return {
+        key,
+        label: 'Reconciled onto moved base',
+        detail: `${shortOid(step.fromBase)} → ${shortOid(step.toBase)}`,
+        log: `Merge ${shortOid(step.mergeOid)} reconciled onto ${step.toBase}`,
+        tone: 'passed',
+      };
+    case 'rebuilding':
+      return {
+        key,
+        label: 'Rebuilding on moved base',
+        detail: step.paths.length === 0 ? `${shortOid(step.fromBase)} → ${shortOid(step.toBase)}` : step.paths.length === 1 ? '1 conflicting file' : `${step.paths.length} conflicting files`,
+        log: step.paths.length > 0 ? step.paths.join('\n') : null,
+        tone: 'running',
       };
     case 'escalated':
       return {
