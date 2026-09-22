@@ -1,5 +1,6 @@
 import type { UpdateState } from '../types.js';
 import { btnPrimary, btnQuiet } from '../ui.js';
+import { Icon } from './Icon.js';
 
 type UpdateBannerProps = {
   update: UpdateState | null;
@@ -16,6 +17,25 @@ function isIdle(update: UpdateState): boolean {
 export function UpdateBanner({ update, pending, onArm, onCancel, onDismiss }: UpdateBannerProps) {
   if (update === null) return null;
 
+  if (update.migrationRequired) {
+    return (
+      <div role="alert" className="shrink-0 border-b border-await bg-await-tint px-6 py-2.5 text-small text-ink">
+        Auto-upgrade is disabled until you re-run <code>sudo harmonic install</code>; your data is untouched.
+      </div>
+    );
+  }
+
+  if (update.upgradingVersion !== null) {
+    return (
+      <div role="status" aria-live="polite" className="flex shrink-0 items-center gap-3 border-b-2 border-running bg-running-tint px-6 py-4 text-body text-ink shadow-sm">
+        <Icon name="refresh" className="size-5 shrink-0 text-running motion-safe:animate-spin" />
+        <p className="min-w-0 flex-1 font-semibold">
+          Updating to v{update.upgradingVersion} — Harmonic will restart, this page reconnects automatically.
+        </p>
+      </div>
+    );
+  }
+
   if (update.armedVersion !== null) {
     if (isIdle(update)) {
       return (
@@ -24,7 +44,6 @@ export function UpdateBanner({ update, pending, onArm, onCancel, onDismiss }: Up
         </div>
       );
     }
-
     return (
       <div role="status" className="flex shrink-0 items-center gap-3 border-b border-running bg-running-tint px-6 py-2.5 text-small">
         <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-running-dot" />

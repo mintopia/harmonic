@@ -1,5 +1,48 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createShutdownHandler } from '../src/cli-serve.js';
+import {
+  createShutdownHandler,
+  detectSystemdInstallMigration,
+  installSystemdUpgrade,
+  readSystemdInstalledVersion,
+  requiresSystemdInstallMigration,
+} from '../src/cli-serve.js';
+
+describe('requiresSystemdInstallMigration', () => {
+  it('recognizes an npm-global CLI as a legacy systemd install and accepts the stable application path', () => {
+    expect(requiresSystemdInstallMigration({
+      managedBy: 'systemd',
+      dataDir: '/var/lib/harmonic',
+      cliPath: '/usr/lib/node_modules/@mintopia/harmonic/dist/cli-serve.js',
+    })).toBe(true);
+    expect(requiresSystemdInstallMigration({
+      managedBy: 'systemd',
+      dataDir: '/var/lib/harmonic',
+      cliPath: '/var/lib/harmonic/app/current/dist/cli.js',
+    })).toBe(false);
+    expect(requiresSystemdInstallMigration({
+      managedBy: undefined,
+      dataDir: '/var/lib/harmonic',
+      cliPath: '/usr/lib/node_modules/@mintopia/harmonic/dist/cli.js',
+    })).toBe(false);
+  });
+});
+
+describe('detectSystemdInstallMigration', () => {
+  it('logs the operator notice for an old-style systemd ExecStart path', () => {
+    const warnings: string[] = [];
+
+    expect(detectSystemdInstallMigration({
+      managedBy: 'systemd',
+      dataDir: '/var/lib/harmonic',
+      cliPath: '/usr/lib/node_modules/@mintopia/harmonic/dist/cli.js',
+      warn: (message) => warnings.push(message),
+    })).toBe(true);
+
+    expect(warnings).toEqual([
+      'Auto-upgrade is disabled until you re-run sudo harmonic install; your data is untouched.',
+    ]);
+  });
+});
 
 describe('createShutdownHandler', () => {
   it('calls release then exit(0), in that order', async () => {
@@ -77,5 +120,41 @@ describe('createShutdownHandler', () => {
     await shutdown();
 
     expect(calls).toEqual(['app.close', 'telemetry.shutdown', 'releaseLock:/data']);
+  });
+});
+
+describe('systemd upgrades', () => {
+  const dataDir = '/var/lib/harmonic';
+  const target = '2.6.0';
+
+  it('installs into the service-owned version directory, flips current, and verifies through current', async () => {
+    const run = vi.fn(async () => ({}));
+    const readFile = vi.fn(() => JSON.stringify({ version: target }));
+
+    await installSystemdUpgrade({ dataDir, target, run });
+    const installed = readSystemdInstalledVersion({ dataDir, readFile });
+
+    expect(run).toHaveBeenCalledWith('npm', [
+      'i', '--prefix', '/var/lib/harmonic/app/versions/2.6.0', '@mintopia/harmonic@2.6.0',
+    ]);
+    expect(run).toHaveBeenCalledWith('ln', [
+      '-sfn', 'versions/2.6.0', '/var/lib/harmonic/app/current',
+    ]);
+    expect(readFile).toHaveBeenCalledWith('/var/lib/harmonic/app/current/dist/../package.json', 'utf8');
+    expect(installed).toBe(target);
+  });
+
+  it('converges when a partially-applied systemd upgrade is retried', async () => {
+    const run = vi.fn(async () => ({}));
+
+    await installSystemdUpgrade({ dataDir, target, run });
+    await installSystemdUpgrade({ dataDir, target, run });
+
+    expect(run.mock.calls).toEqual([
+      ['npm', ['i', '--prefix', '/var/lib/harmonic/app/versions/2.6.0', '@mintopia/harmonic@2.6.0']],
+      ['ln', ['-sfn', 'versions/2.6.0', '/var/lib/harmonic/app/current']],
+      ['npm', ['i', '--prefix', '/var/lib/harmonic/app/versions/2.6.0', '@mintopia/harmonic@2.6.0']],
+      ['ln', ['-sfn', 'versions/2.6.0', '/var/lib/harmonic/app/current']],
+    ]);
   });
 });

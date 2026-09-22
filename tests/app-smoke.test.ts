@@ -3,7 +3,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../web/src/App.js';
-import type { AppConfig, Conversation, Workspace } from '../web/src/types.js';
+import type { AppConfig, Conversation, UpdateState, Workspace } from '../web/src/types.js';
 
 class IdleWebSocket {
   static OPEN = 1;
@@ -120,17 +120,24 @@ function stubFetch(opts: {
   passwordConfigured: boolean;
   workspaces?: Workspace[];
   conversation?: Conversation;
-  update?: { availableVersion: string | null; armedVersion: string | null; dismissedVersion: string | null; idle: { runningAttempts: number; mergingOrIntegrating: boolean; conversationMidTurn: boolean } };
+  update?: Omit<UpdateState, 'currentVersion'>;
+  updateResponses?: Array<Omit<UpdateState, 'currentVersion'> | 'offline'>;
 }) {
   const workspaces = opts.workspaces ?? [];
-  let update = opts.update ?? { availableVersion: null, armedVersion: null, dismissedVersion: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } };
+  let update = opts.update ?? { availableVersion: null, armedVersion: null, upgradingVersion: null, dismissedVersion: null, migrationRequired: false, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } };
+  const updateResponses = opts.updateResponses ? [...opts.updateResponses] : null;
   vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
     const path = String(input instanceof Request ? input.url : input);
     if (path === '/api/auth/me') {
       return new Response(JSON.stringify({ authenticated: opts.authenticated, passwordConfigured: opts.passwordConfigured }));
     }
     if (path === '/api/config') return new Response(JSON.stringify(makeConfig()));
-    if (path === '/api/update') return new Response(JSON.stringify(update));
+    if (path === '/api/update') {
+      const next = updateResponses?.shift();
+      if (next === 'offline') return new Response(JSON.stringify({ error: { message: 'restarting' } }), { status: 503 });
+      if (next !== undefined) update = next;
+      return new Response(JSON.stringify(update));
+    }
     if (path === '/api/update/arm' && init?.method === 'DELETE') {
       update = { ...update, armedVersion: null };
       return new Response(JSON.stringify(update));
@@ -176,6 +183,7 @@ let root: Root | null = null;
 let host: HTMLDivElement | null = null;
 
 afterEach(async () => {
+  vi.useRealTimers();
   await act(async () => root?.unmount());
   host?.remove();
   root = null;
@@ -187,8 +195,8 @@ afterEach(async () => {
 
 async function flush() {
   await act(async () => {
-    await new Promise((r) => setTimeout(r, 0));
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
+    await Promise.resolve();
   });
 }
 
@@ -197,7 +205,8 @@ async function renderApp(opts: {
   passwordConfigured: boolean;
   workspaces?: Workspace[];
   conversation?: Conversation;
-  update?: { availableVersion: string | null; armedVersion: string | null; dismissedVersion: string | null; idle: { runningAttempts: number; mergingOrIntegrating: boolean; conversationMidTurn: boolean } };
+  update?: Omit<UpdateState, 'currentVersion'>;
+  updateResponses?: Array<Omit<UpdateState, 'currentVersion'> | 'offline'>;
 }) {
   stubMatchMedia();
   vi.stubGlobal('WebSocket', IdleWebSocket);
@@ -217,7 +226,7 @@ describe('App smoke (issue #452)', () => {
       authenticated: true,
       passwordConfigured: true,
       workspaces: [makeWorkspace()],
-      update: { availableVersion: '2.7.0', armedVersion: null, dismissedVersion: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } },
+      update: { availableVersion: '2.7.0', armedVersion: null, upgradingVersion: null, dismissedVersion: null, migrationRequired: false, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } },
     });
 
     expect(el.textContent).toContain('Version 2.7.0 is available');
@@ -227,27 +236,74 @@ describe('App smoke (issue #452)', () => {
     expect(el.textContent).not.toContain('Version 2.7.0 is available');
   });
 
+  it('shows the systemd migration notice', async () => {
+    const el = await renderApp({
+      authenticated: true,
+      passwordConfigured: true,
+      workspaces: [makeWorkspace()],
+      update: { availableVersion: '2.7.0', armedVersion: null, upgradingVersion: null, dismissedVersion: null, migrationRequired: true, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } },
+    });
+
+    expect(el.textContent).toContain('Auto-upgrade is disabled until you re-run sudo harmonic install; your data is untouched.');
+  });
+
   it('shows the agent-drain notice and cancel action for an armed update', async () => {
     const el = await renderApp({
       authenticated: true,
       passwordConfigured: true,
       workspaces: [makeWorkspace()],
-      update: { availableVersion: '2.7.0', armedVersion: '2.7.0', dismissedVersion: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: true } },
+      update: { availableVersion: '2.7.0', armedVersion: '2.7.0', upgradingVersion: null, dismissedVersion: null, migrationRequired: false, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: true } },
     });
 
     expect(el.textContent).toContain('waiting for agent before updating');
     expect([...el.querySelectorAll('button')].some((button) => button.textContent === 'Cancel')).toBe(true);
   });
 
-  it('shows upgrading once the armed instance is idle', async () => {
+  it('shows the upgrade takeover only while the server reports a swap in progress', async () => {
     const el = await renderApp({
       authenticated: true,
       passwordConfigured: true,
       workspaces: [makeWorkspace()],
-      update: { availableVersion: '2.7.0', armedVersion: '2.7.0', dismissedVersion: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } },
+      update: { availableVersion: '2.7.0', armedVersion: '2.7.0', upgradingVersion: '2.7.0', dismissedVersion: null, migrationRequired: false, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } },
     });
 
-    expect(el.textContent).toContain('Updating to version 2.7.0');
+    expect(el.textContent).toContain('Updating to v2.7.0 — Harmonic will restart, this page reconnects automatically.');
+  });
+
+  it('holds the upgrade takeover through a failed status poll and clears it after reconnecting to the new version', async () => {
+    const upgrading = { availableVersion: '2.7.0', armedVersion: '2.7.0', upgradingVersion: '2.7.0', dismissedVersion: null, migrationRequired: false, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } };
+    const complete = { ...upgrading, armedVersion: null, upgradingVersion: null };
+    vi.useFakeTimers();
+    const el = await renderApp({
+      authenticated: true,
+      passwordConfigured: true,
+      workspaces: [makeWorkspace()],
+      updateResponses: [upgrading, 'offline', complete],
+    });
+
+    expect(el.textContent).toContain('Updating to v2.7.0');
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(el.textContent).toContain('Updating to v2.7.0');
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(el.textContent).not.toContain('Updating to v2.7.0');
+    vi.useRealTimers();
+  });
+
+  it('polls immediately after arming so the server-reported handoff reaches the takeover', async () => {
+    const available = { availableVersion: '2.7.0', armedVersion: null, upgradingVersion: null, dismissedVersion: null, migrationRequired: false, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } };
+    const upgrading = { ...available, armedVersion: '2.7.0', upgradingVersion: '2.7.0' };
+    const el = await renderApp({
+      authenticated: true,
+      passwordConfigured: true,
+      workspaces: [makeWorkspace()],
+      updateResponses: [available, upgrading],
+    });
+
+    const upgrade = [...el.querySelectorAll('button')].find((button) => button.textContent === 'Upgrade');
+    await act(async () => upgrade?.click());
+    await flush();
+
+    expect(el.textContent).toContain('Updating to v2.7.0');
   });
 
   it('arms and cancels an update from the banner', async () => {
@@ -255,7 +311,7 @@ describe('App smoke (issue #452)', () => {
       authenticated: true,
       passwordConfigured: true,
       workspaces: [makeWorkspace()],
-      update: { availableVersion: '2.7.0', armedVersion: null, dismissedVersion: null, idle: { runningAttempts: 1, mergingOrIntegrating: false, conversationMidTurn: false } },
+      update: { availableVersion: '2.7.0', armedVersion: null, upgradingVersion: null, dismissedVersion: null, migrationRequired: false, idle: { runningAttempts: 1, mergingOrIntegrating: false, conversationMidTurn: false } },
     });
 
     const upgrade = [...el.querySelectorAll('button')].find((button) => button.textContent === 'Upgrade');

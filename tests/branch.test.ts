@@ -3,8 +3,9 @@ import { type AttemptRow, type TaskRow } from '../src/db/schema.js';
 import { defaultBranchPostMerge, mergeIntoBase, mergeIntoBaseAndRunPostMerge, resolveRepositoryDefaultBranch } from '../src/execution/branch-merge.js';
 import { BranchRetirementCoordinator, type BranchRetirementGit } from '../src/execution/branch-retirement.js';
 import { Git } from '../src/execution/git.js';
+import { withEphemeralMergeWorktree } from '../src/execution/ephemeral-merge-worktree.js';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -225,6 +226,25 @@ describe('branch-merge', () => {
   });
 
   describe('branch merging (issue #153)', () => {
+    it('removes an ephemeral merge worktree when its callback fails', async () => {
+      const repo = makeRepo();
+      const parent = tmpPath('harmonic-ephemeral-merge-parent-');
+      let adminPath = '';
+
+      await expect(withEphemeralMergeWorktree(
+        { repoDir: repo, baseTipOid: oid(repo, 'main'), parentDir: parent },
+        async (worktreeDir) => {
+          adminPath = worktreeDir;
+          expect(worktreeCount(repo)).toBe(2);
+          throw new Error('callback failed');
+        },
+      )).rejects.toThrow('callback failed');
+
+      expect(worktreeCount(repo)).toBe(1);
+      expect(existsSync(adminPath)).toBe(false);
+      expect(readdirSync(parent)).toEqual([]);
+    });
+
     it('runs the shared post-merge hook after a successful merge', async () => {
       const repo = makeRepo();
       makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n');
