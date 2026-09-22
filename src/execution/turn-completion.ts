@@ -216,7 +216,33 @@ export class TurnCompletion {
       await this.failImplementationStep(task.id, run.id);
       return { kind: 'actionable-fail', reason: 'attempt ended without an execution-complete (finish_task) signal', output: '' };
     }
-    return this.mergeAndSettle({ task, run, record, active, patch, autoDriven, noChange, advanceTask });
+    return this.mergeAndSettle({ task, run, record, signal: active.verifyAbort.signal, patch, autoDriven, noChange, advanceTask });
+  }
+
+  /**
+   * Operator Accept step-advance (ADR-0038): the caller already overrode the
+   * failed Step to `passed`. Runs the remaining pipeline from `startAt` with no
+   * implementation turn — a passing outcome merges and settles `done`; a
+   * failing one escalates again immediately (the operator's override already
+   * spent this Attempt's one chance at this Step).
+   */
+  async advanceAccepted(input: {
+    task: TaskRow;
+    run: AttemptRow;
+    record: RunEventRecorder;
+    parent: SpanContext;
+    signal: AbortSignal;
+    startAt: 'commands' | 'critics';
+  }): Promise<void> {
+    const { task, run, record, parent, signal, startAt } = input;
+    const { decision } = await this.deps.verification.runVerification(task, run, run.verifiedHeadOid, signal, record, parent, true, startAt);
+    if (decision.outcome !== 'proceed') {
+      const fail = await this.deps.verification.verificationFailTurn(task, decision, record);
+      const feedback = [fail.reason, fail.output].filter(Boolean).join('\n\n');
+      await this.deps.settleEscalated(task, run, fail.reason, { feedback });
+      return;
+    }
+    await this.mergeAndSettle({ task, run, record, signal, patch: {}, autoDriven: false, noChange: false, advanceTask: async () => {} });
   }
 
   private async failImplementationStep(taskId: number, attemptId: number): Promise<void> {
@@ -277,17 +303,17 @@ export class TurnCompletion {
     task: TaskRow;
     run: AttemptRow;
     record: RunEventRecorder;
-    active: ActiveRun;
+    signal: AbortSignal;
     patch: Partial<AttemptRow>;
     autoDriven: boolean;
     noChange: boolean;
     advanceTask: (to: 'verifying' | 'merging') => Promise<void>;
   }): Promise<TurnOutcome> {
-    const { task, run, record, active, patch, autoDriven, noChange, advanceTask } = input;
+    const { task, run, record, signal, patch, autoDriven, noChange, advanceTask } = input;
     const diff = await this.deps.diffSnapshotFor(task, run.id);
     const current = await this.deps.attempts.get(run.id);
     const worktreeMerge = task.isolationMode === 'worktree';
-    const deps = this.deps.mergeCoordinator.mergePolicyDeps(task, run, record, active.verifyAbort.signal, patch);
+    const deps = this.deps.mergeCoordinator.mergePolicyDeps(task, run, record, signal, patch);
     const mergeWorktreeBranch = async (): Promise<boolean> => {
       await this.deps.taskService.setMergeStatus(task.id, 'merging');
       const outcome = await runMergePolicy(

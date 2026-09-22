@@ -136,6 +136,18 @@ export class TurnDriver {
     this.completion = new TurnCompletion(completionDeps);
   }
 
+  /** @see {@link TurnCompletion.advanceAccepted} */
+  async driveAccept(input: {
+    task: TaskRow;
+    run: AttemptRow;
+    record: RunEventRecorder;
+    parent: SpanContext;
+    signal: AbortSignal;
+    startAt: 'commands' | 'critics';
+  }): Promise<void> {
+    return this.completion.advanceAccepted(input);
+  }
+
   async drive(task: TaskRow, run: AttemptRow, harness: HarnessConfig, parent: SpanContext): Promise<void> {
     const workspace = await this.deps.getWorkspace?.(task.workspaceId);
     const maxAttempts = resolveScoped('maxAttempts', workspace?.maxAttempts, this.deps.getConfig().maxAttempts);

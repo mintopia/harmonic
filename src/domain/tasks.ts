@@ -198,13 +198,16 @@ const TERMINAL_STATES: TaskState[] = ['done', 'cancelled'];
  * the reconcile-only edge for a merge that settled its Attempt before the Task
  * reached `done`. A same-state write is an idempotent no-op (e.g. re-escalating
  * to refresh the reason), not a transition, so it is always allowed.
+ * `escalated → working` is the operator-Accept step-advance (ADR-0038): the
+ * ticket runs the remaining pipeline live before settling back to `done` or
+ * `escalated`.
  */
 const LEGAL_TRANSITIONS: Record<TaskState, readonly TaskState[]> = {
   draft: ['ready', 'cancelled'],
   ready: ['working', 'escalated', 'done', 'cancelled'],
   working: ['ready', 'paused', 'escalated', 'done', 'cancelled'],
   paused: ['working', 'cancelled'],
-  escalated: ['ready', 'done', 'cancelled'],
+  escalated: ['ready', 'working', 'done', 'cancelled'],
   done: [],
   cancelled: ['ready'],
 };

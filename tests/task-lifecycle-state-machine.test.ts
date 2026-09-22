@@ -16,13 +16,14 @@ import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 const STATES: TaskState[] = ['draft', 'ready', 'working', 'paused', 'escalated', 'done', 'cancelled'];
 
-/** ADR-0020's legal transition table — the single source of truth the guard enforces. */
+/** ADR-0020's legal transition table (amended by ADR-0038's escalated → working
+ * operator-Accept step-advance) — the single source of truth the guard enforces. */
 const LEGAL: Record<TaskState, TaskState[]> = {
   draft: ['ready', 'cancelled'],
   ready: ['working', 'escalated', 'done', 'cancelled'],
   working: ['ready', 'paused', 'escalated', 'done', 'cancelled'],
   paused: ['working', 'cancelled'],
-  escalated: ['ready', 'done', 'cancelled'],
+  escalated: ['ready', 'working', 'done', 'cancelled'],
   done: [],
   cancelled: ['ready'],
 };
@@ -167,6 +168,7 @@ describe('Task lifecycle state machine (ADR-0020)', () => {
         resume: async () => {},
         cleanup: async () => {},
         candidateHead: async () => 'cand-oid',
+        advance: async () => {},
       });
 
       const acceptDone = service.accept(created.id);
