@@ -1,8 +1,6 @@
 import { Git } from './git.js';
+import { withEphemeralMergeWorktree } from './ephemeral-merge-worktree.js';
 import { withBaseCheckoutLock, withRepoLock } from './repo-lock.js';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { startActiveChildOperation, type Operation } from '../telemetry/operations.js';
 import { logger } from '../logger.js';
 
@@ -208,29 +206,30 @@ async function mergeUnderLock(input: MergePolicyInput, deps: MergePolicyDeps): P
         if (checkedOutAt !== null && (await Git.isDirty(checkedOutAt))) {
           throw new Error(`merge: target branch '${input.baseBranch}' is checked out with uncommitted changes`);
         }
-        const parent = mkdtempSync(join(tmpdir(), 'harmonic-merge-'));
-        const adminPath = join(parent, 'admin');
-        try {
-          await Git.addDetachedWorktree(input.baseDir, adminPath, expectedBaseOid);
-          const outcome = await criticalSection({ ...input, baseDir: adminPath }, deps);
-          if (outcome.kind === 'escalated' && outcome.reason === 'conflict') return outcome;
+        return await withEphemeralMergeWorktree(
+          {
+            repoDir: input.baseDir,
+            baseTipOid: expectedBaseOid,
+            onRemoveError: ({ error, worktreeDir: adminPath }) => {
+              logger.warn('merge: removing the isolated worktree failed', {
+                'merge.repo': input.baseDir,
+                'merge.admin_path': adminPath,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            },
+          },
+          async (adminPath) => {
+            const outcome = await criticalSection({ ...input, baseDir: adminPath }, deps);
+            if (outcome.kind === 'escalated' && outcome.reason === 'conflict') return outcome;
 
-          const finalOid = outcome.kind === 'merged' ? outcome.mergeOid : outcome.revertOid;
-          if (!finalOid) throw new Error('merge: post-merge revert did not produce a commit');
-          const landed = await Git.casUpdateRef(input.baseDir, input.baseBranch, finalOid, expectedBaseOid);
-          if (!landed.ok) throw new Error(`merge: base branch '${input.baseBranch}' advanced before the isolated merge could land: ${landed.detail ?? 'CAS update failed'}`);
-          if (checkedOutAt !== null) await Git.checkoutForce(checkedOutAt, input.baseBranch);
-          return outcome;
-        } finally {
-          await Git.removeWorktree(input.baseDir, adminPath).catch((err) => {
-            logger.warn('merge: removing the isolated worktree failed', {
-              'merge.repo': input.baseDir,
-              'merge.admin_path': adminPath,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          });
-          rmSync(parent, { recursive: true, force: true });
-        }
+            const finalOid = outcome.kind === 'merged' ? outcome.mergeOid : outcome.revertOid;
+            if (!finalOid) throw new Error('merge: post-merge revert did not produce a commit');
+            const landed = await Git.casUpdateRef(input.baseDir, input.baseBranch, finalOid, expectedBaseOid);
+            if (!landed.ok) throw new Error(`merge: base branch '${input.baseBranch}' advanced before the isolated merge could land: ${landed.detail ?? 'CAS update failed'}`);
+            if (checkedOutAt !== null) await Git.checkoutForce(checkedOutAt, input.baseBranch);
+            return outcome;
+          },
+        );
       });
     } finally {
       holdOp?.end();
