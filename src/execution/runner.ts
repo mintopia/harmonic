@@ -17,7 +17,7 @@ import { RunControl, type RunControlDeps } from './run-control.js';
 import { UsageBackfiller, type UsageBackfillerDeps } from './usage-backfiller.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig } from '../config.js';
-import type { TaskRow, AttemptRow } from '../db/schema.js';
+import type { TaskRow, AttemptRow, StepRow } from '../db/schema.js';
 import { SessionStore } from '../domain/sessions.js';
 import { type DeterministicContinuation } from '../domain/session-continuation.js';
 import { DomainError } from '../domain/errors.js';
@@ -378,11 +378,53 @@ export class Runner {
       continuation = await this.sessionContinuation.decideContinuation(task, run, await this.getWorkspace?.(task.workspaceId));
       choice = continuation.path === 'continued-session' ? 'full' : 'condensed';
     }
+    // A reject always spawns a fresh Attempt (ADR-0038) — no setPendingManualResume
+    // here, so beginRun takes its create() branch; the warm Session still binds
+    // via bindContinuationIfEligible's Task-scoped lookup.
     await this.taskService.requeue(task.id, trimmed, choice);
-    if (run) this.activeRuns.setPendingManualResume(task.id, run);
     if (startNow) {
       if (continuation) this.activeRuns.setPendingContinuation(task.id, continuation);
       await this.start(task.id);
+    }
+  }
+
+  /**
+   * Operator Accept step-advance (ADR-0038): `failedStep` is already known
+   * `failed` on `run`'s escalated Attempt. Marks it `passed` (the operator's
+   * override) and resumes the pipeline at the next Step, on the same Attempt.
+   * `rebase` re-drives a full implementation turn; `implementation` and
+   * `verification` skip straight to the remaining verification stages with no
+   * new turn, merging and settling `done` on pass or escalating again on fail.
+   */
+  async advanceAccepted(task: TaskRow, run: AttemptRow, failedStep: StepRow): Promise<void> {
+    await this.attempts.updateStep(failedStep.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
+    this.events.onStepChanged?.(task.id);
+    const working = await this.taskService.setState(task.id, 'working');
+    if (failedStep.type === 'rebase') {
+      await this.beginRun(working, undefined, await this.attempts.get(run.id));
+      return;
+    }
+    const running = await this.attempts.update(run.id, { state: 'running', endedAt: null, reason: null, detail: null });
+    await this.driveAccept(working, running, failedStep.type === 'implementation' ? 'commands' : 'critics');
+  }
+
+  private async driveAccept(task: TaskRow, run: AttemptRow, startAt: 'commands' | 'critics'): Promise<void> {
+    const operation = startOperation({ type: 'attempt', attributes: { 'task.id': task.id, 'attempt.id': run.id } });
+    try {
+      await operation.run(() =>
+        this.turnDriver.driveAccept({
+          task,
+          run,
+          record: (type, payload) => this.recordRunEvent(task, run, type, payload),
+          parent: operation.spanContext,
+          signal: new AbortController().signal,
+          startAt,
+        }),
+      );
+      operation.end();
+    } catch (err) {
+      operation.fail(err instanceof Error ? err.message : String(err));
+      throw err;
     }
   }
 
