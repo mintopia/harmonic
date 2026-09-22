@@ -387,6 +387,7 @@ describe('epicLifecycleSteps for an in-place Epic', () => {
     const e = epic({ members: [m1], inPlace: true, baseBranch: 'develop' });
     const steps = epicLifecycleSteps(e);
     expect(steps.map((s) => s.key)).toEqual(['build', 'complete']);
+    expect(steps.find((s) => s.key === 'build')).toMatchObject({ label: 'Build', sublabel: '0/1 done' });
     expect(steps.find((s) => s.key === 'complete')).toMatchObject({ label: 'Done', sublabel: 'committed on develop', state: 'pending' });
   });
 

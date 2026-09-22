@@ -334,7 +334,7 @@ export function epicLifecycleSteps(epic: Epic): EpicStage[] {
     const build: EpicStage = {
       key: 'build',
       label: 'Build',
-      sublabel: `${epic.foldedCount}/${epic.memberCount} merged`,
+      sublabel: `${epic.foldedCount}/${epic.memberCount} done`,
       state: allFolded ? 'done' : 'current',
     };
     const complete: EpicStage = {
