@@ -1,4 +1,5 @@
 import { Git } from './git.js';
+import { withEphemeralMergeWorktree } from './ephemeral-merge-worktree.js';
 import type { MergePolicyOutcome } from './merge-policy.js';
 import { decideEpicIntegrate, reduceMemberState, type MemberMergeState } from '../domain/epic-integrate-decision.js';
 import type { VerificationDecision } from '../verification/combine.js';
@@ -575,7 +576,7 @@ export class EpicLifecycle {
   constructor(
     private readonly tasks: TaskService,
     private readonly workingDir: string,
-    private readonly git: Pick<EpicGit, 'symbolicBranch' | 'branchExists' | 'createBranch' | 'deleteBranch' | 'branchCheckedOutAt' | 'isAncestor'> = Git,
+    private readonly git: Pick<EpicGit, 'symbolicBranch' | 'branchExists' | 'revParse' | 'createBranch' | 'deleteBranch' | 'branchCheckedOutAt' | 'isAncestor'> = Git,
     private readonly onError: (msg: string) => void = logger.error,
     private epicIntegrate?: EpicIntegrateTrigger,
     private epicRefresh?: EpicRefreshTrigger,
@@ -765,7 +766,29 @@ export class EpicLifecycle {
     if (defaultBranch === null || !(await this.git.branchExists(this.workingDir, branch))) return false;
     if ((await this.git.branchCheckedOutAt(this.workingDir, branch)) !== null) return false;
     if (!(await this.git.isAncestor(this.workingDir, defaultBranch, branch))) return false;
-    await this.git.deleteBranch(this.workingDir, branch);
+    const baseTipOid = await this.git.revParse(this.workingDir, defaultBranch);
+    let retired = false;
+    await withEphemeralMergeWorktree(
+      {
+        repoDir: this.workingDir,
+        baseTipOid,
+        onRemoveError: ({ error, worktreeDir }) => {
+          logger.warn('epic: removing the retirement worktree failed', {
+            'epic.ref': epicRef,
+            'epic.worktree': worktreeDir,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        },
+      },
+      async (worktreeDir) => {
+        if (!(await this.git.branchExists(worktreeDir, branch))) return;
+        if ((await this.git.branchCheckedOutAt(worktreeDir, branch)) !== null) return;
+        if (!(await this.git.isAncestor(worktreeDir, defaultBranch, branch))) return;
+        await this.git.deleteBranch(worktreeDir, branch);
+        retired = true;
+      },
+    );
+    if (!retired) return false;
     await this.onIntegrationBranchRetired?.({ epicRef, branch, baseBranch: defaultBranch });
     return true;
   }
