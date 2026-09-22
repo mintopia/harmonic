@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Git } from './git.js';
 import { forEachYielding } from '../reliability/yield.js';
+import { logger } from '../logger.js';
 
 export interface BaseCheckoutSyncResult {
   mergedPaths: string[];
@@ -12,10 +13,20 @@ export interface BaseCheckoutSyncResult {
 
 const REGULAR_FILE_MODES = new Set(['100644', '100755']);
 
-/** Snapshot the operator's dirty paths in a base checkout. Must be called
- * BEFORE the branch ref moves — see the call site in merge-policy.ts. */
+/** Snapshot the operator's dirty paths in a base checkout. Must be taken
+ * before the branch ref moves, or a moved ref makes a clean tree look dirty. */
 export function captureDirtyPaths(checkoutDir: string): Promise<Set<string>> {
   return Git.dirtyPathsSnapshot(checkoutDir);
+}
+
+/** Leave `path`'s worktree bytes exactly as they are and only advance its
+ * index entry to `newTip`, so it reads as an unstaged diff against the new
+ * HEAD rather than a staged reversal of the merge. */
+async function keepPath(checkoutDir: string, newTip: string, path: string, keptPaths: string[]): Promise<void> {
+  const theirs = await Git.lsTreeEntry(checkoutDir, newTip, path);
+  if (theirs === null) await Git.removeIndexEntry(checkoutDir, path);
+  else await Git.setIndexBlob(checkoutDir, path, theirs.mode, theirs.oid);
+  keptPaths.push(path);
 }
 
 async function resolveOverlapPath(
@@ -58,8 +69,13 @@ async function resolveOverlapPath(
       const result = await Git.mergeFileResult(absPath, baseTmp, theirsTmp);
       if (result.ok) {
         const targetTmp = join(dirname(absPath), `.harmonic-sync-${randomBytes(8).toString('hex')}`);
-        await writeFile(targetTmp, result.content, { mode: oursStat!.mode & 0o777 });
-        await rename(targetTmp, absPath);
+        try {
+          await writeFile(targetTmp, result.content, { mode: oursStat!.mode & 0o777 });
+          await rename(targetTmp, absPath);
+        } catch (err) {
+          await rm(targetTmp, { force: true }).catch(() => {});
+          throw err;
+        }
         await Git.setIndexBlob(checkoutDir, path, theirs.mode, theirs.oid);
         mergedPaths.push(path);
         return;
@@ -71,17 +87,13 @@ async function resolveOverlapPath(
   await Git.setIndexBlob(checkoutDir, path, theirs.mode, theirs.oid);
 }
 
-/**
- * Bring a base checkout's index and working tree from `oldTip` to `newTip`
- * without clobbering or blocking on the operator's uncommitted work. Paths
- * the operator did not touch are synced outright; paths both sides touched
- * are combined with a 3-way text merge where possible, and otherwise left on
- * disk exactly as the operator has them (their bytes never overwritten),
- * with only the index entry advanced to `newTip` so `git status` reads as an
- * unstaged diff against the new HEAD rather than a staged reversal of the
- * merge. Never moves HEAD's branch, writes conflict markers, or touches
- * paths the operator dirtied that the merge did not change.
- */
+/** Bring a base checkout's index and working tree from `oldTip` to `newTip`
+ * without clobbering or blocking on the operator's uncommitted work: paths
+ * only the merge touched sync outright, paths both sides touched are
+ * combined with a 3-way text merge where possible and otherwise kept as the
+ * operator has them (see {@link keepPath}). Runs after the merge is already
+ * committed, so a failure on one path must never abort the rest or the merge
+ * — it falls back to {@link keepPath} instead of propagating. */
 export async function syncBaseCheckout(
   checkoutDir: string,
   dirtyPaths: Set<string>,
@@ -118,7 +130,18 @@ export async function syncBaseCheckout(
   };
 
   try {
-    await forEachYielding(overlap, (path) => resolveOverlapPath(checkoutDir, getTmpDir, oldTip, newTip, path, mergedPaths, keptPaths));
+    await forEachYielding(overlap, async (path) => {
+      try {
+        await resolveOverlapPath(checkoutDir, getTmpDir, oldTip, newTip, path, mergedPaths, keptPaths);
+      } catch (err) {
+        logger.warn('merge: syncing one base checkout path failed; keeping the operator\'s version', {
+          'merge.repo': checkoutDir,
+          'merge.path': path,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        await keepPath(checkoutDir, newTip, path, keptPaths);
+      }
+    });
   } finally {
     if (tmp) await rm(tmp, { recursive: true, force: true });
   }

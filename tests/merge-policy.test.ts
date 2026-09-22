@@ -850,4 +850,48 @@ describe('base checkout sync (accommodating a dirty base checkout)', () => {
     expect(sink.steps.some((s) => s.step === 'checkout-synced')).toBe(false);
     expect(git(repo, 'ls-tree', '--name-only', 'main', 'feature.txt')).toBe('feature.txt');
   });
+
+  it('keeps a single failing overlap path without aborting the rest of the sync', async () => {
+    const repo = makeRepo();
+    writeFileSync(join(repo, 'ok.txt'), 'one\ntwo\nthree\n');
+    writeFileSync(join(repo, 'boom.txt'), 'one\ntwo\nthree\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-m', 'add ok.txt and boom.txt');
+    await makeTaskBranch(repo, 'task-partial-failure', (wt) => {
+      writeFileSync(join(wt, 'ok.txt'), 'TASK-one\ntwo\nthree\n');
+      writeFileSync(join(wt, 'boom.txt'), 'TASK-one\ntwo\nthree\n');
+    });
+    writeFileSync(join(repo, 'ok.txt'), 'one\ntwo\nOPERATOR-three\n');
+    writeFileSync(join(repo, 'boom.txt'), 'one\ntwo\nOPERATOR-three\n');
+
+    const original = Git.mergeFileResult.bind(Git);
+    const spy = vi.spyOn(Git, 'mergeFileResult').mockImplementation(async (oursPath, basePath, theirsPath) => {
+      if (oursPath.endsWith('boom.txt')) throw new Error('injected failure');
+      return original(oursPath, basePath, theirsPath);
+    });
+
+    const sink = collect();
+    const deps: MergePolicyDeps = {
+      resolveConflictTurn: neverCalled('resolveConflictTurn'),
+      runPostMergeCheck: vi.fn(async () => ({ pass: true, output: '' })),
+      escalate: vi.fn(async () => {}),
+      onStep: sink.onStep,
+    };
+
+    try {
+      const outcome = await runMergePolicy(
+        { baseDir: repo, baseBranch: 'main', taskBranch: 'task-partial-failure', conflictResolveTurns: 2, postMergeCheck: true },
+        deps,
+      );
+
+      expect(outcome.kind).toBe('merged');
+      expect(readFileSync(join(repo, 'ok.txt'), 'utf8')).toBe('TASK-one\ntwo\nOPERATOR-three\n');
+      expect(readFileSync(join(repo, 'boom.txt'), 'utf8')).toBe('one\ntwo\nOPERATOR-three\n');
+      const sync = findSyncStep(sink.steps);
+      expect(sync.mergedPaths).toEqual(['ok.txt']);
+      expect(sync.keptPaths).toEqual(['boom.txt']);
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });

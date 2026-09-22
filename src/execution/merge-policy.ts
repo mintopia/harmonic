@@ -217,17 +217,13 @@ async function mergeUnderLock(input: MergePolicyInput, deps: MergePolicyDeps): P
       const holdOp = startActiveChildOperation('merge.lock-hold', { 'merge.repo': input.baseDir });
       try {
         return await within(holdOp, async () => {
-          // Snapshot the operator's dirty paths BEFORE the ref moves — once
-          // casUpdateRef advances the branch, a clean tree that still reflects the
-          // old tip looks "dirty" (phantom deletions), and a real dirty path is
-          // no longer distinguishable from one the merge itself just touched.
+          // Snapshot dirty paths BEFORE the ref moves, or a moved ref makes a
+          // clean tree look dirty.
           const checkoutDir = await Git.branchCheckedOutAt(input.baseDir, input.baseBranch);
           const dirtyPaths = checkoutDir !== null ? await captureDirtyPaths(checkoutDir) : null;
           const result = await Git.casUpdateRef(input.baseDir, input.baseBranch, outcome.mergeOid, expectedBaseOid);
-          // Sync the checkout to the merged tip so the operator never sees an
-          // invisible half-merge (#696), without clobbering or blocking on their
-          // uncommitted work (ADR-0001). Runs after the ref is already published,
-          // so a failure here must never fail or reverse the merge.
+          // Runs after the ref is already published, so a failure here must
+          // never fail or reverse the merge.
           if (result.ok && checkoutDir !== null) {
             try {
               const sync = await syncBaseCheckout(checkoutDir, dirtyPaths!, expectedBaseOid, outcome.mergeOid);

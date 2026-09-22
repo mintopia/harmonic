@@ -858,12 +858,9 @@ export const Git = {
     });
   },
 
-  /**
-   * Every path `git status --porcelain=v1 -z --untracked-files=all` reports at
-   * `dir` — staged, unstaged AND untracked, each file individually (never a
-   * collapsed directory). A rename/copy record contributes both its old and
-   * new path, since either side of it is worth treating as operator-dirty.
-   */
+  /** Every dirty path (staged, unstaged, untracked, each file individually)
+   * `git status --porcelain=v1 -z --untracked-files=all` reports at `dir`. A
+   * rename/copy record contributes both its old and new path. */
   async dirtyPathsSnapshot(dir: string): Promise<Set<string>> {
     const out = await gitUntrimmed(dir, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
     const records = out.split('\0');
@@ -920,13 +917,9 @@ export const Git = {
     return stdout as unknown as Buffer;
   },
 
-  /**
-   * Update the index AND working tree for `paths` to their content at `rev`
-   * (`git checkout <rev> -- <paths>`), batched to keep argv bounded. Only
-   * coherent for paths whose worktree content already matches the index (the
-   * caller's responsibility) — unlike {@link checkoutForce} this never touches
-   * paths outside the given list.
-   */
+  /** Update the index AND working tree for `paths` to their content at `rev`
+   * (`git checkout <rev> -- <paths>`), batched to keep argv bounded. Unlike
+   * {@link checkoutForce} this never touches paths outside the given list. */
   async checkoutPathsFromRev(dir: string, rev: string, paths: string[]): Promise<void> {
     const CHUNK = 200;
     for (let i = 0; i < paths.length; i += CHUNK) {
@@ -952,12 +945,9 @@ export const Git = {
    * leaving whatever is on disk at `path` untouched. */
   removeIndexEntry: (dir: string, path: string) => git(dir, 'update-index', '--force-remove', '--', path),
 
-  /**
-   * A three-way textual merge of `oursPath` against `basePath` and
+  /** A three-way textual merge of `oursPath` against `basePath` and
    * `theirsPath` (`git merge-file -p`), printed rather than written in place.
-   * `ok: false` on any conflict OR non-text-mergeable input (binary, etc) —
-   * the caller decides what to do; nothing is ever written by this call.
-   */
+   * `ok: false` on any conflict; nothing is ever written by this call. */
   async mergeFileResult(oursPath: string, basePath: string, theirsPath: string): Promise<{ ok: true; content: Buffer } | { ok: false }> {
     try {
       const { stdout } = await execFileAsync('git', ['merge-file', '-p', oursPath, basePath, theirsPath], {
