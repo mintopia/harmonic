@@ -2,8 +2,7 @@ import { execFile } from 'node:child_process';
 import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 
@@ -71,7 +70,6 @@ interface CommandResult {
 
 export interface ServiceManagerDependencies {
   nodePath: string;
-  cliPath: string;
   currentVersion: string;
   path: string;
   homeDir: string;
@@ -88,7 +86,6 @@ export interface ServiceManagerDependencies {
 
 const defaultDependencies = (): ServiceManagerDependencies => ({
   nodePath: process.execPath,
-  cliPath: resolve(process.argv[1] ?? fileURLToPath(new URL('./cli.js', import.meta.url))),
   currentVersion: packageVersion(),
   path: process.env.PATH ?? '',
   homeDir: homedir(),
@@ -236,7 +233,8 @@ class SystemdServiceManager implements ServiceManager {
     const version = packageVersionSchema.parse(this.dependencies.currentVersion);
     const versionDir = join(appDir, 'versions', version);
     await this.dependencies.mkdir(versionDir);
-    await this.dependencies.run('cp', ['-a', `${dirname(dirname(this.dependencies.cliPath))}/.`, versionDir]);
+    await this.dependencies.run('npm', ['pack', '--pack-destination', versionDir, `@mintopia/harmonic@${version}`]);
+    await this.dependencies.run('tar', ['-xzf', join(versionDir, `mintopia-harmonic-${version}.tgz`), '--strip-components=1', '-C', versionDir]);
     await this.dependencies.run('npm', ['i', '--prefix', versionDir, '--omit=dev']);
     await this.dependencies.run('chown', ['-R', user ?? this.dependencies.userName, appDir]);
     await this.dependencies.run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);

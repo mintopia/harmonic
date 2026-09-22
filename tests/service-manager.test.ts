@@ -24,7 +24,6 @@ const initdDependencies = () => {
   const warn = vi.fn();
   const dependencies = {
     warn,
-    cliPath: '/opt/harmonic/dist/cli.js',
     currentVersion: '2.16.0',
     nodePath: '/usr/bin/node',
     path: '/usr/local/bin:/usr/bin:/bin',
@@ -158,7 +157,6 @@ describe('systemd ServiceManager', () => {
       dirs,
       files,
       modes,
-      cliPath: '/opt/harmonic/dist/cli.js',
       currentVersion: '2.16.0',
       nodePath: '/usr/bin/node',
       path: '/opt/tools/bin:/usr/local/bin:/usr/bin:/bin',
@@ -197,7 +195,8 @@ describe('systemd ServiceManager', () => {
     expect(deps.dirs).toContain('/var/lib/harmonic/app/versions/2.16.0');
     expect(deps.calls).toEqual([
       ['chown', 'workspace', '/var/lib/harmonic'],
-      ['cp', '-a', '/opt/harmonic/.', '/var/lib/harmonic/app/versions/2.16.0'],
+      ['npm', 'pack', '--pack-destination', '/var/lib/harmonic/app/versions/2.16.0', '@mintopia/harmonic@2.16.0'],
+      ['tar', '-xzf', '/var/lib/harmonic/app/versions/2.16.0/mintopia-harmonic-2.16.0.tgz', '--strip-components=1', '-C', '/var/lib/harmonic/app/versions/2.16.0'],
       ['npm', 'i', '--prefix', '/var/lib/harmonic/app/versions/2.16.0', '--omit=dev'],
       ['chown', '-R', 'workspace', '/var/lib/harmonic/app'],
       ['ln', '-sfn', 'versions/2.16.0', '/var/lib/harmonic/app/current'],
@@ -302,7 +301,8 @@ describe('systemd ServiceManager', () => {
     expect(deps.dirs).toContain('/home/ada/.harmonic/app/versions/2.16.0');
     expect(deps.calls).toEqual([
       ['loginctl', 'enable-linger', 'ada'],
-      ['cp', '-a', '/opt/harmonic/.', '/home/ada/.harmonic/app/versions/2.16.0'],
+      ['npm', 'pack', '--pack-destination', '/home/ada/.harmonic/app/versions/2.16.0', '@mintopia/harmonic@2.16.0'],
+      ['tar', '-xzf', '/home/ada/.harmonic/app/versions/2.16.0/mintopia-harmonic-2.16.0.tgz', '--strip-components=1', '-C', '/home/ada/.harmonic/app/versions/2.16.0'],
       ['npm', 'i', '--prefix', '/home/ada/.harmonic/app/versions/2.16.0', '--omit=dev'],
       ['chown', '-R', 'ada', '/home/ada/.harmonic/app'],
       ['ln', '-sfn', 'versions/2.16.0', '/home/ada/.harmonic/app/current'],
