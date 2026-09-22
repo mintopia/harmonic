@@ -56,7 +56,6 @@ function createLifecycleTracking(
       context: { attemptId: run.id, event: String(payload.event) },
     });
   };
-  // No Attempt to stream an `attempt_event` for; reuse the taskId-keyed `step_changed` signal instead.
   const recordTaskEventBestEffort = (task: Pick<TaskRow, 'id'>, payload: Record<string, unknown>): void => {
     fireAndForget(
       async () => {
@@ -405,9 +404,6 @@ export async function createRuntime(deps: {
       onEpicMergeStep: (payload) => bus.emit('epic_changed', payload),
       onEpicIntegrated: (payload) => {
         bus.emit('epic_integrated', payload);
-        // A folded member's branch is only content-contained once its Epic
-        // integrates into the base branch; recheck retirement now rather than
-        // waiting for the next restart's backfill.
         fireAndForget(() => branchRetirement.reconcile(), {
           op: 'app.branchRetirement.reconcileAfterIntegration',
           level: 'error',
@@ -423,7 +419,6 @@ export async function createRuntime(deps: {
   trackerManagerRef = trackerManager;
   for (const merged of pendingPostMerge.splice(0)) await postMerge(merged);
 
-  // Fired, not awaited: clears branches piled up since retirement was unwired, without delaying boot.
   fireAndForget(() => branchRetirement.reconcile(), { op: 'app.branchRetirement.reconcile', level: 'error' });
 
   return {

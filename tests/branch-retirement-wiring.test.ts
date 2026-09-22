@@ -68,9 +68,6 @@ describe('Branch retirement wiring (owner decision: re-enable, visibly, with bac
     const branchRetirement = new BranchRetirementCoordinator(attempts, tasks, Git, () => {}, (attemptId, payload) => recorded.push([attemptId, payload]));
     const coordinator = new AttemptSettleCoordinator(tasks, attempts, undefined, undefined, branchRetirement);
 
-    // The Task row a real settle caller passes reflects the disposition it is
-    // about to apply, e.g. an already-'done' Task from crash-recovery replaying
-    // a settled disposition (src/execution/crash-recovery.ts).
     await coordinator.settle({ ...task, state: 'done' }, run, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'none', reason: null });
 
     expect(await Git.branchExists(repo, branch)).toBe(false);
@@ -128,15 +125,12 @@ describe('Branch retirement wiring (owner decision: re-enable, visibly, with bac
     const recorded: [number, Record<string, unknown>][] = [];
     const branchRetirement = new BranchRetirementCoordinator(attempts, tasks, Git, () => {}, (attemptId, payload) => recorded.push([attemptId, payload]));
 
-    // Settle-time: the member's content is only contained in epic/5, not yet in develop — kept.
     await branchRetirement.reconcile();
     expect(await Git.branchExists(repo, branch)).toBe(true);
     expect(recorded).toEqual([]);
 
-    // The Epic integrates: epic/5 merges into develop.
     git(repo, 'merge', '--no-ff', '-m', 'integrate epic 5', 'epic/5');
 
-    // The same long-lived coordinator rechecks on integration success (app-runtime.ts's onEpicIntegrated), no restart.
     await branchRetirement.reconcile();
 
     expect(await Git.branchExists(repo, branch)).toBe(false);

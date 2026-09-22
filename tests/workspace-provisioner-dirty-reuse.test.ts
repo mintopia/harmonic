@@ -198,7 +198,6 @@ describe('WorkspaceProvisioner git-visibility events', () => {
     const run = await attempts.update((await attempts.create(task.id)).id, { branch, baseBranch: 'main' });
     git(repo, 'branch', branch, 'main');
     const worktreePath = join(worktreesDir, `task-${task.id}`);
-    // A stale directory at the worktree path that git never registered as a worktree.
     execFileSync('mkdir', ['-p', worktreePath]);
     writeFileSync(join(worktreePath, 'stray.txt'), 'orphaned\n');
 
@@ -269,7 +268,6 @@ describe('WorkspaceProvisioner git-visibility events', () => {
     const task = await tasks.create({ prompt: 'p', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
     const branch = `harmonic/task-${task.id}`;
     const worktreePath = join(worktreesDir, `task-${task.id}`);
-    // A stray worktree+branch left on disk with no live Attempt row to key off.
     git(repo, 'worktree', 'add', '-b', branch, worktreePath, 'main');
 
     const taskEvents = new TaskEventStore(asyncDb);

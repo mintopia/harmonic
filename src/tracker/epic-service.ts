@@ -163,7 +163,6 @@ export class TrackerEpicService implements EpicService {
       if (step.step === 'branch-create-failed') {
         const rows = await this.epicMergeEvents.list(workspace.id, epicRef);
         const last = rows.at(-1)?.step;
-        // Every poll retries a still-unmet cut; skip an identical repeat.
         if (last?.step === 'branch-create-failed' && last.branch === step.branch && last.error === step.error) return;
       }
       await this.epicMergeEvents.append(workspace.id, epicRef, step);

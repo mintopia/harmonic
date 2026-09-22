@@ -86,8 +86,6 @@ export class WorkspaceProvisioner {
       }
       this.deps.events.onAttemptFinished?.(await this.deps.attempts.get(run.id));
     } else {
-      // No Attempt row to key off (e.g. an escalated Task that never spawned
-      // one) — fall back to the Task's deterministic worktree/branch.
       const worktreePath = this.worktreePathForTask(task);
       if (existsSync(worktreePath)) {
         const worktree = basename(worktreePath);
