@@ -514,6 +514,18 @@ export class TaskService {
     return row?.kind ?? null;
   }
 
+  /** The stored Epic lifecycle `state` for a ref in a Workspace, or null when no spine row exists. */
+  async epicState(workspaceId: number, ref: number): Promise<EpicLifecycleState | null> {
+    const row = await this.db.read((db) =>
+      db
+        .select({ state: epics.state })
+        .from(epics)
+        .where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, ref)))
+        .get(),
+    );
+    return row?.state ?? null;
+  }
+
   /**
    * Settle a stored Epic's integration snapshot: flip `state` `open` or `integrating`→`integrated`,
    * record `mergeCommit` (null for a no-op finish where the branch already

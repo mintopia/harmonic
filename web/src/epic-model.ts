@@ -19,6 +19,8 @@ export interface EpicMember {
   mergeStatus: MemberMergeStatus;
   /** Member is in the ready frontier. */
   ready: boolean;
+  /** The member's resolved isolation mode, or null if unmirrored. */
+  isolationMode: 'direct' | 'worktree' | null;
 }
 
 export interface EpicIntegration {
@@ -80,6 +82,9 @@ export interface Epic {
   foldedCount: number;
   /** members.length */
   memberCount: number;
+  /** Every member is direct-isolation: this Epic completes in place rather
+   * than merging one, whether or not a leftover epic/<ref> still exists. */
+  inPlace: boolean;
 }
 
 export function epicDriverRefs(epics: Epic[]): Set<number> {
@@ -245,6 +250,7 @@ export function closedMembers(epic: Epic): EpicMember[] {
  * folded into the integration branch, or an integrate attempt already in flight
  * or held for the operator. Only then does the surface show the progress bar. */
 export function isEpicIntegrating(epic: Epic): boolean {
+  if (epic.inPlace) return false;
   return (
     epic.state === 'integrating' ||
     (epic.memberCount > 0 && epic.foldedCount === epic.memberCount) ||
@@ -310,7 +316,7 @@ export function integrationSteps(epic: Epic): IntegrationStep[] {
  * integrating — but the page shows overall progress from the first member on.
  * The gate steps stay `pending` past `merge` for the same reason `integrationSteps`
  * does: the read model carries a positive signal only through merge. */
-export type EpicStageKey = 'build' | IntegrationStepKey;
+export type EpicStageKey = 'build' | 'complete' | IntegrationStepKey;
 export interface EpicStage {
   key: EpicStageKey;
   label: string;
@@ -323,6 +329,22 @@ export interface EpicStage {
 
 export function epicLifecycleSteps(epic: Epic): EpicStage[] {
   const finished = epic.state === 'integrated';
+  if (epic.inPlace) {
+    const allFolded = finished || (epic.memberCount > 0 && epic.foldedCount === epic.memberCount);
+    const build: EpicStage = {
+      key: 'build',
+      label: 'Build',
+      sublabel: `${epic.foldedCount}/${epic.memberCount} done`,
+      state: allFolded ? 'done' : 'current',
+    };
+    const complete: EpicStage = {
+      key: 'complete',
+      label: 'Done',
+      sublabel: `committed on ${epic.baseBranch ?? 'base'}`,
+      state: finished ? 'done' : allFolded ? 'current' : 'pending',
+    };
+    return [build, complete];
+  }
   const allFolded = finished || (epic.memberCount > 0 && epic.foldedCount === epic.memberCount);
   const held = epic.integrate.held;
   const configured = epic.verification.configured;

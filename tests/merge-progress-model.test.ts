@@ -26,4 +26,14 @@ describe('mergeStepRows', () => {
     const rows = mergeStepRows([{ step: 'retired', branch: 'epic/42', baseBranch: 'develop' }]);
     expect(rows[0]).toMatchObject({ label: 'Integration branch retired', detail: 'epic/42', tone: 'passed' });
   });
+
+  it('records an in-place completion, detailed with the base branch', () => {
+    const rows = mergeStepRows([{ step: 'completed-in-place', baseBranch: 'develop' }]);
+    expect(rows[0]).toMatchObject({ label: 'Completed in place', detail: 'develop', log: null, tone: 'passed' });
+  });
+
+  it('notes a leftover Integration branch left untouched', () => {
+    const rows = mergeStepRows([{ step: 'completed-in-place', baseBranch: 'develop', leftBranch: 'epic/42' }]);
+    expect(rows[0]).toMatchObject({ label: 'Completed in place', detail: 'develop', log: 'epic/42 left untouched; Harmonic no longer uses it', tone: 'passed' });
+  });
 });

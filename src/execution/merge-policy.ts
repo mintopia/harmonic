@@ -53,6 +53,7 @@ export type MergeStepEvent =
   | { step: 'merged'; mergeOid: string }
   | { step: 'checkout-synced'; mergeOid: string; mergedPaths: string[]; keptPaths: string[]; error?: string }
   | { step: 'retired'; branch: string; baseBranch: string }
+  | { step: 'completed-in-place'; baseBranch: string; leftBranch?: string }
   | { step: 'escalated'; reason: 'conflict' | 'post-merge-red' | 'target-advanced'; message: string };
 
 function emitStep(deps: MergePolicyDeps, event: MergeStepEvent): void {

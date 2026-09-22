@@ -19,6 +19,8 @@ export interface EpicMember {
   mergeStatus: MemberMergeStatus;
   /** Whether this member is in the ready frontier. */
   ready: boolean;
+  /** The member's resolved isolation mode, or `null` if unmirrored. */
+  isolationMode: 'direct' | 'worktree' | null;
 }
 
 export interface EpicIntegration {
@@ -83,6 +85,9 @@ export interface Epic {
   /** Members with `mergeStatus === 'completed'`. */
   foldedCount: number;
   memberCount: number;
+  /** Every member is direct-isolation: this Epic completes in place rather
+   * than merging one, whether or not a leftover `epic/<ref>` still exists. */
+  inPlace: boolean;
 }
 
 /** The Epic container ticket + Workspace facts the impure half resolves and passes to {@link composeEpicView}. */
@@ -129,6 +134,7 @@ export function composeEpicView(
       escalated: task?.state === 'escalated',
       mergeStatus: reduceMemberState(task),
       ready: readySet.has(ref),
+      isolationMode: task?.isolationMode === 'direct' || task?.isolationMode === 'worktree' ? task.isolationMode : null,
     };
   });
 
@@ -157,5 +163,6 @@ export function composeEpicView(
     timelineEvents: facts.timelineEvents,
     foldedCount: members.filter((m) => m.mergeStatus === 'completed').length,
     memberCount: members.length,
+    inPlace: members.length > 0 && members.every((m) => m.isolationMode === 'direct'),
   };
 }

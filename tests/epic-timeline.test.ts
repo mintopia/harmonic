@@ -40,6 +40,7 @@ function epic(): Epic {
     ],
     foldedCount: 0,
     memberCount: 0,
+    inPlace: false,
   };
 }
 
@@ -65,5 +66,15 @@ describe('EpicTimeline', () => {
     expect(html.indexOf('Epic created')).toBeLessThan(html.indexOf('Merge started'));
     expect(html.indexOf('Merge started')).toBeLessThan(html.indexOf('Merged'));
     expect(html.indexOf('Merged')).toBeLessThan(html.indexOf('Integration branch retired'));
+  });
+
+  it('renders a "Completed in place" row for an in-place Epic, detailed with the base branch', () => {
+    const rows = epicTimelineRows({
+      ...epic(),
+      inPlace: true,
+      timelineEvents: [{ seq: 1, at: 2_000, step: { step: 'completed-in-place', baseBranch: 'develop' } }],
+    });
+    expect(rows.map((row) => row.label)).toEqual(['Epic created', 'Completed in place']);
+    expect(rows[1]).toMatchObject({ detail: 'develop', tone: 'passed' });
   });
 });

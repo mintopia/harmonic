@@ -3067,6 +3067,21 @@
           },
           "ready": {
             "type": "boolean"
+          },
+          "isolationMode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "direct",
+                  "worktree"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "worktree"
           }
         },
         "required": [
@@ -3076,7 +3091,8 @@
           "state",
           "escalated",
           "mergeStatus",
-          "ready"
+          "ready",
+          "isolationMode"
         ]
       },
       "EpicIntegrationInput": {
@@ -3418,6 +3434,25 @@
             "properties": {
               "step": {
                 "type": "string",
+                "const": "completed-in-place"
+              },
+              "baseBranch": {
+                "type": "string"
+              },
+              "leftBranch": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "baseBranch"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
                 "const": "escalated"
               },
               "reason": {
@@ -3577,6 +3612,9 @@
             "type": "integer",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
+          },
+          "inPlace": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -3597,7 +3635,8 @@
           "mergeSteps",
           "timelineEvents",
           "foldedCount",
-          "memberCount"
+          "memberCount",
+          "inPlace"
         ]
       },
       "EpicAttemptInput": {
@@ -9207,6 +9246,21 @@
           },
           "ready": {
             "type": "boolean"
+          },
+          "isolationMode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "direct",
+                  "worktree"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "worktree"
           }
         },
         "required": [
@@ -9216,7 +9270,8 @@
           "state",
           "escalated",
           "mergeStatus",
-          "ready"
+          "ready",
+          "isolationMode"
         ],
         "additionalProperties": false
       },
@@ -9573,6 +9628,26 @@
             "properties": {
               "step": {
                 "type": "string",
+                "const": "completed-in-place"
+              },
+              "baseBranch": {
+                "type": "string"
+              },
+              "leftBranch": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "baseBranch"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
                 "const": "escalated"
               },
               "reason": {
@@ -9734,6 +9809,9 @@
             "type": "integer",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
+          },
+          "inPlace": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -9754,7 +9832,8 @@
           "mergeSteps",
           "timelineEvents",
           "foldedCount",
-          "memberCount"
+          "memberCount",
+          "inPlace"
         ],
         "additionalProperties": false
       },

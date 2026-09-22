@@ -147,6 +147,7 @@ export class TrackerEpicService implements EpicService {
 
   startWorkspace(workspace: WorkspaceRow): EpicIntegrationSync {
     const epics = new EpicLifecycle(this.tasks, workspace.workingDir);
+    epics.attachWorkspace(workspace.id);
     epics.attachOperations(this.operations);
     epics.attachIntegrationBranchRetired(async ({ epicRef, branch, baseBranch }) => {
       if (!this.epicMergeEvents) return;
@@ -190,6 +191,15 @@ export class TrackerEpicService implements EpicService {
         markIntegrating: (epicRef) => this.tasks.markEpicIntegrating(workspace.id, epicRef),
         recordIntegration: (input) => this.recordEpicIntegration(workspace, input),
         onIntegrated: ({ epicRef }) => this.onEpicIntegrated?.({ workspaceId: workspace.id, epicRef }),
+        epicState: (epicRef) => this.tasks.epicState(workspace.id, epicRef),
+        onCompletedInPlace: ({ epicRef, baseBranch, leftBranch }) => {
+          if (!this.epicMergeEvents) return;
+          void this.epicMergeEvents
+            .append(workspace.id, epicRef, { step: 'completed-in-place', baseBranch, ...(leftBranch !== undefined ? { leftBranch } : {}) })
+            .then(() => {
+              this.onEpicMergeStep?.({ workspaceId: workspace.id, epicRef });
+            });
+        },
       });
       entry.epicIntegrate = epicIntegrate;
       epics.attachIntegrateTrigger(epicIntegrate);
@@ -224,13 +234,21 @@ export class TrackerEpicService implements EpicService {
 
   async forceIntegrateEpic(workspaceId: number, epicRef: number): Promise<EpicIntegrateOutcome | null> {
     const entry = this.entries.get(workspaceId);
-    return entry?.epicIntegrate?.submit({ ref: epicRef, members: [], memberRefs: entry.epics.membersOf(epicRef) }, { force: true }) ?? null;
+    if (!entry) return null;
+    if (entry.epics.isInPlace(epicRef, await this.tasks.list({ workspaceId }))) {
+      return { status: 'noop', reason: 'direct-mode epic completes in place; nothing to integrate' };
+    }
+    return entry.epicIntegrate?.submit({ ref: epicRef, members: [], memberRefs: entry.epics.membersOf(epicRef) }, { force: true }) ?? null;
   }
 
   async rejectEpic(workspaceId: number, epicRef: number, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null> {
     const entry = this.entries.get(workspaceId);
     const coordinator = entry?.epicIntegrate;
-    if (!entry || !coordinator || coordinator.heldReason(epicRef) === null || !this.epicAttempts) return null;
+    if (!entry || !coordinator || !this.epicAttempts) return null;
+    if (entry.epics.isInPlace(epicRef, await this.tasks.list({ workspaceId }))) {
+      return { status: 'noop', reason: 'direct-mode epic completes in place; nothing to integrate' };
+    }
+    if (coordinator.heldReason(epicRef) === null) return null;
     const attempt = await this.epicAttempts.currentForEpic({ workspaceId, epicRef });
     if (attempt.state !== 'escalated') return null;
     await this.epicAttempts.update(attempt.id, {
