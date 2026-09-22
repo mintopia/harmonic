@@ -183,7 +183,7 @@ describe('systemd ServiceManager', () => {
       serve: { port: '4711', host: '127.0.0.1', dataDir: '/var/lib/harmonic', otelEndpoint: 'http://otel' },
     })).resolves.toMatchObject({ backend: 'systemd', status: { running: true } });
 
-    expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('ExecStart=/usr/bin/node /opt/harmonic/dist/cli.js serve --port 4711 --host 127.0.0.1 --data-dir /var/lib/harmonic --otel-endpoint http://otel');
+    expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('ExecStart=/usr/bin/node /var/lib/harmonic/app/current/dist/cli.js serve --port 4711 --host 127.0.0.1 --data-dir /var/lib/harmonic --otel-endpoint http://otel');
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('WorkingDirectory=/var/lib/harmonic');
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('Restart=always');
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('TimeoutStopSec=60');
@@ -192,8 +192,12 @@ describe('systemd ServiceManager', () => {
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).not.toContain('EnvironmentFile=');
     expect(deps.files.has('/etc/systemd/system/harmonic.env')).toBe(false);
     expect(deps.dirs).toContain('/var/lib/harmonic');
+    expect(deps.dirs).toContain('/var/lib/harmonic/app/versions/2.16.0');
     expect(deps.calls).toEqual([
       ['chown', 'workspace', '/var/lib/harmonic'],
+      ['npm', 'i', '--prefix', '/var/lib/harmonic/app/versions/2.16.0', '@mintopia/harmonic@2.16.0'],
+      ['chown', '-R', 'workspace', '/var/lib/harmonic/app'],
+      ['ln', '-sfn', 'versions/2.16.0', '/var/lib/harmonic/app/current'],
       ['systemctl', 'daemon-reload'],
       ['systemctl', 'enable', 'harmonic'],
       ['systemctl', 'start', 'harmonic'],
@@ -214,6 +218,7 @@ describe('systemd ServiceManager', () => {
     const unit = deps.files.get('/etc/systemd/system/harmonic.service') ?? '';
     expect(unit).toContain('User=operator');
     expect(unit).toContain('Group=operator');
+    expect(deps.calls).toContainEqual(['chown', '-R', 'operator', '/srv/harmonic/app']);
   });
 
   it('uses SUDO_USER for a system unit when no explicit user was passed', async () => {
@@ -267,8 +272,12 @@ describe('systemd ServiceManager', () => {
     expect(deps.files.get('/home/ada/.config/systemd/user/harmonic.env')).toBe('HARMONIC_PASSWORD="secret value"\n');
     expect(deps.modes.get('/home/ada/.config/systemd/user/harmonic.env')).toBe(0o600);
     expect(deps.dirs).toContain('/home/ada/.harmonic');
+    expect(deps.dirs).toContain('/home/ada/.harmonic/app/versions/2.16.0');
     expect(deps.calls).toEqual([
       ['loginctl', 'enable-linger', 'ada'],
+      ['npm', 'i', '--prefix', '/home/ada/.harmonic/app/versions/2.16.0', '@mintopia/harmonic@2.16.0'],
+      ['chown', '-R', 'ada', '/home/ada/.harmonic/app'],
+      ['ln', '-sfn', 'versions/2.16.0', '/home/ada/.harmonic/app/current'],
       ['systemctl', '--user', 'daemon-reload'],
       ['systemctl', '--user', 'enable', 'harmonic'],
       ['systemctl', '--user', 'start', 'harmonic'],
@@ -276,7 +285,7 @@ describe('systemd ServiceManager', () => {
     ]);
   });
 
-  it('creates the data directory without chowning it for a user-level unit, since it already runs as the invoking user', async () => {
+  it('keeps the data directory owner but gives the user unit ownership of its app tree', async () => {
     const deps = dependencies();
     const manager = createServiceManager(environment({ userSystemdUsable: true }), deps);
 
@@ -286,7 +295,7 @@ describe('systemd ServiceManager', () => {
     });
 
     expect(deps.dirs).toContain('/home/ada/.harmonic');
-    expect(deps.calls.some((call) => call[0] === 'chown')).toBe(false);
+    expect(deps.calls).toContainEqual(['chown', '-R', 'ada', '/home/ada/.harmonic/app']);
   });
 
   it('ignores --user for a user-level systemd unit and warns', async () => {
@@ -301,6 +310,7 @@ describe('systemd ServiceManager', () => {
 
     const unit = deps.files.get('/home/ada/.config/systemd/user/harmonic.service') ?? '';
     expect(unit).not.toContain('User=');
+    expect(deps.calls).toContainEqual(['chown', '-R', 'ada', '/home/ada/.harmonic/app']);
     expect(deps.warn).toHaveBeenCalledWith(expect.stringContaining('ignored'));
   });
 

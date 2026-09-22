@@ -1,12 +1,16 @@
 import { execFile } from 'node:child_process';
 import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
+const packageVersion = (): string => {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version?: unknown };
+  return typeof pkg.version === 'string' ? pkg.version : 'unknown';
+};
 
 export type ServiceBackend = 'systemd' | 'init.d' | 'user-systemd' | 'self-managed';
 
@@ -194,7 +198,7 @@ class SystemdServiceManager implements ServiceManager {
   private unit(serve: ServiceServeOptions, user?: string): string {
     const args = [
       this.dependencies.nodePath,
-      this.dependencies.cliPath,
+      join(serve.dataDir, 'app', 'current', 'dist', 'cli.js'),
       'serve',
       '--port', serve.port,
       '--host', serve.host,
@@ -224,6 +228,13 @@ class SystemdServiceManager implements ServiceManager {
     if (this.userUnit && options.user !== undefined) warn(this.dependencies, '--user is ignored for user-level systemd.');
     if (this.userUnit) await this.dependencies.run('loginctl', ['enable-linger', this.dependencies.userName]);
     await ensureDataDir(this.dependencies, options.serve.dataDir, user);
+    const appDir = join(options.serve.dataDir, 'app');
+    const version = packageVersion();
+    const versionDir = join(appDir, 'versions', version);
+    await this.dependencies.mkdir(versionDir);
+    await this.dependencies.run('npm', ['i', '--prefix', versionDir, `@mintopia/harmonic@${version}`]);
+    await this.dependencies.run('chown', ['-R', user ?? this.dependencies.userName, appDir]);
+    await this.dependencies.run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
     await this.dependencies.mkdir(this.unitDirectory);
     if (options.serve.password === undefined) {
       await this.dependencies.removeFile(this.environmentPath);
