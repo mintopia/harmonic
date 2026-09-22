@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createShutdownHandler } from '../src/cli-serve.js';
+import {
+  createShutdownHandler,
+  installSystemdUpgrade,
+  readSystemdInstalledVersion,
+} from '../src/cli-serve.js';
 
 describe('createShutdownHandler', () => {
   it('calls release then exit(0), in that order', async () => {
@@ -77,5 +81,41 @@ describe('createShutdownHandler', () => {
     await shutdown();
 
     expect(calls).toEqual(['app.close', 'telemetry.shutdown', 'releaseLock:/data']);
+  });
+});
+
+describe('systemd upgrades', () => {
+  const dataDir = '/var/lib/harmonic';
+  const target = '2.6.0';
+
+  it('installs into the service-owned version directory, flips current, and verifies through current', async () => {
+    const run = vi.fn(async () => ({}));
+    const readFile = vi.fn(() => JSON.stringify({ version: target }));
+
+    await installSystemdUpgrade({ dataDir, target, run });
+    const installed = readSystemdInstalledVersion({ dataDir, readFile });
+
+    expect(run).toHaveBeenCalledWith('npm', [
+      'i', '--prefix', '/var/lib/harmonic/app/versions/2.6.0', '@mintopia/harmonic@2.6.0',
+    ]);
+    expect(run).toHaveBeenCalledWith('ln', [
+      '-sfn', 'versions/2.6.0', '/var/lib/harmonic/app/current',
+    ]);
+    expect(readFile).toHaveBeenCalledWith('/var/lib/harmonic/app/current/dist/../package.json', 'utf8');
+    expect(installed).toBe(target);
+  });
+
+  it('converges when a partially-applied systemd upgrade is retried', async () => {
+    const run = vi.fn(async () => ({}));
+
+    await installSystemdUpgrade({ dataDir, target, run });
+    await installSystemdUpgrade({ dataDir, target, run });
+
+    expect(run.mock.calls).toEqual([
+      ['npm', ['i', '--prefix', '/var/lib/harmonic/app/versions/2.6.0', '@mintopia/harmonic@2.6.0']],
+      ['ln', ['-sfn', 'versions/2.6.0', '/var/lib/harmonic/app/current']],
+      ['npm', ['i', '--prefix', '/var/lib/harmonic/app/versions/2.6.0', '@mintopia/harmonic@2.6.0']],
+      ['ln', ['-sfn', 'versions/2.6.0', '/var/lib/harmonic/app/current']],
+    ]);
   });
 });
