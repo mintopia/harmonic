@@ -323,6 +323,7 @@ export async function createRuntime(deps: {
     resume: (task, guidance, startNow) => runner.resumeWithGuidance(task, guidance, startNow),
     cleanup: (task, run) => runner.cleanupClosed(task, run),
     candidateHead: (task, run) => runner.candidateHead(task, run),
+    advance: (task, run, failedStep) => runner.advanceAccepted(task, run, failedStep),
   });
   await drainRetirement();
   const { loopMonitor, hostLoad, workspaceWatcher } = createObservability(opts, bus, settingsStore);

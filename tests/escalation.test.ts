@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { baselineConfig } from '../src/config.js';
+import { baselineConfig, verificationCommandSchema } from '../src/config.js';
 import { type AsyncDbHandle, openAsyncDb } from '../src/db/async.js';
 import { type TaskAttemptRow, type TaskRow } from '../src/db/schema.js';
 import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
@@ -100,27 +100,26 @@ describe('escalation', () => {
       expect(rejected.status).toBe(200);
       expect(['working', 'escalated']).toContain(rejected.body.state);
 
-      // Unified manual resume (issue #506): the escalated Attempt is resumed in place —
-      // re-running implementation with the guidance folded in — not replaced by a second Attempt.
+      // ADR-0038: Reject spawns a NEW Attempt (number 2) carrying the guidance,
+      // rather than resuming the escalated Attempt in place.
       const again = await waitFor(async () => {
         const { body } = await server.api('GET', `/api/tasks/${taskId}`);
         const attempts = await timeline(taskId);
-        return body.state === 'escalated' &&
-          attempts.length === 1 &&
-          attempts[0]!.steps.filter((step) => step.type === 'implementation').length >= 2
+        return body.state === 'escalated' && attempts.length === 2 && attempts[1]!.state === 'escalated'
           ? body
           : undefined;
       });
-      // Budget reset: the resumed Attempt re-escalates as "attempt 1 of 1".
+      // Budget reset: the new Attempt re-escalates as "attempt 1 of 1".
       expect(again.escalationReason).toMatch(/attempt 1 of 1 failed/);
       const attemptsAfter = await timeline(taskId);
       expect(attemptsAfter.map((attempt) => ({ number: attempt.number, state: attempt.state }))).toEqual([
         { number: 1, state: 'escalated' },
+        { number: 2, state: 'escalated' },
       ]);
       const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
-      expect(runs).toHaveLength(1);
-      expect(runs[0].prompt).toContain('Do not crash; write the CSV header first.');
-      expect(runs[0].prompt).toContain('crash-before-response');
+      expect(runs).toHaveLength(2);
+      expect(runs[1].prompt).toContain('Do not crash; write the CSV header first.');
+      expect(runs[1].prompt).toContain('crash-before-response');
     });
 
     it('Reject without start requeues to ready and records the guidance, but does not force-start', async () => {
@@ -242,6 +241,7 @@ describe('escalation-service', () => {
           candidateHeadCalls.push({ taskId: task.id, runId: run.id });
           return candidateHeadValue;
         },
+        advance: async () => {},
       });
     });
     afterEach(async () => {
@@ -451,6 +451,25 @@ describe('escalation-routes', () => {
       return { taskId, attemptId, file };
     }
 
+    /** Escalates via a failing pre-merge command (no critic configured), so the
+     * escalated Attempt's last failed Step is `verification`, not `review`. */
+    async function escalateViaCommandFail(): Promise<{ taskId: number; attemptId: number; file: string }> {
+      await server.app.ctx.workspaces.update(workspaceId, {
+        isolationMode: 'worktree',
+        taskPreMergeCommands: [
+          { kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-fail', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }) },
+        ],
+        taskPreMergeCritics: null,
+      });
+      const { taskId, attemptId, file } = await createAndRun();
+      const task = await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+        return body.state === 'escalated' ? body : undefined;
+      });
+      expect(task.escalationReason).toMatch(/attempt 2 of 2 failed/);
+      return { taskId, attemptId, file };
+    }
+
     const ticketAttempts = (taskId: number) => new AttemptStore(server.app.ctx.asyncDb).listForTask(taskId);
     const verificationAttempts = async (taskId: number) => {
       const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
@@ -490,6 +509,53 @@ describe('escalation-routes', () => {
         // No second verification attempt was recorded by the accept — the two on
         // record are the ones from the exhausted attempt loop, not a re-verify.
         expect(await verificationAttempts(taskId)).toHaveLength(2);
+      });
+
+      it('verification-fail: Accept overrides the failed Step and runs review only, merging on a passing critic (ADR-0038)', async () => {
+        const baseOidBefore = git(repoDir, 'rev-parse', 'main');
+        const { taskId, file } = await escalateViaCommandFail();
+
+        const before = (await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`)).body.attempts.at(-1);
+        expect(before.steps.filter((s: { type: string }) => s.type === 'verification').at(-1)).toMatchObject({ state: 'failed' });
+        expect(before.steps.some((s: { type: string }) => s.type === 'review')).toBe(false);
+
+        // Reconfigure with a passing critic before Accept — the overridden verification
+        // Step is not re-run, but the review Step Accept advances to must pass to merge.
+        criticResult = { verdict: 'pass', summary: 'looks correct' };
+        await server.app.ctx.workspaces.update(workspaceId, { ...critic() });
+
+        const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
+        expect(accepted.status).toBe(200);
+        expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null });
+
+        const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
+        expect(run).toMatchObject({ state: 'completed' });
+        // Same Attempt throughout — Accept advances in place, it does not spawn a new one.
+        expect(await ticketAttempts(taskId)).toHaveLength(2);
+
+        const after = (await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`)).body.attempts.at(-1);
+        expect(after.steps.filter((s: { type: string }) => s.type === 'verification').at(-1)).toMatchObject({ state: 'passed', verdict: 'pass' });
+        expect(after.steps.filter((s: { type: string }) => s.type === 'review').at(-1)).toMatchObject({ state: 'passed' });
+
+        expect(git(repoDir, 'rev-parse', 'main')).not.toBe(baseOidBefore);
+        expect(git(repoDir, 'show', `main:${file}`)).toBe('work');
+      });
+
+      it('verification-fail: Accept escalates again immediately when the advanced-to review Step still fails', async () => {
+        const { taskId } = await escalateViaCommandFail();
+        criticResult = { verdict: 'fail', summary: 'still not good enough' };
+        await server.app.ctx.workspaces.update(workspaceId, { ...critic() });
+
+        const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
+        expect(accepted.status).toBe(200);
+        expect(accepted.body.state).toBe('escalated');
+
+        const after = (await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`)).body.attempts.at(-1);
+        expect(after.state).toBe('escalated');
+        expect(after.steps.filter((s: { type: string }) => s.type === 'verification').at(-1)).toMatchObject({ state: 'passed' });
+        expect(after.steps.filter((s: { type: string }) => s.type === 'review').at(-1)).toMatchObject({ state: 'failed' });
+        // Still the same Attempt — the escalate-again is not a new Attempt.
+        expect(await ticketAttempts(taskId)).toHaveLength(2);
       });
 
       it('409s invalid_state when the ticket is not escalated (a passing critic merges on its own)', async () => {
@@ -547,19 +613,20 @@ describe('escalation-routes', () => {
         });
         expect(done.state).toBe('done');
         const attempts = await ticketAttempts(taskId);
-        // Resume-in-place (issue #506): the escalated Attempt 2 is resumed on the same
-        // branch and now passes — no third Attempt row is created.
+        // ADR-0038: Reject spawns a NEW Attempt 3 on the same branch, keeping the
+        // escalated Attempt 2 as its own timeline entry rather than reusing it.
         expect(attempts.map((a) => ({ number: a.number, state: a.state }))).toEqual([
           { number: 1, state: 'failed' },
-          { number: 2, state: 'passed' },
+          { number: 2, state: 'escalated' },
+          { number: 3, state: 'passed' },
         ]);
 
         const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
-        expect(runs).toHaveLength(2);
-        expect(runs[1].number).toBe(2);
-        expect(runs[1].prompt).toContain('The timeout is intentional');
+        expect(runs).toHaveLength(3);
+        expect(runs[2].number).toBe(3);
+        expect(runs[2].prompt).toContain('The timeout is intentional');
         expect(branch).toBe(`harmonic/task-${taskId}`);
-        expect(runs[1].branch).toBe(branch);
+        expect(runs[2].branch).toBe(branch);
         expect(runs[0].branch).toBe(branch);
       });
 

@@ -1,4 +1,4 @@
-import type { TaskRow, AttemptRow } from '../db/schema.js';
+import type { TaskRow, AttemptRow, StepRow } from '../db/schema.js';
 import { DomainError } from './errors.js';
 import type { AttemptStore } from './attempts.js';
 import type { TaskService } from './tasks.js';
@@ -22,12 +22,20 @@ export interface EscalationHooks {
   cleanup: (task: TaskRow, run: AttemptRow | undefined) => Promise<void>;
   /** The candidate commit an Accept would merge, or null when the branch has no commits ahead of its base. */
   candidateHead: (task: TaskRow, run: AttemptRow) => Promise<string | null>;
+  /** Accept step-advance (ADR-0038): `failedStep` is already `failed` at `rebase`,
+   * `implementation`, or `verification` (never the final `review` Step, which
+   * `accept` merges directly). Overrides it and resumes the pipeline at the
+   * next Step on the same Attempt, merging and settling `done` on an eventual
+   * pass or escalating again on a later failure. */
+  advance: (task: TaskRow, run: AttemptRow, failedStep: StepRow) => Promise<void>;
 }
 
 /**
  * The one human surface: an `escalated` ticket exposes three actions. Accept is
- * the operator's judgement that the work is done — it merges the candidate as-is
- * and settles the Attempt under `operator-accept`, with no verification. Reject
+ * the operator's judgement that a specific failed Step is fine: at the final
+ * `review` Step this merges the candidate as-is and settles the Attempt under
+ * `operator-accept` with no further verification; at an earlier Step it
+ * overrides that Step and resumes the remaining pipeline (ADR-0038). Reject
  * optionally records guidance as feedback, resets the attempt budget, and
  * requeues the ticket to `ready` (or starts the next Attempt immediately).
  * Close cancels the ticket and cleans up. Nothing else moves a ticket out of
@@ -51,9 +59,16 @@ export class EscalationService {
   }
 
   /**
-   * Accept an escalated ticket: the operator has judged the work done, so merge
-   * the candidate as-is and settle the Attempt under `operator-accept`. No
-   * verification runs — the human Accept is the gate.
+   * Accept an escalated ticket. Requires a candidate — the branch's Attempt
+   * must have committed something ahead of its base, same guard as before this
+   * ADR — since there's nothing for either Accept behaviour to act on
+   * otherwise. Given a candidate, the last `failed` Step on the escalated
+   * Attempt decides what Accept does: at `review` (or when no Step is tracked
+   * at all — a pre-ADR-0038 escalation with no candidate Step to override),
+   * merge the candidate as-is and settle under `operator-accept`, unchanged
+   * from before this ADR. At an earlier Step, override it and resume the
+   * pipeline (ADR-0038); no verification re-runs for the overridden Step
+   * itself — the operator's Accept *is* its judgement.
    */
   async accept(taskId: number): Promise<TaskRow> {
     // Hold the Task across the whole merge→settle span (ADR-0020): a slow
@@ -64,6 +79,12 @@ export class EscalationService {
       const head = run ? await this.hooks.candidateHead(task, run) : null;
       if (!run || !head) {
         throw new DomainError('conflict', `task ${taskId} has no candidate to accept; the branch has no commits ahead of its base`);
+      }
+      const steps = await this.attempts.listSteps(run.id);
+      const failedStep = [...steps].reverse().find((step) => step.state === 'failed');
+      if (failedStep && failedStep.type !== 'review') {
+        await this.hooks.advance(task, run, failedStep);
+        return await this.taskService.get(taskId);
       }
       await this.attempts.update(run.id, { verifiedHeadOid: head });
       const merged = await this.attempts.get(run.id);
