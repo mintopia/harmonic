@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
+import { workspaces } from '../src/db/schema.js';
 import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
@@ -772,21 +773,6 @@ describe('EpicLifecycle direct-mode Epics (isolationMode "direct", ADR-0001 dire
     expect(await coord.memberBaseNotReady(m11)).toBe(false);
   });
 
-  it('scopes isInPlace to its own Workspace: a same-ref worktree Task in another Workspace never demotes it', async () => {
-    const tickets = epicTickets();
-    await mscan(tickets);
-    const otherDir = mkdtempSync(join(tmpdir(), 'harmonic-epic-other-'));
-    const otherWorkspace = await new WorkspaceService(asyncDb, settingsStore).create({ name: 'Other', workingDir: otherDir });
-    const otherTask = await mirrorScan(tasks, [ticket({ number: 11, title: 'Same ref, other repo' })], otherWorkspace.id);
-    await tasks.update(otherTask[0]!.id, { isolationMode: 'worktree' });
-    const git = new FakeGit([], 'develop');
-    const coord = new EpicLifecycle(tasks, dir, git);
-
-    expect(coord.isInPlace(10, await tasks.list(), [11, 12])).toBe(true);
-
-    rmSync(otherDir, { recursive: true, force: true });
-  });
-
   it('a mixed Epic cuts the branch and sets it only on the worktree member', async () => {
     const tickets = epicTickets();
     await mscan(tickets);
@@ -853,13 +839,22 @@ describe('EpicLifecycle direct-mode Epics (isolationMode "direct", ADR-0001 dire
     expect(git.created).toEqual([]);
   });
 
-  it('develop advance does not refresh an in-place Epic\'s legacy branch', async () => {
+  it('develop advance does not refresh an in-place Epic\'s legacy branch, even with a same-ref worktree Task in another Workspace', async () => {
     const tickets = epicTickets();
     const mirrored = await mscan(tickets);
+    const now = Date.now();
+    const otherWsId = (
+      await asyncDb.write((db) =>
+        db.insert(workspaces).values({ name: 'Other', workingDir: '/other-repo', createdAt: now, updatedAt: now }).returning().get(),
+      )
+    ).id;
+    const otherTask = await mirrorScan(tasks, [ticket({ number: 11, title: 'Same ref, other repo' })], otherWsId);
+    await tasks.update(otherTask[0]!.id, { isolationMode: 'worktree' });
     const git = new FakeGit(['epic/10'], 'develop');
     git.contained.delete('epic/10');
     const refresh = new FakeRefresh();
     const coord = new EpicLifecycle(tasks, dir, git);
+    coord.attachWorkspace(wsId);
     coord.attachRefreshTrigger(refresh);
 
     await coord.reconcile(tickets, mirrored);

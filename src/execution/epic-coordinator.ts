@@ -633,6 +633,7 @@ export class EpicLifecycle {
   private latestTickets: Ticket[] = [];
   private operations = new EpicOperations();
   private onIntegrationBranchRetired: ((event: { epicRef: number; branch: string; baseBranch: string }) => Promise<void>) | undefined;
+  private workspaceId: number | undefined;
 
   constructor(
     private readonly tasks: TaskService,
@@ -642,6 +643,10 @@ export class EpicLifecycle {
     private epicIntegrate?: EpicIntegrateTrigger,
     private epicRefresh?: EpicRefreshTrigger,
   ) {}
+
+  attachWorkspace(workspaceId: number): void {
+    this.workspaceId = workspaceId;
+  }
 
   attachIntegrateTrigger(trigger: EpicIntegrateTrigger): void {
     this.epicIntegrate = trigger;
@@ -671,19 +676,19 @@ export class EpicLifecycle {
    * `isolationMode === 'direct'` — the sole decider of an Epic's in-place
    * status. `members`, when given, skips the (open-leaf-only) re-derivation
    * `membersOf` would otherwise do, so a closed Epic's members are still seen.
-   * `rows` scopes to this Workspace's own `workingDir` — a tracker ref is only
-   * unique within a repo, so an unfiltered cross-Workspace `rows` list could
-   * otherwise borrow another Workspace's same-numbered issue. */
+   * `rows` should already be scoped to this Workspace: a tracker ref is only
+   * unique within a repo, so an unscoped `rows` list could borrow another
+   * Workspace's same-numbered issue. */
   isInPlace(epicRef: number, rows: readonly TaskRow[], members: readonly number[] = this.membersOf(epicRef)): boolean {
     if (members.length === 0) return false;
     const byRef = new Map<number, TaskRow>();
-    for (const row of rows) if (row.trackerRef != null && row.workingDir === this.workingDir) byRef.set(row.trackerRef, row);
+    for (const row of rows) if (row.trackerRef != null) byRef.set(row.trackerRef, row);
     return members.every((ref) => byRef.get(ref)?.isolationMode === 'direct');
   }
 
   private async refreshDriftedEpics(defaultBranch: string, epics: readonly { ref: number }[]): Promise<void> {
     if (!this.epicRefresh || epics.length === 0) return;
-    const rows = await this.tasks.list();
+    const rows = await this.tasks.list(this.workspaceId == null ? undefined : { workspaceId: this.workspaceId });
     for (const epic of epics) {
       if (this.isInPlace(epic.ref, rows)) continue;
       const branch = integrationBranchName(epic.ref);

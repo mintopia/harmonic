@@ -147,6 +147,7 @@ export class TrackerEpicService implements EpicService {
 
   startWorkspace(workspace: WorkspaceRow): EpicIntegrationSync {
     const epics = new EpicLifecycle(this.tasks, workspace.workingDir);
+    epics.attachWorkspace(workspace.id);
     epics.attachOperations(this.operations);
     epics.attachIntegrationBranchRetired(async ({ epicRef, branch, baseBranch }) => {
       if (!this.epicMergeEvents) return;
