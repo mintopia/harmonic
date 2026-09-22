@@ -133,10 +133,71 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
       return { label: 'Finished without a completion signal', detail: clip(text(payload?.reason)), tone: 'awaiting', tag: null };
     case 'ticket-closed': {
       const ref = text(payload?.trackerRef);
-      return { label: ref ? `Issue #${ref} closed` : 'Issue closed', detail: null, tone: 'passed', tag: 'GITHUB' };
+      const oid = text(payload?.commitOid);
+      const paths = payload?.paths;
+      const fileCount = Array.isArray(paths) ? paths.length : null;
+      const detail = oid ? `Committed ${shortOid(oid)} to the base checkout${fileCount !== null ? ` (${fileCount === 1 ? '1 file' : `${fileCount} files`})` : ''}` : null;
+      return { label: ref ? `Issue #${ref} closed` : 'Issue closed', detail, tone: 'passed', tag: 'GITHUB' };
     }
-    case 'retired':
-      return { label: 'Worktree cleaned up', detail: null, tone: 'neutral', tag: null };
+    case 'ticket-close-failed': {
+      const ref = text(payload?.trackerRef);
+      return { label: ref ? `Issue #${ref} could not be closed` : 'Issue could not be closed', detail: text(payload?.error), tone: 'failed', tag: 'GITHUB' };
+    }
+    case 'retired': {
+      const worktree = text(payload?.worktree);
+      if (worktree === null) return { label: 'Worktree cleaned up', detail: null, tone: 'neutral', tag: null };
+      const error = text(payload?.error);
+      return error
+        ? { label: `Worktree ${worktree} could not be removed`, detail: error, tone: 'failed', tag: 'GIT' }
+        : { label: `Removed worktree ${worktree} (session retired)`, detail: null, tone: 'neutral', tag: 'GIT' };
+    }
+    case 'worktree-created': {
+      const worktree = text(payload?.worktree);
+      const branch = text(payload?.branch);
+      const baseBranch = text(payload?.baseBranch);
+      const label =
+        payload?.fromExistingBranch === true
+          ? `Checked out ${branch ?? 'branch'} into worktree ${worktree ?? ''}`
+          : `Created worktree ${worktree ?? ''} on ${branch ?? 'branch'}${baseBranch ? ` from ${baseBranch}` : ''}`;
+      return { label, detail: null, tone: 'neutral', tag: 'GIT' };
+    }
+    case 'worktree-create-failed': {
+      const worktree = text(payload?.worktree);
+      return { label: `Worktree ${worktree ?? ''} could not be created`, detail: text(payload?.error), tone: 'failed', tag: 'GIT' };
+    }
+    case 'worktree-discarded': {
+      const worktree = text(payload?.worktree);
+      return { label: `Discarded orphaned worktree ${worktree ?? ''}`, detail: null, tone: 'neutral', tag: 'GIT' };
+    }
+    case 'work-committed': {
+      const oid = text(payload?.oid);
+      const reason = text(payload?.reason);
+      const attempt = num(payload?.attempt);
+      const label =
+        reason === 'recovered'
+          ? 'Committed leftover work'
+          : reason === 'attempt-end'
+            ? attempt !== null
+              ? `Committed Attempt ${attempt}'s uncommitted work`
+              : 'Committed uncommitted work'
+            : "Committed the turn's uncommitted work";
+      return { label, detail: oid ? shortOid(oid) : null, tone: 'neutral', tag: 'GIT' };
+    }
+    case 'commit-failed':
+      return { label: "Couldn't commit leftover work", detail: text(payload?.error), tone: 'failed', tag: 'GIT' };
+    case 'worktree-retained':
+      return { label: `Kept worktree ${text(payload?.worktree) ?? ''} for the warm session`, detail: null, tone: 'neutral', tag: 'GIT' };
+    case 'worktree-removed':
+      return { label: `Removed worktree ${text(payload?.worktree) ?? ''}`, detail: null, tone: 'neutral', tag: 'GIT' };
+    case 'worktree-remove-failed':
+      return { label: `Worktree ${text(payload?.worktree) ?? ''} could not be removed`, detail: text(payload?.error), tone: 'failed', tag: 'GIT' };
+    case 'branch-deleted': {
+      const branch = text(payload?.branch);
+      const containedIn = text(payload?.containedIn);
+      return { label: `Deleted branch ${branch ?? ''}${containedIn ? ` (already merged into ${containedIn})` : ''}`, detail: null, tone: 'neutral', tag: 'GIT' };
+    }
+    case 'branch-delete-failed':
+      return { label: `Branch ${text(payload?.branch) ?? ''} could not be deleted`, detail: text(payload?.error), tone: 'failed', tag: 'GIT' };
     default:
       return { label: event ? humanizeEvent(event) : 'Lifecycle event', detail: null, tone: 'neutral', tag: null };
   }

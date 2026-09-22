@@ -1,5 +1,5 @@
 import { Git } from './git.js';
-import { bestEffort } from '../error-handling.js';
+import { attempted } from '../error-handling.js';
 import { runMergePolicy } from './merge-policy.js';
 import { observedModelMismatch, type AttemptUsage } from './usage.js';
 import { AcpDriver, AcpPromptTimeoutError, type PromptResult } from '../acp/driver.js';
@@ -278,11 +278,12 @@ export class TurnCompletion {
       active.idle = true;
     }
     if (workspace.worktree && !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
-      await bestEffort(() => Git.commitAll(workspace.cwd, `harmonic: task ${task.id} attempt ${attemptNumber}`), {
+      const committed = await attempted(() => Git.commitAll(workspace.cwd, `harmonic: task ${task.id} attempt ${attemptNumber}`), {
         op: 'runner.finishDrivenTurn.commitAll',
         level: 'error',
         context: { taskId: task.id, attemptId: run.id, attemptNumber },
       });
+      if (committed.ok && committed.value !== null) record('lifecycle', { event: 'work-committed', oid: committed.value, reason: 'turn-end' });
     }
     const [head, base] = await Promise.all([
       Git.revParse(workspace.cwd, 'HEAD').catch(() => null),

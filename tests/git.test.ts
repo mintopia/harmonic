@@ -69,6 +69,45 @@ describe('git-branch', () => {
     });
   });
 
+  describe('Git.commitAll / Git.commitPaths return the new HEAD oid, or null when nothing was committed', () => {
+    it('commitAll returns the new HEAD oid for a dirty tree, and rev-parses to it', async () => {
+      const dir = makeRepo();
+      try {
+        writeFileSync(join(dir, 'f.txt'), 'a\n');
+        const oid = await Git.commitAll(dir, 'snapshot');
+        expect(oid).toBe(raw(dir, 'rev-parse', 'HEAD'));
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('commitAll returns null on a clean tree, committing nothing', async () => {
+      const dir = makeRepo();
+      try {
+        const before = raw(dir, 'rev-parse', 'HEAD');
+        expect(await Git.commitAll(dir, 'snapshot')).toBeNull();
+        expect(raw(dir, 'rev-parse', 'HEAD')).toBe(before);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('commitPaths returns the new HEAD oid for a real change, null for an empty path list or no staged change', async () => {
+      const dir = makeRepo();
+      try {
+        expect(await Git.commitPaths(dir, [], 'no paths')).toBeNull();
+
+        writeFileSync(join(dir, 'f.txt'), 'a\n');
+        const oid = await Git.commitPaths(dir, ['f.txt'], 'add f');
+        expect(oid).toBe(raw(dir, 'rev-parse', 'HEAD'));
+
+        expect(await Git.commitPaths(dir, ['f.txt'], 'nothing changed')).toBeNull();
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe('Git.isContentContained (issue #218)', () => {
     it('is true when the branch is an ancestor (merge-merged)', async () => {
       const dir = makeRepo();

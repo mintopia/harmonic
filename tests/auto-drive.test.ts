@@ -674,4 +674,40 @@ describe('AutoDrive.closeTicket — file-backed tracker commits its status chang
     expect(g('rev-list', '--count', 'HEAD')).toBe(afterFirst);
     expect(await Git.isDirty(repo)).toBe(false);
   });
+
+  it('fires onTicketClosed with the commit oid + changed paths for a file-backed tracker', async () => {
+    const adapter = localMarkdownAdapter(join(repo, '.scratch'));
+    const commits: ({ oid: string; paths: string[] } | null)[] = [];
+    const drive = new AutoDrive(() => baselineConfig(), () => null, async () => adapter, undefined, undefined, (_task, commit) => commits.push(commit));
+    const task = worktreeTask({ trackerRef: 7, workingDir: repo });
+
+    expect(await drive.closeTicket(task)).toBe(true);
+
+    expect(commits).toHaveLength(1);
+    expect(commits[0]).toMatchObject({ oid: g('rev-parse', 'HEAD'), paths: [join(repo, '.scratch/issues/07-fix.md')] });
+  });
+
+  it('fires onTicketCloseFailed, not onTicketClosed, when the adapter throws', async () => {
+    const adapter = localMarkdownAdapter(join(repo, '.scratch'));
+    adapter.close = async () => {
+      throw new Error('locked by another process');
+    };
+    const closed: unknown[] = [];
+    const failed: [number | null, string][] = [];
+    const drive = new AutoDrive(
+      () => baselineConfig(),
+      () => null,
+      async () => adapter,
+      undefined,
+      undefined,
+      (task) => closed.push(task.trackerRef),
+      (task, err) => failed.push([task.trackerRef, err instanceof Error ? err.message : String(err)]),
+    );
+    const task = worktreeTask({ trackerRef: 7, workingDir: repo });
+
+    expect(await drive.closeTicket(task)).toBe(false);
+
+    expect(closed).toEqual([]);
+    expect(failed).toEqual([[7, 'locked by another process']]);
+  });
 });

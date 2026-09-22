@@ -233,18 +233,36 @@ describe('Session retirement (issue #148)', () => {
       expect((await sessions.get(s.id)).status).toBe('retired');
     });
 
-    it('notifies onRetired with the Session\'s latest Attempt when its worktree is cleaned up', async () => {
+    it('notifies onRetired with the Session\'s latest Attempt and worktree basename when its worktree is cleaned up', async () => {
       const s = await dispatch();
       await sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
       const run = await runForSession(s.id);
       await runs.update(run.id, { state: 'passed' });
       await sessions.beginRetiring(s.id, 'merged', now);
-      const retiredRuns: number[] = [];
-      const coord = new SessionRetirementCoordinator(sessions, runs, vi.fn(async () => {}), cfg, () => now, (r) => retiredRuns.push(r.id));
+      const retired: [number, { worktree: string; error?: string }][] = [];
+      const coord = new SessionRetirementCoordinator(sessions, runs, vi.fn(async () => {}), cfg, () => now, (r, info) => retired.push([r.id, info]));
 
       await coord.drain(now);
 
-      expect(retiredRuns).toEqual([run.id]);
+      expect(retired).toEqual([[run.id, { worktree: 'run-1' }]]);
+    });
+
+    it('notifies onRetired with the failure — a removal failure is never recorded as a clean removal', async () => {
+      const s = await dispatch();
+      await sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
+      const run = await runForSession(s.id);
+      await runs.update(run.id, { state: 'passed' });
+      await sessions.beginRetiring(s.id, 'merged', now);
+      const retired: [number, { worktree: string; error?: string }][] = [];
+      const removeWorktree = vi.fn(async () => {
+        throw new Error('worktree already gone');
+      });
+      const coord = new SessionRetirementCoordinator(sessions, runs, removeWorktree, cfg, () => now, (r, info) => retired.push([r.id, info]));
+
+      await coord.drain(now);
+
+      expect(retired).toEqual([[run.id, { worktree: 'run-1', error: 'worktree already gone' }]]);
+      expect((await sessions.get(s.id)).status).toBe('retired');
     });
 
     it('does not notify onRetired for a Session with no worktree to clean up', async () => {

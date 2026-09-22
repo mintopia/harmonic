@@ -105,6 +105,20 @@ describe('ticket-timeline-route', () => {
       expect(response.body.events.filter((event: { kind: string }) => event.kind === 'operator-reject')).toHaveLength(1);
     });
 
+    it('renders a Task-level event (no owning Attempt) as a visible lifecycle row (owner decision: task_events)', async () => {
+      const task = await server.api('POST', '/api/tasks', { prompt: 'no-attempt close target' });
+      await server.app.ctx.taskEvents.appendEvent(task.body.id, { event: 'ticket-close-failed', trackerRef: '9', error: 'no permission' });
+
+      const response = await server.api('GET', `/api/tasks/${task.body.id}/timeline`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.events).toContainEqual(expect.objectContaining({
+        attemptId: null,
+        kind: 'lifecycle',
+        data: { type: 'lifecycle', payload: { event: 'ticket-close-failed', trackerRef: '9', error: 'no permission' } },
+      }));
+    });
+
     it('shows only the task-created row for a task with no runs, and 404 for an unknown task', async () => {
       const task = await server.api('POST', '/api/tasks', { prompt: 'empty timeline' });
 

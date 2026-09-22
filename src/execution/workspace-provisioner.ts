@@ -1,9 +1,9 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { Git } from './git.js';
 import { GitError } from '../domain/errors.js';
-import { attempted, bestEffort } from '../error-handling.js';
+import { attempted, bestEffort, errorMessage } from '../error-handling.js';
 import { adapterFor } from './harness/registry.js';
 import { dropIndexForPath } from './code-index.js';
 import { parseIntegrationBranch } from './epic-coordinator.js';
@@ -15,7 +15,7 @@ import type { SessionStore } from '../domain/sessions.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
 import { logger } from '../logger.js';
-import type { RunnerEvents, Workspace } from './runner-options.js';
+import type { RunnerEvents, TaskEventAppender, Workspace } from './runner-options.js';
 
 export interface WorkspaceProvisionerDeps {
   attempts: AttemptStore;
@@ -25,10 +25,30 @@ export interface WorkspaceProvisionerDeps {
   sessionRetirement: SessionRetirementHook | undefined;
   events: RunnerEvents;
   worktreesDir: string;
+  /** Absent → a Close with no Attempt drops its cleanup row. */
+  taskEvents?: TaskEventAppender;
 }
 
 export class WorkspaceProvisioner {
   constructor(private readonly deps: WorkspaceProvisionerDeps) {}
+
+  private async record(run: Pick<AttemptRow, 'id'>, payload: Record<string, unknown>): Promise<void> {
+    try {
+      const event = await this.deps.attempts.appendEvent(run.id, { type: 'lifecycle', payload });
+      this.deps.events.onAttemptEvent?.(event);
+    } catch (err) {
+      logger.error(`attempt ${run.id}: ${String(payload.event)} event append failed: ${String(err)}`);
+    }
+  }
+
+  private async recordTask(task: Pick<TaskRow, 'id'>, payload: Record<string, unknown>): Promise<void> {
+    try {
+      await this.deps.taskEvents?.appendEvent(task.id, payload);
+      this.deps.events.onTaskEvent?.(task.id);
+    } catch (err) {
+      logger.error(`task ${task.id}: ${String(payload.event)} event append failed: ${String(err)}`);
+    }
+  }
 
   /**
    * Close: the ticket is cancelled; remove its branch and worktree and close
@@ -45,16 +65,52 @@ export class WorkspaceProvisioner {
       const session = run.sessionRowId === null ? null : await this.deps.sessionStore.get(run.sessionRowId).catch(() => null);
       if (session?.worktreePath && session.worktreeRepoDir && existsSync(session.worktreePath)) {
         const removedPath = session.worktreePath;
-        await Git.removeWorktree(session.worktreeRepoDir, removedPath)
-          .then(() => dropIndexForPath(removedPath))
-          .catch((err) => logger.error(`task ${task.id} close: worktree removal failed: ${String(err)}`));
+        const worktree = basename(removedPath);
+        try {
+          await Git.removeWorktree(session.worktreeRepoDir, removedPath);
+          await dropIndexForPath(removedPath);
+          await this.record(run, { event: 'worktree-removed', worktree });
+        } catch (err) {
+          logger.error(`task ${task.id} close: worktree removal failed: ${String(err)}`);
+          await this.record(run, { event: 'worktree-remove-failed', worktree, error: errorMessage(err) });
+        }
       }
       if (run.branch && (await Git.branchCheckedOutAt(task.workingDir, run.branch).catch(() => null)) === null) {
-        await Git.deleteBranch(task.workingDir, run.branch).catch((err) =>
-          logger.error(`task ${task.id} close: branch '${run.branch}' removal failed: ${String(err)}`),
-        );
+        try {
+          await Git.deleteBranch(task.workingDir, run.branch);
+          await this.record(run, { event: 'branch-deleted', branch: run.branch });
+        } catch (err) {
+          logger.error(`task ${task.id} close: branch '${run.branch}' removal failed: ${String(err)}`);
+          await this.record(run, { event: 'branch-delete-failed', branch: run.branch, error: errorMessage(err) });
+        }
       }
       this.deps.events.onAttemptFinished?.(await this.deps.attempts.get(run.id));
+    } else {
+      const worktreePath = this.worktreePathForTask(task);
+      if (existsSync(worktreePath)) {
+        const worktree = basename(worktreePath);
+        try {
+          await Git.removeWorktree(task.workingDir, worktreePath);
+          await dropIndexForPath(worktreePath);
+          await this.recordTask(task, { event: 'worktree-removed', worktree });
+        } catch (err) {
+          logger.error(`task ${task.id} close: worktree removal failed: ${String(err)}`);
+          await this.recordTask(task, { event: 'worktree-remove-failed', worktree, error: errorMessage(err) });
+        }
+      }
+      const branch = this.branchForTask(task);
+      if (
+        (await Git.branchExists(task.workingDir, branch).catch(() => false)) &&
+        (await Git.branchCheckedOutAt(task.workingDir, branch).catch(() => null)) === null
+      ) {
+        try {
+          await Git.deleteBranch(task.workingDir, branch);
+          await this.recordTask(task, { event: 'branch-deleted', branch });
+        } catch (err) {
+          logger.error(`task ${task.id} close: branch '${branch}' removal failed: ${String(err)}`);
+          await this.recordTask(task, { event: 'branch-delete-failed', branch, error: errorMessage(err) });
+        }
+      }
     }
     if (this.deps.autoDrive && !(await this.deps.autoDrive.closeTicket(task, `Closed by a Harmonic operator without merging (task ${task.id}).`))) {
       logger.error(`task ${task.id} close: tracker issue could not be closed`);
@@ -119,21 +175,26 @@ export class WorkspaceProvisioner {
     }
 
     const path = this.worktreePathForTask(task);
+    const worktree = basename(path);
     mkdirSync(this.deps.worktreesDir, { recursive: true });
 
     if (existsSync(path) && !(await Git.isValidWorktree(task.workingDir, path))) {
       await Git.discardOrphanWorktree(task.workingDir, path);
+      await this.record(run, { event: 'worktree-discarded', worktree });
     }
 
     // A killed prior attempt skips finalizeWorkspace's commitAll, so a reused
     // worktree can still be dirty here; the rebase step below refuses to run
     // on a dirty tree, so snapshot any leftovers first (no-op if clean).
     if (existsSync(path)) {
-      await bestEffort(() => Git.commitAll(path, `harmonic: task ${task.id} recovered leftover work`), {
+      const recovered = await attempted(() => Git.commitAll(path, `harmonic: task ${task.id} recovered leftover work`), {
         op: 'runner.prepareWorkspace.commitAll',
         level: 'error',
         context: { taskId: task.id, attemptId: run.id, path },
       });
+      if (recovered.ok && recovered.value !== null) {
+        await this.record(run, { event: 'work-committed', oid: recovered.value, reason: 'recovered' });
+      }
     }
 
     if (resume) {
@@ -141,7 +202,13 @@ export class WorkspaceProvisioner {
       const branch = persisted.branch ?? this.branchForTask(task);
       const baseBranch = persisted.baseBranch ?? (await this.deps.mergeCoordinator.resolveBaseBranch(task));
       if (!existsSync(path)) {
-        await Git.addWorktreeCheckout(task.workingDir, path, branch);
+        try {
+          await Git.addWorktreeCheckout(task.workingDir, path, branch);
+        } catch (err) {
+          await this.record(run, { event: 'worktree-create-failed', worktree, branch, baseBranch, error: errorMessage(err) });
+          throw err;
+        }
+        await this.record(run, { event: 'worktree-created', worktree, branch, baseBranch: null, fromExistingBranch: true });
       }
       return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
     }
@@ -153,8 +220,14 @@ export class WorkspaceProvisioner {
       return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
     }
     if (await Git.branchExists(task.workingDir, branch)) {
-      await Git.addWorktreeCheckout(task.workingDir, path, branch);
+      try {
+        await Git.addWorktreeCheckout(task.workingDir, path, branch);
+      } catch (err) {
+        await this.record(run, { event: 'worktree-create-failed', worktree, branch, baseBranch, error: errorMessage(err) });
+        throw err;
+      }
       await this.deps.attempts.update(run.id, { branch, baseBranch });
+      await this.record(run, { event: 'worktree-created', worktree, branch, baseBranch: null, fromExistingBranch: true });
       return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
     }
     if (parseIntegrationBranch(baseBranch) !== null && !(await Git.branchExists(task.workingDir, baseBranch))) {
@@ -162,19 +235,31 @@ export class WorkspaceProvisioner {
         `Epic integration branch ${baseBranch} does not exist yet; it is cut/re-cut on the next tracker poll`,
       );
     }
-    await Git.addWorktree(task.workingDir, path, branch, baseBranch);
+    try {
+      await Git.addWorktree(task.workingDir, path, branch, baseBranch);
+    } catch (err) {
+      await this.record(run, { event: 'worktree-create-failed', worktree, branch, baseBranch, error: errorMessage(err) });
+      throw err;
+    }
     await this.deps.attempts.update(run.id, { branch, baseBranch });
+    await this.record(run, { event: 'worktree-created', worktree, branch, baseBranch, fromExistingBranch: false });
     return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
   }
 
   async finalizeWorkspace(task: TaskRow, run: AttemptRow, attemptNumber: number, workspace: Workspace): Promise<void> {
     if (!workspace.worktree) return;
     const { repoDir, path } = workspace.worktree;
-    await bestEffort(() => Git.commitAll(path, `harmonic: task ${task.id} attempt ${attemptNumber}`), {
+    const worktree = basename(path);
+    const committed = await attempted(() => Git.commitAll(path, `harmonic: task ${task.id} attempt ${attemptNumber}`), {
       op: 'runner.finalizeWorkspace.commitAll',
       level: 'error',
       context: { taskId: task.id, attemptId: run.id, attemptNumber, path },
     });
+    if (committed.ok) {
+      if (committed.value !== null) await this.record(run, { event: 'work-committed', oid: committed.value, reason: 'attempt-end', attempt: attemptNumber });
+    } else {
+      await this.record(run, { event: 'commit-failed', error: committed.message });
+    }
     const sessionRowId = (await this.deps.attempts.get(run.id)).sessionRowId;
     let retained = false;
     if (sessionRowId != null) {
@@ -185,12 +270,15 @@ export class WorkspaceProvisioner {
         context: { taskId: task.id, attemptId: run.id, attemptNumber, sessionRowId, repoDir, worktreePath: path },
       });
     }
-    if (!retained) {
-      await bestEffort(() => Git.removeWorktree(repoDir, path), {
-        op: 'runner.finalizeWorkspace.removeWorktree',
-        level: 'debug',
-        context: { taskId: task.id, attemptId: run.id, attemptNumber, repoDir, worktreePath: path },
-      });
+    if (retained) {
+      await this.record(run, { event: 'worktree-retained', worktree });
+      return;
+    }
+    try {
+      await Git.removeWorktree(repoDir, path);
+      await this.record(run, { event: 'worktree-removed', worktree });
+    } catch (err) {
+      await this.record(run, { event: 'worktree-remove-failed', worktree, error: errorMessage(err) });
     }
   }
 }

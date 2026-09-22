@@ -92,8 +92,16 @@ const mergeStepSchema = z
   ])
   .meta({ id: 'MergeStepEvent' });
 
+const epicTimelineStepSchema = z
+  .discriminatedUnion('step', [
+    ...mergeStepSchema.options,
+    z.object({ step: z.literal('branch-created'), branch: z.string(), fromBranch: z.string(), oid: z.string() }),
+    z.object({ step: z.literal('branch-create-failed'), branch: z.string(), fromBranch: z.string(), error: z.string() }),
+  ])
+  .meta({ id: 'EpicTimelineStep' });
+
 const epicTimelineEventSchema = z
-  .object({ seq: z.number().int(), at: z.number().int(), step: mergeStepSchema })
+  .object({ seq: z.number().int(), at: z.number().int(), step: epicTimelineStepSchema })
   .meta({ id: 'EpicTimelineEvent' });
 
 const epicSchema = z

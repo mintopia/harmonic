@@ -59,6 +59,7 @@ export class Runner {
   private readonly worktreesDir: string;
   private readonly keys: RunnerOptions['keys'];
   private readonly autoDrive: AutoDrive | undefined;
+  private readonly taskEvents: RunnerOptions['taskEvents'];
   private readonly getWorkspace: RunnerOptions['getWorkspace'];
   private readonly postMerge: RunnerOptions['postMerge'];
   private readonly criticDrive: RunnerOptions['criticDrive'];
@@ -96,6 +97,7 @@ export class Runner {
     this.worktreesDir = options.worktreesDir ?? join(tmpdir(), 'harmonic-worktrees');
     this.keys = options.keys;
     this.autoDrive = options.autoDrive;
+    this.taskEvents = options.taskEvents;
     this.getWorkspace = options.getWorkspace;
     this.postMerge = options.postMerge;
     this.gitBreaker = options.gitBreaker;
@@ -197,6 +199,7 @@ export class Runner {
       sessionRetirement: this.sessionRetirement,
       events: this.events,
       worktreesDir: this.worktreesDir,
+      taskEvents: this.taskEvents,
     };
   }
 

@@ -3526,6 +3526,337 @@
           }
         ]
       },
+      "EpicTimelineStepInput": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "started"
+              },
+              "baseBranch": {
+                "type": "string"
+              },
+              "taskBranch": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "baseBranch",
+              "taskBranch"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "conflict"
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "step",
+              "paths"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "resolve-turn"
+              },
+              "turn": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "unmergedCount": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "step",
+              "turn",
+              "unmergedCount"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "post-check-skipped"
+              },
+              "mergeOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "post-check-passed"
+              },
+              "mergeOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "reverted"
+              },
+              "mergeOid": {
+                "type": "string"
+              },
+              "revertOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid",
+              "revertOid"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "merged"
+              },
+              "mergeOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "checkout-synced"
+              },
+              "mergeOid": {
+                "type": "string"
+              },
+              "mergedPaths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "keptPaths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid",
+              "mergedPaths",
+              "keptPaths"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "retired"
+              },
+              "branch": {
+                "type": "string"
+              },
+              "baseBranch": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "branch",
+              "baseBranch"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "completed-in-place"
+              },
+              "baseBranch": {
+                "type": "string"
+              },
+              "leftBranch": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "baseBranch"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "reconciled"
+              },
+              "fromBase": {
+                "type": "string"
+              },
+              "toBase": {
+                "type": "string"
+              },
+              "mergeOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "fromBase",
+              "toBase",
+              "mergeOid"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "rebuilding"
+              },
+              "fromBase": {
+                "type": "string"
+              },
+              "toBase": {
+                "type": "string"
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "step",
+              "fromBase",
+              "toBase",
+              "paths"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "escalated"
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "conflict",
+                  "post-merge-red",
+                  "target-advanced"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "reason",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "branch-created"
+              },
+              "branch": {
+                "type": "string"
+              },
+              "fromBranch": {
+                "type": "string"
+              },
+              "oid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "branch",
+              "fromBranch",
+              "oid"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "branch-create-failed"
+              },
+              "branch": {
+                "type": "string"
+              },
+              "fromBranch": {
+                "type": "string"
+              },
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "branch",
+              "fromBranch",
+              "error"
+            ]
+          }
+        ]
+      },
       "EpicTimelineEventInput": {
         "type": "object",
         "properties": {
@@ -3540,7 +3871,7 @@
             "maximum": 9007199254740991
           },
           "step": {
-            "$ref": "#/components/schemas/MergeStepEventInput"
+            "$ref": "#/components/schemas/EpicTimelineStepInput"
           }
         },
         "required": [
@@ -9775,6 +10106,352 @@
           }
         ]
       },
+      "EpicTimelineStep": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "started"
+              },
+              "baseBranch": {
+                "type": "string"
+              },
+              "taskBranch": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "baseBranch",
+              "taskBranch"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "conflict"
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "step",
+              "paths"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "resolve-turn"
+              },
+              "turn": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "unmergedCount": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "step",
+              "turn",
+              "unmergedCount"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "post-check-skipped"
+              },
+              "mergeOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "post-check-passed"
+              },
+              "mergeOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "reverted"
+              },
+              "mergeOid": {
+                "type": "string"
+              },
+              "revertOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid",
+              "revertOid"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "merged"
+              },
+              "mergeOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "checkout-synced"
+              },
+              "mergeOid": {
+                "type": "string"
+              },
+              "mergedPaths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "keptPaths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid",
+              "mergedPaths",
+              "keptPaths"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "retired"
+              },
+              "branch": {
+                "type": "string"
+              },
+              "baseBranch": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "branch",
+              "baseBranch"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "completed-in-place"
+              },
+              "baseBranch": {
+                "type": "string"
+              },
+              "leftBranch": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "baseBranch"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "reconciled"
+              },
+              "fromBase": {
+                "type": "string"
+              },
+              "toBase": {
+                "type": "string"
+              },
+              "mergeOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "fromBase",
+              "toBase",
+              "mergeOid"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "rebuilding"
+              },
+              "fromBase": {
+                "type": "string"
+              },
+              "toBase": {
+                "type": "string"
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "step",
+              "fromBase",
+              "toBase",
+              "paths"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "escalated"
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "conflict",
+                  "post-merge-red",
+                  "target-advanced"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "reason",
+              "message"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "branch-created"
+              },
+              "branch": {
+                "type": "string"
+              },
+              "fromBranch": {
+                "type": "string"
+              },
+              "oid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "branch",
+              "fromBranch",
+              "oid"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "branch-create-failed"
+              },
+              "branch": {
+                "type": "string"
+              },
+              "fromBranch": {
+                "type": "string"
+              },
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "branch",
+              "fromBranch",
+              "error"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
       "EpicTimelineEvent": {
         "type": "object",
         "properties": {
@@ -9789,7 +10466,7 @@
             "maximum": 9007199254740991
           },
           "step": {
-            "$ref": "#/components/schemas/MergeStepEvent"
+            "$ref": "#/components/schemas/EpicTimelineStep"
           }
         },
         "required": [

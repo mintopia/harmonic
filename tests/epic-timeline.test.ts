@@ -77,4 +77,19 @@ describe('EpicTimeline', () => {
     expect(rows.map((row) => row.label)).toEqual(['Epic created', 'Completed in place']);
     expect(rows[1]).toMatchObject({ detail: 'develop', tone: 'passed' });
   });
+
+  it('renders integration-branch cut rows, success and failure, tagged INTEGRATION', () => {
+    const rows = epicTimelineRows({
+      ...epic(),
+      timelineEvents: [
+        { seq: 1, at: 1_500, step: { step: 'branch-created', branch: 'epic/701', fromBranch: 'develop', oid: 'abcdef1234567' } },
+        { seq: 2, at: 1_800, step: { step: 'branch-create-failed', branch: 'epic/701', fromBranch: 'develop', error: 'ref exists' } },
+      ],
+    });
+
+    expect(rows.slice(1).map((row) => [row.label, row.detail, row.tone, row.tag])).toEqual([
+      ['Created integration branch epic/701 from develop', 'abcdef1', 'passed', 'INTEGRATION'],
+      ['Integration branch epic/701 could not be created', 'ref exists', 'failed', 'INTEGRATION'],
+    ]);
+  });
 });

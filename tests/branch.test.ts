@@ -197,6 +197,72 @@ describe('branch-retirement', () => {
       expect(branchGit.deleteBranch).not.toHaveBeenCalledWith('/repo', 'harmonic/task-2-run-2');
     });
   });
+
+  describe('BranchRetirementCoordinator git-visibility events', () => {
+    it('records branch-deleted on the settled Attempt when the branch is retired', async () => {
+      const branchGit = git();
+      const recorded: [number, Record<string, unknown>][] = [];
+      const coordinator = new BranchRetirementCoordinator(
+        { listAll: async () => [] },
+        { get: async () => task },
+        branchGit,
+        undefined,
+        (attemptId, payload) => recorded.push([attemptId, payload]),
+      );
+
+      await coordinator.onAttemptSettled(task, run());
+
+      expect(recorded).toEqual([[1, { event: 'branch-deleted', branch: 'harmonic/task-2-run-1', containedIn: 'develop' }]]);
+    });
+
+    it('records branch-delete-failed when git.deleteBranch throws', async () => {
+      const failing = git({ deleteBranch: vi.fn(async () => { throw new Error('ref lock held'); }) });
+      const recorded: [number, Record<string, unknown>][] = [];
+      const coordinator = new BranchRetirementCoordinator(
+        { listAll: async () => [] },
+        { get: async () => task },
+        failing,
+        undefined,
+        (attemptId, payload) => recorded.push([attemptId, payload]),
+      );
+
+      await coordinator.onAttemptSettled(task, run());
+
+      expect(recorded).toEqual([[1, { event: 'branch-delete-failed', branch: 'harmonic/task-2-run-1', error: 'ref lock held' }]]);
+    });
+
+    it('is silent (kept) when the branch has unmerged content — nothing to observe', async () => {
+      const unmerged = git({ isContentContained: vi.fn(async () => false) });
+      const recorded: unknown[] = [];
+      const coordinator = new BranchRetirementCoordinator(
+        { listAll: async () => [] },
+        { get: async () => task },
+        unmerged,
+        undefined,
+        (attemptId, payload) => recorded.push([attemptId, payload]),
+      );
+
+      await coordinator.onAttemptSettled(task, run());
+
+      expect(recorded).toEqual([]);
+    });
+
+    it('records the backfill event on the Attempt row being retired during boot reconcile, with no live Attempt needed', async () => {
+      const branchGit = git();
+      const recorded: [number, Record<string, unknown>][] = [];
+      const coordinator = new BranchRetirementCoordinator(
+        { listAll: async () => [run()] },
+        { get: async () => task },
+        branchGit,
+        undefined,
+        (attemptId, payload) => recorded.push([attemptId, payload]),
+      );
+
+      await coordinator.reconcile();
+
+      expect(recorded).toEqual([[1, { event: 'branch-deleted', branch: 'harmonic/task-2-run-1', containedIn: 'develop' }]]);
+    });
+  });
 });
 
 describe('branch-merge', () => {
