@@ -3365,13 +3365,34 @@
             "properties": {
               "step": {
                 "type": "string",
+                "const": "retired"
+              },
+              "branch": {
+                "type": "string"
+              },
+              "baseBranch": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "branch",
+              "baseBranch"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
                 "const": "escalated"
               },
               "reason": {
                 "type": "string",
                 "enum": [
                   "conflict",
-                  "post-merge-red"
+                  "post-merge-red",
+                  "target-advanced"
                 ]
               },
               "message": {
@@ -3384,6 +3405,29 @@
               "message"
             ]
           }
+        ]
+      },
+      "EpicTimelineEventInput": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "at": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "step": {
+            "$ref": "#/components/schemas/MergeStepEventInput"
+          }
+        },
+        "required": [
+          "seq",
+          "at",
+          "step"
         ]
       },
       "EpicInput": {
@@ -3410,6 +3454,7 @@
             "type": "string",
             "enum": [
               "open",
+              "integrating",
               "integrated"
             ]
           },
@@ -3484,6 +3529,12 @@
               "$ref": "#/components/schemas/MergeStepEventInput"
             }
           },
+          "timelineEvents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EpicTimelineEventInput"
+            }
+          },
           "foldedCount": {
             "type": "integer",
             "minimum": -9007199254740991,
@@ -3511,6 +3562,7 @@
           "verification",
           "integrate",
           "mergeSteps",
+          "timelineEvents",
           "foldedCount",
           "memberCount"
         ]
@@ -9433,13 +9485,35 @@
             "properties": {
               "step": {
                 "type": "string",
+                "const": "retired"
+              },
+              "branch": {
+                "type": "string"
+              },
+              "baseBranch": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "branch",
+              "baseBranch"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
                 "const": "escalated"
               },
               "reason": {
                 "type": "string",
                 "enum": [
                   "conflict",
-                  "post-merge-red"
+                  "post-merge-red",
+                  "target-advanced"
                 ]
               },
               "message": {
@@ -9454,6 +9528,30 @@
             "additionalProperties": false
           }
         ]
+      },
+      "EpicTimelineEvent": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "at": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "step": {
+            "$ref": "#/components/schemas/MergeStepEvent"
+          }
+        },
+        "required": [
+          "seq",
+          "at",
+          "step"
+        ],
+        "additionalProperties": false
       },
       "Epic": {
         "type": "object",
@@ -9479,6 +9577,7 @@
             "type": "string",
             "enum": [
               "open",
+              "integrating",
               "integrated"
             ]
           },
@@ -9553,6 +9652,12 @@
               "$ref": "#/components/schemas/MergeStepEvent"
             }
           },
+          "timelineEvents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EpicTimelineEvent"
+            }
+          },
           "foldedCount": {
             "type": "integer",
             "minimum": -9007199254740991,
@@ -9580,6 +9685,7 @@
           "verification",
           "integrate",
           "mergeSteps",
+          "timelineEvents",
           "foldedCount",
           "memberCount"
         ],
@@ -24170,6 +24276,16 @@
                         }
                       ]
                     },
+                    "upgradingVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "dismissedVersion": {
                       "anyOf": [
                         {
@@ -24179,6 +24295,9 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "migrationRequired": {
+                      "type": "boolean"
                     },
                     "idle": {
                       "type": "object",
@@ -24207,7 +24326,9 @@
                     "currentVersion",
                     "availableVersion",
                     "armedVersion",
+                    "upgradingVersion",
                     "dismissedVersion",
+                    "migrationRequired",
                     "idle"
                   ],
                   "additionalProperties": false,
@@ -24264,6 +24385,16 @@
                         }
                       ]
                     },
+                    "upgradingVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "dismissedVersion": {
                       "anyOf": [
                         {
@@ -24273,6 +24404,9 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "migrationRequired": {
+                      "type": "boolean"
                     },
                     "idle": {
                       "type": "object",
@@ -24301,7 +24435,9 @@
                     "currentVersion",
                     "availableVersion",
                     "armedVersion",
+                    "upgradingVersion",
                     "dismissedVersion",
+                    "migrationRequired",
                     "idle"
                   ],
                   "additionalProperties": false,
@@ -24366,6 +24502,16 @@
                         }
                       ]
                     },
+                    "upgradingVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "dismissedVersion": {
                       "anyOf": [
                         {
@@ -24375,6 +24521,9 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "migrationRequired": {
+                      "type": "boolean"
                     },
                     "idle": {
                       "type": "object",
@@ -24403,7 +24552,9 @@
                     "currentVersion",
                     "availableVersion",
                     "armedVersion",
+                    "upgradingVersion",
                     "dismissedVersion",
+                    "migrationRequired",
                     "idle"
                   ],
                   "additionalProperties": false,
@@ -24460,6 +24611,16 @@
                         }
                       ]
                     },
+                    "upgradingVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "dismissedVersion": {
                       "anyOf": [
                         {
@@ -24469,6 +24630,9 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "migrationRequired": {
+                      "type": "boolean"
                     },
                     "idle": {
                       "type": "object",
@@ -24497,7 +24661,9 @@
                     "currentVersion",
                     "availableVersion",
                     "armedVersion",
+                    "upgradingVersion",
                     "dismissedVersion",
+                    "migrationRequired",
                     "idle"
                   ],
                   "additionalProperties": false,
@@ -24554,6 +24720,16 @@
                         }
                       ]
                     },
+                    "upgradingVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "dismissedVersion": {
                       "anyOf": [
                         {
@@ -24563,6 +24739,9 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "migrationRequired": {
+                      "type": "boolean"
                     },
                     "idle": {
                       "type": "object",
@@ -24591,7 +24770,9 @@
                     "currentVersion",
                     "availableVersion",
                     "armedVersion",
+                    "upgradingVersion",
                     "dismissedVersion",
+                    "migrationRequired",
                     "idle"
                   ],
                   "additionalProperties": false,
