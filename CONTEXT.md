@@ -191,9 +191,14 @@ record — its `kind`, integration merge-commit, lifecycle state, and a member-r
 snapshot — that outlives the tracker issue closing, so historical Epics and the
 whole-Epic diff resolve without re-derivation. It was formerly a query-time
 roll-up (ADR-0016, superseded). Parent/spine Epics above the leaf stay derived
-roll-ups; membership and agent-workability stay derived. Every Epic cuts an
-`epic/<ref>` integration branch; finishing merges it to base (a **no-op** when
-branch and base already match) and **closes the tracker issue**. An Epic is a
+roll-ups; membership and agent-workability stay derived. An Epic has no
+Isolation Mode of its own; each Member runs by its own. An Epic with
+worktree-mode Members cuts an `epic/<ref>` integration branch; finishing merges
+it to base (a **no-op** when branch and base already match) and **closes the
+tracker issue**. An Epic whose Members are all direct-mode has no Integration
+branch and **completes in place**: once every Member is done it is recorded
+integrated (no merge commit) and its tracker issue closed, with no Epic
+Pre-Merge Verification, Epic Attempt, or Whole-Epic integrate. An Epic is a
 **container**: it neither **blocks** its children (a `Blocked by: #<epic>` edge
 is never projected — an Epic contains, it does not gate) nor **runs** (it is
 never agent-workable, so the Auto-Runner never executes the container itself).
@@ -297,10 +302,13 @@ _Avoid_: auto-retry, retry cap
 
 **Integration branch**:
 The per-Epic branch (`epic/<ref>`) Harmonic cuts off the default branch and
-owns: every Member's worktree forks from it, every finished Member merges back
-onto it, and it merges to the default branch in one atomic go once the whole
-Epic is green — then Harmonic **retires** (deletes) it. Its mere existence is
-the Epic's only persisted execution state.
+owns: every worktree-mode Member's worktree forks from it, every finished
+worktree-mode Member merges back onto it, and it merges to the default branch in
+one atomic go once the whole Epic is green — then Harmonic **retires** (deletes)
+it. Its mere existence is the Epic's only persisted execution state. It is cut
+when the first worktree-mode Member becomes ready, so an Epic whose Members are
+all direct-mode never has one; Harmonic never switches the base checkout's
+branch.
 _Avoid_: feature branch, epic branch
 
 **Refresh**:
@@ -315,7 +323,10 @@ _Avoid_: sync, catch-up merge
 
 **Member**:
 A direct child ticket of an Epic — an ordinary Task run concurrently with its
-siblings, its per-Task worktree cut from the Integration branch.
+siblings. A worktree-mode Member's per-Task worktree is cut from the
+Integration branch and merges back onto it; a direct-mode Member commits in
+place on the base checkout's branch like any direct Task and never touches the
+Integration branch.
 _Avoid_: child task, subtask
 
 **Ready frontier**:
@@ -460,7 +471,11 @@ tip. Green releases the mutex; red reverts the merge commit and escalates. A
 textual conflict gets bounded agentic resolve-turns, then escalates. Base
 movement since the verdict is irrelevant — the merge commit reconciles the
 trees, and a verdict attaches to the Attempt, never to a SHA. There is no
-freshness gate, no SHA assertion, and no re-verification loop.
+freshness gate, no SHA assertion, and no re-verification loop. When the merged
+branch is checked out in the base checkout, Harmonic brings its files forward
+path by path. It never switches that checkout's branch, overwrites the
+operator's uncommitted work, or lets a dirty checkout block the merge
+(ADR-0039).
 _Avoid_: accept, merge gate, land (banned)
 
 ### Pause and Resume
