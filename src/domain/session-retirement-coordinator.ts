@@ -36,9 +36,8 @@ export class SessionRetirementCoordinator {
     private readonly removeWorktree: RemoveWorktree,
     private readonly config: RetentionConfig = DEFAULT_RETENTION,
     private readonly clock: () => number = Date.now,
-    /** Notified with the Session's latest Attempt when its worktree removal is
-     * attempted — the hook that records the Timeline's `retired` event. `error`
-     * is set when the removal itself failed (the Session still retires). */
+    /** Notified when a worktree removal is attempted; `error` set means it
+     * failed (the Session still retires). Records the `retired` event. */
     private readonly onRetired?: (run: AttemptRow, info: { worktree: string; error?: string }) => void,
   ) {}
 

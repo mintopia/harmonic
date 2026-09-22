@@ -28,14 +28,10 @@ export class AutoDrive {
     /** Resolves the stored `kind` of a Task's parent Epic (its `mapRef`); a Map
      * child drives `/wayfinder {mapRef}`. Absent → every child keeps its own drive. */
     private readonly getEpicKind?: (workspaceId: number, ref: number) => Promise<StoredEpicKind | null>,
-    /** Notified when {@link closeTicket} issues a genuine tracker close (a real
-     * ref that was open) — the hook that records the Timeline's ticket-closed
-     * event. Not fired for the no-op paths (no ref, or already closed). `commit`
-     * carries the base-checkout commit for a file-backed tracker's status
-     * write, or `null` when the tracker doesn't persist in the working tree. */
+    /** Notified on a genuine tracker close (not the no-op paths). `commit` is
+     * the base-checkout commit for a file-backed tracker, else `null`. */
     private readonly onTicketClosed?: (task: TaskRow, commit: { oid: string; paths: string[] } | null) => void,
-    /** Notified when a close attempt throws — the hook that records the
-     * Timeline's ticket-close-failed event. */
+    /** Notified when a close attempt throws. */
     private readonly onTicketCloseFailed?: (task: TaskRow, error: unknown) => void,
   ) {}
 

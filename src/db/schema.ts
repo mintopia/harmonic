@@ -283,11 +283,8 @@ export const attemptEvents = sqliteTable('attempt_events', {
   payload: text('payload').notNull(),
 });
 
-/** Append-only lifecycle log for a Task action with no owning Attempt (a
- * ticket-close commit/failure, an operator-Close cleanup) that the ticket
- * timeline renders alongside `attempt_events`' lifecycle rows, same mapping,
- * same copy — `id` orders ties at the same `ts`, same role `attempt_events.id`
- * plays there. */
+/** Append-only lifecycle log for a Task action with no owning Attempt; the
+ * ticket timeline renders it alongside `attempt_events`, same mapping. */
 export const taskEvents = sqliteTable(
   'task_events',
   {

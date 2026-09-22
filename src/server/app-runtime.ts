@@ -56,9 +56,7 @@ function createLifecycleTracking(
       context: { attemptId: run.id, event: String(payload.event) },
     });
   };
-  // No owning Attempt to stream a `attempt_event` for; `step_changed` is the
-  // existing taskId-keyed "refetch this Task's timeline" signal (issued today
-  // for a mid-Attempt Step transition, but generic in shape).
+  // No Attempt to stream an `attempt_event` for; reuse the taskId-keyed `step_changed` signal instead.
   const recordTaskEventBestEffort = (task: Pick<TaskRow, 'id'>, payload: Record<string, unknown>): void => {
     fireAndForget(
       async () => {
@@ -415,9 +413,7 @@ export async function createRuntime(deps: {
   trackerManagerRef = trackerManager;
   for (const merged of pendingPostMerge.splice(0)) await postMerge(merged);
 
-  // Backfill: clears branches that piled up while retirement was unwired
-  // (dropped in b37adbaf). Fired, not awaited — reconcile() yields internally
-  // (AGENTS.md "Background loops must yield") but must never delay boot.
+  // Fired, not awaited: clears branches piled up since retirement was unwired, without delaying boot.
   fireAndForget(() => branchRetirement.reconcile(), { op: 'app.branchRetirement.reconcile', level: 'error' });
 
   return {

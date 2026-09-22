@@ -9,7 +9,6 @@ export type EpicBranchStep =
   | { step: 'branch-created'; branch: string; fromBranch: string; oid: string }
   | { step: 'branch-create-failed'; branch: string; fromBranch: string; error: string };
 
-/** Every step this Epic's timeline can hold, merge steps and branch-cut steps alike. */
 export type EpicTimelineStep = MergeStepEvent | EpicBranchStep;
 
 export interface PersistedEpicMergeEvent {

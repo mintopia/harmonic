@@ -9,7 +9,6 @@ export type EpicBranchStep =
   | { step: 'branch-created'; branch: string; fromBranch: string; oid: string }
   | { step: 'branch-create-failed'; branch: string; fromBranch: string; error: string };
 
-/** Mirrors `EpicTimelineStep`: every step an Epic's timeline can hold. */
 export type EpicTimelineStep = MergeStepEvent | EpicBranchStep;
 
 /** Mirrors `reduceMemberState` server-side. */

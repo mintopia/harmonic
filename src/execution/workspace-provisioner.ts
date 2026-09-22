@@ -25,15 +25,13 @@ export interface WorkspaceProvisionerDeps {
   sessionRetirement: SessionRetirementHook | undefined;
   events: RunnerEvents;
   worktreesDir: string;
-  /** Task-level lifecycle log, for a Close with no Attempt to attach a
-   * worktree/branch cleanup row to. Absent → that row is dropped. */
+  /** Absent → a Close with no Attempt drops its cleanup row. */
   taskEvents?: TaskEventAppender;
 }
 
 export class WorkspaceProvisioner {
   constructor(private readonly deps: WorkspaceProvisionerDeps) {}
 
-  /** Record a git side-effect onto the Attempt's lifecycle timeline; never throws. */
   private async record(run: Pick<AttemptRow, 'id'>, payload: Record<string, unknown>): Promise<void> {
     try {
       const event = await this.deps.attempts.appendEvent(run.id, { type: 'lifecycle', payload });
@@ -43,8 +41,6 @@ export class WorkspaceProvisioner {
     }
   }
 
-  /** Record a git side-effect with no owning Attempt onto the Task's own
-   * lifecycle log; never throws. */
   private async recordTask(task: Pick<TaskRow, 'id'>, payload: Record<string, unknown>): Promise<void> {
     try {
       await this.deps.taskEvents?.appendEvent(task.id, payload);
@@ -90,9 +86,8 @@ export class WorkspaceProvisioner {
       }
       this.deps.events.onAttemptFinished?.(await this.deps.attempts.get(run.id));
     } else {
-      // No Attempt to attach cleanup evidence to (e.g. an escalated Task with
-      // none recorded) — fall back to the Task's own deterministic worktree
-      // path and branch name, and record on the Task's own event log.
+      // No Attempt row to key off (e.g. an escalated Task that never spawned
+      // one) — fall back to the Task's deterministic worktree/branch.
       const worktreePath = this.worktreePathForTask(task);
       if (existsSync(worktreePath)) {
         const worktree = basename(worktreePath);
