@@ -5,6 +5,7 @@ harnesses:
     args: [--yes, "@agentclientprotocol/claude-agent-acp"]
     env: {}
     models:
+      - { id: claude-opus-5-5, price: { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 }, contextWindow: 1000000 }
       - { id: claude-opus-5, price: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }, contextWindow: 1000000 }
       - { id: claude-fable-5-1, price: { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 }, contextWindow: 1000000 }
       - { id: claude-fable-5, price: { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 }, contextWindow: 1000000 }
