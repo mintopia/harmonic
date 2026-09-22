@@ -137,8 +137,11 @@ never invalidated by movement elsewhere in the repository.
 
 ### Epics
 
-- A per-Epic integration branch `epic/<ref>` is cut from develop; members fork
-  off it (per-Task `baseBranch`) and merge into it by the policy above. The
+- A per-Epic integration branch `epic/<ref>` is cut from develop; worktree-mode
+  members fork off it (per-Task `baseBranch`) and merge into it by the policy
+  above. Direct-mode members commit in place like any direct Task, and an Epic
+  whose members are all direct has no integration branch: it completes in
+  place when every member is done (ADR-0039). The
   Epic is derived from the tracker's parent/child structure (ADR-0004);
   Harmonic authors no Epic structure and stores no grouping entity.
 - Develop is merged into live epic branches on advance, quietly; a refresh that

@@ -53,6 +53,12 @@ not-yet-torn-down machinery is marked `legacy until ADR-1 epic`.
 | 0033 | [Global scope and path-based routing](0033-global-scope-and-path-routing.md) |
 | 0034 | [Running Harmonic as a supervised service](0034-running-harmonic-as-a-supervised-service.md) |
 | 0035 | [Slash-command autocomplete in the Conversation Composer](0035-slash-command-autocomplete-in-the-composer.md) |
+| 0036 | [Per-Harness unattended permission mode for Attempts](0036-per-harness-permission-mode-for-attempts.md) |
+| 0037 | [Additive, id-keyed workspace verifier overlays](0037-additive-workspace-verifier-overlays.md) |
+| 0038 | [Step-aware escalation actions: Reject spawns a fresh Attempt, Accept advances the pipeline](0038-step-aware-escalation-actions.md) |
+| 0039 | [Epic integration and branch retirement use an ephemeral worktree](0039-epic-integration-and-retirement-use-an-ephemeral-worktree.md) |
+| 0040 | [The merge reconciles base movement by re-merging, not by a SHA assertion](0040-merge-reconciles-base-movement-without-a-sha-assertion.md) |
+| 0041 | [Non-privileged atomic self-upgrade](0041-non-privileged-atomic-self-upgrade.md) |
 
 ## Where every pre-reset ADR went
 

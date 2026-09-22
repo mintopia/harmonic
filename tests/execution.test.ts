@@ -137,7 +137,7 @@ describe('run execution over ACP (direct mode)', () => {
     expect(run.state).toBe('cancelled');
   });
 
-  it('continues the same Attempt after Reject with guidance', async () => {
+  it('spawns a fresh Attempt after Reject with guidance', async () => {
     const { taskId, attemptId } = await createAndRun({ exit: 'crash-before-response' });
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
 
@@ -148,13 +148,16 @@ describe('run execution over ACP (direct mode)', () => {
     const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'try again', start: true });
     expect(rejected.status).toBe(200);
 
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
-
-    const afterReject = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
-    expect(afterReject).toHaveLength(beforeReject.length);
-    expect(afterReject.at(-1)!.id).toBe(lastAttemptBeforeReject.id);
-    expect(afterReject.at(-1)!.number).toBe(lastAttemptBeforeReject.number);
-    expect(afterReject.at(-1)!.sessionId).not.toBe(lastAttemptBeforeReject.sessionId);
+    // ADR-0038: Reject spawns a NEW Attempt (the number increments) with the
+    // budget reset, rather than reusing the escalated Attempt in place; the
+    // fresh Attempt crashes again and the ticket re-escalates.
+    const afterReject = await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      const attempts = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
+      return body.state === 'escalated' && attempts.length > beforeReject.length ? attempts : undefined;
+    });
+    expect(afterReject.at(-1)!.number).toBeGreaterThan(lastAttemptBeforeReject.number);
+    expect(afterReject.at(-1)!.id).not.toBe(lastAttemptBeforeReject.id);
   });
 
   it('escalates the task when the harness crashes on every attempt', async () => {

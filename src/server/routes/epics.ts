@@ -47,6 +47,7 @@ const epicMemberSchema = z
     escalated: z.boolean(),
     mergeStatus: z.enum(['completed', 'blocked', 'pending']).meta({ example: 'pending' }),
     ready: z.boolean(),
+    isolationMode: z.enum(['direct', 'worktree']).nullable().meta({ example: 'worktree' }),
   })
   .meta({ id: 'EpicMember' });
 
@@ -82,16 +83,33 @@ const mergeStepSchema = z
     z.object({ step: z.literal('post-check-passed'), mergeOid: z.string() }),
     z.object({ step: z.literal('reverted'), mergeOid: z.string(), revertOid: z.string() }),
     z.object({ step: z.literal('merged'), mergeOid: z.string() }),
-    z.object({ step: z.literal('escalated'), reason: z.enum(['conflict', 'post-merge-red']), message: z.string() }),
+    z.object({ step: z.literal('checkout-synced'), mergeOid: z.string(), mergedPaths: z.array(z.string()), keptPaths: z.array(z.string()), error: z.string().optional() }),
+    z.object({ step: z.literal('retired'), branch: z.string(), baseBranch: z.string() }),
+    z.object({ step: z.literal('completed-in-place'), baseBranch: z.string(), leftBranch: z.string().optional() }),
+    z.object({ step: z.literal('reconciled'), fromBase: z.string(), toBase: z.string(), mergeOid: z.string() }),
+    z.object({ step: z.literal('rebuilding'), fromBase: z.string(), toBase: z.string(), paths: z.array(z.string()) }),
+    z.object({ step: z.literal('escalated'), reason: z.enum(['conflict', 'post-merge-red', 'target-advanced']), message: z.string() }),
   ])
   .meta({ id: 'MergeStepEvent' });
+
+const epicTimelineStepSchema = z
+  .discriminatedUnion('step', [
+    ...mergeStepSchema.options,
+    z.object({ step: z.literal('branch-created'), branch: z.string(), fromBranch: z.string(), oid: z.string() }),
+    z.object({ step: z.literal('branch-create-failed'), branch: z.string(), fromBranch: z.string(), error: z.string() }),
+  ])
+  .meta({ id: 'EpicTimelineStep' });
+
+const epicTimelineEventSchema = z
+  .object({ seq: z.number().int(), at: z.number().int(), step: epicTimelineStepSchema })
+  .meta({ id: 'EpicTimelineEvent' });
 
 const epicSchema = z
   .object({
     ref: z.number().int().meta({ example: 42 }),
     title: z.string().meta({ example: 'Parallel Epic operator UI' }),
     kind: z.enum(['map', 'spec']),
-    state: z.enum(['open', 'integrated']),
+    state: z.enum(['open', 'integrating', 'integrated']),
     description: z.string().meta({ example: 'Build the parallel-Epic operator UI …' }),
     createdAt: z.number().int().meta({ example: 1_756_000_000_000 }),
     updatedAt: z.number().int().nullable().meta({ example: 1_756_100_000_000 }),
@@ -103,8 +121,10 @@ const epicSchema = z
     verification: epicVerificationSchema,
     integrate: epicIntegrateStateSchema,
     mergeSteps: z.array(mergeStepSchema),
+    timelineEvents: z.array(epicTimelineEventSchema),
     foldedCount: z.number().int(),
     memberCount: z.number().int(),
+    inPlace: z.boolean(),
   })
   .meta({ id: 'Epic' });
 

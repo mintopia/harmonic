@@ -12,6 +12,11 @@ install is a new distribution/tooling surface). Builds on the daemon launch
 path (`harmonic start`/`stop`/`status`, the data-dir lock, the upgrade
 relauncher).
 
+**Amended by ADR-0041**: the systemd unit launches the stable
+`<dataDir>/app/current` symlink rather than an absolute CLI path. Its
+non-privileged upgrade installs and verifies code in the service-user-owned
+application tree before atomically changing that symlink and exiting(0).
+
 ## Context
 
 Harmonic already self-daemonizes: `harmonic start` spawns a detached `serve`,

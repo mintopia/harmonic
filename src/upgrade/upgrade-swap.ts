@@ -11,6 +11,7 @@ export interface UpgradeSwapDependencies {
   install(version: string): Promise<void>;
   installedVersion(): Promise<string>;
   managedBy?: string;
+  migrationRequired?: boolean;
   spawnRelauncher(): Promise<void>;
   releaseLock(): Promise<void>;
   exit(): void;
@@ -22,6 +23,7 @@ export interface UpgradeSwapDependencies {
 
 export type UpgradeSwapResult =
   | { kind: 'swapped' }
+  | { kind: 'migration-required' }
   | { kind: 'aborted'; error: Error };
 
 /** Performs the irreversible handoff only after the pinned package is verified. */
@@ -29,6 +31,9 @@ export class UpgradeSwap {
   constructor(private readonly dependencies: UpgradeSwapDependencies) {}
 
   async execute({ version }: { version: string }): Promise<UpgradeSwapResult> {
+    if (this.dependencies.managedBy === 'systemd' && this.dependencies.migrationRequired) {
+      return { kind: 'migration-required' };
+    }
     try {
       await this.step({ action: 'install', version, work: () => this.dependencies.install(version) });
       await this.step({

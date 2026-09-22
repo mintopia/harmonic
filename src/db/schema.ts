@@ -283,6 +283,23 @@ export const attemptEvents = sqliteTable('attempt_events', {
   payload: text('payload').notNull(),
 });
 
+/** Append-only lifecycle log for a Task action with no owning Attempt; the
+ * ticket timeline renders it alongside `attempt_events`, same mapping. */
+export const taskEvents = sqliteTable(
+  'task_events',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    taskId: integer('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    ts: integer('ts').notNull(),
+    /** JSON payload — same shape as an Attempt lifecycle event's payload. */
+    payload: text('payload').notNull(),
+  },
+  (t) => [index('task_events_task_id_idx').on(t.taskId)],
+);
+export type TaskEventRow = typeof taskEvents.$inferSelect;
+
 export const CONVERSATION_STATES = ['active', 'ended'] as const;
 export type ConversationState = (typeof CONVERSATION_STATES)[number];
 export const CONVERSATION_PERMISSION_MODES = ['ask', 'automatic'] as const;
@@ -428,8 +445,8 @@ export type TrackerContainerRow = typeof trackerContainers.$inferSelect;
 export const STORED_EPIC_KINDS = ['map', 'spec', 'epic'] as const;
 export type StoredEpicKind = (typeof STORED_EPIC_KINDS)[number];
 
-/** `open` while the Epic is live; `integrated` once its branch is merged to base (or a no-op finish settles it). */
-export const EPIC_LIFECYCLE_STATES = ['open', 'integrated'] as const;
+/** `open` while members are working; `integrating` during the whole-Epic gate; `integrated` once its branch reaches base. */
+export const EPIC_LIFECYCLE_STATES = ['open', 'integrating', 'integrated'] as const;
 export type EpicLifecycleState = (typeof EPIC_LIFECYCLE_STATES)[number];
 
 /** The leaf-most Epic as a stored resource, keyed `(workspaceId, trackerRef)`; survives the tracker issue closing, removed only on Dismiss. `mergeCommit`/`memberRefs` are null while live. */
@@ -445,14 +462,16 @@ export const epics = sqliteTable('epics', {
 }, (t) => [primaryKey({ columns: [t.workspaceId, t.trackerRef] })]);
 export type EpicRow = typeof epics.$inferSelect;
 
-/** Append-only log of one Epic's current integration-merge steps, for merge visibility; one total order per Epic via `seq`, cleared when a fresh integration starts. */
+/** Append-only log of an Epic's integration-branch cuts and merge steps, for
+ * merge visibility; one total order per Epic via `seq`, never cleared —
+ * readers slice from the current integration's last `started` row. */
 export const epicMergeEvents = sqliteTable('epic_merge_events', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   workspaceId: integer('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
   epicRef: integer('epic_ref').notNull(),
   seq: integer('seq').notNull(),
   ts: integer('ts').notNull(),
-  /** JSON `MergeStepEvent` payload. */
+  /** JSON `EpicTimelineStep` payload. */
   payload: text('payload').notNull(),
 }, (t) => [uniqueIndex('epic_merge_events_epic_seq_unique').on(t.workspaceId, t.epicRef, t.seq)]);
 export type EpicMergeEventRow = typeof epicMergeEvents.$inferSelect;

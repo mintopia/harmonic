@@ -105,6 +105,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     workspaces: stores.workspaces,
     tasks: stores.tasks,
     attempts: stores.attempts,
+    taskEvents: stores.taskEvents,
     sessions: stores.sessions,
     runner: runtime.runner,
     conversations: stores.conversations,

@@ -32,10 +32,6 @@ interface AboutOverlayProps {
   onClose: () => void;
 }
 
-function isIdle(update: UpdateState): boolean {
-  return update.idle.runningAttempts === 0 && !update.idle.mergingOrIntegrating && !update.idle.conversationMidTurn;
-}
-
 type MoteVariant = 'quarter' | 'eighth' | 'beamed' | 'sixteenth' | 'half';
 
 interface NoteMoteConfig {
@@ -552,11 +548,20 @@ function HeaderBackdrop({ revealStave, plan, introKey }: { revealStave: boolean;
 function UpdateControl({ update, pending, onArm, onCheckForUpdates }: Pick<AboutOverlayProps, 'update' | 'pending' | 'onArm' | 'onCheckForUpdates'>) {
   if (update === null) return null;
 
+  if (update.upgradingVersion !== null) {
+    return (
+      <span className="inline-flex items-center gap-2 text-small text-muted">
+        <span className="size-1.5 rounded-full bg-accent" />
+        Updating to {update.upgradingVersion}…
+      </span>
+    );
+  }
+
   if (update.armedVersion !== null) {
     return (
       <span className="inline-flex items-center gap-2 text-small text-muted">
         <span className="size-1.5 rounded-full bg-accent" />
-        {isIdle(update) ? `Updating to ${update.armedVersion}…` : `${update.armedVersion} restarts when idle`}
+        {update.armedVersion} restarts when idle
       </span>
     );
   }

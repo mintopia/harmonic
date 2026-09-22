@@ -21,10 +21,15 @@ function coordinator(input: {
   runningAttempts?: number;
   conversationMidTurn?: boolean;
   operations?: OperationSnapshot[];
-  onIdle?: (version: string) => void;
+  onIdle?: (version: string) => Promise<void> | void;
+  migrationRequired?: boolean;
+  armedVersion?: string | null;
 } = {}) {
   let config: AppConfig = { ...baselineConfig(), autoRunner: { ...baselineConfig().autoRunner, enabled: input.autoRunnerEnabled ?? true } };
-  const store = new MemoryStore({ version: input.version ?? '2.6.0', armedVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null });
+  const phase: UpdateAvailabilityState['phase'] = input.armedVersion == null
+    ? { kind: 'unarmed' }
+    : { kind: 'armed', targetVersion: input.armedVersion, autoRunnerWasEnabled: true };
+  const store = new MemoryStore({ version: input.version ?? '2.6.0', dismissedVersion: null, phase });
   let runningAttempts = input.runningAttempts ?? 0;
   let conversationMidTurn = input.conversationMidTurn ?? false;
   let operations = input.operations ?? [];
@@ -42,6 +47,7 @@ function coordinator(input: {
     operations: () => operations,
     conversations: { hasInFlightTurn: () => conversationMidTurn },
     onIdle: input.onIdle,
+    migrationRequired: input.migrationRequired,
   });
   return {
     upgrade,
@@ -53,6 +59,24 @@ function coordinator(input: {
 }
 
 describe('UpgradeCoordinator', () => {
+  it('refuses to arm an upgrade until a legacy systemd install is migrated', async () => {
+    const subject = coordinator({ migrationRequired: true });
+
+    await expect(subject.upgrade.arm()).rejects.toThrow(
+      'Auto-upgrade is disabled until you re-run sudo harmonic install; your data is untouched.',
+    );
+    await expect(subject.upgrade.migrationRequired()).resolves.toBe(true);
+    expect(subject.config().autoRunner.enabled).toBe(true);
+  });
+
+  it('cancels an upgrade armed before a legacy systemd layout was detected', async () => {
+    const subject = coordinator({ migrationRequired: true, armedVersion: '2.6.0' });
+
+    await expect(subject.upgrade.reconcile()).resolves.toBe(false);
+    await expect(subject.upgrade.state()).resolves.toMatchObject({ phase: { kind: 'unarmed' } });
+    expect(subject.config().autoRunner.enabled).toBe(true);
+  });
+
   it('dismisses only the current offered version without changing the master switch', async () => {
     const subject = coordinator();
 
@@ -63,10 +87,10 @@ describe('UpgradeCoordinator', () => {
   it('pins the offered version, turns off the master switch, and restores its prior value on cancel', async () => {
     const subject = coordinator();
 
-    await expect(subject.upgrade.arm()).resolves.toMatchObject({ armedVersion: '2.6.0', autoRunnerWasEnabled: true });
+    await expect(subject.upgrade.arm()).resolves.toMatchObject({ phase: { kind: 'armed', targetVersion: '2.6.0', autoRunnerWasEnabled: true } });
     expect(subject.config().autoRunner.enabled).toBe(false);
 
-    await expect(subject.upgrade.cancel()).resolves.toMatchObject({ armedVersion: null, autoRunnerWasEnabled: null });
+    await expect(subject.upgrade.cancel()).resolves.toMatchObject({ phase: { kind: 'unarmed' } });
     expect(subject.config().autoRunner.enabled).toBe(true);
   });
 
@@ -107,18 +131,45 @@ describe('UpgradeCoordinator', () => {
     expect(ready).toEqual(['2.6.0']);
   });
 
+  it('records the real upgrade-in-progress state before handing the swap to the service manager', async () => {
+    let release: (() => void) | undefined;
+    const handoff = new Promise<void>((resolve) => { release = resolve; });
+    let entered: (() => void) | undefined;
+    const enteredHandoff = new Promise<void>((resolve) => { entered = resolve; });
+    const subject = coordinator({ onIdle: async () => { entered?.(); return handoff; } });
+
+    const arm = subject.upgrade.arm();
+    await expect(arm).resolves.toMatchObject({ phase: { kind: 'armed', targetVersion: '2.6.0' } });
+    await enteredHandoff;
+    await expect(subject.upgrade.state()).resolves.toMatchObject({ phase: { kind: 'upgrading', targetVersion: '2.6.0' } });
+
+    release?.();
+  });
+
   it('unarms and restores the master switch when the idle handoff fails', async () => {
     const subject = coordinator({ onIdle: () => { throw new Error('install failed'); } });
 
     await subject.upgrade.arm();
+    await subject.upgrade.reconcile();
 
     await expect(subject.upgrade.state()).resolves.toEqual({
       version: '2.6.0',
-      armedVersion: null,
-      autoRunnerWasEnabled: null,
       dismissedVersion: null,
+      phase: { kind: 'unarmed' },
     });
     expect(subject.config().autoRunner.enabled).toBe(true);
+  });
+
+  it('does not hand off an upgrade after cancellation wins the arm race', async () => {
+    const handoffs: string[] = [];
+    const subject = coordinator({ onIdle: (version) => { handoffs.push(version); } });
+
+    await subject.upgrade.arm();
+    await subject.upgrade.cancel();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(handoffs).toEqual([]);
+    await expect(subject.upgrade.state()).resolves.toMatchObject({ phase: { kind: 'unarmed' } });
   });
 
   it('clears the arming and restores the master switch once relaunched onto the armed version', async () => {
@@ -126,7 +177,7 @@ describe('UpgradeCoordinator', () => {
     await subject.upgrade.arm();
     expect(subject.config().autoRunner.enabled).toBe(false);
 
-    await expect(subject.upgrade.complete()).resolves.toMatchObject({ armedVersion: null, autoRunnerWasEnabled: null });
+    await expect(subject.upgrade.complete()).resolves.toMatchObject({ phase: { kind: 'unarmed' } });
     expect(subject.config().autoRunner.enabled).toBe(true);
   });
 
@@ -134,7 +185,7 @@ describe('UpgradeCoordinator', () => {
     const subject = coordinator({ runningVersion: '2.0.0' });
     await subject.upgrade.arm();
 
-    await expect(subject.upgrade.complete()).resolves.toMatchObject({ armedVersion: '2.6.0' });
+    await expect(subject.upgrade.complete()).resolves.toMatchObject({ phase: { kind: 'armed', targetVersion: '2.6.0' } });
     expect(subject.config().autoRunner.enabled).toBe(false);
   });
 });

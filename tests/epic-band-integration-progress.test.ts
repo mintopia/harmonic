@@ -22,13 +22,28 @@ function epic(overrides: Partial<Epic> = {}): Epic {
     verification: { status: 'pass', configured: true },
     integrate: { inFlight: false, held: null },
     mergeSteps: [],
+    timelineEvents: [],
     foldedCount: 2,
     memberCount: 2,
+    inPlace: false,
     ...overrides,
   };
 }
 
 describe('EpicBand whole-Epic integration progress (issue #424)', () => {
+  it('renders an integrating lifecycle Epic as a visible board band', () => {
+    const html = renderToStaticMarkup(
+      createElement(EpicBand, {
+        epic: epic({ state: 'integrating' }),
+        columns: [],
+        onOpenTask: () => {},
+      }),
+    );
+
+    expect(html).toContain('bg-running-tint text-running">integrating</span>');
+    expect(html).toContain('Post-merge check');
+  });
+
   it("makes the main-board band's content the shared integration bar while the Epic is integrating", () => {
     const html = renderToStaticMarkup(
       createElement(EpicBand, {
@@ -58,8 +73,8 @@ describe('EpicBand whole-Epic integration progress (issue #424)', () => {
 
   it('drives the bar off the server-authoritative read model, never re-derived from child states', () => {
     const merged: EpicMember[] = [
-      { ref: 1, title: 'a', taskId: 1, state: 'done', escalated: false, mergeStatus: 'completed', ready: false },
-      { ref: 2, title: 'b', taskId: 2, state: 'done', escalated: false, mergeStatus: 'completed', ready: false },
+      { ref: 1, title: 'a', taskId: 1, state: 'done', escalated: false, mergeStatus: 'completed', ready: false, isolationMode: 'worktree' },
+      { ref: 2, title: 'b', taskId: 2, state: 'done', escalated: false, mergeStatus: 'completed', ready: false, isolationMode: 'worktree' },
     ];
     const failing = renderToStaticMarkup(
       createElement(EpicIntegrationBar, {

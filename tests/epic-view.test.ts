@@ -37,6 +37,7 @@ const noFacts: EpicFacts = {
   verification: { status: null, configured: false },
   integrate: { inFlight: false, held: null, phase: null },
   mergeSteps: [],
+  timelineEvents: [],
 };
 
 const noMeta: EpicMeta = { description: '', createdAt: 0, baseBranch: null, dependsOn: [], kind: 'spec', state: 'open' };
@@ -56,6 +57,7 @@ describe('composeEpicView', () => {
       escalated: false,
       mergeStatus: 'completed',
       ready: false,
+      isolationMode: null,
     });
     expect(epic.foldedCount).toBe(1);
   });
@@ -81,6 +83,7 @@ describe('composeEpicView', () => {
       escalated: false,
       mergeStatus: 'pending',
       ready: true,
+      isolationMode: null,
     });
   });
 
@@ -111,6 +114,7 @@ describe('composeEpicView', () => {
       verification: { status: null, configured: false },
       integrate: { inFlight: false, held: null, phase: null },
       mergeSteps: [],
+      timelineEvents: [],
     };
     const epic = composeEpicView(derived({ members: [], ready: [] }), new Map(), new Map(), facts, noMeta);
     expect(epic.integration).toEqual({ branch: 'epic/10', exists: false, tip: null });
@@ -126,11 +130,23 @@ describe('composeEpicView', () => {
       verification: { status: 'pass', configured: true },
       integrate: { inFlight: true, held: 'already escalated for this member state; awaiting operator or a state change', phase: null },
       mergeSteps: [],
+      timelineEvents: [],
     };
     const epic = composeEpicView(derived({ members: [], ready: [] }), new Map(), new Map(), facts, noMeta);
     expect(epic.integration).toEqual({ branch: 'epic/10', exists: true, tip: 'a1b2c3d' });
     expect(epic.verification).toEqual({ status: 'pass', configured: true });
     expect(epic.integrate).toEqual({ inFlight: true, held: expect.stringContaining('escalated'), phase: null });
+  });
+
+  it('keeps timestamped integration events for the Epic timeline', () => {
+    const facts: EpicFacts = {
+      ...noFacts,
+      timelineEvents: [{ seq: 1, at: 1_700_000_000_000, step: { step: 'retired', branch: 'epic/10', baseBranch: 'develop' } }],
+    };
+
+    const epic = composeEpicView(derived({ members: [], ready: [] }), new Map(), new Map(), facts, noMeta);
+
+    expect(epic.timelineEvents).toEqual(facts.timelineEvents);
   });
 
   it('carries ref/title from the DerivedEpic and kind from the meta record', () => {
@@ -168,5 +184,30 @@ describe('composeEpicView', () => {
   it('leaves updatedAt null when no member is mirrored', () => {
     const epic = composeEpicView(derived({ members: [11], ready: [] }), new Map(), new Map(), noFacts, noMeta);
     expect(epic.updatedAt).toBeNull();
+  });
+
+  it('carries a member\'s resolved isolationMode, and null for an unmirrored one', () => {
+    const memberTasks = new Map<number, TaskRow>([[11, task({ id: 1, trackerRef: 11, isolationMode: 'direct' })]]);
+    const epic = composeEpicView(derived({ members: [11, 12], ready: [] }), memberTasks, new Map(), noFacts, noMeta);
+    expect(epic.members.find((m) => m.ref === 11)?.isolationMode).toBe('direct');
+    expect(epic.members.find((m) => m.ref === 12)?.isolationMode).toBeNull();
+  });
+
+  it('inPlace is true whenever every member is direct, whether or not a leftover Integration branch exists', () => {
+    const direct = new Map<number, TaskRow>([
+      [11, task({ id: 1, trackerRef: 11, isolationMode: 'direct' })],
+      [12, task({ id: 2, trackerRef: 12, isolationMode: 'direct' })],
+    ]);
+    const inPlaceEpic = composeEpicView(derived({ members: [11, 12], ready: [] }), direct, new Map(), noFacts, noMeta);
+    expect(inPlaceEpic.inPlace).toBe(true);
+
+    const mixed = new Map<number, TaskRow>([
+      [11, task({ id: 1, trackerRef: 11, isolationMode: 'direct' })],
+      [12, task({ id: 2, trackerRef: 12, isolationMode: 'worktree' })],
+    ]);
+    expect(composeEpicView(derived({ members: [11, 12], ready: [] }), mixed, new Map(), noFacts, noMeta).inPlace).toBe(false);
+
+    const existingBranch: EpicFacts = { ...noFacts, integration: { branch: 'epic/10', exists: true, tip: 'abc' } };
+    expect(composeEpicView(derived({ members: [11, 12], ready: [] }), direct, new Map(), existingBranch, noMeta).inPlace).toBe(true);
   });
 });

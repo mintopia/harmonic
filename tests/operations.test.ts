@@ -14,6 +14,7 @@ import { EventBus } from '../src/server/bus.js';
 import { initializeTelemetry, resolveTelemetryOptions } from '../src/telemetry.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
 import { allWorkspaces, makeSettingsStore, seedLocalMarkdownTicket, startServer, stubHarness, seedWorkspace } from './helpers.js';
+import type { CriticHarnessDrive } from '../src/verification/critic.js';
 
 const providers: NodeTracerProvider[] = [];
 
@@ -271,7 +272,11 @@ describe('Auto-Runner operations (issue #289)', () => {
 describe('Run operations (issue #290)', () => {
   it('closes the Run operation at escalation and merges the operator Accept as its own operation on that Run', async () => {
     const { exporter, registry } = installOperations();
-    const server = await startServer({ ...stubHarness(), maxAttempts: 1 });
+    // Escalate at the review Step (failing critic) so Accept runs Accept-and-Merge
+    // (ADR-0038), the operator merge that emits its own harmonic.merge span on the
+    // escalated Attempt — the advance path a verification failure would take does not.
+    const criticDrive: CriticHarnessDrive = { run: async () => ({ output: JSON.stringify({ verdict: 'fail', summary: 'needs work' }), permissionRequests: [] }) };
+    const server = await startServer({ ...stubHarness(), maxAttempts: 1 }, { criticDrive });
     try {
       const repo = mkdtempSync(join(tmpdir(), 'harmonic-ops-merge-'));
       execFileSync('git', ['init', '-b', 'main', repo]);
@@ -279,7 +284,7 @@ describe('Run operations (issue #290)', () => {
       const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
       await server.app.ctx.workspaces.update(wsId, {
         workingDir: repo,
-        taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-exit-1', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }) }],
+        taskPreMergeCritics: [{ kind: 'local', enabled: true, critic: { id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.', model: 'stub-model', timeoutSeconds: 300 } }],
       });
       const task = await server.api('POST', '/api/tasks', {
         prompt: JSON.stringify({ writeFiles: { 'ops.txt': 'work\n' } }),
@@ -297,10 +302,6 @@ describe('Run operations (issue #290)', () => {
         expect(exporter.getFinishedSpans().find((span) => span.name === 'harmonic.attempt' && span.attributes['attempt.id'] === attemptId)).toBeDefined();
       });
       expect(registry.list().find((operation) => operation.name === 'harmonic.attempt' && operation.attributes['attempt.id'] === attemptId)).toBeUndefined();
-
-      await server.app.ctx.workspaces.update(wsId, {
-        taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-exit-0', command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 }) }],
-      });
 
       const escalatedAttempt = await server.app.ctx.attempts.currentForTask(task.body.id);
       expect((await server.api('POST', `/api/tasks/${task.body.id}/accept`)).status).toBe(200);

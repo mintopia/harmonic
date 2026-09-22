@@ -1,7 +1,5 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { Attributes, SpanContext } from '@opentelemetry/api';
+import { withEphemeralMergeWorktree } from './ephemeral-merge-worktree.js';
 import { Git } from './git.js';
 import { logger } from '../logger.js';
 import { startOperation } from '../telemetry/operations.js';
@@ -72,6 +70,10 @@ export type MergeIntoBaseOutcome =
   | { ok: true; mode: 'cas' | 'in-place'; oid: string; baseBranch: string; branch: string }
   | { ok: false; reason: 'conflict' | 'target-advanced' | 'stale-head' | 'stale-base' | 'fallback-pr-manual'; detail: string };
 
+type IsolatedMergeResult =
+  | { kind: 'merged'; oid: string }
+  | { kind: 'conflict'; detail?: string };
+
 /** Run the one shared success-only post-merge hook around a branch merge.
  * `baseRepoDir` is the workspace's persistent base repo checkout, for the
  * direct-mode case where the merge's own `repoDir` is a task checkout parked on
@@ -124,25 +126,30 @@ async function mergeIntoBaseUnchecked(args: MergeIntoBaseArgs): Promise<MergeInt
 
   let newOid: string;
   if (args.mode === 'merge') {
-    const parent = mkdtempSync(join(args.adminWorktreeParent ?? tmpdir(), 'harmonic-merge-'));
-    const adminPath = join(parent, 'admin');
-    try {
-      await Git.addDetachedWorktree(repoDir, adminPath, expectedOld);
-      const merged = await Git.mergeNoEdit(adminPath, expectedOid);
-      if (!merged.ok) {
-        return { ok: false, reason: 'conflict', detail: merged.detail ?? 'merge conflict' };
-      }
-      newOid = await Git.revParse(adminPath, 'HEAD');
-    } finally {
-      await Git.removeWorktree(repoDir, adminPath).catch((err) => {
-        logger.debug('branch-merge: removing the admin worktree failed', {
-          'merge.repo': repoDir,
-          'merge.admin_path': adminPath,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
-      rmSync(parent, { recursive: true, force: true });
+    const mergeResult = await withEphemeralMergeWorktree<IsolatedMergeResult>(
+      {
+        repoDir,
+        baseTipOid: expectedOld,
+        ...(args.adminWorktreeParent === undefined ? {} : { parentDir: args.adminWorktreeParent }),
+        onRemoveError: ({ error, worktreeDir: adminPath }) => {
+          logger.debug('branch-merge: removing the admin worktree failed', {
+            'merge.repo': repoDir,
+            'merge.admin_path': adminPath,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        },
+      },
+      async (adminPath) => {
+        const merged = await Git.mergeNoEdit(adminPath, expectedOid);
+        return merged.ok
+          ? { kind: 'merged', oid: await Git.revParse(adminPath, 'HEAD') }
+          : { kind: 'conflict', ...(merged.detail === undefined ? {} : { detail: merged.detail }) };
+      },
+    );
+    if (mergeResult.kind === 'conflict') {
+      return { ok: false, reason: 'conflict', detail: mergeResult.detail ?? 'merge conflict' };
     }
+    newOid = mergeResult.oid;
   } else if (await Git.isAncestor(repoDir, expectedOid, expectedOld)) {
     newOid = expectedOid;
   } else {

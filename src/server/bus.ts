@@ -32,6 +32,7 @@ export interface BusEvents {
   /** An Epic's integration merge advanced a step; a live board refreshes its
    * merge progress (Epics have no Attempt row, so `attempt_event` never covers this). */
   epic_changed: (payload: { workspaceId: number; epicRef: number }) => void;
+  epic_integrated: (payload: { workspaceId: number; epicRef: number }) => void;
   conversation_event: (event: PersistedConversationEvent) => void;
   conversation_changed: (conversation: ConversationRow) => void;
   conversation_commands: (payload: { conversationId: number; commands: AdvertisedCommand[] }) => void;

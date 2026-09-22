@@ -8,7 +8,9 @@ export interface UpdateState {
   currentVersion: string;
   availableVersion: string | null;
   armedVersion: string | null;
+  upgradingVersion: string | null;
   dismissedVersion: string | null;
+  migrationRequired: boolean;
   idle: {
     runningAttempts: number;
     mergingOrIntegrating: boolean;

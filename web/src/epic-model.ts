@@ -3,6 +3,14 @@
 import type { MergeStepEvent } from './merge-progress-model.js';
 import type { Task } from './types.js';
 
+/** Mirrors `EpicBranchStep` in `src/domain/epic-merge-events.ts`; an
+ * integration-branch cut observed outside a merge. */
+export type EpicBranchStep =
+  | { step: 'branch-created'; branch: string; fromBranch: string; oid: string }
+  | { step: 'branch-create-failed'; branch: string; fromBranch: string; error: string };
+
+export type EpicTimelineStep = MergeStepEvent | EpicBranchStep;
+
 /** Mirrors `reduceMemberState` server-side. */
 export type MemberMergeStatus = 'completed' | 'blocked' | 'pending';
 
@@ -19,6 +27,8 @@ export interface EpicMember {
   mergeStatus: MemberMergeStatus;
   /** Member is in the ready frontier. */
   ready: boolean;
+  /** The member's resolved isolation mode, or null if unmirrored. */
+  isolationMode: 'direct' | 'worktree' | null;
 }
 
 export interface EpicIntegration {
@@ -44,12 +54,18 @@ export interface EpicIntegrateState {
   held: string | null;
 }
 
+export interface EpicTimelineEvent {
+  seq: number;
+  at: number;
+  step: EpicTimelineStep;
+}
+
 export interface Epic {
   ref: number;
   title: string;
   kind: 'map' | 'spec';
-  /** Lifecycle from the stored record: `integrated` once the whole-Epic gate finished. */
-  state: 'open' | 'integrated';
+  /** Lifecycle from the stored record. */
+  state: 'open' | 'integrating' | 'integrated';
   /** The Epic container ticket's body — the summary page's description. */
   description: string;
   /** Epic container ticket creation time (ms). */
@@ -69,10 +85,14 @@ export interface Epic {
   integrate: EpicIntegrateState;
   /** Steps of the current integration merge, in order; empty until an integration runs. */
   mergeSteps: MergeStepEvent[];
+  timelineEvents: EpicTimelineEvent[];
   /** members with mergeStatus === 'completed' */
   foldedCount: number;
   /** members.length */
   memberCount: number;
+  /** Every member is direct-isolation: this Epic completes in place rather
+   * than merging one, whether or not a leftover epic/<ref> still exists. */
+  inPlace: boolean;
 }
 
 export function epicDriverRefs(epics: Epic[]): Set<number> {
@@ -238,7 +258,9 @@ export function closedMembers(epic: Epic): EpicMember[] {
  * folded into the integration branch, or an integrate attempt already in flight
  * or held for the operator. Only then does the surface show the progress bar. */
 export function isEpicIntegrating(epic: Epic): boolean {
+  if (epic.inPlace) return false;
   return (
+    epic.state === 'integrating' ||
     (epic.memberCount > 0 && epic.foldedCount === epic.memberCount) ||
     epic.integrate.inFlight ||
     epic.integrate.held != null
@@ -302,7 +324,7 @@ export function integrationSteps(epic: Epic): IntegrationStep[] {
  * integrating — but the page shows overall progress from the first member on.
  * The gate steps stay `pending` past `merge` for the same reason `integrationSteps`
  * does: the read model carries a positive signal only through merge. */
-export type EpicStageKey = 'build' | IntegrationStepKey;
+export type EpicStageKey = 'build' | 'complete' | IntegrationStepKey;
 export interface EpicStage {
   key: EpicStageKey;
   label: string;
@@ -315,6 +337,22 @@ export interface EpicStage {
 
 export function epicLifecycleSteps(epic: Epic): EpicStage[] {
   const finished = epic.state === 'integrated';
+  if (epic.inPlace) {
+    const allFolded = finished || (epic.memberCount > 0 && epic.foldedCount === epic.memberCount);
+    const build: EpicStage = {
+      key: 'build',
+      label: 'Build',
+      sublabel: `${epic.foldedCount}/${epic.memberCount} done`,
+      state: allFolded ? 'done' : 'current',
+    };
+    const complete: EpicStage = {
+      key: 'complete',
+      label: 'Done',
+      sublabel: `committed on ${epic.baseBranch ?? 'base'}`,
+      state: finished ? 'done' : allFolded ? 'current' : 'pending',
+    };
+    return [build, complete];
+  }
   const allFolded = finished || (epic.memberCount > 0 && epic.foldedCount === epic.memberCount);
   const held = epic.integrate.held;
   const configured = epic.verification.configured;

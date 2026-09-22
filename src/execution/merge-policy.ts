@@ -1,11 +1,17 @@
 import { Git } from './git.js';
-import { withBaseCheckoutLock, withRepoLock } from './repo-lock.js';
+import { withEphemeralMergeWorktree } from './ephemeral-merge-worktree.js';
+import { withBaseCheckoutLock } from './repo-lock.js';
+import { captureDirtyPaths, syncBaseCheckout } from './base-checkout-sync.js';
 import { startActiveChildOperation, type Operation } from '../telemetry/operations.js';
 import { logger } from '../logger.js';
 
 function within<T>(operation: Operation | undefined, work: () => Promise<T>): Promise<T> {
   return operation ? operation.run(work) : work();
 }
+
+const MAX_RECONCILE_REBUILDS = 2;
+
+const UNSUPPORTED_GIT_MAX_REBUILDS = 8;
 
 export interface ConflictResolveContext {
   baseDir: string;
@@ -44,7 +50,14 @@ export type MergeStepEvent =
   | { step: 'post-check-passed'; mergeOid: string }
   | { step: 'reverted'; mergeOid: string; revertOid: string }
   | { step: 'merged'; mergeOid: string }
-  | { step: 'escalated'; reason: 'conflict' | 'post-merge-red'; message: string };
+  | { step: 'checkout-synced'; mergeOid: string; mergedPaths: string[]; keptPaths: string[]; error?: string }
+  | { step: 'retired'; branch: string; baseBranch: string }
+  | { step: 'completed-in-place'; baseBranch: string; leftBranch?: string }
+  | { step: 'reconciled'; fromBase: string; toBase: string; mergeOid: string }
+  | { step: 'rebuilding'; fromBase: string; toBase: string; paths: string[] }
+  // 'target-advanced' is kept here only to read pre-ADR-0040 persisted rows;
+  // nothing emits it anymore (see MergePolicyOutcome, which never produces it).
+  | { step: 'escalated'; reason: 'conflict' | 'post-merge-red' | 'target-advanced'; message: string };
 
 function emitStep(deps: MergePolicyDeps, event: MergeStepEvent): void {
   try {
@@ -61,17 +74,17 @@ function emitStep(deps: MergePolicyDeps, event: MergeStepEvent): void {
 }
 
 export interface MergePolicyInput {
-  baseDir: string; // base checkout: baseBranch is its HEAD; merge/revert happen here; its repo identity is the mutex key
+  baseDir: string; // persistent repository checkout: its repo identity is the mutex key and it owns baseBranch
   baseBranch: string;
   taskBranch: string;
   conflictResolveTurns: number; // bounded agentic resolve turns; 0 => escalate on first conflict
-  postMergeCheck: boolean; // run the post-merge deterministic check under the mutex
+  postMergeCheck: boolean; // run the post-merge deterministic check in the isolated worktree
   spanAttributes?: Record<string, string | number | boolean>; // extra attributes for the merge span (e.g. run.id)
 }
 
 export type MergePolicyOutcome =
   | { kind: 'merged'; mergeOid: string }
-  | { kind: 'escalated'; reason: 'conflict' | 'post-merge-red'; message: string; revertOid?: string };
+  | { kind: 'escalated'; reason: 'conflict' | 'post-merge-red'; message: string };
 
 function conflictMessage(taskBranch: string, baseBranch: string, conflictResolveTurns: number): string {
   if (conflictResolveTurns === 0) {
@@ -82,11 +95,19 @@ function conflictMessage(taskBranch: string, baseBranch: string, conflictResolve
 }
 
 function postMergeRedMessage(taskBranch: string, baseBranch: string, output: string): string {
-  return `The post-merge check on ${baseBranch} failed after merging ${taskBranch}; the merge was reverted so the base stays green.\n\nFailing output:\n${output}`;
+  return `The post-merge check on ${baseBranch} failed after merging ${taskBranch}; the merge was discarded and the base is unchanged.\n\nFailing output:\n${output}`;
+}
+
+function reconcileConflictMessage(taskBranch: string, baseBranch: string, rebuilds: number): string {
+  return `Merging ${taskBranch} into ${baseBranch} kept conflicting with changes arriving on ${baseBranch} (rebuilt ${rebuilds} times); a human needs to resolve them.`;
+}
+
+function unsupportedGitMessage(taskBranch: string, baseBranch: string, rebuilds: number): string {
+  return `Merging ${taskBranch} into ${baseBranch} could not be reconciled after ${rebuilds} rebuilds because this git is older than 2.38 and has no \`merge-tree --write-tree\` to reconcile a moved base without rebuilding each time; upgrade git to 2.38 or newer.`;
 }
 
 async function escalateConflict(input: MergePolicyInput): Promise<MergePolicyOutcome> {
-  await withRepoLock(input.baseDir, () => Git.abortMerge(input.baseDir));
+  await Git.abortMerge(input.baseDir);
   const message = conflictMessage(input.taskBranch, input.baseBranch, input.conflictResolveTurns);
   return { kind: 'escalated', reason: 'conflict', message };
 }
@@ -96,7 +117,7 @@ async function resolveConflict(
   deps: MergePolicyDeps,
 ): Promise<{ mergeOid: string } | { escalated: true }> {
   for (let turn = 1; turn <= input.conflictResolveTurns; turn++) {
-    const unmerged = await withRepoLock(input.baseDir, () => Git.unmergedPaths(input.baseDir));
+    const unmerged = await Git.unmergedPaths(input.baseDir);
     if (unmerged.length === 0) break;
 
     const turnOp = startActiveChildOperation('merge.resolve', {
@@ -119,25 +140,19 @@ async function resolveConflict(
       turnOp?.end();
     }
 
-    const settled = await withRepoLock(
-      input.baseDir,
-      async (): Promise<{ mergeOid: string } | 'remain' | 'failed'> => {
-        const stillUnmerged = await Git.unmergedPaths(input.baseDir);
-        if (stillUnmerged.length > 0) {
-          logger.warn('merge: conflicts remain after resolve turn', {
-            'merge.turn': turn,
-            'merge.unmerged_count': stillUnmerged.length,
-          });
-          return 'remain';
-        }
-        const done = await Git.completeMerge(input.baseDir);
-        if (done.ok) {
-          logger.info('merge: completed after resolution', { 'merge.turn': turn, 'merge.oid': done.mergeOid });
-          return { mergeOid: done.mergeOid };
-        }
-        return 'failed';
-      },
-    );
+    const stillUnmerged = await Git.unmergedPaths(input.baseDir);
+    const settled: { mergeOid: string } | 'remain' | 'failed' = stillUnmerged.length > 0
+      ? 'remain'
+      : await Git.completeMerge(input.baseDir).then((done) => (done.ok ? { mergeOid: done.mergeOid } : 'failed'));
+    if (settled === 'remain') {
+      logger.warn('merge: conflicts remain after resolve turn', {
+        'merge.turn': turn,
+        'merge.unmerged_count': stillUnmerged.length,
+      });
+    }
+    if (typeof settled === 'object') {
+      logger.info('merge: completed after resolution', { 'merge.turn': turn, 'merge.oid': settled.mergeOid });
+    }
     if (typeof settled === 'object') return settled;
     if (settled === 'failed') break;
   }
@@ -145,91 +160,174 @@ async function resolveConflict(
 }
 
 async function criticalSection(input: MergePolicyInput, deps: MergePolicyDeps): Promise<MergePolicyOutcome> {
-  const parkedBranch = await Git.currentBranch(input.baseDir).catch((err) => {
-    logger.debug('merge: resolving the currently parked branch failed', {
-      'merge.repo': input.baseDir,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return null;
-  });
-  try {
-    const started = await withRepoLock(
-      input.baseDir,
-      async (): Promise<{ mergeOid: string } | { conflict: true; paths: string[] }> => {
-        if (parkedBranch !== input.baseBranch) {
-          logger.info('merge: checking out base branch', { 'merge.base_branch': input.baseBranch });
-          await Git.checkout(input.baseDir, input.baseBranch);
-        }
-        const merge = await Git.mergeNoFf(input.baseDir, input.taskBranch);
-        if (merge.ok) return { mergeOid: merge.mergeOid };
-        if (merge.conflict) {
-          const paths = await Git.unmergedPaths(input.baseDir);
-          logger.warn('merge: conflicts detected', { 'merge.task_branch': input.taskBranch, 'merge.unmerged_count': paths.length });
-          return { conflict: true, paths };
-        }
-        throw new Error(merge.detail);
-      },
-    );
+  const merge = await Git.mergeNoFf(input.baseDir, input.taskBranch);
+  if (!merge.ok && !merge.conflict) throw new Error(merge.detail);
+  const started: { mergeOid: string } | { conflict: true; paths: string[] } = merge.ok
+    ? { mergeOid: merge.mergeOid }
+    : { conflict: true, paths: await Git.unmergedPaths(input.baseDir) };
+  if ('conflict' in started) {
+    logger.warn('merge: conflicts detected', { 'merge.task_branch': input.taskBranch, 'merge.unmerged_count': started.paths.length });
+  }
 
-    let mergeOid: string;
-    if ('mergeOid' in started) {
-      mergeOid = started.mergeOid;
-    } else {
-      emitStep(deps, { step: 'conflict', paths: started.paths });
-      const resolved = await resolveConflict(input, deps);
-      if ('escalated' in resolved) return escalateConflict(input);
-      mergeOid = resolved.mergeOid;
+  let mergeOid: string;
+  if ('mergeOid' in started) {
+    mergeOid = started.mergeOid;
+  } else {
+    emitStep(deps, { step: 'conflict', paths: started.paths });
+    const resolved = await resolveConflict(input, deps);
+    if ('escalated' in resolved) return escalateConflict(input);
+    mergeOid = resolved.mergeOid;
+  }
+
+  if (input.postMergeCheck) {
+    const checkOp = startActiveChildOperation('merge.post-check', { 'merge.oid': mergeOid });
+    logger.info('merge: running post-merge check', { 'merge.oid': mergeOid });
+    const check = await within(checkOp, () => deps.runPostMergeCheck(mergeOid, input.baseDir));
+    checkOp?.update({ 'merge.post_check_pass': check.pass });
+    checkOp?.end();
+    if (!check.pass) {
+      logger.warn('merge: post-merge check failed; discarding isolated merge', { 'merge.oid': mergeOid });
+      const message = postMergeRedMessage(input.taskBranch, input.baseBranch, check.output);
+      return { kind: 'escalated', reason: 'post-merge-red', message };
     }
+    emitStep(deps, { step: 'post-check-passed', mergeOid });
+  } else {
+    emitStep(deps, { step: 'post-check-skipped', mergeOid });
+  }
 
-    if (input.postMergeCheck) {
-      const checkOp = startActiveChildOperation('merge.post-check', { 'merge.oid': mergeOid });
-      logger.info('merge: running post-merge check', { 'merge.oid': mergeOid });
-      const check = await within(checkOp, () => deps.runPostMergeCheck(mergeOid, input.baseDir));
-      checkOp?.update({ 'merge.post_check_pass': check.pass });
-      checkOp?.end();
-      if (!check.pass) {
-        logger.warn('merge: post-merge check failed; reverting', { 'merge.oid': mergeOid });
-        const revertOid = await withRepoLock(input.baseDir, () => Git.revertMergeCommit(input.baseDir, mergeOid));
-        const message = postMergeRedMessage(input.taskBranch, input.baseBranch, check.output);
-        logger.warn('merge: reverted to keep base green', { 'merge.revert_oid': revertOid });
-        emitStep(deps, { step: 'reverted', mergeOid, revertOid });
-        return { kind: 'escalated', reason: 'post-merge-red', message, revertOid };
+  return { kind: 'merged', mergeOid };
+}
+
+type PublishResult =
+  | { kind: 'published'; mergeOid: string }
+  | { kind: 'reconcile-conflict'; currentTip: string; paths: string[]; unsupported: boolean }
+  | { kind: 'write-failed'; detail: string };
+
+/**
+ * Publish `mergeOid` (built off `snapshotOid`) onto the base branch. Runs
+ * under the base-checkout lock. When the current tip has not moved, publishes
+ * `mergeOid` directly; when it has, reconciles onto it (ADR-0040) rather than
+ * asserting the snapshot is still current. `casUpdateRef`'s old-value is only
+ * ever the tip THIS iteration just read, so a miss (a writer outside the
+ * lock — the operator, direct mode) never rejects: it re-reads the tip and
+ * reconciles the ORIGINAL build onto it again, unbounded.
+ */
+async function publish(input: MergePolicyInput, deps: MergePolicyDeps, mergeOid: string, snapshotOid: string): Promise<PublishResult> {
+  for (;;) {
+    const tip = await Git.revParse(input.baseDir, input.baseBranch);
+    let toPublish: string;
+    if (tip === snapshotOid) {
+      toPublish = mergeOid;
+    } else {
+      const reconciled = await Git.reconcileMerge(input.baseDir, tip, mergeOid);
+      if (!reconciled.ok) {
+        return {
+          kind: 'reconcile-conflict',
+          currentTip: tip,
+          paths: 'paths' in reconciled ? reconciled.paths : [],
+          unsupported: 'unsupported' in reconciled,
+        };
       }
-      emitStep(deps, { step: 'post-check-passed', mergeOid });
-    } else {
-      emitStep(deps, { step: 'post-check-skipped', mergeOid });
+      toPublish = reconciled.mergeOid;
     }
 
-    return { kind: 'merged', mergeOid };
-  } finally {
-    if (parkedBranch && parkedBranch !== input.baseBranch) {
-      await withRepoLock(input.baseDir, () =>
-        Git.checkout(input.baseDir, parkedBranch).catch((err) => {
-          logger.warn('merge: restoring the parked branch after merging failed; checkout left on the base branch', {
-            'merge.repo': input.baseDir,
-            'merge.parked_branch': parkedBranch,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }),
-      );
+    const checkoutDir = await Git.branchCheckedOutAt(input.baseDir, input.baseBranch);
+    const dirtyPaths = checkoutDir !== null ? await captureDirtyPaths(checkoutDir) : null;
+    const cas = await Git.casUpdateRef(input.baseDir, input.baseBranch, toPublish, tip);
+    if (!cas.ok) {
+      const tipAfter = await Git.revParse(input.baseDir, input.baseBranch);
+      if (tipAfter !== tip) {
+        logger.warn('merge: lost the publish race to a writer outside the lock; re-reading the tip and reconciling again', {
+          'merge.repo': input.baseDir,
+          'merge.base_branch': input.baseBranch,
+        });
+        continue;
+      }
+      return { kind: 'write-failed', detail: cas.detail ?? 'update-ref failed' };
     }
+
+    if (tip !== snapshotOid) emitStep(deps, { step: 'reconciled', fromBase: snapshotOid, toBase: tip, mergeOid: toPublish });
+
+    if (checkoutDir !== null) {
+      try {
+        const sync = await syncBaseCheckout(checkoutDir, dirtyPaths!, tip, toPublish);
+        emitStep(deps, { step: 'checkout-synced', mergeOid: toPublish, mergedPaths: sync.mergedPaths, keptPaths: sync.keptPaths });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.warn('merge: syncing the base checkout after a successful merge failed', {
+          'merge.repo': input.baseDir,
+          'merge.oid': toPublish,
+          error: message,
+        });
+        emitStep(deps, { step: 'checkout-synced', mergeOid: toPublish, mergedPaths: [], keptPaths: [], error: message });
+      }
+    }
+
+    return { kind: 'published', mergeOid: toPublish };
   }
 }
 
 async function mergeUnderLock(input: MergePolicyInput, deps: MergePolicyDeps): Promise<MergePolicyOutcome> {
-  const waitOp = startActiveChildOperation('merge.lock-wait', { 'merge.repo': input.baseDir });
-  logger.debug('merge: awaiting base checkout lock', { 'merge.repo': input.baseDir });
-  return withBaseCheckoutLock(input.baseDir, async (): Promise<MergePolicyOutcome> => {
-    waitOp?.end();
-    logger.debug('merge: base checkout lock acquired', { 'merge.repo': input.baseDir });
-    const holdOp = startActiveChildOperation('merge.lock-hold', { 'merge.repo': input.baseDir });
-    try {
-      return await within(holdOp, () => criticalSection(input, deps));
-    } finally {
-      holdOp?.end();
-      logger.debug('merge: base checkout lock released', { 'merge.repo': input.baseDir });
+  let baseTipOid = await Git.revParse(input.baseDir, input.baseBranch);
+  let reconcileRebuilds = 0;
+  let unsupportedRebuilds = 0;
+
+  for (;;) {
+    const built = await withEphemeralMergeWorktree(
+      {
+        repoDir: input.baseDir,
+        baseTipOid,
+        onRemoveError: ({ error, worktreeDir: adminPath }) => {
+          logger.warn('merge: removing the isolated worktree failed', {
+            'merge.repo': input.baseDir,
+            'merge.admin_path': adminPath,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        },
+      },
+      (adminPath) => criticalSection({ ...input, baseDir: adminPath }, deps),
+    );
+    if (built.kind === 'escalated') return built;
+
+    const waitOp = startActiveChildOperation('merge.lock-wait', { 'merge.repo': input.baseDir });
+    logger.debug('merge: awaiting base checkout lock', { 'merge.repo': input.baseDir });
+    const published = await withBaseCheckoutLock(input.baseDir, async (): Promise<PublishResult> => {
+      waitOp?.end();
+      logger.debug('merge: base checkout lock acquired', { 'merge.repo': input.baseDir });
+      const holdOp = startActiveChildOperation('merge.lock-hold', { 'merge.repo': input.baseDir });
+      try {
+        return await within(holdOp, () => publish(input, deps, built.mergeOid, baseTipOid));
+      } finally {
+        holdOp?.end();
+        logger.debug('merge: base checkout lock released', { 'merge.repo': input.baseDir });
+      }
+    });
+    if (published.kind === 'published') return { kind: 'merged', mergeOid: published.mergeOid };
+
+    if (published.kind === 'write-failed') {
+      return { kind: 'escalated', reason: 'conflict', message: `Couldn't update ${input.baseBranch}: ${published.detail}` };
     }
-  });
+
+    emitStep(deps, { step: 'rebuilding', fromBase: baseTipOid, toBase: published.currentTip, paths: published.paths });
+    logger.warn('merge: reconcile conflict; rebuilding onto the new base tip', {
+      'merge.repo': input.baseDir,
+      'merge.base_branch': input.baseBranch,
+      'merge.unsupported': published.unsupported,
+    });
+
+    if (published.unsupported) {
+      unsupportedRebuilds++;
+      if (unsupportedRebuilds > UNSUPPORTED_GIT_MAX_REBUILDS) {
+        return { kind: 'escalated', reason: 'conflict', message: unsupportedGitMessage(input.taskBranch, input.baseBranch, UNSUPPORTED_GIT_MAX_REBUILDS) };
+      }
+    } else {
+      reconcileRebuilds++;
+      if (reconcileRebuilds > MAX_RECONCILE_REBUILDS) {
+        return { kind: 'escalated', reason: 'conflict', message: reconcileConflictMessage(input.taskBranch, input.baseBranch, MAX_RECONCILE_REBUILDS) };
+      }
+    }
+    baseTipOid = published.currentTip;
+  }
 }
 
 export async function runMergePolicy(input: MergePolicyInput, deps: MergePolicyDeps): Promise<MergePolicyOutcome> {

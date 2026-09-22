@@ -28,6 +28,15 @@ export interface RunnerEvents {
   /** Fired after each Epic integration-merge step is persisted, so the Epic's
    * merge progress can follow live (Epics have no Attempt row to stream). */
   onEpicMergeStep?: (payload: { workspaceId: number; epicRef: number }) => void;
+  /** Fired after a Task-level lifecycle event (no owning Attempt) is
+   * persisted, so the ticket timeline can follow live. */
+  onTaskEvent?: (taskId: number) => void;
+}
+
+/** The minimum {@link TaskEventStore} surface a git-visibility writer needs to
+ * append a row with no owning Attempt. */
+export interface TaskEventAppender {
+  appendEvent(taskId: number, payload: unknown): Promise<unknown>;
 }
 
 export interface RunnerOptions {
@@ -87,6 +96,10 @@ export interface RunnerOptions {
    * to spawn such an Attempt (a `DomainError`). Absent → not gated. */
   epicBaseNotReady?: (task: TaskRow) => boolean | Promise<boolean>;
   postMerge?: PostMergeHook;
+  /** Task-level lifecycle log for a git side effect with no owning Attempt
+   * (an operator-Close cleanup on a Task that never spawned one). Absent →
+   * that cleanup still happens, just unobserved. */
+  taskEvents?: TaskEventAppender;
 }
 
 export interface Workspace {

@@ -37,6 +37,24 @@ async function gitEnv(cwd: string, env: Record<string, string>, ...args: string[
   }
 }
 
+/** Like {@link git}, but never `.trim()`s stdout — required for `-z` porcelain
+ * output, whose first record can legitimately start with a space (a blank
+ * index-status column), which `.trim()` would silently eat and misalign every
+ * `slice()` offset downstream. */
+async function gitUntrimmed(cwd: string, args: string[]): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', cwd, ...args], {
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: GIT_TIMEOUT_MS,
+      killSignal: 'SIGKILL',
+    });
+    return stdout;
+  } catch (err: any) {
+    const output = [err.stderr?.trim(), err.stdout?.trim()].filter(Boolean).join('\n');
+    throw new GitError(`git ${args.join(' ')} failed: ${output || err.message}`, err.stderr ?? '');
+  }
+}
+
 function failureReason(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -94,6 +112,20 @@ function warnOnceIfMergeTreeUnsupported(err: unknown): void {
   );
 }
 
+function isMergeTreeUnsupportedError(stderr: string): boolean {
+  return /write-tree/.test(stderr) && /unknown option|unknown switch|usage:|not a git command/i.test(stderr);
+}
+
+let warnedReconcileMergeUnsupported = false;
+function warnOnceIfReconcileMergeUnsupported(): void {
+  if (warnedReconcileMergeUnsupported) return;
+  warnedReconcileMergeUnsupported = true;
+  process.emitWarning(
+    'git is older than 2.38 (no `merge-tree --write-tree`): reconciling a moved base by rebuilding the merge instead (ADR-0040).',
+    { code: 'HARMONIC_GIT_TOO_OLD' },
+  );
+}
+
 export const Git = {
   currentBranch: (dir: string) => git(dir, 'rev-parse', '--abbrev-ref', 'HEAD'),
 
@@ -121,7 +153,7 @@ export const Git = {
 
   /** Paths whose working-tree changes a forced cleanup would discard. */
   async dirtyFiles(dir: string): Promise<string[]> {
-    const records = (await git(dir, 'status', '--porcelain', '-z')).split('\0');
+    const records = (await gitUntrimmed(dir, ['status', '--porcelain', '-z'])).split('\0');
     const files: string[] = [];
     for (let index = 0; index < records.length - 1; index += 1) {
       const record = records[index]!;
@@ -426,28 +458,32 @@ export const Git = {
     }
   },
 
-  /** Snapshot everything in the worktree onto its branch; no-op when clean. */
-  async commitAll(worktreePath: string, message: string): Promise<void> {
+  /** Snapshot everything in the worktree onto its branch; no-op when clean.
+   * Returns the new HEAD oid, or `null` when nothing was committed. */
+  async commitAll(worktreePath: string, message: string): Promise<string | null> {
     await git(worktreePath, 'add', '-A');
     const status = await git(worktreePath, 'status', '--porcelain');
-    if (status.length === 0) return;
+    if (status.length === 0) return null;
     await git(worktreePath, ...IDENTITY, 'commit', '-m', message);
+    return git(worktreePath, 'rev-parse', 'HEAD');
   },
 
   /** Stage only `paths` and commit them onto the checkout's current branch; no-op
    * when they introduce no staged change (so re-closing an already-closed ticket
    * commits nothing). Unlike {@link commitAll} this never sweeps up unrelated
-   * working-tree changes. */
-  async commitPaths(dir: string, paths: string[], message: string): Promise<void> {
-    if (paths.length === 0) return;
+   * working-tree changes. Returns the new HEAD oid, or `null` when nothing was
+   * committed. */
+  async commitPaths(dir: string, paths: string[], message: string): Promise<string | null> {
+    if (paths.length === 0) return null;
     await git(dir, 'add', '--', ...paths);
     try {
       await git(dir, 'diff', '--cached', '--quiet');
-      return;
+      return null;
     } catch {
       // A non-zero exit means there are staged changes to commit.
     }
     await git(dir, ...IDENTITY, 'commit', '-m', message);
+    return git(dir, 'rev-parse', 'HEAD');
   },
 
   stage: (dir: string, paths: string[]) =>
@@ -631,6 +667,53 @@ export const Git = {
     } catch (err) {
       return { ok: false, detail: err instanceof GitError ? err.message : String(err) };
     }
+  },
+
+  /**
+   * Reconcile a merge `builtOid` (built off a snapshot `builtOid^1`) onto a
+   * base that has since moved to `tipOid`, without re-running the agentic
+   * build: `git merge-tree --write-tree` treats `builtOid^1` as the merge
+   * base of `tipOid` and `builtOid`, so the resulting tree is `tipOid` plus
+   * exactly what the build changed (including any conflict resolutions
+   * already baked into `builtOid`'s tree). The new commit's parents are
+   * `tipOid` (the live base) and `builtOid^2` (the task tip) — never
+   * `builtOid` itself, which would make the discarded build an ancestor.
+   * `{ ok: false, unsupported: true }` on git < 2.38 (no `--write-tree`);
+   * `{ ok: false, paths }` on a real reconcile conflict OR a base that
+   * rewound past the build's snapshot (paths empty in the rewind case).
+   * Never throws.
+   */
+  async reconcileMerge(
+    dir: string,
+    tipOid: string,
+    builtOid: string,
+  ): Promise<{ ok: true; mergeOid: string } | { ok: false; paths: string[] } | { ok: false; unsupported: true }> {
+    return withGitOperation('git.reconcile', { 'git.ref': tipOid }, async () => {
+      const snapshotOid = await git(dir, 'rev-parse', `${builtOid}^1`);
+      if (!(await Git.isAncestor(dir, tipOid, snapshotOid))) return { ok: false, paths: [] };
+      try {
+        const { stdout } = await execFileAsync(
+          'git',
+          ['-C', dir, 'merge-tree', '--write-tree', '--name-only', '--no-messages', tipOid, builtOid],
+          { maxBuffer: 10 * 1024 * 1024, timeout: GIT_TIMEOUT_MS, killSignal: 'SIGKILL' },
+        );
+        const treeOid = stdout.split('\n', 1)[0]?.trim();
+        if (!treeOid) return { ok: false, paths: [] };
+        const taskTip = await git(dir, 'rev-parse', `${builtOid}^2`);
+        const message = await git(dir, 'log', '-1', '--format=%B', builtOid);
+        const mergeOid = await git(dir, ...IDENTITY, 'commit-tree', treeOid, '-p', tipOid, '-p', taskTip, '-m', message);
+        return { ok: true, mergeOid };
+      } catch (err: any) {
+        const stderr = String(err?.stderr ?? '');
+        if (isMergeTreeUnsupportedError(stderr)) {
+          warnOnceIfReconcileMergeUnsupported();
+          return { ok: false, unsupported: true };
+        }
+        const stdout = String(err?.stdout ?? '');
+        const paths = stdout.split('\n').slice(1).map((line) => line.trim()).filter(Boolean);
+        return { ok: false, paths };
+      }
+    });
   },
 
   /**
@@ -838,5 +921,110 @@ export const Git = {
       await git(worktreeDir, ...IDENTITY, 'revert', '-m', '1', '--no-edit', mergeOid);
       return Git.revParse(worktreeDir, 'HEAD');
     });
+  },
+
+  /** Every dirty path (staged, unstaged, untracked, each file individually)
+   * `git status --porcelain=v1 -z --untracked-files=all` reports at `dir`. A
+   * rename/copy record contributes both its old and new path. */
+  async dirtyPathsSnapshot(dir: string): Promise<Set<string>> {
+    const out = await gitUntrimmed(dir, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
+    const records = out.split('\0');
+    const paths = new Set<string>();
+    for (let i = 0; i < records.length; i++) {
+      const record = records[i];
+      if (!record) continue;
+      paths.add(record.slice(3));
+      if (record[0] === 'R' || record[0] === 'C') {
+        const orig = records[++i];
+        if (orig) paths.add(orig);
+      }
+    }
+    return paths;
+  },
+
+  /** Per-path `A`/`M`/`D` status between two commit-ish revisions, straight
+   * from the object store (`--no-renames`, so a rename never hides as one
+   * combined record). Works without a checkout of either revision. */
+  async changedPaths(dir: string, oldRev: string, newRev: string): Promise<Array<{ status: 'A' | 'M' | 'D'; path: string }>> {
+    const out = await git(dir, 'diff', '--name-status', '--no-renames', '-z', oldRev, newRev);
+    const records = out.split('\0').filter((record) => record.length > 0);
+    const result: Array<{ status: 'A' | 'M' | 'D'; path: string }> = [];
+    for (let i = 0; i < records.length; i += 2) {
+      const status = records[i]!.charAt(0) as 'A' | 'M' | 'D';
+      const path = records[i + 1];
+      if (path) result.push({ status, path });
+    }
+    return result;
+  },
+
+  /** The tree entry for `path` at `rev` — its mode (`100644`/`100755` regular,
+   * `120000` symlink, `160000` gitlink) and blob/tree oid — or `null` when
+   * `path` does not exist at `rev`. */
+  async lsTreeEntry(dir: string, rev: string, path: string): Promise<{ mode: string; oid: string } | null> {
+    const out = await git(dir, 'ls-tree', '-z', rev, '--', `:(literal)${path}`);
+    const record = out.split('\0').find((r) => r.length > 0);
+    if (!record) return null;
+    const meta = record.slice(0, record.indexOf('\t')).split(' ');
+    const mode = meta[0];
+    const oid = meta[2];
+    return mode && oid ? { mode, oid } : null;
+  },
+
+  /** Raw bytes of blob `oid` (`git cat-file -p`), unlike the string-returning
+   * helpers above — safe for binary content. */
+  async blobBytes(dir: string, oid: string): Promise<Buffer> {
+    const { stdout } = await execFileAsync('git', ['-C', dir, 'cat-file', '-p', oid], {
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: GIT_TIMEOUT_MS,
+      killSignal: 'SIGKILL',
+      encoding: 'buffer',
+    });
+    return stdout as unknown as Buffer;
+  },
+
+  /** Update the index AND working tree for `paths` to their content at `rev`
+   * (`git checkout <rev> -- <paths>`), batched to keep argv bounded. Unlike
+   * {@link checkoutForce} this never touches paths outside the given list. */
+  async checkoutPathsFromRev(dir: string, rev: string, paths: string[]): Promise<void> {
+    const CHUNK = 200;
+    for (let i = 0; i < paths.length; i += CHUNK) {
+      await git(dir, 'checkout', rev, '--', ...literalPaths(paths.slice(i, i + CHUNK)));
+    }
+  },
+
+  /** Remove `paths` from the index AND working tree (`git rm -q`), batched to
+   * keep argv bounded. */
+  async removePaths(dir: string, paths: string[]): Promise<void> {
+    const CHUNK = 200;
+    for (let i = 0; i < paths.length; i += CHUNK) {
+      await git(dir, 'rm', '-q', '--', ...literalPaths(paths.slice(i, i + CHUNK)));
+    }
+  },
+
+  /** Point the index entry for `path` at blob `oid` with mode `mode`
+   * (`git update-index --add --cacheinfo`) WITHOUT touching the working tree. */
+  setIndexBlob: (dir: string, path: string, mode: string, oid: string) =>
+    git(dir, 'update-index', '--add', '--cacheinfo', `${mode},${oid},${path}`),
+
+  /** Remove `path` from the index only (`git update-index --force-remove`),
+   * leaving whatever is on disk at `path` untouched. */
+  removeIndexEntry: (dir: string, path: string) => git(dir, 'update-index', '--force-remove', '--', path),
+
+  /** A three-way textual merge of `oursPath` against `basePath` and
+   * `theirsPath` (`git merge-file -p`), printed rather than written in place.
+   * `ok: false` on any conflict; nothing is ever written by this call. */
+  async mergeFileResult(oursPath: string, basePath: string, theirsPath: string): Promise<{ ok: true; content: Buffer } | { ok: false }> {
+    try {
+      const { stdout } = await execFileAsync('git', ['merge-file', '-p', oursPath, basePath, theirsPath], {
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: GIT_TIMEOUT_MS,
+        killSignal: 'SIGKILL',
+        encoding: 'buffer',
+      });
+      return { ok: true, content: stdout as unknown as Buffer };
+    } catch (err: any) {
+      if (typeof err.code === 'number') return { ok: false };
+      throw new GitError(`git merge-file failed: ${err.message}`, '');
+    }
   },
 };

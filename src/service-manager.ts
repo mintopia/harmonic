@@ -1,12 +1,17 @@
 import { execFile } from 'node:child_process';
 import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
-import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { z } from 'zod';
 
 const execFileAsync = promisify(execFile);
+const packageVersionSchema = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/);
+const packageManifest = z.object({ version: packageVersionSchema });
+const packageVersion = (): string => {
+  return packageManifest.parse(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))).version;
+};
 
 export type ServiceBackend = 'systemd' | 'init.d' | 'user-systemd' | 'self-managed';
 
@@ -65,7 +70,7 @@ interface CommandResult {
 
 export interface ServiceManagerDependencies {
   nodePath: string;
-  cliPath: string;
+  currentVersion: string;
   path: string;
   homeDir: string;
   userName: string;
@@ -81,7 +86,7 @@ export interface ServiceManagerDependencies {
 
 const defaultDependencies = (): ServiceManagerDependencies => ({
   nodePath: process.execPath,
-  cliPath: resolve(process.argv[1] ?? fileURLToPath(new URL('./cli.js', import.meta.url))),
+  currentVersion: packageVersion(),
   path: process.env.PATH ?? '',
   homeDir: homedir(),
   userName: userInfo().username,
@@ -194,7 +199,7 @@ class SystemdServiceManager implements ServiceManager {
   private unit(serve: ServiceServeOptions, user?: string): string {
     const args = [
       this.dependencies.nodePath,
-      this.dependencies.cliPath,
+      join(serve.dataDir, 'app', 'current', 'dist', 'cli.js'),
       'serve',
       '--port', serve.port,
       '--host', serve.host,
@@ -224,6 +229,15 @@ class SystemdServiceManager implements ServiceManager {
     if (this.userUnit && options.user !== undefined) warn(this.dependencies, '--user is ignored for user-level systemd.');
     if (this.userUnit) await this.dependencies.run('loginctl', ['enable-linger', this.dependencies.userName]);
     await ensureDataDir(this.dependencies, options.serve.dataDir, user);
+    const appDir = join(options.serve.dataDir, 'app');
+    const version = packageVersionSchema.parse(this.dependencies.currentVersion);
+    const versionDir = join(appDir, 'versions', version);
+    await this.dependencies.mkdir(versionDir);
+    await this.dependencies.run('npm', ['pack', '--pack-destination', versionDir, `@mintopia/harmonic@${version}`]);
+    await this.dependencies.run('tar', ['-xzf', join(versionDir, `mintopia-harmonic-${version}.tgz`), '--strip-components=1', '-C', versionDir]);
+    await this.dependencies.run('npm', ['i', '--prefix', versionDir, '--omit=dev']);
+    if (user !== undefined) await this.dependencies.run('chown', ['-R', user, appDir]);
+    await this.dependencies.run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
     await this.dependencies.mkdir(this.unitDirectory);
     if (options.serve.password === undefined) {
       await this.dependencies.removeFile(this.environmentPath);

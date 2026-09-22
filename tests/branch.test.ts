@@ -3,8 +3,9 @@ import { type AttemptRow, type TaskRow } from '../src/db/schema.js';
 import { defaultBranchPostMerge, mergeIntoBase, mergeIntoBaseAndRunPostMerge, resolveRepositoryDefaultBranch } from '../src/execution/branch-merge.js';
 import { BranchRetirementCoordinator, type BranchRetirementGit } from '../src/execution/branch-retirement.js';
 import { Git } from '../src/execution/git.js';
+import { withEphemeralMergeWorktree } from '../src/execution/ephemeral-merge-worktree.js';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -85,6 +86,17 @@ describe('branch-retirement', () => {
 
       expect(branchGit.isContentContained).toHaveBeenCalledWith('/repo', 'develop', 'harmonic/task-2-run-1');
       expect(branchGit.deleteBranch).toHaveBeenCalledWith('/repo', 'harmonic/task-2-run-1');
+    });
+
+    it('notifies the Epic lifecycle only after retiring its integration branch', async () => {
+      const branchGit = git();
+      const onRetired = vi.fn(async () => {});
+      const coordinator = new BranchRetirementCoordinator({ listAll: async () => [] }, { get: async () => task }, branchGit);
+
+      await coordinator.retireEpic('/repo', 'epic/42', 'develop', onRetired);
+
+      expect(branchGit.deleteBranch).toHaveBeenCalledWith('/repo', 'epic/42');
+      expect(onRetired).toHaveBeenCalledOnce();
     });
 
     it('retires a drifted branch after equivalent content merges under another SHA', async () => {
@@ -185,6 +197,72 @@ describe('branch-retirement', () => {
       expect(branchGit.deleteBranch).not.toHaveBeenCalledWith('/repo', 'harmonic/task-2-run-2');
     });
   });
+
+  describe('BranchRetirementCoordinator git-visibility events', () => {
+    it('records branch-deleted on the settled Attempt when the branch is retired', async () => {
+      const branchGit = git();
+      const recorded: [number, Record<string, unknown>][] = [];
+      const coordinator = new BranchRetirementCoordinator(
+        { listAll: async () => [] },
+        { get: async () => task },
+        branchGit,
+        undefined,
+        (attemptId, payload) => recorded.push([attemptId, payload]),
+      );
+
+      await coordinator.onAttemptSettled(task, run());
+
+      expect(recorded).toEqual([[1, { event: 'branch-deleted', branch: 'harmonic/task-2-run-1', containedIn: 'develop' }]]);
+    });
+
+    it('records branch-delete-failed when git.deleteBranch throws', async () => {
+      const failing = git({ deleteBranch: vi.fn(async () => { throw new Error('ref lock held'); }) });
+      const recorded: [number, Record<string, unknown>][] = [];
+      const coordinator = new BranchRetirementCoordinator(
+        { listAll: async () => [] },
+        { get: async () => task },
+        failing,
+        undefined,
+        (attemptId, payload) => recorded.push([attemptId, payload]),
+      );
+
+      await coordinator.onAttemptSettled(task, run());
+
+      expect(recorded).toEqual([[1, { event: 'branch-delete-failed', branch: 'harmonic/task-2-run-1', error: 'ref lock held' }]]);
+    });
+
+    it('is silent (kept) when the branch has unmerged content — nothing to observe', async () => {
+      const unmerged = git({ isContentContained: vi.fn(async () => false) });
+      const recorded: unknown[] = [];
+      const coordinator = new BranchRetirementCoordinator(
+        { listAll: async () => [] },
+        { get: async () => task },
+        unmerged,
+        undefined,
+        (attemptId, payload) => recorded.push([attemptId, payload]),
+      );
+
+      await coordinator.onAttemptSettled(task, run());
+
+      expect(recorded).toEqual([]);
+    });
+
+    it('records the backfill event on the Attempt row being retired during boot reconcile, with no live Attempt needed', async () => {
+      const branchGit = git();
+      const recorded: [number, Record<string, unknown>][] = [];
+      const coordinator = new BranchRetirementCoordinator(
+        { listAll: async () => [run()] },
+        { get: async () => task },
+        branchGit,
+        undefined,
+        (attemptId, payload) => recorded.push([attemptId, payload]),
+      );
+
+      await coordinator.reconcile();
+
+      expect(recorded).toEqual([[1, { event: 'branch-deleted', branch: 'harmonic/task-2-run-1', containedIn: 'develop' }]]);
+    });
+  });
 });
 
 describe('branch-merge', () => {
@@ -225,6 +303,25 @@ describe('branch-merge', () => {
   });
 
   describe('branch merging (issue #153)', () => {
+    it('removes an ephemeral merge worktree when its callback fails', async () => {
+      const repo = makeRepo();
+      const parent = tmpPath('harmonic-ephemeral-merge-parent-');
+      let adminPath = '';
+
+      await expect(withEphemeralMergeWorktree(
+        { repoDir: repo, baseTipOid: oid(repo, 'main'), parentDir: parent },
+        async (worktreeDir) => {
+          adminPath = worktreeDir;
+          expect(worktreeCount(repo)).toBe(2);
+          throw new Error('callback failed');
+        },
+      )).rejects.toThrow('callback failed');
+
+      expect(worktreeCount(repo)).toBe(1);
+      expect(existsSync(adminPath)).toBe(false);
+      expect(readdirSync(parent)).toEqual([]);
+    });
+
     it('runs the shared post-merge hook after a successful merge', async () => {
       const repo = makeRepo();
       makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n');

@@ -6,6 +6,17 @@ import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, seedLocalMarkdownTicket, type TestServer } from './helpers.js';
 import { verificationCommandSchema } from '../src/config.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
+import type { CriticHarnessDrive } from '../src/verification/critic.js';
+
+const failingCritic = () => ({
+  taskPreMergeCritics: [
+    {
+      kind: 'local' as const,
+      enabled: true,
+      critic: { id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.', model: 'stub-model', timeoutSeconds: 300 },
+    },
+  ],
+});
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
@@ -122,15 +133,18 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     await server.close();
   });
 
-  it('operator Accept refuses (409) when the base advance conflicts with the candidate, leaving the ticket escalated and nothing merged', async () => {
-    server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 2 });
+  it('Accept-and-Merge refuses (409) when the base advance conflicts with the candidate, leaving the ticket escalated and nothing merged', async () => {
+    // Escalate at the review Step so Accept merges the candidate as-is (ADR-0038),
+    // reaching the base-moved merge where the collision surfaces.
+    const criticDrive: CriticHarnessDrive = { run: async () => ({ output: JSON.stringify({ verdict: 'fail', summary: 'needs work' }), permissionRequests: [] }) };
+    server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 2 }, { criticDrive });
     wsId = (await server.app.ctx.workspaces.list())[0]!.id;
 
     const repo = makeRepo();
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
       conflictResolveTurns: 0,
-      taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-exit-1', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }) }],
+      ...failingCritic(),
     });
 
     const created = await server.api('POST', '/api/tasks', {
@@ -147,7 +161,7 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
 
     const mainTip = advanceMain(repo, 'impl-native.txt', 'someone else changed this\n');
 
-    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`, { force: true });
+    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
     expect(accepted.status).toBe(409);
     const stillEscalated = await server.app.ctx.tasks.get(taskId);
     expect(stillEscalated.state).toBe('escalated');
@@ -157,15 +171,16 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     await server.close();
   });
 
-  it('operator Accept escalates (409) when the post-merge check on the merged base is red, reverting the merge to keep the base green', async () => {
-    server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 2 });
+  it('Accept-and-Merge escalates (409) when the post-merge check on the merged base is red, leaving the base unchanged', async () => {
+    const criticDrive: CriticHarnessDrive = { run: async () => ({ output: JSON.stringify({ verdict: 'fail', summary: 'needs work' }), permissionRequests: [] }) };
+    server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 2 }, { criticDrive });
     wsId = (await server.app.ctx.workspaces.list())[0]!.id;
 
     const repo = makeRepo();
     const redCommand = verificationCommandSchema.parse({ id: 'cmd-exit-1', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 });
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
-      taskPreMergeCommands: [{ kind: 'local', enabled: true, command: redCommand }],
+      ...failingCritic(),
       taskPostMergeCommands: [{ kind: 'local', enabled: true, command: redCommand }],
     });
 
@@ -183,7 +198,7 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
 
     advanceMain(repo, 'other.txt', 'someone else merged\n');
 
-    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`, { force: true });
+    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
     expect(accepted.status).toBe(409);
     expect((await server.app.ctx.tasks.get(taskId)).state).toBe('escalated');
     expect(() => git(repo, 'show', 'main:impl-native.txt')).toThrow();

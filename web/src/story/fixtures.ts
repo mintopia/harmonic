@@ -240,6 +240,7 @@ const boardMember = (o: Partial<EpicMember> & Pick<EpicMember, 'ref'>): EpicMemb
   escalated: false,
   mergeStatus: 'pending',
   ready: false,
+  isolationMode: 'worktree',
   ...o,
 });
 export const boardEpic = {
@@ -266,9 +267,11 @@ export const boardEpic = {
   verification: { status: 'pending', configured: true },
   integrate: { inFlight: false, held: null },
   mergeSteps: [],
+  timelineEvents: [],
   dependsOn: [],
   foldedCount: 2,
   memberCount: 8,
+  inPlace: false,
 } satisfies Epic;
 
 const boardTask = (id: number, state: Task['state'], extra: Partial<Task> = {}): Task => ({
@@ -361,9 +364,11 @@ export const doneEpic = {
   verification: { status: 'pending', configured: true },
   integrate: { inFlight: true, held: null },
   mergeSteps: [],
+  timelineEvents: [],
   dependsOn: [],
   foldedCount: 3,
   memberCount: 3,
+  inPlace: false,
 } satisfies Epic;
 
 export const epic = {
@@ -375,21 +380,23 @@ export const epic = {
     'Surface the per-workspace guardrail ceilings (max attempts, token budget, wall-clock cap) as editable global defaults in Settings.',
   baseBranch: 'develop',
   members: [
-    { ref: 140, title: 'Add the resolveGuardrails() resolver + migration', taskId: 501, state: 'done', escalated: false, mergeStatus: 'completed', ready: false },
-    { ref: 141, title: 'Wire the Settings form to the resolver', taskId: 502, state: 'done', escalated: false, mergeStatus: 'completed', ready: false },
-    { ref: 142, title: 'Per-task override UI + inherit toggle', taskId: 503, state: 'working', escalated: false, mergeStatus: 'pending', ready: true },
-    { ref: 143, title: 'Backfill existing Workspaces onto the new resolver', taskId: 504, state: 'escalated', escalated: true, mergeStatus: 'blocked', ready: false },
+    { ref: 140, title: 'Add the resolveGuardrails() resolver + migration', taskId: 501, state: 'done', escalated: false, mergeStatus: 'completed', ready: false, isolationMode: 'worktree' },
+    { ref: 141, title: 'Wire the Settings form to the resolver', taskId: 502, state: 'done', escalated: false, mergeStatus: 'completed', ready: false, isolationMode: 'worktree' },
+    { ref: 142, title: 'Per-task override UI + inherit toggle', taskId: 503, state: 'working', escalated: false, mergeStatus: 'pending', ready: true, isolationMode: 'worktree' },
+    { ref: 143, title: 'Backfill existing Workspaces onto the new resolver', taskId: 504, state: 'escalated', escalated: true, mergeStatus: 'blocked', ready: false, isolationMode: 'worktree' },
   ],
   ready: [142],
   integration: { branch: 'epic/166', exists: true, tip: 'a1b2c3d' },
   verification: { status: 'pass', configured: true },
   integrate: { inFlight: false, held: 'Whole-Epic verification failed on the last attempt — a command check regressed.' },
   mergeSteps: [],
+  timelineEvents: [],
   dependsOn: [],
   createdAt: E0 - 3 * 24 * 3600_000,
   updatedAt: E0 + emin(230),
   foldedCount: 2,
   memberCount: 4,
+  inPlace: false,
 } satisfies Epic;
 
 const epicOpusUsage = { inputTokens: 612_000, outputTokens: 74_000, cacheReadTokens: 3_100_000, cacheWriteTokens: 460_000 };

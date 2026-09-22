@@ -234,6 +234,7 @@ export class VerificationCoordinator {
     record: LifecycleRecorder,
     parent: SpanContext,
     criticEnabled = true,
+    startAt: 'commands' | 'critics' = 'commands',
   ): Promise<{ decision: VerificationDecision; ran: boolean }> {
     run = await this.deps.attempts.get(run.id);
     const { config, resolvedTask } = await this.resolveTaskVerifiers(task);
@@ -242,7 +243,7 @@ export class VerificationCoordinator {
     const verdicts: VerifierVerdict[] = [];
     const oid = head;
 
-    for (const command of commands) {
+    for (const command of startAt === 'critics' ? [] : commands) {
       if (!oid) {
         verdicts.push(await this.noVerifiedHeadVerdict(task, 'command', record));
       } else {

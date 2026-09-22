@@ -78,8 +78,10 @@ describe('derived-rollup pagination (epics, maps)', () => {
     verification: { status: null, configured: false },
     integrate: { inFlight: false, held: null, phase: null },
     mergeSteps: [],
+    timelineEvents: [],
     foldedCount: 0,
     memberCount: 0,
+    inPlace: false,
   });
 
   const map = (ref: number, workspaceId: number, title = `Map ${ref}`): DerivedMap => ({

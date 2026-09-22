@@ -20,6 +20,7 @@ import {
   type TrackerFacts,
   type TrackerContainerRow,
   type StoredEpicKind,
+  type EpicLifecycleState,
   type EpicRow,
 } from '../db/schema.js';
 import { resolveWorkspace } from './workspaces.js';
@@ -198,13 +199,16 @@ const TERMINAL_STATES: TaskState[] = ['done', 'cancelled'];
  * the reconcile-only edge for a merge that settled its Attempt before the Task
  * reached `done`. A same-state write is an idempotent no-op (e.g. re-escalating
  * to refresh the reason), not a transition, so it is always allowed.
+ * `escalated → working` is the operator-Accept step-advance (ADR-0038): the
+ * ticket runs the remaining pipeline live before settling back to `done` or
+ * `escalated`.
  */
 const LEGAL_TRANSITIONS: Record<TaskState, readonly TaskState[]> = {
   draft: ['ready', 'cancelled'],
   ready: ['working', 'escalated', 'done', 'cancelled'],
   working: ['ready', 'paused', 'escalated', 'done', 'cancelled'],
   paused: ['working', 'cancelled'],
-  escalated: ['ready', 'done', 'cancelled'],
+  escalated: ['ready', 'working', 'done', 'cancelled'],
   done: [],
   cancelled: ['ready'],
 };
@@ -510,8 +514,20 @@ export class TaskService {
     return row?.kind ?? null;
   }
 
+  /** The stored Epic lifecycle `state` for a ref in a Workspace, or null when no spine row exists. */
+  async epicState(workspaceId: number, ref: number): Promise<EpicLifecycleState | null> {
+    const row = await this.db.read((db) =>
+      db
+        .select({ state: epics.state })
+        .from(epics)
+        .where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, ref)))
+        .get(),
+    );
+    return row?.state ?? null;
+  }
+
   /**
-   * Settle a stored Epic's integration snapshot: flip `state` `open`→`integrated`,
+   * Settle a stored Epic's integration snapshot: flip `state` `open` or `integrating`→`integrated`,
    * record `mergeCommit` (null for a no-op finish where the branch already
    * matched base), and snapshot the member refs. Guarded on `state = 'open'` so
    * it is a once-only transition.
@@ -525,6 +541,17 @@ export class TaskService {
       await db
         .update(epics)
         .set({ state: 'integrated', mergeCommit: snapshot.mergeCommit, memberRefs: snapshot.memberRefs })
+        .where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, trackerRef), inArray(epics.state, ['open', 'integrating'] satisfies EpicLifecycleState[])))
+        .run();
+    });
+  }
+
+  /** Mark the durable Epic as passing through its whole-Epic verification and merge gate. */
+  async markEpicIntegrating(workspaceId: number, trackerRef: number): Promise<void> {
+    await this.db.write(async (db) => {
+      await db
+        .update(epics)
+        .set({ state: 'integrating' })
         .where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, trackerRef), eq(epics.state, 'open')))
         .run();
     });

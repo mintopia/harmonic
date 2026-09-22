@@ -30,6 +30,7 @@ const mergedSteps: MergeStepEvent[] = [
   { step: 'resolve-turn', turn: 1, unmergedCount: 2 },
   { step: 'post-check-skipped', mergeOid: '4f7a1c9e2b3d5a6f8091' },
   { step: 'merged', mergeOid: '4f7a1c9e2b3d5a6f8091' },
+  { step: 'checkout-synced', mergeOid: '4f7a1c9e2b3d5a6f8091', mergedPaths: ['src/App.tsx'], keptPaths: ['README.md'] },
 ];
 
 const revertedSteps: MergeStepEvent[] = [
@@ -37,6 +38,22 @@ const revertedSteps: MergeStepEvent[] = [
   { step: 'post-check-passed', mergeOid: 'aa11bb22cc33dd44ee55' },
   { step: 'reverted', mergeOid: '9c8d7e6f5a4b3c2d1e0f', revertOid: '112233445566778899aa' },
   { step: 'escalated', reason: 'post-merge-red', message: 'The post-merge check on develop failed after merging task/schema-sync-rewrite; the merge was reverted so the base stays green.\n\nFailing output:\n  FAIL tests/schema-sync.test.ts > drops a removed column' },
+];
+
+const reconciledSteps: MergeStepEvent[] = [
+  { step: 'started', baseBranch: 'develop', taskBranch: 'task/reconcile-fixture' },
+  { step: 'post-check-passed', mergeOid: '7a1b2c3d4e5f60718293' },
+  { step: 'reconciled', fromBase: 'a1b2c3d4e5f6', toBase: 'b2c3d4e5f6a1', mergeOid: '7a1b2c3d4e5f60718293' },
+  { step: 'checkout-synced', mergeOid: '7a1b2c3d4e5f60718293', mergedPaths: ['src/App.tsx'], keptPaths: [] },
+  { step: 'merged', mergeOid: '7a1b2c3d4e5f60718293' },
+];
+
+const rebuildingSteps: MergeStepEvent[] = [
+  { step: 'started', baseBranch: 'develop', taskBranch: 'task/rebuild-fixture' },
+  { step: 'post-check-passed', mergeOid: '112233445566778899aa' },
+  { step: 'rebuilding', fromBase: 'a1b2c3d4e5f6', toBase: 'c3d4e5f6a1b2', paths: ['src/execution/merge-policy.ts'] },
+  { step: 'post-check-passed', mergeOid: '99aabbccddee00112233' },
+  { step: 'merged', mergeOid: '99aabbccddee00112233' },
 ];
 
 const params = new URLSearchParams(window.location.search);
@@ -162,6 +179,8 @@ function MergeStory() {
     <StoryFrame style={{ padding: 30, display: 'grid', gap: 24, maxWidth: 720, margin: '0 auto' }}>
       <div style={cardStyle}><MergeProgress steps={mergedSteps} /></div>
       <div style={cardStyle}><MergeProgress steps={revertedSteps} /></div>
+      <div style={cardStyle}><MergeProgress steps={reconciledSteps} /></div>
+      <div style={cardStyle}><MergeProgress steps={rebuildingSteps} /></div>
       <div style={{ ...cardStyle, padding: 0 }}><EpicIntegrationBar epic={{ ...boardEpic, mergeSteps: mergedSteps }} /></div>
     </StoryFrame>
   );

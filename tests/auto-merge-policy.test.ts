@@ -177,7 +177,7 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     30_000,
   );
 
-  it('runs task post-merge commands in the live integration checkout, then reverts and escalates on red', async () => {
+  it('runs task post-merge commands in an isolated integration checkout, then discards and escalates on red', async () => {
     const repo = makeRepo();
     const postMergeFail = verificationCommandSchema.parse({
       id: 'cmd-post-merge-fail',
@@ -199,7 +199,7 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     const task = await waitEscalated(taskId);
     expect(task.escalationReason).toContain('post-merge check');
     expect(() => git(repo, 'show', `main:impl-${trackerRef}.txt`)).toThrow();
-    expect(Number(git(repo, 'rev-list', '--count', '--merges', 'main'))).toBe(1);
+    expect(Number(git(repo, 'rev-list', '--count', '--merges', 'main'))).toBe(0);
 
     const events = await lifecycle(attemptId);
     expect(events.filter((event) => event.event === 'verification' && event.mechanism === 'command')).toHaveLength(2);
@@ -305,8 +305,9 @@ describe('post-merge check (issue #381, ADR-0001) — direct against runMergePol
     expect(checkedOids).toEqual([git(repo, 'rev-parse', 'main')]);
   });
 
-  it('reverts the merge and escalates with a plain reason when the post-merge check goes red', async () => {
+  it('discards the merge and escalates with a plain reason when the post-merge check goes red', async () => {
     const { repo, taskBranch } = makeMergeableRepo();
+    const baseTip = git(repo, 'rev-parse', 'main');
     let escalated: string | null = null;
 
     const outcome = await runMergePolicy(
@@ -323,11 +324,10 @@ describe('post-merge check (issue #381, ADR-0001) — direct against runMergePol
     expect(outcome.kind).toBe('escalated');
     if (outcome.kind === 'escalated') expect(outcome.reason).toBe('post-merge-red');
     expect(escalated).toMatch(/post-merge check/);
-    expect(escalated).toMatch(/reverted/);
+    expect(escalated).toMatch(/base is unchanged/);
     expect(escalated).not.toMatch(/<<<<<<<|CONFLICT/);
 
-    expect(Number(git(repo, 'rev-list', '--count', '--merges', 'main'))).toBeGreaterThanOrEqual(1);
-    expect(git(repo, 'log', '-1', '--format=%s', 'main')).toMatch(/^Revert /);
+    expect(git(repo, 'rev-parse', 'main')).toBe(baseTip);
     expect(() => git(repo, 'show', 'main:impl.txt')).toThrow();
   });
 });
