@@ -48,8 +48,8 @@ export interface Epic {
   ref: number;
   title: string;
   kind: 'map' | 'spec';
-  /** Lifecycle from the stored record: `integrated` once the whole-Epic gate finished. */
-  state: 'open' | 'integrated';
+  /** Lifecycle from the stored record. */
+  state: 'open' | 'integrating' | 'integrated';
   /** The Epic container ticket's body — the summary page's description. */
   description: string;
   /** Epic container ticket creation time (ms). */
@@ -239,6 +239,7 @@ export function closedMembers(epic: Epic): EpicMember[] {
  * or held for the operator. Only then does the surface show the progress bar. */
 export function isEpicIntegrating(epic: Epic): boolean {
   return (
+    epic.state === 'integrating' ||
     (epic.memberCount > 0 && epic.foldedCount === epic.memberCount) ||
     epic.integrate.inFlight ||
     epic.integrate.held != null

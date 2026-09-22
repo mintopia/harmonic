@@ -20,6 +20,7 @@ import {
   type TrackerFacts,
   type TrackerContainerRow,
   type StoredEpicKind,
+  type EpicLifecycleState,
   type EpicRow,
 } from '../db/schema.js';
 import { resolveWorkspace } from './workspaces.js';
@@ -514,7 +515,7 @@ export class TaskService {
   }
 
   /**
-   * Settle a stored Epic's integration snapshot: flip `state` `open`→`integrated`,
+   * Settle a stored Epic's integration snapshot: flip `state` `open` or `integrating`→`integrated`,
    * record `mergeCommit` (null for a no-op finish where the branch already
    * matched base), and snapshot the member refs. Guarded on `state = 'open'` so
    * it is a once-only transition.
@@ -528,6 +529,17 @@ export class TaskService {
       await db
         .update(epics)
         .set({ state: 'integrated', mergeCommit: snapshot.mergeCommit, memberRefs: snapshot.memberRefs })
+        .where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, trackerRef), inArray(epics.state, ['open', 'integrating'] satisfies EpicLifecycleState[])))
+        .run();
+    });
+  }
+
+  /** Mark the durable Epic as passing through its whole-Epic verification and merge gate. */
+  async markEpicIntegrating(workspaceId: number, trackerRef: number): Promise<void> {
+    await this.db.write(async (db) => {
+      await db
+        .update(epics)
+        .set({ state: 'integrating' })
         .where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, trackerRef), eq(epics.state, 'open')))
         .run();
     });

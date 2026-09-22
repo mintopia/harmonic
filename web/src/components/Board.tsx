@@ -548,6 +548,9 @@ export function EpicBand({
           <span className="truncate text-title font-semibold text-ink">{epic.title}</span>
         </button>
         <div className="flex min-w-0 shrink-0 items-center gap-2.5">
+          {epic.state === 'integrating' && (
+            <span className={`${chip} shrink-0 bg-running-tint text-running`}>integrating</span>
+          )}
           {attention.length > 0 && (
             <span className={`${chip} shrink-0 bg-await-tint text-await`}>{attention.length} in attention</span>
           )}

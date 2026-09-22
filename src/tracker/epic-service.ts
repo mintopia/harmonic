@@ -176,6 +176,7 @@ export class TrackerEpicService implements EpicService {
         retire: (epicRef) => integration.retire(epicRef),
         escalate: (epicRef, reason) => this.escalateEpicIntegration(epicRef, reason),
         operations: this.operations,
+        markIntegrating: (epicRef) => this.tasks.markEpicIntegrating(workspace.id, epicRef),
         recordIntegration: (input) => this.recordEpicIntegration(workspace, input),
       });
       entry.epicIntegrate = epicIntegrate;
@@ -313,9 +314,9 @@ export class TrackerEpicService implements EpicService {
     const live = this.liveEpics(tickets, mirrored); const ticketByRef = new Map(tickets.map((ticket) => [ticket.number, ticket])); const epics: DerivedEpic[] = [];
     for (const row of rows) {
       if (this.isHistorical(row)) { if (includeHistorical) epics.push(this.storedToDerived(row, tickets, mirrored)); }
-      else if (row.state === 'open' && ticketByRef.get(row.trackerRef)?.state === 'open') {
+      else if (row.state !== 'integrated' && ticketByRef.get(row.trackerRef)?.state === 'open') {
         const epic = live.get(row.trackerRef); if (epic) epics.push(epic);
-      } else if (row.state === 'open' && ticketByRef.get(row.trackerRef)?.state === 'closed') {
+      } else if (row.state !== 'integrated' && ticketByRef.get(row.trackerRef)?.state === 'closed') {
         epics.push(this.storedToDerived(row, tickets, mirrored));
       }
     }
@@ -330,7 +331,7 @@ export class TrackerEpicService implements EpicService {
     const titles = new Map(tickets.map((ticket) => [ticket.number, ticket.title])); const tasks = new Map<number, TaskRow>();
     for (const task of mirrored) if (task.trackerRef !== null) tasks.set(task.trackerRef, task);
     const ticket = tickets.find((candidate) => candidate.number === epic.ref); const row = rows.get(epic.ref);
-    const meta: EpicMeta = { description: ticket?.body ?? '', createdAt: ticket ? Date.parse(ticket.createdAt) || 0 : 0, baseBranch, dependsOn: (ticket?.blockedBy ?? []).map((blocker) => blocker.number).sort((a, b) => a - b), kind: row?.kind === 'map' ? 'map' : 'spec', state: row?.state === 'integrated' ? 'integrated' : 'open' };
+    const meta: EpicMeta = { description: ticket?.body ?? '', createdAt: ticket ? Date.parse(ticket.createdAt) || 0 : 0, baseBranch, dependsOn: (ticket?.blockedBy ?? []).map((blocker) => blocker.number).sort((a, b) => a - b), kind: row?.kind === 'map' ? 'map' : 'spec', state: row?.state ?? 'open' };
     return composeEpicView(epic, tasks, titles, await this.epicFacts(workspaceId, epic.ref, configured), meta);
   }
   private async epicFacts(workspaceId: number, epicRef: number, configured: boolean): Promise<EpicFacts> {

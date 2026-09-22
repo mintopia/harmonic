@@ -152,6 +152,15 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
   });
 
   describe('integration settle (ADR-0018, #438)', () => {
+    it('records the non-terminal integrating lifecycle state before the merge settles', async () => {
+      await tasks.syncEpics(wsId, [{ ref: 10, kind: 'spec' }]);
+      await tasks.markEpicIntegrating(wsId, 10);
+      expect(await readEpics()).toMatchObject([{ state: 'integrating' }]);
+
+      await tasks.markEpicIntegrated(wsId, 10, { mergeCommit: 'abc123', memberRefs: [11] });
+      expect(await readEpics()).toMatchObject([{ state: 'integrated' }]);
+    });
+
     it('flips state open→integrated and stores the merge-commit + member snapshot', async () => {
       await tasks.syncEpics(wsId, [{ ref: 10, kind: 'spec' }]);
       await tasks.markEpicIntegrated(wsId, 10, { mergeCommit: 'abc123', memberRefs: [11, 12] });

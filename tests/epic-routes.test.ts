@@ -1186,6 +1186,7 @@ describe('epic-integrate-git', () => {
     const integrate = vi.fn<EpicIntegrate>(opts.integrate ?? (async () => merged()));
     const retire = vi.fn(async (_ref: number) => {});
     const escalate = vi.fn<(epicRef: number, reason: string) => void>();
+    const markIntegrating = vi.fn(async (_epicRef: number) => {});
     const recordIntegration = vi.fn(async (_input: { epicRef: number; mergeCommit: string | null; memberRefs: number[] }) => {});
     const onError = vi.fn<(msg: string) => void>();
     let t = 0;
@@ -1200,10 +1201,11 @@ describe('epic-integrate-git', () => {
       now: opts.now ?? (() => (t += 600_000)),
       ...(opts.verifyBackoffMs !== undefined ? { verifyBackoffMs: opts.verifyBackoffMs } : {}),
       ...(opts.operationTimeoutMs !== undefined ? { operationTimeoutMs: opts.operationTimeoutMs } : {}),
+      markIntegrating,
       recordIntegration,
       onError,
     });
-    return { coord, git, verify, resolve, integrate, retire, escalate, recordIntegration, onError };
+    return { coord, git, verify, resolve, integrate, retire, escalate, markIntegrating, recordIntegration, onError };
   };
 
   const members = (...m: MemberMergeState[]): MemberMergeState[] => m;
@@ -1242,6 +1244,13 @@ describe('epic-integrate-git', () => {
       expect(integrate).toHaveBeenCalledWith(expect.objectContaining({ repoDir: '/repo', epicRef: 42, defaultBranch: 'develop', integrationBranch: 'epic/42' }));
       expect(retire).toHaveBeenCalledWith(42);
       expect(escalate).not.toHaveBeenCalled();
+    });
+
+    it('persists integrating before whole-Epic verification begins', async () => {
+      const { coord, markIntegrating, verify } = build();
+      await coord.submit({ ref: 42, members: members('completed') });
+      expect(markIntegrating).toHaveBeenCalledWith(42);
+      expect(markIntegrating).toHaveBeenCalledBefore(verify);
     });
 
     it('records the real merge-commit + member snapshot on a successful integrate (#438)', async () => {
