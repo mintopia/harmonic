@@ -82,8 +82,8 @@ export interface Epic {
   foldedCount: number;
   /** members.length */
   memberCount: number;
-  /** Every member is direct-isolation and no Integration branch exists — this
-   * Epic has no epic/<ref> and, once done, completes in place. */
+  /** Every member is direct-isolation: this Epic completes in place rather
+   * than merging one, whether or not a leftover epic/<ref> still exists. */
   inPlace: boolean;
 }
 

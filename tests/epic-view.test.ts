@@ -193,7 +193,7 @@ describe('composeEpicView', () => {
     expect(epic.members.find((m) => m.ref === 12)?.isolationMode).toBeNull();
   });
 
-  it('inPlace is true only when no Integration branch exists and every member is direct', () => {
+  it('inPlace is true whenever every member is direct, whether or not a leftover Integration branch exists', () => {
     const direct = new Map<number, TaskRow>([
       [11, task({ id: 1, trackerRef: 11, isolationMode: 'direct' })],
       [12, task({ id: 2, trackerRef: 12, isolationMode: 'direct' })],
@@ -207,7 +207,9 @@ describe('composeEpicView', () => {
     ]);
     expect(composeEpicView(derived({ members: [11, 12], ready: [] }), mixed, new Map(), noFacts, noMeta).inPlace).toBe(false);
 
+    // A leftover epic/<ref> never demotes an all-direct Epic out of in-place —
+    // direct mode never isolates and never merges, so the branch is inert.
     const existingBranch: EpicFacts = { ...noFacts, integration: { branch: 'epic/10', exists: true, tip: 'abc' } };
-    expect(composeEpicView(derived({ members: [11, 12], ready: [] }), direct, new Map(), existingBranch, noMeta).inPlace).toBe(false);
+    expect(composeEpicView(derived({ members: [11, 12], ready: [] }), direct, new Map(), existingBranch, noMeta).inPlace).toBe(true);
   });
 });

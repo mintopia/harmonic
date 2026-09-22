@@ -85,8 +85,8 @@ export interface Epic {
   /** Members with `mergeStatus === 'completed'`. */
   foldedCount: number;
   memberCount: number;
-  /** Every member is direct-isolation and no Integration branch exists — this
-   * Epic has no `epic/<ref>` and, once done, completes in place. */
+  /** Every member is direct-isolation: this Epic completes in place rather
+   * than merging one, whether or not a leftover `epic/<ref>` still exists. */
   inPlace: boolean;
 }
 
@@ -163,6 +163,6 @@ export function composeEpicView(
     timelineEvents: facts.timelineEvents,
     foldedCount: members.filter((m) => m.mergeStatus === 'completed').length,
     memberCount: members.length,
-    inPlace: !facts.integration.exists && members.length > 0 && members.every((m) => m.isolationMode === 'direct'),
+    inPlace: members.length > 0 && members.every((m) => m.isolationMode === 'direct'),
   };
 }

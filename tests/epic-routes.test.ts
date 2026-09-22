@@ -79,9 +79,9 @@ describe('epic-routes', () => {
           expect(decideEpicIntegrate(facts({ integrationExists: false, inPlace: true, members: members('completed', 'blocked'), force: true })).action).toBe('blocked');
         });
 
-        it('an Epic with an Integration branch is never in-place regardless of the flag', () => {
+        it('completes in place even when a leftover Integration branch still exists (direct mode never merges)', () => {
           const d = decideEpicIntegrate(facts({ integrationExists: true, inPlace: true, members: members('completed') }));
-          expect(d.action).not.toBe('complete');
+          expect(d.action).toBe('complete');
         });
       });
 
@@ -1222,7 +1222,7 @@ describe('epic-integrate-git', () => {
     operationTimeoutMs?: number;
     onIntegrated?: (event: { epicRef: number }) => void;
     epicState?: (epicRef: number) => Promise<'open' | 'integrating' | 'integrated' | null>;
-    onCompletedInPlace?: (event: { epicRef: number; baseBranch: string }) => void;
+    onCompletedInPlace?: (event: { epicRef: number; baseBranch: string; leftBranch?: string }) => void;
   } = {}) => {
     const git = opts.git ?? new FakeGit();
     const verify = vi.fn<VerifyFn>(opts.verify ?? (async () => proceed));
@@ -1235,7 +1235,7 @@ describe('epic-integrate-git', () => {
     const onError = vi.fn<(msg: string) => void>();
     const onIntegrated = vi.fn<(event: { epicRef: number }) => void>(opts.onIntegrated);
     const epicState = vi.fn<(epicRef: number) => Promise<'open' | 'integrating' | 'integrated' | null>>(opts.epicState ?? (async () => 'open'));
-    const onCompletedInPlace = vi.fn<(event: { epicRef: number; baseBranch: string }) => void>(opts.onCompletedInPlace);
+    const onCompletedInPlace = vi.fn<(event: { epicRef: number; baseBranch: string; leftBranch?: string }) => void>(opts.onCompletedInPlace);
     let t = 0;
     const coord = new EpicCoordinator({
       repoDir: '/repo',
@@ -1270,15 +1270,26 @@ describe('epic-integrate-git', () => {
     });
 
     describe('in-place Epics (no Integration branch, every member direct)', () => {
-      it('settles an all-done in-place Epic without verifying or merging', async () => {
-        const { coord, verify, integrate, recordIntegration, onIntegrated, onCompletedInPlace } = build({ git: new FakeGit(new Set()) });
+      it('settles an all-done in-place Epic without verifying, merging, or ever touching epic/<ref>', async () => {
+        const git = new FakeGit(new Set());
+        const branchExists = vi.spyOn(git, 'branchExists');
+        const { coord, verify, integrate, recordIntegration, onIntegrated, onCompletedInPlace } = build({ git });
         const out = await coord.submit({ ref: 42, members: members('completed', 'completed'), memberRefs: [1, 2], inPlace: true });
         expect(out).toEqual({ status: 'integrated', oid: 'oid-develop' });
         expect(verify).not.toHaveBeenCalled();
         expect(integrate).not.toHaveBeenCalled();
+        expect(branchExists).not.toHaveBeenCalled();
         expect(recordIntegration).toHaveBeenCalledWith({ epicRef: 42, mergeCommit: null, memberRefs: [1, 2] });
         expect(onIntegrated).toHaveBeenCalledWith({ epicRef: 42 });
         expect(onCompletedInPlace).toHaveBeenCalledWith({ epicRef: 42, baseBranch: 'develop' });
+      });
+
+      it('reports a leftover Integration branch untouched, via the target the caller already resolved', async () => {
+        const { coord, integrate, onCompletedInPlace } = build({ git: new FakeGit(new Set(['epic/42'])) });
+        const out = await coord.submit({ ref: 42, members: members('completed'), memberRefs: [1], inPlace: true, leftBranch: 'epic/42' });
+        expect(out.status).toBe('integrated');
+        expect(integrate).not.toHaveBeenCalled();
+        expect(onCompletedInPlace).toHaveBeenCalledWith({ epicRef: 42, baseBranch: 'develop', leftBranch: 'epic/42' });
       });
 
       it('waits while a member is still pending, never verifying', async () => {

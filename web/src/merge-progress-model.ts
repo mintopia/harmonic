@@ -8,7 +8,7 @@ export type MergeStepEvent =
   | { step: 'reverted'; mergeOid: string; revertOid: string }
   | { step: 'merged'; mergeOid: string }
   | { step: 'retired'; branch: string; baseBranch: string }
-  | { step: 'completed-in-place'; baseBranch: string }
+  | { step: 'completed-in-place'; baseBranch: string; leftBranch?: string }
   | { step: 'escalated'; reason: 'conflict' | 'post-merge-red' | 'target-advanced'; message: string };
 
 export type MergeStepTone = 'neutral' | 'running' | 'passed' | 'failed' | 'awaiting';
@@ -64,7 +64,13 @@ export function mergeStepRow(step: MergeStepEvent, index: number): MergeStepRow 
     case 'retired':
       return { key, label: 'Integration branch retired', detail: step.branch, log: `Merged into ${step.baseBranch}`, tone: 'passed' };
     case 'completed-in-place':
-      return { key, label: 'Completed in place', detail: step.baseBranch, log: null, tone: 'passed' };
+      return {
+        key,
+        label: 'Completed in place',
+        detail: step.baseBranch,
+        log: step.leftBranch ? `${step.leftBranch} left untouched; Harmonic no longer uses it` : null,
+        tone: 'passed',
+      };
     case 'escalated':
       return {
         key,

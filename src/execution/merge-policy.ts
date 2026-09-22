@@ -51,7 +51,7 @@ export type MergeStepEvent =
   | { step: 'reverted'; mergeOid: string; revertOid: string }
   | { step: 'merged'; mergeOid: string }
   | { step: 'retired'; branch: string; baseBranch: string }
-  | { step: 'completed-in-place'; baseBranch: string }
+  | { step: 'completed-in-place'; baseBranch: string; leftBranch?: string }
   | { step: 'escalated'; reason: 'conflict' | 'post-merge-red' | 'target-advanced'; message: string };
 
 function emitStep(deps: MergePolicyDeps, event: MergeStepEvent): void {

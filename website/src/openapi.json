@@ -3405,6 +3405,9 @@
               },
               "baseBranch": {
                 "type": "string"
+              },
+              "leftBranch": {
+                "type": "string"
               }
             },
             "required": [
@@ -9561,6 +9564,9 @@
                 "const": "completed-in-place"
               },
               "baseBranch": {
+                "type": "string"
+              },
+              "leftBranch": {
                 "type": "string"
               }
             },

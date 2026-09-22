@@ -35,9 +35,11 @@ export interface EpicIntegrateFacts {
   verification: VerificationDecision | null;
   /** The operator's explicit force-integrate-the-ready-subset override. Never set by the automatic poll trigger. */
   force: boolean;
-  /** Every member is a direct-isolation Task and no Integration branch exists —
-   * the Epic completes in place on its base branch instead of merging one.
-   * `force` never bypasses the member gate for an in-place Epic. */
+  /** Every member is a direct-isolation Task: the Epic completes in place on
+   * its base branch instead of merging one, whether or not a leftover
+   * `epic/<ref>` still exists (direct mode never isolates and never merges).
+   * `force` never bypasses the member gate for an in-place Epic. Takes
+   * precedence over `integrationExists`. */
   inPlace: boolean;
 }
 
@@ -67,10 +69,12 @@ export type EpicIntegrateDecision =
 /**
  * Decide the whole-Epic integrate action. Precedence:
  *
- *  1. no integration branch, in-place → the member gate (no members → `noop`;
+ *  1. in-place (every member direct) → the member gate (no members → `noop`;
  *     any `blocked` → `blocked`; any `pending` → `wait`; else `complete`),
- *     never bypassed by `force`;
- *  2. no integration branch, not in-place → `noop`;
+ *     never bypassed by `force`, regardless of `integrationExists` — a
+ *     leftover `epic/<ref>` from before an Epic went (or stayed) direct is
+ *     never merged, never refreshed, never deleted;
+ *  2. not in-place, no integration branch → `noop`;
  *  3. (automatic path only) no members → `noop`; any `blocked` member →
  *     `blocked`; any `pending` member → `wait`; else the gate opens;
  *  4. `force` opens the gate unconditionally, skipping step 3 but not Verification;
@@ -79,10 +83,7 @@ export type EpicIntegrateDecision =
  *     `escalate`, fail-safe.
  */
 export function decideEpicIntegrate(facts: EpicIntegrateFacts): EpicIntegrateDecision {
-  if (!facts.integrationExists) {
-    if (!facts.inPlace) {
-      return { action: 'noop', reason: 'no integration branch to integrate (already integrated, retired, or never cut)' };
-    }
+  if (facts.inPlace) {
     if (facts.members.length === 0) {
       return { action: 'noop', reason: 'epic has no members to integrate' };
     }
@@ -93,6 +94,10 @@ export function decideEpicIntegrate(facts: EpicIntegrateFacts): EpicIntegrateDec
       return { action: 'wait', reason: 'members are still in progress' };
     }
     return { action: 'complete', reason: 'all direct members are done: completing the Epic in place' };
+  }
+
+  if (!facts.integrationExists) {
+    return { action: 'noop', reason: 'no integration branch to integrate (already integrated, retired, or never cut)' };
   }
 
   if (!facts.force) {
