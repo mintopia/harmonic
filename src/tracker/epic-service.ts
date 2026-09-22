@@ -93,6 +93,8 @@ export interface TrackerEpicServiceOptions {
   dispatchEpicResolution?: EpicResolutionDispatch | undefined;
   worktreesDir?: string | undefined;
   onEpicAttemptChanged?: ((attempt: EpicAttemptRow) => void) | undefined;
+  onEpicMergeStep?: ((payload: { workspaceId: number; epicRef: number }) => void) | undefined;
+  onEpicIntegrated?: ((payload: { workspaceId: number; epicRef: number }) => void) | undefined;
   verificationAttemptStore?: VerificationAttemptStore | undefined;
   criticDrive?: CriticHarnessDrive | undefined;
 }
@@ -116,6 +118,8 @@ export class TrackerEpicService implements EpicService {
   private readonly dispatchEpicResolution: TrackerEpicServiceOptions['dispatchEpicResolution'];
   private readonly worktreesDir: TrackerEpicServiceOptions['worktreesDir'];
   private readonly onEpicAttemptChanged: TrackerEpicServiceOptions['onEpicAttemptChanged'];
+  private readonly onEpicMergeStep: TrackerEpicServiceOptions['onEpicMergeStep'];
+  private readonly onEpicIntegrated: TrackerEpicServiceOptions['onEpicIntegrated'];
   private readonly verificationAttemptStore: TrackerEpicServiceOptions['verificationAttemptStore'];
   private readonly criticDrive: TrackerEpicServiceOptions['criticDrive'];
 
@@ -135,6 +139,8 @@ export class TrackerEpicService implements EpicService {
     this.dispatchEpicResolution = options.dispatchEpicResolution;
     this.worktreesDir = options.worktreesDir;
     this.onEpicAttemptChanged = options.onEpicAttemptChanged;
+    this.onEpicMergeStep = options.onEpicMergeStep;
+    this.onEpicIntegrated = options.onEpicIntegrated;
     this.verificationAttemptStore = options.verificationAttemptStore;
     this.criticDrive = options.criticDrive;
   }
@@ -142,6 +148,11 @@ export class TrackerEpicService implements EpicService {
   startWorkspace(workspace: WorkspaceRow): EpicIntegrationSync {
     const epics = new EpicLifecycle(this.tasks, workspace.workingDir);
     epics.attachOperations(this.operations);
+    epics.attachIntegrationBranchRetired(async ({ epicRef, branch, baseBranch }) => {
+      if (!this.epicMergeEvents) return;
+      await this.epicMergeEvents.append(workspace.id, epicRef, { step: 'retired', branch, baseBranch });
+      this.onEpicMergeStep?.({ workspaceId: workspace.id, epicRef });
+    });
     const entry: WorkspaceEpicEntry = { epics };
     const { getConfig, mergeEpicIntegration } = this;
     if (getConfig && mergeEpicIntegration) {
@@ -177,6 +188,7 @@ export class TrackerEpicService implements EpicService {
         escalate: (epicRef, reason) => this.escalateEpicIntegration(epicRef, reason),
         operations: this.operations,
         recordIntegration: (input) => this.recordEpicIntegration(workspace, input),
+        onIntegrated: ({ epicRef }) => this.onEpicIntegrated?.({ workspaceId: workspace.id, epicRef }),
       });
       entry.epicIntegrate = epicIntegrate;
       epics.attachIntegrateTrigger(epicIntegrate);

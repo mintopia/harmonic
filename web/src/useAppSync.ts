@@ -199,6 +199,10 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
       if (msg.type === 'epic_changed' && msg.workspaceId === activeWorkspaceId) {
         debouncedRefreshEpics();
       }
+      if (msg.type === 'epic_integrated' && msg.workspaceId === activeWorkspaceId) {
+        toastSuccess(`Epic #${msg.epicRef} merged`, { sticky: true });
+        debouncedRefreshEpics();
+      }
       if (msg.type === 'task_removed') {
         setTasks((current) => (current ?? []).filter((t) => t.id !== msg.id));
         setFetchedTask((current) => (current && current.id === msg.id ? null : current));

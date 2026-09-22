@@ -54,18 +54,20 @@ export class BranchRetirementCoordinator {
   }
 
   /** Retire an Epic integration branch only when it is safely contained. */
-  async retireEpic(repoDir: string, branch: string, retainedBranch: string): Promise<void> {
-    await this.retireContained(repoDir, branch, retainedBranch);
+  async retireEpic(repoDir: string, branch: string, retainedBranch: string, onRetired: () => Promise<void>): Promise<void> {
+    if (await this.retireContained(repoDir, branch, retainedBranch)) await onRetired();
   }
 
-  private async retireContained(repoDir: string, branch: string, retainedBranch: string): Promise<void> {
+  private async retireContained(repoDir: string, branch: string, retainedBranch: string): Promise<boolean> {
     try {
-      if (!(await this.git.branchExists(repoDir, branch))) return;
-      if ((await this.git.branchCheckedOutAt(repoDir, branch)) !== null) return;
-      if (!(await this.git.isContentContained(repoDir, retainedBranch, branch))) return;
+      if (!(await this.git.branchExists(repoDir, branch))) return false;
+      if ((await this.git.branchCheckedOutAt(repoDir, branch)) !== null) return false;
+      if (!(await this.git.isContentContained(repoDir, retainedBranch, branch))) return false;
       await this.git.deleteBranch(repoDir, branch);
+      return true;
     } catch (err) {
       this.onError(`branch '${branch}' retirement failed: ${String(err)}`);
+      return false;
     }
   }
 }

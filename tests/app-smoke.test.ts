@@ -221,6 +221,21 @@ async function renderApp(opts: {
 }
 
 describe('App smoke (issue #452)', () => {
+  it('shows an epic merge toast from the live event stream', async () => {
+    const el = await renderApp({
+      authenticated: true,
+      passwordConfigured: true,
+      workspaces: [makeWorkspace()],
+    });
+
+    await act(async () => {
+      IdleWebSocket.latest?.emit({ type: 'epic_integrated', workspaceId: 1, epicRef: 5 });
+    });
+    await flush();
+
+    expect(el.textContent).toContain('Epic #5 merged');
+  });
+
   it('shows the available update banner and dismisses that version', async () => {
     const el = await renderApp({
       authenticated: true,

@@ -148,6 +148,7 @@ export class EpicCoordinator {
   private readonly onError: (msg: string) => void;
   private readonly operations: EpicOperations;
   private readonly recordIntegrationFn: EpicRecordIntegration | undefined;
+  private readonly onIntegrated: ((event: { epicRef: number }) => void) | undefined;
 
   private readonly inFlight = new Set<number>();
 
@@ -195,6 +196,8 @@ export class EpicCoordinator {
     operations?: EpicOperations;
     /** Persist the integration snapshot onto the stored Epic record; absent ⇒ nothing is recorded. */
     recordIntegration?: EpicRecordIntegration;
+    /** Notify clients after the integrated Epic has a durable record. */
+    onIntegrated?: (event: { epicRef: number }) => void;
   }) {
     this.repoDir = deps.repoDir;
     this.git = deps.git ?? Git;
@@ -209,6 +212,7 @@ export class EpicCoordinator {
     this.onError = deps.onError ?? logger.error;
     this.operations = deps.operations ?? new EpicOperations();
     this.recordIntegrationFn = deps.recordIntegration;
+    this.onIntegrated = deps.onIntegrated;
   }
 
   /**
@@ -357,7 +361,10 @@ export class EpicCoordinator {
     const recorded = await this.recordIntegrationQuietly(target, integrated.mergeOid);
 
     this.clearMergeGuards(target.ref);
-    if (recorded) await this.retireQuietly(target.ref, target.title, 'after integrate');
+    if (recorded) {
+      this.onIntegrated?.({ epicRef: target.ref });
+      await this.retireQuietly(target.ref, target.title, 'after integrate');
+    }
     this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
     return { status: 'integrated', oid: integrated.mergeOid };
   }
@@ -437,7 +444,10 @@ export class EpicCoordinator {
     const tip = await this.git.revParse(this.repoDir, branch);
     this.settledEscalated.delete(target.ref);
     const recorded = await this.recordIntegrationQuietly(target, null);
-    if (recorded) await this.retireQuietly(target.ref, target.title, 'already-contained');
+    if (recorded) {
+      this.onIntegrated?.({ epicRef: target.ref });
+      await this.retireQuietly(target.ref, target.title, 'already-contained');
+    }
     this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
     return { status: 'integrated', oid: tip };
   }
@@ -552,6 +562,7 @@ export class EpicLifecycle {
   private leafEpicRefs = new Set<number>();
   private latestTickets: Ticket[] = [];
   private operations = new EpicOperations();
+  private onIntegrationBranchRetired: ((event: { epicRef: number; branch: string; baseBranch: string }) => Promise<void>) | undefined;
 
   constructor(
     private readonly tasks: TaskService,
@@ -572,6 +583,10 @@ export class EpicLifecycle {
 
   attachOperations(operations: EpicOperations): void {
     this.operations = operations;
+  }
+
+  attachIntegrationBranchRetired(listener: (event: { epicRef: number; branch: string; baseBranch: string }) => Promise<void>): void {
+    this.onIntegrationBranchRetired = listener;
   }
 
   async refreshAfterDefaultBranchAdvance(defaultBranch: string): Promise<void> {
@@ -736,12 +751,14 @@ export class EpicLifecycle {
     await this.git.createBranch(this.workingDir, branch, defaultBranch);
   }
 
-  async retireIntegrationBranch(epicRef: number): Promise<void> {
+  async retireIntegrationBranch(epicRef: number): Promise<boolean> {
     const branch = integrationBranchName(epicRef);
     const defaultBranch = await this.git.symbolicBranch(this.workingDir);
-    if (defaultBranch === null || !(await this.git.branchExists(this.workingDir, branch))) return;
-    if ((await this.git.branchCheckedOutAt(this.workingDir, branch)) !== null) return;
-    if (!(await this.git.isAncestor(this.workingDir, defaultBranch, branch))) return;
+    if (defaultBranch === null || !(await this.git.branchExists(this.workingDir, branch))) return false;
+    if ((await this.git.branchCheckedOutAt(this.workingDir, branch)) !== null) return false;
+    if (!(await this.git.isAncestor(this.workingDir, defaultBranch, branch))) return false;
     await this.git.deleteBranch(this.workingDir, branch);
+    await this.onIntegrationBranchRetired?.({ epicRef, branch, baseBranch: defaultBranch });
+    return true;
   }
 }
