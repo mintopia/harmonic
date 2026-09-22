@@ -109,4 +109,37 @@ describe('Branch retirement wiring (owner decision: re-enable, visibly, with bac
     expect(await Git.branchExists(repo, branch)).toBe(true);
     expect(recorded).toEqual([]);
   });
+
+  it('retires a worktree-mode Epic member\'s branch once its Epic integrates, without a restart (owner decision: recheck on integration)', async () => {
+    const task = await tasks.create({ prompt: 'p', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
+    const branch = `harmonic/task-${task.id}`;
+    git(repo, 'branch', 'epic/5', 'develop');
+    git(repo, 'checkout', 'epic/5');
+    git(repo, 'checkout', '-b', branch);
+    writeFileSync(join(repo, 'member.txt'), 'member work\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-m', 'member work');
+    git(repo, 'checkout', 'epic/5');
+    git(repo, 'merge', '--no-ff', '-m', 'fold member', branch);
+    git(repo, 'checkout', 'develop');
+    await attempts.update((await attempts.create(task.id)).id, { branch, baseBranch: 'epic/5', state: 'passed' });
+    await tasks.setState(task.id, 'done');
+
+    const recorded: [number, Record<string, unknown>][] = [];
+    const branchRetirement = new BranchRetirementCoordinator(attempts, tasks, Git, () => {}, (attemptId, payload) => recorded.push([attemptId, payload]));
+
+    // Settle-time: the member's content is only contained in epic/5, not yet in develop — kept.
+    await branchRetirement.reconcile();
+    expect(await Git.branchExists(repo, branch)).toBe(true);
+    expect(recorded).toEqual([]);
+
+    // The Epic integrates: epic/5 merges into develop.
+    git(repo, 'merge', '--no-ff', '-m', 'integrate epic 5', 'epic/5');
+
+    // The same long-lived coordinator rechecks on integration success (app-runtime.ts's onEpicIntegrated), no restart.
+    await branchRetirement.reconcile();
+
+    expect(await Git.branchExists(repo, branch)).toBe(false);
+    expect(recorded).toEqual([[expect.any(Number), { event: 'branch-deleted', branch, containedIn: 'develop' }]]);
+  });
 });

@@ -403,7 +403,17 @@ export async function createRuntime(deps: {
       worktreesDir,
       onEpicAttemptChanged: (attempt) => bus.emit('attempt_changed', attempt),
       onEpicMergeStep: (payload) => bus.emit('epic_changed', payload),
-      onEpicIntegrated: (payload) => bus.emit('epic_integrated', payload),
+      onEpicIntegrated: (payload) => {
+        bus.emit('epic_integrated', payload);
+        // A folded member's branch is only content-contained once its Epic
+        // integrates into the base branch; recheck retirement now rather than
+        // waiting for the next restart's backfill.
+        fireAndForget(() => branchRetirement.reconcile(), {
+          op: 'app.branchRetirement.reconcileAfterIntegration',
+          level: 'error',
+          context: payload,
+        });
+      },
       verificationAttemptStore: verificationAttempts,
       criticDrive: opts.criticDrive,
     },
