@@ -24,6 +24,7 @@ function epic(overrides: Partial<Epic> = {}): Epic {
     verification: { status: 'pass', configured: true },
     integrate: { inFlight: false, held: 'awaiting operator decision' },
     mergeSteps: [],
+    timelineEvents: [],
     foldedCount: 2,
     memberCount: 2,
     ...overrides,

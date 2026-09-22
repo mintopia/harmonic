@@ -87,6 +87,10 @@ const mergeStepSchema = z
   ])
   .meta({ id: 'MergeStepEvent' });
 
+const epicTimelineEventSchema = z
+  .object({ seq: z.number().int(), at: z.number().int(), step: mergeStepSchema })
+  .meta({ id: 'EpicTimelineEvent' });
+
 const epicSchema = z
   .object({
     ref: z.number().int().meta({ example: 42 }),
@@ -104,6 +108,7 @@ const epicSchema = z
     verification: epicVerificationSchema,
     integrate: epicIntegrateStateSchema,
     mergeSteps: z.array(mergeStepSchema),
+    timelineEvents: z.array(epicTimelineEventSchema),
     foldedCount: z.number().int(),
     memberCount: z.number().int(),
   })
