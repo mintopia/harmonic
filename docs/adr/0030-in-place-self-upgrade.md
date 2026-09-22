@@ -14,6 +14,13 @@ supervisor — it installs the new version, verifies it, and exits(0), letting
 is skipped. The relauncher described here remains the mechanism for init.d and
 standalone Managed Mode, where nothing else restarts the process.
 
+**Amended by ADR-0038**: systemd Managed Mode no longer uses the global npm
+install described below. It installs into the service-user-owned
+`<dataDir>/app/versions/<version>` tree, atomically changes
+`<dataDir>/app/current`, verifies the version at that symlink target, and
+exits(0). The relauncher remains unchanged for init.d and standalone Managed
+Mode.
+
 ## Context
 
 Harmonic ships as the npm package `@mintopia/harmonic` (ADR-0012), released by
