@@ -1,8 +1,6 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { Attributes, SpanContext } from '@opentelemetry/api';
 import { Git } from './git.js';
+import { withEphemeralMergeWorktree } from './detached-worktree.js';
 import { logger } from '../logger.js';
 import { startOperation } from '../telemetry/operations.js';
 
@@ -124,25 +122,20 @@ async function mergeIntoBaseUnchecked(args: MergeIntoBaseArgs): Promise<MergeInt
 
   let newOid: string;
   if (args.mode === 'merge') {
-    const parent = mkdtempSync(join(args.adminWorktreeParent ?? tmpdir(), 'harmonic-merge-'));
-    const adminPath = join(parent, 'admin');
-    try {
-      await Git.addDetachedWorktree(repoDir, adminPath, expectedOld);
-      const merged = await Git.mergeNoEdit(adminPath, expectedOid);
-      if (!merged.ok) {
-        return { ok: false, reason: 'conflict', detail: merged.detail ?? 'merge conflict' };
-      }
-      newOid = await Git.revParse(adminPath, 'HEAD');
-    } finally {
-      await Git.removeWorktree(repoDir, adminPath).catch((err) => {
-        logger.debug('branch-merge: removing the admin worktree failed', {
-          'merge.repo': repoDir,
-          'merge.admin_path': adminPath,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
-      rmSync(parent, { recursive: true, force: true });
-    }
+    const merged = await withEphemeralMergeWorktree(
+      repoDir,
+      expectedOld,
+      async (adminPath): Promise<{ ok: false; detail: string } | { ok: true; oid: string }> => {
+        const merged = await Git.mergeNoEdit(adminPath, expectedOid);
+        if (!merged.ok) {
+          return { ok: false, detail: merged.detail ?? 'merge conflict' };
+        }
+        return { ok: true, oid: await Git.revParse(adminPath, 'HEAD') };
+      },
+      args.adminWorktreeParent,
+    );
+    if (!merged.ok) return { ok: false, reason: 'conflict', detail: merged.detail };
+    newOid = merged.oid;
   } else if (await Git.isAncestor(repoDir, expectedOid, expectedOld)) {
     newOid = expectedOid;
   } else {

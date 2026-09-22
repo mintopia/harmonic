@@ -241,8 +241,9 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     await expect(Git.revParse(repo, 'MERGE_HEAD')).rejects.toThrow();
   });
 
-  it('reverts the merge and escalates with the failing output when the post-merge check goes red', async () => {
+  it('discards the isolated merge and escalates with the failing output when the post-merge check goes red', async () => {
     const repo = makeRepo();
+    const baseTip = git(repo, 'rev-parse', 'main');
     await makeTaskBranch(repo, 'task-red', (wt) => {
       writeFileSync(join(wt, 'feature.txt'), 'feature\n');
     });
@@ -261,11 +262,10 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     expect(outcome.kind).toBe('escalated');
     if (outcome.kind !== 'escalated') throw new Error('unreachable');
     expect(outcome.reason).toBe('post-merge-red');
-    expect(outcome.revertOid).toBeTruthy();
     expect(deps.escalate).toHaveBeenCalledTimes(1);
     expect(deps.escalate).toHaveBeenCalledWith(expect.stringContaining('BOOM tests failed'));
-
-    expect(() => git(repo, 'show', 'HEAD:feature.txt')).toThrow();
+    expect(git(repo, 'rev-parse', 'main')).toBe(baseTip);
+    expect(() => git(repo, 'show', 'main:feature.txt')).toThrow();
   });
 
   it('skips the post-merge check when postMergeCheck is false', async () => {
@@ -333,7 +333,7 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     expect(git(repo, 'rev-parse', 'HEAD^2')).toBeTruthy();
   });
 
-  it('throws on a non-conflict merge fault without escalating', async () => {
+  it('merges in an isolated worktree without touching dirty files in the persistent checkout', async () => {
     const repo = makeRepo();
     await makeTaskBranch(repo, 'task-dirty-base', (wt) => {
       writeFileSync(join(wt, 'base.txt'), 'task version\n');
@@ -343,63 +343,72 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     // non-conflict fault, no MERGE_HEAD is ever created.
     writeFileSync(join(repo, 'base.txt'), 'dirty uncommitted\n');
 
+    const dirtyContents = git(repo, 'show', ':base.txt');
     const deps: MergePolicyDeps = {
       resolveConflictTurn: neverCalled('resolveConflictTurn'),
-      runPostMergeCheck: neverCalled('runPostMergeCheck'),
+      runPostMergeCheck: vi.fn(async () => ({ pass: true, output: '' })),
       escalate: vi.fn(async () => {}),
     };
 
-    await expect(
-      runMergePolicy(
-        { baseDir: repo, baseBranch: 'main', taskBranch: 'task-dirty-base', conflictResolveTurns: 2, postMergeCheck: true },
-        deps,
-      ),
-    ).rejects.toThrow();
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-dirty-base', conflictResolveTurns: 2, postMergeCheck: true },
+      deps,
+    );
 
+    expect(outcome.kind).toBe('merged');
     expect(deps.escalate).not.toHaveBeenCalled();
+    expect(git(repo, 'show', ':base.txt')).toBe(dirtyContents);
     await expect(Git.revParse(repo, 'MERGE_HEAD')).rejects.toThrow();
   });
 
-  it('serialises two concurrent merges into the same base repo under one mutex', async () => {
+  it('reports target-advanced when another merge updates the base before the CAS', async () => {
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-race', (wt) => {
+      writeFileSync(join(wt, 'feature.txt'), 'feature\n');
+    });
+    git(repo, 'checkout', '-b', 'parked');
+    writeFileSync(join(repo, 'racer.txt'), 'racer\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-m', 'racing update');
+    const racerTip = git(repo, 'rev-parse', 'HEAD');
+    const deps: MergePolicyDeps = {
+      resolveConflictTurn: neverCalled('resolveConflictTurn'),
+      runPostMergeCheck: vi.fn(async () => {
+        git(repo, 'update-ref', 'refs/heads/main', racerTip);
+        return { pass: true, output: '' };
+      }),
+      escalate: vi.fn(async () => {}),
+    };
+
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-race', conflictResolveTurns: 0, postMergeCheck: true },
+      deps,
+    );
+
+    expect(outcome).toMatchObject({ kind: 'escalated', reason: 'target-advanced' });
+    expect(git(repo, 'rev-parse', 'main')).toBe(racerTip);
+  });
+
+  it('does not hold the base-checkout lock while a conflict resolve turn runs', async () => {
     const repo = makeRepo();
     await makeTaskBranch(repo, 'task-1', (wt) => {
       writeFileSync(join(wt, 'a.txt'), 'a\n');
     });
-    await makeTaskBranch(repo, 'task-2', (wt) => {
-      writeFileSync(join(wt, 'b.txt'), 'b\n');
-    });
-
-    let active = 0;
-    let maxActive = 0;
-    const runPostMergeCheck = vi.fn(async () => {
-      active++;
-      maxActive = Math.max(maxActive, active);
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      expect(active).toBeLessThanOrEqual(1);
-      active--;
-      return { pass: true, output: '' };
-    });
+    let entered = false;
     const deps: MergePolicyDeps = {
       resolveConflictTurn: neverCalled('resolveConflictTurn'),
-      runPostMergeCheck,
+      runPostMergeCheck: vi.fn(async () => {
+        entered = true;
+        return { pass: true, output: '' };
+      }),
       escalate: vi.fn(async () => {}),
     };
-
-    const [outcome1, outcome2] = await Promise.all([
-      runMergePolicy(
-        { baseDir: repo, baseBranch: 'main', taskBranch: 'task-1', conflictResolveTurns: 0, postMergeCheck: true },
-        deps,
-      ),
-      runMergePolicy(
-        { baseDir: repo, baseBranch: 'main', taskBranch: 'task-2', conflictResolveTurns: 0, postMergeCheck: true },
-        deps,
-      ),
-    ]);
-
-    expect(outcome1.kind).toBe('merged');
-    expect(outcome2.kind).toBe('merged');
-    expect(maxActive).toBe(1);
-    expect(runPostMergeCheck).toHaveBeenCalledTimes(2);
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-1', conflictResolveTurns: 0, postMergeCheck: true },
+      deps,
+    );
+    expect(outcome.kind).toBe('merged');
+    expect(entered).toBe(true);
   });
 
   it('drops the metadata repo lock around each agentic turn so sibling worktree ops proceed (issue #455)', async () => {
@@ -450,67 +459,6 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     expect(resolveConflictTurn).toHaveBeenCalledTimes(1);
   });
 
-  it('holds the base-checkout lock across the turn so a sibling merge waits (issue #455)', async () => {
-    const repo = makeRepo();
-    await makeTaskBranch(repo, 'task-conflict', (wt) => {
-      writeFileSync(join(wt, 'base.txt'), 'task version\n');
-    });
-    writeFileSync(join(repo, 'base.txt'), 'main version\n');
-    git(repo, 'commit', '-am', 'main edits base.txt');
-    await makeTaskBranch(repo, 'task-clean-sibling', (wt) => {
-      writeFileSync(join(wt, 'feature.txt'), 'feature\n');
-    });
-
-    let turnStarted!: () => void;
-    const turnInProgress = new Promise<void>((r) => {
-      turnStarted = r;
-    });
-    let releaseTurn!: () => void;
-    const turnGate = new Promise<void>((r) => {
-      releaseTurn = r;
-    });
-
-    const conflictDeps: MergePolicyDeps = {
-      resolveConflictTurn: vi.fn(async (ctx) => {
-        turnStarted();
-        await turnGate;
-        writeFileSync(join(ctx.baseDir, 'base.txt'), 'resolved\n');
-        git(ctx.baseDir, 'add', 'base.txt');
-      }),
-      runPostMergeCheck: vi.fn(async () => ({ pass: true, output: '' })),
-      escalate: vi.fn(async () => {}),
-    };
-
-    let siblingMergeEntered = false;
-    const siblingDeps: MergePolicyDeps = {
-      resolveConflictTurn: neverCalled('resolveConflictTurn'),
-      runPostMergeCheck: vi.fn(async () => {
-        siblingMergeEntered = true;
-        return { pass: true, output: '' };
-      }),
-      escalate: vi.fn(async () => {}),
-    };
-
-    const conflictMerge = runMergePolicy(
-      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-conflict', conflictResolveTurns: 2, postMergeCheck: true },
-      conflictDeps,
-    );
-
-    await turnInProgress;
-    const siblingMerge = runMergePolicy(
-      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-clean-sibling', conflictResolveTurns: 0, postMergeCheck: true },
-      siblingDeps,
-    );
-
-    await new Promise((r) => setTimeout(r, 50));
-    expect(siblingMergeEntered).toBe(false);
-
-    releaseTurn();
-    const [conflictOutcome, siblingOutcome] = await Promise.all([conflictMerge, siblingMerge]);
-    expect(conflictOutcome.kind).toBe('merged');
-    expect(siblingOutcome.kind).toBe('merged');
-    expect(siblingMergeEntered).toBe(true);
-  });
 });
 
 describe('runMergePolicy telemetry (ADR-0010, #387)', () => {
@@ -566,7 +514,7 @@ describe('runMergePolicy telemetry (ADR-0010, #387)', () => {
     expect(merge.parentSpanContext?.spanId).toBe(attempt.spanContext().spanId);
     expect(wait.parentSpanContext?.spanId).toBe(merge.spanContext().spanId);
     expect(hold.parentSpanContext?.spanId).toBe(merge.spanContext().spanId);
-    expect(postCheck.parentSpanContext?.spanId).toBe(hold.spanContext().spanId);
+    expect(postCheck.parentSpanContext?.spanId).toBe(merge.spanContext().spanId);
   });
 });
 
@@ -617,7 +565,7 @@ describe('runMergePolicy onStep (merge-visibility events)', () => {
     expect(sink.steps.map((s) => s.step)).toEqual(['started', 'post-check-passed', 'merged']);
   });
 
-  it('emits started → reverted → escalated when the post-merge check fails', async () => {
+  it('emits started → escalated when the post-merge check fails', async () => {
     const repo = makeRepo();
     await makeTaskBranch(repo, 'task-red', (wt) => writeFileSync(join(wt, 'feature.txt'), 'feature\n'));
     const sink = collect();
@@ -634,9 +582,7 @@ describe('runMergePolicy onStep (merge-visibility events)', () => {
     );
 
     expect(outcome.kind).toBe('escalated');
-    expect(sink.steps.map((s) => s.step)).toEqual(['started', 'reverted', 'escalated']);
-    const reverted = sink.steps.find((s) => s.step === 'reverted');
-    expect(reverted && 'revertOid' in reverted && reverted.revertOid).toBeTruthy();
+    expect(sink.steps.map((s) => s.step)).toEqual(['started', 'escalated']);
     const escalated = sink.steps.find((s) => s.step === 'escalated');
     expect(escalated && 'reason' in escalated && escalated.reason).toBe('post-merge-red');
   });
