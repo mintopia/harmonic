@@ -54,6 +54,7 @@ not-yet-torn-down machinery is marked `legacy until ADR-1 epic`.
 | 0034 | [Running Harmonic as a supervised service](0034-running-harmonic-as-a-supervised-service.md) |
 | 0035 | [Slash-command autocomplete in the Conversation Composer](0035-slash-command-autocomplete-in-the-composer.md) |
 | 0038 | [Non-privileged atomic self-upgrade](0038-non-privileged-atomic-self-upgrade.md) |
+| 0039 | [Epic integration and branch retirement use an ephemeral worktree](0039-epic-integration-and-retirement-use-an-ephemeral-worktree.md) |
 
 ## Where every pre-reset ADR went
 
