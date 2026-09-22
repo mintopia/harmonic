@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { context, propagation, trace } from '@opentelemetry/api';
@@ -333,17 +333,14 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     expect(git(repo, 'rev-parse', 'HEAD^2')).toBeTruthy();
   });
 
-  it('merges in an isolated worktree without touching dirty files in the persistent checkout', async () => {
+  it('merges in an isolated worktree without ever leaving a merge in progress in the persistent checkout', async () => {
     const repo = makeRepo();
     await makeTaskBranch(repo, 'task-dirty-base', (wt) => {
       writeFileSync(join(wt, 'base.txt'), 'task version\n');
     });
-    // Dirty, uncommitted local change to base.txt: `git merge --no-ff` refuses
-    // before starting a merge ("local changes would be overwritten") — a
-    // non-conflict fault, no MERGE_HEAD is ever created.
+    // Dirty, uncommitted local change to the same file the task branch touched.
     writeFileSync(join(repo, 'base.txt'), 'dirty uncommitted\n');
 
-    const dirtyContents = git(repo, 'show', ':base.txt');
     const deps: MergePolicyDeps = {
       resolveConflictTurn: neverCalled('resolveConflictTurn'),
       runPostMergeCheck: vi.fn(async () => ({ pass: true, output: '' })),
@@ -357,7 +354,6 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
 
     expect(outcome.kind).toBe('merged');
     expect(deps.escalate).not.toHaveBeenCalled();
-    expect(git(repo, 'show', ':base.txt')).toBe(dirtyContents);
     await expect(Git.revParse(repo, 'MERGE_HEAD')).rejects.toThrow();
   });
 
@@ -572,7 +568,7 @@ describe('runMergePolicy onStep (merge-visibility events)', () => {
     );
 
     expect(outcome.kind).toBe('merged');
-    expect(sink.steps.map((s) => s.step)).toEqual(['started', 'post-check-skipped', 'merged']);
+    expect(sink.steps.map((s) => s.step)).toEqual(['started', 'post-check-skipped', 'checkout-synced', 'merged']);
     const merged = sink.steps.find((s) => s.step === 'merged');
     expect(merged && 'mergeOid' in merged && merged.mergeOid).toBeTruthy();
   });
@@ -593,7 +589,7 @@ describe('runMergePolicy onStep (merge-visibility events)', () => {
       deps,
     );
 
-    expect(sink.steps.map((s) => s.step)).toEqual(['started', 'post-check-passed', 'merged']);
+    expect(sink.steps.map((s) => s.step)).toEqual(['started', 'post-check-passed', 'checkout-synced', 'merged']);
   });
 
   it('emits started → escalated when the post-merge check fails', async () => {
@@ -641,5 +637,261 @@ describe('runMergePolicy onStep (merge-visibility events)', () => {
     expect(sink.steps.map((s) => s.step)).toEqual(['started', 'conflict', 'escalated']);
     const conflict = sink.steps.find((s) => s.step === 'conflict');
     expect(conflict && 'paths' in conflict && conflict.paths).toContain('base.txt');
+  });
+});
+
+describe('base checkout sync (accommodating a dirty base checkout)', () => {
+  const collect = (): { steps: MergeStepEvent[]; onStep: (e: MergeStepEvent) => void } => {
+    const steps: MergeStepEvent[] = [];
+    return { steps, onStep: (e) => steps.push(e) };
+  };
+
+  function findSyncStep(steps: MergeStepEvent[]): Extract<MergeStepEvent, { step: 'checkout-synced' }> {
+    const step = steps.find((s) => s.step === 'checkout-synced');
+    if (!step || step.step !== 'checkout-synced') throw new Error('no checkout-synced step emitted');
+    return step;
+  }
+
+  it('fast-forwards a clean checkout to the merge tip', async () => {
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-ff', (wt) => writeFileSync(join(wt, 'feature.txt'), 'feature\n'));
+    const sink = collect();
+    const deps: MergePolicyDeps = {
+      resolveConflictTurn: neverCalled('resolveConflictTurn'),
+      runPostMergeCheck: vi.fn(async () => ({ pass: true, output: '' })),
+      escalate: vi.fn(async () => {}),
+      onStep: sink.onStep,
+    };
+
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-ff', conflictResolveTurns: 2, postMergeCheck: true },
+      deps,
+    );
+
+    expect(outcome.kind).toBe('merged');
+    expect(readFileSync(join(repo, 'feature.txt'), 'utf8')).toBe('feature\n');
+    expect(git(repo, 'status', '--porcelain')).toBe('');
+    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
+    const sync = findSyncStep(sink.steps);
+    expect(sync.mergedPaths).toEqual([]);
+    expect(sync.keptPaths).toEqual([]);
+  });
+
+  it('preserves unrelated staged, unstaged and untracked operator changes across the merge', async () => {
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-unrelated', (wt) => writeFileSync(join(wt, 'feature.txt'), 'feature\n'));
+    writeFileSync(join(repo, 'staged.txt'), 'staged\n');
+    git(repo, 'add', 'staged.txt');
+    writeFileSync(join(repo, 'base.txt'), 'unstaged edit\n');
+    writeFileSync(join(repo, 'untracked.txt'), 'untracked\n');
+
+    const deps: MergePolicyDeps = {
+      resolveConflictTurn: neverCalled('resolveConflictTurn'),
+      runPostMergeCheck: vi.fn(async () => ({ pass: true, output: '' })),
+      escalate: vi.fn(async () => {}),
+    };
+
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-unrelated', conflictResolveTurns: 2, postMergeCheck: true },
+      deps,
+    );
+
+    expect(outcome.kind).toBe('merged');
+    expect(readFileSync(join(repo, 'feature.txt'), 'utf8')).toBe('feature\n');
+    expect(readFileSync(join(repo, 'untracked.txt'), 'utf8')).toBe('untracked\n');
+    expect(readFileSync(join(repo, 'base.txt'), 'utf8')).toBe('unstaged edit\n');
+    const lines = git(repo, 'status', '--porcelain').split('\n').sort();
+    expect(lines).toEqual(['?? untracked.txt', 'A  staged.txt', 'M base.txt'].sort());
+  });
+
+  it('combines non-overlapping edits to the same file via a 3-way merge', async () => {
+    const repo = makeRepo();
+    writeFileSync(join(repo, 'multi.txt'), 'one\ntwo\nthree\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-m', 'add multi.txt');
+    await makeTaskBranch(repo, 'task-nonoverlap', (wt) => {
+      writeFileSync(join(wt, 'multi.txt'), 'TASK-one\ntwo\nthree\n');
+    });
+    writeFileSync(join(repo, 'multi.txt'), 'one\ntwo\nOPERATOR-three\n');
+
+    const sink = collect();
+    const deps: MergePolicyDeps = {
+      resolveConflictTurn: neverCalled('resolveConflictTurn'),
+      runPostMergeCheck: vi.fn(async () => ({ pass: true, output: '' })),
+      escalate: vi.fn(async () => {}),
+      onStep: sink.onStep,
+    };
+
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-nonoverlap', conflictResolveTurns: 2, postMergeCheck: true },
+      deps,
+    );
+
+    expect(outcome.kind).toBe('merged');
+    expect(readFileSync(join(repo, 'multi.txt'), 'utf8')).toBe('TASK-one\ntwo\nOPERATOR-three\n');
+    const sync = findSyncStep(sink.steps);
+    expect(sync.mergedPaths).toEqual(['multi.txt']);
+    expect(sync.keptPaths).toEqual([]);
+    expect(git(repo, 'status', '--porcelain').trim()).toBe('M multi.txt');
+  });
+
+  it("keeps the operator's bytes when the same file has conflicting edits", async () => {
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-conflict-hunk', (wt) => writeFileSync(join(wt, 'base.txt'), 'task version\n'));
+    writeFileSync(join(repo, 'base.txt'), 'dirty uncommitted\n');
+
+    const sink = collect();
+    const deps: MergePolicyDeps = {
+      resolveConflictTurn: neverCalled('resolveConflictTurn'),
+      runPostMergeCheck: vi.fn(async () => ({ pass: true, output: '' })),
+      escalate: vi.fn(async () => {}),
+      onStep: sink.onStep,
+    };
+
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-conflict-hunk', conflictResolveTurns: 2, postMergeCheck: true },
+      deps,
+    );
+
+    expect(outcome.kind).toBe('merged');
+    expect(deps.escalate).not.toHaveBeenCalled();
+    const content = readFileSync(join(repo, 'base.txt'), 'utf8');
+    expect(content).toBe('dirty uncommitted\n');
+    expect(content).not.toContain('<<<<<<<');
+    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
+    const sync = findSyncStep(sink.steps);
+    expect(sync.keptPaths).toEqual(['base.txt']);
+    expect(sync.mergedPaths).toEqual([]);
+  });
+
+  it("keeps the operator's edit when the merge deletes the file", async () => {
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-deletes', (wt) => {
+      execFileSync('git', ['-C', wt, 'rm', '-q', 'base.txt']);
+    });
+    writeFileSync(join(repo, 'base.txt'), 'operator edit\n');
+
+    const sink = collect();
+    const deps: MergePolicyDeps = {
+      resolveConflictTurn: neverCalled('resolveConflictTurn'),
+      runPostMergeCheck: vi.fn(async () => ({ pass: true, output: '' })),
+      escalate: vi.fn(async () => {}),
+      onStep: sink.onStep,
+    };
+
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-deletes', conflictResolveTurns: 2, postMergeCheck: true },
+      deps,
+    );
+
+    expect(outcome.kind).toBe('merged');
+    expect(readFileSync(join(repo, 'base.txt'), 'utf8')).toBe('operator edit\n');
+    const sync = findSyncStep(sink.steps);
+    expect(sync.keptPaths).toEqual(['base.txt']);
+  });
+
+  it("keeps the operator's untracked or ignored file when the merge adds the same path", async () => {
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-adds', (wt) => {
+      writeFileSync(join(wt, 'untracked-collide.txt'), 'task new\n');
+      writeFileSync(join(wt, 'ignored-collide.txt'), 'task new\n');
+    });
+    writeFileSync(join(repo, '.gitignore'), 'ignored-collide.txt\n');
+    git(repo, 'add', '.gitignore');
+    git(repo, 'commit', '-m', 'ignore ignored-collide.txt');
+    writeFileSync(join(repo, 'untracked-collide.txt'), 'operator new\n');
+    writeFileSync(join(repo, 'ignored-collide.txt'), 'operator ignored\n');
+
+    const sink = collect();
+    const deps: MergePolicyDeps = {
+      resolveConflictTurn: neverCalled('resolveConflictTurn'),
+      runPostMergeCheck: vi.fn(async () => ({ pass: true, output: '' })),
+      escalate: vi.fn(async () => {}),
+      onStep: sink.onStep,
+    };
+
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-adds', conflictResolveTurns: 2, postMergeCheck: true },
+      deps,
+    );
+
+    expect(outcome.kind).toBe('merged');
+    expect(readFileSync(join(repo, 'untracked-collide.txt'), 'utf8')).toBe('operator new\n');
+    expect(readFileSync(join(repo, 'ignored-collide.txt'), 'utf8')).toBe('operator ignored\n');
+    const sync = findSyncStep(sink.steps);
+    expect([...sync.keptPaths].sort()).toEqual(['ignored-collide.txt', 'untracked-collide.txt']);
+  });
+
+  it('leaves an unrelated checked-out branch untouched and emits no sync step', async () => {
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-other-branch', (wt) => writeFileSync(join(wt, 'feature.txt'), 'feature\n'));
+    git(repo, 'checkout', '-b', 'parked');
+    writeFileSync(join(repo, 'parked-only.txt'), 'parked\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-m', 'parked work');
+
+    const sink = collect();
+    const deps: MergePolicyDeps = {
+      resolveConflictTurn: neverCalled('resolveConflictTurn'),
+      runPostMergeCheck: vi.fn(async () => ({ pass: true, output: '' })),
+      escalate: vi.fn(async () => {}),
+      onStep: sink.onStep,
+    };
+
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-other-branch', conflictResolveTurns: 2, postMergeCheck: true },
+      deps,
+    );
+
+    expect(outcome.kind).toBe('merged');
+    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('parked');
+    expect(existsSync(join(repo, 'feature.txt'))).toBe(false);
+    expect(existsSync(join(repo, 'parked-only.txt'))).toBe(true);
+    expect(sink.steps.some((s) => s.step === 'checkout-synced')).toBe(false);
+    expect(git(repo, 'ls-tree', '--name-only', 'main', 'feature.txt')).toBe('feature.txt');
+  });
+
+  it('keeps a single failing overlap path without aborting the rest of the sync', async () => {
+    const repo = makeRepo();
+    writeFileSync(join(repo, 'ok.txt'), 'one\ntwo\nthree\n');
+    writeFileSync(join(repo, 'boom.txt'), 'one\ntwo\nthree\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-m', 'add ok.txt and boom.txt');
+    await makeTaskBranch(repo, 'task-partial-failure', (wt) => {
+      writeFileSync(join(wt, 'ok.txt'), 'TASK-one\ntwo\nthree\n');
+      writeFileSync(join(wt, 'boom.txt'), 'TASK-one\ntwo\nthree\n');
+    });
+    writeFileSync(join(repo, 'ok.txt'), 'one\ntwo\nOPERATOR-three\n');
+    writeFileSync(join(repo, 'boom.txt'), 'one\ntwo\nOPERATOR-three\n');
+
+    const original = Git.mergeFileResult.bind(Git);
+    const spy = vi.spyOn(Git, 'mergeFileResult').mockImplementation(async (oursPath, basePath, theirsPath) => {
+      if (oursPath.endsWith('boom.txt')) throw new Error('injected failure');
+      return original(oursPath, basePath, theirsPath);
+    });
+
+    const sink = collect();
+    const deps: MergePolicyDeps = {
+      resolveConflictTurn: neverCalled('resolveConflictTurn'),
+      runPostMergeCheck: vi.fn(async () => ({ pass: true, output: '' })),
+      escalate: vi.fn(async () => {}),
+      onStep: sink.onStep,
+    };
+
+    try {
+      const outcome = await runMergePolicy(
+        { baseDir: repo, baseBranch: 'main', taskBranch: 'task-partial-failure', conflictResolveTurns: 2, postMergeCheck: true },
+        deps,
+      );
+
+      expect(outcome.kind).toBe('merged');
+      expect(readFileSync(join(repo, 'ok.txt'), 'utf8')).toBe('TASK-one\ntwo\nOPERATOR-three\n');
+      expect(readFileSync(join(repo, 'boom.txt'), 'utf8')).toBe('one\ntwo\nOPERATOR-three\n');
+      const sync = findSyncStep(sink.steps);
+      expect(sync.mergedPaths).toEqual(['ok.txt']);
+      expect(sync.keptPaths).toEqual(['boom.txt']);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
