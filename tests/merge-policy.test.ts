@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { context, propagation, trace } from '@opentelemetry/api';
@@ -72,20 +72,29 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     expect(Number(git(repo, 'rev-list', '--count', '--merges', 'HEAD'))).toBeGreaterThanOrEqual(1);
   });
 
-  it('checks the base branch out to merge a different base, then restores the parked branch', async () => {
+  it('merges in a disposable worktree without changing the parked checkout', async () => {
     const repo = makeRepo();
     const mainTip = git(repo, 'rev-parse', 'main');
     git(repo, 'checkout', '-b', 'parked');
     writeFileSync(join(repo, 'parked.txt'), 'parked work\n');
     git(repo, 'add', '-A');
     git(repo, 'commit', '-m', 'parked commit');
+    const parkedHead = git(repo, 'rev-parse', 'HEAD');
+    const parkedStatus = git(repo, 'status', '--porcelain');
     await makeTaskBranch(repo, 'task-elsewhere', (wt) => {
       writeFileSync(join(wt, 'feature.txt'), 'feature\n');
     });
 
+    let postCheckDir = '';
+
     const deps: MergePolicyDeps = {
       resolveConflictTurn: neverCalled('resolveConflictTurn'),
-      runPostMergeCheck: vi.fn(async () => ({ pass: true, output: '' })),
+      runPostMergeCheck: vi.fn(async (mergeOid, baseDir) => {
+        postCheckDir = baseDir;
+        expect(git(baseDir, 'rev-parse', 'HEAD')).toBe(mergeOid);
+        expect(git(repo, 'rev-parse', 'main')).toBe(mainTip);
+        return { pass: true, output: '' };
+      }),
       escalate: vi.fn(async () => {}),
     };
 
@@ -96,10 +105,14 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
 
     expect(outcome.kind).toBe('merged');
     expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('parked');
+    expect(git(repo, 'rev-parse', 'HEAD')).toBe(parkedHead);
+    expect(git(repo, 'status', '--porcelain')).toBe(parkedStatus);
     expect(git(repo, 'rev-parse', 'main')).not.toBe(mainTip);
     expect(git(repo, 'rev-parse', 'main^2')).toBeTruthy();
     expect(() => git(repo, 'show', 'main:feature.txt')).not.toThrow();
     expect(() => git(repo, 'show', 'parked:parked.txt')).not.toThrow();
+    expect(postCheckDir).not.toBe(repo);
+    expect(existsSync(postCheckDir)).toBe(false);
   });
 
   it('runs a post-merge check that adds a worktree on the same repo without deadlocking', async () => {
@@ -194,6 +207,38 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
 
     await expect(Git.revParse(repo, 'MERGE_HEAD')).rejects.toThrow();
     expect(git(repo, 'rev-parse', 'HEAD')).toBe(originalHead);
+  });
+
+  it('leaves the persistent checkout untouched when a merge conflicts', async () => {
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-conflict', (wt) => {
+      writeFileSync(join(wt, 'base.txt'), 'task version\n');
+    });
+    writeFileSync(join(repo, 'base.txt'), 'main version\n');
+    git(repo, 'commit', '-am', 'main edits base.txt');
+    git(repo, 'checkout', '-b', 'parked');
+    writeFileSync(join(repo, 'parked.txt'), 'parked work\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-m', 'parked commit');
+    const parkedHead = git(repo, 'rev-parse', 'HEAD');
+    const parkedStatus = git(repo, 'status', '--porcelain');
+    const mainHead = git(repo, 'rev-parse', 'main');
+
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-conflict', conflictResolveTurns: 0, postMergeCheck: false },
+      {
+        resolveConflictTurn: neverCalled('resolveConflictTurn'),
+        runPostMergeCheck: neverCalled('runPostMergeCheck'),
+        escalate: vi.fn(async () => {}),
+      },
+    );
+
+    expect(outcome).toMatchObject({ kind: 'escalated', reason: 'conflict' });
+    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('parked');
+    expect(git(repo, 'rev-parse', 'HEAD')).toBe(parkedHead);
+    expect(git(repo, 'status', '--porcelain')).toBe(parkedStatus);
+    expect(git(repo, 'rev-parse', 'main')).toBe(mainHead);
+    await expect(Git.revParse(repo, 'MERGE_HEAD')).rejects.toThrow();
   });
 
   it('reverts the merge and escalates with the failing output when the post-merge check goes red', async () => {
