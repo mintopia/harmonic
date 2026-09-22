@@ -1,5 +1,47 @@
 # Changelog
 
+## [2.18.0](https://github.com/mintopia/harmonic/compare/v2.17.0...v2.18.0) (2026-09-22)
+
+
+### Features
+
+* add epic detail timeline ([062785a](https://github.com/mintopia/harmonic/commit/062785a63627f310faa0afa854ac1b68be3ff600))
+* **config:** add Claude Opus 5.5 to the Claude harness catalog ([ae1c286](https://github.com/mintopia/harmonic/commit/ae1c286e0696a7676f78d45ae7bda6ab4ef8f078))
+* **config:** add GPT-6 Sol and GPT-6 Luna to the Codex harness catalog ([b0fb44e](https://github.com/mintopia/harmonic/commit/b0fb44e2640cfdcd094697f78c1900ae343bf20e))
+* **epics:** complete all-direct epics in place without an integration branch ([31c4bfc](https://github.com/mintopia/harmonic/commit/31c4bfce96173fbc6e893a851ebd62c420d71336))
+* **escalation:** step-aware Accept and fresh-Attempt Reject (ADR-0038) ([4299984](https://github.com/mintopia/harmonic/commit/4299984de9b2faaead77a8b95ac314fb7689f4b4))
+* **git-visibility:** re-enable branch retirement visibly + task-level events for no-Attempt actions ([941e9dd](https://github.com/mintopia/harmonic/commit/941e9dde675f4a1d02c6374ce72e87388a1ef240))
+* **git-visibility:** record every worktree/branch/commit side effect as a lifecycle row ([8d56129](https://github.com/mintopia/harmonic/commit/8d561299d932af84824052fd62b2514af6846332))
+* **merge:** reconcile a moved base instead of asserting its SHA (ADR-0040) ([3069ecb](https://github.com/mintopia/harmonic/commit/3069ecb38a4fd17a2d20e115040aeffcd3c661b8))
+* show integrating epic board bands ([18ac5c1](https://github.com/mintopia/harmonic/commit/18ac5c1edbc9c38e4ec64d28d1d3fba9558e4f4c))
+* surface epic integration lifecycle events ([dc1692e](https://github.com/mintopia/harmonic/commit/dc1692edc5dab81268ad5c5e1e5ad6917c9f8f02))
+* **web:** filter the graph by epic ([58b2bcc](https://github.com/mintopia/harmonic/commit/58b2bccdd30a8c2deb38f688aa1bb75882255edd))
+
+
+### Bug Fixes
+
+* avoid chown in user systemd installs ([f2194ca](https://github.com/mintopia/harmonic/commit/f2194cafeb623d386ab6c622ab668b88cdd9f86b))
+* **build:** accept undefined taskEvents under exactOptionalPropertyTypes ([5b82c94](https://github.com/mintopia/harmonic/commit/5b82c94c3858745657f622a214069cfd720bc6a2))
+* **config:** match OpenAI's current API prices and context windows ([d7dc202](https://github.com/mintopia/harmonic/commit/d7dc202fec664954a0d672b4f74a34cb85cbe3db))
+* **epics:** in-place build stage sublabel says done, not merged ([18afd93](https://github.com/mintopia/harmonic/commit/18afd93562c5c60e12b7424eab7131eaa19a9e75))
+* **epics:** in-place status keys off member modes, not branch existence ([0e830f5](https://github.com/mintopia/harmonic/commit/0e830f5c87f52fa81db1d9b08e68703b91bd8ae0))
+* **epics:** recheck branch retirement when an Epic integration succeeds ([2960d76](https://github.com/mintopia/harmonic/commit/2960d76ea8cdda8185668b3cc3b2343e760f2437))
+* **epics:** scope isInPlace to its own Workspace's tracker refs ([82534a6](https://github.com/mintopia/harmonic/commit/82534a678db972a215b1741387c63683b99f5624))
+* **epics:** scope isInPlace's caller by workspace id, not task workingDir ([2b79b86](https://github.com/mintopia/harmonic/commit/2b79b861ab6f15774e40787dca1199bb6cbd3342))
+* **git:** keep the leading status column when parsing porcelain output ([a2916e9](https://github.com/mintopia/harmonic/commit/a2916e945dba80b366678352897d528dc55eda1b))
+* green the test failures the build error had masked ([8d46111](https://github.com/mintopia/harmonic/commit/8d46111d3932f438b276ee68f985410facb52457))
+* install systemd code through current symlink ([c468387](https://github.com/mintopia/harmonic/commit/c468387c87ea627c1ecfc89b435d13b2dde277ae))
+* install versioned service package root ([d017520](https://github.com/mintopia/harmonic/commit/d0175204533078bf9e17b3a077bb4b5a7e5ce484))
+* isolate epic branch retirement ([3fdd835](https://github.com/mintopia/harmonic/commit/3fdd8357e20ca7c57ca1520209aa168c4514a7eb))
+* isolate merge policy worktrees ([b92f670](https://github.com/mintopia/harmonic/commit/b92f6702b29a21d45d966974a946e4646ca4aec0))
+* isolate merge policy worktrees ([13eb9c3](https://github.com/mintopia/harmonic/commit/13eb9c32ebd11906fd770d1ffc5daf0c0ef7a40c))
+* **merge:** escalate instead of spinning on a non-race ref-write failure ([b211b4f](https://github.com/mintopia/harmonic/commit/b211b4f193afe5ed006bf86027e7195227c6ad60))
+* **merge:** fall back to keeping a path when its checkout sync fails ([9ffab2d](https://github.com/mintopia/harmonic/commit/9ffab2dbe39cbeadf6221c217c77026c1944f586))
+* **merge:** sync a dirty base checkout without clobbering or blocking ([905ab56](https://github.com/mintopia/harmonic/commit/905ab564a2ebea9e2122b3811a4030fa4c3b4ac4))
+* omit undefined detail in isolated merge conflict result ([a9a025b](https://github.com/mintopia/harmonic/commit/a9a025b2330856c1a53bb7582489ba3e9d26a2ed))
+* preserve systemd current path detection ([0c2eee4](https://github.com/mintopia/harmonic/commit/0c2eee43a03abf6f82f0cce9fc205899bccafd3e))
+* report upgrade progress from server state ([d21a5c0](https://github.com/mintopia/harmonic/commit/d21a5c08f56d16c2ff55fc06932302d2df9fa5f4))
+
 ## [2.17.0](https://github.com/mintopia/harmonic/compare/v2.16.0...v2.17.0) (2026-09-21)
 
 
