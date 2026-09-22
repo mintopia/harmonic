@@ -25,6 +25,7 @@ const initdDependencies = () => {
   const dependencies = {
     warn,
     cliPath: '/opt/harmonic/dist/cli.js',
+    currentVersion: '2.16.0',
     nodePath: '/usr/bin/node',
     path: '/usr/local/bin:/usr/bin:/bin',
     homeDir: '/home/agent',
@@ -158,6 +159,7 @@ describe('systemd ServiceManager', () => {
       files,
       modes,
       cliPath: '/opt/harmonic/dist/cli.js',
+      currentVersion: '2.16.0',
       nodePath: '/usr/bin/node',
       path: '/opt/tools/bin:/usr/local/bin:/usr/bin:/bin',
       homeDir: '/home/ada',
@@ -195,7 +197,8 @@ describe('systemd ServiceManager', () => {
     expect(deps.dirs).toContain('/var/lib/harmonic/app/versions/2.16.0');
     expect(deps.calls).toEqual([
       ['chown', 'workspace', '/var/lib/harmonic'],
-      ['npm', 'i', '--prefix', '/var/lib/harmonic/app/versions/2.16.0', '@mintopia/harmonic@2.16.0'],
+      ['cp', '-a', '/opt/harmonic/.', '/var/lib/harmonic/app/versions/2.16.0'],
+      ['npm', 'i', '--prefix', '/var/lib/harmonic/app/versions/2.16.0', '--omit=dev'],
       ['chown', '-R', 'workspace', '/var/lib/harmonic/app'],
       ['ln', '-sfn', 'versions/2.16.0', '/var/lib/harmonic/app/current'],
       ['systemctl', 'daemon-reload'],
@@ -219,6 +222,29 @@ describe('systemd ServiceManager', () => {
     expect(unit).toContain('User=operator');
     expect(unit).toContain('Group=operator');
     expect(deps.calls).toContainEqual(['chown', '-R', 'operator', '/srv/harmonic/app']);
+  });
+
+  it('installs the injected running version under the app versions directory', async () => {
+    const deps = { ...dependencies(), currentVersion: '3.1.4' };
+    const manager = createServiceManager(environment({ isRoot: true, systemdRunning: true }), deps);
+
+    await manager.install({
+      startSelfManaged: vi.fn(),
+      serve: { port: '4700', host: '0.0.0.0', dataDir: '/srv/harmonic' },
+    });
+
+    expect(deps.dirs).toContain('/srv/harmonic/app/versions/3.1.4');
+    expect(deps.calls).toContainEqual(['ln', '-sfn', 'versions/3.1.4', '/srv/harmonic/app/current']);
+  });
+
+  it('rejects a version that could escape the app versions directory', async () => {
+    const deps = { ...dependencies(), currentVersion: '../outside' };
+    const manager = createServiceManager(environment({ isRoot: true, systemdRunning: true }), deps);
+
+    await expect(manager.install({
+      startSelfManaged: vi.fn(),
+      serve: { port: '4700', host: '0.0.0.0', dataDir: '/srv/harmonic' },
+    })).rejects.toThrow('Invalid string');
   });
 
   it('uses SUDO_USER for a system unit when no explicit user was passed', async () => {
@@ -269,13 +295,15 @@ describe('systemd ServiceManager', () => {
     });
 
     expect(deps.files.get('/home/ada/.config/systemd/user/harmonic.service')).toContain('EnvironmentFile=/home/ada/.config/systemd/user/harmonic.env');
+    expect(deps.files.get('/home/ada/.config/systemd/user/harmonic.service')).toContain('ExecStart=/usr/bin/node /home/ada/.harmonic/app/current/dist/cli.js serve');
     expect(deps.files.get('/home/ada/.config/systemd/user/harmonic.env')).toBe('HARMONIC_PASSWORD="secret value"\n');
     expect(deps.modes.get('/home/ada/.config/systemd/user/harmonic.env')).toBe(0o600);
     expect(deps.dirs).toContain('/home/ada/.harmonic');
     expect(deps.dirs).toContain('/home/ada/.harmonic/app/versions/2.16.0');
     expect(deps.calls).toEqual([
       ['loginctl', 'enable-linger', 'ada'],
-      ['npm', 'i', '--prefix', '/home/ada/.harmonic/app/versions/2.16.0', '@mintopia/harmonic@2.16.0'],
+      ['cp', '-a', '/opt/harmonic/.', '/home/ada/.harmonic/app/versions/2.16.0'],
+      ['npm', 'i', '--prefix', '/home/ada/.harmonic/app/versions/2.16.0', '--omit=dev'],
       ['chown', '-R', 'ada', '/home/ada/.harmonic/app'],
       ['ln', '-sfn', 'versions/2.16.0', '/home/ada/.harmonic/app/current'],
       ['systemctl', '--user', 'daemon-reload'],
