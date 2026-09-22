@@ -131,6 +131,10 @@ export class UpgradeCoordinator {
   private async reconcileOnce(): Promise<boolean> {
     const armed = await this.options.store.getState();
     if (armed.armedVersion === null) return false;
+    if (this.options.migrationRequired) {
+      await this.cancelOnce();
+      return false;
+    }
     const idle = await this.idleState();
     if (idle.runningAttempts !== 0 || idle.mergingOrIntegrating || idle.conversationMidTurn) return false;
     if (this.onIdleStartedFor === armed.armedVersion) return true;

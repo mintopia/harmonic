@@ -14,7 +14,8 @@ import { UpgradeSwap } from './upgrade/upgrade-swap.js';
 import { startOperation } from './telemetry/operations.js';
 import { displayUrl, type CliOutcome } from './cli-commands.js';
 
-export function requiresSystemdInstallMigration({ dataDir, cliPath }: { dataDir: string; cliPath: string }): boolean {
+export function requiresSystemdInstallMigration({ managedBy, dataDir, cliPath }: { managedBy: string | undefined; dataDir: string; cliPath: string }): boolean {
+  if (managedBy !== 'systemd') return false;
   const current = join(dataDir, 'app', 'current');
   const pathFromCurrent = relative(current, cliPath);
   return pathFromCurrent === '' || pathFromCurrent.startsWith('..') || isAbsolute(pathFromCurrent);
@@ -56,9 +57,10 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
   const dataDir = values['data-dir'] ?? defaultDataDir();
   const port = Number(values.port);
   const host = values.host!;
-  const migrationRequired = process.env.HARMONIC_MANAGED_BY === 'systemd' && requiresSystemdInstallMigration({
+  const migrationRequired = requiresSystemdInstallMigration({
+    managedBy: process.env.HARMONIC_MANAGED_BY,
     dataDir,
-    cliPath: fileURLToPath(import.meta.url),
+    cliPath: process.argv[1] ?? fileURLToPath(import.meta.url),
   });
   if (migrationRequired) {
     logger.warn('Auto-upgrade is disabled until you re-run sudo harmonic install; your data is untouched.');

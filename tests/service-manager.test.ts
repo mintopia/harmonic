@@ -239,6 +239,7 @@ describe('systemd ServiceManager', () => {
   it('reinstalls an old systemd service into the stable layout without changing data files', async () => {
     const deps = dependencies();
     deps.files.set('/srv/harmonic/settings.yaml', 'existing data');
+    deps.files.set('/etc/systemd/system/harmonic.service', 'ExecStart=/usr/bin/node /usr/lib/node_modules/@mintopia/harmonic/dist/cli.js serve');
     const manager = createServiceManager(environment({ isRoot: true, systemdRunning: true }), deps);
     const options = { startSelfManaged: vi.fn(), serve: { port: '4700', host: '0.0.0.0', dataDir: '/srv/harmonic' } };
 
@@ -250,6 +251,10 @@ describe('systemd ServiceManager', () => {
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain(
       'ExecStart=/usr/bin/node /srv/harmonic/app/current/dist/cli.js serve',
     );
+    expect(deps.calls.filter(([command]) => command === 'ln')).toEqual([
+      ['ln', '-sfn', 'versions/2.16.0', '/srv/harmonic/app/current'],
+      ['ln', '-sfn', 'versions/2.16.0', '/srv/harmonic/app/current'],
+    ]);
     expect(deps.calls.filter(([command, action]) => command === 'systemctl' && action === 'daemon-reload')).toHaveLength(2);
   });
 

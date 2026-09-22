@@ -23,9 +23,10 @@ function coordinator(input: {
   operations?: OperationSnapshot[];
   onIdle?: (version: string) => void;
   migrationRequired?: boolean;
+  armedVersion?: string | null;
 } = {}) {
   let config: AppConfig = { ...baselineConfig(), autoRunner: { ...baselineConfig().autoRunner, enabled: input.autoRunnerEnabled ?? true } };
-  const store = new MemoryStore({ version: input.version ?? '2.6.0', armedVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null });
+  const store = new MemoryStore({ version: input.version ?? '2.6.0', armedVersion: input.armedVersion ?? null, autoRunnerWasEnabled: input.armedVersion === undefined ? null : true, dismissedVersion: null });
   let runningAttempts = input.runningAttempts ?? 0;
   let conversationMidTurn = input.conversationMidTurn ?? false;
   let operations = input.operations ?? [];
@@ -62,6 +63,14 @@ describe('UpgradeCoordinator', () => {
       'Auto-upgrade is disabled until you re-run sudo harmonic install; your data is untouched.',
     );
     await expect(subject.upgrade.migrationRequired()).resolves.toBe(true);
+    expect(subject.config().autoRunner.enabled).toBe(true);
+  });
+
+  it('cancels an upgrade armed before a legacy systemd layout was detected', async () => {
+    const subject = coordinator({ migrationRequired: true, armedVersion: '2.6.0' });
+
+    await expect(subject.upgrade.reconcile()).resolves.toBe(false);
+    await expect(subject.upgrade.state()).resolves.toMatchObject({ armedVersion: null });
     expect(subject.config().autoRunner.enabled).toBe(true);
   });
 
