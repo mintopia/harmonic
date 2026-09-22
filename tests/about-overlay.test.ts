@@ -107,6 +107,21 @@ describe('AboutOverlay', () => {
     expect(host!.textContent).toContain('3.2.0');
   });
 
+  it('shows updating only when the server reports an upgrade in progress', async () => {
+    await renderAbout({
+      update: makeUpdate({ availableVersion: '3.2.0', armedVersion: '3.2.0' }),
+    });
+
+    expect(host!.textContent).toContain('3.2.0 restarts when idle');
+    expect(host!.textContent).not.toContain('Updating to');
+
+    await renderAbout({
+      update: makeUpdate({ availableVersion: '3.2.0', armedVersion: '3.2.0', upgradingVersion: '3.2.0' }),
+    });
+
+    expect(host!.textContent).toContain('Updating to 3.2.0…');
+  });
+
   it('calls onCheckForUpdates when the check-for-updates button is clicked, and disables it while pending', async () => {
     const onCheckForUpdates = vi.fn();
     await renderAbout({ onCheckForUpdates, pending: true });
