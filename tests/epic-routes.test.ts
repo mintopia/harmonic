@@ -182,6 +182,9 @@ describe('epic-routes', () => {
         const runner = makeRunner(async ({ baseBranch }) => {
           refreshed.push(baseBranch);
         });
+        git(repo, 'checkout', '-b', 'parked');
+        const parkedHead = git(repo, 'rev-parse', 'HEAD');
+        const parkedStatus = git(repo, 'status', '--porcelain');
 
         const outcome = await runner.mergeEpicIntegration({
           workspaceId: 1,
@@ -197,6 +200,9 @@ describe('epic-routes', () => {
         expect(() => git(repo, 'cat-file', '-e', 'develop:epic.txt')).not.toThrow();
         expect(() => git(repo, 'cat-file', '-e', 'develop:develop.txt')).not.toThrow();
         expect(refreshed).toEqual(['develop']);
+        expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('parked');
+        expect(git(repo, 'rev-parse', 'HEAD')).toBe(parkedHead);
+        expect(git(repo, 'status', '--porcelain')).toBe(parkedStatus);
       });
 
       it('reverts and escalates (post-merge-red) when the post-merge check fails, leaving develop green', async () => {
@@ -233,6 +239,9 @@ describe('epic-routes', () => {
         writeFileSync(join(wt, 'shared.txt'), 'epic change\n');
         git(wt, 'commit', '-am', 'epic side');
         git(conflictRepo, 'worktree', 'remove', '--force', wt);
+        git(conflictRepo, 'checkout', '-b', 'parked');
+        const parkedHead = git(conflictRepo, 'rev-parse', 'HEAD');
+        const parkedStatus = git(conflictRepo, 'status', '--porcelain');
 
         const runner = makeRunner();
         const outcome = await runner.mergeEpicIntegration({
@@ -245,7 +254,10 @@ describe('epic-routes', () => {
         });
 
         expect(outcome).toMatchObject({ kind: 'escalated', reason: 'conflict' });
+        expect(git(conflictRepo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('parked');
+        expect(git(conflictRepo, 'rev-parse', 'HEAD')).toBe(parkedHead);
         expect(git(conflictRepo, 'status', '--porcelain')).toBe('');
+        expect(git(conflictRepo, 'status', '--porcelain')).toBe(parkedStatus);
       });
 
       describe('base-repo restore after a non-default base merge (member → epic/<ref>)', () => {
