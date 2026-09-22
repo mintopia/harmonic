@@ -3,6 +3,7 @@ import type { AppConfig, DeepPartial } from '../config.js';
 import { SettingsStore } from './settings-store.js';
 import { TaskService } from '../domain/tasks.js';
 import { AttemptStore } from '../domain/attempts.js';
+import { TaskEventStore } from '../domain/task-events.js';
 import { ConversationStore } from '../domain/conversations.js';
 import { WorkspaceService } from '../domain/workspaces.js';
 import { PermissionRuleStore } from '../domain/permission-rules.js';
@@ -68,6 +69,7 @@ export interface AppContext {
   workspaces: WorkspaceService;
   tasks: TaskService;
   attempts: AttemptStore;
+  taskEvents: TaskEventStore;
   sessions: SessionStore;
   runner: Runner;
   conversations: ConversationStore;
@@ -102,6 +104,7 @@ export type PersistenceContext = Pick<
   | 'workspaces'
   | 'tasks'
   | 'attempts'
+  | 'taskEvents'
   | 'sessions'
   | 'conversations'
   | 'permissionRules'
@@ -144,8 +147,8 @@ export interface AppContexts {
 }
 
 export function createPersistenceContext(ctx: AppContext): PersistenceContext {
-  const { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels } = ctx;
-  return { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels };
+  const { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, taskEvents, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels } = ctx;
+  return { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, taskEvents, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels };
 }
 
 export function createExecutionContext(ctx: AppContext): ExecutionContext {

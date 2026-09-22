@@ -8,7 +8,9 @@ import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { SessionStore } from '../src/domain/sessions.js';
+import { TaskEventStore } from '../src/domain/task-events.js';
 import { WorkspaceProvisioner } from '../src/execution/workspace-provisioner.js';
+import { Git } from '../src/execution/git.js';
 import type { MergeCoordinator } from '../src/execution/merge-coordinator.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -261,5 +263,33 @@ describe('WorkspaceProvisioner git-visibility events', () => {
     const events = await eventsFor(run.id);
     const committed = events.find((e) => e.event === 'work-committed');
     expect(committed).toMatchObject({ reason: 'attempt-end', attempt: 3 });
+  });
+
+  it('cleanupClosed falls back to the Task\'s own event log when there is no Attempt to attach worktree/branch cleanup to (owner decision: task_events)', async () => {
+    const task = await tasks.create({ prompt: 'p', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
+    const branch = `harmonic/task-${task.id}`;
+    const worktreePath = join(worktreesDir, `task-${task.id}`);
+    // A stray worktree+branch left on disk with no live Attempt row to key off.
+    git(repo, 'worktree', 'add', '-b', branch, worktreePath, 'main');
+
+    const taskEvents = new TaskEventStore(asyncDb);
+    const provisionerInstance = new WorkspaceProvisioner({
+      attempts,
+      sessionStore: new SessionStore(asyncDb),
+      mergeCoordinator: { resolveBaseBranch: async () => 'main' } as unknown as MergeCoordinator,
+      autoDrive: undefined,
+      sessionRetirement: undefined,
+      events: {},
+      worktreesDir,
+      taskEvents,
+    });
+
+    await provisionerInstance.cleanupClosed(task, undefined);
+
+    expect(existsSync(worktreePath)).toBe(false);
+    expect(await Git.branchExists(repo, branch)).toBe(false);
+    const events = (await taskEvents.listEvents(task.id)).map((e) => e.payload as Record<string, unknown>);
+    expect(events).toContainEqual({ event: 'worktree-removed', worktree: `task-${task.id}` });
+    expect(events).toContainEqual({ event: 'branch-deleted', branch });
   });
 });

@@ -15,7 +15,7 @@ import type { SessionStore } from '../domain/sessions.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
 import { logger } from '../logger.js';
-import type { RunnerEvents, Workspace } from './runner-options.js';
+import type { RunnerEvents, TaskEventAppender, Workspace } from './runner-options.js';
 
 export interface WorkspaceProvisionerDeps {
   attempts: AttemptStore;
@@ -25,6 +25,9 @@ export interface WorkspaceProvisionerDeps {
   sessionRetirement: SessionRetirementHook | undefined;
   events: RunnerEvents;
   worktreesDir: string;
+  /** Task-level lifecycle log, for a Close with no Attempt to attach a
+   * worktree/branch cleanup row to. Absent → that row is dropped. */
+  taskEvents?: TaskEventAppender;
 }
 
 export class WorkspaceProvisioner {
@@ -37,6 +40,17 @@ export class WorkspaceProvisioner {
       this.deps.events.onAttemptEvent?.(event);
     } catch (err) {
       logger.error(`attempt ${run.id}: ${String(payload.event)} event append failed: ${String(err)}`);
+    }
+  }
+
+  /** Record a git side-effect with no owning Attempt onto the Task's own
+   * lifecycle log; never throws. */
+  private async recordTask(task: Pick<TaskRow, 'id'>, payload: Record<string, unknown>): Promise<void> {
+    try {
+      await this.deps.taskEvents?.appendEvent(task.id, payload);
+      this.deps.events.onTaskEvent?.(task.id);
+    } catch (err) {
+      logger.error(`task ${task.id}: ${String(payload.event)} event append failed: ${String(err)}`);
     }
   }
 
@@ -75,6 +89,35 @@ export class WorkspaceProvisioner {
         }
       }
       this.deps.events.onAttemptFinished?.(await this.deps.attempts.get(run.id));
+    } else {
+      // No Attempt to attach cleanup evidence to (e.g. an escalated Task with
+      // none recorded) — fall back to the Task's own deterministic worktree
+      // path and branch name, and record on the Task's own event log.
+      const worktreePath = this.worktreePathForTask(task);
+      if (existsSync(worktreePath)) {
+        const worktree = basename(worktreePath);
+        try {
+          await Git.removeWorktree(task.workingDir, worktreePath);
+          await dropIndexForPath(worktreePath);
+          await this.recordTask(task, { event: 'worktree-removed', worktree });
+        } catch (err) {
+          logger.error(`task ${task.id} close: worktree removal failed: ${String(err)}`);
+          await this.recordTask(task, { event: 'worktree-remove-failed', worktree, error: errorMessage(err) });
+        }
+      }
+      const branch = this.branchForTask(task);
+      if (
+        (await Git.branchExists(task.workingDir, branch).catch(() => false)) &&
+        (await Git.branchCheckedOutAt(task.workingDir, branch).catch(() => null)) === null
+      ) {
+        try {
+          await Git.deleteBranch(task.workingDir, branch);
+          await this.recordTask(task, { event: 'branch-deleted', branch });
+        } catch (err) {
+          logger.error(`task ${task.id} close: branch '${branch}' removal failed: ${String(err)}`);
+          await this.recordTask(task, { event: 'branch-delete-failed', branch, error: errorMessage(err) });
+        }
+      }
     }
     if (this.deps.autoDrive && !(await this.deps.autoDrive.closeTicket(task, `Closed by a Harmonic operator without merging (task ${task.id}).`))) {
       logger.error(`task ${task.id} close: tracker issue could not be closed`);

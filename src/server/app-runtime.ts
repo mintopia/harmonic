@@ -2,6 +2,7 @@ import { defaultBranchPostMerge, type PostMergeHook } from '../execution/branch-
 import type { AsyncDbHandle } from '../db/async.js';
 import { dropIndexForPath } from '../execution/code-index.js';
 import { Git } from '../execution/git.js';
+import { BranchRetirementCoordinator } from '../execution/branch-retirement.js';
 import type { MergeEffectExec } from '../domain/merge.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import { CrashRecoveryCoordinator } from '../execution/crash-recovery.js';
@@ -38,11 +39,15 @@ import type { DistributionMode } from '../distribution-mode.js';
 function createLifecycleTracking(
   bus: EventBus,
   attempts: Stores['attempts'],
+  taskEvents: Stores['taskEvents'],
+  tasks: Stores['tasks'],
   sessionStore: Stores['sessions'],
 ): {
   recordAttemptLifecycleBestEffort: (run: Pick<AttemptRow, 'id'>, payload: Record<string, unknown>) => void;
+  recordTaskEventBestEffort: (task: Pick<TaskRow, 'id'>, payload: Record<string, unknown>) => void;
   sessionRetirement: SessionRetirementCoordinator;
   drainRetirement: () => Promise<number>;
+  branchRetirement: BranchRetirementCoordinator;
 } {
   const recordAttemptLifecycleBestEffort = (run: Pick<AttemptRow, 'id'>, payload: Record<string, unknown>): void => {
     fireAndForget(async () => bus.emit('attempt_event', await attempts.appendEvent(run.id, { type: 'lifecycle', payload })), {
@@ -50,6 +55,18 @@ function createLifecycleTracking(
       level: 'debug',
       context: { attemptId: run.id, event: String(payload.event) },
     });
+  };
+  // No owning Attempt to stream a `attempt_event` for; `step_changed` is the
+  // existing taskId-keyed "refetch this Task's timeline" signal (issued today
+  // for a mid-Attempt Step transition, but generic in shape).
+  const recordTaskEventBestEffort = (task: Pick<TaskRow, 'id'>, payload: Record<string, unknown>): void => {
+    fireAndForget(
+      async () => {
+        await taskEvents.appendEvent(task.id, payload);
+        bus.emit('step_changed', { taskId: task.id });
+      },
+      { op: 'app.recordTaskEvent', level: 'debug', context: { taskId: task.id, event: String(payload.event) } },
+    );
   };
   const sessionRetirement = new SessionRetirementCoordinator(
     sessionStore,
@@ -62,7 +79,10 @@ function createLifecycleTracking(
     (run, info) => recordAttemptLifecycleBestEffort(run, { event: 'retired', worktree: info.worktree, ...(info.error !== undefined ? { error: info.error } : {}) }),
   );
   const drainRetirement = singleFlight(() => sessionRetirement.drain());
-  return { recordAttemptLifecycleBestEffort, sessionRetirement, drainRetirement };
+  const branchRetirement = new BranchRetirementCoordinator(attempts, tasks, Git, logger.error, (attemptId, payload) =>
+    recordAttemptLifecycleBestEffort({ id: attemptId }, payload),
+  );
+  return { recordAttemptLifecycleBestEffort, recordTaskEventBestEffort, sessionRetirement, drainRetirement, branchRetirement };
 }
 
 /** Reconcile crash-interrupted Attempts, requeue orphaned working Tasks, and sweep dangling keys. */
@@ -180,7 +200,7 @@ export async function createRuntime(deps: {
   runningVersion: string;
 }): Promise<Runtime> {
   const { opts, bus, scheduler, asyncDb, worktreesDir, managedWorktreesRoot, distributionMode, runningVersion } = deps;
-  const { tasks, attempts, settingsStore, workspaces, conversations, permissionRules, auth, notifier, epicMergeEvents, verificationAttempts, sessions: sessionStore } = deps.stores;
+  const { tasks, attempts, taskEvents, settingsStore, workspaces, conversations, permissionRules, auth, notifier, epicMergeEvents, verificationAttempts, sessions: sessionStore } = deps.stores;
 
   let upgradeRef: UpgradeCoordinator | undefined;
   const conversationDriver = new ConversationDriver(conversations, () => settingsStore.getGlobal(), {
@@ -199,7 +219,7 @@ export async function createRuntime(deps: {
     onTurnSettled: () => { void upgradeRef?.reconcile().catch((error: unknown) => logger.error(`upgrade reconciliation failed: ${String(error)}`)); },
     allowedRoots: async () => [...(await workspaces.list()).map((w) => w.workingDir), managedWorktreesRoot],
   });
-  const { recordAttemptLifecycleBestEffort, sessionRetirement, drainRetirement } = createLifecycleTracking(bus, attempts, sessionStore);
+  const { recordAttemptLifecycleBestEffort, recordTaskEventBestEffort, sessionRetirement, drainRetirement, branchRetirement } = createLifecycleTracking(bus, attempts, taskEvents, tasks, sessionStore);
   let runnerRef: Runner | undefined;
   let globalPauseRef: GlobalPause | undefined;
   let trackerManagerRef: TrackerPollerManager | undefined;
@@ -226,6 +246,7 @@ export async function createRuntime(deps: {
       bus.emit('attempt_changed', run);
     },
     sessionRetirement,
+    branchRetirement,
   );
   const postMergeCheck = createPostMergeCheck({
     workspaces,
@@ -250,26 +271,26 @@ export async function createRuntime(deps: {
     (workspaceId, ref) => tasks.epicKind(workspaceId, ref),
     (task, commit) => {
       void (async () => {
+        const payload = {
+          event: 'ticket-closed',
+          trackerRef: task.trackerRef != null ? String(task.trackerRef) : null,
+          ...(commit ? { commitOid: commit.oid, paths: commit.paths } : {}),
+        };
         const run = (await attempts.listForTask(task.id)).at(-1);
-        if (run) {
-          recordAttemptLifecycleBestEffort(run, {
-            event: 'ticket-closed',
-            trackerRef: task.trackerRef != null ? String(task.trackerRef) : null,
-            ...(commit ? { commitOid: commit.oid, paths: commit.paths } : {}),
-          });
-        }
+        if (run) recordAttemptLifecycleBestEffort(run, payload);
+        else recordTaskEventBestEffort(task, payload);
       })();
     },
     (task, error) => {
       void (async () => {
+        const payload = {
+          event: 'ticket-close-failed',
+          trackerRef: task.trackerRef != null ? String(task.trackerRef) : null,
+          error: errorMessage(error),
+        };
         const run = (await attempts.listForTask(task.id)).at(-1);
-        if (run) {
-          recordAttemptLifecycleBestEffort(run, {
-            event: 'ticket-close-failed',
-            trackerRef: task.trackerRef != null ? String(task.trackerRef) : null,
-            error: errorMessage(error),
-          });
-        }
+        if (run) recordAttemptLifecycleBestEffort(run, payload);
+        else recordTaskEventBestEffort(task, payload);
       })();
     },
   );
@@ -317,6 +338,7 @@ export async function createRuntime(deps: {
       onAttemptUsage: (payload) => bus.emit('attempt_usage', payload),
       onStepChanged: (taskId) => bus.emit('step_changed', { taskId }),
       onEpicMergeStep: (payload) => bus.emit('epic_changed', payload),
+      onTaskEvent: (taskId) => bus.emit('step_changed', { taskId }),
     },
     gitBreaker,
     epicBaseNotReady: (task) => epicServiceRef?.epicBaseNotReady(task) ?? false,
@@ -325,6 +347,7 @@ export async function createRuntime(deps: {
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
     criticDrive: opts.criticDrive,
     sessionRetirement,
+    taskEvents,
     keys: {
       mint: async (attemptId) => (await auth.createKey(`attempt-${attemptId}`, { scope: 'attempt', attemptId })).token,
       revoke: (attemptId) => auth.deleteKeysForAttempt(attemptId),
@@ -391,6 +414,11 @@ export async function createRuntime(deps: {
   const trackerManager = new TrackerPollerManager(tasks, () => workspaces.list(), { epicService, scheduler });
   trackerManagerRef = trackerManager;
   for (const merged of pendingPostMerge.splice(0)) await postMerge(merged);
+
+  // Backfill: clears branches that piled up while retirement was unwired
+  // (dropped in b37adbaf). Fired, not awaited — reconcile() yields internally
+  // (AGENTS.md "Background loops must yield") but must never delay boot.
+  fireAndForget(() => branchRetirement.reconcile(), { op: 'app.branchRetirement.reconcile', level: 'error' });
 
   return {
     conversationDriver,

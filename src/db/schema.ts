@@ -283,6 +283,26 @@ export const attemptEvents = sqliteTable('attempt_events', {
   payload: text('payload').notNull(),
 });
 
+/** Append-only lifecycle log for a Task action with no owning Attempt (a
+ * ticket-close commit/failure, an operator-Close cleanup) that the ticket
+ * timeline renders alongside `attempt_events`' lifecycle rows, same mapping,
+ * same copy — `id` orders ties at the same `ts`, same role `attempt_events.id`
+ * plays there. */
+export const taskEvents = sqliteTable(
+  'task_events',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    taskId: integer('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    ts: integer('ts').notNull(),
+    /** JSON payload — same shape as an Attempt lifecycle event's payload. */
+    payload: text('payload').notNull(),
+  },
+  (t) => [index('task_events_task_id_idx').on(t.taskId)],
+);
+export type TaskEventRow = typeof taskEvents.$inferSelect;
+
 export const CONVERSATION_STATES = ['active', 'ended'] as const;
 export type ConversationState = (typeof CONVERSATION_STATES)[number];
 export const CONVERSATION_PERMISSION_MODES = ['ask', 'automatic'] as const;
