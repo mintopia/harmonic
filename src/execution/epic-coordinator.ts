@@ -268,10 +268,6 @@ export class EpicCoordinator {
     }
   }
 
-  /** An in-place Epic (every member direct) never touches git for the branch
-   * that isn't its concern: no branchExists/isAncestor/isContentContained, no
-   * Verification, no merge, no retire, and no `operations.run` integrate
-   * wrapper — just the member gate, then {@link completeInPlace}. */
   private async attemptInPlace(target: EpicIntegrateTarget): Promise<EpicIntegrateOutcome> {
     const gate = decideEpicIntegrate({ integrationExists: false, members: target.members, verification: null, force: false, inPlace: true });
     switch (gate.action) {
@@ -487,10 +483,6 @@ export class EpicCoordinator {
     this.resumes.delete(ref);
   }
 
-  /** Settle an all-direct Epic once every member is done: no branch, no merge,
-   * just a durable "integrated" record with `mergeCommit: null` and an event on
-   * the timeline. `epicState` guards re-entry — a second poll after the record
-   * lands is a no-op, never a duplicate `completed-in-place` event. */
   private async completeInPlace(target: EpicIntegrateTarget): Promise<EpicIntegrateOutcome> {
     if ((await this.epicStateFn?.(target.ref)) === 'integrated') {
       this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
@@ -762,11 +754,6 @@ export class EpicLifecycle {
             this.onError(`epic ${epic.ref} ${reason}`);
           }
         }
-        // A direct-isolation Member never gets an Integration branch base; reset a
-        // legacy pre-spawn one still pointed at epic/<ref> (a direct member of a
-        // MIXED Epic whose branch was cut before this policy existed) so it spawns
-        // in place. An in-place (all-direct) Epic skips this: it never touches
-        // epic/<ref> either way, so there is nothing to reconcile.
         for (const memberRef of epic.members) {
           const task = byRef.get(memberRef);
           if (!task || task.isolationMode !== 'direct') continue;
@@ -790,9 +777,6 @@ export class EpicLifecycle {
       );
       for (const epic of closed) {
         const inPlace = this.isInPlace(epic.ref, mirrored, epic.members);
-        // A closed in-place Epic still needs offering — it never had a branch to
-        // hold unmerged work in, so the branch-existence check that protects
-        // against offering an empty non-in-place Epic doesn't apply to it.
         if (!inPlace && !(await this.git.branchExists(this.workingDir, integrationBranchName(epic.ref)))) continue;
         await this.submitWholeEpicIntegrate(epic, byRef, inPlace);
       }

@@ -207,8 +207,6 @@ describe('composeEpicView', () => {
     ]);
     expect(composeEpicView(derived({ members: [11, 12], ready: [] }), mixed, new Map(), noFacts, noMeta).inPlace).toBe(false);
 
-    // A leftover epic/<ref> never demotes an all-direct Epic out of in-place —
-    // direct mode never isolates and never merges, so the branch is inert.
     const existingBranch: EpicFacts = { ...noFacts, integration: { branch: 'epic/10', exists: true, tip: 'abc' } };
     expect(composeEpicView(derived({ members: [11, 12], ready: [] }), direct, new Map(), existingBranch, noMeta).inPlace).toBe(true);
   });

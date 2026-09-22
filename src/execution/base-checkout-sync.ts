@@ -19,9 +19,6 @@ export function captureDirtyPaths(checkoutDir: string): Promise<Set<string>> {
   return Git.dirtyPathsSnapshot(checkoutDir);
 }
 
-/** Leave `path`'s worktree bytes exactly as they are and only advance its
- * index entry to `newTip`, so it reads as an unstaged diff against the new
- * HEAD rather than a staged reversal of the merge. */
 async function keepPath(checkoutDir: string, newTip: string, path: string, keptPaths: string[]): Promise<void> {
   const theirs = await Git.lsTreeEntry(checkoutDir, newTip, path);
   if (theirs === null) await Git.removeIndexEntry(checkoutDir, path);

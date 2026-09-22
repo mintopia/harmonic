@@ -338,7 +338,6 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     await makeTaskBranch(repo, 'task-dirty-base', (wt) => {
       writeFileSync(join(wt, 'base.txt'), 'task version\n');
     });
-    // Dirty, uncommitted local change to the same file the task branch touched.
     writeFileSync(join(repo, 'base.txt'), 'dirty uncommitted\n');
 
     const deps: MergePolicyDeps = {

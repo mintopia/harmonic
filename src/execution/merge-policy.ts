@@ -218,13 +218,9 @@ async function mergeUnderLock(input: MergePolicyInput, deps: MergePolicyDeps): P
       const holdOp = startActiveChildOperation('merge.lock-hold', { 'merge.repo': input.baseDir });
       try {
         return await within(holdOp, async () => {
-          // Snapshot dirty paths BEFORE the ref moves, or a moved ref makes a
-          // clean tree look dirty.
           const checkoutDir = await Git.branchCheckedOutAt(input.baseDir, input.baseBranch);
           const dirtyPaths = checkoutDir !== null ? await captureDirtyPaths(checkoutDir) : null;
           const result = await Git.casUpdateRef(input.baseDir, input.baseBranch, outcome.mergeOid, expectedBaseOid);
-          // Runs after the ref is already published, so a failure here must
-          // never fail or reverse the merge.
           if (result.ok && checkoutDir !== null) {
             try {
               const sync = await syncBaseCheckout(checkoutDir, dirtyPaths!, expectedBaseOid, outcome.mergeOid);

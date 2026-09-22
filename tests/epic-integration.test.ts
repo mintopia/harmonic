@@ -147,9 +147,6 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
-    // Default isolationMode is 'direct' (baseline.yaml); these tests exercise the
-    // legacy epic/<ref> branch-cutting path, so pin the Workspace to 'worktree'.
-    // Direct-mode behaviour gets its own describe block below.
     await new WorkspaceService(asyncDb, settingsStore).update(wsId, { isolationMode: 'worktree' });
   });
   afterEach(async () => {
@@ -725,15 +722,10 @@ describe('EpicLifecycle direct-mode Epics (isolationMode "direct", ADR-0001 dire
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-direct-'));
     asyncDb = await openAsyncDb(dir);
-    // isInPlace scopes to a mirrored Task's own workingDir, so the seeded
-    // Workspace's workingDir must match the EpicLifecycle under test (`dir`),
-    // not the default `process.cwd()`.
     await seedWorkspace(asyncDb, dir);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
-    // baseline default isolationMode is 'direct' (src/baseline.yaml); leave the
-    // Workspace unset so mirrored members resolve to it.
   });
   afterEach(async () => {
     await asyncDb.close();
