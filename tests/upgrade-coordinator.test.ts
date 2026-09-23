@@ -347,4 +347,27 @@ describe('UpgradeCoordinator idle-timeout (ADR-0042 Cancel vs commit, waitForIdl
     await flushHandoff();
     expect(calls).toEqual(['install', 'verify', 'commit', 'relauncher', 'release-lock', 'exit']);
   });
+
+  it('honours a cancel requested during the idle drain even though waitForIdle times out, instead of re-arming to retry', async () => {
+    const calls: string[] = [];
+    const subject = coordinator({
+      onIdle: (version, cancellation) =>
+        realSwapOnIdle(calls, {
+          waitForIdle: async () => {
+            await subject.upgrade.cancel();
+            return false;
+          },
+        })(version, cancellation),
+    });
+
+    await subject.upgrade.arm();
+    await subject.upgrade.reconcile();
+    await flushHandoff();
+    await flushHandoff();
+
+    expect(calls).toEqual(['install', 'verify', 'abort']);
+    expect(calls).not.toContain('commit');
+    await expect(subject.upgrade.state()).resolves.toMatchObject({ phase: { kind: 'unarmed' } });
+    expect(subject.config().autoRunner.enabled).toBe(true);
+  });
 });

@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { installManagedUpgrade, readManagedInstalledVersion } from '../src/cli-serve.js';
 import { flipCurrent, readPending, snapshotDatabase, writePending } from '../src/upgrade/boot-state.js';
 import { UpgradeSwap, type UpgradeSwapDependencies } from '../src/upgrade/upgrade-swap.js';
+import { UpgradeCancellation } from '../src/upgrade/upgrade-coordinator.js';
 import { verifyInstall } from '../src/upgrade/version-install.js';
 import { createTempDirTracker, packFixtureTarball } from './helpers/upgrade-fixture.js';
 
@@ -32,7 +33,11 @@ function seedDatabase(dataDir: string): Promise<void> {
   })();
 }
 
-function buildSwap(dataDir: string, packageSpec: string): { swap: UpgradeSwap; calls: string[] } {
+function buildSwap(
+  dataDir: string,
+  packageSpec: string,
+  extra: Partial<UpgradeSwapDependencies> = {},
+): { swap: UpgradeSwap; calls: string[] } {
   const calls: string[] = [];
   const dependencies: UpgradeSwapDependencies = {
     install: async (version) => { await installManagedUpgrade({ dataDir, target: version, run, packageSpec }); },
@@ -66,6 +71,7 @@ function buildSwap(dataDir: string, packageSpec: string): { swap: UpgradeSwap; c
     abort: async () => { calls.push('abort'); },
     operation: async (_input, work) => work(),
     log: () => {},
+    ...extra,
   };
   return { swap: new UpgradeSwap(dependencies), calls };
 }
@@ -132,6 +138,35 @@ describe('UpgradeSwap commit order (real fixtures, real SQLite)', () => {
 
     expect(readlinkSync(join(dataDir, 'app', 'current'))).toBe('versions/1.0.0');
     expect(existsSync(join(dataDir, 'app', 'pending.json'))).toBe(false);
+    expect(calls).not.toContain('release-lock');
+    expect(calls).not.toContain('exit');
+  }, 30_000);
+
+  it('reports cancelled, not idle-timeout, and never touches disk when a cancellation lands while waitForIdle is still draining', async () => {
+    const dataDir = tempDir('upgrade-swap-cancel-idle-');
+    await setupRunningV1(dataDir);
+    await seedDatabase(dataDir);
+    const dbBefore = readFileSync(join(dataDir, 'harmonic.db'));
+
+    const v2Spec = packFixtureTarball(tempDir, { version: '2.0.0' });
+    const cancellation = new UpgradeCancellation();
+    // Simulates a Cancel request arriving mid-drain, followed by waitForIdle's
+    // bound elapsing with work still running: the deadline losing the race must
+    // not override an already-accepted cancellation (ADR-0042).
+    const { swap, calls } = buildSwap(dataDir, v2Spec, {
+      cancellation,
+      waitForIdle: async () => {
+        cancellation.requestCancel();
+        return false;
+      },
+    });
+
+    const result = await swap.execute({ version: '2.0.0' });
+
+    expect(result.kind).toBe('cancelled');
+    expect(readlinkSync(join(dataDir, 'app', 'current'))).toBe('versions/1.0.0');
+    expect(existsSync(join(dataDir, 'app', 'pending.json'))).toBe(false);
+    expect(readFileSync(join(dataDir, 'harmonic.db'))).toEqual(dbBefore);
     expect(calls).not.toContain('release-lock');
     expect(calls).not.toContain('exit');
   }, 30_000);

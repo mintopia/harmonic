@@ -80,7 +80,10 @@ export class UpgradeSwap {
           version,
           work: () => this.dependencies.abort(new Error('timed out waiting for in-flight work to drain before commit')),
         });
-        return { kind: 'idle-timeout' };
+        // A cancellation requested while waitForIdle was draining always wins over the
+        // timeout: report 'cancelled' so the coordinator unarms instead of re-arming to
+        // retry a target the caller already asked to stop (ADR-0042).
+        return this.shouldContinue() ? { kind: 'idle-timeout' } : { kind: 'cancelled' };
       }
     }
 
