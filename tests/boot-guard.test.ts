@@ -2,7 +2,7 @@ import { createClient } from '@libsql/client';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, symlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTempDirTracker } from './helpers/upgrade-fixture.js';
 
@@ -167,6 +167,116 @@ describe('boot-guard.cjs', () => {
     expect(rows.rows).toEqual([{ label: 'post-upgrade' }]);
   });
 
+  it('moves the live database back into place when moving the WAL aside fails partway through', () => {
+    const { dataDir, appDir } = makeDataDir();
+    seedVersion(appDir, '1.0.0', '');
+    seedVersion(appDir, '2.0.0', '');
+    symlinkSync('versions/2.0.0', join(appDir, 'current'));
+    const snapshotPath = join(appDir, 'pre-2.0.0.db');
+    writeFileSync(snapshotPath, 'snapshot');
+    writeFileSync(join(appDir, 'pending.json'), JSON.stringify({ version: '2.0.0', previous: '1.0.0', snapshot: snapshotPath, boots: 3 }));
+    const dbPath = join(dataDir, 'harmonic.db');
+    writeFileSync(dbPath, 'live-db');
+    writeFileSync(`${dbPath}-wal`, 'wal-before');
+
+    const preloadPath = join(dataDir, 'fail-wal-rename-preload.cjs');
+    writeFileSync(
+      preloadPath,
+      `
+      const fs = require('node:fs');
+      const original = fs.renameSync;
+      let triggered = false;
+      fs.renameSync = function (from, to) {
+        if (!triggered && String(to).endsWith('harmonic.db-wal')) {
+          triggered = true;
+          const err = new Error('simulated I/O failure moving wal aside');
+          err.code = 'EIO';
+          throw err;
+        }
+        return original.call(this, from, to);
+      };
+      `,
+    );
+
+    const result = spawnSync('node', ['--require', preloadPath, guardPath, dataDir], { encoding: 'utf8' });
+
+    expect(result.status).toBe(0);
+    // The db file (moved first) must be moved back, not left stranded inside the preserved dir.
+    expect(existsSync(dbPath)).toBe(true);
+    expect(readFileSync(dbPath, 'utf8')).toBe('live-db');
+    expect(existsSync(`${dbPath}-wal`)).toBe(true);
+    expect(readFileSync(`${dbPath}-wal`, 'utf8')).toBe('wal-before');
+    const rollback = JSON.parse(readFileSync(join(appDir, 'rollback.json'), 'utf8'));
+    expect(rollback).toMatchObject({ rolledBack: false, blockedReason: 'database-not-restored' });
+    expect(rollback.preservedDatabaseDir).toBeUndefined();
+    // Blocked: current must not flip onto an unrestored database, and pending.json stays so the next boot retries.
+    expect(readlinkSync(join(appDir, 'current'))).toBe('versions/2.0.0');
+    expect(existsSync(join(appDir, 'pending.json'))).toBe(true);
+  });
+
+  it('preserves the pre-rollback database on the same filesystem as harmonic.db, not under app/', () => {
+    const { dataDir, appDir } = makeDataDir();
+    seedVersion(appDir, '1.0.0', '');
+    seedVersion(appDir, '2.0.0', '');
+    symlinkSync('versions/2.0.0', join(appDir, 'current'));
+    const snapshotPath = join(appDir, 'pre-2.0.0.db');
+    writeFileSync(snapshotPath, 'snapshot');
+    writeFileSync(join(appDir, 'pending.json'), JSON.stringify({ version: '2.0.0', previous: '1.0.0', snapshot: snapshotPath, boots: 3 }));
+    writeFileSync(join(dataDir, 'harmonic.db'), 'live-db');
+
+    runGuard(dataDir);
+
+    const rollback = JSON.parse(readFileSync(join(appDir, 'rollback.json'), 'utf8'));
+    expect(rollback.databaseRestored).toBe(true);
+    const preservedDir: string = rollback.preservedDatabaseDir;
+    expect(dirname(preservedDir)).toBe(join(dataDir, 'rolled-back'));
+  });
+
+  it('fsyncs the preserved dir before the data dir after moving the database aside', () => {
+    const { dataDir, appDir } = makeDataDir();
+    seedVersion(appDir, '1.0.0', '');
+    seedVersion(appDir, '2.0.0', '');
+    symlinkSync('versions/2.0.0', join(appDir, 'current'));
+    const snapshotPath = join(appDir, 'pre-2.0.0.db');
+    writeFileSync(snapshotPath, 'snapshot');
+    writeFileSync(join(appDir, 'pending.json'), JSON.stringify({ version: '2.0.0', previous: '1.0.0', snapshot: snapshotPath, boots: 3 }));
+    writeFileSync(join(dataDir, 'harmonic.db'), 'live-db');
+
+    const logPath = join(dataDir, 'fsync-order.log');
+    writeFileSync(logPath, '');
+    const preloadPath = join(dataDir, 'fsync-order-preload.cjs');
+    writeFileSync(
+      preloadPath,
+      `
+      const fs = require('node:fs');
+      const origOpen = fs.openSync;
+      const origFsync = fs.fsyncSync;
+      const fdPaths = new Map();
+      fs.openSync = function (path, ...args) {
+        const fd = origOpen.call(this, path, ...args);
+        fdPaths.set(fd, String(path));
+        return fd;
+      };
+      fs.fsyncSync = function (fd) {
+        fs.appendFileSync(${JSON.stringify(logPath)}, (fdPaths.get(fd) || '') + '\\n');
+        return origFsync.call(this, fd);
+      };
+      `,
+    );
+
+    const result = spawnSync('node', ['--require', preloadPath, guardPath, dataDir], { encoding: 'utf8' });
+    expect(result.status).toBe(0);
+
+    const rollback = JSON.parse(readFileSync(join(appDir, 'rollback.json'), 'utf8'));
+    const preservedDir: string = rollback.preservedDatabaseDir;
+
+    const calls = readFileSync(logPath, 'utf8').trim().split('\n').filter(Boolean);
+    const preservedIndex = calls.indexOf(preservedDir);
+    const dataDirIndex = calls.indexOf(dataDir);
+    expect(preservedIndex).toBeGreaterThanOrEqual(0);
+    expect(dataDirIndex).toBeGreaterThan(preservedIndex);
+  });
+
   function seedPendingAtFourthBoot(dataDir: string, appDir: string, snapshotPath: string): void {
     seedVersion(appDir, '1.0.0', '');
     seedVersion(appDir, '2.0.0', '');
@@ -175,21 +285,40 @@ describe('boot-guard.cjs', () => {
     writeFileSync(join(dataDir, 'harmonic.db'), 'live-db');
   }
 
-  it('still rolls back but reports databaseRestored false, and says why, when the snapshot is missing', () => {
+  it('blocks the rollback, keeps pending.json (boots incremented), and leaves current and the live db alone when the snapshot is missing', () => {
     const { dataDir, appDir } = makeDataDir();
     seedPendingAtFourthBoot(dataDir, appDir, join(appDir, 'pre-2.0.0.db'));
 
     const result = spawnSync('node', [guardPath, dataDir], { encoding: 'utf8' });
 
     expect(result.status).toBe(0);
-    expect(readlinkSync(join(appDir, 'current'))).toBe('versions/1.0.0');
-    expect(JSON.parse(readFileSync(join(appDir, 'rollback.json'), 'utf8'))).toMatchObject({ databaseRestored: false });
+    // Never flips: the previous release must not be started against a database that was never restored.
+    expect(readlinkSync(join(appDir, 'current'))).toBe('versions/2.0.0');
     expect(readFileSync(join(dataDir, 'harmonic.db'), 'utf8')).toBe('live-db');
-    expect(result.stderr).toMatch(/database was not restored/);
-    expect(JSON.parse(readFileSync(join(appDir, 'rollback.json'), 'utf8')).reason).toMatch(/could not be restored/);
+    expect(result.stderr).toMatch(/rollback blocked/);
+    expect(JSON.parse(readFileSync(join(appDir, 'pending.json'), 'utf8'))).toMatchObject({ version: '2.0.0', previous: '1.0.0', boots: 4 });
+    const rollback = JSON.parse(readFileSync(join(appDir, 'rollback.json'), 'utf8'));
+    expect(rollback).toMatchObject({ rolledBack: false, blockedReason: 'database-not-restored', fromVersion: '2.0.0', toVersion: '1.0.0' });
+    expect(rollback.reason).toMatch(/could not be restored/);
   });
 
-  it('leaves the live database and WAL byte-identical to before, and still flips current, when the snapshot copy fails midway', () => {
+  it('retries on the next boot and restores/flips once the snapshot exists', () => {
+    const { dataDir, appDir } = makeDataDir();
+    const snapshotPath = join(appDir, 'pre-2.0.0.db');
+    seedPendingAtFourthBoot(dataDir, appDir, snapshotPath);
+    spawnSync('node', [guardPath, dataDir], { encoding: 'utf8' }); // blocked: snapshot still missing
+    expect(readlinkSync(join(appDir, 'current'))).toBe('versions/2.0.0');
+
+    writeFileSync(snapshotPath, 'snapshot');
+    runGuard(dataDir);
+
+    expect(readlinkSync(join(appDir, 'current'))).toBe('versions/1.0.0');
+    expect(existsSync(join(appDir, 'pending.json'))).toBe(false);
+    const rollback = JSON.parse(readFileSync(join(appDir, 'rollback.json'), 'utf8'));
+    expect(rollback).toMatchObject({ databaseRestored: true, fromVersion: '2.0.0', toVersion: '1.0.0' });
+  });
+
+  it('leaves the live database and WAL byte-identical to before, blocks the rollback, and keeps pending.json when the snapshot copy fails midway', () => {
     const { dataDir, appDir } = makeDataDir();
     const snapshotPath = join(appDir, 'pre-2.0.0.db');
     mkdirSync(snapshotPath); // a directory where a file is expected makes copyFileSync fail with EISDIR
@@ -201,15 +330,16 @@ describe('boot-guard.cjs', () => {
     const result = spawnSync('node', [guardPath, dataDir], { encoding: 'utf8' });
 
     expect(result.status).toBe(0);
-    expect(readlinkSync(join(appDir, 'current'))).toBe('versions/1.0.0');
+    expect(readlinkSync(join(appDir, 'current'))).toBe('versions/2.0.0');
+    expect(existsSync(join(appDir, 'pending.json'))).toBe(true);
     expect(readFileSync(join(dataDir, 'harmonic.db'), 'utf8')).toBe(dbBefore);
     expect(readFileSync(join(dataDir, 'harmonic.db-wal'), 'utf8')).toBe(walBefore);
-    const rolledBackDir = join(appDir, 'rolled-back');
+    const rolledBackDir = join(dataDir, 'rolled-back');
     if (existsSync(rolledBackDir)) expect(readdirSync(rolledBackDir)).toEqual([]); // reverted: nothing left preserved
     const rollback = JSON.parse(readFileSync(join(appDir, 'rollback.json'), 'utf8'));
-    expect(rollback).toMatchObject({ databaseRestored: false });
+    expect(rollback).toMatchObject({ rolledBack: false, blockedReason: 'database-not-restored' });
     expect(rollback.preservedDatabaseDir).toBeUndefined();
-    expect(result.stderr).toMatch(/database was not restored/);
+    expect(result.stderr).toMatch(/rollback blocked/);
   });
 
   it('records fsyncSync calls against the pending/rollback files and their parent directory', () => {

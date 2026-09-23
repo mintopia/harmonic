@@ -8,6 +8,7 @@ import {
   readlinkSync,
   renameSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -23,7 +24,8 @@ const pendingSchema = z.object({
 
 export type PendingUpgrade = z.infer<typeof pendingSchema>;
 
-const rollbackSchema = z.object({
+/** Written when the guard actually flipped `current` back to `previous`. */
+const rollbackDoneSchema = z.object({
   fromVersion: z.string(),
   toVersion: z.string(),
   at: z.string(),
@@ -32,6 +34,22 @@ const rollbackSchema = z.object({
   /** Where the guard preserved the pre-rollback database files, when it needed to move them aside. */
   preservedDatabaseDir: z.string().optional(),
 });
+
+/** Written when the guard could NOT restore the database (missing snapshot, failed copy, or
+ * failed preservation) and therefore did not flip `current` — flipping onto a database the
+ * failed release may have already migrated is worse than staying put. `pending.json` is left in
+ * place so every later boot retries the restore. */
+const rollbackBlockedSchema = z.object({
+  rolledBack: z.literal(false),
+  blockedReason: z.literal('database-not-restored'),
+  fromVersion: z.string(),
+  toVersion: z.string(),
+  at: z.string(),
+  reason: z.string(),
+  preservedDatabaseDir: z.string().optional(),
+});
+
+const rollbackSchema = z.union([rollbackDoneSchema, rollbackBlockedSchema]);
 
 export type RollbackRecord = z.infer<typeof rollbackSchema>;
 
@@ -170,7 +188,21 @@ export function markHealthy({ appDir, runningVersion, guardSource }: { appDir: s
   pruneVersions({ appDir });
 }
 
-/** Keeps `current`, `previous` and any pending version; deletes every other `versions/*` entry, stray `.tgz` files, and stale DB snapshots. Runs only when no upgrade is in flight is the caller's responsibility. */
+/** Deletes every `<dataDir>/rolled-back/*` entry except the 2 most recently modified. The boot
+ * guard only ever adds entries here on rollback; it never deletes, so this is the sole place
+ * that bounds how many preserved pre-rollback database copies accumulate. */
+function pruneRolledBack({ dataDir }: { dataDir: string }): void {
+  const rolledBackDir = join(dataDir, 'rolled-back');
+  if (!existsSync(rolledBackDir)) return;
+  const entries = readdirSync(rolledBackDir)
+    .map((name) => ({ name, mtimeMs: statSync(join(rolledBackDir, name)).mtimeMs }))
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+  for (const entry of entries.slice(2)) {
+    rmSync(join(rolledBackDir, entry.name), { recursive: true, force: true });
+  }
+}
+
+/** Keeps `current`, `previous` and any pending version; deletes every other `versions/*` entry, stray `.tgz` files, and stale DB snapshots; keeps only the 2 most recent `rolled-back/*` preserved-database copies. Runs only when no upgrade is in flight is the caller's responsibility. */
 export function pruneVersions({ appDir }: { appDir: string }): void {
   const current = readCurrentVersion({ appDir });
   if (current === null || !existsSync(join(appDir, 'versions', current))) return; // missing or dangling current: nothing is provably safe to delete
@@ -197,4 +229,6 @@ export function pruneVersions({ appDir }: { appDir: string }): void {
       rmSync(fullPath, { force: true });
     }
   }
+
+  pruneRolledBack({ dataDir: dirname(appDir) });
 }

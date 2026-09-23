@@ -1,7 +1,7 @@
 import { createClient } from '@libsql/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import {
   clearRollback,
   flipCurrent,
@@ -193,6 +193,30 @@ describe('pruneVersions', () => {
     pruneVersions({ appDir });
     expect(existsSync(join(appDir, 'versions', '1'))).toBe(true);
     expect(existsSync(join(appDir, 'versions', '2'))).toBe(true);
+  });
+});
+
+describe('rolled-back retention', () => {
+  it('keeps only the 2 most recent preserved rollback copies when pruning on a healthy boot', () => {
+    const appDir = makeAppDir();
+    const dataDir = dirname(appDir);
+    seedVersion(appDir, '1.0.0');
+    flipCurrent({ appDir, version: '1.0.0' });
+
+    const rolledBackDir = join(dataDir, 'rolled-back');
+    const timestamps = [1000, 2000, 3000];
+    for (const ts of timestamps) {
+      const dir = join(rolledBackDir, `2.0.0-${ts}`);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'harmonic.db'), String(ts));
+      utimesSync(dir, new Date(ts), new Date(ts));
+    }
+
+    pruneVersions({ appDir });
+
+    expect(existsSync(join(rolledBackDir, '2.0.0-1000'))).toBe(false);
+    expect(existsSync(join(rolledBackDir, '2.0.0-2000'))).toBe(true);
+    expect(existsSync(join(rolledBackDir, '2.0.0-3000'))).toBe(true);
   });
 });
 

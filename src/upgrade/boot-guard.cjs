@@ -79,11 +79,18 @@ function flipCurrent(appDir, version) {
 // disk, just renamed out of the way, and get moved back if the copy fails.
 function moveAside(dbPath, preservedDir) {
   const moved = [];
-  for (const suffix of ['', '-wal', '-shm']) {
-    const from = `${dbPath}${suffix}`;
-    if (!fs.existsSync(from)) continue;
-    fs.renameSync(from, path.join(preservedDir, `harmonic.db${suffix}`));
-    moved.push(suffix);
+  try {
+    for (const suffix of ['', '-wal', '-shm']) {
+      const from = `${dbPath}${suffix}`;
+      if (!fs.existsSync(from)) continue;
+      fs.renameSync(from, path.join(preservedDir, `harmonic.db${suffix}`));
+      moved.push(suffix);
+    }
+  } catch (error) {
+    // Undo whatever this call already moved before the caller sees the failure, so a partial
+    // move (e.g. the db renamed but -wal failing) never strands the live database mid-flight.
+    moveBack(dbPath, preservedDir, moved);
+    throw error;
   }
   return moved;
 }
@@ -110,13 +117,25 @@ function restoreDatabase(dataDir, appDir, snapshotPath, fromVersion) {
     return { restored: false, preservedDir: null };
   }
 
-  const preservedDir = path.join(appDir, 'rolled-back', `${fromVersion}-${Date.now()}`);
+  // Preserved on the same filesystem as harmonic.db (dataDir, not appDir), so moving the live
+  // files aside is a same-filesystem rename and can't fail with EXDEV.
+  const preservedDir = path.join(dataDir, 'rolled-back', `${fromVersion}-${Date.now()}`);
   let moved;
   try {
     fs.mkdirSync(preservedDir, { recursive: true });
     moved = moveAside(dbPath, preservedDir);
+    // moveAside() undoes its own partial failures, so reaching here means every db/-wal/-shm
+    // file that existed made it into preservedDir intact. Fsync destination then source so the
+    // move survives a crash before the copy below even starts.
+    fsyncDir(preservedDir);
+    fsyncDir(dataDir);
   } catch (error) {
     logError('database was not restored', error);
+    try {
+      fs.rmdirSync(preservedDir);
+    } catch {
+      // best-effort cleanup; moveAside() already reverted any files it moved
+    }
     return { restored: false, preservedDir: null };
   }
 
@@ -182,22 +201,41 @@ function main() {
   }
 
   const { restored: databaseRestored, preservedDir } = restoreDatabase(dataDir, appDir, pending.snapshot, pending.version);
-  flipCurrent(appDir, pending.previous);
-  let reason;
-  if (databaseRestored) {
-    reason = `${pending.version} failed to start 4 times, so Harmonic rolled back to ${pending.previous} and restored the database from before the upgrade. Changes made after the upgrade started were discarded. The database from just before the rollback is preserved at ${preservedDir}.`;
-  } else if (preservedDir) {
-    reason = `${pending.version} failed to start 4 times, so Harmonic rolled back to ${pending.previous}. The database could not be restored from before the upgrade; the original files are preserved at ${preservedDir}. Check the service log.`;
-  } else {
-    reason = `${pending.version} failed to start 4 times, so Harmonic rolled back to ${pending.previous}. The database could not be restored from before the upgrade; check the service log.`;
+
+  // The database could not be restored (missing snapshot, failed copy, or failed preservation):
+  // rolling back now would open the previous release against a database the failed release may
+  // have already migrated. Leave `current` and `pending.json` exactly as they are — the live
+  // db/-wal/-shm are already back in their original place (restoreDatabase()/moveAside() never
+  // leave a failed attempt half-moved) — so every subsequent boot retries the restore, and a
+  // later attempt that succeeds falls through to the normal flip below.
+  if (!databaseRestored) {
+    const reason =
+      `Rollback to ${pending.previous} is blocked: the database from before the ${pending.version} upgrade could not be restored` +
+      (preservedDir ? ` (the pre-rollback files are preserved at ${preservedDir})` : '') +
+      `. Harmonic will retry the restore on every start. Check the service log, available disk space, and that the snapshot at ${pending.snapshot} exists.`;
+    logError('rollback blocked', new Error(reason));
+    writeJsonAtomic(pendingPath, { ...pending, boots }); // keep counting so every later boot retries the restore
+    writeJsonAtomic(path.join(appDir, 'rollback.json'), {
+      rolledBack: false,
+      blockedReason: 'database-not-restored',
+      fromVersion: pending.version,
+      toVersion: pending.previous,
+      at: new Date().toISOString(),
+      reason,
+      ...(preservedDir ? { preservedDatabaseDir: preservedDir } : {}),
+    });
+    return;
   }
+
+  flipCurrent(appDir, pending.previous);
+  const reason = `${pending.version} failed to start 4 times, so Harmonic rolled back to ${pending.previous} and restored the database from before the upgrade. Changes made after the upgrade started were discarded. The database from just before the rollback is preserved at ${preservedDir}.`;
   writeJsonAtomic(path.join(appDir, 'rollback.json'), {
     fromVersion: pending.version,
     toVersion: pending.previous,
     at: new Date().toISOString(),
     reason,
-    databaseRestored,
-    ...(preservedDir ? { preservedDatabaseDir: preservedDir } : {}),
+    databaseRestored: true,
+    preservedDatabaseDir: preservedDir,
   });
   removeIfPresent(pendingPath);
 }
