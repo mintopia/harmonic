@@ -10,6 +10,11 @@ import type { TrackerPollerManager } from '../tracker/manager.js';
 import type { UpgradeCoordinator } from '../upgrade/upgrade-coordinator.js';
 import type { StatsWorkerClient } from '../db/stats-reader.js';
 import type { App } from './app-context.js';
+import { sweepStaleMergeWorktrees } from '../execution/ephemeral-merge-worktree.js';
+import { forEachYielding } from '../reliability/yield.js';
+import { logger } from '../logger.js';
+import { errorMessage } from '../error-handling.js';
+import { startOperation } from '../telemetry/operations.js';
 
 export function registerShutdown(app: App, deps: {
   trackerManager: TrackerPollerManager;
@@ -56,11 +61,32 @@ export function registerStartup(app: App, deps: {
       deps.runner.mcpUrl = mcpUrl;
       deps.conversationDriver.mcpUrl = mcpUrl;
     }
+    const workspaceList = await deps.workspaces.list();
+    await forEachYielding(workspaceList, async (workspace) => {
+      const operation = startOperation({ type: 'worktree.merge-sweep', attributes: { 'workspace.id': workspace.id } });
+      try {
+        const removed = await operation.run(() => sweepStaleMergeWorktrees(workspace.workingDir));
+        operation.update({ 'worktree.merge_sweep.removed': removed.length });
+        operation.end();
+        for (const path of removed) {
+          logger.info('startup: removed a merge worktree left by a prior crash', {
+            'workspace.id': workspace.id,
+            path,
+          });
+        }
+      } catch (error) {
+        operation.fail(error);
+        logger.warn('startup: sweeping stale merge worktrees failed', {
+          'workspace.id': workspace.id,
+          error: errorMessage(error),
+        });
+      }
+    });
     deps.autoRunner.start();
     deps.autoRunner.poke();
     deps.scheduler.start();
     await deps.trackerManager.sync();
-    await deps.workspaceWatcher.sync(await deps.workspaces.list());
+    await deps.workspaceWatcher.sync(workspaceList);
     deps.loopMonitor?.start();
     deps.hostLoad.start();
     await deps.upgrade.reconcile();

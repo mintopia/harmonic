@@ -1,7 +1,10 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { Git } from './git.js';
+import { forEachYielding } from '../reliability/yield.js';
+
+const MERGE_WORKTREE_PREFIX = 'harmonic-merge-';
 
 export interface EphemeralMergeWorktreeArgs {
   repoDir: string;
@@ -14,7 +17,7 @@ export async function withEphemeralMergeWorktree<T>(
   { repoDir, baseTipOid, parentDir, onRemoveError }: EphemeralMergeWorktreeArgs,
   run: (worktreeDir: string) => Promise<T>,
 ): Promise<T> {
-  const tempDir = mkdtempSync(join(parentDir ?? tmpdir(), 'harmonic-merge-'));
+  const tempDir = mkdtempSync(join(parentDir ?? tmpdir(), MERGE_WORKTREE_PREFIX));
   const worktreeDir = join(tempDir, 'admin');
   try {
     await Git.addDetachedWorktree(repoDir, worktreeDir, baseTipOid);
@@ -31,4 +34,53 @@ export async function withEphemeralMergeWorktree<T>(
     }
     rmSync(tempDir, { recursive: true, force: true });
   }
+}
+
+export interface SweepStaleMergeWorktreesDeps {
+  listWorktrees: typeof Git.listWorktrees;
+  removeWorktree: typeof Git.removeWorktree;
+  pruneWorktrees: typeof Git.pruneWorktrees;
+}
+
+const DEFAULT_STALE_AFTER_MS = 60 * 60 * 1000;
+
+export interface SweepStaleMergeWorktreesOptions {
+  /** Only sweep a worktree whose temp dir is at least this old. Default 1h: merges/retirements finish in seconds, but several Harmonic processes on one host can share a repo, so a dir this fresh may still be a live merge in another process. */
+  olderThanMs?: number;
+  /** Clock injection for tests. */
+  now?: () => number;
+}
+
+/**
+ * Remove `harmonic-merge-*` admin worktrees left behind by a process that
+ * died between {@link withEphemeralMergeWorktree} creating one and its
+ * `finally` removing it. Intended to run once at boot: age-gated rather than
+ * scoped to "this process never created it", because multiple Harmonic
+ * processes can share a repo and one booting must not delete another's
+ * in-flight merge. The temp dir's own mtime is set once, at `mkdtempSync`,
+ * and is never touched again by writes inside `admin/` (only `admin`'s own
+ * mtime moves, and only for some writes), so it reliably reflects the age of
+ * the operation rather than its last activity.
+ */
+export async function sweepStaleMergeWorktrees(
+  repoDir: string,
+  deps: SweepStaleMergeWorktreesDeps = Git,
+  options: SweepStaleMergeWorktreesOptions = {},
+): Promise<string[]> {
+  const olderThanMs = options.olderThanMs ?? DEFAULT_STALE_AFTER_MS;
+  const now = options.now ?? Date.now;
+  const worktrees = await deps.listWorktrees(repoDir);
+  const removed: string[] = [];
+  await forEachYielding(worktrees, async (worktree) => {
+    const path = resolve(worktree.path);
+    const tempDir = dirname(path);
+    if (basename(path) !== 'admin' || !basename(tempDir).startsWith(MERGE_WORKTREE_PREFIX)) return;
+    const stat = statSync(tempDir, { throwIfNoEntry: false });
+    if (stat !== undefined && now() - stat.mtimeMs < olderThanMs) return;
+    await deps.removeWorktree(repoDir, path).catch(() => {});
+    rmSync(tempDir, { recursive: true, force: true });
+    removed.push(path);
+  });
+  if (removed.length > 0) await deps.pruneWorktrees(repoDir);
+  return removed;
 }
