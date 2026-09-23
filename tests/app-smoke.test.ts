@@ -259,7 +259,7 @@ describe('App smoke (issue #452)', () => {
       update: { availableVersion: '2.7.0', armedVersion: null, upgradingVersion: null, dismissedVersion: null, migrationRequired: true, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } },
     });
 
-    expect(el.textContent).toContain('Auto-upgrade is disabled until you re-run sudo harmonic install; your data is untouched.');
+    expect(el.textContent).toContain("Auto-upgrade is disabled until you re-run sudo harmonic install, which reuses this service's existing port, host, data directory, and password.");
   });
 
   it('shows the agent-drain notice and cancel action for an armed update', async () => {

@@ -25,7 +25,8 @@ export interface UpgradeCoordinatorOptions {
   migrationRequired?: boolean;
 }
 
-export const SYSTEMD_MIGRATION_NOTICE = 'Auto-upgrade is disabled until you re-run sudo harmonic install; your data is untouched.';
+export const SYSTEMD_MIGRATION_NOTICE =
+  "Auto-upgrade is disabled until you re-run sudo harmonic install, which reuses this service's existing port, host, data directory, and password.";
 
 /** Durable arming state for an offered in-place upgrade. */
 export class UpgradeCoordinator {

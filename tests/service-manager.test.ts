@@ -39,6 +39,7 @@ const initdDependencies = () => {
     chmod: async (path: string, mode: number) => { modes.set(path, mode); },
     removeFile: async (path: string) => { files.delete(path); },
     fileExists: (path: string) => files.has(path),
+    readFile: async (path: string) => files.get(path) ?? null,
   } satisfies ServiceManagerDependencies;
   return { dependencies, calls, dirs, files, modes, warn };
 };
@@ -171,6 +172,7 @@ describe('systemd ServiceManager', () => {
       chmod: async (path, mode) => { modes.set(path, mode); },
       removeFile: async (path) => { files.delete(path); },
       fileExists: (path) => files.has(path),
+      readFile: async (path) => files.get(path) ?? null,
     };
   };
 

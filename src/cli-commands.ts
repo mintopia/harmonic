@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, openSync, readFileSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
+import { parseArgs } from 'node:util';
 import { defaultDataDir } from './config.js';
 import { daemonStatus, logFilePath, stopDaemon, writeDaemon, type DaemonInfo } from './daemon.js';
 import { logger } from './logger.js';
 import { dispatchCli, type CliDispatch, type ServeValues } from './cli-dispatch.js';
-import { createServiceManager, shellWord, type ServiceManager } from './service-manager.js';
+import { createServiceManager, shellWord, type ExistingServiceSettings, type ServiceManager } from './service-manager.js';
 
 export type CliOutcome =
   | { kind: 'exit'; code: number }
@@ -238,26 +239,83 @@ async function runLifecycleCommand(
   return { kind: 'continue' };
 }
 
+/** Which `install` flags the operator actually typed, as opposed to values.* defaults filled in by dispatchCli. */
+const explicitInstallFlags = (rest: string[]): ReadonlySet<string> => {
+  const { values } = parseArgs({
+    args: rest,
+    options: {
+      port: { type: 'string' },
+      host: { type: 'string' },
+      'data-dir': { type: 'string' },
+      user: { type: 'string' },
+      password: { type: 'string' },
+      'otel-endpoint': { type: 'string' },
+      'otel-headers': { type: 'string' },
+      'otel-export': { type: 'string' },
+      'otel-metric-export-interval': { type: 'string' },
+      'otel-stdout-log-level': { type: 'string' },
+    },
+    strict: false,
+  });
+  return new Set(Object.keys(values));
+};
+
+/** Explicit flags win; otherwise reuse the running service's settings; otherwise fall through to values.* (already defaulted). */
+function resolveInstallSettings(values: ServeValues, explicit: ReadonlySet<string>, existing: ExistingServiceSettings | null) {
+  const reused: string[] = [];
+  const pick = <K extends string>(flag: K, explicitValue: string | undefined, existingValue: string | undefined): string | undefined => {
+    if (explicit.has(flag)) return explicitValue;
+    if (existingValue !== undefined) {
+      reused.push(flag);
+      return existingValue;
+    }
+    return explicitValue;
+  };
+  const serve = {
+    port: pick('port', values.port, existing?.serve.port)!,
+    host: pick('host', values.host, existing?.serve.host)!,
+    dataDir: pick('data-dir', values['data-dir'], existing?.serve.dataDir),
+    otelEndpoint: pick('otel-endpoint', values['otel-endpoint'], existing?.serve.otelEndpoint),
+    otelHeaders: pick('otel-headers', values['otel-headers'], existing?.serve.otelHeaders),
+    otelExport: pick('otel-export', values['otel-export'], existing?.serve.otelExport),
+    otelMetricExportInterval: pick(
+      'otel-metric-export-interval',
+      values['otel-metric-export-interval'],
+      existing?.serve.otelMetricExportInterval,
+    ),
+    otelStdoutLogLevel: pick('otel-stdout-log-level', values['otel-stdout-log-level'], existing?.serve.otelStdoutLogLevel),
+  };
+  const user = pick('user', values.user, existing?.user);
+  const password = pick('password', values.password, existing?.password);
+  return { serve, user, password, reused };
+}
+
 async function runInstallCommand(values: ServeValues, rest: string[], deps: CliCommandDependencies): Promise<CliOutcome> {
   const manager = deps.serviceManager();
   deps.log.info(`Selected ${manager.backend}.`);
+  const existing = (await manager.isInstalled()) ? await manager.readExistingSettings() : null;
+  const explicit = explicitInstallFlags(rest);
+  const resolved = resolveInstallSettings(values, explicit, existing);
+  if (resolved.reused.length > 0) {
+    deps.log.info(`Reusing existing service settings (${resolved.reused.join(', ')}) since they weren't passed explicitly.`);
+  }
   const result = await manager.install({
     startSelfManaged: () => startStandalone(values, rest, deps),
     bootCommand: bootCommand(rest),
     serve: {
-      port: values.port,
-      host: values.host,
-      dataDir: values['data-dir'] ?? deps.defaultDataDir(),
-      ...(values.password === undefined ? {} : { password: values.password }),
-      ...(values['otel-endpoint'] === undefined ? {} : { otelEndpoint: values['otel-endpoint'] }),
-      ...(values['otel-headers'] === undefined ? {} : { otelHeaders: values['otel-headers'] }),
-      ...(values['otel-export'] === undefined ? {} : { otelExport: values['otel-export'] }),
-      ...(values['otel-metric-export-interval'] === undefined
+      port: resolved.serve.port,
+      host: resolved.serve.host,
+      dataDir: resolved.serve.dataDir ?? deps.defaultDataDir(),
+      ...(resolved.password === undefined ? {} : { password: resolved.password }),
+      ...(resolved.serve.otelEndpoint === undefined ? {} : { otelEndpoint: resolved.serve.otelEndpoint }),
+      ...(resolved.serve.otelHeaders === undefined ? {} : { otelHeaders: resolved.serve.otelHeaders }),
+      ...(resolved.serve.otelExport === undefined ? {} : { otelExport: resolved.serve.otelExport }),
+      ...(resolved.serve.otelMetricExportInterval === undefined
         ? {}
-        : { otelMetricExportInterval: values['otel-metric-export-interval'] }),
-      ...(values['otel-stdout-log-level'] === undefined ? {} : { otelStdoutLogLevel: values['otel-stdout-log-level'] }),
+        : { otelMetricExportInterval: resolved.serve.otelMetricExportInterval }),
+      ...(resolved.serve.otelStdoutLogLevel === undefined ? {} : { otelStdoutLogLevel: resolved.serve.otelStdoutLogLevel }),
     },
-    ...(values.user === undefined ? {} : { user: values.user }),
+    ...(resolved.user === undefined ? {} : { user: resolved.user }),
   });
   if (result.status) deps.log.info(result.status.detail ?? (result.status.running ? 'Running.' : 'Not running.'));
   if (result.bootCommand) deps.log.info(`Add this to the host boot hook: ${result.bootCommand}`);
