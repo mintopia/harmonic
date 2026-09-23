@@ -85,15 +85,16 @@ Installed as an OS service (`harmonic install`, systemd or init.d),
 Harmonic upgrades itself. Click Upgrade and, the next time your fleet is
 idle, it installs the new release alongside the current one, checks it,
 and switches over, so nothing is interrupted mid-flight. If the new release
-keeps failing to start, it switches back to the previous one. The
+keeps failing to start, it switches back to the previous one when the
+pre-upgrade database can still be restored. The
 [README](https://github.com/mintopia/harmonic#if-an-upgrade-fails) covers
 what to check when an upgrade fails.
 
 Run any other way (a global install with `harmonic start`, `npx`, pm2,
-Docker), Harmonic doesn't upgrade itself: it can't restart safely under a
-supervisor it doesn't control. The banner shows the command to run instead.
-From a source checkout Harmonic doesn't
-self-update; pull and rebuild instead.
+Docker), Harmonic doesn't upgrade itself, because it can't restart safely
+under a supervisor it doesn't control. The banner shows the command to run
+instead. From a source checkout Harmonic doesn't self-update; pull and
+rebuild instead.
 
 ## See also
 

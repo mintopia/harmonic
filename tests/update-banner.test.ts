@@ -86,11 +86,11 @@ describe('UpdateBanner', () => {
     await renderBanner({
       update: makeUpdate({
         availableVersion: '2.13.0',
-        mode: { kind: 'external', instruction: { kind: 'manual', instructions: 'reinstall @mintopia/harmonic@2.13.0 the way you originally installed it' } },
+        mode: { kind: 'external', instruction: { kind: 'manual', instructions: 'Reinstall @mintopia/harmonic@2.13.0 the way you originally installed it.' } },
       }),
     });
 
-    expect(host!.textContent).toContain('reinstall @mintopia/harmonic@2.13.0 the way you originally installed it');
+    expect(host!.textContent).toContain('Reinstall @mintopia/harmonic@2.13.0 the way you originally installed it.');
     expect(host!.querySelector('code')).toBeNull();
     expect(host!.querySelector('button[aria-label="Copy command"]')).toBeNull();
     expect(buttonByText('Dismiss')).toBeDefined();
