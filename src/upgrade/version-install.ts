@@ -107,20 +107,11 @@ export async function installVersion({
   packageSpec?: string;
   dependencies: VersionInstallDependencies;
 }): Promise<string> {
+  // Only ever replaces an install that didn't verify as valid — a valid install (whatever `current`
+  // points at, if it's healthy) always hits the no-op return above and is never rm'd.
   const versionsDir = join(appDir, 'versions');
   const versionDir = join(versionsDir, version);
   if (hasValidInstall(versionDir, version, dependencies)) return versionDir;
-
-  const currentTarget = dependencies.readlink(join(appDir, 'current'));
-  if (currentTarget !== null) {
-    const resolvedCurrent = isAbsolute(currentTarget) ? currentTarget : join(appDir, currentTarget);
-    if (resolvedCurrent === versionDir) {
-      throw new Error(
-        `refusing to reinstall ${versionDir}: app/current points at it and it did not verify as an already-valid install. ` +
-          'Investigate and clear it manually before retrying — installing over it would delete the running server.',
-      );
-    }
-  }
 
   const stagingDir = join(versionsDir, `.${version}.staging`);
   await dependencies.rm(stagingDir);

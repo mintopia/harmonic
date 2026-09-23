@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync } from 'node:fs';
+import { rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -100,6 +101,49 @@ describe('postinstall-rescue.cjs (real npm install)', () => {
     expect(rmCalled).toBe(false);
     expect(runCalls).toEqual([]);
     expect(existsSync(nestedCliPath)).toBe(true);
+  }, 30_000);
+
+  it('replaces a broken nested layout that was never rescued (e.g. npm ignore-scripts=true), even when app/current points at it', async () => {
+    const version = '0.0.0-rescue-recover.1';
+    const packageSpec = packFixtureTarball(tempDir, { version, scripts: rescueFixtureScripts, files: rescueFixtureFiles });
+    const dataDir = tempDir('harmonic-rescue-recover-datadir-');
+    const appDir = join(dataDir, 'app');
+    const versionDir = join(appDir, 'versions', version);
+    mkdirSync(versionDir, { recursive: true });
+
+    // Same broken 2.18.x sequence, but --ignore-scripts means postinstall-rescue.cjs never ran:
+    // no versions/<v>/dist symlink, so hasValidInstall (and the old verify) both see it as broken.
+    await run('npm', ['i', '--prefix', versionDir, '--ignore-scripts', packageSpec]);
+    await run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
+    expect(existsSync(join(versionDir, 'dist'))).toBe(false);
+    expect(existsSync(join(versionDir, 'node_modules', '@mintopia', 'harmonic', 'dist', 'cli.js'))).toBe(true);
+
+    const result = await installVersion({
+      appDir,
+      version,
+      packageSpec,
+      dependencies: {
+        run,
+        mkdir: async (p) => { mkdirSync(p, { recursive: true }); },
+        rm: async (p) => { await rm(p, { recursive: true, force: true }); },
+        rename: async (from, to) => { await rename(from, to); },
+        fileExists: existsSync,
+        readFile: (p) => readFileSync(p, 'utf8'),
+        readlink: (p) => {
+          try {
+            return readlinkSync(p);
+          } catch {
+            return null;
+          }
+        },
+      },
+    });
+
+    expect(result).toBe(versionDir);
+    expect(existsSync(join(versionDir, 'dist', 'cli.js'))).toBe(true);
+    expect(lstatSync(join(versionDir, 'dist')).isSymbolicLink()).toBe(false);
+    const { stdout } = await execFileAsync(process.execPath, [join(versionDir, 'dist', 'cli.js')]);
+    expect(stdout).toContain('fixture-cli');
   }, 30_000);
 
   it('does not act on the new installVersion staging install: versions/<v>/dist stays a real directory', async () => {
