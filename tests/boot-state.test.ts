@@ -106,7 +106,7 @@ describe('markHealthy', () => {
     writePending({ appDir, version: '2.0.0', previous: '1.0.0', snapshot: join(appDir, 'pre-2.0.0.db') });
     seedVersion(appDir, '3.0.0'); // a stray old version pruning should remove
 
-    markHealthy({ appDir, runningVersion: '2.0.0' });
+    markHealthy({ appDir, runningVersion: '2.0.0', guardSource: join(appDir, 'versions', '2.0.0', 'dist', 'upgrade', 'boot-guard.cjs') });
 
     expect(readPending({ appDir })).toBeNull();
     expect(readFileSync(join(appDir, 'boot-guard.cjs'), 'utf8')).toBe('// guard for 2.0.0');
@@ -121,9 +121,23 @@ describe('markHealthy', () => {
     flipCurrent({ appDir, version: '1.0.0' });
     writePending({ appDir, version: '2.0.0', previous: '1.0.0', snapshot: join(appDir, 'pre-2.0.0.db') });
 
-    markHealthy({ appDir, runningVersion: '1.0.0' });
+    markHealthy({ appDir, runningVersion: '1.0.0', guardSource: join(appDir, 'versions', '1.0.0', 'dist', 'upgrade', 'boot-guard.cjs') });
 
     expect(readPending({ appDir })).not.toBeNull();
+  });
+
+  it('does not clear pending when current already points at the pending version but this process is still the old one', () => {
+    const appDir = makeAppDir();
+    seedVersion(appDir, '1.0.0');
+    seedVersion(appDir, '2.0.0');
+    flipCurrent({ appDir, version: '2.0.0' }); // an upgrade already flipped `current` to v2 ahead of this process restarting
+    writePending({ appDir, version: '2.0.0', previous: '1.0.0', snapshot: join(appDir, 'pre-2.0.0.db') });
+
+    // This process is still running v1: its own guard, not the one under `current`, must be what gets copied.
+    markHealthy({ appDir, runningVersion: '1.0.0', guardSource: join(appDir, 'versions', '1.0.0', 'dist', 'upgrade', 'boot-guard.cjs') });
+
+    expect(readPending({ appDir })).not.toBeNull();
+    expect(readFileSync(join(appDir, 'boot-guard.cjs'), 'utf8')).toBe('// guard for 1.0.0');
   });
 });
 

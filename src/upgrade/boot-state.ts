@@ -128,16 +128,17 @@ function writePreviousVersion({ appDir, version }: { appDir: string; version: st
 
 /**
  * Marks the running version healthy: clears `pending.json` only if it names the version that's
- * actually running, then copies this release's boot-guard over `app/boot-guard.cjs` (so a pending
- * boot always runs a guard shipped by a release that has already booted), then prunes old versions.
+ * actually running (the caller's own version, not whatever `current` currently points to — those
+ * can disagree if `current` was flipped by a later upgrade attempt this process hasn't picked up
+ * yet), then copies the caller's own boot-guard over `app/boot-guard.cjs` (so a pending boot always
+ * runs a guard shipped by a release that has already booted), then prunes old versions.
  */
-export function markHealthy({ appDir, runningVersion }: { appDir: string; runningVersion: string }): void {
+export function markHealthy({ appDir, runningVersion, guardSource }: { appDir: string; runningVersion: string; guardSource: string }): void {
   const pending = readPending({ appDir });
   if (pending && pending.version === runningVersion) {
     writePreviousVersion({ appDir, version: pending.previous });
     clearPending({ appDir });
   }
-  const guardSource = join(appDir, 'current', 'dist', 'upgrade', 'boot-guard.cjs');
   if (existsSync(guardSource)) {
     writeFileAtomic(join(appDir, 'boot-guard.cjs'), readFileSync(guardSource, 'utf8'));
   }
