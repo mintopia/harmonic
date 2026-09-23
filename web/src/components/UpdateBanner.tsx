@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { UpdateState } from '../types.js';
-import { btnPrimary, btnQuiet } from '../ui.js';
+import { btnPrimary, btnQuiet, touchTarget } from '../ui.js';
 import { Icon } from './Icon.js';
 
 type UpdateBannerProps = {
@@ -36,7 +36,7 @@ function CopyCommandButton({ command }: { command: string }) {
       type="button"
       aria-label={copied ? 'Copied' : 'Copy command'}
       onClick={copy}
-      className={`inline-flex size-6 shrink-0 items-center justify-center rounded text-faint transition-colors duration-150 hover:text-ink ${copied ? 'text-merged' : ''}`}
+      className={`${touchTarget} shrink-0 rounded text-faint transition-colors duration-150 hover:text-ink ${copied ? 'text-merged' : ''}`}
     >
       <Icon name={copied ? 'check' : 'copy'} className="size-3.5" />
     </button>
