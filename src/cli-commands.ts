@@ -239,7 +239,6 @@ async function runLifecycleCommand(
   return { kind: 'continue' };
 }
 
-/** Which `install` flags the operator actually typed, as opposed to values.* defaults filled in by dispatchCli. */
 const explicitInstallFlags = (rest: string[]): ReadonlySet<string> => {
   const { values } = parseArgs({
     args: rest,

@@ -89,8 +89,7 @@ function fsyncDir(dirPath: string): void {
   }
 }
 
-/** Atomically and durably overwrite `path`: write to a sibling tmp file, fsync it, rename over the
- * target, then fsync the parent directory. */
+/** fsyncs the tmp file and the parent dir so the rename survives a power loss. */
 function writeFileAtomic(path: string, contents: string): void {
   const tmpPath = `${path}.tmp`;
   writeFileSync(tmpPath, contents, 'utf8');

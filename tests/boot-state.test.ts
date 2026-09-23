@@ -227,11 +227,11 @@ describe('durability', () => {
 
     fsyncCalls.length = 0;
     writePending({ appDir, version: '2.0.0', previous: '1.0.0', snapshot: join(appDir, 'pre-2.0.0.db') });
-    expect(fsyncCalls.length).toBe(2); // the tmp file, then the app dir after the rename
+    expect(fsyncCalls.length).toBe(2);
 
     fsyncCalls.length = 0;
     flipCurrent({ appDir, version: '2.0.0' });
-    expect(fsyncCalls.length).toBe(1); // the app dir after the rename
+    expect(fsyncCalls.length).toBe(1);
   });
 });
 

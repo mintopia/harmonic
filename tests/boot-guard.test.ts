@@ -205,7 +205,6 @@ describe('boot-guard.cjs', () => {
     const rollback = JSON.parse(readFileSync(join(appDir, 'rollback.json'), 'utf8'));
     expect(rollback).toMatchObject({ rolledBack: false, blockedReason: 'database-not-restored' });
     expect(rollback.preservedDatabaseDir).toBeUndefined();
-    // Blocked: current must not flip onto an unrestored database, and pending.json stays so the next boot retries.
     expect(readlinkSync(join(appDir, 'current'))).toBe('versions/2.0.0');
     expect(existsSync(join(appDir, 'pending.json'))).toBe(true);
   });
@@ -264,7 +263,6 @@ describe('boot-guard.cjs', () => {
     expect(incomplete.strandedFiles).toEqual(['harmonic.db']);
     expect(readFileSync(join(incomplete.preservedDir, 'harmonic.db'), 'utf8')).toBe('live-db');
 
-    // Blocked: current must not flip onto an unrestored database, and pending.json stays so the next boot retries.
     expect(readlinkSync(join(appDir, 'current'))).toBe('versions/2.0.0');
     expect(existsSync(join(appDir, 'pending.json'))).toBe(true);
   });
@@ -445,7 +443,6 @@ describe('boot-guard.cjs', () => {
     const result = spawnSync('node', [guardPath, dataDir], { encoding: 'utf8' });
 
     expect(result.status).toBe(0);
-    // Never flips: the previous release must not be started against a database that was never restored.
     expect(readlinkSync(join(appDir, 'current'))).toBe('versions/2.0.0');
     expect(readFileSync(join(dataDir, 'harmonic.db'), 'utf8')).toBe('live-db');
     expect(result.stderr).toMatch(/rollback blocked/);
@@ -539,9 +536,7 @@ describe('boot-guard.cjs', () => {
       runGuard(dataDir);
       try {
         execFileSync('node', [join(appDir, 'current', 'dist', 'cli.js')], { env: { ...process.env, MARKER_PATH: markerPath }, stdio: 'pipe' });
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
 
     expect(readlinkSync(join(appDir, 'current'))).toBe('versions/1.0.0');

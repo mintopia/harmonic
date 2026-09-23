@@ -57,12 +57,11 @@ export interface AppOptions {
   version?: string | undefined;
   onUpgradeIdle?: ((version: string, cancellation: UpgradeCancellation) => Promise<UpgradeIdleHandoffOutcome | void> | UpgradeIdleHandoffOutcome | void) | undefined;
   migrationRequired?: boolean | undefined;
-  /** How this instance was installed; drives whether arming is allowed and what `GET /update` offers as the manual command. Defaults to `{ kind: 'systemd' }`. */
+  /** Defaults to `{ kind: 'systemd' }`. */
   installMode?: InstallMode | undefined;
-  /** Reads `app/rollback.json` written by the boot guard, if the last boot rolled back. */
   readRollback?: (() => { reason: string } | undefined) | undefined;
   clearRollback?: (() => void) | undefined;
-  /** True for a root system unit that predates the boot guard (ADR-0042): it still upgrades itself, but with no automatic rollback until `sudo harmonic install` reinstalls it. */
+  /** A root system unit from before the boot guard: it upgrades itself but can't roll back. */
   guardMissing?: boolean | undefined;
 }
 

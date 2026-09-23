@@ -211,8 +211,6 @@ export class UpgradeCoordinator {
     return this.exclusively(() => this.settleOnBootOnce());
   }
 
-  /** Runs once at boot: dispatches to `settleUpgraded` or `settleFailed` depending on whether
-   * the running version matches the armed target. */
   private async settleOnBootOnce(): Promise<UpdateAvailabilityState> {
     const current = await this.options.store.getState();
     const phase = current.phase;

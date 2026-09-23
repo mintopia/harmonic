@@ -114,7 +114,6 @@ export async function installVersion({
   packageSpec?: string;
   dependencies: VersionInstallDependencies;
 }): Promise<string> {
-  // Only ever replaces an install that didn't verify as valid; a healthy install always hits the no-op return above.
   const versionsDir = join(appDir, 'versions');
   const versionDir = join(versionsDir, version);
   if (hasValidInstall(versionDir, version, dependencies)) return versionDir;

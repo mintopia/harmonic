@@ -24,7 +24,6 @@ function makeRepo(): string {
   return dir;
 }
 
-// `ageMs` backdates the temp dir's mtime (see ephemeral-merge-worktree.ts for why staleness is judged on it).
 function leaveMergeWorktree(repo: string, ageMs = 0): { tempDir: string; adminPath: string } {
   const tempDir = mkdtempSync(join(tmpdir(), 'harmonic-merge-'));
   tmpDirs.push(tempDir);
