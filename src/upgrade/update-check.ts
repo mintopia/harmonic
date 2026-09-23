@@ -1,13 +1,15 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { settings } from '../db/schema.js';
 
+const execFileAsync = promisify(execFile);
+
 const stableVersion = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const prereleaseVersion = /^(?:v)?(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)-(?:[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
-const npmPackage = z.object({
-  'dist-tags': z.object({ latest: z.string() }),
-});
+const npmDistTags = z.object({ latest: z.string() });
 
 type StableVersion = readonly [string, string, string];
 
@@ -179,10 +181,23 @@ export class UpdateCheck {
   }
 }
 
+/** Goes through `npm view` rather than fetching a registry URL directly, so it follows
+ * whatever registry (and auth, and scoped `@mintopia:registry` override) the host's npm
+ * config resolves, the same way `npm pack` does when installing an update. */
 export async function fetchLatestVersion(): Promise<string> {
-  const response = await fetch('https://registry.npmjs.org/@mintopia%2Fharmonic');
-  if (!response.ok) throw new Error(`npm registry request failed: ${response.status} ${response.statusText}`.trim());
-  const parsed = npmPackage.safeParse(await response.json());
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileAsync('npm', ['view', '@mintopia/harmonic', 'dist-tags', '--json'], { timeout: 15_000 }));
+  } catch (error) {
+    throw new Error(`npm registry request failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(stdout);
+  } catch {
+    throw new Error('npm registry response was not valid JSON');
+  }
+  const parsed = npmDistTags.safeParse(json);
   if (!parsed.success) throw new Error('npm registry response has no latest dist-tag');
-  return parsed.data['dist-tags'].latest;
+  return parsed.data.latest;
 }

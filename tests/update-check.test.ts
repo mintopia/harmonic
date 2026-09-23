@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { UpdateCheck, compareStableVersions, type UpdateAvailabilityStore } from '../src/upgrade/update-check.js';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createServer, type Server } from 'node:http';
+import { UpdateCheck, compareStableVersions, fetchLatestVersion, type UpdateAvailabilityStore } from '../src/upgrade/update-check.js';
 
 function store(initial: string | null = null): UpdateAvailabilityStore {
   let version = initial;
@@ -58,4 +59,49 @@ describe('UpdateCheck', () => {
 
     await expect(check.getAvailableVersion()).resolves.toBe('2.6.0');
   });
+});
+
+function startFakeRegistry(latest: string): Promise<{ server: Server; registry: string }> {
+  return new Promise((resolve) => {
+    const server = createServer((_req, res) => {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({
+        name: '@mintopia/harmonic',
+        'dist-tags': { latest },
+        versions: {
+          [latest]: {
+            name: '@mintopia/harmonic',
+            version: latest,
+            dist: { tarball: `http://127.0.0.1/mintopia-harmonic-${latest}.tgz`, shasum: '0'.repeat(40) },
+          },
+        },
+      }));
+    });
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (address === null || typeof address === 'string') throw new Error('fake registry did not bind to a port');
+      resolve({ server, registry: `http://127.0.0.1:${address.port}/` });
+    });
+  });
+}
+
+describe('fetchLatestVersion', () => {
+  let server: Server | undefined;
+  let originalRegistry: string | undefined;
+
+  afterEach(async () => {
+    if (server !== undefined) await new Promise((resolve) => server?.close(() => resolve(undefined)));
+    server = undefined;
+    if (originalRegistry === undefined) delete process.env.npm_config_registry;
+    else process.env.npm_config_registry = originalRegistry;
+  });
+
+  it('follows the registry npm resolves from the host config, not a hardcoded host', async () => {
+    originalRegistry = process.env.npm_config_registry;
+    const started = await startFakeRegistry('9.9.9');
+    server = started.server;
+    process.env.npm_config_registry = started.registry;
+
+    await expect(fetchLatestVersion()).resolves.toBe('9.9.9');
+  }, 20_000);
 });
