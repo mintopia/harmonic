@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { Git } from './git.js';
 import { forEachYielding } from '../reliability/yield.js';
+import { logger } from '../logger.js';
+import { errorMessage } from '../error-handling.js';
 
 const MERGE_WORKTREE_PREFIX = 'harmonic-merge-';
 
@@ -77,7 +79,12 @@ export async function sweepStaleMergeWorktrees(
     if (basename(path) !== 'admin' || !basename(tempDir).startsWith(MERGE_WORKTREE_PREFIX)) return;
     const stat = statSync(tempDir, { throwIfNoEntry: false });
     if (stat !== undefined && now() - stat.mtimeMs < olderThanMs) return;
-    await deps.removeWorktree(repoDir, path).catch(() => {});
+    await deps.removeWorktree(repoDir, path).catch((error) => {
+      logger.warn('merge-worktree sweep: git worktree remove failed, deleting the directory and pruning instead', {
+        path,
+        error: errorMessage(error),
+      });
+    });
     rmSync(tempDir, { recursive: true, force: true });
     removed.push(path);
   });
