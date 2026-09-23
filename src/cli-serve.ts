@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readlinkSync } from 'node:fs';
 import { mkdir, rename, rm } from 'node:fs/promises';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -105,14 +105,33 @@ export async function installManagedUpgrade({
   }
 }
 
+/**
+ * The rollback target is the directory `app/current` actually points at, not whatever
+ * `current/package.json` says: on a systemd 2.18.0/2.18.1 install rescued by the postinstall
+ * script, `current/package.json` is npm's wrapper manifest for the nested install (no real version
+ * field), which previously fed 'unknown' into `writePending`'s `previous` and made the boot guard
+ * flip to a nonexistent `versions/unknown` on rollback. The symlink target's basename is always the
+ * version directory the guard will flip back to; only trust it once that directory exists.
+ */
 export function readManagedInstalledVersion({
   dataDir,
-  readFile,
+  readlink,
+  fileExists,
 }: {
   dataDir: string;
-  readFile: (path: string, encoding: 'utf8') => string;
+  readlink: (path: string) => string;
+  fileExists: (path: string) => boolean;
 }): string {
-  return readInstalledVersion({ dir: join(dataDir, 'app', 'current'), readFile });
+  const appDir = join(dataDir, 'app');
+  let target: string;
+  try {
+    target = readlink(join(appDir, 'current'));
+  } catch {
+    return 'unknown';
+  }
+  const version = target.split('/').pop();
+  if (!version || !fileExists(join(appDir, 'versions', version))) return 'unknown';
+  return version;
 }
 
 export async function runServer(values: ServeValues, rest: string[]): Promise<CliOutcome> {
@@ -194,7 +213,7 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
             commit: async (target) => {
               const appDir = join(dataDir, 'app');
               // `current` still points at the running version here — the flip below hasn't happened yet.
-              const previous = readManagedInstalledVersion({ dataDir, readFile: readFileSync });
+              const previous = readManagedInstalledVersion({ dataDir, readlink: readlinkSync, fileExists: existsSync });
               const snapshot = await snapshotDatabase({ dataDir, version: target });
               writePending({ appDir, version: target, previous, snapshot });
               flipCurrent({ appDir, version: target });

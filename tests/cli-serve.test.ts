@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFile } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -292,19 +292,27 @@ describe('systemd upgrades', () => {
     expect(run.mock.calls).toEqual([]);
   });
 
-  it('reads the installed version straight from app/current/package.json', () => {
-    const readFile = vi.fn(() => JSON.stringify({ version: target }));
+  it('reads the installed version from the app/current symlink target, not its package.json', () => {
+    const readlink = vi.fn(() => `versions/${target}`);
+    const fileExists = vi.fn(() => true);
 
-    expect(readManagedInstalledVersion({ dataDir, readFile })).toBe(target);
-    expect(readFile).toHaveBeenCalledWith('/var/lib/harmonic/app/current/package.json', 'utf8');
+    expect(readManagedInstalledVersion({ dataDir, readlink, fileExists })).toBe(target);
+    expect(readlink).toHaveBeenCalledWith('/var/lib/harmonic/app/current');
+    expect(fileExists).toHaveBeenCalledWith(`/var/lib/harmonic/app/versions/${target}`);
   });
 
-  it('reports unknown for a malformed or missing package.json', () => {
-    const readFile = vi.fn(() => {
+  it('reports unknown when app/current is missing or not a symlink', () => {
+    const readlink = vi.fn(() => {
       throw new Error('ENOENT');
     });
 
-    expect(readManagedInstalledVersion({ dataDir, readFile })).toBe('unknown');
+    expect(readManagedInstalledVersion({ dataDir, readlink, fileExists: () => true })).toBe('unknown');
+  });
+
+  it('reports unknown when the symlink target does not exist under versions/ (dangling rollback target)', () => {
+    const readlink = vi.fn(() => `versions/${target}`);
+
+    expect(readManagedInstalledVersion({ dataDir, readlink, fileExists: () => false })).toBe('unknown');
   });
 });
 
@@ -327,7 +335,7 @@ describe('installManagedUpgrade (real filesystem)', () => {
 
     expect(readInstalledVersionDirCli(dataDir, version)).toContain('fixture-cli');
     expect(readInstalledVersion({ dir: join(dataDir, 'app', 'versions', version), readFile: (path) => readFileSync(path, 'utf8') })).toBe(version);
-    expect(readManagedInstalledVersion({ dataDir, readFile: (path) => readFileSync(path, 'utf8') })).toBe('unknown');
+    expect(readManagedInstalledVersion({ dataDir, readlink: (path) => readlinkSync(path), fileExists: existsSync })).toBe('unknown');
   }, 30_000);
 
   it('repairs a pre-existing broken versions/<v> (old nested node_modules layout) on retry', async () => {

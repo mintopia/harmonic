@@ -45,7 +45,7 @@ function buildSwap(dataDir: string, packageSpec: string): { swap: UpgradeSwap; c
     },
     commit: async (version) => {
       const appDir = join(dataDir, 'app');
-      const previous = readManagedInstalledVersion({ dataDir, readFile: readFileUtf8 });
+      const previous = readManagedInstalledVersion({ dataDir, readlink: readlinkSync, fileExists: existsSync });
       const snapshot = await snapshotDatabase({ dataDir, version });
       writePending({ appDir, version, previous, snapshot });
       flipCurrent({ appDir, version });

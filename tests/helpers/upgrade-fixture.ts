@@ -26,6 +26,8 @@ export interface FixturePackageOptions {
   cliServeJs?: string;
   /** Extra files to write under the package root, keyed by relative path. */
   files?: Record<string, string>;
+  /** Merged into `package.json`'s `scripts`, alongside the default `prepare: 'exit 1'`. */
+  scripts?: Record<string, string>;
 }
 
 /**
@@ -33,7 +35,7 @@ export interface FixturePackageOptions {
  * (packing a local directory with `npm pack <dir>` would run `prepare` immediately).
  */
 export function packFixtureTarball(tempDir: (prefix: string) => string, options: FixturePackageOptions): string {
-  const { version, cliJs, cliServeJs, files } = options;
+  const { version, cliJs, cliServeJs, files, scripts } = options;
   const source = tempDir('harmonic-upgrade-fixture-src-');
   const packageDir = join(source, 'package');
   mkdirSync(join(packageDir, 'dist'), { recursive: true });
@@ -47,7 +49,7 @@ export function packFixtureTarball(tempDir: (prefix: string) => string, options:
     version,
     type: 'module',
     devDependencies: { 'nonexistent-dev-dep': '999.999.999' },
-    scripts: { prepare: 'exit 1' },
+    scripts: { prepare: 'exit 1', ...scripts },
   }));
   for (const [relativePath, contents] of Object.entries(files ?? {})) {
     const fullPath = join(packageDir, relativePath);
