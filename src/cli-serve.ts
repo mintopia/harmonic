@@ -11,7 +11,7 @@ import { acquireLock, releaseLock } from './daemon.js';
 import { initializeTelemetry, resolveTelemetryOptions } from './telemetry.js';
 import { logger } from './logger.js';
 import { installProcessSafetyNet } from './reliability/process-safety-net.js';
-import { touchStartupProgress } from './reliability/startup-progress.js';
+import { beginBootProgress, endBootProgress, touchStartupProgress } from './reliability/startup-progress.js';
 import { type ServeValues } from './cli-dispatch.js';
 import { UpgradeSwap } from './upgrade/upgrade-swap.js';
 import { SYSTEMD_MIGRATION_NOTICE, type UpgradeCancellation } from './upgrade/upgrade-coordinator.js';
@@ -166,7 +166,7 @@ export function startStartupWatchdog({
   dataDir,
   ownDir = fileURLToPath(new URL('..', import.meta.url)),
   watcherPath = join(ownDir, 'dist', 'upgrade', 'startup-watcher.cjs'),
-  deadlineMs = Number(process.env.HARMONIC_STARTUP_DEADLINE_MS ?? 120_000),
+  deadlineMs = Number(process.env.HARMONIC_STARTUP_DEADLINE_MS ?? 300_000),
   spawnWatcher = spawn,
 }: {
   dataDir: string;
@@ -190,7 +190,9 @@ export function startStartupWatchdog({
     watcher = spawnWatcher(
       process.execPath,
       [watcherPath, dataDir, String(process.pid), runningVersion, String(deadlineMs)],
-      { stdio: 'ignore' },
+      // stderr inherited (not 'ignore') so the watcher's kill explanation reaches this process's
+      // own stderr — the journal under systemd — instead of being discarded.
+      { stdio: ['ignore', 'ignore', 'inherit'] },
     );
     watcher.unref();
   } catch (error) {
@@ -202,6 +204,10 @@ export function startStartupWatchdog({
 
 export async function runServer(values: ServeValues, rest: string[]): Promise<CliOutcome> {
   const dataDir = values['data-dir'] ?? defaultDataDir();
+  // Cleared after `listen`/`markHealthy` below (or on any early exit): every `forEachYielding` loop
+  // touches startup progress while this is set, so a real boot-time backlog (not just the coarse
+  // per-phase touches) keeps the out-of-process startup watchdog from treating it as a hang.
+  beginBootProgress(dataDir);
   const clearStartupWatchdog = startStartupWatchdog({ dataDir });
   const port = Number(values.port);
   const host = values.host!;
@@ -221,6 +227,7 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
         '  Stop it first (harmonic stop), or use a different --data-dir.',
     );
     clearStartupWatchdog();
+    endBootProgress();
     return { kind: 'exit', code: 1 };
   }
   installProcessSafetyNet();
@@ -342,6 +349,7 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
     });
   } catch (error) {
     clearStartupWatchdog();
+    endBootProgress();
     await telemetry.shutdown();
     releaseLock(dataDir);
     throw error;
@@ -379,6 +387,7 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
       logger.warn('Failed to mark the running version healthy after boot', { error: error instanceof Error ? error.message : String(error) });
     }
   }
+  endBootProgress();
 
   const releaseAll = async () => {
     await app.close();

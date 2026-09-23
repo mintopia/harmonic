@@ -125,7 +125,7 @@ const TRACKER_BACKFILL_KEY = 'trackerEnabledBackfilled';
  * orphaned Tasks/Conversations onto the oldest Workspace. A fresh install has no Workspace and is
  * left empty so first-run onboarding can prompt the operator to add one.
  */
-async function backfillWorkspaceAssociationsAsync(handle: AsyncDbHandle): Promise<void> {
+async function backfillWorkspaceAssociationsAsync(handle: AsyncDbHandle, onStep: () => void): Promise<void> {
   await handle.write(async (db) => {
     const workspace = await db.select().from(workspaces).orderBy(workspaces.id).get();
     if (!workspace) return;
@@ -149,14 +149,17 @@ async function backfillWorkspaceAssociationsAsync(handle: AsyncDbHandle): Promis
           .run();
       }
       await db.insert(settings).values({ key: TRACKER_BACKFILL_KEY, value: 'true' }).run();
+      onStep();
     }
 
     await db.update(tasks).set({ workspaceId: workspace.id }).where(isNull(tasks.workspaceId)).run();
+    onStep();
     await db
       .update(conversations)
       .set({ workspaceId: workspace.id })
       .where(isNull(conversations.workspaceId))
       .run();
+    onStep();
   });
 }
 
@@ -173,7 +176,7 @@ export async function openAsyncDb(
   await client.execute('PRAGMA foreign_keys = OFF');
   const db = drizzle(client, { schema });
   const baseline = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'drizzle', '0000_baseline.sql');
-  await syncSchema(client, readFileSync(baseline, 'utf8'));
+  await syncSchema(client, readFileSync(baseline, 'utf8'), () => touchStartupProgress(dataDir));
   touchStartupProgress(dataDir);
   const violations = await client.execute('PRAGMA foreign_key_check');
   if (violations.rows.length > 0) {
@@ -183,7 +186,7 @@ export async function openAsyncDb(
   }
   await client.execute('PRAGMA foreign_keys = ON');
   const handle = new AsyncDbHandle(db, client, options.queryTimeoutMs ?? DEFAULT_QUERY_TIMEOUT_MS);
-  await backfillWorkspaceAssociationsAsync(handle);
+  await backfillWorkspaceAssociationsAsync(handle, () => touchStartupProgress(dataDir));
   touchStartupProgress(dataDir);
   return handle;
 }

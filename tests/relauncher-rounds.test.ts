@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createTempDirTracker } from './helpers/upgrade-fixture.js';
+import { logFilePath } from '../src/daemon.js';
 
 const { tempDir, cleanupAll } = createTempDirTracker();
 afterEach(cleanupAll);
@@ -114,5 +115,31 @@ describe('relauncher rounds (real process, real boot guard)', () => {
     expect(JSON.parse(readFileSync(join(appDir, 'pending.json'), 'utf8')).boots).toBe(1);
     expect(readlinkSync(join(appDir, 'current'))).toBe('versions/2.0.0');
     expect(existsSync(join(appDir, 'rollback.json'))).toBe(false);
+  }, 20_000);
+
+  it('the boot guard\'s blocked-rollback diagnostics reach harmonic.log, not stdio: "ignore"', async () => {
+    const dataDir = tempDir('relauncher-rounds-blocked-');
+    const appDir = join(dataDir, 'app');
+    seedVersion(appDir, '1.0.0', '');
+    seedVersion(appDir, '2.0.0', "throw new Error('v2 is broken');");
+    symlinkSync('versions/2.0.0', join(appDir, 'current'));
+    writeFileSync(join(appDir, 'boot-guard.cjs'), readFileSync(guardSourcePath, 'utf8'));
+    // No snapshot file at all: after 4 boots the guard can't restore the database, so it blocks the
+    // rollback and logs the reason instead of flipping `current` back.
+    writeFileSync(
+      join(appDir, 'pending.json'),
+      JSON.stringify({ version: '2.0.0', previous: '1.0.0', snapshot: join(appDir, 'missing-snapshot.db'), boots: 0 }),
+    );
+    writeFileSync(join(dataDir, 'harmonic.db'), '');
+
+    const exitCode = await runRelauncher(dataDir, { HARMONIC_RELAUNCHER_POLL_MS: '10' });
+
+    expect(exitCode).toBe(0);
+    const rollback = JSON.parse(readFileSync(join(appDir, 'rollback.json'), 'utf8'));
+    expect(rollback.blockedReason).toBe('database-not-restored');
+    expect(readlinkSync(join(appDir, 'current'))).toBe('versions/2.0.0');
+    const log = readFileSync(logFilePath(dataDir), 'utf8');
+    expect(log).toMatch(/rollback blocked/i);
+    expect(log).toMatch(/Rollback to 1\.0\.0 is blocked/);
   }, 20_000);
 });
