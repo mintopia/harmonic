@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.18.1](https://github.com/mintopia/harmonic/compare/v2.18.0...v2.18.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **service:** strip dev manifest before installing a systemd version ([e84172a](https://github.com/mintopia/harmonic/commit/e84172a8592fd02cb8282d52c605afb97373a7b4))
+
 ## [2.18.0](https://github.com/mintopia/harmonic/compare/v2.17.0...v2.18.0) (2026-09-22)
 
 
