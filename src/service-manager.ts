@@ -235,6 +235,8 @@ class SystemdServiceManager implements ServiceManager {
     await this.dependencies.mkdir(versionDir);
     await this.dependencies.run('npm', ['pack', '--pack-destination', versionDir, `@mintopia/harmonic@${version}`]);
     await this.dependencies.run('tar', ['-xzf', join(versionDir, `mintopia-harmonic-${version}.tgz`), '--strip-components=1', '-C', versionDir]);
+    // --omit=dev still resolves the dev tree (npm crashes on its peer cycle) and runs prepare's build.
+    await this.dependencies.run('npm', ['pkg', 'delete', 'devDependencies', 'scripts.prepare', '--prefix', versionDir]);
     await this.dependencies.run('npm', ['i', '--prefix', versionDir, '--omit=dev']);
     if (user !== undefined) await this.dependencies.run('chown', ['-R', user, appDir]);
     await this.dependencies.run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
