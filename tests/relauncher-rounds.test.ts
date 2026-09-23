@@ -31,7 +31,7 @@ function runRelauncher(dataDir: string, env: Record<string, string>): Promise<nu
   return new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      ['--import', 'tsx', relauncherPath, dataDir, '(unused)', JSON.stringify(['--data-dir', dataDir])],
+      ['--import', 'tsx', relauncherPath, dataDir, JSON.stringify(['--data-dir', dataDir])],
       { stdio: 'pipe', env: { ...process.env, ...env } },
     );
     child.on('exit', (code) => resolve(code));

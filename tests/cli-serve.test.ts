@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { execFile, execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { execFile } from 'node:child_process';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import {
@@ -11,6 +10,8 @@ import {
   readManagedInstalledVersion,
   type ManagedUpgradeFsDependencies,
 } from '../src/cli-serve.js';
+import { readInstalledVersion } from '../src/upgrade/version-install.js';
+import { createTempDirTracker, packFixtureTarball } from './helpers/upgrade-fixture.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -176,7 +177,7 @@ describe('systemd upgrades', () => {
     };
   }
 
-  it('stages the install, then verifies through the final directory before flipping current', async () => {
+  it('stages the install into versions/<v> without touching current', async () => {
     const run = vi.fn(async (_command: string, _args: readonly string[]) => ({}));
     const { fs } = stagedFs();
 
@@ -187,11 +188,11 @@ describe('systemd upgrades', () => {
       ['tar', ['-xzf', `${stagingDir}/mintopia-harmonic-${target}.tgz`, '--strip-components=1', '-C', stagingDir]],
       ['npm', ['pkg', 'delete', 'devDependencies', 'scripts.prepare', '--prefix', stagingDir]],
       ['npm', ['i', '--prefix', stagingDir, '--omit=dev']],
-      ['ln', ['-sfn', `versions/${target}`, '/var/lib/harmonic/app/current']],
     ]);
+    expect(run.mock.calls.some(([command]) => command === 'ln')).toBe(false);
   });
 
-  it('throws and never flips current when the staged install fails verification', async () => {
+  it('throws when the staged install fails verification', async () => {
     const run = vi.fn(async (_command: string, _args: readonly string[]) => ({}));
     const fs: ManagedUpgradeFsDependencies = {
       mkdir: async () => {},
@@ -202,8 +203,6 @@ describe('systemd upgrades', () => {
     };
 
     await expect(installManagedUpgrade({ dataDir, target, run, fs })).rejects.toThrow('did not produce a valid install');
-
-    expect(run.mock.calls.some(([command]) => command === 'ln')).toBe(false);
   });
 
   it('skips reinstalling when versions/<v> already holds a valid install for the target', async () => {
@@ -213,9 +212,7 @@ describe('systemd upgrades', () => {
 
     await installManagedUpgrade({ dataDir, target, run, fs });
 
-    expect(run.mock.calls).toEqual([
-      ['ln', ['-sfn', `versions/${target}`, '/var/lib/harmonic/app/current']],
-    ]);
+    expect(run.mock.calls).toEqual([]);
   });
 
   it('reads the installed version straight from app/current/package.json', () => {
@@ -235,55 +232,30 @@ describe('systemd upgrades', () => {
 });
 
 describe('installManagedUpgrade (real filesystem)', () => {
-  const cleanup: string[] = [];
+  const { tempDir, cleanupAll } = createTempDirTracker();
   const run = (command: string, args: readonly string[]) => execFileAsync(command, [...args]);
 
-  function tempDir(prefix: string): string {
-    const dir = mkdtempSync(join(tmpdir(), prefix));
-    cleanup.push(dir);
-    return dir;
+  function readInstalledVersionDirCli(dataDir: string, version: string): string {
+    return readFileSync(join(dataDir, 'app', 'versions', version, 'dist', 'cli.js'), 'utf8');
   }
 
-  function readInstalledCurrentCli(dataDir: string): string {
-    return readFileSync(join(dataDir, 'app', 'current', 'dist', 'cli.js'), 'utf8');
-  }
+  afterEach(cleanupAll);
 
-  // Built by hand, not `npm pack <dir>`: packing a local directory runs its prepare script immediately.
-  function packFixtureTarball(version: string): string {
-    const source = tempDir('harmonic-upgrade-fixture-src-');
-    const packageDir = join(source, 'package');
-    mkdirSync(join(packageDir, 'dist'), { recursive: true });
-    writeFileSync(join(packageDir, 'dist', 'cli.js'), '#!/usr/bin/env node\nconsole.log("fixture-cli");\n');
-    writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
-      name: '@mintopia/harmonic',
-      version,
-      devDependencies: { 'nonexistent-dev-dep': '999.999.999' },
-      scripts: { prepare: 'exit 1' },
-    }));
-    const tarballDir = tempDir('harmonic-upgrade-fixture-tgz-');
-    const tarballPath = join(tarballDir, `mintopia-harmonic-${version}.tgz`);
-    execFileSync('tar', ['-czf', tarballPath, '-C', source, 'package']);
-    return tarballPath;
-  }
-
-  afterEach(() => {
-    for (const dir of cleanup.splice(0)) rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('installs a fixture package into app/current and makes it discoverable, offline and without running its prepare script', async () => {
+  it('installs a fixture package into app/versions/<v> without touching current, offline and without running its prepare script', async () => {
     const version = '0.0.0-test.1';
-    const packageSpec = packFixtureTarball(version);
+    const packageSpec = packFixtureTarball(tempDir, { version });
     const dataDir = tempDir('harmonic-upgrade-datadir-');
 
     await installManagedUpgrade({ dataDir, target: version, run, packageSpec });
 
-    expect(readInstalledCurrentCli(dataDir)).toContain('fixture-cli');
-    expect(readManagedInstalledVersion({ dataDir, readFile: (path) => readFileSync(path, 'utf8') })).toBe(version);
+    expect(readInstalledVersionDirCli(dataDir, version)).toContain('fixture-cli');
+    expect(readInstalledVersion({ dir: join(dataDir, 'app', 'versions', version), readFile: (path) => readFileSync(path, 'utf8') })).toBe(version);
+    expect(readManagedInstalledVersion({ dataDir, readFile: (path) => readFileSync(path, 'utf8') })).toBe('unknown');
   }, 30_000);
 
   it('repairs a pre-existing broken versions/<v> (old nested node_modules layout) on retry', async () => {
     const version = '0.0.0-test.2';
-    const packageSpec = packFixtureTarball(version);
+    const packageSpec = packFixtureTarball(tempDir, { version });
     const dataDir = tempDir('harmonic-upgrade-datadir-');
     const brokenVersionDir = join(dataDir, 'app', 'versions', version);
     mkdirSync(join(brokenVersionDir, 'node_modules', '@mintopia', 'harmonic', 'dist'), { recursive: true });
@@ -295,7 +267,7 @@ describe('installManagedUpgrade (real filesystem)', () => {
 
     await installManagedUpgrade({ dataDir, target: version, run, packageSpec });
 
-    expect(readInstalledCurrentCli(dataDir)).toContain('fixture-cli');
-    expect(readManagedInstalledVersion({ dataDir, readFile: (path) => readFileSync(path, 'utf8') })).toBe(version);
+    expect(readInstalledVersionDirCli(dataDir, version)).toContain('fixture-cli');
+    expect(readInstalledVersion({ dir: join(dataDir, 'app', 'versions', version), readFile: (path) => readFileSync(path, 'utf8') })).toBe(version);
   }, 30_000);
 });

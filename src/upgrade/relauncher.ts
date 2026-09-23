@@ -54,7 +54,6 @@ const productionDependencies: RelauncherDependencies = {
 
 async function waitForLockRelease({
   dataDir,
-  cliPath,
   serveArgs,
   isLocked,
   wait,
@@ -62,7 +61,6 @@ async function waitForLockRelease({
   maxWaitMs,
 }: {
   dataDir: string;
-  cliPath: string;
   serveArgs: string[];
   isLocked: RelauncherDependencies['isLocked'];
   wait: RelauncherDependencies['wait'];
@@ -83,6 +81,7 @@ async function waitForLockRelease({
     operation.end();
   } catch (error) {
     operation.fail(error);
+    const cliPath = join(dataDir, 'app', 'current', 'dist', 'cli.js');
     appendToDataDirLog(
       dataDir,
       `ERROR upgrade relauncher gave up waiting for the upgrade lock: ${error instanceof Error ? error.message : String(error)}. ` +
@@ -125,8 +124,6 @@ async function waitForRoundOutcome({
 export interface RelaunchOptions {
   dataDir: string;
   serveArgs: string[];
-  /** Unused for launch path resolution: each round re-resolves `app/current`, since the boot guard can flip it mid-loop. Kept only for the CLI argv shape spawnRelauncher already writes. */
-  cliPath?: string;
   maxRounds?: number;
   lockPollMs?: number;
   lockMaxWaitMs?: number;
@@ -144,7 +141,6 @@ export interface RelaunchOptions {
 export async function relaunchWithBootGuard({
   dataDir,
   serveArgs,
-  cliPath = '(unused)',
   maxRounds = 4,
   lockPollMs = 100,
   lockMaxWaitMs = 5 * 60 * 1000,
@@ -154,7 +150,6 @@ export async function relaunchWithBootGuard({
 }: RelaunchOptions): Promise<void> {
   await waitForLockRelease({
     dataDir,
-    cliPath,
     serveArgs,
     isLocked: dependencies.isLocked,
     wait: dependencies.wait,
@@ -196,9 +191,9 @@ export async function relaunchWithBootGuard({
 }
 
 async function main(): Promise<void> {
-  const [dataDir, cliPath, encodedArgs] = process.argv.slice(2);
-  if (!dataDir || !cliPath || encodedArgs === undefined) {
-    throw new Error('relauncher requires data directory, CLI path, and serve arguments');
+  const [dataDir, encodedArgs] = process.argv.slice(2);
+  if (!dataDir || encodedArgs === undefined) {
+    throw new Error('relauncher requires a data directory and serve arguments');
   }
   const parsed: unknown = JSON.parse(encodedArgs);
   if (!Array.isArray(parsed) || parsed.some((value) => typeof value !== 'string')) {
@@ -209,7 +204,6 @@ async function main(): Promise<void> {
   const roundWaitMs = process.env.HARMONIC_RELAUNCHER_ROUND_WAIT_MS;
   await relaunchWithBootGuard({
     dataDir,
-    cliPath,
     serveArgs: parsed,
     ...(lockMaxWaitMs === undefined ? {} : { lockMaxWaitMs: Number(lockMaxWaitMs) }),
     ...(lockPollMs === undefined ? {} : { lockPollMs: Number(lockPollMs) }),

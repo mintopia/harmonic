@@ -14,8 +14,8 @@ import { type ServeValues } from './cli-dispatch.js';
 import { UpgradeSwap } from './upgrade/upgrade-swap.js';
 import { SYSTEMD_MIGRATION_NOTICE } from './upgrade/upgrade-coordinator.js';
 import { defaultIsWritable, defaultRealpath, resolveInstallMode, type InstallMode } from './upgrade/install-mode.js';
-import { hasValidInstall, installVersion, readInstalledVersion, type VersionInstallDependencies } from './upgrade/version-install.js';
-import { clearRollback, markHealthy, readRollback } from './upgrade/boot-state.js';
+import { hasValidInstall, installVersion, readInstalledVersion, verifyInstall, type VersionInstallDependencies } from './upgrade/version-install.js';
+import { clearRollback, flipCurrent, markHealthy, readRollback, snapshotDatabase, writePending } from './upgrade/boot-state.js';
 import { startOperation } from './telemetry/operations.js';
 import { displayUrl, type CliOutcome } from './cli-commands.js';
 import { createServiceManager, CURRENT_UNIT_REVISION, unitRevision } from './service-manager.js';
@@ -47,7 +47,7 @@ const defaultManagedUpgradeFsDependencies = (): ManagedUpgradeFsDependencies => 
   readFile: (path) => readFileSync(path, 'utf8'),
 });
 
-/** Installs a pinned version into `app/versions/<target>` and flips `app/current` onto it. Used for both systemd and init.d self-upgrades — both lay out `app/` identically. */
+/** Installs a pinned version into `app/versions/<target>`. Never touches `app/current` — the swap's commit step owns the flip, after verification. Used for both systemd and init.d self-upgrades — both lay out `app/` identically. */
 export async function installManagedUpgrade({
   dataDir,
   target,
@@ -68,11 +68,9 @@ export async function installManagedUpgrade({
     ...(packageSpec === undefined ? {} : { packageSpec }),
     dependencies: { run, ...fs },
   });
-  // Verify before flipping `current`: a broken install must never take down the running service.
   if (!hasValidInstall(versionDir, target, fs)) {
     throw new Error(`self-upgrade to ${target} did not produce a valid install at ${versionDir}`);
   }
-  await run('ln', ['-sfn', `versions/${target}`, join(appDir, 'current')]);
 }
 
 export function readManagedInstalledVersion({
@@ -119,7 +117,6 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
   });
   const telemetry = initializeTelemetry(telemetryOptions, { ownsMetricSummaryInterval: false });
   let app: Awaited<ReturnType<typeof buildApp>>;
-  let installedCliPath: string | undefined;
   // Only systemd/init.d installs manage a versioned `app/` directory to self-upgrade into;
   // npx/npm-global/unknown installs and pre-migration systemd units never get an `onUpgradeIdle`,
   // so `reconcile()` can never reach a swap for them even if `arm()`'s own guard were bypassed.
@@ -145,14 +142,24 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
                 run: async (file, args) => execFileAsync(file, args),
               });
             },
-            installedVersion: async () => {
-              installedCliPath = join(dataDir, 'app', 'current', 'dist', 'cli.js');
-              return readManagedInstalledVersion({ dataDir, readFile: readFileSync });
+            verify: async (target) => {
+              await verifyInstall({
+                dir: join(dataDir, 'app', 'versions', target),
+                version: target,
+                dependencies: { fileExists: existsSync, readFile: readFileSync },
+              });
+            },
+            commit: async (target) => {
+              const appDir = join(dataDir, 'app');
+              // `current` still points at the running version here — the flip below hasn't happened yet.
+              const previous = readManagedInstalledVersion({ dataDir, readFile: readFileSync });
+              const snapshot = await snapshotDatabase({ dataDir, version: target });
+              writePending({ appDir, version: target, previous, snapshot });
+              flipCurrent({ appDir, version: target });
             },
             spawnRelauncher: async () => {
-              if (!installedCliPath) throw new Error('installed Harmonic CLI path was not resolved');
               const relauncher = fileURLToPath(new URL('./upgrade/relauncher.js', import.meta.url));
-              const child = spawn(process.execPath, [relauncher, dataDir, installedCliPath, JSON.stringify(rest)], {
+              const child = spawn(process.execPath, [relauncher, dataDir, JSON.stringify(rest)], {
                 detached: true,
                 stdio: 'ignore',
               });
