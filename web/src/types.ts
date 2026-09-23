@@ -12,7 +12,10 @@ export interface UpdateState {
   dismissedVersion: string | null;
   migrationRequired: boolean;
   guardMissing: boolean;
-  mode: { kind: 'systemd' | 'initd' | 'migration-required' | 'external'; command?: string };
+  mode: {
+    kind: 'systemd' | 'initd' | 'migration-required' | 'external';
+    instruction?: { kind: 'command'; command: string } | { kind: 'manual'; instructions: string };
+  };
   failed: { targetVersion: string; reason: string; at: string } | null;
   idle: {
     runningAttempts: number;

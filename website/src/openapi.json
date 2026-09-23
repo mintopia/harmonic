@@ -25241,8 +25241,49 @@
                             "external"
                           ]
                         },
-                        "command": {
-                          "type": "string"
+                        "instruction": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "command"
+                                  ]
+                                },
+                                "command": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "command"
+                              ],
+                              "additionalProperties": false,
+                              "description": "An exact shell command the operator can copy and run to upgrade manually."
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "manual"
+                                  ]
+                                },
+                                "instructions": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "instructions"
+                              ],
+                              "additionalProperties": false,
+                              "description": "Free-text upgrade instructions, used when no exact command is known."
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -25404,8 +25445,49 @@
                             "external"
                           ]
                         },
-                        "command": {
-                          "type": "string"
+                        "instruction": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "command"
+                                  ]
+                                },
+                                "command": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "command"
+                              ],
+                              "additionalProperties": false,
+                              "description": "An exact shell command the operator can copy and run to upgrade manually."
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "manual"
+                                  ]
+                                },
+                                "instructions": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "instructions"
+                              ],
+                              "additionalProperties": false,
+                              "description": "Free-text upgrade instructions, used when no exact command is known."
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -25575,8 +25657,49 @@
                             "external"
                           ]
                         },
-                        "command": {
-                          "type": "string"
+                        "instruction": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "command"
+                                  ]
+                                },
+                                "command": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "command"
+                              ],
+                              "additionalProperties": false,
+                              "description": "An exact shell command the operator can copy and run to upgrade manually."
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "manual"
+                                  ]
+                                },
+                                "instructions": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "instructions"
+                              ],
+                              "additionalProperties": false,
+                              "description": "Free-text upgrade instructions, used when no exact command is known."
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -25748,8 +25871,49 @@
                             "external"
                           ]
                         },
-                        "command": {
-                          "type": "string"
+                        "instruction": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "command"
+                                  ]
+                                },
+                                "command": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "command"
+                              ],
+                              "additionalProperties": false,
+                              "description": "An exact shell command the operator can copy and run to upgrade manually."
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "manual"
+                                  ]
+                                },
+                                "instructions": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "instructions"
+                              ],
+                              "additionalProperties": false,
+                              "description": "Free-text upgrade instructions, used when no exact command is known."
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -25911,8 +26075,49 @@
                             "external"
                           ]
                         },
-                        "command": {
-                          "type": "string"
+                        "instruction": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "command"
+                                  ]
+                                },
+                                "command": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "command"
+                              ],
+                              "additionalProperties": false,
+                              "description": "An exact shell command the operator can copy and run to upgrade manually."
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "manual"
+                                  ]
+                                },
+                                "instructions": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "instructions"
+                              ],
+                              "additionalProperties": false,
+                              "description": "Free-text upgrade instructions, used when no exact command is known."
+                            }
+                          ]
                         }
                       },
                       "required": [

@@ -4,6 +4,12 @@ import { SYSTEMD_MIGRATION_NOTICE } from './upgrade-coordinator.js';
 
 export type ExternalInstallSubkind = 'npx' | 'npm-global' | 'unknown';
 
+/** How an operator manually upgrades an `external` install: an exact command to copy and run,
+ * or free-text instructions when the install shape (`unknown` subkind) doesn't yield one. */
+export type InstallInstruction =
+  | { kind: 'command'; command: string }
+  | { kind: 'manual'; instructions: string };
+
 /** How this running instance was installed, and therefore whether/how it can self-upgrade. */
 export type InstallMode =
   | { kind: 'systemd' }
@@ -11,7 +17,7 @@ export type InstallMode =
   /** A pre-versions-layout systemd unit; upgrading from the app is off until `sudo harmonic install` reinstalls it. */
   | { kind: 'migration-required' }
   /** Neither systemd nor init.d manage this process; Harmonic never self-upgrades here. */
-  | { kind: 'external'; subkind: ExternalInstallSubkind; commandFor: (version: string) => string };
+  | { kind: 'external'; subkind: ExternalInstallSubkind; instructionFor: (version: string) => InstallInstruction };
 
 export interface ResolveInstallModeInput {
   env: { HARMONIC_MANAGED_BY?: string | undefined };
@@ -55,7 +61,7 @@ function resolveExternalMode({ cliPath, realpath, isWritable }: Pick<ResolveInst
   }
 
   if (resolved.includes('/_npx/')) {
-    return { kind: 'external', subkind: 'npx', commandFor: (version) => `npx @mintopia/harmonic@${version} serve` };
+    return { kind: 'external', subkind: 'npx', instructionFor: (version) => ({ kind: 'command', command: `npx @mintopia/harmonic@${version} serve` }) };
   }
 
   const npmGlobalMatch = npmGlobalPackagePath.exec(resolved);
@@ -64,14 +70,14 @@ function resolveExternalMode({ cliPath, realpath, isWritable }: Pick<ResolveInst
     return {
       kind: 'external',
       subkind: 'npm-global',
-      commandFor: (version) => `${isWritable(nodeModulesDir) ? '' : 'sudo '}npm i -g @mintopia/harmonic@${version}`,
+      instructionFor: (version) => ({ kind: 'command', command: `${isWritable(nodeModulesDir) ? '' : 'sudo '}npm i -g @mintopia/harmonic@${version}` }),
     };
   }
 
   return {
     kind: 'external',
     subkind: 'unknown',
-    commandFor: (version) => `Reinstall @mintopia/harmonic@${version} the way you originally installed it.`,
+    instructionFor: (version) => ({ kind: 'manual', instructions: `reinstall @mintopia/harmonic@${version} the way you originally installed it` }),
   };
 }
 

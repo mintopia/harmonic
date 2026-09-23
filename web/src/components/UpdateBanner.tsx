@@ -86,14 +86,16 @@ function primaryBanner({ update, pending, onArm, onCancel, onDismiss }: UpdateBa
     );
   }
 
-  if (update.mode.kind === 'external' && update.mode.command !== undefined && update.dismissedVersion !== update.availableVersion) {
+  if (update.mode.kind === 'external' && update.mode.instruction !== undefined && update.dismissedVersion !== update.availableVersion) {
+    const instruction = update.mode.instruction;
     return (
       <div role="status" className="flex shrink-0 items-center gap-3 border-b border-await bg-await-tint px-6 py-2.5 text-small text-ink">
         <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-await-dot" />
         <p className="min-w-0 flex-1">
-          Version {update.availableVersion} is available. This install can't upgrade itself — run: <code>{update.mode.command}</code>
+          Version {update.availableVersion} is available. This install can't upgrade itself —{' '}
+          {instruction.kind === 'command' ? <>run: <code>{instruction.command}</code></> : instruction.instructions}
         </p>
-        <CopyCommandButton command={update.mode.command} />
+        {instruction.kind === 'command' && <CopyCommandButton command={instruction.command} />}
         <button type="button" className={`${btnQuiet} shrink-0`} disabled={pending} onClick={onDismiss}>
           Dismiss
         </button>

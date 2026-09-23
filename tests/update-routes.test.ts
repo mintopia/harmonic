@@ -57,12 +57,12 @@ describe('Update routes (issue #638)', () => {
       distributionMode: 'packaged',
       version: '1.0.0',
       updateCheckLatest: async () => '1.1.0',
-      installMode: { kind: 'external', subkind: 'npm-global', commandFor: (version) => `npm i -g @mintopia/harmonic@${version}` },
+      installMode: { kind: 'external', subkind: 'npm-global', instructionFor: (version) => ({ kind: 'command', command: `npm i -g @mintopia/harmonic@${version}` }) },
     });
     await server.api('POST', '/api/update/check');
 
     const state = await server.api('GET', '/api/update');
-    expect(state.body).toMatchObject({ mode: { kind: 'external', command: 'npm i -g @mintopia/harmonic@1.1.0' } });
+    expect(state.body).toMatchObject({ mode: { kind: 'external', instruction: { kind: 'command', command: 'npm i -g @mintopia/harmonic@1.1.0' } } });
 
     const arm = await server.api('POST', '/api/update/arm');
     expect(arm.status).toBe(409);
