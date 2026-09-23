@@ -219,7 +219,15 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
 
   if (!migrationRequired && (process.env.HARMONIC_MANAGED_BY === 'systemd' || process.env.HARMONIC_MANAGED_BY === 'initd')) {
     try {
-      markHealthy({ appDir: join(dataDir, 'app'), runningVersion: readSystemdInstalledVersion({ dataDir, readFile: readFileSync }) });
+      // `current` may already point at a later version than the one actually executing this process
+      // (a subsequent upgrade attempt can flip it before this process restarts), so resolve the running
+      // version and its own boot-guard from this process's own install directory, not from `current`.
+      const ownDir = fileURLToPath(new URL('..', import.meta.url));
+      markHealthy({
+        appDir: join(dataDir, 'app'),
+        runningVersion: readInstalledVersion({ dir: ownDir, readFile: readFileSync }),
+        guardSource: join(ownDir, 'dist', 'upgrade', 'boot-guard.cjs'),
+      });
     } catch (error) {
       logger.warn('Failed to mark the running version healthy after boot', { error: error instanceof Error ? error.message : String(error) });
     }
