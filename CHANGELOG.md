@@ -1,5 +1,55 @@
 # Changelog
 
+## [2.19.0](https://github.com/mintopia/harmonic/compare/v2.18.1...v2.19.0) (2026-09-23)
+
+
+### Features
+
+* **upgrade:** boot guard, DB snapshot/restore, and version pruning (ADR-0042) ([04b9a0e](https://github.com/mintopia/harmonic/commit/04b9a0edf727e66f2f2615871e2232f5819aa9a3))
+* **upgrade:** init.d boot guard, wire rollback reasons, and guardMissing banner (ADR-0042) ([4f82c89](https://github.com/mintopia/harmonic/commit/4f82c8924e4446f14b10ad2ae1ae2cf59970b287))
+* **upgrade:** resolve install modes and settle upgrades on boot (ADR-0042 W1/W6) ([9232f9d](https://github.com/mintopia/harmonic/commit/9232f9d4b66892045f9ce57a24de021886b7b914))
+* **upgrade:** round-based initd relauncher with boot-guard integration (W5) ([bfd8b85](https://github.com/mintopia/harmonic/commit/bfd8b85fd232c08fefa0f1858e51f5c389347a44))
+* **upgrade:** swap commit order — install, verify, commit, then flip (W3) ([6c93cba](https://github.com/mintopia/harmonic/commit/6c93cba1419a59accb8c9d43b8a1e48d9db38c05))
+
+
+### Bug Fixes
+
+* age-gate the merge-worktree sweep and prune dangling registrations ([e692531](https://github.com/mintopia/harmonic/commit/e692531cd9313ed444605aac21d9b44bb3d45e53))
+* block startup on an incomplete live database, deflake real-convergence test ([197d606](https://github.com/mintopia/harmonic/commit/197d60623d9932830732bc05daf0dc1d637ce5d3))
+* **boot:** sync the workspace watcher from a fresh list, not the pre-sweep snapshot ([d093a56](https://github.com/mintopia/harmonic/commit/d093a563bd41be7fef0bab41742a4f14ec165200))
+* log why the merge-worktree sweep's git worktree remove failed ([2212a45](https://github.com/mintopia/harmonic/commit/2212a45680787314afa8f88ac1c2d2318c320d9e))
+* merge-worktree sweep prunes registrations whose temp dir is already gone ([acb03fd](https://github.com/mintopia/harmonic/commit/acb03fd6848700c1136888ff8daa876dfbe27222))
+* **service:** guard init.d start, --flag=value units, and rescue-layout installs ([bf53c3e](https://github.com/mintopia/harmonic/commit/bf53c3ee8a34efc1c68f43fdb3b99d80fc749ea1))
+* **service:** reuse existing systemd unit settings on reinstall ([f8bcfd9](https://github.com/mintopia/harmonic/commit/f8bcfd916c1a528fb8ad10525d83b8d2f69f67da))
+* **startup:** touch progress throughout boot, not just around phases ([62ac2fd](https://github.com/mintopia/harmonic/commit/62ac2fd196a6db4468012783df73b7d603fb68db))
+* **startup:** watch boot with an out-of-process watcher, not a relauncher timeout ([98aeb1f](https://github.com/mintopia/harmonic/commit/98aeb1f4c949c0cfa307df252d6b8574c8276f93))
+* sweep stale harmonic-merge-* worktrees at boot ([d55143f](https://github.com/mintopia/harmonic/commit/d55143f970b26722adb572bbb51cd7c7a13ae43c))
+* **test:** harden conversation_changed ordering test against a leaked listener ([3774cd2](https://github.com/mintopia/harmonic/commit/3774cd262dc3eaacf17dabb5cee62f3ef208e2cc))
+* unreadable unit reports guardMissing, surface blocked rollback on matching-version boot, and fix docs (review 3, finding 5) ([167c7b1](https://github.com/mintopia/harmonic/commit/167c7b1734623c0877168863aa86da3735e3ae02))
+* **upgrade:** block rollback instead of flipping when the database can't be restored ([df44ae9](https://github.com/mintopia/harmonic/commit/df44ae90ccd05b6422161f6f578bbd541064beac))
+* **upgrade:** boot guard clears the WAL before restoring, reports restore failures ([e4245d3](https://github.com/mintopia/harmonic/commit/e4245d3be3555308019f9f33e6397a1c08c6cc04))
+* **upgrade:** fix relauncher entry guard and add data-dir logging ([49f31b6](https://github.com/mintopia/harmonic/commit/49f31b635983502ccfa4568f70dedabbe21348dc))
+* **upgrade:** gate the tracker's scheduled epic reconcile on the upgrade coordinator ([ba20a24](https://github.com/mintopia/harmonic/commit/ba20a24d223a51a0274a88734eb3b46159ceee37))
+* **upgrade:** give Cancel a step-boundary token and make waitForIdle timeouts abort before commit ([20b5e68](https://github.com/mintopia/harmonic/commit/20b5e684dc79d7a50de2bfc8cfd4a041ba6508ff))
+* **upgrade:** honour cancel over idle-timeout, surface failed guard self-heal, sync installed tree ([40d422d](https://github.com/mintopia/harmonic/commit/40d422db3db7ba9bdf6f669c7fac018523b25390))
+* **upgrade:** install systemd self-upgrades into app/versions layout ([630364c](https://github.com/mintopia/harmonic/commit/630364cf47f31927b56e198011bffed3e385333a))
+* **upgrade:** key guardMissing off which systemd unit exists, not process uid ([4710086](https://github.com/mintopia/harmonic/commit/47100862dc9329067819999d519e44b7e264e7c7))
+* **upgrade:** let installVersion replace an invalid install even under app/current ([b83cfad](https://github.com/mintopia/harmonic/commit/b83cfad5a5c7233b32596a6ebc25b6e53157461d))
+* **upgrade:** make update-check's version write atomic against arm/cancel ([412dc00](https://github.com/mintopia/harmonic/commit/412dc00912b2acbb2ed81a27cfe79ad072430aaa))
+* **upgrade:** markHealthy uses the running process's own version, not current ([bfd8b85](https://github.com/mintopia/harmonic/commit/bfd8b85fd232c08fefa0f1858e51f5c389347a44))
+* **upgrade:** preserve rollback database on failure, fsync durable writes ([180359c](https://github.com/mintopia/harmonic/commit/180359cf334cb6e355116c99c53d6cbd590df480))
+* **upgrade:** recover boot-guard db preservation from fsync failures ([6c7ed06](https://github.com/mintopia/harmonic/commit/6c7ed067e6827ac52e93ddad30117ea711b8246c))
+* **upgrade:** report verify import errors without console ([01a6570](https://github.com/mintopia/harmonic/commit/01a6570aa5cfda6b1d84d91e85bc4c3ddfff1630))
+* **upgrade:** rescue broken 2.18.0/2.18.1 systemd self-upgrades on install ([cfa1b43](https://github.com/mintopia/harmonic/commit/cfa1b4329e447ac009d96572aab4d048593a95ea))
+* **upgrade:** self-heal partial move-aside, preserve DB on same filesystem, order fsyncs, cap rolled-back retention ([7377e8b](https://github.com/mintopia/harmonic/commit/7377e8b314fbb1270f3cd9359313fd63632ad999))
+* **upgrade:** startup watchdog and relauncher round-timeout kill for hung boots ([#6](https://github.com/mintopia/harmonic/issues/6)) ([ac0ab34](https://github.com/mintopia/harmonic/commit/ac0ab348e0876ca8fdd9a3368a55a9768da308a0))
+* **upgrade:** stop the coordinator lock deadlocking around the swap ([70142f0](https://github.com/mintopia/harmonic/commit/70142f0ac1408ac7c61de0f566bb4a4bc3c15833))
+* **upgrade:** update check follows the host's npm registry ([339d56f](https://github.com/mintopia/harmonic/commit/339d56fa36907802ab4b365c7f7c7c3d2ecc38c7))
+* **web:** don't offer a copy-command button for prose upgrade instructions ([4378838](https://github.com/mintopia/harmonic/commit/4378838c8e730b7a97091cd1211f0f1cc3e4394d))
+* **web:** give CopyCommandButton the app's 44px touch-target floor ([6b3b1fc](https://github.com/mintopia/harmonic/commit/6b3b1fce63a1c4f8c91c4e21801677320d896a44))
+* **ws:** never send a stale task_changed after a newer one or a removal ([d64d3c3](https://github.com/mintopia/harmonic/commit/d64d3c34bcd666fb70da214c1c8435e055d8572c))
+* **ws:** newest attempt_changed/conversation_changed wins per connection ([5eb1604](https://github.com/mintopia/harmonic/commit/5eb1604644457191d7de88940497818a4fd78e9b))
+
 ## [2.18.1](https://github.com/mintopia/harmonic/compare/v2.18.0...v2.18.1) (2026-09-23)
 
 
