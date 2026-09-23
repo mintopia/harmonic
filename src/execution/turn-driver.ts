@@ -110,6 +110,7 @@ export interface TurnDriverDeps {
   diffSnapshotFor: (
     task: TaskRow, attemptId: number,
   ) => Promise<Pick<AttemptRow, 'stat' | 'diffBaseOid' | 'diffHeadOid'>>;
+  worktreePathForTask: (task: TaskRow) => string;
   kill: (active: ActiveRun) => void;
 }
 
@@ -131,6 +132,7 @@ export class TurnDriver {
       settleEscalated: deps.settleEscalated,
       settleAutoCompleted: deps.settleAutoCompleted,
       diffSnapshotFor: deps.diffSnapshotFor,
+      worktreePathForTask: deps.worktreePathForTask,
       updateStep: deps.updateStep,
     };
     this.completion = new TurnCompletion(completionDeps);

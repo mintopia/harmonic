@@ -311,6 +311,32 @@ describe('git-rebase', () => {
       expect(readFileSync(join(featureWt, 'base.txt'), 'utf8')).toMatch(/<<<<<<</);
       expect(readFileSync(join(featureWt, 'base.txt'), 'utf8')).toContain('dirty conflicting edit');
     });
+
+    it('unresolved autostash conflict left from an earlier rebaseOnto: a later call also returns ok:false, conflict:true instead of erroring', async () => {
+      const repo = makeRepo();
+      const featureWt = addBranchWorktree(repo, 'feature');
+      writeFileSync(join(featureWt, 'other.txt'), 'feature version of other\n');
+      git(featureWt, 'add', '-A');
+      git(featureWt, 'commit', '-m', 'B: add other.txt on feature');
+
+      writeFileSync(join(repo, 'base.txt'), 'main version\n');
+      git(repo, 'commit', '-am', 'C: change base.txt on main');
+      const baseTip = oid(repo, 'main');
+
+      writeFileSync(join(featureWt, 'base.txt'), 'dirty conflicting edit\n');
+
+      const first = await Git.rebaseOnto(featureWt, baseTip);
+      expect(first).toMatchObject({ ok: false, conflict: true });
+      const headAfterFirst = git(featureWt, 'rev-parse', 'HEAD');
+
+      const second = await Git.rebaseOnto(featureWt, baseTip);
+
+      expect(second).toMatchObject({ ok: false, conflict: true });
+      expect(git(featureWt, 'rev-parse', 'HEAD')).toBe(headAfterFirst);
+      expect(git(featureWt, 'diff', '--name-only', '--diff-filter=U')).toBe('base.txt');
+      expect(readFileSync(join(featureWt, 'base.txt'), 'utf8')).toMatch(/<<<<<<</);
+      expect(readFileSync(join(featureWt, 'base.txt'), 'utf8')).toContain('dirty conflicting edit');
+    });
   });
 });
 

@@ -780,13 +780,20 @@ export const Git = {
    * conflict left in progress is aborted first, never resumed. A dirty
    * working copy is autostashed and reapplied after a successful rebase; if
    * the reapply itself conflicts, git exits 0 but leaves unmerged paths, so
-   * that is detected and also returned as `conflict: true`. On success the
-   * worktree HEAD is the rebased tip (a descendant of `ontoOid`).
+   * that is detected and also returned as `conflict: true`. If unmerged paths
+   * from an earlier, never-resolved autostash conflict are already present
+   * after the pre-rebase abort, that is also `conflict: true`, and no rebase
+   * is attempted (`--autostash` cannot run with unmerged entries in the tree).
+   * On success the worktree HEAD is the rebased tip (a descendant of `ontoOid`).
    */
   async rebaseOnto(
     worktreeDir: string,
     ontoOid: string,
   ): Promise<{ ok: true; rebasedTip: string } | { ok: false; conflict: boolean; detail: string }> {
+    const hasUnmergedPaths = async () => {
+      const unmerged = await git(worktreeDir, 'diff', '--name-only', '--diff-filter=U');
+      return unmerged.trim().length > 0;
+    };
     return withGitOperation(
       'git.rebase',
       { 'git.branch': 'HEAD', 'git.ref': ontoOid },
@@ -798,10 +805,12 @@ export const Git = {
             error: failureReason(abortErr),
           });
         });
+        if (await hasUnmergedPaths().catch(() => false)) {
+          return { ok: false, conflict: true, detail: 'unresolved conflicts from an earlier rebase remain' };
+        }
         try {
           await git(worktreeDir, ...IDENTITY, 'rebase', '--autostash', ontoOid);
-          const unmerged = await git(worktreeDir, 'diff', '--name-only', '--diff-filter=U');
-          if (unmerged.trim().length > 0) {
+          if (await hasUnmergedPaths()) {
             return { ok: false, conflict: true, detail: 'autostash re-apply conflicted after rebase' };
           }
           const rebasedTip = await Git.revParse(worktreeDir, 'HEAD');

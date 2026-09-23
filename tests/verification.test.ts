@@ -1105,6 +1105,71 @@ describe('verification-command', () => {
       ]);
       expect(rows.map((row) => row.output.trim())).toEqual(['CMD1', 'CMD2', 'CMD1', 'CMD2']);
     });
+
+    it('a worktree left dirty at implementation end is not committed while verification blocks', async () => {
+      await server.app.ctx.workspaces.update(workspaceId, {
+        isolationMode: 'worktree',
+        taskPreMergeCommands: localCommands(exitCommand(1)),
+      });
+      const { taskId } = await createAndRun({ writeFiles: { 'blocked-dirty.txt': 'left uncommitted\n' }, commit: false });
+
+      const task = await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+        return body.state === 'escalated' ? body : undefined;
+      });
+      expect(task.state).toBe('escalated');
+
+      const branch = `harmonic/task-${taskId}`;
+      const worktreePath = join(server.dataDir, 'worktrees', `task-${taskId}`);
+      expect(git(repoDir, 'rev-parse', branch)).toBe(git(repoDir, 'rev-parse', 'main'));
+      expect(git(worktreePath, 'status', '--porcelain')).not.toBe('');
+      expect(readFileSync(join(worktreePath, 'blocked-dirty.txt'), 'utf8')).toBe('left uncommitted\n');
+    });
+
+    it('a worktree left dirty at implementation end is committed once verification passes, immediately before merge', async () => {
+      await server.app.ctx.workspaces.update(workspaceId, {
+        isolationMode: 'worktree',
+        taskPreMergeCommands: localCommands(exitCommand(0)),
+      });
+      const { taskId } = await createAndRun({ writeFiles: { 'pass-dirty.txt': 'left uncommitted\n' }, commit: false });
+
+      const task = await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+        return body.state === 'done' ? body : undefined;
+      });
+      expect(task.state).toBe('done');
+
+      const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
+      expect(run.verifiedHeadOid).toMatch(/^[0-9a-f]{40}$/);
+      expect(git(repoDir, 'rev-parse', 'main^2')).toBe(run.verifiedHeadOid);
+      expect(git(repoDir, 'show', `${run.verifiedHeadOid}:pass-dirty.txt`)).toBe('left uncommitted');
+
+      const events = (await server.api('GET', `/api/attempts/${run.id}/events`)).body.events;
+      const committed = events.find((e: any) => e.type === 'lifecycle' && e.payload.event === 'work-committed');
+      expect(committed?.payload).toMatchObject({ reason: 'pre-merge', oid: run.verifiedHeadOid });
+    });
+
+    it('leftover uncommitted work at finish_task is not treated as a no-change finish', async () => {
+      await server.app.ctx.workspaces.update(workspaceId, {
+        isolationMode: 'worktree',
+        taskPreMergeCommands: localCommands(exitCommand(0)),
+      });
+      const { taskId } = await createAndRun({
+        writeFiles: { 'finish-dirty.txt': 'still uncommitted\n' },
+        commit: false,
+        mcpFinish: true,
+      });
+
+      const task = await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+        return body.state !== 'working' ? body : undefined;
+      });
+      expect(task.state).toBe('done');
+      expect(task.escalationReason).toBeNull();
+
+      const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
+      expect(git(repoDir, 'show', `${run.verifiedHeadOid}:finish-dirty.txt`)).toBe('still uncommitted');
+    });
   });
 
   describe('native merging (issue #138, ADR-0021)', () => {
