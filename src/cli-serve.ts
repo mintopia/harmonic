@@ -33,16 +33,10 @@ export interface SystemdGuardRevisionDeps {
 }
 
 /**
- * Which unit actually owns this running service determines whether it can self-heal: a
- * `createServiceManager`/`process.getuid()` check describes the CLI invoker, not the service —
- * `sudo harmonic install --user harmonic` writes a root-owned system unit that runs the process as
- * a non-root user. So this checks the system unit path first (any user can read it), then the user
- * unit path for this process's own HOME, independent of the running process's own uid.
- *
- * A system unit predating the boot guard (ADR-0042) can't be rewritten without root, so it's
- * reported as `guardMissing` instead (it keeps upgrading itself, just without rollback safety). A
- * user unit self-heals in place. Neither found is unexpected for a `HARMONIC_MANAGED_BY=systemd`
- * process and is reported as `guardMissing` too.
+ * Checks the system unit path first, then the user unit path, since the running process's own
+ * uid doesn't tell us which one owns it (`sudo harmonic install --user x` runs a root-owned unit
+ * as a non-root user). A pre-boot-guard system unit can't self-heal without root, so it's reported
+ * as `guardMissing` instead of rewritten; a user unit self-heals in place.
  */
 export async function reconcileSystemdGuardRevision(deps: SystemdGuardRevisionDeps): Promise<boolean> {
   if (deps.fileExists(deps.systemUnitPath)) {
@@ -95,7 +89,7 @@ const defaultManagedUpgradeFsDependencies = (): ManagedUpgradeFsDependencies => 
   },
 });
 
-/** Installs a pinned version into `app/versions/<target>`. Never touches `app/current` — the swap's commit step owns the flip, after verification. Used for both systemd and init.d self-upgrades — both lay out `app/` identically. */
+/** Installs a pinned version into `app/versions/<target>`; the flip to `app/current` happens later, in the swap's commit step. */
 export async function installManagedUpgrade({
   dataDir,
   target,
@@ -121,14 +115,6 @@ export async function installManagedUpgrade({
   }
 }
 
-/**
- * The rollback target is the directory `app/current` actually points at, not whatever
- * `current/package.json` says: on a systemd 2.18.0/2.18.1 install rescued by the postinstall
- * script, `current/package.json` is npm's wrapper manifest for the nested install (no real version
- * field), which previously fed 'unknown' into `writePending`'s `previous` and made the boot guard
- * flip to a nonexistent `versions/unknown` on rollback. The symlink target's basename is always the
- * version directory the guard will flip back to; only trust it once that directory exists.
- */
 export function readManagedInstalledVersion({
   dataDir,
   readlink,
@@ -146,22 +132,13 @@ export function readManagedInstalledVersion({
     return 'unknown';
   }
   const version = target.split('/').pop();
+  // Trust the symlink target only once its version directory exists (a rescued 2.18.0/2.18.1
+  // install's package.json can't be trusted instead: it's npm's wrapper manifest, not ours).
   if (!version || !fileExists(join(appDir, 'versions', version))) return 'unknown';
   return version;
 }
 
-/**
- * Guards against a release that imports fine but hangs before `listen` (e.g. a stuck DB init):
- * `Type=simple` and the init.d relauncher both consider the process started the moment it forks,
- * so nothing else notices a hang. If `pending.json` names this process's own version, spawn a
- * dependency-free, out-of-process watcher (`startup-watcher.cjs`) that force-kills this process if
- * it goes too long without touching {@link touchStartupProgress}, so systemd/the relauncher restart
- * it and the boot guard counts the boot. It runs as a separate OS process (not detached, so
- * systemd's KillMode still cleans it up) specifically because a fully blocked event loop can't fire
- * an in-process timer — only a separate process can catch a synchronous infinite loop. The deadline
- * is measured from the last progress touch, not from spawn, so a slow-but-healthy boot (e.g. a long
- * migration) isn't killed as long as it keeps signalling progress.
- */
+/** Force-kills this process if boot hangs past `deadlineMs` without touching {@link touchStartupProgress}, so systemd/the relauncher restart it. Runs as a separate OS process because a fully blocked event loop can't fire an in-process timer. */
 export function startStartupWatchdog({
   dataDir,
   ownDir = fileURLToPath(new URL('..', import.meta.url)),
@@ -190,8 +167,7 @@ export function startStartupWatchdog({
     watcher = spawnWatcher(
       process.execPath,
       [watcherPath, dataDir, String(process.pid), runningVersion, String(deadlineMs)],
-      // stderr inherited (not 'ignore') so the watcher's kill explanation reaches this process's
-      // own stderr — the journal under systemd — instead of being discarded.
+      // stderr inherited so the watcher's kill explanation reaches the journal under systemd.
       { stdio: ['ignore', 'ignore', 'inherit'] },
     );
     watcher.unref();
@@ -204,9 +180,6 @@ export function startStartupWatchdog({
 
 export async function runServer(values: ServeValues, rest: string[]): Promise<CliOutcome> {
   const dataDir = values['data-dir'] ?? defaultDataDir();
-  // Cleared after `listen`/`markHealthy` below (or on any early exit): every `forEachYielding` loop
-  // touches startup progress while this is set, so a real boot-time backlog (not just the coarse
-  // per-phase touches) keeps the out-of-process startup watchdog from treating it as a hang.
   beginBootProgress(dataDir);
   const clearStartupWatchdog = startStartupWatchdog({ dataDir });
   const port = Number(values.port);
@@ -241,9 +214,7 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
   });
   const telemetry = initializeTelemetry(telemetryOptions, { ownsMetricSummaryInterval: false });
   let app: Awaited<ReturnType<typeof buildApp>>;
-  // Only systemd/init.d installs manage a versioned `app/` directory to self-upgrade into;
-  // npx/npm-global/unknown installs and pre-migration systemd units never get an `onUpgradeIdle`,
-  // so `reconcile()` can never reach a swap for them even if `arm()`'s own guard were bypassed.
+  // Only systemd/init.d installs manage a versioned `app/` directory to self-upgrade into.
   const selfUpgrading = installMode.kind === 'systemd' || installMode.kind === 'initd';
   const guardMissing = installMode.kind === 'systemd'
     ? await reconcileSystemdGuardRevision({
@@ -410,15 +381,7 @@ export function createShutdownHandler(release: () => Promise<void>, exit: (code:
   };
 }
 
-/**
- * The upgrade swap's `releaseLock` step: once it starts, the process must
- * always drop the data-dir lock and exit, or a botched `app.close()`/telemetry
- * shutdown leaves a dead-but-listening process holding the lock forever with
- * systemd unable to restart it. `close`/`shutdownTelemetry` failures
- * or a hang (bounded by `timeoutMs`) are swallowed here and force a non-zero
- * exit instead of propagating — a zero exit is left to the swap's own `exit`
- * step on the clean path.
- */
+/** Always drops the data-dir lock and exits, even on a `close`/`shutdownTelemetry` failure or timeout, so a botched shutdown never leaves a dead-but-listening process holding the lock. */
 export function createUpgradeReleaseLock({
   close,
   shutdownTelemetry,

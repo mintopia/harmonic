@@ -170,10 +170,6 @@ export async function openAsyncDb(
   options: { queryTimeoutMs?: number } = {},
 ): Promise<AsyncDbHandle> {
   mkdirSync(dataDir, { recursive: true });
-  // Refuse to open the database at all if the boot guard left it incomplete or orphaned — opening
-  // it here would either miss a blocked rollback's stranded files or, worse, create a fresh empty
-  // database next to a WAL from the file it's missing. Neither check applies on a genuine
-  // first-ever boot (no db, no wal, no marker), which still creates the database normally below.
   const incomplete = readDatabaseIncomplete({ appDir: join(dataDir, 'app') });
   if (incomplete) {
     throw new Error(
