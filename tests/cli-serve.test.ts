@@ -9,10 +9,86 @@ import {
   createUpgradeReleaseLock,
   installManagedUpgrade,
   readManagedInstalledVersion,
+  reconcileSystemdGuardRevision,
   type ManagedUpgradeFsDependencies,
 } from '../src/cli-serve.js';
 
 const execFileAsync = promisify(execFile);
+
+describe('reconcileSystemdGuardRevision (real filesystem)', () => {
+  const cleanup: string[] = [];
+
+  function tempDir(prefix: string): string {
+    const dir = mkdtempSync(join(tmpdir(), prefix));
+    cleanup.push(dir);
+    return dir;
+  }
+
+  afterEach(() => {
+    for (const dir of cleanup.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  function deps(overrides: Partial<{ systemUnitPath: string; userUnitPath: string; ensureUserUnitCurrent: () => Promise<unknown> | undefined; warn: (message: string) => void }> = {}) {
+    const dir = tempDir('harmonic-guard-revision-');
+    return {
+      systemUnitPath: join(dir, 'system.service'),
+      userUnitPath: join(dir, 'user.service'),
+      fileExists: (path: string) => { try { readFileSync(path, 'utf8'); return true; } catch { return false; } },
+      readFile: (path: string) => readFileSync(path, 'utf8'),
+      ensureUserUnitCurrent: vi.fn(async () => undefined),
+      warn: vi.fn(),
+      ...overrides,
+    };
+  }
+
+  // Root-vs-non-root would wrongly pick the system unit for a `sudo harmonic install --user harmonic`
+  // deployment (root-owned unit, non-root running process) — this must key off which unit exists, not `getuid()`.
+  it('reports guardMissing for a pre-boot-guard SYSTEM unit without attempting a rewrite, even though the running process is non-root', async () => {
+    const d = deps();
+    writeFileSync(d.systemUnitPath, 'Environment=HARMONIC_UNIT_REVISION=1\n');
+    writeFileSync(d.userUnitPath, 'Environment=HARMONIC_UNIT_REVISION=2\n');
+
+    await expect(reconcileSystemdGuardRevision(d)).resolves.toBe(true);
+
+    expect(d.ensureUserUnitCurrent).not.toHaveBeenCalled();
+    expect(d.warn).not.toHaveBeenCalled();
+  });
+
+  it('reports no guardMissing for a current SYSTEM unit', async () => {
+    const d = deps();
+    writeFileSync(d.systemUnitPath, 'Environment=HARMONIC_UNIT_REVISION=2\n');
+
+    await expect(reconcileSystemdGuardRevision(d)).resolves.toBe(false);
+    expect(d.ensureUserUnitCurrent).not.toHaveBeenCalled();
+  });
+
+  it('self-heals a pre-boot-guard USER unit and reports no guardMissing', async () => {
+    const d = deps();
+    writeFileSync(d.userUnitPath, 'Environment=HARMONIC_UNIT_REVISION=1\n');
+
+    await expect(reconcileSystemdGuardRevision(d)).resolves.toBe(false);
+
+    expect(d.ensureUserUnitCurrent).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports guardMissing and warns when neither unit exists', async () => {
+    const d = deps();
+
+    await expect(reconcileSystemdGuardRevision(d)).resolves.toBe(true);
+
+    expect(d.ensureUserUnitCurrent).not.toHaveBeenCalled();
+    expect(d.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports guardMissing and warns when the user unit self-heal throws', async () => {
+    const d = deps({ ensureUserUnitCurrent: vi.fn(async () => { throw new Error('daemon-reload failed'); }) });
+    writeFileSync(d.userUnitPath, 'Environment=HARMONIC_UNIT_REVISION=1\n');
+
+    await expect(reconcileSystemdGuardRevision(d)).resolves.toBe(true);
+
+    expect(d.warn).toHaveBeenCalledWith(expect.stringContaining('daemon-reload failed'));
+  });
+});
 
 describe('createShutdownHandler', () => {
   it('calls release then exit(0), in that order', async () => {

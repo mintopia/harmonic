@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rename, rm } from 'node:fs/promises';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './server/app.js';
@@ -20,17 +21,48 @@ import { startOperation } from './telemetry/operations.js';
 import { displayUrl, type CliOutcome } from './cli-commands.js';
 import { createServiceManager, CURRENT_UNIT_REVISION, unitRevision } from './service-manager.js';
 
-const systemUnitPath = '/etc/systemd/system/harmonic.service';
+export interface SystemdGuardRevisionDeps {
+  systemUnitPath: string;
+  userUnitPath: string;
+  fileExists: (path: string) => boolean;
+  readFile: (path: string) => string;
+  /** Rewrites and reloads the user unit if it predates the boot guard; a no-op otherwise. */
+  ensureUserUnitCurrent: () => Promise<unknown> | undefined;
+  warn: (message: string) => void;
+}
 
-/** True when a root-owned system unit predates the boot guard (ADR-0042): automatic rollback is off
- * until `sudo harmonic install` rewrites it — unlike a user unit, this process can't self-heal it. */
-function systemUnitGuardMissing(): boolean {
-  if (!existsSync(systemUnitPath)) return false;
-  try {
-    return unitRevision(readFileSync(systemUnitPath, 'utf8')) < CURRENT_UNIT_REVISION;
-  } catch {
-    return false;
+/**
+ * Which unit actually owns this running service determines whether it can self-heal: a
+ * `createServiceManager`/`process.getuid()` check describes the CLI invoker, not the service —
+ * `sudo harmonic install --user harmonic` writes a root-owned system unit that runs the process as
+ * a non-root user. So this checks the system unit path first (any user can read it), then the user
+ * unit path for this process's own HOME, independent of the running process's own uid.
+ *
+ * A system unit predating the boot guard (ADR-0042) can't be rewritten without root, so it's
+ * reported as `guardMissing` instead (Q2: it keeps auto-upgrading, just without rollback safety). A
+ * user unit self-heals in place. Neither found is unexpected for a `HARMONIC_MANAGED_BY=systemd`
+ * process and is reported as `guardMissing` too.
+ */
+export async function reconcileSystemdGuardRevision(deps: SystemdGuardRevisionDeps): Promise<boolean> {
+  if (deps.fileExists(deps.systemUnitPath)) {
+    try {
+      return unitRevision(deps.readFile(deps.systemUnitPath)) < CURRENT_UNIT_REVISION;
+    } catch (error) {
+      deps.warn(`Failed to read the system unit at ${deps.systemUnitPath}: ${error instanceof Error ? error.message : String(error)}`);
+      return true;
+    }
   }
+  if (deps.fileExists(deps.userUnitPath)) {
+    try {
+      await deps.ensureUserUnitCurrent();
+      return false;
+    } catch (error) {
+      deps.warn(`Failed to self-heal the user systemd unit at ${deps.userUnitPath}: ${error instanceof Error ? error.message : String(error)}`);
+      return true;
+    }
+  }
+  deps.warn(`Could not find a systemd unit for this process at ${deps.systemUnitPath} or ${deps.userUnitPath}; automatic rollback status is unknown.`);
+  return true;
 }
 
 const execFileAsync = promisify(execFile);
@@ -98,8 +130,6 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
   });
   const migrationRequired = installMode.kind === 'migration-required';
   if (migrationRequired) logger.warn(SYSTEMD_MIGRATION_NOTICE);
-  const isRootSystemUnit = installMode.kind === 'systemd' && process.getuid?.() === 0;
-  const guardMissing = isRootSystemUnit && systemUnitGuardMissing();
   const holder = acquireLock(dataDir, { port, host });
   if (holder) {
     logger.error(
@@ -124,6 +154,18 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
   // npx/npm-global/unknown installs and pre-migration systemd units never get an `onUpgradeIdle`,
   // so `reconcile()` can never reach a swap for them even if `arm()`'s own guard were bypassed.
   const selfUpgrading = installMode.kind === 'systemd' || installMode.kind === 'initd';
+  const guardMissing = installMode.kind === 'systemd'
+    ? await reconcileSystemdGuardRevision({
+      systemUnitPath: '/etc/systemd/system/harmonic.service',
+      userUnitPath: join(homedir(), '.config', 'systemd', 'user', 'harmonic.service'),
+      fileExists: existsSync,
+      readFile: (path) => readFileSync(path, 'utf8'),
+      ensureUserUnitCurrent: () =>
+        createServiceManager({ platform: process.platform, isRoot: false, systemdRunning: false, initdAvailable: false, userSystemdUsable: true })
+          .ensureUnitRevisionCurrent?.(),
+      warn: logger.warn,
+    })
+    : false;
   try {
     app = await buildApp({
       dataDir,
@@ -227,18 +269,6 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
       });
     } catch (error) {
       logger.warn('Failed to mark the running version healthy after boot', { error: error instanceof Error ? error.message : String(error) });
-    }
-  }
-
-  if (installMode.kind === 'systemd' && !isRootSystemUnit) {
-    // A user unit can rewrite and reload itself with no elevated privileges, unlike a root system
-    // unit (which needs `sudo harmonic install`) — so a pre-boot-guard user unit self-heals here
-    // instead of surfacing `guardMissing`.
-    try {
-      await createServiceManager({ platform: process.platform, isRoot: false, systemdRunning: false, initdAvailable: false, userSystemdUsable: true })
-        .ensureUnitRevisionCurrent?.();
-    } catch (error) {
-      logger.warn('Failed to self-heal the user systemd unit to the current revision', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
