@@ -214,6 +214,66 @@ describe('boot-guard.cjs', () => {
     expect(existsSync(join(appDir, 'pending.json'))).toBe(true);
   });
 
+  it('writes app/database-incomplete.json and preserves the stranded db when the reverse move also fails after the forward WAL move fails', () => {
+    const { dataDir, appDir } = makeDataDir();
+    seedVersion(appDir, '1.0.0', '');
+    seedVersion(appDir, '2.0.0', '');
+    symlinkSync('versions/2.0.0', join(appDir, 'current'));
+    const snapshotPath = join(appDir, 'pre-2.0.0.db');
+    writeFileSync(snapshotPath, 'snapshot');
+    writeFileSync(join(appDir, 'pending.json'), JSON.stringify({ version: '2.0.0', previous: '1.0.0', snapshot: snapshotPath, boots: 3 }));
+    const dbPath = join(dataDir, 'harmonic.db');
+    writeFileSync(dbPath, 'live-db');
+    writeFileSync(`${dbPath}-wal`, 'wal-before');
+
+    const preloadPath = join(dataDir, 'fail-wal-and-reverse-rename-preload.cjs');
+    writeFileSync(
+      preloadPath,
+      `
+      const fs = require('node:fs');
+      const original = fs.renameSync;
+      let forwardWalFailed = false;
+      fs.renameSync = function (from, to) {
+        if (!forwardWalFailed && String(to).endsWith('harmonic.db-wal') && !String(from).includes('rolled-back')) {
+          forwardWalFailed = true;
+          const err = new Error('simulated I/O failure moving wal aside');
+          err.code = 'EIO';
+          throw err;
+        }
+        if (String(from).includes('rolled-back') && String(to).endsWith('harmonic.db') && !String(to).endsWith('harmonic.db-wal') && !String(to).endsWith('harmonic.db-shm')) {
+          const err = new Error('simulated I/O failure moving db back');
+          err.code = 'EIO';
+          throw err;
+        }
+        return original.call(this, from, to);
+      };
+      `,
+    );
+
+    const result = spawnSync('node', ['--require', preloadPath, guardPath, dataDir], { encoding: 'utf8' });
+
+    expect(result.status).toBe(0);
+    // The db is stranded in preservedDir (its own reverse move failed); the WAL was never touched.
+    expect(existsSync(dbPath)).toBe(false);
+    expect(existsSync(`${dbPath}-wal`)).toBe(true);
+    expect(readFileSync(`${dbPath}-wal`, 'utf8')).toBe('wal-before');
+
+    const rollback = JSON.parse(readFileSync(join(appDir, 'rollback.json'), 'utf8'));
+    expect(rollback).toMatchObject({ rolledBack: false, blockedReason: 'database-not-restored' });
+    expect(typeof rollback.preservedDatabaseDir).toBe('string');
+
+    const incompletePath = join(appDir, 'database-incomplete.json');
+    expect(existsSync(incompletePath)).toBe(true);
+    const incomplete = JSON.parse(readFileSync(incompletePath, 'utf8'));
+    expect(incomplete.preservedDir).toBe(rollback.preservedDatabaseDir);
+    expect(incomplete.strandedFiles).toEqual(['harmonic.db']);
+    expect(readFileSync(join(incomplete.preservedDir, 'harmonic.db'), 'utf8')).toBe('live-db');
+
+    // Blocked: current must not flip onto an unrestored database, and pending.json stays so the next boot retries.
+    expect(readlinkSync(join(appDir, 'current'))).toBe('versions/2.0.0');
+    expect(existsSync(join(appDir, 'pending.json'))).toBe(true);
+  });
+
   it('preserves the pre-rollback database on the same filesystem as harmonic.db, not under app/', () => {
     const { dataDir, appDir } = makeDataDir();
     seedVersion(appDir, '1.0.0', '');

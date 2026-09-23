@@ -55,9 +55,24 @@ export type RollbackRecord = z.infer<typeof rollbackSchema>;
 
 const previousSchema = z.object({ version: z.string() });
 
+/** Written by the boot guard whenever a blocked rollback leaves part of the live db/-wal/-shm
+ * set stranded away from its original path (see restoreDatabase() in boot-guard.cjs). Read here
+ * — not by the guard itself, which is dependency-free — to block the server from opening a
+ * database it knows is incomplete. */
+const databaseIncompleteSchema = z.object({
+  dataDir: z.string(),
+  preservedDir: z.string(),
+  strandedFiles: z.array(z.string()),
+  reason: z.string(),
+  at: z.string(),
+});
+
+export type DatabaseIncompleteRecord = z.infer<typeof databaseIncompleteSchema>;
+
 const pendingPath = (appDir: string): string => join(appDir, 'pending.json');
 const rollbackPath = (appDir: string): string => join(appDir, 'rollback.json');
 const previousPath = (appDir: string): string => join(appDir, 'previous.json');
+const databaseIncompletePath = (appDir: string): string => join(appDir, 'database-incomplete.json');
 
 function fsyncFile(filePath: string): void {
   const fd = fs.openSync(filePath, 'r+');
@@ -159,6 +174,14 @@ export function readRollback({ appDir }: { appDir: string }): RollbackRecord | n
 
 export function clearRollback({ appDir }: { appDir: string }): void {
   rmSync(rollbackPath(appDir), { force: true });
+}
+
+export function readDatabaseIncomplete({ appDir }: { appDir: string }): DatabaseIncompleteRecord | null {
+  return readJson(databaseIncompletePath(appDir), databaseIncompleteSchema);
+}
+
+export function clearDatabaseIncomplete({ appDir }: { appDir: string }): void {
+  rmSync(databaseIncompletePath(appDir), { force: true });
 }
 
 function readPreviousVersion({ appDir }: { appDir: string }): string | null {

@@ -65,6 +65,10 @@ Check, in order:
   when anything was moved aside, where.
 - `<data-dir>/rolled-back/` — the pre-upgrade database, preserved (never
   deleted) if it had to be moved aside during a rollback attempt.
+- `<data-dir>/app/database-incomplete.json` — present only if a blocked
+  rollback couldn't move every db/-wal/-shm file back to `<data-dir>`; it
+  names the file(s) and where they ended up, and Harmonic refuses to start
+  until you move them back and delete this file.
 
 Once you've fixed the underlying cause (disk space, a missing snapshot, etc.),
 restart the service. For systemd, repeated failures can trip the unit's

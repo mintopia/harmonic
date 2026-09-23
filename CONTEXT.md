@@ -949,7 +949,11 @@ flipping onto a database the failed release may have already migrated would
 be worse than staying put — `pending.json` stays in place so every later
 boot retries the restore, and `app/rollback.json` instead records a blocked
 state (`rolledBack: false`, `blockedReason`) with the same message on
-stderr. A healthy boot's pruning pass keeps only the 2 most recent preserved
+stderr; if any db/-wal/-shm file ended up stranded outside `<dataDir>` rather
+than fully reversed back into place, the guard also writes
+`app/database-incomplete.json` naming it, which the server checks before
+ever opening the database and refuses to start while it exists. A healthy
+boot's pruning pass keeps only the 2 most recent preserved
 copies. A blocked state can persist indefinitely if the target keeps failing
 to start — no UI boots to show anything, so the reason is only in the service
 log and `app/rollback.json` until either the restored previous release boots

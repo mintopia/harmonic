@@ -1,13 +1,14 @@
 import { createClient, type Client } from '@libsql/client';
 import { drizzle, type LibSQLDatabase } from 'drizzle-orm/libsql';
 import { isNull, eq } from 'drizzle-orm';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as schema from './schema.js';
 import { syncSchema } from './schema-sync.js';
 import { touchStartupProgress } from '../reliability/startup-progress.js';
 import { conversations, settings, tasks, workspaces } from './schema.js';
+import { readDatabaseIncomplete } from '../upgrade/boot-state.js';
 
 /** The libsql-backed Drizzle database; every `.get/.all/.run` is a Promise. */
 export type AsyncDb = LibSQLDatabase<typeof schema>;
@@ -169,9 +170,27 @@ export async function openAsyncDb(
   options: { queryTimeoutMs?: number } = {},
 ): Promise<AsyncDbHandle> {
   mkdirSync(dataDir, { recursive: true });
+  // Refuse to open the database at all if the boot guard left it incomplete or orphaned — opening
+  // it here would either miss a blocked rollback's stranded files or, worse, create a fresh empty
+  // database next to a WAL from the file it's missing. Neither check applies on a genuine
+  // first-ever boot (no db, no wal, no marker), which still creates the database normally below.
+  const incomplete = readDatabaseIncomplete({ appDir: join(dataDir, 'app') });
+  if (incomplete) {
+    throw new Error(
+      `${incomplete.reason} Refusing to open ${join(dataDir, 'harmonic.db')} until ${join(dataDir, 'app', 'database-incomplete.json')} is resolved and removed.`,
+    );
+  }
+  const dbPath = join(dataDir, 'harmonic.db');
+  if (!existsSync(dbPath) && existsSync(`${dbPath}-wal`)) {
+    throw new Error(
+      `${dbPath} is missing but ${dbPath}-wal exists. Refusing to open it: that would create a fresh, empty database next to an orphaned WAL ` +
+        `instead of the one it belongs to. Check ${join(dataDir, 'app', 'rollback.json')} and the service log, restore harmonic.db (from a ` +
+        `backup or a preserved copy under ${join(dataDir, 'rolled-back')}), then restart.`,
+    );
+  }
   touchStartupProgress(dataDir);
   // `@libsql/client` on a local `file:` URL uses a single connection, so these connection-level pragmas apply to every drizzle query.
-  const client = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+  const client = createClient({ url: `file:${dbPath}` });
   await client.execute('PRAGMA journal_mode = WAL');
   await client.execute('PRAGMA foreign_keys = OFF');
   const db = drizzle(client, { schema });

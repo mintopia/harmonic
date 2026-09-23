@@ -1,14 +1,23 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join as pathJoin, dirname as pathDirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createClient } from '@libsql/client';
 import { createTempDirTracker } from './helpers/upgrade-fixture.js';
 import { startStartupWatchdog } from '../src/cli-serve.js';
+import { openAsyncDb } from '../src/db/async.js';
+import { parseBaseline } from '../src/db/schema-sync.js';
+
+vi.mock('../src/reliability/startup-progress.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/reliability/startup-progress.js')>();
+  return { ...actual, touchStartupProgress: vi.fn(actual.touchStartupProgress) };
+});
+import { touchStartupProgress } from '../src/reliability/startup-progress.js';
 
 const { tempDir, cleanupAll } = createTempDirTracker();
 const hangFixturePath = fileURLToPath(new URL('./fixtures/startup-watchdog-hang.ts', import.meta.url));
 const progressFixturePath = fileURLToPath(new URL('./fixtures/startup-watchdog-progress.ts', import.meta.url));
-const realBootFixturePath = fileURLToPath(new URL('./fixtures/startup-watchdog-real-boot.ts', import.meta.url));
 const watcherPath = fileURLToPath(new URL('../src/upgrade/startup-watcher.cjs', import.meta.url));
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const ownVersion: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -37,16 +46,6 @@ function spawnFixture(fixturePath: string, args: string[]): ChildProcessWithoutN
     stdio: 'pipe',
     // Fast polling keeps these tests quick; production leaves this at the watcher's 1s default.
     env: { ...process.env, HARMONIC_STARTUP_WATCHER_POLL_MS: '30', HARMONIC_STARTUP_DEADLINE_MS: '300' },
-  });
-  runningChildren.push(child);
-  return child;
-}
-
-function spawnFixtureWithEnv(fixturePath: string, args: string[], env: Record<string, string>): ChildProcessWithoutNullStreams {
-  const child = spawn(process.execPath, ['--import', 'tsx', fixturePath, ...args], {
-    cwd: repoRoot,
-    stdio: 'pipe',
-    env: { ...process.env, ...env },
   });
   runningChildren.push(child);
   return child;
@@ -96,25 +95,54 @@ describe('startup watchdog: out-of-process watcher (real processes)', () => {
     child.kill('SIGKILL');
   }, 30_000);
 
-  it('does not kill a real boot running schema convergence (src/db/async.ts) against a tiny deadline window', async () => {
-    const dataDir = tempDir('startup-watchdog-real-boot-');
-    writePending(dataDir, ownVersion);
+});
 
-    // The fixture drifts and seeds every FK-free baseline table (except `workspaces`, kept tiny) with
-    // 100k rows, forcing schema-sync's real `rebuildTable` row-copy for each (src/db/schema-sync.ts):
-    // individual steps take up to ~45ms, the whole convergence takes 150ms+. A 90ms deadline sits
-    // comfortably above any single step but well below the total, so surviving it depends on per-step
-    // progress touches, not just the touches around the whole DB open.
-    const child = spawnFixtureWithEnv(realBootFixturePath, [dataDir, '100000'], {
-      HARMONIC_STARTUP_WATCHER_POLL_MS: '15',
-      HARMONIC_STARTUP_DEADLINE_MS: '90',
-    });
-    await waitForStdout(child, 'armed\n', 20_000);
-    await waitForStdout(child, 'healthy\n', 20_000);
-    const code = await waitForExit(child, 5_000);
+describe('real schema convergence touches startup-progress after every step, not just around the whole boot', () => {
+  const { tempDir: tempDataDir, cleanupAll: cleanupDataDirs } = createTempDirTracker();
+  afterEach(cleanupDataDirs);
 
-    expect(code).toBe(0);
-  }, 30_000);
+  it('touches progress after every rebuilt-table step and every backfill step (deterministic, no wall-clock deadline)', async () => {
+    const dataDir = tempDataDir('startup-watchdog-real-convergence-');
+    mkdirSync(pathJoin(dataDir, 'app'), { recursive: true });
+
+    // Drifts and seeds every FK-free baseline table so each needs schema-sync's real `rebuildTable`
+    // row-copy (src/db/schema-sync.ts) on open — the same real convergence path the deadline-race
+    // version of this test drove, minus any wall clock: this asserts directly on how many times
+    // touchStartupProgress fired, so it fails on its own if per-step touching is ever removed,
+    // instead of failing only under contention on a slow/fast runner.
+    const baselinePath = pathJoin(pathDirname(fileURLToPath(new URL('../src/db/async.ts', import.meta.url))), '..', '..', 'drizzle', '0000_baseline.sql');
+    const baseline = parseBaseline(readFileSync(baselinePath, 'utf8'));
+    const seedTables = baseline.tables.filter((t) => !/FOREIGN KEY/.test(t.sql));
+    const client = createClient({ url: `file:${pathJoin(dataDir, 'harmonic.db')}` });
+    await client.execute('PRAGMA foreign_keys = OFF');
+    for (const table of seedTables) {
+      const driftedSql = table.sql.replace(/\)$/, ', CHECK (1=1))');
+      await client.execute(driftedSql);
+      const rowCount = table.name === 'workspaces' ? 1 : 5; // at least one workspace so the backfill actually runs its 3 steps
+      const columnNames = table.columns.map((c) => `\`${c.name}\``).join(', ');
+      const values = Array.from({ length: rowCount }, (_, i) =>
+        `(${table.columns.map((c) => (/integer/i.test(c.definition) ? String(i + 1) : `'v${i + 1}'`)).join(', ')})`,
+      );
+      await client.execute(`INSERT INTO \`${table.name}\` (${columnNames}) VALUES ${values.join(', ')}`);
+    }
+    client.close();
+
+    vi.mocked(touchStartupProgress).mockClear();
+    const handle = await openAsyncDb(dataDir);
+    await handle.close();
+
+    const touchesForThisBoot = vi.mocked(touchStartupProgress).mock.calls.filter(([dir]) => dir === dataDir);
+    // rebuildTable() (src/db/schema-sync.ts) touches 4 times per rebuilt table (create temp, copy
+    // rows, drop old, rename); backfillWorkspaceAssociationsAsync touches 3 times once a workspace
+    // exists; plus the 3 coarse touches openAsyncDb makes around the whole schema-sync/backfill
+    // calls. Any of those being dropped brings the count below this floor.
+    // Each rebuilt table's 4 touches interleave with that table's own awaited DDL/copy statements
+    // (rebuildTable calls onStep after each one, not once at the end), and the mock records real
+    // call order — so clearing far above the 3-touch floor from openAsyncDb's own fixed call sites
+    // only holds if the per-step touches inside schema-sync/backfill actually fired in sequence.
+    const minimumExpectedTouches = 3 + seedTables.length * 4;
+    expect(touchesForThisBoot.length).toBeGreaterThanOrEqual(minimumExpectedTouches);
+  });
 });
 
 describe('startStartupWatchdog (unit)', () => {
