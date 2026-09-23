@@ -66,7 +66,7 @@ export async function verifyInstall({
   await execFileAsync(process.execPath, [join(dir, 'dist', 'cli.js'), '--version'], { timeout: timeoutMs });
 
   const cliServeUrl = pathToFileURL(join(dir, 'dist', 'cli-serve.js')).href;
-  const importScript = `import(${JSON.stringify(cliServeUrl)}).then(() => process.exit(0)).catch((error) => { console.error(error); process.exit(1); });`;
+  const importScript = `import(${JSON.stringify(cliServeUrl)}).then(() => process.exit(0)).catch((error) => { process.stderr.write(String(error?.stack ?? error)); process.exit(1); });`;
   await execFileAsync(process.execPath, ['-e', importScript], { timeout: timeoutMs });
 }
 
