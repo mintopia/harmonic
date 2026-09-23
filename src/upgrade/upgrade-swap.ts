@@ -1,4 +1,4 @@
-export type UpgradeSwapAction = 'install' | 'verify' | 'relaunch' | 'release-lock' | 'exit' | 'abort';
+export type UpgradeSwapAction = 'install' | 'verify' | 'await-idle' | 'relaunch' | 'release-lock' | 'exit' | 'abort';
 
 export interface UpgradeSwapLogEvent {
   action: UpgradeSwapAction;
@@ -13,6 +13,9 @@ export interface UpgradeSwapDependencies {
   managedBy?: string;
   migrationRequired?: boolean;
   spawnRelauncher(): Promise<void>;
+  /** Best-effort bounded wait for in-flight work to drain before the
+   * irreversible relaunch/release-lock; never rejects. Absent ⇒ skipped. */
+  waitForIdle?(): Promise<void>;
   releaseLock(): Promise<void>;
   exit(): void;
   /** Records the failure before the caller restores the armed-update state. */
@@ -50,6 +53,9 @@ export class UpgradeSwap {
       return { kind: 'aborted', error: failure };
     }
 
+    if (this.dependencies.waitForIdle) {
+      await this.step({ action: 'await-idle', version, work: () => this.dependencies.waitForIdle!() });
+    }
     if (this.dependencies.managedBy !== 'systemd') {
       await this.step({ action: 'relaunch', version, work: () => this.dependencies.spawnRelauncher() });
     }

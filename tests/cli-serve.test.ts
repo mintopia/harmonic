@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createShutdownHandler,
+  createUpgradeReleaseLock,
   detectSystemdInstallMigration,
   installSystemdUpgrade,
   readSystemdInstalledVersion,
@@ -121,6 +122,69 @@ describe('createShutdownHandler', () => {
 
     expect(calls).toEqual(['app.close', 'telemetry.shutdown', 'releaseLock:/data']);
   });
+});
+
+describe('createUpgradeReleaseLock', () => {
+  it('releases the lock and exits cleanly, without forcing exit, when close and telemetry shutdown succeed', async () => {
+    const calls: string[] = [];
+    const releaseLock = createUpgradeReleaseLock({
+      close: async () => { calls.push('close'); },
+      shutdownTelemetry: async () => { calls.push('telemetry'); },
+      releaseLock: () => { calls.push('releaseLock'); },
+      exit: (code) => { calls.push(`exit:${code}`); },
+      log: () => {},
+    });
+
+    await releaseLock();
+
+    expect(calls).toEqual(['close', 'telemetry', 'releaseLock']);
+  });
+
+  it('still releases the lock and forces a non-zero exit when app.close throws', async () => {
+    const calls: string[] = [];
+    const releaseLock = createUpgradeReleaseLock({
+      close: async () => { throw new Error('close failed'); },
+      shutdownTelemetry: async () => { calls.push('telemetry'); },
+      releaseLock: () => { calls.push('releaseLock'); },
+      exit: (code) => { calls.push(`exit:${code}`); },
+      log: () => {},
+    });
+
+    await releaseLock();
+
+    expect(calls).toEqual(['telemetry', 'releaseLock', 'exit:1']);
+  });
+
+  it('still releases the lock and forces a non-zero exit when telemetry shutdown throws', async () => {
+    const calls: string[] = [];
+    const releaseLock = createUpgradeReleaseLock({
+      close: async () => { calls.push('close'); },
+      shutdownTelemetry: async () => { throw new Error('telemetry failed'); },
+      releaseLock: () => { calls.push('releaseLock'); },
+      exit: (code) => { calls.push(`exit:${code}`); },
+      log: () => {},
+    });
+
+    await releaseLock();
+
+    expect(calls).toEqual(['close', 'releaseLock', 'exit:1']);
+  });
+
+  it('bounds a hanging app.close with a timeout, still releasing the lock and forcing a non-zero exit', async () => {
+    const calls: string[] = [];
+    const releaseLock = createUpgradeReleaseLock({
+      close: () => new Promise(() => {}), // never resolves
+      shutdownTelemetry: async () => { calls.push('telemetry'); },
+      releaseLock: () => { calls.push('releaseLock'); },
+      exit: (code) => { calls.push(`exit:${code}`); },
+      log: () => {},
+      timeoutMs: 20,
+    });
+
+    await releaseLock();
+
+    expect(calls).toEqual(['telemetry', 'releaseLock', 'exit:1']);
+  }, 2000);
 });
 
 describe('systemd upgrades', () => {
