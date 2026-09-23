@@ -524,7 +524,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     expect(yields).toBeGreaterThan(0);
   });
 
-  it('gates the epic reconcile tick on a real upgrade coordinator: armed starts no work, unarmed runs it (issue #9)', async () => {
+  it('gates the epic reconcile tick on a real upgrade coordinator: armed starts no work, unarmed runs it', async () => {
     manager.stopAll();
     const reconciled: number[] = [];
     const fakeEpicService: EpicService = {

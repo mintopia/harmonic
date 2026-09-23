@@ -139,7 +139,7 @@ describe('UpgradeCoordinator', () => {
     expect(ready).toEqual(['2.6.0']);
   });
 
-  it('treats a namespaced epic.* operation (integrate, merge, verify, ...) as busy, not just the bare merge/integrate types (issue #9)', async () => {
+  it('treats a namespaced epic.* operation (integrate, merge, verify, ...) as busy, not just the bare merge/integrate types', async () => {
     const epicIntegrate: OperationSnapshot = {
       type: 'epic.integrate', name: 'harmonic.epic.integrate', spanContext: { traceId: 'trace', spanId: 'span', traceFlags: 0 }, parentSpanContext: undefined, attributes: {}, startedAt: 0, status: { code: SpanStatusCode.UNSET },
     };
