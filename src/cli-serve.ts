@@ -14,6 +14,7 @@ import { type ServeValues } from './cli-dispatch.js';
 import { UpgradeSwap } from './upgrade/upgrade-swap.js';
 import { SYSTEMD_MIGRATION_NOTICE } from './upgrade/upgrade-coordinator.js';
 import { hasValidInstall, installVersion, readInstalledVersion, type VersionInstallDependencies } from './upgrade/version-install.js';
+import { markHealthy } from './upgrade/boot-state.js';
 import { startOperation } from './telemetry/operations.js';
 import { displayUrl, type CliOutcome } from './cli-commands.js';
 
@@ -215,6 +216,14 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
   }
   await app.listen({ port, host });
   logger.info(`Harmonic listening on ${displayUrl(host, port)} (bound to ${host}, data: ${dataDir})`);
+
+  if (!migrationRequired && (process.env.HARMONIC_MANAGED_BY === 'systemd' || process.env.HARMONIC_MANAGED_BY === 'initd')) {
+    try {
+      markHealthy({ appDir: join(dataDir, 'app'), runningVersion: readSystemdInstalledVersion({ dataDir, readFile: readFileSync }) });
+    } catch (error) {
+      logger.warn('Failed to mark the running version healthy after boot', { error: error instanceof Error ? error.message : String(error) });
+    }
+  }
 
   const releaseAll = async () => {
     await app.close();

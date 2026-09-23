@@ -15,7 +15,7 @@
     "docs:openapi": "tsx scripts/gen-openapi.ts",
     "jev:gate": "tsx scripts/jev-gate/cli.ts",
     "jev:baseline": "tsx scripts/jev-gate/cli.ts --write-baseline",
-    "build": "tsc -p tsconfig.json && cp src/baseline.yaml dist/baseline.yaml && vite build --config web/vite.config.ts",
+    "build": "tsc -p tsconfig.json && cp src/baseline.yaml dist/baseline.yaml && mkdir -p dist/upgrade && cp src/upgrade/boot-guard.cjs dist/upgrade/boot-guard.cjs && vite build --config web/vite.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && tsc -p web/tsconfig.json",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix"
