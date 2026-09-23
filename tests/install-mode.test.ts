@@ -120,7 +120,7 @@ describe('resolveInstallMode (real temp filesystem)', () => {
     expect(mode.kind).toBe('external');
     if (mode.kind !== 'external') throw new Error('unreachable');
     expect(mode.subkind).toBe('npx');
-    expect(mode.commandFor('2.6.0')).toBe('npx @mintopia/harmonic@2.6.0 serve');
+    expect(mode.instructionFor('2.6.0')).toEqual({ kind: 'command', command: 'npx @mintopia/harmonic@2.6.0 serve' });
   });
 
   it('recognizes a writable npm-global install and omits sudo', () => {
@@ -143,7 +143,7 @@ describe('resolveInstallMode (real temp filesystem)', () => {
     expect(mode.kind).toBe('external');
     if (mode.kind !== 'external') throw new Error('unreachable');
     expect(mode.subkind).toBe('npm-global');
-    expect(mode.commandFor('2.6.0')).toBe('npm i -g @mintopia/harmonic@2.6.0');
+    expect(mode.instructionFor('2.6.0')).toEqual({ kind: 'command', command: 'npm i -g @mintopia/harmonic@2.6.0' });
   });
 
   it('prefixes sudo for a non-writable npm-global prefix', () => {
@@ -167,7 +167,7 @@ describe('resolveInstallMode (real temp filesystem)', () => {
     expect(mode.kind).toBe('external');
     if (mode.kind !== 'external') throw new Error('unreachable');
     expect(mode.subkind).toBe('npm-global');
-    expect(mode.commandFor('2.6.0')).toBe('sudo npm i -g @mintopia/harmonic@2.6.0');
+    expect(mode.instructionFor('2.6.0')).toEqual({ kind: 'command', command: 'sudo npm i -g @mintopia/harmonic@2.6.0' });
 
     chmodSync(nodeModulesDir, 0o755);
   });
@@ -189,6 +189,9 @@ describe('resolveInstallMode (real temp filesystem)', () => {
     expect(mode.kind).toBe('external');
     if (mode.kind !== 'external') throw new Error('unreachable');
     expect(mode.subkind).toBe('unknown');
-    expect(mode.commandFor('2.6.0')).toContain('2.6.0');
+    const instruction = mode.instructionFor('2.6.0');
+    expect(instruction.kind).toBe('manual');
+    if (instruction.kind !== 'manual') throw new Error('unreachable');
+    expect(instruction.instructions).toContain('2.6.0');
   });
 });

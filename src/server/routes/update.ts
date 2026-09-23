@@ -5,10 +5,15 @@ import type { AppContext } from '../app.js';
 import { DomainError } from '../../domain/errors.js';
 import { errorResponse } from '../schemas.js';
 
+const updateInstructionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('command'), command: z.string() }).describe('An exact shell command the operator can copy and run to upgrade manually.'),
+  z.object({ kind: z.literal('manual'), instructions: z.string() }).describe('Free-text upgrade instructions, used when no exact command is known.'),
+]);
+
 const updateModeSchema = z.object({
   kind: z.enum(['systemd', 'initd', 'migration-required', 'external']),
-  /** Only set for `external`: the exact command an operator runs to upgrade manually. */
-  command: z.string().optional(),
+  /** Only set for `external`: how an operator manually upgrades this install. */
+  instruction: updateInstructionSchema.optional(),
 });
 
 const updateFailureSchema = z.object({
@@ -50,7 +55,7 @@ export async function updateRoutes(
     const phase = state.phase;
     const installMode = ctx.installMode;
     const mode = installMode.kind === 'external'
-      ? { kind: installMode.kind, ...(state.version === null ? {} : { command: installMode.commandFor(state.version) }) }
+      ? { kind: installMode.kind, ...(state.version === null ? {} : { instruction: installMode.instructionFor(state.version) }) }
       : { kind: installMode.kind };
     return {
       currentVersion: ctx.runningVersion,

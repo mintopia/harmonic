@@ -52,7 +52,7 @@ describe('UpdateBanner', () => {
     await renderBanner({
       update: makeUpdate({
         availableVersion: '2.13.0',
-        mode: { kind: 'external', command: 'sudo npm i -g @mintopia/harmonic@2.13.0' },
+        mode: { kind: 'external', instruction: { kind: 'command', command: 'sudo npm i -g @mintopia/harmonic@2.13.0' } },
       }),
     });
 
@@ -60,6 +60,8 @@ describe('UpdateBanner', () => {
     expect(host!.textContent).toContain('sudo npm i -g @mintopia/harmonic@2.13.0');
     expect(buttonByText('Upgrade')).toBeUndefined();
     expect(buttonByText('Dismiss')).toBeDefined();
+    expect(host!.querySelector('code')).toBeTruthy();
+    expect(host!.querySelector('button[aria-label="Copy command"]')).toBeTruthy();
   });
 
   it('copies the external command to the clipboard', async () => {
@@ -69,7 +71,7 @@ describe('UpdateBanner', () => {
     await renderBanner({
       update: makeUpdate({
         availableVersion: '2.13.0',
-        mode: { kind: 'external', command: 'npx @mintopia/harmonic@2.13.0 serve' },
+        mode: { kind: 'external', instruction: { kind: 'command', command: 'npx @mintopia/harmonic@2.13.0 serve' } },
       }),
     });
 
@@ -78,6 +80,20 @@ describe('UpdateBanner', () => {
     copyButton.click();
 
     expect(writeText).toHaveBeenCalledWith('npx @mintopia/harmonic@2.13.0 serve');
+  });
+
+  it('shows plain instructions with no code element or copy button for an unknown-shape install', async () => {
+    await renderBanner({
+      update: makeUpdate({
+        availableVersion: '2.13.0',
+        mode: { kind: 'external', instruction: { kind: 'manual', instructions: 'reinstall @mintopia/harmonic@2.13.0 the way you originally installed it' } },
+      }),
+    });
+
+    expect(host!.textContent).toContain('reinstall @mintopia/harmonic@2.13.0 the way you originally installed it');
+    expect(host!.querySelector('code')).toBeNull();
+    expect(host!.querySelector('button[aria-label="Copy command"]')).toBeNull();
+    expect(buttonByText('Dismiss')).toBeDefined();
   });
 
   it('shows the failure reason and lets the operator arm again', async () => {
@@ -103,7 +119,7 @@ describe('UpdateBanner', () => {
       update: makeUpdate({
         availableVersion: '2.13.0',
         dismissedVersion: '2.13.0',
-        mode: { kind: 'external', command: 'npm i -g @mintopia/harmonic@2.13.0' },
+        mode: { kind: 'external', instruction: { kind: 'command', command: 'npm i -g @mintopia/harmonic@2.13.0' } },
       }),
     });
 
