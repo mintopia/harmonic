@@ -920,9 +920,13 @@ if it predates the release it's guarding. Runs before every start (systemd
 `ExecStartPre=-`, the init.d script, the relauncher). While a version is
 pending it counts boots; on the fourth boot that never reached `listen` it
 performs the **Rollback**. A boot that hangs instead of crashing still counts:
-a startup watchdog force-exits after `HARMONIC_STARTUP_DEADLINE_MS` (120s
-default) while `pending.json` names the running version, and the init.d
-relauncher independently kills a hung child on its own timeout. A release copies its own copy over
+an out-of-process startup watcher force-kills the server after
+`HARMONIC_STARTUP_DEADLINE_MS` (120s default) with no progress touch to
+`app/startup-progress` while `pending.json` names the running version — a
+separate OS process because an in-process timer can't fire once the event
+loop is blocked. The init.d relauncher has no shorter deadline of its own; it
+only falls back to killing a child and stopping if an overall safety cap
+(30 minutes default) is exceeded. A release copies its own copy over
 `app/boot-guard.cjs` only after it clears `pending.json` post-`listen`, so a
 pending boot always runs a guard shipped by a release that already booted a
 prior version. A pre-ADR-0042 systemd unit has no guard at all — reported as

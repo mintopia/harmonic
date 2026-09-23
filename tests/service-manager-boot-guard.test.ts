@@ -73,6 +73,21 @@ describe('systemd unit boot-guard wiring', () => {
     expect(unitRevision(unit)).toBe(2);
   });
 
+  it('leaves KillMode at its default (control-group) and sets a stop timeout, so a SIGKILLed server and its startup watcher both die together and Restart=always brings the unit back', async () => {
+    const deps = dependencies();
+    const manager = createServiceManager(environment({ isRoot: true, systemdRunning: true }), deps);
+
+    await manager.install({
+      startSelfManaged: vi.fn(),
+      serve: { port: '4711', host: '127.0.0.1', dataDir: '/var/lib/harmonic' },
+    });
+
+    const unit = deps.files.get('/etc/systemd/system/harmonic.service') ?? '';
+    expect(unit).toContain('TimeoutStopSec=60');
+    expect(unit).toContain('Restart=always');
+    expect(unit).not.toContain('KillMode=');
+  });
+
   it('copies the newly installed version boot-guard.cjs into app/', async () => {
     const deps = dependencies();
     deps.files.set('/var/lib/harmonic/app/versions/2.16.0/dist/upgrade/boot-guard.cjs', '// guard 2.16.0');

@@ -1,12 +1,25 @@
 import { describe, expect, it, vi } from 'vitest';
 import { relaunchWithBootGuard, type LaunchedProcess, type RelauncherDependencies } from '../src/upgrade/relauncher.js';
 
+/** A fake `LaunchedProcess` whose `onExit` supports multiple subscribers, like `child.once('exit', cb)` in production. */
+function fakeChild(pid: number, kill: (signal: NodeJS.Signals) => void = () => {}): { child: LaunchedProcess; exit: () => void } {
+  const listeners: Array<() => void> = [];
+  return {
+    child: {
+      pid,
+      onExit: (callback) => { listeners.push(callback); },
+      kill,
+    },
+    exit: () => { listeners.forEach((listener) => { listener(); }); },
+  };
+}
+
 function noWaitDependencies(overrides: Partial<RelauncherDependencies> = {}): RelauncherDependencies {
   return {
     isLocked: () => false,
     wait: async () => {},
     runGuard: () => {},
-    launch: () => ({ pid: 1, onExit: () => {}, kill: () => {} }),
+    launch: () => fakeChild(1).child,
     isPending: () => false,
     ...overrides,
   };
@@ -37,7 +50,7 @@ describe('relaunchWithBootGuard', () => {
       serveArgs: [],
       dependencies: noWaitDependencies({
         runGuard: () => calls.push('guard'),
-        launch: () => { calls.push('launch'); pending = false; return { pid: 7, onExit: () => {}, kill: () => {} }; },
+        launch: () => { calls.push('launch'); pending = false; return fakeChild(7).child; },
         isPending: () => pending,
       }),
     });
@@ -56,9 +69,9 @@ describe('relaunchWithBootGuard', () => {
         runGuard: () => { guardCalls += 1; },
         launch: () => {
           launchCalls += 1;
-          let exitCallback: (() => void) | undefined;
-          queueMicrotask(() => exitCallback?.());
-          return { pid: launchCalls, onExit: (callback) => { exitCallback = callback; }, kill: () => {} };
+          const { child, exit } = fakeChild(launchCalls);
+          queueMicrotask(exit);
+          return child;
         },
         isPending: () => true,
       }),
@@ -68,60 +81,103 @@ describe('relaunchWithBootGuard', () => {
     expect(launchCalls).toBe(4);
   });
 
-  it('a round that times out kills the hung child (SIGTERM then SIGKILL) and moves to the next round, giving up after maxRounds', async () => {
+  it('does not start another round while the child from a timed-out round never exits: kills it once and stops', async () => {
     let guardCalls = 0;
     let launchCalls = 0;
     const killSignals: string[] = [];
     await relaunchWithBootGuard({
       dataDir: '/tmp/harmonic',
       serveArgs: [],
-      maxRounds: 3,
-      roundWaitMs: 10,
+      maxRounds: 4,
+      overallDeadlineMs: 20,
       roundPollMs: 5,
-      killGraceMs: 10,
+      killGraceMs: 5,
       dependencies: noWaitDependencies({
         runGuard: () => { guardCalls += 1; },
         launch: () => {
           launchCalls += 1;
-          return {
-            pid: launchCalls,
-            onExit: () => {}, // never exits: every round times out
-            kill: (signal) => { killSignals.push(signal); },
-          };
+          // never exits: nothing but the overall deadline can end the round
+          return fakeChild(launchCalls, (signal) => { killSignals.push(signal); }).child;
         },
-        isPending: () => true, // never clears: every round times out
+        isPending: () => true, // never clears
       }),
     });
 
-    expect(guardCalls).toBe(3);
-    expect(launchCalls).toBe(3);
-    expect(killSignals).toEqual(['SIGTERM', 'SIGKILL', 'SIGTERM', 'SIGKILL', 'SIGTERM', 'SIGKILL']);
+    expect(guardCalls).toBe(1);
+    expect(launchCalls).toBe(1);
+    expect(killSignals).toEqual(['SIGTERM', 'SIGKILL']);
   });
 
-  it('does not escalate to SIGKILL when the child exits right after SIGTERM', async () => {
-    const killSignals: string[] = [];
-    const onExitCallbacks: Array<() => void> = [];
+  it('does not run the next guard round when the child exits but the data-dir lock never clears', async () => {
+    let guardCalls = 0;
+    let launched = false;
     await relaunchWithBootGuard({
       dataDir: '/tmp/harmonic',
       serveArgs: [],
-      maxRounds: 1,
-      roundWaitMs: 10,
-      roundPollMs: 5,
-      killGraceMs: 10,
+      maxRounds: 4,
+      exitPollMs: 5,
+      exitMaxWaitMs: 20,
       dependencies: noWaitDependencies({
-        launch: () => ({
-          pid: 1,
-          onExit: (callback) => { onExitCallbacks.push(callback); },
-          kill: (signal) => {
-            killSignals.push(signal);
-            if (signal === 'SIGTERM') onExitCallbacks.forEach((callback) => { callback(); });
-          },
-        }),
-        isPending: () => true, // never clears: the round times out and triggers a kill
+        runGuard: () => { guardCalls += 1; },
+        // free before launch (so the pre-round lock wait passes), stuck forever after — as if the exiting process were still tearing down
+        isLocked: () => launched,
+        launch: () => {
+          launched = true;
+          const { child, exit } = fakeChild(1);
+          queueMicrotask(exit);
+          return child;
+        },
+        isPending: () => true,
       }),
     });
 
-    expect(killSignals).toEqual(['SIGTERM']);
+    expect(guardCalls).toBe(1);
+  });
+
+  it('runs the next guard round once a process that exited on its own also clears the lock', async () => {
+    let guardCalls = 0;
+    let launchCalls = 0;
+    let pending = true;
+    await relaunchWithBootGuard({
+      dataDir: '/tmp/harmonic',
+      serveArgs: [],
+      maxRounds: 2,
+      exitPollMs: 5,
+      exitMaxWaitMs: 1000,
+      dependencies: noWaitDependencies({
+        runGuard: () => { guardCalls += 1; },
+        launch: () => {
+          launchCalls += 1;
+          const { child, exit } = fakeChild(launchCalls);
+          queueMicrotask(exit);
+          if (launchCalls === 2) pending = false;
+          return child;
+        },
+        isPending: () => pending,
+      }),
+    });
+
+    expect(guardCalls).toBe(2);
+    expect(launchCalls).toBe(2);
+  });
+
+  it('gives up mid-round when the overall safety cap is exceeded, without starting another round', async () => {
+    let guardCalls = 0;
+    await relaunchWithBootGuard({
+      dataDir: '/tmp/harmonic',
+      serveArgs: [],
+      maxRounds: 4,
+      overallDeadlineMs: 15,
+      roundPollMs: 5,
+      killGraceMs: 5,
+      dependencies: noWaitDependencies({
+        runGuard: () => { guardCalls += 1; },
+        launch: () => fakeChild(1).child,
+        isPending: () => true,
+      }),
+    });
+
+    expect(guardCalls).toBe(1);
   });
 
   it('continues to the next round when launch itself throws', async () => {
@@ -129,7 +185,9 @@ describe('relaunchWithBootGuard', () => {
     const launch = vi.fn((): LaunchedProcess => {
       attempts += 1;
       if (attempts === 1) throw new Error('spawn failed');
-      return { pid: 2, onExit: () => {}, kill: () => {} };
+      const { child, exit } = fakeChild(2);
+      queueMicrotask(exit);
+      return child;
     });
     let pending = true;
     await relaunchWithBootGuard({

@@ -11,6 +11,7 @@ import { acquireLock, releaseLock } from './daemon.js';
 import { initializeTelemetry, resolveTelemetryOptions } from './telemetry.js';
 import { logger } from './logger.js';
 import { installProcessSafetyNet } from './reliability/process-safety-net.js';
+import { touchStartupProgress } from './reliability/startup-progress.js';
 import { type ServeValues } from './cli-dispatch.js';
 import { UpgradeSwap } from './upgrade/upgrade-swap.js';
 import { SYSTEMD_MIGRATION_NOTICE, type UpgradeCancellation } from './upgrade/upgrade-coordinator.js';
@@ -152,33 +153,51 @@ export function readManagedInstalledVersion({
 /**
  * Guards against a release that imports fine but hangs before `listen` (e.g. a stuck DB init):
  * `Type=simple` and the init.d relauncher both consider the process started the moment it forks,
- * so nothing else notices a hang. If `pending.json` names this process's own version, arm an
- * unref'd timer that force-exits so systemd/the relauncher restart it and the boot guard counts
- * the boot. A fully blocked event loop can't fire this timer either — it only catches hangs still
- * inside an async wait (a DB query, a stuck import), not a synchronous infinite loop.
+ * so nothing else notices a hang. If `pending.json` names this process's own version, spawn a
+ * dependency-free, out-of-process watcher (`startup-watcher.cjs`) that force-kills this process if
+ * it goes too long without touching {@link touchStartupProgress}, so systemd/the relauncher restart
+ * it and the boot guard counts the boot. It runs as a separate OS process (not detached, so
+ * systemd's KillMode still cleans it up) specifically because a fully blocked event loop can't fire
+ * an in-process timer — only a separate process can catch a synchronous infinite loop. The deadline
+ * is measured from the last progress touch, not from spawn, so a slow-but-healthy boot (e.g. a long
+ * migration) isn't killed as long as it keeps signalling progress.
  */
 export function startStartupWatchdog({
   dataDir,
   ownDir = fileURLToPath(new URL('..', import.meta.url)),
+  watcherPath = join(ownDir, 'dist', 'upgrade', 'startup-watcher.cjs'),
   deadlineMs = Number(process.env.HARMONIC_STARTUP_DEADLINE_MS ?? 120_000),
+  spawnWatcher = spawn,
 }: {
   dataDir: string;
   ownDir?: string;
+  watcherPath?: string;
   deadlineMs?: number;
+  spawnWatcher?: typeof spawn;
 }): () => void {
   const appDir = join(dataDir, 'app');
   const pending = readPending({ appDir });
   if (!pending) return () => {};
   const runningVersion = readInstalledVersion({ dir: ownDir, readFile: readFileSync });
   if (pending.version !== runningVersion) return () => {};
-  const timer = setTimeout(() => {
-    logger.error(
-      `Startup watchdog: still not listening ${deadlineMs}ms after boot while pending.json names this running version (${runningVersion}); exiting so it counts as a failed boot.`,
+  touchStartupProgress(dataDir);
+  if (!existsSync(watcherPath)) {
+    logger.warn(`Startup watchdog: no out-of-process watcher at ${watcherPath}; a synchronous startup hang will not be caught.`);
+    return () => {};
+  }
+  let watcher: ReturnType<typeof spawn>;
+  try {
+    watcher = spawnWatcher(
+      process.execPath,
+      [watcherPath, dataDir, String(process.pid), runningVersion, String(deadlineMs)],
+      { stdio: 'ignore' },
     );
-    process.exit(1);
-  }, deadlineMs);
-  timer.unref();
-  return () => { clearTimeout(timer); };
+    watcher.unref();
+  } catch (error) {
+    logger.warn(`Startup watchdog: failed to spawn the out-of-process watcher: ${error instanceof Error ? error.message : String(error)}`);
+    return () => {};
+  }
+  return () => { watcher.kill(); };
 }
 
 export async function runServer(values: ServeValues, rest: string[]): Promise<CliOutcome> {

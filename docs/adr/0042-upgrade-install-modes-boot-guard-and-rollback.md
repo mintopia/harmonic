@@ -67,11 +67,19 @@ script, and from the relauncher.
   fails. It then writes `app/rollback.json` — itself fsynced, recording
   whether the database was restored (`databaseRestored`) and where the
   preserved copy landed (`preservedDatabaseDir`) — and deletes `pending.json`.
-- A release that never reaches `listen` counts as a failed boot too: a startup
-  watchdog force-exits after `HARMONIC_STARTUP_DEADLINE_MS` (120s default) if
-  `pending.json` still names the running version, and the init.d relauncher
-  independently kills a hung child (SIGTERM, then SIGKILL) and moves to the
-  next round on its own timeout.
+- A release that never reaches `listen` counts as a failed boot too: an
+  out-of-process startup watcher (`startup-watcher.cjs`, spawned non-detached
+  in the same cgroup so systemd's `KillMode` still reaps it) SIGKILLs the
+  server once it goes `HARMONIC_STARTUP_DEADLINE_MS` (120s default) without
+  touching `app/startup-progress`, which the server touches at boot and after
+  each migration step — so a slow-but-healthy boot isn't killed, and (unlike
+  an in-process timer) neither is a synchronous event-loop hang missed. The
+  init.d relauncher has no kill deadline of its own for this: it just waits
+  for `pending.json` to clear or the child to exit, under an overall safety
+  cap (`HARMONIC_RELAUNCHER_OVERALL_DEADLINE_MS`, 30 minutes default) that
+  only exists for the case nothing else ever kills a wedged child; if it
+  fires, the relauncher kills that child and stops instead of starting
+  another round against a process it can't be sure has died.
 - After `listen` succeeds, the new process clears `pending.json`. Only then does
   it copy its own guard over `app/boot-guard.cjs`. A pending boot therefore
   always runs a guard shipped by a release that has already booted.
