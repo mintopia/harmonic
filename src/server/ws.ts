@@ -4,7 +4,7 @@ import { requestIsOperator } from './auth.js';
 import { attemptTimelineToApi, conversationToApi, attemptToApi, attemptUsageToApi, taskToApi } from './serialize.js';
 import { operationEventToApi, scheduledJobsToApi, worktreesToApi } from './dto.js';
 import { forEachYielding } from '../reliability/yield.js';
-import { isTaskAttempt } from '../db/schema.js';
+import { isTaskAttempt, type TaskRow } from '../db/schema.js';
 import { fireAndForget } from '../error-handling.js';
 
 /** One firehose socket at /api/ws: every event is broadcast to every client; clients filter. */
@@ -27,6 +27,16 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
     const hasWriteScope = await requestIsOperator(req, ctx.auth, socket.protocol || undefined);
     let unsubscribeAttemptLog: (() => void) | undefined;
     let unsubscribeCriticLog: (() => void) | undefined;
+    // Each broadcast awaits DB reads, so a later change can finish first; only the newest per task is sent.
+    const taskGeneration = new Map<number, number>();
+    const sendTaskChanged = async (task: TaskRow): Promise<void> => {
+      const generation = (taskGeneration.get(task.id) ?? 0) + 1;
+      taskGeneration.set(task.id, generation);
+      const apiTask = await taskToApi(ctx, await ctx.tasks.withDeps(task));
+      if (taskGeneration.get(task.id) !== generation) return;
+      taskGeneration.delete(task.id);
+      send({ type: 'task_changed', task: apiTask });
+    };
     const unsubscribes = [
       ctx.bus.on('attempt_event', (event) => send({ type: 'attempt_event', event })),
       ctx.bus.on('attempt_changed', async (run) => {
@@ -41,9 +51,11 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       ctx.bus.on('attempt_usage', ({ attemptId, snapshot }) => {
         void attemptUsageToApi(ctx, attemptId, snapshot).then((usage) => send({ type: 'attempt_usage', attemptId, ...usage }));
       }),
-      ctx.bus.on('task_changed', async (task) =>
-        send({ type: 'task_changed', task: await taskToApi(ctx, await ctx.tasks.withDeps(task)) })),
-      ctx.bus.on('task_removed', ({ id }) => send({ type: 'task_removed', id })),
+      ctx.bus.on('task_changed', sendTaskChanged),
+      ctx.bus.on('task_removed', ({ id }) => {
+        if (taskGeneration.has(id)) taskGeneration.set(id, taskGeneration.get(id)! + 1);
+        send({ type: 'task_removed', id });
+      }),
       ctx.bus.on('epic_changed', (payload) => send({ type: 'epic_changed', ...payload })),
       ctx.bus.on('epic_integrated', (payload) => send({ type: 'epic_integrated', ...payload })),
       ctx.bus.on('scheduled_jobs', (jobs) => send({ type: 'scheduled-jobs', jobs: scheduledJobsToApi(jobs) })),
