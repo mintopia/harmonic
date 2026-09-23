@@ -7,9 +7,7 @@ import { forEachYielding } from '../reliability/yield.js';
 import { isTaskAttempt, type AttemptRow, type ConversationRow, type TaskRow } from '../db/schema.js';
 import { fireAndForget } from '../error-handling.js';
 
-/** Each broadcast awaits DB reads before sending, so a slower older change can
- * finish after a newer one; only the newest send per id is delivered, and a
- * removal invalidates any send still in flight for that id. */
+/** Only the newest send per id is delivered; a removal invalidates any send still in flight for that id. */
 function latestChangeSender<TRow, TApi>(toApi: (row: TRow) => Promise<TApi>): {
   send: (id: number, row: TRow, deliver: (api: TApi) => void) => Promise<void>;
   markRemoved: (id: number) => void;

@@ -1,14 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
-// Dependency-free CommonJS, no imports from this package's own dist: it must run before that
-// dist even exists. Rescues 2.18.0/2.18.1 systemd self-upgrades, which ran
-// `npm i --prefix versions/<v> @mintopia/harmonic@<v>` and nested the install at
-// `versions/<v>/node_modules/@mintopia/harmonic/dist` instead of `versions/<v>/dist`, breaking the
-// old verify step and the next restart. Symlinking `versions/<v>/dist` to the nested `dist` lets the
-// old verify's `current/dist/../package.json` read resolve to the real (versioned) manifest, and lets
-// systemd's `node current/dist/cli.js` resolve through the symlink chain to the installed code.
-// Always exits 0 and never throws: a broken rescue must not fail an install.
+// Dependency-free CommonJS (must run before this package's own dist exists). Rescues
+// 2.18.0/2.18.1 installs that nested the install under node_modules by symlinking
+// `versions/<v>/dist` to it, so `current/dist/cli.js` and its package.json still resolve.
 
 const fs = require('node:fs');
 const path = require('node:path');

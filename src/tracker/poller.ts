@@ -38,9 +38,7 @@ export class TrackerPoller {
     private readonly onResolved: (r: ResolvedTracker) => void = () => {},
     /** Runs after mirroring; absent ⇒ no Epic integration. Its failure is logged, not fatal. */
     private readonly epics?: EpicIntegrationSync,
-    /** `reconcileOnPoll` false ⇒ Epics reconcile through the global Scheduler Job instead.
-     * `workStartAllowed` absent ⇒ always allowed; false ⇒ the reconcile tick starts no new
-     * Epic integration/verification/resolution work (e.g. an in-progress upgrade). */
+    /** `reconcileOnPoll` false ⇒ Epics reconcile through the global Scheduler Job instead. See `workStartAllowed` in tracker/manager.ts. */
     private readonly opts: { reconcileOnPoll?: boolean; yieldOptions?: YieldOptions; workStartAllowed?: () => boolean | Promise<boolean> } = {},
   ) {}
 

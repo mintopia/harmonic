@@ -5,13 +5,7 @@ export function startupProgressPath(dataDir: string): string {
   return join(dataDir, 'app', 'startup-progress');
 }
 
-/**
- * Marks that boot is still making progress: the out-of-process startup watcher (`startup-watcher.cjs`)
- * measures its deadline from this file's mtime instead of from its own spawn time, so a release whose
- * migrations legitimately take longer than one deadline window isn't killed as long as it keeps
- * touching this between phases. A no-op outside a managed (`systemd`/`initd`) install — `app/` only
- * exists there, and nothing reads this file otherwise.
- */
+/** The out-of-process startup watcher measures its kill deadline from this file's mtime, not its own spawn time, so a slow-but-progressing boot is never killed. No-op outside a managed install. */
 export function touchStartupProgress(dataDir: string): void {
   const appDir = join(dataDir, 'app');
   if (!existsSync(appDir)) return;
@@ -23,7 +17,7 @@ export function touchStartupProgress(dataDir: string): void {
     try {
       closeSync(openSync(path, 'a'));
     } catch {
-      // best-effort: the watcher falls back to its own start time if this file never appears
+      // best-effort; the watcher falls back to its own start time if this file never appears
     }
   }
 }
@@ -32,12 +26,7 @@ let bootProgressDataDir: string | undefined;
 let lastThrottledTouchAt = 0;
 const THROTTLED_TOUCH_INTERVAL_MS = 2000;
 
-/**
- * Marks boot as in progress so every {@link yieldToEventLoop} call (and so every
- * `forEachYielding` loop, which every growing-collection boot loop already uses per
- * AGENTS.md's "Background loops must yield") touches startup progress while it runs, not just
- * around whole boot phases. Always pair with {@link endBootProgress}.
- */
+/** While set, every {@link yieldToEventLoop} call touches startup progress, not just whole boot phases. Always pair with {@link endBootProgress}. */
 export function beginBootProgress(dataDir: string): void {
   bootProgressDataDir = dataDir;
   lastThrottledTouchAt = 0;
@@ -47,7 +36,6 @@ export function endBootProgress(): void {
   bootProgressDataDir = undefined;
 }
 
-/** Throttled to {@link THROTTLED_TOUCH_INTERVAL_MS} so calling it on every yield stays cheap. No-op unless a boot is in progress. */
 export function touchStartupProgressIfBooting(now: () => number = Date.now): void {
   if (!bootProgressDataDir) return;
   const at = now();

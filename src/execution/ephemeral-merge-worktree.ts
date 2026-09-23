@@ -54,15 +54,10 @@ export interface SweepStaleMergeWorktreesOptions {
 }
 
 /**
- * Remove `harmonic-merge-*` admin worktrees left behind by a process that
- * died between {@link withEphemeralMergeWorktree} creating one and its
- * `finally` removing it. Intended to run once at boot: age-gated rather than
- * scoped to "this process never created it", because multiple Harmonic
- * processes can share a repo and one booting must not delete another's
- * in-flight merge. The temp dir's own mtime is set once, at `mkdtempSync`,
- * and is never touched again by writes inside `admin/` (only `admin`'s own
- * mtime moves, and only for some writes), so it reliably reflects the age of
- * the operation rather than its last activity.
+ * Remove `harmonic-merge-*` admin worktrees left behind by a process that died between
+ * {@link withEphemeralMergeWorktree} creating one and its `finally` removing it. Age-gated
+ * (see `olderThanMs`) rather than scoped by owning process, since another process's merge may
+ * still be in flight.
  */
 export async function sweepStaleMergeWorktrees(
   repoDir: string,
@@ -77,6 +72,7 @@ export async function sweepStaleMergeWorktrees(
     const path = resolve(worktree.path);
     const tempDir = dirname(path);
     if (basename(path) !== 'admin' || !basename(tempDir).startsWith(MERGE_WORKTREE_PREFIX)) return;
+    // tempDir's mtime, not admin's, is stable (set once at mkdtempSync; admin's own mtime moves on some writes).
     const stat = statSync(tempDir, { throwIfNoEntry: false });
     if (stat !== undefined && now() - stat.mtimeMs < olderThanMs) return;
     await deps.removeWorktree(repoDir, path).catch((error) => {

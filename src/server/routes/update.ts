@@ -12,7 +12,6 @@ const updateInstructionSchema = z.discriminatedUnion('kind', [
 
 const updateModeSchema = z.object({
   kind: z.enum(['systemd', 'initd', 'migration-required', 'external']),
-  /** Only set for `external`: how an operator manually upgrades this install. */
   instruction: updateInstructionSchema.optional(),
 });
 
@@ -29,10 +28,8 @@ const updateStateSchema = z.object({
   upgradingVersion: z.string().nullable(),
   dismissedVersion: z.string().nullable(),
   migrationRequired: z.boolean(),
-  /** A root system unit that predates the boot guard: still upgrades itself, but with no automatic rollback until `sudo harmonic install`. */
   guardMissing: z.boolean(),
   mode: updateModeSchema,
-  /** Set when the last boot found the running version didn't match the armed target: the swap started but never completed. */
   failed: updateFailureSchema.nullable(),
   idle: z.object({
     runningAttempts: z.number().int().nonnegative(),

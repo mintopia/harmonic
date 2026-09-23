@@ -54,7 +54,6 @@ export interface ServiceStatus {
   detail?: string;
 }
 
-/** Settings recovered from a previously installed service, offered as install-time defaults. */
 export interface ExistingServiceSettings {
   serve: {
     /** Undefined only when the existing unit couldn't determine it and the caller passed it explicitly instead. */
@@ -80,12 +79,9 @@ export interface ServiceManager {
   restart(): Promise<void>;
   status(): Promise<ServiceStatus>;
   isInstalled(): Promise<boolean>;
-  /** Best-effort recovery of the currently installed service's settings, for reuse on reinstall.
-   * Without `explicit`, an unparseable unit is a lenient no-op (warns, returns null). With `explicit`
-   * (the CLI flags the operator actually typed), an unparseable unit throws instead, naming what it
-   * couldn't determine, unless --port/--host/--data-dir were all passed explicitly to override it. */
+  /** Without `explicit`, an unparseable unit is a lenient no-op (warns, returns null); with it, an unparseable unit throws instead, unless --port/--host/--data-dir were all passed explicitly. */
   readExistingSettings(explicit?: ReadonlySet<string>): Promise<ExistingServiceSettings | null>;
-  /** Systemd-only self-heal for a pre-boot-guard unit (ADR-0042); absent on other backends. */
+  /** Systemd-only self-heal for a pre-boot-guard unit (ADR-0042). */
   ensureUnitRevisionCurrent?(): Promise<boolean>;
 }
 
@@ -229,13 +225,10 @@ const execStartFlags: Record<string, keyof z.infer<typeof execStartServeSchema>>
 
 interface ParsedExecStart {
   serve: Partial<Record<keyof z.infer<typeof execStartServeSchema>, string>>;
-  /** Tokens this parser could not attribute to a known flag, quoted as encountered. */
   unparsedTokens: string[];
 }
 
-/** Recovers as much of the `harmonic serve` invocation an ExecStart line encodes as it can, understanding
- * both `--flag value` (this file writer's own form) and `--flag=value` (hand-edited or foreign units).
- * Never silently drops a token: anything it can't attribute to a known flag comes back in `unparsedTokens`. */
+/** Handles both `--flag value` (this file writer's own form) and `--flag=value` (hand-edited or foreign units). Never silently drops a token: anything unattributed comes back in `unparsedTokens`. */
 const parseExecStartTokens = (unitContents: string): ParsedExecStart => {
   const match = /^ExecStart=(.*)$/m.exec(unitContents);
   if (!match?.[1]) return { serve: {}, unparsedTokens: ['(no ExecStart line found)'] };
@@ -269,7 +262,6 @@ const parseExecStartTokens = (unitContents: string): ParsedExecStart => {
 
 const parseUnitUser = (unitContents: string): string | undefined => /^User=(.+)$/m.exec(unitContents)?.[1];
 
-/** Reads `HARMONIC_UNIT_REVISION` from a generated unit; 0 if absent (pre-boot-guard units, ADR-0042). */
 export const unitRevision = (unitContents: string): number => {
   const match = /^Environment=HARMONIC_UNIT_REVISION=(\d+)$/m.exec(unitContents);
   return match?.[1] ? Number(match[1]) : 0;
@@ -278,7 +270,6 @@ export const unitRevision = (unitContents: string): number => {
 /** The revision `unit()` currently writes; bump alongside any change `unitRevision` callers must react to. */
 export const CURRENT_UNIT_REVISION = 2;
 
-/** Recovers the operator password from a harmonic.env file written by this file writer. */
 const parseEnvPassword = (envContents: string): { ok: true; password: string | undefined } | { ok: false } => {
   const match = /^HARMONIC_PASSWORD=(.*)$/m.exec(envContents);
   if (!match) return { ok: true, password: undefined };
@@ -297,8 +288,7 @@ const ensureDataDir = async (dependencies: ServiceManagerDependencies, dataDir: 
   if (user !== undefined) await dependencies.run('chown', [user, dataDir]);
 };
 
-/** Copies the newly installed version's boot guard to `app/boot-guard.cjs`, so a pending boot always
- * runs a guard shipped by the release it's about to boot (ADR-0042). Absent on pre-guard versions. */
+/** Copies the newly installed version's boot guard to `app/boot-guard.cjs`, so a pending boot always runs a guard shipped by the release it's about to boot (ADR-0042). */
 const copyBootGuard = async (dependencies: ServiceManagerDependencies, appDir: string, version: string): Promise<void> => {
   const guardSource = join(appDir, 'versions', version, 'dist', 'upgrade', 'boot-guard.cjs');
   if (dependencies.fileExists(guardSource)) {
@@ -313,8 +303,9 @@ export const shellWord = (value: string): string => /^[A-Za-z0-9_./:-]+$/.test(v
 export const initdScript = ({ dataDir, user, nodePath }: { dataDir: string; user: string; nodePath: string }): string => {
   const cli = shellWord(join(dataDir, 'app', 'current', 'dist', 'cli.js'));
   const runCli = `HARMONIC_INITD_SERVICE=1 HARMONIC_MANAGED_BY=initd runuser -u ${shellWord(user)} -- ${shellWord(nodePath)} ${cli}`;
-  // The guard always exits 0 (ADR-0042); `|| true` is defensive. Runs as the service user, like
-  // systemd's ExecStartPre, so any rollback.json/pending.json it writes stays owned by that user.
+  // The guard's own code always exits 0 (ADR-0042); `|| true` guards against it failing to run at
+  // all (missing file, permission). Runs as the service user so any rollback.json/pending.json it
+  // writes stays owned by that user.
   const runGuard = `runuser -u ${shellWord(user)} -- ${shellWord(nodePath)} ${shellWord(join(dataDir, 'app', 'boot-guard.cjs'))} ${shellWord(dataDir)} || true`;
   return `#!/bin/sh
 ### BEGIN INIT INFO
@@ -403,7 +394,8 @@ class SystemdServiceManager implements ServiceManager {
     // install-time PATH so the harness can spawn its agents and in-place upgrades
     // can reach npm.
     const pathEnvironment = this.dependencies.path ? `Environment=${unitEnvironment('PATH', this.dependencies.path)}\n` : '';
-    // `-` tells systemd to ignore this step's exit code; the guard always exits 0 anyway (ADR-0042).
+    // `-` tells systemd to ignore this step's exit code, guarding against the guard failing to run
+    // at all; the guard's own code always exits 0 (ADR-0042).
     const execStartPre = [this.dependencies.nodePath, join(serve.dataDir, 'app', 'boot-guard.cjs'), serve.dataDir]
       .map(escapeUnitArgument)
       .join(' ');
@@ -523,11 +515,7 @@ class SystemdServiceManager implements ServiceManager {
     return settings;
   }
 
-  /** Rewrites the unit file and reloads systemd if its `HARMONIC_UNIT_REVISION` predates the boot
-   * guard (ADR-0042); no-op when already current or no unit is installed. Throws if the existing
-   * unit can't be read or parsed, so callers can distinguish "healed" from "guard status unknown" —
-   * only meaningful for user-level units, since self-healing a root-owned system unit needs
-   * `sudo harmonic install` instead. Idempotent: a second call after a successful rewrite is a no-op. */
+  /** Rewrites the unit file and reloads systemd if its `HARMONIC_UNIT_REVISION` predates the boot guard (ADR-0042); no-op when already current or no unit is installed. Throws if the existing unit can't be read or parsed, so callers can distinguish "healed" from "guard status unknown". */
   async ensureUnitRevisionCurrent(): Promise<boolean> {
     if (!this.dependencies.fileExists(this.unitPath)) return false;
     const unitContents = await this.dependencies.readTextFile(this.unitPath);
@@ -593,9 +581,7 @@ class InitdServiceManager implements ServiceManager {
     await this.dependencies.writeFile(initdScriptPath, initdScript({ dataDir, user, nodePath: this.dependencies.nodePath }));
     await this.dependencies.chmod(initdScriptPath, 0o755);
     await this.dependencies.run('update-rc.d', ['harmonic', 'defaults']);
-    // Restarting (not starting) an already-running service is what makes the newly installed code
-    // take effect — the init.d script's `start` case no-ops when it finds the service already
-    // running, so a plain `start` here would silently skip the upgrade.
+    // Restart (not start): the init.d script's own `start` case no-ops when already running, which would silently skip the upgrade.
     if (wasRunning) await this.restart(); else await this.start();
     return { backend: this.backend };
   }
