@@ -75,8 +75,8 @@ export async function sweepStaleMergeWorktrees(
     const path = resolve(worktree.path);
     const tempDir = dirname(path);
     if (basename(path) !== 'admin' || !basename(tempDir).startsWith(MERGE_WORKTREE_PREFIX)) return;
-    const age = now() - statSync(tempDir).mtimeMs;
-    if (age < olderThanMs) return;
+    const stat = statSync(tempDir, { throwIfNoEntry: false });
+    if (stat !== undefined && now() - stat.mtimeMs < olderThanMs) return;
     await deps.removeWorktree(repoDir, path).catch(() => {});
     rmSync(tempDir, { recursive: true, force: true });
     removed.push(path);

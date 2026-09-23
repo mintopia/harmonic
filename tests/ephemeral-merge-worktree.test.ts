@@ -116,4 +116,15 @@ describe('sweepStaleMergeWorktrees', () => {
     expect(existsSync(tempDir)).toBe(false);
     expect(git(repo, 'worktree', 'list', '--porcelain')).not.toContain(adminPath);
   });
+
+  it('prunes a registration whose temp dir is already gone from disk', async () => {
+    const repo = makeRepo();
+    const { tempDir, adminPath } = leaveMergeWorktree(repo);
+    rmSync(tempDir, { recursive: true, force: true });
+
+    const removed = await sweepStaleMergeWorktrees(repo);
+
+    expect(removed).toEqual([adminPath]);
+    expect(git(repo, 'worktree', 'list', '--porcelain')).not.toContain(adminPath);
+  });
 });
