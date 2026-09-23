@@ -62,10 +62,11 @@ script, and from the relauncher.
 - On the fourth boot it flips `current` back to `previous`. It moves the live
   `harmonic.db` (and any `-wal`/`-shm`) aside into
   `app/rolled-back/<version>-<timestamp>/` rather than deleting them, copies
-  the pre-upgrade snapshot into place atomically, and moves the originals
-  back if that copy fails. It then writes `app/rollback.json` — recording
-  whether the database was restored and where the preserved copy landed — and
-  deletes `pending.json`.
+  the pre-upgrade snapshot into place via a tmp-file-plus-fsync-plus-rename
+  (durable across a power loss), and moves the originals back if that copy
+  fails. It then writes `app/rollback.json` — itself fsynced, recording
+  whether the database was restored (`databaseRestored`) and where the
+  preserved copy landed (`preservedDatabaseDir`) — and deletes `pending.json`.
 - A release that never reaches `listen` counts as a failed boot too: a startup
   watchdog force-exits after `HARMONIC_STARTUP_DEADLINE_MS` (120s default) if
   `pending.json` still names the running version, and the init.d relauncher
