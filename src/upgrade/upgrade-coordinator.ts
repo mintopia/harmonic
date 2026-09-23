@@ -4,6 +4,7 @@ import type { SettingsStore } from '../server/settings-store.js';
 import type { OperationSnapshot } from '../telemetry/operations.js';
 import type { ConversationDriver } from '../execution/conversation-driver.js';
 import { reportFailure } from '../error-handling.js';
+import { logger } from '../logger.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import type { UpdateArmingStore, UpdateAvailabilityState, UpdatePhase } from './update-check.js';
 
@@ -32,8 +33,10 @@ export interface UpgradeCoordinatorOptions {
   migrationRequired?: boolean;
   /** Set when this install mode can never self-upgrade (npx, npm-global, unknown); arming is refused. */
   externalInstall?: boolean;
-  /** Reads `app/rollback.json` written by the boot guard, if the last boot rolled back. */
-  readRollback?: () => { reason: string } | null | undefined;
+  /** Reads `app/rollback.json` written by the boot guard, if the last boot rolled back or was
+   * blocked from doing so. `rolledBack: false` means the guard left the failed release running
+   * because it couldn't restore the database (ADR-0042). */
+  readRollback?: () => { reason: string; rolledBack?: boolean } | null | undefined;
   clearRollback?: () => void;
 }
 
@@ -224,9 +227,12 @@ export class UpgradeCoordinator {
    * before. A relaunch that lands on the wrong version — the swap started but
    * never completed — instead records `failed` with the rollback reason (if
    * the boot guard rolled back), restores the Auto-Runner, and leaves arming
-   * available again; it never re-triggers the swap itself. An `armed` phase
-   * that hasn't started upgrading yet is left untouched for `reconcile` to
-   * pick up normally. */
+   * available again; it never re-triggers the swap itself. Landing on the
+   * armed target after a *blocked* rollback (the guard couldn't restore the
+   * database and left the failed release running, ADR-0042) is reported the
+   * same way instead of settling cleanly, since the database still doesn't
+   * match what the operator expects. An `armed` phase that hasn't started
+   * upgrading yet is left untouched for `reconcile` to pick up normally. */
   private async settleOnBootOnce(): Promise<UpdateAvailabilityState> {
     const current = await this.options.store.getState();
     const phase = current.phase;
@@ -236,6 +242,10 @@ export class UpgradeCoordinator {
   }
 
   private async settleUpgraded(current: UpdateAvailabilityState, phase: Extract<UpdatePhase, { kind: 'upgrading' }>): Promise<UpdateAvailabilityState> {
+    const rollback = this.options.readRollback?.();
+    if (rollback !== null && rollback !== undefined && rollback.rolledBack === false) {
+      return this.settleBlockedRollbackOnMatchingVersion(current, phase, rollback);
+    }
     const settled: UpdateAvailabilityState = { version: current.version, dismissedVersion: current.dismissedVersion, phase: { kind: 'unarmed' } };
     await this.options.store.setState(settled);
     try {
@@ -245,6 +255,37 @@ export class UpgradeCoordinator {
       await this.options.store.setState(current);
       throw error;
     }
+  }
+
+  /** The running version matches the armed target, but the boot guard's last rollback attempt
+   * was blocked (it couldn't restore the pre-upgrade database) and this boot never retried it —
+   * the target simply started successfully on its own. Reuses the `failed` phase's fields so
+   * `GET /update` and the update banner surface it without new UI, then clears `rollback.json`
+   * so this is reported exactly once. */
+  private async settleBlockedRollbackOnMatchingVersion(
+    current: UpdateAvailabilityState,
+    phase: Extract<UpdatePhase, { kind: 'upgrading' }>,
+    rollback: { reason: string },
+  ): Promise<UpdateAvailabilityState> {
+    const reason = `the upgrade to ${phase.targetVersion} completed after a blocked rollback attempt; the database was not restored (${rollback.reason})`;
+    logger.warn(reason);
+    const failed: UpdateAvailabilityState = {
+      version: current.version,
+      dismissedVersion: current.dismissedVersion,
+      phase: { kind: 'failed', targetVersion: phase.targetVersion, reason, at: new Date().toISOString() },
+    };
+    await this.options.store.setState(failed);
+    try {
+      await this.options.settings.updateGlobal({ autoRunner: { enabled: phase.autoRunnerWasEnabled } });
+    } catch (error) {
+      reportFailure(error, {
+        op: 'upgradeCoordinator.settleOnBoot.restoreAutoRunner',
+        level: 'error',
+        context: { targetVersion: phase.targetVersion },
+      });
+    }
+    this.options.clearRollback?.();
+    return failed;
   }
 
   private async settleFailed(current: UpdateAvailabilityState, phase: Extract<UpdatePhase, { kind: 'upgrading' }>): Promise<UpdateAvailabilityState> {

@@ -202,4 +202,49 @@ describe('UpgradeCoordinator.settleOnBoot wired to the real boot-state readRollb
     expect(config.autoRunner.enabled).toBe(true);
     expect(existsSync(join(appDir, 'rollback.json'))).toBe(false);
   });
+
+  it('surfaces a blocked rollback and clears it, when the target booted anyway', async () => {
+    const record = {
+      rolledBack: false,
+      blockedReason: 'database-not-restored',
+      fromVersion: '1.0.0',
+      toVersion: '2.0.0',
+      at: new Date().toISOString(),
+      reason: 'no pre-upgrade snapshot was found to restore',
+    };
+    writeFileSync(join(appDir, 'rollback.json'), JSON.stringify(record));
+    await store.setState({
+      version: '2.0.0',
+      dismissedVersion: null,
+      phase: { kind: 'upgrading', targetVersion: '2.0.0', autoRunnerWasEnabled: true },
+    });
+
+    const upgrade = new UpgradeCoordinator({
+      version: '2.0.0',
+      store,
+      settings: {
+        getGlobal: () => config,
+        updateGlobal: async (patch) => {
+          config = { ...config, autoRunner: { ...config.autoRunner, ...patch.autoRunner } };
+          return config;
+        },
+      },
+      attempts: { countRunning: async () => 0 },
+      operations: () => [],
+      conversations: { hasInFlightTurn: () => false },
+      readRollback: () => readRollback({ appDir }) ?? undefined,
+      clearRollback: () => { clearRollback({ appDir }); },
+    });
+
+    const settled = await upgrade.settleOnBoot();
+
+    expect(settled.phase).toMatchObject({ kind: 'failed', targetVersion: '2.0.0' });
+    expect((settled.phase as { reason: string }).reason).toContain(record.reason);
+    expect(config.autoRunner.enabled).toBe(true);
+    expect(existsSync(join(appDir, 'rollback.json'))).toBe(false);
+
+    // Settling again (e.g. a later restart) does not re-surface it — the phase is already `failed`, not `upgrading`.
+    const resettled = await upgrade.settleOnBoot();
+    expect(resettled).toEqual(settled);
+  });
 });

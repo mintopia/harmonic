@@ -524,13 +524,17 @@ class SystemdServiceManager implements ServiceManager {
   }
 
   /** Rewrites the unit file and reloads systemd if its `HARMONIC_UNIT_REVISION` predates the boot
-   * guard (ADR-0042); no-op when already current, no unit is installed, or the existing unit can't
-   * be parsed. Only meaningful for user-level units — self-healing a root-owned system unit needs
+   * guard (ADR-0042); no-op when already current or no unit is installed. Throws if the existing
+   * unit can't be read or parsed, so callers can distinguish "healed" from "guard status unknown" —
+   * only meaningful for user-level units, since self-healing a root-owned system unit needs
    * `sudo harmonic install` instead. Idempotent: a second call after a successful rewrite is a no-op. */
   async ensureUnitRevisionCurrent(): Promise<boolean> {
     if (!this.dependencies.fileExists(this.unitPath)) return false;
     const unitContents = await this.dependencies.readTextFile(this.unitPath);
-    if (unitContents === null || unitRevision(unitContents) >= CURRENT_UNIT_REVISION) return false;
+    if (unitContents === null) {
+      throw new Error(`could not read the existing unit at ${this.unitPath}; refusing to self-heal without it`);
+    }
+    if (unitRevision(unitContents) >= CURRENT_UNIT_REVISION) return false;
     const existing = await this.readExistingSettings();
     if (existing === null || existing.serve.port === undefined || existing.serve.host === undefined || existing.serve.dataDir === undefined) {
       throw new Error(`could not fully parse the existing unit at ${this.unitPath}; refusing to self-heal without its settings`);

@@ -86,8 +86,9 @@ script, and from the relauncher.
   out-of-process startup watcher (`startup-watcher.cjs`, spawned non-detached
   in the same cgroup so systemd's `KillMode` still reaps it) SIGKILLs the
   server once it goes `HARMONIC_STARTUP_DEADLINE_MS` (120s default) without
-  touching `app/startup-progress`, which the server touches at boot and after
-  each migration step — so a slow-but-healthy boot isn't killed, and (unlike
+  touching `app/startup-progress`, which the server touches at boot and
+  periodically during boot-time work — including migrations and other
+  boot-time loops — so a slow-but-healthy boot isn't killed, and (unlike
   an in-process timer) neither is a synchronous event-loop hang missed. The
   init.d relauncher has no kill deadline of its own for this: it just waits
   for `pending.json` to clear or the child to exit, under an overall safety
@@ -160,6 +161,16 @@ disk space.
   fixes the underlying cause — `app/rollback.json` names it
   (`blockedReason: 'database-not-restored'`) and the same message goes to
   stderr.
+- Operator recovery from a wedged blocked rollback: fix the underlying cause
+  named in `app/rollback.json` and the service log, then restart. For a
+  systemd unit, fast repeated failures can trip `StartLimitBurst` first, so
+  restarting the unit alone isn't enough — run
+  `sudo systemctl reset-failed harmonic && sudo systemctl start harmonic`
+  after fixing the cause. If the target starts successfully on its own before
+  an operator intervenes, the next boot's settle records the blocked reason
+  once (Update Banner / `GET /update`'s `failed` phase) and clears
+  `app/rollback.json`, rather than staying silent because the version now
+  matches.
 
 ## Supersedes
 
