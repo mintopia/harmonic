@@ -16,7 +16,7 @@ import { UpgradeSwap } from './upgrade/upgrade-swap.js';
 import { SYSTEMD_MIGRATION_NOTICE } from './upgrade/upgrade-coordinator.js';
 import { defaultIsWritable, defaultRealpath, resolveInstallMode, type InstallMode } from './upgrade/install-mode.js';
 import { hasValidInstall, installVersion, readInstalledVersion, verifyInstall, type VersionInstallDependencies } from './upgrade/version-install.js';
-import { clearRollback, flipCurrent, markHealthy, readRollback, snapshotDatabase, writePending } from './upgrade/boot-state.js';
+import { clearRollback, flipCurrent, markHealthy, readPending, readRollback, snapshotDatabase, writePending } from './upgrade/boot-state.js';
 import { startOperation } from './telemetry/operations.js';
 import { displayUrl, type CliOutcome } from './cli-commands.js';
 import { createServiceManager, CURRENT_UNIT_REVISION, unitRevision } from './service-manager.js';
@@ -134,8 +134,41 @@ export function readManagedInstalledVersion({
   return version;
 }
 
+/**
+ * Guards against a release that imports fine but hangs before `listen` (e.g. a stuck DB init):
+ * `Type=simple` and the init.d relauncher both consider the process started the moment it forks,
+ * so nothing else notices a hang. If `pending.json` names this process's own version, arm an
+ * unref'd timer that force-exits so systemd/the relauncher restart it and the boot guard counts
+ * the boot. A fully blocked event loop can't fire this timer either — it only catches hangs still
+ * inside an async wait (a DB query, a stuck import), not a synchronous infinite loop.
+ */
+export function startStartupWatchdog({
+  dataDir,
+  ownDir = fileURLToPath(new URL('..', import.meta.url)),
+  deadlineMs = Number(process.env.HARMONIC_STARTUP_DEADLINE_MS ?? 120_000),
+}: {
+  dataDir: string;
+  ownDir?: string;
+  deadlineMs?: number;
+}): () => void {
+  const appDir = join(dataDir, 'app');
+  const pending = readPending({ appDir });
+  if (!pending) return () => {};
+  const runningVersion = readInstalledVersion({ dir: ownDir, readFile: readFileSync });
+  if (pending.version !== runningVersion) return () => {};
+  const timer = setTimeout(() => {
+    logger.error(
+      `Startup watchdog: still not listening ${deadlineMs}ms after boot while pending.json names this running version (${runningVersion}); exiting so it counts as a failed boot.`,
+    );
+    process.exit(1);
+  }, deadlineMs);
+  timer.unref();
+  return () => { clearTimeout(timer); };
+}
+
 export async function runServer(values: ServeValues, rest: string[]): Promise<CliOutcome> {
   const dataDir = values['data-dir'] ?? defaultDataDir();
+  const clearStartupWatchdog = startStartupWatchdog({ dataDir });
   const port = Number(values.port);
   const host = values.host!;
   const installMode: InstallMode = resolveInstallMode({
@@ -153,6 +186,7 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
       `Another Harmonic instance is using ${dataDir} (pid ${holder.pid}, ${displayUrl(holder.host, holder.port)}).\n` +
         '  Stop it first (harmonic stop), or use a different --data-dir.',
     );
+    clearStartupWatchdog();
     return { kind: 'exit', code: 1 };
   }
   installProcessSafetyNet();
@@ -261,6 +295,7 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
       } : {}),
     });
   } catch (error) {
+    clearStartupWatchdog();
     await telemetry.shutdown();
     releaseLock(dataDir);
     throw error;
@@ -280,6 +315,7 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
     );
   }
   await app.listen({ port, host });
+  clearStartupWatchdog();
   logger.info(`Harmonic listening on ${displayUrl(host, port)} (bound to ${host}, data: ${dataDir})`);
 
   if (selfUpgrading) {

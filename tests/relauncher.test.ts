@@ -6,7 +6,7 @@ function noWaitDependencies(overrides: Partial<RelauncherDependencies> = {}): Re
     isLocked: () => false,
     wait: async () => {},
     runGuard: () => {},
-    launch: () => ({ pid: 1, onExit: () => {} }),
+    launch: () => ({ pid: 1, onExit: () => {}, kill: () => {} }),
     isPending: () => false,
     ...overrides,
   };
@@ -37,7 +37,7 @@ describe('relaunchWithBootGuard', () => {
       serveArgs: [],
       dependencies: noWaitDependencies({
         runGuard: () => calls.push('guard'),
-        launch: () => { calls.push('launch'); pending = false; return { pid: 7, onExit: () => {} }; },
+        launch: () => { calls.push('launch'); pending = false; return { pid: 7, onExit: () => {}, kill: () => {} }; },
         isPending: () => pending,
       }),
     });
@@ -58,7 +58,7 @@ describe('relaunchWithBootGuard', () => {
           launchCalls += 1;
           let exitCallback: (() => void) | undefined;
           queueMicrotask(() => exitCallback?.());
-          return { pid: launchCalls, onExit: (callback) => { exitCallback = callback; } };
+          return { pid: launchCalls, onExit: (callback) => { exitCallback = callback; }, kill: () => {} };
         },
         isPending: () => true,
       }),
@@ -68,21 +68,60 @@ describe('relaunchWithBootGuard', () => {
     expect(launchCalls).toBe(4);
   });
 
-  it('stops after one round on a timeout without treating it as a crash (does not start a second round)', async () => {
+  it('a round that times out kills the hung child (SIGTERM then SIGKILL) and moves to the next round, giving up after maxRounds', async () => {
     let guardCalls = 0;
+    let launchCalls = 0;
+    const killSignals: string[] = [];
     await relaunchWithBootGuard({
       dataDir: '/tmp/harmonic',
       serveArgs: [],
+      maxRounds: 3,
       roundWaitMs: 10,
       roundPollMs: 5,
+      killGraceMs: 10,
       dependencies: noWaitDependencies({
         runGuard: () => { guardCalls += 1; },
-        launch: () => ({ pid: 1, onExit: () => {} }),
-        isPending: () => true, // never clears, process never exits: eventually times out
+        launch: () => {
+          launchCalls += 1;
+          return {
+            pid: launchCalls,
+            onExit: () => {}, // never exits: every round times out
+            kill: (signal) => { killSignals.push(signal); },
+          };
+        },
+        isPending: () => true, // never clears: every round times out
       }),
     });
 
-    expect(guardCalls).toBe(1);
+    expect(guardCalls).toBe(3);
+    expect(launchCalls).toBe(3);
+    expect(killSignals).toEqual(['SIGTERM', 'SIGKILL', 'SIGTERM', 'SIGKILL', 'SIGTERM', 'SIGKILL']);
+  });
+
+  it('does not escalate to SIGKILL when the child exits right after SIGTERM', async () => {
+    const killSignals: string[] = [];
+    const onExitCallbacks: Array<() => void> = [];
+    await relaunchWithBootGuard({
+      dataDir: '/tmp/harmonic',
+      serveArgs: [],
+      maxRounds: 1,
+      roundWaitMs: 10,
+      roundPollMs: 5,
+      killGraceMs: 10,
+      dependencies: noWaitDependencies({
+        launch: () => ({
+          pid: 1,
+          onExit: (callback) => { onExitCallbacks.push(callback); },
+          kill: (signal) => {
+            killSignals.push(signal);
+            if (signal === 'SIGTERM') onExitCallbacks.forEach((callback) => { callback(); });
+          },
+        }),
+        isPending: () => true, // never clears: the round times out and triggers a kill
+      }),
+    });
+
+    expect(killSignals).toEqual(['SIGTERM']);
   });
 
   it('continues to the next round when launch itself throws', async () => {
@@ -90,7 +129,7 @@ describe('relaunchWithBootGuard', () => {
     const launch = vi.fn((): LaunchedProcess => {
       attempts += 1;
       if (attempts === 1) throw new Error('spawn failed');
-      return { pid: 2, onExit: () => {} };
+      return { pid: 2, onExit: () => {}, kill: () => {} };
     });
     let pending = true;
     await relaunchWithBootGuard({
