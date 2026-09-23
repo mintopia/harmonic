@@ -5,6 +5,22 @@ import type { AppContext } from '../app.js';
 import { DomainError } from '../../domain/errors.js';
 import { errorResponse } from '../schemas.js';
 
+const updateInstructionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('command'), command: z.string() }).describe('An exact shell command the operator can copy and run to upgrade manually.'),
+  z.object({ kind: z.literal('manual'), instructions: z.string() }).describe('Free-text upgrade instructions, used when no exact command is known.'),
+]);
+
+const updateModeSchema = z.object({
+  kind: z.enum(['systemd', 'initd', 'migration-required', 'external']),
+  instruction: updateInstructionSchema.optional(),
+});
+
+const updateFailureSchema = z.object({
+  targetVersion: z.string(),
+  reason: z.string(),
+  at: z.string(),
+});
+
 const updateStateSchema = z.object({
   currentVersion: z.string(),
   availableVersion: z.string().nullable(),
@@ -12,6 +28,9 @@ const updateStateSchema = z.object({
   upgradingVersion: z.string().nullable(),
   dismissedVersion: z.string().nullable(),
   migrationRequired: z.boolean(),
+  guardMissing: z.boolean(),
+  mode: updateModeSchema,
+  failed: updateFailureSchema.nullable(),
   idle: z.object({
     runningAttempts: z.number().int().nonnegative(),
     mergingOrIntegrating: z.boolean(),
@@ -25,19 +44,26 @@ function assertPackaged(distributionMode: AppContext['distributionMode']): void 
 
 export async function updateRoutes(
   fastify: FastifyInstance,
-  ctx: Pick<AppContext, 'distributionMode' | 'upgrade' | 'updateCheck' | 'runningVersion'>,
+  ctx: Pick<AppContext, 'distributionMode' | 'upgrade' | 'updateCheck' | 'runningVersion' | 'installMode' | 'guardMissing'>,
 ): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
   const response = async () => {
     const [state, idle, migrationRequired] = await Promise.all([ctx.upgrade.state(), ctx.upgrade.idleState(), ctx.upgrade.migrationRequired()]);
     const phase = state.phase;
+    const installMode = ctx.installMode;
+    const mode = installMode.kind === 'external'
+      ? { kind: installMode.kind, ...(state.version === null ? {} : { instruction: installMode.instructionFor(state.version) }) }
+      : { kind: installMode.kind };
     return {
       currentVersion: ctx.runningVersion,
       availableVersion: state.version,
-      armedVersion: phase.kind === 'unarmed' ? null : phase.targetVersion,
+      armedVersion: phase.kind === 'armed' || phase.kind === 'upgrading' ? phase.targetVersion : null,
       upgradingVersion: phase.kind === 'upgrading' ? phase.targetVersion : null,
       dismissedVersion: state.dismissedVersion,
       migrationRequired,
+      guardMissing: ctx.guardMissing,
+      mode,
+      failed: phase.kind === 'failed' ? { targetVersion: phase.targetVersion, reason: phase.reason, at: phase.at } : null,
       idle,
     };
   };
@@ -59,7 +85,7 @@ export async function updateRoutes(
       tags: ['Update'],
       description: 'Pin the currently offered update and quiesce new work until the instance is idle. Operator only.',
       security: [{ bearerAuth: [] }, { sessionCookie: [] }],
-      response: { 200: updateStateSchema.describe('The newly armed update and current drain-to-idle blockers.'), 409: errorResponse('No update is currently available to arm.') },
+      response: { 200: updateStateSchema.describe('The newly armed update and current drain-to-idle blockers.'), 409: errorResponse('No update is currently available to arm, or a previously armed one is already switching versions.') },
     },
   }, async () => {
     assertPackaged(ctx.distributionMode);
@@ -72,7 +98,10 @@ export async function updateRoutes(
       tags: ['Update'],
       description: 'Cancel an armed update and restore the Auto-Runner master switch to its pre-arm value. Operator only.',
       security: [{ bearerAuth: [] }, { sessionCookie: [] }],
-      response: { 200: updateStateSchema.describe('The unarmed update state and current drain-to-idle blockers.') },
+      response: {
+        200: updateStateSchema.describe('The unarmed update state and current drain-to-idle blockers, or the unchanged state if the swap has already started stopping and hasn\'t yet.'),
+        409: errorResponse('The swap has already committed to the new version and can no longer be cancelled.'),
+      },
     },
   }, async () => {
     assertPackaged(ctx.distributionMode);

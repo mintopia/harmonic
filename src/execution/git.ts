@@ -361,6 +361,9 @@ export const Git = {
       rmSync(worktreePath, { recursive: true, force: true });
     }),
 
+  /** Deregister worktrees whose directory is gone, e.g. after a caller force-removed one from disk without going through `removeWorktree`. */
+  pruneWorktrees: (dir: string) => withRepoLock(dir, () => git(dir, 'worktree', 'prune')),
+
   /**
    * Whether `worktreePath` is a live, registered git worktree of the base repo
    * at `dir`. True requires BOTH that git resolves a work tree rooted *at* the

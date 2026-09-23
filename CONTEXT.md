@@ -873,26 +873,32 @@ _Avoid_: system load, host metrics
 ### Updates
 
 **Distribution Mode**:
-How this instance was installed, which decides whether it can self-upgrade —
-**packaged** (a global npm install of `@mintopia/harmonic`, upgradable in place)
-or **source** (a git checkout, developer or self-hosted, not upgradable by
-Harmonic itself). Detected at boot from whether a `.git` directory sits at the
-app root. Only *packaged* mode runs the Update Check and shows the Update Banner;
-*source* mode suppresses both, since Harmonic cannot cleanly upgrade a checkout.
+Whether this instance runs from a published package, which decides whether it
+looks for updates at all — **packaged** (installed from `@mintopia/harmonic` on
+npm) or **source** (a git checkout, developer or self-hosted). Detected at boot
+from whether a `.git` directory sits at the app root. Only *packaged* mode runs
+the Update Check and shows the Update Banner; *source* mode suppresses both.
+Whether a packaged instance then upgrades itself or shows a command is decided
+by its Install Mode.
 _Avoid_: install type, dev mode, environment
 
-**Managed Mode**:
-How Harmonic's *process* is kept alive — **standalone** (a human ran `harmonic
-serve`/`start`; Harmonic owns its own daemon lifecycle and self-restarts on
-upgrade via the relauncher) or **supervised** (an OS service manager owns the
-process). Detected from the `HARMONIC_MANAGED_BY` env the service unit sets.
-Under a **systemd** supervisor an upgrade hands the restart to the supervisor —
-install the new version, exit, and `Restart=always` reboots it — instead of
-spawning the relauncher; under init.d and standalone the relauncher performs the
-restart. Orthogonal to Distribution Mode, which decides *whether* self-upgrade
-can happen at all. (ADR-0034, ADR-0030.)
-_Avoid_: daemon mode, service mode (a Service install is one way to reach
-supervised mode, not the mode itself)
+**Install Mode**:
+How this running process can self-upgrade, detected once at boot — **systemd**
+or **initd** (the service unit sets `HARMONIC_MANAGED_BY` and the CLI resolves
+under `<dataDir>/app/current`), **migration-required** (`HARMONIC_MANAGED_BY=systemd`
+but the CLI resolves somewhere else — a unit that predates the `app/versions`
+layout), or **external** (everything else: npx, an npm-global install, a source
+checkout, pm2, Docker, a foreground `serve`). Only *systemd* and *initd*
+self-upgrade — an upgrade under *systemd* hands the restart to the supervisor
+(install the new version, exit, `Restart=always` reboots it) while *initd*
+spawns the relauncher. *migration-required* blocks arming until `sudo harmonic
+install` reinstalls the unit; *external* shows the exact command for its
+subkind (npx, npm-global, unknown) instead of offering an upgrade, and arming
+is refused. Orthogonal to Distribution Mode, which decides whether Harmonic
+runs the Update Check at all. (ADR-0042; supersedes Managed Mode — a standalone
+or foreground process no longer self-upgrades.)
+_Avoid_: daemon mode, service mode, managed mode, standalone, supervised
+(Install Mode replaces the old standalone/supervised split)
 
 **Service install**:
 Installing Harmonic as an OS-managed service so it starts on boot and is
@@ -901,10 +907,64 @@ the backend — a **systemd** unit (a system unit when run as root, a user unit
 with linger otherwise) or a **SysV init.d** script registered with `update-rc.d`
 (the mechanism on init.d hosts, run at provision time as root, executing Harmonic
 as a non-root `--user`) — falling back to the self-managed daemon plus a printed
-boot snippet where no service manager fits. `harmonic uninstall` removes the
-service and **never** touches the data dir. Linux only; the seam errors clearly
-elsewhere. (ADR-0034.)
+boot snippet where no service manager fits. Also installs the Boot Guard
+(`app/boot-guard.cjs`) and wires it into the unit's pre-start, giving the
+install Install Mode `systemd`/`initd` with rollback protection (ADR-0042).
+`harmonic uninstall` removes the service and **never** touches the data dir.
+Linux only; the seam errors clearly elsewhere. (ADR-0034, ADR-0042.)
 _Avoid_: daemon install, systemd install (systemd is one backend of several)
+
+**Boot Guard**:
+`app/boot-guard.cjs` — dependency-free and unversioned, so it always runs even
+if it predates the release it's guarding. Runs before every start (systemd
+`ExecStartPre=-`, the init.d script, the relauncher). While a version is
+pending it counts boots; on the fourth boot that never reached `listen` it
+performs the **Rollback**. A boot that hangs instead of crashing still counts:
+an out-of-process startup watcher force-kills the server after
+`HARMONIC_STARTUP_DEADLINE_MS` (120s default) with no progress touch to
+`app/startup-progress` while `pending.json` names the running version — a
+separate OS process because an in-process timer can't fire once the event
+loop is blocked. The init.d relauncher has no shorter deadline of its own; it
+only falls back to killing a child and stopping if an overall safety cap
+(30 minutes default) is exceeded. A release copies its own copy over
+`app/boot-guard.cjs` only after it clears `pending.json` post-`listen`, so a
+pending boot always runs a guard shipped by a release that already booted a
+prior version. A pre-ADR-0042 systemd unit has no guard at all — reported as
+`guardMissing` until `sudo harmonic install` rewrites it. (ADR-0042.)
+_Avoid_: startup guard, health check
+
+**Rollback**:
+The Boot Guard's automatic reversion of a version that failed to reach
+`listen` four boots running. It first restores the database from the
+pre-upgrade `VACUUM INTO` snapshot — moving the live `harmonic.db` (and any
+`-wal`/`-shm`) aside into `<dataDir>/rolled-back/<version>-<timestamp>/`
+(next to `harmonic.db` itself, not under `app/`, so the move stays on the
+same filesystem) rather than deleting them, so anything written after the
+snapshot is discarded from `harmonic.db` but not lost, and moving the
+originals back if the snapshot copy itself fails. Only if that restore
+succeeds does it flip `current` back to `previous` and write
+`app/rollback.json` naming the preserved copy. If the restore fails (missing
+snapshot, failed copy, or failed preservation), `current` is left untouched —
+flipping onto a database the failed release may have already migrated would
+be worse than staying put — `pending.json` stays in place so every later
+boot retries the restore, and `app/rollback.json` instead records a blocked
+state (`rolledBack: false`, `blockedReason`) with the same message on
+stderr; if any db/-wal/-shm file ended up stranded outside `<dataDir>` rather
+than fully reversed back into place, the guard also writes
+`app/database-incomplete.json` naming it, which the server checks before
+ever opening the database and refuses to start while it exists. A healthy
+boot's pruning pass keeps only the 2 most recent preserved
+copies. A blocked state can persist indefinitely if the target keeps failing
+to start — no UI boots to show anything, so the reason is only in the service
+log and `app/rollback.json` until either the restored previous release boots
+or the target itself eventually starts despite the blocked restore. Once some
+UI does boot, the rollback (or blocked) reason is what the Update Banner's
+*failed* state and Armed Upgrade's `failed` phase surface — including a
+target that later starts on its own, which is reported once and then clears
+`app/rollback.json`. Never available under `external` Install Mode (which
+never self-upgrades) and off for a systemd unit still on `guardMissing` until
+`sudo harmonic install`. (ADR-0042.)
+_Avoid_: revert, downgrade
 
 **Update Check**:
 A Scheduled Job that asks the npm registry whether a newer Harmonic is published
@@ -916,11 +976,16 @@ _Avoid_: version poll, upgrade poll
 
 **Update Banner**:
 The instance-global notice at the top of every board announcing an available
-update. **Three states**: *available* (Upgrade / Dismiss), *armed* (the operator
-chose to upgrade — shows that it will restart once the instance is idle, with
-Cancel), and *upgrading* (the swap is under way). **Dismiss is per-version** — a
-newer published version re-raises it; there is no permanent silence. Dismiss and
-arm are instance-wide, never per-Workspace.
+update. States: *available* (Upgrade / Dismiss), *armed* (the operator chose
+to upgrade — shows that it will restart once the instance is idle, with
+Cancel), *upgrading* (the swap is under way), and *failed* (the last armed
+swap didn't land — shows the target version and the Rollback reason, with Try
+again). Under `external` Install Mode it instead shows the offered version
+with the exact upgrade command to run by hand, no Upgrade button. A pre-ADR-0042
+systemd unit (`guardMissing`) adds a standing second banner: automatic
+Rollback is off until `sudo harmonic install`. **Dismiss is per-version** — a
+newer published version re-raises it; there is no permanent silence. Dismiss
+and arm are instance-wide, never per-Workspace.
 _Avoid_: update toast, banner notification (a Notification Channel is a different
 thing)
 
@@ -934,8 +999,14 @@ Conversation is **never force-killed**; the upgrade waits for a between-turns ga
 and shows a "waiting for agent before updating" notice. The armed intent and its
 target version are **persisted**, so a crash before it fires does not lose it.
 **Cancel** un-arms, clears the intent, and restores the master switch to its
-pre-arm value. When idle is reached the instance restarts onto the new version
-with all on-disk data — the DB and worktrees — preserved.
+pre-arm value — but only up to the swap's commit step (install the release,
+snapshot the database, flip `current`): once commit has started, Cancel is
+rejected and the swap runs to completion instead of racing the flip. If the
+idle wait times out with work still running, the swap aborts back to **armed**
+(not unarmed), so the next idle window retries the same target rather than
+losing the offer. When idle is reached and the swap commits, the instance
+restarts onto the new version with all on-disk data — the DB and worktrees —
+preserved.
 _Avoid_: pending update, scheduled upgrade, auto-upgrade (it is always
 operator-initiated, never silent)
 

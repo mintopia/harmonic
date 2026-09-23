@@ -15,10 +15,11 @@
     "docs:openapi": "tsx scripts/gen-openapi.ts",
     "jev:gate": "tsx scripts/jev-gate/cli.ts",
     "jev:baseline": "tsx scripts/jev-gate/cli.ts --write-baseline",
-    "build": "tsc -p tsconfig.json && cp src/baseline.yaml dist/baseline.yaml && vite build --config web/vite.config.ts",
+    "build": "tsc -p tsconfig.json && cp src/baseline.yaml dist/baseline.yaml && mkdir -p dist/upgrade && cp src/upgrade/boot-guard.cjs dist/upgrade/boot-guard.cjs && cp src/upgrade/startup-watcher.cjs dist/upgrade/startup-watcher.cjs && vite build --config web/vite.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && tsc -p web/tsconfig.json",
     "lint": "oxlint",
-    "lint:fix": "oxlint --fix"
+    "lint:fix": "oxlint --fix",
+    "postinstall": "node scripts/postinstall-rescue.cjs"
   },
   "keywords": [],
   "author": "",
@@ -90,7 +91,8 @@
   },
   "files": [
     "dist",
-    "drizzle"
+    "drizzle",
+    "scripts/postinstall-rescue.cjs"
   ],
   "allowScripts": {
     "esbuild@0.18.20": true,

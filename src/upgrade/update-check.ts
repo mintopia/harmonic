@@ -1,13 +1,15 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { settings } from '../db/schema.js';
 
+const execFileAsync = promisify(execFile);
+
 const stableVersion = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const prereleaseVersion = /^(?:v)?(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)-(?:[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
-const npmPackage = z.object({
-  'dist-tags': z.object({ latest: z.string() }),
-});
+const npmDistTags = z.object({ latest: z.string() });
 
 type StableVersion = readonly [string, string, string];
 
@@ -60,12 +62,16 @@ const persistedAvailability = z.object({
   upgradingVersion: z.string().nullable().optional(),
   autoRunnerWasEnabled: z.boolean().nullable().optional(),
   dismissedVersion: z.string().nullable().optional(),
+  failedReason: z.string().nullable().optional(),
+  failedAt: z.string().nullable().optional(),
 });
 
-type UpdatePhase =
+export type UpdatePhase =
   | { kind: 'unarmed' }
   | { kind: 'armed'; targetVersion: string; autoRunnerWasEnabled: boolean }
-  | { kind: 'upgrading'; targetVersion: string; autoRunnerWasEnabled: boolean };
+  | { kind: 'upgrading'; targetVersion: string; autoRunnerWasEnabled: boolean }
+  /** A boot found the running version didn't match the armed target: the swap never completed. */
+  | { kind: 'failed'; targetVersion: string; reason: string; at: string };
 
 export type UpdateAvailabilityState = {
   version: string | null;
@@ -76,6 +82,44 @@ export type UpdateAvailabilityState = {
 export interface UpdateArmingStore extends UpdateAvailabilityStore {
   getState(): Promise<UpdateAvailabilityState>;
   setState(state: UpdateAvailabilityState): Promise<void>;
+}
+
+function parsePersisted(row: { value: string } | undefined): UpdateAvailabilityState {
+  if (row === undefined) return { version: null, dismissedVersion: null, phase: { kind: 'unarmed' } };
+  try {
+    const parsed = persistedAvailability.safeParse(JSON.parse(row.value));
+    if (!parsed.success) return { version: null, dismissedVersion: null, phase: { kind: 'unarmed' } };
+    const state = {
+      version: parsed.data.version,
+      dismissedVersion: parsed.data.dismissedVersion ?? null,
+    };
+    const armedVersion = parsed.data.armedVersion ?? null;
+    if (armedVersion === null) return { ...state, phase: { kind: 'unarmed' } };
+    const failedReason = parsed.data.failedReason ?? null;
+    if (failedReason !== null) {
+      const at = parsed.data.failedAt ?? new Date(0).toISOString();
+      return { ...state, phase: { kind: 'failed', targetVersion: armedVersion, reason: failedReason, at } };
+    }
+    const autoRunnerWasEnabled = parsed.data.autoRunnerWasEnabled ?? false;
+    const upgradingVersion = parsed.data.upgradingVersion;
+    if (upgradingVersion === armedVersion) return { ...state, phase: { kind: 'upgrading', targetVersion: armedVersion, autoRunnerWasEnabled } };
+    return { ...state, phase: { kind: 'armed', targetVersion: armedVersion, autoRunnerWasEnabled } };
+  } catch {
+    return { version: null, dismissedVersion: null, phase: { kind: 'unarmed' } };
+  }
+}
+
+function serialize(state: UpdateAvailabilityState): string {
+  const phase = state.phase;
+  return JSON.stringify({
+    version: state.version,
+    dismissedVersion: state.dismissedVersion,
+    armedVersion: phase.kind === 'unarmed' ? null : phase.targetVersion,
+    upgradingVersion: phase.kind === 'upgrading' ? phase.targetVersion : null,
+    autoRunnerWasEnabled: phase.kind === 'armed' || phase.kind === 'upgrading' ? phase.autoRunnerWasEnabled : null,
+    failedReason: phase.kind === 'failed' ? phase.reason : null,
+    failedAt: phase.kind === 'failed' ? phase.at : null,
+  } satisfies z.infer<typeof persistedAvailability>);
 }
 
 export class SettingsUpdateAvailabilityStore implements UpdateArmingStore {
@@ -89,40 +133,24 @@ export class SettingsUpdateAvailabilityStore implements UpdateArmingStore {
     const row = await this.db.read((db) =>
       db.select({ value: settings.value }).from(settings).where(eq(settings.key, UPDATE_AVAILABILITY_KEY)).get(),
     );
-    if (row === undefined) return { version: null, dismissedVersion: null, phase: { kind: 'unarmed' } };
-    try {
-      const parsed = persistedAvailability.safeParse(JSON.parse(row.value));
-      if (!parsed.success) return { version: null, dismissedVersion: null, phase: { kind: 'unarmed' } };
-      const state = {
-        version: parsed.data.version,
-        dismissedVersion: parsed.data.dismissedVersion ?? null,
-      };
-      const armedVersion = parsed.data.armedVersion ?? null;
-      if (armedVersion === null) return { ...state, phase: { kind: 'unarmed' } };
-      const autoRunnerWasEnabled = parsed.data.autoRunnerWasEnabled ?? false;
-      const upgradingVersion = parsed.data.upgradingVersion;
-      if (upgradingVersion === armedVersion) return { ...state, phase: { kind: 'upgrading', targetVersion: armedVersion, autoRunnerWasEnabled } };
-      return { ...state, phase: { kind: 'armed', targetVersion: armedVersion, autoRunnerWasEnabled } };
-    } catch {
-      // Corrupt/legacy stored JSON degrades to "no known update" rather than crashing the update check.
-      return { version: null, dismissedVersion: null, phase: { kind: 'unarmed' } };
-    }
+    return parsePersisted(row);
   }
 
+  /** Updates only `version`, reading the current row inside the same serialised write. */
   async set(version: string | null): Promise<void> {
-    const state = await this.getState();
-    await this.setState({ ...state, version });
+    await this.db.write(async (db) => {
+      const row = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, UPDATE_AVAILABILITY_KEY)).get();
+      const value = serialize({ ...parsePersisted(row), version });
+      await db
+        .insert(settings)
+        .values({ key: UPDATE_AVAILABILITY_KEY, value })
+        .onConflictDoUpdate({ target: settings.key, set: { value } })
+        .run();
+    });
   }
 
   async setState(state: UpdateAvailabilityState): Promise<void> {
-    const phase = state.phase;
-    const value = JSON.stringify({
-      version: state.version,
-      dismissedVersion: state.dismissedVersion,
-      armedVersion: phase.kind === 'unarmed' ? null : phase.targetVersion,
-      upgradingVersion: phase.kind === 'upgrading' ? phase.targetVersion : null,
-      autoRunnerWasEnabled: phase.kind === 'unarmed' ? null : phase.autoRunnerWasEnabled,
-    } satisfies z.infer<typeof persistedAvailability>);
+    const value = serialize(state);
     await this.db.write((db) =>
       db
         .insert(settings)
@@ -149,10 +177,22 @@ export class UpdateCheck {
   }
 }
 
+/** Goes through `npm view` rather than a direct registry fetch, so it resolves the same
+ * registry/auth config as the actual install in `version-install.ts`. */
 export async function fetchLatestVersion(): Promise<string> {
-  const response = await fetch('https://registry.npmjs.org/@mintopia%2Fharmonic');
-  if (!response.ok) throw new Error(`npm registry request failed: ${response.status} ${response.statusText}`.trim());
-  const parsed = npmPackage.safeParse(await response.json());
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileAsync('npm', ['view', '@mintopia/harmonic', 'dist-tags', '--json'], { timeout: 15_000 }));
+  } catch (error) {
+    throw new Error(`npm registry request failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(stdout);
+  } catch {
+    throw new Error('npm registry response was not valid JSON');
+  }
+  const parsed = npmDistTags.safeParse(json);
   if (!parsed.success) throw new Error('npm registry response has no latest dist-tag');
-  return parsed.data['dist-tags'].latest;
+  return parsed.data.latest;
 }

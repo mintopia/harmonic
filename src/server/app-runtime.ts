@@ -26,7 +26,7 @@ import type { MirrorClaim } from '../execution/auto-runner.js';
 import { operationRegistry, startOperation } from '../telemetry/operations.js';
 import { EventBus } from './bus.js';
 import { SettingsUpdateAvailabilityStore } from '../upgrade/update-check.js';
-import { UpgradeCoordinator } from '../upgrade/upgrade-coordinator.js';
+import { UpgradeCoordinator, type UpgradeCancellation, type UpgradeIdleHandoffOutcome } from '../upgrade/upgrade-coordinator.js';
 import { AttemptSettleCoordinator } from '../domain/attempt-settle.js';
 import { SessionRetirementCoordinator } from '../domain/session-retirement-coordinator.js';
 import { EscalationService } from '../domain/escalation.js';
@@ -35,6 +35,7 @@ import type { Stores } from './app-stores.js';
 import type { WorktreeServices } from './app-worktrees.js';
 import { createPostMergeCheck } from '../verification/post-merge-check.js';
 import type { DistributionMode } from '../distribution-mode.js';
+import { touchStartupProgress } from '../reliability/startup-progress.js';
 
 function createLifecycleTracking(
   bus: EventBus,
@@ -137,11 +138,12 @@ function createUpgrade(deps: {
   notifier: Stores['notifier'];
 }): UpgradeCoordinator {
   const { opts, runningVersion, asyncDb, settingsStore, attempts, conversationDriver, notifier } = deps;
+  const externalInstall = opts.installMode?.kind === 'external';
   const onUpgradeIdle = opts.onUpgradeIdle === undefined
     ? undefined
-    : async (version: string): Promise<void> => {
+    : async (version: string, cancellation: UpgradeCancellation): Promise<UpgradeIdleHandoffOutcome | void> => {
       try {
-        await opts.onUpgradeIdle?.(version);
+        return await opts.onUpgradeIdle?.(version, cancellation);
       } catch (error) {
         const abort = startOperation({ type: 'upgrade.abort', attributes: { 'upgrade.version': version } });
         try {
@@ -163,7 +165,10 @@ function createUpgrade(deps: {
     operations: () => operationRegistry.list(),
     conversations: conversationDriver,
     ...(opts.migrationRequired === undefined ? {} : { migrationRequired: opts.migrationRequired }),
+    ...(externalInstall ? { externalInstall: true } : {}),
     ...(onUpgradeIdle === undefined ? {} : { onIdle: onUpgradeIdle }),
+    ...(opts.readRollback === undefined ? {} : { readRollback: opts.readRollback }),
+    ...(opts.clearRollback === undefined ? {} : { clearRollback: opts.clearRollback }),
   });
 }
 
@@ -251,7 +256,9 @@ export async function createRuntime(deps: {
     verificationAttempts,
     criticDrive: opts.criticDrive,
   });
+  touchStartupProgress(opts.dataDir);
   await runStartupRecovery({ attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus });
+  touchStartupProgress(opts.dataDir);
   const getWorkspaceRow = async (id: number | null) => {
     if (id == null) return undefined;
     try {
@@ -357,14 +364,18 @@ export async function createRuntime(deps: {
   const globalPause = new GlobalPause(tasks, runner, asyncDb);
   globalPauseRef = globalPause;
   await globalPause.rebuild();
+  touchStartupProgress(opts.dataDir);
   await runner.backfillUsage();
+  touchStartupProgress(opts.dataDir);
   const escalation = new EscalationService(attempts, tasks, operatorSettle, mergeEffectsFor, {
     resume: (task, guidance, startNow) => runner.resumeWithGuidance(task, guidance, startNow),
     cleanup: (task, run) => runner.cleanupClosed(task, run),
     candidateHead: (task, run) => runner.candidateHead(task, run),
     advance: (task, run, failedStep) => runner.advanceAccepted(task, run, failedStep),
   });
+  touchStartupProgress(opts.dataDir);
   await drainRetirement();
+  touchStartupProgress(opts.dataDir);
   const { loopMonitor, hostLoad, workspaceWatcher } = createObservability(opts, bus, settingsStore);
   const mirror: MirrorClaim = {
     advertiseClaim: async (task) => {
@@ -386,7 +397,9 @@ export async function createRuntime(deps: {
   const upgrade = createUpgrade({ opts, runningVersion, asyncDb, settingsStore, attempts, conversationDriver, notifier });
   upgradeRef = upgrade;
   if (distributionMode === 'packaged') {
-    await upgrade.complete();
+    touchStartupProgress(opts.dataDir);
+    await upgrade.settleOnBoot();
+    touchStartupProgress(opts.dataDir);
   }
   const epicService = new TrackerEpicService(
     tasks,
@@ -415,7 +428,11 @@ export async function createRuntime(deps: {
     },
   );
   epicServiceRef = epicService;
-  const trackerManager = new TrackerPollerManager(tasks, () => workspaces.list(), { epicService, scheduler });
+  const trackerManager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+    epicService,
+    scheduler,
+    workStartAllowed: () => upgrade.workStartAllowed(),
+  });
   trackerManagerRef = trackerManager;
   for (const merged of pendingPostMerge.splice(0)) await postMerge(merged);
 

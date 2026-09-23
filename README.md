@@ -38,9 +38,63 @@ harmonic status         # is it running, and where?
 harmonic stop           # shut it down
 ```
 
-A global install keeps itself up to date. Harmonic checks npm hourly and,
-when a newer release is out, shows a banner in the app, then upgrades in
-place the next time your fleet is idle and relaunches on the new version.
+Harmonic checks npm hourly and shows a banner in the app when a newer release
+is out. The check uses your npm config, so a private registry or mirror sees
+the same versions `npm install` would. How it upgrades depends on how you run it:
+
+- **As an OS service** (`harmonic install`, systemd or init.d): Upgrade in the
+  banner installs the new release alongside the current one, checks it, then
+  switches over the next time your fleet is idle. If the new release fails to
+  start four times, Harmonic switches back to the previous release and restores
+  the database from just before the upgrade, as long as that pre-upgrade copy
+  can still be restored. If it can't (for example a missing snapshot), Harmonic
+  stays on the failed release instead of risking a database the failed release
+  may have already changed, and keeps retrying on every start. The reason is in
+  the service log and `<data-dir>/app/rollback.json`; see
+  [If an upgrade fails](#if-an-upgrade-fails) below.
+- **Anything else** (a global install, `npx`, `harmonic start`, pm2, Docker):
+  the banner shows the command to run, or tells you to reinstall the way you
+  originally did when it can't tell how Harmonic was installed. Harmonic
+  doesn't upgrade itself here, because it can't restart safely under a
+  supervisor it doesn't control.
+
+### If an upgrade fails
+
+Check, in order:
+
+- The service log: `journalctl -u harmonic` (systemd) or
+  `<data-dir>/harmonic.log` (init.d/background).
+- `<data-dir>/app/rollback.json` names why a rollback didn't happen and,
+  when anything was moved aside, where.
+- `<data-dir>/rolled-back/` holds the pre-upgrade database, preserved (never
+  deleted) if it had to be moved aside during a rollback attempt.
+- `<data-dir>/app/database-incomplete.json` exists only if a blocked
+  rollback couldn't move every db/-wal/-shm file back to `<data-dir>`; it
+  names the file(s) and where they ended up, and Harmonic refuses to start
+  until you move them back and delete this file.
+
+Once you've fixed the underlying cause (disk space, a missing snapshot, etc.),
+restart the service. For systemd, repeated failures can trip the unit's
+restart limit first, so fixing the cause alone may not be enough:
+
+```sh
+sudo systemctl reset-failed harmonic && sudo systemctl start harmonic
+```
+
+### Upgrading from 2.18.0 or 2.18.1
+
+2.18.0 and 2.18.1 have a bug in the systemd upgrade. 2.18.2 repairs the upgrade
+for you as it installs, unless npm is set to skip install scripts
+(`ignore-scripts=true`). If it is, or if the service fails to start after
+upgrading, upgrade by hand instead of using the banner:
+
+```sh
+sudo npm install -g @mintopia/harmonic@latest
+sudo harmonic install
+```
+
+`harmonic install` keeps the existing service's port, host, data directory and
+password.
 
 Rather not install? Every command also works through `npx`:
 

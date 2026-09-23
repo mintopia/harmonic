@@ -2,10 +2,31 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from './app.js';
 import { requestIsOperator } from './auth.js';
 import { attemptTimelineToApi, conversationToApi, attemptToApi, attemptUsageToApi, taskToApi } from './serialize.js';
-import { operationEventToApi, scheduledJobsToApi, worktreesToApi } from './dto.js';
+import { operationEventToApi, scheduledJobsToApi, worktreesToApi, type ApiAttemptSummary, type ApiConversation, type ApiTask } from './dto.js';
 import { forEachYielding } from '../reliability/yield.js';
-import { isTaskAttempt } from '../db/schema.js';
+import { isTaskAttempt, type AttemptRow, type ConversationRow, type TaskRow } from '../db/schema.js';
 import { fireAndForget } from '../error-handling.js';
+
+/** Only the newest send per id is delivered; a removal invalidates any send still in flight for that id. */
+function latestChangeSender<TRow, TApi>(toApi: (row: TRow) => Promise<TApi>): {
+  send: (id: number, row: TRow, deliver: (api: TApi) => void) => Promise<void>;
+  markRemoved: (id: number) => void;
+} {
+  const generation = new Map<number, number>();
+  return {
+    async send(id, row, deliver) {
+      const gen = (generation.get(id) ?? 0) + 1;
+      generation.set(id, gen);
+      const api = await toApi(row);
+      if (generation.get(id) !== gen) return;
+      generation.delete(id);
+      deliver(api);
+    },
+    markRemoved(id) {
+      if (generation.has(id)) generation.set(id, generation.get(id)! + 1);
+    },
+  };
+}
 
 /** One firehose socket at /api/ws: every event is broadcast to every client; clients filter. */
 export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promise<void> {
@@ -27,11 +48,14 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
     const hasWriteScope = await requestIsOperator(req, ctx.auth, socket.protocol || undefined);
     let unsubscribeAttemptLog: (() => void) | undefined;
     let unsubscribeCriticLog: (() => void) | undefined;
+    const taskChanged = latestChangeSender<TaskRow, ApiTask>((task) => ctx.tasks.withDeps(task).then((withDeps) => taskToApi(ctx, withDeps)));
+    const attemptChanged = latestChangeSender<AttemptRow, ApiAttemptSummary>((run) => attemptToApi(ctx, run));
+    const conversationChanged = latestChangeSender<ConversationRow, ApiConversation>((conversation) => conversationToApi(ctx, conversation));
     const unsubscribes = [
       ctx.bus.on('attempt_event', (event) => send({ type: 'attempt_event', event })),
-      ctx.bus.on('attempt_changed', async (run) => {
+      ctx.bus.on('attempt_changed', (run) => {
         if (isTaskAttempt(run)) {
-          send({ type: 'attempt_changed', run: await attemptToApi(ctx, run) });
+          void attemptChanged.send(run.id, run, (api) => send({ type: 'attempt_changed', run: api }));
           sendAttemptTimeline(run.taskId);
         } else if (run.workspaceId !== null && run.epicRef !== null) {
           send({ type: 'epic_changed', workspaceId: run.workspaceId, epicRef: run.epicRef });
@@ -41,9 +65,11 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       ctx.bus.on('attempt_usage', ({ attemptId, snapshot }) => {
         void attemptUsageToApi(ctx, attemptId, snapshot).then((usage) => send({ type: 'attempt_usage', attemptId, ...usage }));
       }),
-      ctx.bus.on('task_changed', async (task) =>
-        send({ type: 'task_changed', task: await taskToApi(ctx, await ctx.tasks.withDeps(task)) })),
-      ctx.bus.on('task_removed', ({ id }) => send({ type: 'task_removed', id })),
+      ctx.bus.on('task_changed', (task) => void taskChanged.send(task.id, task, (api) => send({ type: 'task_changed', task: api }))),
+      ctx.bus.on('task_removed', ({ id }) => {
+        taskChanged.markRemoved(id);
+        send({ type: 'task_removed', id });
+      }),
       ctx.bus.on('epic_changed', (payload) => send({ type: 'epic_changed', ...payload })),
       ctx.bus.on('epic_integrated', (payload) => send({ type: 'epic_integrated', ...payload })),
       ctx.bus.on('scheduled_jobs', (jobs) => send({ type: 'scheduled-jobs', jobs: scheduledJobsToApi(jobs) })),
@@ -58,11 +84,10 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       unsubscribes.push(
         ctx.bus.on('conversation_event', (event) => send({ type: 'conversation_event', event })),
         ctx.bus.on('conversation_changed', (conversation) => {
-          fireAndForget(async () => send({ type: 'conversation_changed', conversation: await conversationToApi(ctx, conversation) }), {
-            op: 'ws.sendConversationChanged',
-            level: 'warn',
-            context: { conversationId: conversation.id },
-          });
+          fireAndForget(
+            () => conversationChanged.send(conversation.id, conversation, (api) => send({ type: 'conversation_changed', conversation: api })),
+            { op: 'ws.sendConversationChanged', level: 'warn', context: { conversationId: conversation.id } },
+          );
         }),
         ctx.bus.on('conversation_commands', (payload) => send({ type: 'conversation_commands', ...payload })),
         ctx.bus.on('permission_request', (pending) => send({ type: 'permission_request', ...pending })),
