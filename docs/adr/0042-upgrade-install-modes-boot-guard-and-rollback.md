@@ -73,6 +73,12 @@ script, and from the relauncher.
   writes `app/rollback.json` — itself fsynced, recording that the database
   was restored (`databaseRestored: true`) and where the preserved copy landed
   (`preservedDatabaseDir`) — and deletes `pending.json`.
+- If a blocked restore leaves part of the live db/-wal/-shm set stranded away
+  from `<dataDir>` (a forward move that failed and then couldn't be reversed
+  either), the guard also writes `app/database-incomplete.json`, fsynced and
+  naming the stranded files and where they are; the server checks this before
+  it ever opens the database and refuses to start while it exists, rather
+  than risking a fresh database next to a missing or partial live set.
 - If the restore fails (the snapshot is missing, the copy fails, or the
   files couldn't even be preserved), the guard does **not** flip `current`:
   flipping would open the previous release against a database the failed
