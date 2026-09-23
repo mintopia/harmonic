@@ -139,6 +139,15 @@ describe('UpgradeCoordinator', () => {
     expect(ready).toEqual(['2.6.0']);
   });
 
+  it('treats a namespaced epic.* operation (integrate, merge, verify, ...) as busy, not just the bare merge/integrate types (issue #9)', async () => {
+    const epicIntegrate: OperationSnapshot = {
+      type: 'epic.integrate', name: 'harmonic.epic.integrate', spanContext: { traceId: 'trace', spanId: 'span', traceFlags: 0 }, parentSpanContext: undefined, attributes: {}, startedAt: 0, status: { code: SpanStatusCode.UNSET },
+    };
+    const subject = coordinator({ operations: [epicIntegrate] });
+
+    await expect(subject.upgrade.idleState()).resolves.toMatchObject({ mergingOrIntegrating: true });
+  });
+
   it('records the real upgrade-in-progress state before handing the swap to the service manager', async () => {
     let release: (() => void) | undefined;
     const handoff = new Promise<void>((resolve) => { release = resolve; });

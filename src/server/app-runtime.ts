@@ -415,7 +415,11 @@ export async function createRuntime(deps: {
     },
   );
   epicServiceRef = epicService;
-  const trackerManager = new TrackerPollerManager(tasks, () => workspaces.list(), { epicService, scheduler });
+  const trackerManager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+    epicService,
+    scheduler,
+    workStartAllowed: () => upgrade.workStartAllowed(),
+  });
   trackerManagerRef = trackerManager;
   for (const merged of pendingPostMerge.splice(0)) await postMerge(merged);
 
