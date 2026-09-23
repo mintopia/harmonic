@@ -775,9 +775,12 @@ export const Git = {
   /**
    * Rebase the branch checked out at `worktreeDir` onto `ontoOid` (linear replay).
    * A conflict (`conflict: true`) is left IN PROGRESS (markers, `REBASE_HEAD`)
-   * and returned rather than thrown; any other failure (a missing worktree, a
-   * dirty tree) is `conflict: false`, nothing in progress. A rebase an earlier
-   * conflict left in progress is aborted first, never resumed. On success the
+   * and returned rather than thrown; any other failure (a missing worktree) is
+   * `conflict: false`, nothing in progress. A rebase an earlier
+   * conflict left in progress is aborted first, never resumed. A dirty
+   * working copy is autostashed and reapplied after a successful rebase; if
+   * the reapply itself conflicts, git exits 0 but leaves unmerged paths, so
+   * that is detected and also returned as `conflict: true`. On success the
    * worktree HEAD is the rebased tip (a descendant of `ontoOid`).
    */
   async rebaseOnto(
@@ -796,7 +799,11 @@ export const Git = {
           });
         });
         try {
-          await git(worktreeDir, ...IDENTITY, 'rebase', ontoOid);
+          await git(worktreeDir, ...IDENTITY, 'rebase', '--autostash', ontoOid);
+          const unmerged = await git(worktreeDir, 'diff', '--name-only', '--diff-filter=U');
+          if (unmerged.trim().length > 0) {
+            return { ok: false, conflict: true, detail: 'autostash re-apply conflicted after rebase' };
+          }
           const rebasedTip = await Git.revParse(worktreeDir, 'HEAD');
           return { ok: true, rebasedTip };
         } catch (err) {
