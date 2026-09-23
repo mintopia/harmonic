@@ -76,15 +76,23 @@ harmonic start --password ''
 
 ## Staying up to date
 
-A global install keeps itself current. Harmonic checks npm once an hour
-(and once at startup); when a newer release is out, a banner appears in the
-app. The next time your fleet is idle it installs the new version, swaps to
-it, and relaunches, so nothing is interrupted mid-flight. Dismiss the
-banner to hide a version you're not ready for; the next release brings it
-back.
+Harmonic checks npm once an hour (and once at startup) using your npm
+config, so a private registry or mirror works. When a newer release is out,
+a banner appears in the app. Dismiss it to hide a version you're not ready
+for; the next release brings it back.
 
-Running through `npx` fetches the latest published version every time, so
-there's nothing to update. From a source checkout Harmonic doesn't
+Installed as an OS service (`harmonic install`, systemd or init.d),
+Harmonic upgrades itself. Click Upgrade and, the next time your fleet is
+idle, it installs the new release alongside the current one, checks it,
+and switches over, so nothing is interrupted mid-flight. If the new release
+keeps failing to start, it switches back to the previous one. The
+[README](https://github.com/mintopia/harmonic#if-an-upgrade-fails) covers
+what to check when an upgrade fails.
+
+Run any other way (a global install with `harmonic start`, `npx`, pm2,
+Docker), Harmonic doesn't upgrade itself: it can't restart safely under a
+supervisor it doesn't control. The banner shows the command to run instead.
+From a source checkout Harmonic doesn't
 self-update; pull and rebuild instead.
 
 ## See also

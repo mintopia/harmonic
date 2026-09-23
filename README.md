@@ -39,7 +39,8 @@ harmonic stop           # shut it down
 ```
 
 Harmonic checks npm hourly and shows a banner in the app when a newer release
-is out. How it upgrades depends on how you run it:
+is out. The check uses your npm config, so a private registry or mirror sees
+the same versions `npm install` would. How it upgrades depends on how you run it:
 
 - **As an OS service** (`harmonic install`, systemd or init.d): Upgrade in the
   banner installs the new release alongside the current one, checks it, then
@@ -52,8 +53,10 @@ is out. How it upgrades depends on how you run it:
   the service log and `<data-dir>/app/rollback.json`; see
   [If an upgrade fails](#if-an-upgrade-fails) below.
 - **Anything else** (a global install, `npx`, `harmonic start`, pm2, Docker):
-  the banner shows the command to run. Harmonic doesn't upgrade itself here,
-  because it can't restart safely under a supervisor it doesn't control.
+  the banner shows the command to run, or tells you to reinstall the way you
+  originally did when it can't tell how Harmonic was installed. Harmonic
+  doesn't upgrade itself here, because it can't restart safely under a
+  supervisor it doesn't control.
 
 ### If an upgrade fails
 
