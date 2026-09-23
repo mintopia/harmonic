@@ -1,4 +1,5 @@
 import { createClient } from '@libsql/client';
+import * as fs from 'node:fs';
 import {
   existsSync,
   mkdirSync,
@@ -10,7 +11,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { z } from 'zod';
 
 const pendingSchema = z.object({
@@ -28,6 +29,8 @@ const rollbackSchema = z.object({
   at: z.string(),
   reason: z.string(),
   databaseRestored: z.boolean(),
+  /** Where the guard preserved the pre-rollback database files, when it needed to move them aside. */
+  preservedDatabaseDir: z.string().optional(),
 });
 
 export type RollbackRecord = z.infer<typeof rollbackSchema>;
@@ -38,11 +41,32 @@ const pendingPath = (appDir: string): string => join(appDir, 'pending.json');
 const rollbackPath = (appDir: string): string => join(appDir, 'rollback.json');
 const previousPath = (appDir: string): string => join(appDir, 'previous.json');
 
-/** Atomically overwrite `path`: write to a sibling tmp file, then rename over it. */
+function fsyncFile(filePath: string): void {
+  const fd = fs.openSync(filePath, 'r+');
+  try {
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function fsyncDir(dirPath: string): void {
+  const fd = fs.openSync(dirPath, 'r');
+  try {
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** Atomically and durably overwrite `path`: write to a sibling tmp file, fsync it, rename over the
+ * target, then fsync the parent directory so the rename survives a power loss. */
 function writeFileAtomic(path: string, contents: string): void {
   const tmpPath = `${path}.tmp`;
   writeFileSync(tmpPath, contents, 'utf8');
+  fsyncFile(tmpPath);
   renameSync(tmpPath, path);
+  fsyncDir(dirname(path));
 }
 
 function readJson<T>(path: string, schema: z.ZodType<T>): T | null {
@@ -97,6 +121,7 @@ export function flipCurrent({ appDir, version }: { appDir: string; version: stri
   rmSync(tmpPath, { force: true });
   symlinkSync(`versions/${version}`, tmpPath);
   renameSync(tmpPath, join(appDir, 'current'));
+  fsyncDir(appDir);
 }
 
 /** Reads the version `app/current` points at, or null if it's missing or dangling. */

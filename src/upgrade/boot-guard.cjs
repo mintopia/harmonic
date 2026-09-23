@@ -48,35 +48,107 @@ function readCurrentVersion(appDir) {
   }
 }
 
+function fsyncFile(filePath) {
+  const fd = fs.openSync(filePath, 'r+');
+  try {
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function fsyncDir(dirPath) {
+  const fd = fs.openSync(dirPath, 'r');
+  try {
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 function flipCurrent(appDir, version) {
   const tmpPath = path.join(appDir, '.current.tmp');
   removeIfPresent(tmpPath);
   fs.symlinkSync(`versions/${version}`, tmpPath);
   fs.renameSync(tmpPath, path.join(appDir, 'current'));
+  fsyncDir(appDir);
 }
 
-// The WAL must go before the snapshot lands, or SQLite replays the newer release's writes onto it.
-function restoreDatabase(dataDir, snapshotPath) {
+// Moves the live db/-wal/-shm aside instead of deleting them, so a snapshot copy failure
+// (ENOSPC/EIO) can never destroy committed-but-uncheckpointed writes: the originals are still on
+// disk, just renamed out of the way, and get moved back if the copy fails.
+function moveAside(dbPath, preservedDir) {
+  const moved = [];
+  for (const suffix of ['', '-wal', '-shm']) {
+    const from = `${dbPath}${suffix}`;
+    if (!fs.existsSync(from)) continue;
+    fs.renameSync(from, path.join(preservedDir, `harmonic.db${suffix}`));
+    moved.push(suffix);
+  }
+  return moved;
+}
+
+function moveBack(dbPath, preservedDir, moved) {
+  let ok = true;
+  for (const suffix of moved) {
+    try {
+      fs.renameSync(path.join(preservedDir, `harmonic.db${suffix}`), `${dbPath}${suffix}`);
+    } catch (error) {
+      logError(`could not move harmonic.db${suffix} back from ${preservedDir}`, error);
+      ok = false;
+    }
+  }
+  return ok;
+}
+
+// Returns { restored, preservedDir }. preservedDir is set whenever the pre-rollback database is
+// sitting somewhere other than its original path, so operators can recover it either way.
+function restoreDatabase(dataDir, appDir, snapshotPath, fromVersion) {
   const dbPath = path.join(dataDir, 'harmonic.db');
+  if (!fs.existsSync(snapshotPath)) {
+    logError('database was not restored', new Error(`snapshot ${snapshotPath} is missing`));
+    return { restored: false, preservedDir: null };
+  }
+
+  const preservedDir = path.join(appDir, 'rolled-back', `${fromVersion}-${Date.now()}`);
+  let moved;
   try {
-    if (!fs.existsSync(snapshotPath)) throw new Error(`snapshot ${snapshotPath} is missing`);
-    const walRemoved = removeIfPresent(`${dbPath}-wal`);
-    const shmRemoved = removeIfPresent(`${dbPath}-shm`);
-    if (!walRemoved || !shmRemoved) throw new Error('the database write-ahead log could not be cleared');
-    const tmpPath = `${dbPath}.restore.tmp`;
-    fs.copyFileSync(snapshotPath, tmpPath);
-    fs.renameSync(tmpPath, dbPath);
-    return true;
+    fs.mkdirSync(preservedDir, { recursive: true });
+    moved = moveAside(dbPath, preservedDir);
   } catch (error) {
     logError('database was not restored', error);
-    return false;
+    return { restored: false, preservedDir: null };
+  }
+
+  try {
+    const tmpPath = `${dbPath}.restore.tmp`;
+    fs.copyFileSync(snapshotPath, tmpPath);
+    fsyncFile(tmpPath);
+    fs.renameSync(tmpPath, dbPath);
+    fsyncDir(dataDir);
+    return { restored: true, preservedDir };
+  } catch (error) {
+    logError('database was not restored', error);
+    const revertedOk = moveBack(dbPath, preservedDir, moved);
+    if (revertedOk) {
+      try {
+        fs.rmdirSync(preservedDir);
+      } catch {
+        // best-effort cleanup of the now-empty preserved dir
+      }
+      return { restored: false, preservedDir: null };
+    }
+    logError('original database files could not be moved back; they remain preserved', new Error(preservedDir));
+    return { restored: false, preservedDir };
   }
 }
 
 function writeJsonAtomic(filePath, value) {
   const tmpPath = `${filePath}.tmp`;
   fs.writeFileSync(tmpPath, JSON.stringify(value), 'utf8');
+  fsyncFile(tmpPath);
   fs.renameSync(tmpPath, filePath);
+  fsyncDir(path.dirname(filePath));
 }
 
 function main() {
@@ -109,16 +181,23 @@ function main() {
     return;
   }
 
-  const databaseRestored = restoreDatabase(dataDir, pending.snapshot);
+  const { restored: databaseRestored, preservedDir } = restoreDatabase(dataDir, appDir, pending.snapshot, pending.version);
   flipCurrent(appDir, pending.previous);
+  let reason;
+  if (databaseRestored) {
+    reason = `${pending.version} failed to start 4 times, so Harmonic rolled back to ${pending.previous} and restored the database from before the upgrade. Changes made after the upgrade started were discarded. The database from just before the rollback is preserved at ${preservedDir}.`;
+  } else if (preservedDir) {
+    reason = `${pending.version} failed to start 4 times, so Harmonic rolled back to ${pending.previous}. The database could not be restored from before the upgrade; the original files are preserved at ${preservedDir}. Check the service log.`;
+  } else {
+    reason = `${pending.version} failed to start 4 times, so Harmonic rolled back to ${pending.previous}. The database could not be restored from before the upgrade; check the service log.`;
+  }
   writeJsonAtomic(path.join(appDir, 'rollback.json'), {
     fromVersion: pending.version,
     toVersion: pending.previous,
     at: new Date().toISOString(),
-    reason: databaseRestored
-      ? `${pending.version} failed to start 4 times, so Harmonic rolled back to ${pending.previous} and restored the database from before the upgrade. Changes made after the upgrade started were discarded.`
-      : `${pending.version} failed to start 4 times, so Harmonic rolled back to ${pending.previous}. The database could not be restored from before the upgrade; check the service log.`,
+    reason,
     databaseRestored,
+    ...(preservedDir ? { preservedDatabaseDir: preservedDir } : {}),
   });
   removeIfPresent(pendingPath);
 }

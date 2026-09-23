@@ -1,5 +1,5 @@
 import { createClient } from '@libsql/client';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -14,6 +14,19 @@ import {
   writePending,
 } from '../src/upgrade/boot-state.js';
 import { createTempDirTracker } from './helpers/upgrade-fixture.js';
+
+const fsyncCalls = vi.hoisted(() => [] as number[]);
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    fsyncSync: (fd: number) => {
+      fsyncCalls.push(fd);
+      return actual.fsyncSync(fd);
+    },
+  };
+});
 
 const { tempDir, cleanupAll } = createTempDirTracker();
 afterEach(cleanupAll);
@@ -180,6 +193,22 @@ describe('pruneVersions', () => {
     pruneVersions({ appDir });
     expect(existsSync(join(appDir, 'versions', '1'))).toBe(true);
     expect(existsSync(join(appDir, 'versions', '2'))).toBe(true);
+  });
+});
+
+describe('durability', () => {
+  it('fsyncs the tmp file and parent directory when writing pending.json, and the app dir when flipping current', () => {
+    const appDir = makeAppDir();
+    seedVersion(appDir, '1.0.0');
+    seedVersion(appDir, '2.0.0');
+
+    fsyncCalls.length = 0;
+    writePending({ appDir, version: '2.0.0', previous: '1.0.0', snapshot: join(appDir, 'pre-2.0.0.db') });
+    expect(fsyncCalls.length).toBe(2); // the tmp file, then the app dir after the rename
+
+    fsyncCalls.length = 0;
+    flipCurrent({ appDir, version: '2.0.0' });
+    expect(fsyncCalls.length).toBe(1); // the app dir after the rename
   });
 });
 
