@@ -710,8 +710,9 @@ export class TurnDriver {
     if (rebaseConflict) {
       promptText =
         `${promptText}\n\n## Rebase conflict — resolve first\n` +
-        `Harmonic rebased your branch onto its base and the rebase stopped with conflicts left in progress in this checkout. ` +
-        `Inspect the conflicted files (\`git status\`), resolve them, stage them, and run \`git rebase --continue\` before doing anything else.`;
+        `Harmonic rebased your branch onto its base. Your uncommitted changes from before the rebase were stashed and reapplied. ` +
+        `The rebase or the reapply stopped with conflicts left in this checkout. Inspect the conflicted files (\`git status\`), ` +
+        `resolve them, and stage them. If a rebase is still in progress, run \`git rebase --continue\`. Do not drop any stashes.`;
     }
     if (condensed) promptText = `${promptText}\n\n${condensed}`;
     if (codeIndexRepoId) promptText = `${promptText}${codeIndexRepoGuidance(codeIndexRepoId)}`;

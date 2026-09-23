@@ -5,7 +5,7 @@ import { trace } from '@opentelemetry/api';
 import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -262,6 +262,54 @@ describe('git-rebase', () => {
       expect(again).toMatchObject({ ok: true, rebasedTip: featureTipBefore });
       expect(git(featureWt, 'status', '--porcelain')).toBe('');
       expect(() => git(featureWt, 'rev-parse', '--verify', 'REBASE_HEAD')).toThrow();
+    });
+
+    it('autostash: a dirty tracked file at rebase start rebases cleanly and the dirty change is still uncommitted afterwards', async () => {
+      const repo = makeRepo();
+      const featureWt = addBranchWorktree(repo, 'feature');
+      writeFileSync(join(featureWt, 'feature.txt'), 'feature work\n');
+      git(featureWt, 'add', '-A');
+      git(featureWt, 'commit', '-m', 'B: add feature.txt');
+
+      writeFileSync(join(repo, 'other.txt'), 'other\n');
+      git(repo, 'add', '-A');
+      git(repo, 'commit', '-m', 'C: add other.txt on main');
+      const baseTip = oid(repo, 'main');
+
+      writeFileSync(join(featureWt, 'feature.txt'), 'feature work, dirty edit\n');
+      writeFileSync(join(featureWt, 'untracked.txt'), 'untracked scratch\n');
+      expect(git(featureWt, 'status', '--porcelain')).not.toBe('');
+
+      const out = await Git.rebaseOnto(featureWt, baseTip);
+
+      expect(out).toMatchObject({ ok: true });
+      if (!out.ok) throw new Error('expected ok:true');
+      expect(await Git.isAncestor(featureWt, out.rebasedTip, baseTip)).toBe(true);
+      expect(git(featureWt, 'status', '--porcelain')).not.toBe('');
+      expect(git(featureWt, 'diff', 'feature.txt')).toContain('feature work, dirty edit');
+      expect(readFileSync(join(featureWt, 'untracked.txt'), 'utf8')).toBe('untracked scratch\n');
+    });
+
+    it('autostash conflict: a dirty change that conflicts with the rebased onto returns ok:false, conflict:true and leaves the work in the tree', async () => {
+      const repo = makeRepo();
+      const featureWt = addBranchWorktree(repo, 'feature');
+      writeFileSync(join(featureWt, 'other.txt'), 'feature version of other\n');
+      git(featureWt, 'add', '-A');
+      git(featureWt, 'commit', '-m', 'B: add other.txt on feature');
+
+      writeFileSync(join(repo, 'base.txt'), 'main version\n');
+      git(repo, 'commit', '-am', 'C: change base.txt on main');
+      const baseTip = oid(repo, 'main');
+
+      writeFileSync(join(featureWt, 'base.txt'), 'dirty conflicting edit\n');
+      expect(git(featureWt, 'status', '--porcelain')).not.toBe('');
+
+      const out = await Git.rebaseOnto(featureWt, baseTip);
+
+      expect(out).toMatchObject({ ok: false, conflict: true });
+      expect(git(featureWt, 'diff', '--name-only', '--diff-filter=U')).toBe('base.txt');
+      expect(readFileSync(join(featureWt, 'base.txt'), 'utf8')).toMatch(/<<<<<<</);
+      expect(readFileSync(join(featureWt, 'base.txt'), 'utf8')).toContain('dirty conflicting edit');
     });
   });
 });
