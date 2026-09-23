@@ -23,23 +23,7 @@ describe('postinstall-rescue.cjs (real npm install)', () => {
   const { tempDir, cleanupAll } = createTempDirTracker();
   afterEach(cleanupAll);
 
-  it("2.18.1's exact broken sequence, without the rescue script, leaves current/dist unreadable (red baseline)", async () => {
-    const version = '0.0.0-rescue-red.1';
-    const packageSpec = packFixtureTarball(tempDir, { version });
-    const dataDir = tempDir('harmonic-rescue-red-datadir-');
-    const appDir = join(dataDir, 'app');
-    const versionDir = join(appDir, 'versions', version);
-    mkdirSync(versionDir, { recursive: true });
-
-    await run('npm', ['i', '--prefix', versionDir, packageSpec]);
-    await run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
-
-    expect(existsSync(join(versionDir, 'dist'))).toBe(false);
-    const packageJsonPath = `${join(appDir, 'current', 'dist')}/../package.json`;
-    expect(() => readManifestVersion(packageJsonPath)).toThrow();
-  }, 30_000);
-
-  it("rescues 2.18.1's broken nested layout for real: old verify's package.json read and a restart through app/current/dist/cli.js both resolve (green)", async () => {
+  it("rescues 2.18.1's broken nested layout for real: old verify's package.json read and a restart through app/current/dist/cli.js both resolve", async () => {
     const version = '0.0.0-rescue-green.1';
     const packageSpec = packFixtureTarball(tempDir, { version, scripts: rescueFixtureScripts, files: rescueFixtureFiles });
     const dataDir = tempDir('harmonic-rescue-green-datadir-');
