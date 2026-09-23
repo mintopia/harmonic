@@ -94,8 +94,9 @@ describe('live structured run event streaming and replay', () => {
     await waitFor(async () =>
       ws.messages.some((m) => m.type === 'task_changed' && m.task.id === created.body.id),
     );
-    const rest = await server.api('GET', `/api/tasks/${created.body.id}`);
+    let rest = await server.api('GET', `/api/tasks/${created.body.id}`);
     const msg = await waitFor(async () => {
+      rest = await server.api('GET', `/api/tasks/${created.body.id}`);
       const latest = ws.messages.findLast((m) => m.type === 'task_changed' && m.task.id === created.body.id);
       return latest && isDeepStrictEqual(latest.task, rest.body) ? latest : undefined;
     });
@@ -107,6 +108,62 @@ describe('live structured run event streaming and replay', () => {
     expect(msg.task.humanOnly).toBe(false);
 
     expect(msg.task).toEqual(rest.body);
+    ws.close();
+  });
+
+  it('never lets a slow, older task_changed overtake a newer one for the same task', async () => {
+    const ws = await connectFirehose(server);
+    const created = await server.api('POST', '/api/tasks', { prompt: 'original', state: 'draft' });
+    const row = await server.app.ctx.tasks.get(created.body.id);
+    const tasks = server.app.ctx.tasks;
+    const withDeps = tasks.withDeps.bind(tasks);
+    let delayNext = true;
+    tasks.withDeps = async (task) => {
+      if (delayNext) {
+        delayNext = false;
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+      return withDeps(task);
+    };
+
+    try {
+      server.app.ctx.bus.emit('task_changed', { ...row, prompt: 'older' });
+      server.app.ctx.bus.emit('task_changed', { ...row, prompt: 'newer' });
+      await waitFor(async () =>
+        ws.messages.some((m) => m.type === 'task_changed' && m.task.id === created.body.id && m.task.prompt === 'newer'),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    } finally {
+      tasks.withDeps = withDeps;
+    }
+
+    const latest = ws.messages.findLast((m) => m.type === 'task_changed' && m.task.id === created.body.id);
+    expect(latest.task.prompt).toBe('newer');
+    ws.close();
+  });
+
+  it('never sends a slow task_changed after that task was removed', async () => {
+    const ws = await connectFirehose(server);
+    const created = await server.api('POST', '/api/tasks', { prompt: 'doomed', state: 'draft' });
+    const row = await server.app.ctx.tasks.get(created.body.id);
+    const tasks = server.app.ctx.tasks;
+    const withDeps = tasks.withDeps.bind(tasks);
+    tasks.withDeps = async (task) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return withDeps(task);
+    };
+
+    try {
+      server.app.ctx.bus.emit('task_changed', { ...row, prompt: 'late' });
+      server.app.ctx.bus.emit('task_removed', { id: created.body.id });
+      await waitFor(async () => ws.messages.some((m) => m.type === 'task_removed' && m.id === created.body.id));
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    } finally {
+      tasks.withDeps = withDeps;
+    }
+
+    const forTask = ws.messages.filter((m) => (m.type === 'task_changed' && m.task.id === created.body.id) || (m.type === 'task_removed' && m.id === created.body.id));
+    expect(forTask.at(-1)?.type).toBe('task_removed');
     ws.close();
   });
 
