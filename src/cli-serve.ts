@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { mkdir, rename, rm } from 'node:fs/promises';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { isAbsolute, join, relative } from 'node:path';
@@ -12,6 +13,7 @@ import { installProcessSafetyNet } from './reliability/process-safety-net.js';
 import { type ServeValues } from './cli-dispatch.js';
 import { UpgradeSwap } from './upgrade/upgrade-swap.js';
 import { SYSTEMD_MIGRATION_NOTICE } from './upgrade/upgrade-coordinator.js';
+import { hasValidInstall, installVersion, readInstalledVersion, type VersionInstallDependencies } from './upgrade/version-install.js';
 import { startOperation } from './telemetry/operations.js';
 import { displayUrl, type CliOutcome } from './cli-commands.js';
 
@@ -40,20 +42,42 @@ export function detectSystemdInstallMigration({
 
 const execFileAsync = promisify(execFile);
 
-export type UpgradeCommand = (file: string, args: string[]) => Promise<unknown>;
+export type UpgradeCommand = (file: string, args: readonly string[]) => Promise<unknown>;
+
+export type SystemdUpgradeFsDependencies = Pick<VersionInstallDependencies, 'mkdir' | 'rm' | 'rename' | 'fileExists' | 'readFile'>;
+
+const defaultSystemdUpgradeFsDependencies = (): SystemdUpgradeFsDependencies => ({
+  mkdir: async (path) => { await mkdir(path, { recursive: true }); },
+  rm: async (path) => { await rm(path, { recursive: true, force: true }); },
+  rename: async (from, to) => { await rename(from, to); },
+  fileExists: existsSync,
+  readFile: (path) => readFileSync(path, 'utf8'),
+});
 
 export async function installSystemdUpgrade({
   dataDir,
   target,
   run,
+  packageSpec,
+  fs = defaultSystemdUpgradeFsDependencies(),
 }: {
   dataDir: string;
   target: string;
   run: UpgradeCommand;
+  packageSpec?: string;
+  fs?: SystemdUpgradeFsDependencies;
 }): Promise<void> {
   const appDir = join(dataDir, 'app');
-  const versionDir = join(appDir, 'versions', target);
-  await run('npm', ['i', '--prefix', versionDir, `@mintopia/harmonic@${target}`]);
+  const versionDir = await installVersion({
+    appDir,
+    version: target,
+    ...(packageSpec === undefined ? {} : { packageSpec }),
+    dependencies: { run, ...fs },
+  });
+  // Verify before flipping `current`: a broken install must never take down the running service.
+  if (!hasValidInstall(versionDir, target, fs)) {
+    throw new Error(`self-upgrade to ${target} did not produce a valid install at ${versionDir}`);
+  }
   await run('ln', ['-sfn', `versions/${target}`, join(appDir, 'current')]);
 }
 
@@ -64,10 +88,7 @@ export function readSystemdInstalledVersion({
   dataDir: string;
   readFile: (path: string, encoding: 'utf8') => string;
 }): string {
-  const packagePath = `${join(dataDir, 'app', 'current', 'dist')}/../package.json`;
-  const packageJson: unknown = JSON.parse(readFile(packagePath, 'utf8'));
-  if (typeof packageJson !== 'object' || packageJson === null || !('version' in packageJson)) return 'unknown';
-  return typeof packageJson.version === 'string' ? packageJson.version : 'unknown';
+  return readInstalledVersion({ dir: join(dataDir, 'app', 'current'), readFile });
 }
 
 export async function runServer(values: ServeValues, rest: string[]): Promise<CliOutcome> {

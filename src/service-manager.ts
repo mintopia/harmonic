@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { z } from 'zod';
+import { installVersion } from './upgrade/version-install.js';
 
 const execFileAsync = promisify(execFile);
 const packageVersionSchema = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/);
@@ -79,7 +80,9 @@ export interface ServiceManagerDependencies {
   writeFile(path: string, contents: string): Promise<void>;
   chmod(path: string, mode: number): Promise<void>;
   removeFile(path: string): Promise<void>;
+  rename(from: string, to: string): Promise<void>;
   fileExists(path: string): boolean;
+  readFile(path: string, encoding: 'utf8'): string;
   sudoUser?: string;
   warn?(message: string): void;
 }
@@ -97,8 +100,10 @@ const defaultDependencies = (): ServiceManagerDependencies => ({
   mkdir: async (path) => { await mkdir(path, { recursive: true }); },
   writeFile: async (path, contents) => { await writeFile(path, contents, 'utf8'); },
   chmod,
-  removeFile: async (path) => { await rm(path, { force: true }); },
+  removeFile: async (path) => { await rm(path, { recursive: true, force: true }); },
+  rename: async (from, to) => { await rename(from, to); },
   fileExists: existsSync,
+  readFile: (path) => readFileSync(path, 'utf8'),
   ...(process.env.SUDO_USER === undefined ? {} : { sudoUser: process.env.SUDO_USER }),
 });
 
@@ -231,13 +236,18 @@ class SystemdServiceManager implements ServiceManager {
     await ensureDataDir(this.dependencies, options.serve.dataDir, user);
     const appDir = join(options.serve.dataDir, 'app');
     const version = packageVersionSchema.parse(this.dependencies.currentVersion);
-    const versionDir = join(appDir, 'versions', version);
-    await this.dependencies.mkdir(versionDir);
-    await this.dependencies.run('npm', ['pack', '--pack-destination', versionDir, `@mintopia/harmonic@${version}`]);
-    await this.dependencies.run('tar', ['-xzf', join(versionDir, `mintopia-harmonic-${version}.tgz`), '--strip-components=1', '-C', versionDir]);
-    // --omit=dev still resolves the dev tree (npm crashes on its peer cycle) and runs prepare's build.
-    await this.dependencies.run('npm', ['pkg', 'delete', 'devDependencies', 'scripts.prepare', '--prefix', versionDir]);
-    await this.dependencies.run('npm', ['i', '--prefix', versionDir, '--omit=dev']);
+    await installVersion({
+      appDir,
+      version,
+      dependencies: {
+        run: this.dependencies.run,
+        mkdir: this.dependencies.mkdir,
+        rm: this.dependencies.removeFile,
+        rename: this.dependencies.rename,
+        fileExists: this.dependencies.fileExists,
+        readFile: this.dependencies.readFile,
+      },
+    });
     if (user !== undefined) await this.dependencies.run('chown', ['-R', user, appDir]);
     await this.dependencies.run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
     await this.dependencies.mkdir(this.unitDirectory);

@@ -38,7 +38,13 @@ const initdDependencies = () => {
     writeFile: async (path: string, contents: string) => { files.set(path, contents); },
     chmod: async (path: string, mode: number) => { modes.set(path, mode); },
     removeFile: async (path: string) => { files.delete(path); },
+    rename: async () => {},
     fileExists: (path: string) => files.has(path),
+    readFile: (path: string) => {
+      const contents = files.get(path);
+      if (contents === undefined) throw new Error(`ENOENT: ${path}`);
+      return contents;
+    },
   } satisfies ServiceManagerDependencies;
   return { dependencies, calls, dirs, files, modes, warn };
 };
@@ -170,7 +176,13 @@ describe('systemd ServiceManager', () => {
       writeFile: async (path, contents) => { files.set(path, contents); },
       chmod: async (path, mode) => { modes.set(path, mode); },
       removeFile: async (path) => { files.delete(path); },
+      rename: async () => {},
       fileExists: (path) => files.has(path),
+      readFile: (path) => {
+        const contents = files.get(path);
+        if (contents === undefined) throw new Error(`ENOENT: ${path}`);
+        return contents;
+      },
     };
   };
 
@@ -192,13 +204,13 @@ describe('systemd ServiceManager', () => {
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).not.toContain('EnvironmentFile=');
     expect(deps.files.has('/etc/systemd/system/harmonic.env')).toBe(false);
     expect(deps.dirs).toContain('/var/lib/harmonic');
-    expect(deps.dirs).toContain('/var/lib/harmonic/app/versions/2.16.0');
+    expect(deps.dirs).toContain('/var/lib/harmonic/app/versions/.2.16.0.staging');
     expect(deps.calls).toEqual([
       ['chown', 'workspace', '/var/lib/harmonic'],
-      ['npm', 'pack', '--pack-destination', '/var/lib/harmonic/app/versions/2.16.0', '@mintopia/harmonic@2.16.0'],
-      ['tar', '-xzf', '/var/lib/harmonic/app/versions/2.16.0/mintopia-harmonic-2.16.0.tgz', '--strip-components=1', '-C', '/var/lib/harmonic/app/versions/2.16.0'],
-      ['npm', 'pkg', 'delete', 'devDependencies', 'scripts.prepare', '--prefix', '/var/lib/harmonic/app/versions/2.16.0'],
-      ['npm', 'i', '--prefix', '/var/lib/harmonic/app/versions/2.16.0', '--omit=dev'],
+      ['npm', 'pack', '--pack-destination', '/var/lib/harmonic/app/versions/.2.16.0.staging', '@mintopia/harmonic@2.16.0'],
+      ['tar', '-xzf', '/var/lib/harmonic/app/versions/.2.16.0.staging/mintopia-harmonic-2.16.0.tgz', '--strip-components=1', '-C', '/var/lib/harmonic/app/versions/.2.16.0.staging'],
+      ['npm', 'pkg', 'delete', 'devDependencies', 'scripts.prepare', '--prefix', '/var/lib/harmonic/app/versions/.2.16.0.staging'],
+      ['npm', 'i', '--prefix', '/var/lib/harmonic/app/versions/.2.16.0.staging', '--omit=dev'],
       ['chown', '-R', 'workspace', '/var/lib/harmonic/app'],
       ['ln', '-sfn', 'versions/2.16.0', '/var/lib/harmonic/app/current'],
       ['systemctl', 'daemon-reload'],
@@ -233,7 +245,7 @@ describe('systemd ServiceManager', () => {
       serve: { port: '4700', host: '0.0.0.0', dataDir: '/srv/harmonic' },
     });
 
-    expect(deps.dirs).toContain('/srv/harmonic/app/versions/3.1.4');
+    expect(deps.dirs).toContain('/srv/harmonic/app/versions/.3.1.4.staging');
     expect(deps.calls).toContainEqual(['ln', '-sfn', 'versions/3.1.4', '/srv/harmonic/app/current']);
   });
 
@@ -248,7 +260,7 @@ describe('systemd ServiceManager', () => {
     await manager.install(options);
 
     expect(deps.files.get('/srv/harmonic/settings.yaml')).toBe('existing data');
-    expect(deps.dirs).toContain('/srv/harmonic/app/versions/2.16.0');
+    expect(deps.dirs).toContain('/srv/harmonic/app/versions/.2.16.0.staging');
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain(
       'ExecStart=/usr/bin/node /srv/harmonic/app/current/dist/cli.js serve',
     );
@@ -321,13 +333,13 @@ describe('systemd ServiceManager', () => {
     expect(deps.files.get('/home/ada/.config/systemd/user/harmonic.env')).toBe('HARMONIC_PASSWORD="secret value"\n');
     expect(deps.modes.get('/home/ada/.config/systemd/user/harmonic.env')).toBe(0o600);
     expect(deps.dirs).toContain('/home/ada/.harmonic');
-    expect(deps.dirs).toContain('/home/ada/.harmonic/app/versions/2.16.0');
+    expect(deps.dirs).toContain('/home/ada/.harmonic/app/versions/.2.16.0.staging');
     expect(deps.calls).toEqual([
       ['loginctl', 'enable-linger', 'ada'],
-      ['npm', 'pack', '--pack-destination', '/home/ada/.harmonic/app/versions/2.16.0', '@mintopia/harmonic@2.16.0'],
-      ['tar', '-xzf', '/home/ada/.harmonic/app/versions/2.16.0/mintopia-harmonic-2.16.0.tgz', '--strip-components=1', '-C', '/home/ada/.harmonic/app/versions/2.16.0'],
-      ['npm', 'pkg', 'delete', 'devDependencies', 'scripts.prepare', '--prefix', '/home/ada/.harmonic/app/versions/2.16.0'],
-      ['npm', 'i', '--prefix', '/home/ada/.harmonic/app/versions/2.16.0', '--omit=dev'],
+      ['npm', 'pack', '--pack-destination', '/home/ada/.harmonic/app/versions/.2.16.0.staging', '@mintopia/harmonic@2.16.0'],
+      ['tar', '-xzf', '/home/ada/.harmonic/app/versions/.2.16.0.staging/mintopia-harmonic-2.16.0.tgz', '--strip-components=1', '-C', '/home/ada/.harmonic/app/versions/.2.16.0.staging'],
+      ['npm', 'pkg', 'delete', 'devDependencies', 'scripts.prepare', '--prefix', '/home/ada/.harmonic/app/versions/.2.16.0.staging'],
+      ['npm', 'i', '--prefix', '/home/ada/.harmonic/app/versions/.2.16.0.staging', '--omit=dev'],
       ['ln', '-sfn', 'versions/2.16.0', '/home/ada/.harmonic/app/current'],
       ['systemctl', '--user', 'daemon-reload'],
       ['systemctl', '--user', 'enable', 'harmonic'],
