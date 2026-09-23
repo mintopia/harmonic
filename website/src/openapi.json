@@ -25226,6 +25226,98 @@
                     "migrationRequired": {
                       "type": "boolean"
                     },
+                    "guardMissing": {
+                      "type": "boolean"
+                    },
+                    "mode": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "systemd",
+                            "initd",
+                            "migration-required",
+                            "external"
+                          ]
+                        },
+                        "instruction": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "command"
+                                  ]
+                                },
+                                "command": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "command"
+                              ],
+                              "additionalProperties": false,
+                              "description": "An exact shell command the operator can copy and run to upgrade manually."
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "manual"
+                                  ]
+                                },
+                                "instructions": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "instructions"
+                              ],
+                              "additionalProperties": false,
+                              "description": "Free-text upgrade instructions, used when no exact command is known."
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "failed": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "targetVersion": {
+                              "type": "string"
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "targetVersion",
+                            "reason",
+                            "at"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "idle": {
                       "type": "object",
                       "properties": {
@@ -25256,6 +25348,9 @@
                     "upgradingVersion",
                     "dismissedVersion",
                     "migrationRequired",
+                    "guardMissing",
+                    "mode",
+                    "failed",
                     "idle"
                   ],
                   "additionalProperties": false,
@@ -25335,6 +25430,98 @@
                     "migrationRequired": {
                       "type": "boolean"
                     },
+                    "guardMissing": {
+                      "type": "boolean"
+                    },
+                    "mode": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "systemd",
+                            "initd",
+                            "migration-required",
+                            "external"
+                          ]
+                        },
+                        "instruction": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "command"
+                                  ]
+                                },
+                                "command": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "command"
+                              ],
+                              "additionalProperties": false,
+                              "description": "An exact shell command the operator can copy and run to upgrade manually."
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "manual"
+                                  ]
+                                },
+                                "instructions": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "instructions"
+                              ],
+                              "additionalProperties": false,
+                              "description": "Free-text upgrade instructions, used when no exact command is known."
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "failed": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "targetVersion": {
+                              "type": "string"
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "targetVersion",
+                            "reason",
+                            "at"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "idle": {
                       "type": "object",
                       "properties": {
@@ -25365,6 +25552,9 @@
                     "upgradingVersion",
                     "dismissedVersion",
                     "migrationRequired",
+                    "guardMissing",
+                    "mode",
+                    "failed",
                     "idle"
                   ],
                   "additionalProperties": false,
@@ -25374,7 +25564,7 @@
             }
           },
           "409": {
-            "description": "No update is currently available to arm.",
+            "description": "No update is currently available to arm, or a previously armed one is already switching versions.",
             "content": {
               "application/json": {
                 "schema": {
@@ -25400,7 +25590,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The unarmed update state and current drain-to-idle blockers.",
+            "description": "The unarmed update state and current drain-to-idle blockers, or the unchanged state if the swap has already started stopping and hasn't yet.",
             "content": {
               "application/json": {
                 "schema": {
@@ -25452,6 +25642,98 @@
                     "migrationRequired": {
                       "type": "boolean"
                     },
+                    "guardMissing": {
+                      "type": "boolean"
+                    },
+                    "mode": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "systemd",
+                            "initd",
+                            "migration-required",
+                            "external"
+                          ]
+                        },
+                        "instruction": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "command"
+                                  ]
+                                },
+                                "command": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "command"
+                              ],
+                              "additionalProperties": false,
+                              "description": "An exact shell command the operator can copy and run to upgrade manually."
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "manual"
+                                  ]
+                                },
+                                "instructions": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "instructions"
+                              ],
+                              "additionalProperties": false,
+                              "description": "Free-text upgrade instructions, used when no exact command is known."
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "failed": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "targetVersion": {
+                              "type": "string"
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "targetVersion",
+                            "reason",
+                            "at"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "idle": {
                       "type": "object",
                       "properties": {
@@ -25482,10 +25764,23 @@
                     "upgradingVersion",
                     "dismissedVersion",
                     "migrationRequired",
+                    "guardMissing",
+                    "mode",
+                    "failed",
                     "idle"
                   ],
                   "additionalProperties": false,
-                  "description": "The unarmed update state and current drain-to-idle blockers."
+                  "description": "The unarmed update state and current drain-to-idle blockers, or the unchanged state if the swap has already started stopping and hasn't yet."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The swap has already committed to the new version and can no longer be cancelled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -25561,6 +25856,98 @@
                     "migrationRequired": {
                       "type": "boolean"
                     },
+                    "guardMissing": {
+                      "type": "boolean"
+                    },
+                    "mode": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "systemd",
+                            "initd",
+                            "migration-required",
+                            "external"
+                          ]
+                        },
+                        "instruction": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "command"
+                                  ]
+                                },
+                                "command": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "command"
+                              ],
+                              "additionalProperties": false,
+                              "description": "An exact shell command the operator can copy and run to upgrade manually."
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "manual"
+                                  ]
+                                },
+                                "instructions": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "instructions"
+                              ],
+                              "additionalProperties": false,
+                              "description": "Free-text upgrade instructions, used when no exact command is known."
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "failed": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "targetVersion": {
+                              "type": "string"
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "targetVersion",
+                            "reason",
+                            "at"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "idle": {
                       "type": "object",
                       "properties": {
@@ -25591,6 +25978,9 @@
                     "upgradingVersion",
                     "dismissedVersion",
                     "migrationRequired",
+                    "guardMissing",
+                    "mode",
+                    "failed",
                     "idle"
                   ],
                   "additionalProperties": false,
@@ -25670,6 +26060,98 @@
                     "migrationRequired": {
                       "type": "boolean"
                     },
+                    "guardMissing": {
+                      "type": "boolean"
+                    },
+                    "mode": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "systemd",
+                            "initd",
+                            "migration-required",
+                            "external"
+                          ]
+                        },
+                        "instruction": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "command"
+                                  ]
+                                },
+                                "command": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "command"
+                              ],
+                              "additionalProperties": false,
+                              "description": "An exact shell command the operator can copy and run to upgrade manually."
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "manual"
+                                  ]
+                                },
+                                "instructions": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "instructions"
+                              ],
+                              "additionalProperties": false,
+                              "description": "Free-text upgrade instructions, used when no exact command is known."
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "failed": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "targetVersion": {
+                              "type": "string"
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "targetVersion",
+                            "reason",
+                            "at"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "idle": {
                       "type": "object",
                       "properties": {
@@ -25700,6 +26182,9 @@
                     "upgradingVersion",
                     "dismissedVersion",
                     "migrationRequired",
+                    "guardMissing",
+                    "mode",
+                    "failed",
                     "idle"
                   ],
                   "additionalProperties": false,

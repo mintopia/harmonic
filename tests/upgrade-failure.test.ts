@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { startServer, type TestServer } from './helpers.js';
+import { startServer, waitFor, type TestServer } from './helpers.js';
 
 describe('failed idle upgrade', () => {
   let server: TestServer | undefined;
@@ -17,6 +17,10 @@ describe('failed idle upgrade', () => {
 
     await server.app.ctx.upgrade.arm();
     await server.app.ctx.upgrade.reconcile();
+    await waitFor(async () => {
+      const state = await server!.app.ctx.upgrade.state();
+      return state.phase.kind === 'unarmed' ? true : undefined;
+    });
 
     await expect(server.app.ctx.upgrade.state()).resolves.toEqual({
       version: '2.6.0',

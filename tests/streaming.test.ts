@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { startServer, stubHarness, waitFor, connectFirehose, type TestServer } from './helpers.js';
+import { startServer, stubHarness, waitFor, connectFirehose, cancelRunningTasks, type TestServer } from './helpers.js';
 
 describe('live structured run event streaming and replay', () => {
   let server: TestServer;
@@ -94,8 +94,9 @@ describe('live structured run event streaming and replay', () => {
     await waitFor(async () =>
       ws.messages.some((m) => m.type === 'task_changed' && m.task.id === created.body.id),
     );
-    const rest = await server.api('GET', `/api/tasks/${created.body.id}`);
+    let rest = await server.api('GET', `/api/tasks/${created.body.id}`);
     const msg = await waitFor(async () => {
+      rest = await server.api('GET', `/api/tasks/${created.body.id}`);
       const latest = ws.messages.findLast((m) => m.type === 'task_changed' && m.task.id === created.body.id);
       return latest && isDeepStrictEqual(latest.task, rest.body) ? latest : undefined;
     });
@@ -108,6 +109,136 @@ describe('live structured run event streaming and replay', () => {
 
     expect(msg.task).toEqual(rest.body);
     ws.close();
+  });
+
+  it('never lets a slow, older task_changed overtake a newer one for the same task', async () => {
+    const ws = await connectFirehose(server);
+    const created = await server.api('POST', '/api/tasks', { prompt: 'original', state: 'draft' });
+    const row = await server.app.ctx.tasks.get(created.body.id);
+    const tasks = server.app.ctx.tasks;
+    const withDeps = tasks.withDeps.bind(tasks);
+    let delayNext = true;
+    tasks.withDeps = async (task) => {
+      if (delayNext) {
+        delayNext = false;
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+      return withDeps(task);
+    };
+
+    try {
+      server.app.ctx.bus.emit('task_changed', { ...row, prompt: 'older' });
+      server.app.ctx.bus.emit('task_changed', { ...row, prompt: 'newer' });
+      await waitFor(async () =>
+        ws.messages.some((m) => m.type === 'task_changed' && m.task.id === created.body.id && m.task.prompt === 'newer'),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    } finally {
+      tasks.withDeps = withDeps;
+    }
+
+    const latest = ws.messages.findLast((m) => m.type === 'task_changed' && m.task.id === created.body.id);
+    expect(latest.task.prompt).toBe('newer');
+    ws.close();
+  });
+
+  it('never sends a slow task_changed after that task was removed', async () => {
+    const ws = await connectFirehose(server);
+    const created = await server.api('POST', '/api/tasks', { prompt: 'doomed', state: 'draft' });
+    const row = await server.app.ctx.tasks.get(created.body.id);
+    const tasks = server.app.ctx.tasks;
+    const withDeps = tasks.withDeps.bind(tasks);
+    tasks.withDeps = async (task) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return withDeps(task);
+    };
+
+    try {
+      server.app.ctx.bus.emit('task_changed', { ...row, prompt: 'late' });
+      server.app.ctx.bus.emit('task_removed', { id: created.body.id });
+      await waitFor(async () => ws.messages.some((m) => m.type === 'task_removed' && m.id === created.body.id));
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    } finally {
+      tasks.withDeps = withDeps;
+    }
+
+    const forTask = ws.messages.filter((m) => (m.type === 'task_changed' && m.task.id === created.body.id) || (m.type === 'task_removed' && m.id === created.body.id));
+    expect(forTask.at(-1)?.type).toBe('task_removed');
+    ws.close();
+  });
+
+  it('never lets a slow, older attempt_changed overtake a newer one for the same attempt', async () => {
+    const ws = await connectFirehose(server);
+    const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ exit: 'hang' }) });
+    const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+    const attemptId = started.body.id;
+    const row = await server.app.ctx.attempts.get(attemptId);
+    const attempts = server.app.ctx.attempts;
+    const listToolCalls = attempts.listToolCalls.bind(attempts);
+    let delayNext = true;
+    attempts.listToolCalls = async (id) => {
+      if (delayNext) {
+        delayNext = false;
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+      return listToolCalls(id);
+    };
+
+    try {
+      server.app.ctx.bus.emit('attempt_changed', { ...row, prompt: 'older' });
+      server.app.ctx.bus.emit('attempt_changed', { ...row, prompt: 'newer' });
+      await waitFor(async () =>
+        ws.messages.some((m) => m.type === 'attempt_changed' && m.run.id === attemptId && m.run.prompt === 'newer'),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    } finally {
+      attempts.listToolCalls = listToolCalls;
+    }
+
+    // Close before asserting: a failing assertion must not leak this connection's bus listener into later tests.
+    const latest = ws.messages.findLast((m) => m.type === 'attempt_changed' && m.run.id === attemptId);
+    ws.close();
+    await cancelRunningTasks(server);
+    expect(latest.run.prompt).toBe('newer');
+  });
+
+  it('never lets a slow, older conversation_changed overtake a newer one for the same conversation', async () => {
+    const ws = await connectFirehose(server);
+    const created = await server.api('POST', '/api/conversations', {});
+    const conversationId = created.body.id;
+    // Wait for both the creation and session-open broadcasts, so the delay patch below only intercepts the 'older' emit.
+    await waitFor(async () =>
+      ws.messages.some((m) => m.type === 'conversation_changed' && m.conversation.id === conversationId && m.conversation.sessionId !== null),
+    );
+
+    const row = await server.app.ctx.conversations.get(conversationId);
+    const conversations = server.app.ctx.conversations;
+    const firstTurnText = conversations.firstTurnText.bind(conversations);
+    let delayNext = true;
+    conversations.firstTurnText = async (id) => {
+      if (id === conversationId && delayNext) {
+        delayNext = false;
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+      return firstTurnText(id);
+    };
+
+    try {
+      server.app.ctx.bus.emit('conversation_changed', { ...row, workingDir: 'older' });
+      server.app.ctx.bus.emit('conversation_changed', { ...row, workingDir: 'newer' });
+      await waitFor(async () =>
+        ws.messages.some(
+          (m) => m.type === 'conversation_changed' && m.conversation.id === conversationId && m.conversation.workingDir === 'newer',
+        ),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    } finally {
+      conversations.firstTurnText = firstTurnText;
+    }
+    // Close before asserting: a failing assertion must not leak this connection's bus listener into later tests.
+    const latest = ws.messages.findLast((m) => m.type === 'conversation_changed' && m.conversation.id === conversationId);
+    ws.close();
+    expect(latest.conversation.workingDir).toBe('newer');
   });
 
   it('re-broadcasts a dependant when its blocker escalates, so blockedOnFailed shows live', async () => {

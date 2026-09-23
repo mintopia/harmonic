@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
+import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { existsSync, readFileSync, readlinkSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { z } from 'zod';
+import { installVersion } from './upgrade/version-install.js';
 
 const execFileAsync = promisify(execFile);
 const packageVersionSchema = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/);
@@ -53,6 +54,22 @@ export interface ServiceStatus {
   detail?: string;
 }
 
+export interface ExistingServiceSettings {
+  serve: {
+    /** Undefined only when the existing unit couldn't determine it and the caller passed it explicitly instead. */
+    port?: string | undefined;
+    host?: string | undefined;
+    dataDir?: string | undefined;
+    otelEndpoint?: string | undefined;
+    otelHeaders?: string | undefined;
+    otelExport?: string | undefined;
+    otelMetricExportInterval?: string | undefined;
+    otelStdoutLogLevel?: string | undefined;
+  };
+  user?: string;
+  password?: string;
+}
+
 export interface ServiceManager {
   readonly backend: ServiceBackend;
   install(options: ServiceInstallOptions): Promise<ServiceInstallResult>;
@@ -62,6 +79,10 @@ export interface ServiceManager {
   restart(): Promise<void>;
   status(): Promise<ServiceStatus>;
   isInstalled(): Promise<boolean>;
+  /** Without `explicit`, an unparseable unit is a lenient no-op (warns, returns null); with it, an unparseable unit throws instead, unless --port/--host/--data-dir were all passed explicitly. */
+  readExistingSettings(explicit?: ReadonlySet<string>): Promise<ExistingServiceSettings | null>;
+  /** Systemd-only self-heal for a pre-boot-guard unit (ADR-0042). */
+  ensureUnitRevisionCurrent?(): Promise<boolean>;
 }
 
 interface CommandResult {
@@ -79,7 +100,13 @@ export interface ServiceManagerDependencies {
   writeFile(path: string, contents: string): Promise<void>;
   chmod(path: string, mode: number): Promise<void>;
   removeFile(path: string): Promise<void>;
+  rename(from: string, to: string): Promise<void>;
   fileExists(path: string): boolean;
+  readFile(path: string, encoding: 'utf8'): string;
+  /** Returns the file's contents, or null if it doesn't exist or can't be read. */
+  readTextFile(path: string): Promise<string | null>;
+  /** The symlink target at `path`, or null if it isn't a symlink (including if it doesn't exist). */
+  readlink(path: string): string | null;
   sudoUser?: string;
   warn?(message: string): void;
 }
@@ -97,8 +124,24 @@ const defaultDependencies = (): ServiceManagerDependencies => ({
   mkdir: async (path) => { await mkdir(path, { recursive: true }); },
   writeFile: async (path, contents) => { await writeFile(path, contents, 'utf8'); },
   chmod,
-  removeFile: async (path) => { await rm(path, { force: true }); },
+  removeFile: async (path) => { await rm(path, { recursive: true, force: true }); },
+  rename: async (from, to) => { await rename(from, to); },
   fileExists: existsSync,
+  readFile: (path) => readFileSync(path, 'utf8'),
+  readlink: (path) => {
+    try {
+      return readlinkSync(path);
+    } catch {
+      return null;
+    }
+  },
+  readTextFile: async (path) => {
+    try {
+      return await readFile(path, 'utf8');
+    } catch {
+      return null;
+    }
+  },
   ...(process.env.SUDO_USER === undefined ? {} : { sudoUser: process.env.SUDO_USER }),
 });
 
@@ -126,6 +169,118 @@ const unitEnvironment = (key: string, value: string): string => {
   return /^[A-Za-z0-9_./:=+@%,-]+$/.test(assignment) ? assignment : JSON.stringify(assignment);
 };
 
+/** Splits an ExecStart value back into arguments, reversing escapeUnitArgument's quoting. */
+const tokenizeUnitArgs = (execStart: string): string[] | null => {
+  const tokens: string[] = [];
+  let i = 0;
+  const n = execStart.length;
+  while (i < n) {
+    while (i < n && execStart[i] === ' ') i++;
+    if (i >= n) break;
+    if (execStart[i] === '"') {
+      let j = i + 1;
+      while (j < n && execStart[j] !== '"') {
+        j += execStart[j] === '\\' ? 2 : 1;
+      }
+      if (j >= n) return null;
+      try {
+        const value: unknown = JSON.parse(execStart.slice(i, j + 1));
+        if (typeof value !== 'string') return null;
+        tokens.push(value);
+      } catch {
+        return null;
+      }
+      i = j + 1;
+    } else {
+      let j = i;
+      while (j < n && execStart[j] !== ' ') j++;
+      tokens.push(execStart.slice(i, j));
+      i = j;
+    }
+  }
+  return tokens;
+};
+
+const execStartServeSchema = z.object({
+  port: z.string(),
+  host: z.string(),
+  dataDir: z.string(),
+  otelEndpoint: z.string().optional(),
+  otelHeaders: z.string().optional(),
+  otelExport: z.string().optional(),
+  otelMetricExportInterval: z.string().optional(),
+  otelStdoutLogLevel: z.string().optional(),
+});
+
+const execStartFlags: Record<string, keyof z.infer<typeof execStartServeSchema>> = {
+  '--port': 'port',
+  '--host': 'host',
+  '--data-dir': 'dataDir',
+  '--otel-endpoint': 'otelEndpoint',
+  '--otel-headers': 'otelHeaders',
+  '--otel-export': 'otelExport',
+  '--otel-metric-export-interval': 'otelMetricExportInterval',
+  '--otel-stdout-log-level': 'otelStdoutLogLevel',
+};
+
+interface ParsedExecStart {
+  serve: Partial<Record<keyof z.infer<typeof execStartServeSchema>, string>>;
+  unparsedTokens: string[];
+}
+
+/** Handles both `--flag value` (this file writer's own form) and `--flag=value` (hand-edited or foreign units). Never silently drops a token: anything unattributed comes back in `unparsedTokens`. */
+const parseExecStartTokens = (unitContents: string): ParsedExecStart => {
+  const match = /^ExecStart=(.*)$/m.exec(unitContents);
+  if (!match?.[1]) return { serve: {}, unparsedTokens: ['(no ExecStart line found)'] };
+  const tokens = tokenizeUnitArgs(match[1]);
+  if (!tokens || tokens.length < 3 || tokens[2] !== 'serve') return { serve: {}, unparsedTokens: [match[1]] };
+  const serve: ParsedExecStart['serve'] = {};
+  const unparsedTokens: string[] = [];
+  let i = 3;
+  while (i < tokens.length) {
+    const token = tokens[i]!;
+    const equals = token.startsWith('--') ? token.indexOf('=') : -1;
+    if (equals !== -1) {
+      const key = execStartFlags[token.slice(0, equals)];
+      if (key) serve[key] = token.slice(equals + 1);
+      else unparsedTokens.push(token);
+      i += 1;
+      continue;
+    }
+    const key = execStartFlags[token];
+    const value = tokens[i + 1];
+    if (key && value !== undefined) {
+      serve[key] = value;
+      i += 2;
+      continue;
+    }
+    unparsedTokens.push(token);
+    i += 1;
+  }
+  return { serve, unparsedTokens };
+};
+
+const parseUnitUser = (unitContents: string): string | undefined => /^User=(.+)$/m.exec(unitContents)?.[1];
+
+export const unitRevision = (unitContents: string): number => {
+  const match = /^Environment=HARMONIC_UNIT_REVISION=(\d+)$/m.exec(unitContents);
+  return match?.[1] ? Number(match[1]) : 0;
+};
+
+/** The revision `unit()` currently writes; bump alongside any change `unitRevision` callers must react to. */
+export const CURRENT_UNIT_REVISION = 2;
+
+const parseEnvPassword = (envContents: string): { ok: true; password: string | undefined } | { ok: false } => {
+  const match = /^HARMONIC_PASSWORD=(.*)$/m.exec(envContents);
+  if (!match) return { ok: true, password: undefined };
+  try {
+    const value: unknown = JSON.parse(match[1]!);
+    return typeof value === 'string' ? { ok: true, password: value } : { ok: false };
+  } catch {
+    return { ok: false };
+  }
+};
+
 const initdScriptPath = '/etc/init.d/harmonic';
 
 const ensureDataDir = async (dependencies: ServiceManagerDependencies, dataDir: string, user?: string): Promise<void> => {
@@ -133,11 +288,26 @@ const ensureDataDir = async (dependencies: ServiceManagerDependencies, dataDir: 
   if (user !== undefined) await dependencies.run('chown', [user, dataDir]);
 };
 
+/** Copies the newly installed version's boot guard to `app/boot-guard.cjs`, so a pending boot always runs a guard shipped by the release it's about to boot (ADR-0042). */
+const copyBootGuard = async (dependencies: ServiceManagerDependencies, appDir: string, version: string): Promise<void> => {
+  const guardSource = join(appDir, 'versions', version, 'dist', 'upgrade', 'boot-guard.cjs');
+  if (dependencies.fileExists(guardSource)) {
+    await dependencies.writeFile(join(appDir, 'boot-guard.cjs'), dependencies.readFile(guardSource, 'utf8'));
+  }
+};
+
 export const shellWord = (value: string): string => /^[A-Za-z0-9_./:-]+$/.test(value)
   ? value
   : `'${value.replaceAll("'", "'\"'\"'")}'`;
 
-const initdScript = ({ dataDir, user }: { dataDir: string; user: string }): string => `#!/bin/sh
+export const initdScript = ({ dataDir, user, nodePath }: { dataDir: string; user: string; nodePath: string }): string => {
+  const cli = shellWord(join(dataDir, 'app', 'current', 'dist', 'cli.js'));
+  const runCli = `HARMONIC_INITD_SERVICE=1 HARMONIC_MANAGED_BY=initd runuser -u ${shellWord(user)} -- ${shellWord(nodePath)} ${cli}`;
+  // The guard's own code always exits 0 (ADR-0042); `|| true` guards against it failing to run at
+  // all (missing file, permission). Runs as the service user so any rollback.json/pending.json it
+  // writes stays owned by that user.
+  const runGuard = `runuser -u ${shellWord(user)} -- ${shellWord(nodePath)} ${shellWord(join(dataDir, 'app', 'boot-guard.cjs'))} ${shellWord(dataDir)} || true`;
+  return `#!/bin/sh
 ### BEGIN INIT INFO
 # Provides:          harmonic
 # Required-Start:    $network
@@ -154,13 +324,17 @@ fi
 
 case "$1" in
   start)
-    HARMONIC_INITD_SERVICE=1 runuser -u ${shellWord(user)} -- harmonic start --data-dir ${shellWord(dataDir)}
+    if ${runCli} status --data-dir ${shellWord(dataDir)} >/dev/null 2>&1; then
+      exit 0
+    fi
+    ${runGuard}
+    ${runCli} start --data-dir ${shellWord(dataDir)}
     ;;
   stop)
-    HARMONIC_INITD_SERVICE=1 runuser -u ${shellWord(user)} -- harmonic stop --data-dir ${shellWord(dataDir)}
+    ${runCli} stop --data-dir ${shellWord(dataDir)}
     ;;
   status)
-    HARMONIC_INITD_SERVICE=1 runuser -u ${shellWord(user)} -- harmonic status --data-dir ${shellWord(dataDir)}
+    ${runCli} status --data-dir ${shellWord(dataDir)}
     ;;
   restart|force-reload)
     "$0" stop
@@ -172,6 +346,7 @@ case "$1" in
     ;;
 esac
 `;
+};
 
 class SystemdServiceManager implements ServiceManager {
   readonly backend: 'systemd' | 'user-systemd';
@@ -219,7 +394,12 @@ class SystemdServiceManager implements ServiceManager {
     // install-time PATH so the harness can spawn its agents and in-place upgrades
     // can reach npm.
     const pathEnvironment = this.dependencies.path ? `Environment=${unitEnvironment('PATH', this.dependencies.path)}\n` : '';
-    return `[Unit]\nDescription=Harmonic\nAfter=network.target\n\n[Service]\nType=simple\n${serviceUser}${workingDirectory}ExecStart=${args}\n${environmentFile}${pathEnvironment}Environment=HARMONIC_MANAGED_BY=systemd\nRestart=always\nTimeoutStopSec=60\n\n[Install]\nWantedBy=${wantedBy}\n`;
+    // `-` tells systemd to ignore this step's exit code, guarding against the guard failing to run
+    // at all; the guard's own code always exits 0 (ADR-0042).
+    const execStartPre = [this.dependencies.nodePath, join(serve.dataDir, 'app', 'boot-guard.cjs'), serve.dataDir]
+      .map(escapeUnitArgument)
+      .join(' ');
+    return `[Unit]\nDescription=Harmonic\nAfter=network.target\nStartLimitIntervalSec=120\nStartLimitBurst=10\n\n[Service]\nType=simple\nExecStartPre=-${execStartPre}\n${serviceUser}${workingDirectory}ExecStart=${args}\n${environmentFile}${pathEnvironment}Environment=HARMONIC_MANAGED_BY=systemd\nEnvironment=HARMONIC_UNIT_REVISION=${CURRENT_UNIT_REVISION}\nRestart=always\nRestartSec=2\nTimeoutStopSec=60\n\n[Install]\nWantedBy=${wantedBy}\n`;
   }
 
   async install(options: ServiceInstallOptions): Promise<ServiceInstallResult> {
@@ -227,17 +407,26 @@ class SystemdServiceManager implements ServiceManager {
     const user = this.userUnit ? undefined : systemdServiceUser(resolveServiceUser({ user: options.user, sudoUser: this.dependencies.sudoUser }));
     if (user === 'root') warn(this.dependencies, 'Harmonic will run as root. Pass --user to run it as a non-root user.');
     if (this.userUnit && options.user !== undefined) warn(this.dependencies, '--user is ignored for user-level systemd.');
+    // Captured before any change: a fresh install (never run before) must still `start`, not `restart`.
+    const wasRunning = (await this.status()).running;
     if (this.userUnit) await this.dependencies.run('loginctl', ['enable-linger', this.dependencies.userName]);
     await ensureDataDir(this.dependencies, options.serve.dataDir, user);
     const appDir = join(options.serve.dataDir, 'app');
     const version = packageVersionSchema.parse(this.dependencies.currentVersion);
-    const versionDir = join(appDir, 'versions', version);
-    await this.dependencies.mkdir(versionDir);
-    await this.dependencies.run('npm', ['pack', '--pack-destination', versionDir, `@mintopia/harmonic@${version}`]);
-    await this.dependencies.run('tar', ['-xzf', join(versionDir, `mintopia-harmonic-${version}.tgz`), '--strip-components=1', '-C', versionDir]);
-    // --omit=dev still resolves the dev tree (npm crashes on its peer cycle) and runs prepare's build.
-    await this.dependencies.run('npm', ['pkg', 'delete', 'devDependencies', 'scripts.prepare', '--prefix', versionDir]);
-    await this.dependencies.run('npm', ['i', '--prefix', versionDir, '--omit=dev']);
+    await installVersion({
+      appDir,
+      version,
+      dependencies: {
+        run: this.dependencies.run,
+        mkdir: this.dependencies.mkdir,
+        rm: this.dependencies.removeFile,
+        rename: this.dependencies.rename,
+        fileExists: this.dependencies.fileExists,
+        readFile: this.dependencies.readFile,
+        readlink: this.dependencies.readlink,
+      },
+    });
+    await copyBootGuard(this.dependencies, appDir, version);
     if (user !== undefined) await this.dependencies.run('chown', ['-R', user, appDir]);
     await this.dependencies.run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
     await this.dependencies.mkdir(this.unitDirectory);
@@ -251,7 +440,9 @@ class SystemdServiceManager implements ServiceManager {
     await this.dependencies.chmod(this.unitPath, 0o644);
     await this.systemctl('daemon-reload');
     await this.systemctl('enable', 'harmonic');
-    await this.systemctl('start', 'harmonic');
+    // Restarting (not starting) an already-running unit is what makes the newly installed code and
+    // unit settings actually take effect — `start` on a unit systemd already considers active is a no-op.
+    await this.systemctl(wasRunning ? 'restart' : 'start', 'harmonic');
     return { backend: this.backend, status: await this.status() };
   }
 
@@ -280,6 +471,78 @@ class SystemdServiceManager implements ServiceManager {
   }
 
   async isInstalled(): Promise<boolean> { return this.dependencies.fileExists(this.unitPath); }
+
+  async readExistingSettings(explicit?: ReadonlySet<string>): Promise<ExistingServiceSettings | null> {
+    if (!this.dependencies.fileExists(this.unitPath)) return null;
+    const unitContents = await this.dependencies.readTextFile(this.unitPath);
+    if (unitContents === null) return null;
+    const parsed = parseExecStartTokens(unitContents);
+    const missingRequired = (['port', 'host', 'dataDir'] as const).filter((key) => parsed.serve[key] === undefined);
+    if (parsed.unparsedTokens.length > 0 || missingRequired.length > 0) {
+      const requiredFlagsExplicit = explicit !== undefined
+        && explicit.has('port') && explicit.has('host') && explicit.has('data-dir');
+      if (!requiredFlagsExplicit) {
+        if (explicit === undefined) {
+          warn(
+            this.dependencies,
+            `Could not parse the existing unit at ${this.unitPath}; reinstalling with the values you passed (or their defaults) instead of the running service's settings.`,
+          );
+          return null;
+        }
+        const problems = [
+          ...parsed.unparsedTokens.map((token) => `unrecognized ExecStart argument ${JSON.stringify(token)}`),
+          ...missingRequired.map((key) => `could not determine --${key === 'dataDir' ? 'data-dir' : key}`),
+        ];
+        throw new Error(
+          `Could not fully parse the existing unit at ${this.unitPath} (${problems.join('; ')}). ` +
+            'Refusing to reinstall without its settings — pass --port, --host, and --data-dir explicitly to override.',
+        );
+      }
+    }
+    const user = parseUnitUser(unitContents);
+    const settings: ExistingServiceSettings = { serve: parsed.serve, ...(user === undefined ? {} : { user }) };
+    if (this.dependencies.fileExists(this.environmentPath)) {
+      const envContents = await this.dependencies.readTextFile(this.environmentPath);
+      if (envContents === null) {
+        throw new Error(`Could not read the existing password file at ${this.environmentPath}; refusing to reinstall without it. Pass --password explicitly to replace it deliberately.`);
+      }
+      const parsedEnv = parseEnvPassword(envContents);
+      if (!parsedEnv.ok) {
+        throw new Error(`Could not read the existing password from ${this.environmentPath}; refusing to reinstall without it. Pass --password explicitly to replace it deliberately.`);
+      }
+      if (parsedEnv.password !== undefined) settings.password = parsedEnv.password;
+    }
+    return settings;
+  }
+
+  /** Rewrites the unit file and reloads systemd if its `HARMONIC_UNIT_REVISION` predates the boot guard (ADR-0042); no-op when already current or no unit is installed. Throws if the existing unit can't be read or parsed, so callers can distinguish "healed" from "guard status unknown". */
+  async ensureUnitRevisionCurrent(): Promise<boolean> {
+    if (!this.dependencies.fileExists(this.unitPath)) return false;
+    const unitContents = await this.dependencies.readTextFile(this.unitPath);
+    if (unitContents === null) {
+      throw new Error(`could not read the existing unit at ${this.unitPath}; refusing to self-heal without it`);
+    }
+    if (unitRevision(unitContents) >= CURRENT_UNIT_REVISION) return false;
+    const existing = await this.readExistingSettings();
+    if (existing === null || existing.serve.port === undefined || existing.serve.host === undefined || existing.serve.dataDir === undefined) {
+      throw new Error(`could not fully parse the existing unit at ${this.unitPath}; refusing to self-heal without its settings`);
+    }
+    const serve: ServiceServeOptions = {
+      port: existing.serve.port,
+      host: existing.serve.host,
+      dataDir: existing.serve.dataDir,
+      ...(existing.password === undefined ? {} : { password: existing.password }),
+      ...(existing.serve.otelEndpoint === undefined ? {} : { otelEndpoint: existing.serve.otelEndpoint }),
+      ...(existing.serve.otelHeaders === undefined ? {} : { otelHeaders: existing.serve.otelHeaders }),
+      ...(existing.serve.otelExport === undefined ? {} : { otelExport: existing.serve.otelExport }),
+      ...(existing.serve.otelMetricExportInterval === undefined ? {} : { otelMetricExportInterval: existing.serve.otelMetricExportInterval }),
+      ...(existing.serve.otelStdoutLogLevel === undefined ? {} : { otelStdoutLogLevel: existing.serve.otelStdoutLogLevel }),
+    };
+    await this.dependencies.writeFile(this.unitPath, this.unit(serve, existing.user));
+    await this.dependencies.chmod(this.unitPath, 0o644);
+    await this.systemctl('daemon-reload');
+    return true;
+  }
 }
 
 class InitdServiceManager implements ServiceManager {
@@ -293,11 +556,33 @@ class InitdServiceManager implements ServiceManager {
     if (user === 'root') {
       warn(this.dependencies, 'Harmonic will run as root. Pass --user to run it as a non-root user.');
     }
-    await ensureDataDir(this.dependencies, options.serve.dataDir, user);
-    await this.dependencies.writeFile(initdScriptPath, initdScript({ dataDir: options.serve.dataDir, user }));
+    const dataDir = options.serve.dataDir;
+    // Captured before any change: a fresh install (never run before) must still `start`, not `restart`.
+    const wasRunning = (await this.status()).running;
+    await ensureDataDir(this.dependencies, dataDir, user);
+    const appDir = join(dataDir, 'app');
+    const version = packageVersionSchema.parse(this.dependencies.currentVersion);
+    await installVersion({
+      appDir,
+      version,
+      dependencies: {
+        run: this.dependencies.run,
+        mkdir: this.dependencies.mkdir,
+        rm: this.dependencies.removeFile,
+        rename: this.dependencies.rename,
+        fileExists: this.dependencies.fileExists,
+        readFile: this.dependencies.readFile,
+        readlink: this.dependencies.readlink,
+      },
+    });
+    await copyBootGuard(this.dependencies, appDir, version);
+    await this.dependencies.run('chown', ['-R', user, appDir]);
+    await this.dependencies.run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
+    await this.dependencies.writeFile(initdScriptPath, initdScript({ dataDir, user, nodePath: this.dependencies.nodePath }));
     await this.dependencies.chmod(initdScriptPath, 0o755);
     await this.dependencies.run('update-rc.d', ['harmonic', 'defaults']);
-    await this.start();
+    // Restart (not start): the init.d script's own `start` case no-ops when already running, which would silently skip the upgrade.
+    if (wasRunning) await this.restart(); else await this.start();
     return { backend: this.backend };
   }
 
@@ -323,6 +608,8 @@ class InitdServiceManager implements ServiceManager {
   }
 
   async isInstalled(): Promise<boolean> { return this.dependencies.fileExists(initdScriptPath); }
+
+  async readExistingSettings(): Promise<ExistingServiceSettings | null> { return null; }
 }
 
 export class UnsupportedServicePlatformError extends Error {
@@ -354,6 +641,10 @@ class SelfManagedServiceManager implements ServiceManager {
 
   async isInstalled(): Promise<boolean> {
     return false;
+  }
+
+  async readExistingSettings(): Promise<ExistingServiceSettings | null> {
+    return null;
   }
 }
 

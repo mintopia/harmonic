@@ -10,10 +10,14 @@ import { TrackerPollerManager } from '../src/tracker/manager.js';
 import { deriveMaps } from '../src/tracker/mirror.js';
 import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
 import { EPIC_LABEL, TrackerResolutionError } from '../src/tracker/adapter.js';
+import type { EpicService } from '../src/tracker/epic-service.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, waitFor, seedWorkspace } from './helpers.js';
 import { yieldToEventLoop } from '../src/reliability/yield.js';
 import { integrationSteps } from '../web/src/epic-model.js';
+import { UpgradeCoordinator } from '../src/upgrade/upgrade-coordinator.js';
+import { SettingsUpdateAvailabilityStore } from '../src/upgrade/update-check.js';
+import { Scheduler } from '../src/scheduler/scheduler.js';
 
 const ticket = (number: number): Ticket => ({
   number,
@@ -518,5 +522,76 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     yields = 0;
     await manager.reconcileEpics();
     expect(yields).toBeGreaterThan(0);
+  });
+
+  it('gates the epic reconcile tick on a real upgrade coordinator: armed starts no work, unarmed runs it', async () => {
+    manager.stopAll();
+    const reconciled: number[] = [];
+    const fakeEpicService: EpicService = {
+      startWorkspace: () => ({ reconcile: async () => { reconciled.push(1); } }),
+      stopWorkspace: () => {},
+      forceIntegrateEpic: async () => null,
+      rejectEpic: async () => null,
+      epicBaseNotReady: async () => false,
+      refreshAfterDefaultBranchAdvance: async () => {},
+      listEpics: async () => [],
+      listEpicTickets: async () => [],
+      epicDetail: async () => null,
+      epicDiff: async () => '',
+    };
+
+    let config = baselineConfig();
+    const coordinator = new UpgradeCoordinator({
+      version: '2.0.0',
+      store: new SettingsUpdateAvailabilityStore(asyncDb),
+      settings: {
+        getGlobal: () => config,
+        updateGlobal: async (patch) => {
+          config = { ...config, autoRunner: { ...config.autoRunner, ...patch.autoRunner } };
+          return config;
+        },
+      },
+      attempts: { countRunning: async () => 0 },
+      operations: () => [],
+      conversations: { hasInFlightTurn: () => false },
+    });
+    await new SettingsUpdateAvailabilityStore(asyncDb).set('2.7.0');
+
+    const resolveAdapter = async (repoRoot: string): Promise<TrackerAdapter> => {
+      if (unresolvable.has(repoRoot))
+        throw new TrackerResolutionError('no-declaration', `No tracker declaration at ${repoRoot}`);
+      polled.push(repoRoot);
+      return {
+        name: 'stub',
+        scan: async () => ticketsByRepo.get(repoRoot) ?? [],
+        readTicket: async (r) => ticket(r.number),
+        claim: async () => {},
+        release: async () => {},
+        close: async () => {},
+        reopen: async () => {},
+      };
+    };
+    // A real, never-started Scheduler puts pollers into scheduler-driven mode: only explicit reconcileEpics() calls below trigger a reconcile.
+    manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+      resolveAdapter,
+      epicService: fakeEpicService,
+      scheduler: new Scheduler(asyncDb),
+      workStartAllowed: () => coordinator.workStartAllowed(),
+    });
+
+    await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    await manager.sync();
+
+    await manager.reconcileEpics();
+    expect(reconciled).toEqual([1]);
+
+    reconciled.length = 0;
+    await coordinator.arm();
+    await manager.reconcileEpics();
+    expect(reconciled).toEqual([]);
+
+    await coordinator.cancel();
+    await manager.reconcileEpics();
+    expect(reconciled).toEqual([1]);
   });
 });

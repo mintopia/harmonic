@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq, sql } from 'drizzle-orm';
@@ -392,5 +392,50 @@ describe('unique-index CAS behaviour unchanged under libsql', () => {
     }
     expect(caught).toBeInstanceOf(Error);
     expect(isUniqueViolation(caught)).toBe(true);
+  });
+});
+
+describe('openAsyncDb guards against an incomplete live database', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'harmonic-async-incomplete-'));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('refuses to open the database and creates nothing when app/database-incomplete.json is present', async () => {
+    mkdirSync(join(dir, 'app'), { recursive: true });
+    writeFileSync(
+      join(dir, 'app', 'database-incomplete.json'),
+      JSON.stringify({
+        dataDir: dir,
+        preservedDir: join(dir, 'rolled-back', '2.0.0-123'),
+        strandedFiles: ['harmonic.db'],
+        reason: 'test fixture',
+        at: new Date().toISOString(),
+      }),
+    );
+
+    await expect(openAsyncDb(dir)).rejects.toThrow(/database-incomplete\.json/);
+    expect(existsSync(join(dir, 'harmonic.db'))).toBe(false);
+  });
+
+  it('refuses to open the database and creates nothing when harmonic.db is missing but harmonic.db-wal exists', async () => {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'harmonic.db-wal'), 'orphaned-wal');
+
+    await expect(openAsyncDb(dir)).rejects.toThrow(/orphaned WAL/);
+    expect(existsSync(join(dir, 'harmonic.db'))).toBe(false);
+  });
+
+  it('creates the database normally on a genuine first-ever boot (no db, no wal, no marker)', async () => {
+    const handle = await openAsyncDb(dir);
+    try {
+      expect(existsSync(join(dir, 'harmonic.db'))).toBe(true);
+    } finally {
+      await handle.close();
+    }
   });
 });
