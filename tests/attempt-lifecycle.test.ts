@@ -67,6 +67,7 @@ describe('an unresolved auto-driven attempt fails its implementation step (issue
       settleEscalated: async () => {},
       settleAutoCompleted: async () => {},
       diffSnapshotFor: async () => ({ stat: null, diffBaseOid: null, diffHeadOid: null }),
+      worktreePathForTask: () => { throw new Error('not a worktree task in this test'); },
       updateStep: (_taskId, id, patch) => attempts.updateStep(id, patch),
     };
     const completion = new TurnCompletion(deps);

@@ -162,6 +162,8 @@ export interface RunCriticArgs {
   verifiedHeadOid: string;
   /** The base revision the candidate diverged from; omitted ⇒ the critic reviews the candidate alone. */
   baseOid?: string;
+  /** True when the worktree still carries uncommitted work pending a pre-merge commit. */
+  dirty?: boolean;
   critic: { prompt: string; model: string; harness?: string };
   /** The Drive-Prompt interpolation tokens filled into the operator's review prompt. */
   fields: DriveFields;
@@ -232,6 +234,7 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
     fields: args.fields,
     verifiedHeadOid: args.verifiedHeadOid,
     ...(args.baseOid ? { baseOid: args.baseOid } : {}),
+    ...(args.dirty ? { dirty: args.dirty } : {}),
   });
   try {
     const result = await drive.run({

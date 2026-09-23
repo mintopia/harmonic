@@ -180,7 +180,9 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
             ? attempt !== null
               ? `Committed Attempt ${attempt}'s uncommitted work`
               : 'Committed uncommitted work'
-            : "Committed the turn's uncommitted work";
+            : reason === 'turn-end'
+              ? "Committed the turn's uncommitted work"
+              : 'Committed outstanding work before merge';
       return { label, detail: oid ? shortOid(oid) : null, tone: 'neutral', tag: 'GIT' };
     }
     case 'commit-failed':
