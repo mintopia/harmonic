@@ -38,9 +38,32 @@ harmonic status         # is it running, and where?
 harmonic stop           # shut it down
 ```
 
-A global install keeps itself up to date. Harmonic checks npm hourly and,
-when a newer release is out, shows a banner in the app, then upgrades in
-place the next time your fleet is idle and relaunches on the new version.
+Harmonic checks npm hourly and shows a banner in the app when a newer release
+is out. How it upgrades depends on how you run it:
+
+- **As an OS service** (`harmonic install`, systemd or init.d): Upgrade in the
+  banner installs the new release alongside the current one, checks it, then
+  switches over the next time your fleet is idle. If the new release fails to
+  start four times, Harmonic switches back to the previous release and restores
+  the database from just before the upgrade.
+- **Anything else** (a global install, `npx`, `harmonic start`, pm2, Docker):
+  the banner shows the command to run. Harmonic doesn't upgrade itself here,
+  because it can't restart safely under a supervisor it doesn't control.
+
+### Upgrading from 2.18.0 or 2.18.1
+
+2.18.0 and 2.18.1 have a bug in the systemd upgrade. 2.18.2 repairs the upgrade
+for you as it installs, unless npm is set to skip install scripts
+(`ignore-scripts=true`). If it is, or if the service fails to start after
+upgrading, upgrade by hand instead of using the banner:
+
+```sh
+sudo npm install -g @mintopia/harmonic@latest
+sudo harmonic install
+```
+
+`harmonic install` keeps the existing service's port, host, data directory and
+password.
 
 Rather not install? Every command also works through `npx`:
 
