@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-/** The idle handoff now runs outside `exclusively` (issue #3), kicked off via
+/** The idle handoff now runs outside `exclusively`, kicked off via
  * `setImmediate` after `reconcile()`/`arm()` resolves; wait a tick for it (and
  * any failure-recovery cancel chained off it) to settle before asserting. */
 function flushHandoff(): Promise<void> {

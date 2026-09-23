@@ -38,7 +38,7 @@ function flipCurrent(appDir, version) {
   try {
     fs.unlinkSync(tmpPath);
   } catch {
-    // already gone
+    // best-effort: the guard must never fail a boot
   }
   fs.symlinkSync(`versions/${version}`, tmpPath);
   fs.renameSync(tmpPath, path.join(appDir, 'current'));
@@ -51,7 +51,7 @@ function restoreDatabase(dataDir, snapshotPath) {
     try {
       fs.unlinkSync(`${dbPath}${suffix}`);
     } catch {
-      // already gone
+      // best-effort: the guard must never fail a boot
     }
   }
 }
@@ -82,7 +82,7 @@ function main() {
     try {
       fs.unlinkSync(pendingPath);
     } catch {
-      // already gone
+      // best-effort: the guard must never fail a boot
     }
     return;
   }
@@ -109,12 +109,11 @@ function main() {
   try {
     fs.unlinkSync(pendingPath);
   } catch {
-    // already gone
+    // best-effort: the guard must never fail a boot
   }
 }
 
 try {
   main();
 } catch {
-  // never block a start attempt
 }

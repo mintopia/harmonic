@@ -260,7 +260,6 @@ const explicitInstallFlags = (rest: string[]): ReadonlySet<string> => {
   return new Set(Object.keys(values));
 };
 
-/** Explicit flags win; otherwise reuse the running service's settings; otherwise fall through to values.* (already defaulted). */
 function resolveInstallSettings(values: ServeValues, explicit: ReadonlySet<string>, existing: ExistingServiceSettings | null) {
   const reused: string[] = [];
   const pick = <K extends string>(flag: K, explicitValue: string | undefined, existingValue: string | undefined): string | undefined => {

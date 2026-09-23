@@ -176,7 +176,7 @@ export class UpgradeCoordinator {
     const runningAttempts = await this.options.attempts.countRunning();
     // Whole-Epic work (integrate, merge, and the verify/resolve/cut/member-merge
     // steps around it) is namespaced `epic.*`, not the bare `merge`/`integrate`
-    // a single-task merge uses — both count as busy (issue #9).
+    // a single-task merge uses — both count as busy.
     const mergingOrIntegrating = this.options.operations().some(
       (operation) => operation.type === 'merge' || operation.type === 'integrate' || operation.type.startsWith('epic.'),
     );
@@ -189,7 +189,7 @@ export class UpgradeCoordinator {
 
   /** Best-effort bounded, yielding wait for in-flight work to drain, so the
    * swap's irreversible release-lock/exit doesn't kill work that started
-   * during install/verify (issue #9); never throws, and gives up (returns)
+   * during install/verify; never throws, and gives up (returns)
    * once `timeoutMs` elapses even if still busy. */
   async waitForIdle({
     timeoutMs = 10 * 60_000,
@@ -213,7 +213,7 @@ export class UpgradeCoordinator {
   /** Transitions `armed` -> `upgrading` and kicks off the handoff, all under the
    * lock; the handoff itself (the real install/verify/relaunch/release-lock swap,
    * which can run for minutes and ends the process) runs after this returns, so
-   * the lock never blocks a request for the swap's duration (issue #3). An
+   * the lock never blocks a request for the swap's duration. An
    * already-`upgrading` phase is a no-op: the persisted phase itself is the
    * re-entry guard, replacing the old in-memory `onIdleStartedFor` flag. */
   private async reconcileOnce(): Promise<boolean> {
@@ -259,7 +259,7 @@ export class UpgradeCoordinator {
   /** False once an update is armed (queued to start), mid idle-handoff, or
    * upgrading — the single gate every work-start path (manual launch routes,
    * the tracker's scheduled epic reconcile) must check before starting new
-   * work (issue #9). A `failed` boot-guard rollback is not itself blocking:
+   * work. A `failed` boot-guard rollback is not itself blocking:
    * the swap never landed, so ordinary work is safe to resume. */
   async workStartAllowed(): Promise<boolean> {
     const kind = (await this.options.store.getState()).phase.kind;

@@ -138,7 +138,7 @@ export class SettingsUpdateAvailabilityStore implements UpdateArmingStore {
   /** Updates only `version`, reading the current row inside the same
    * serialised write so it can't race a concurrent `setState` (e.g. an arm)
    * landing between a separate read and write and clobbering it with a stale
-   * merge (issue #8). */
+   * merge. */
   async set(version: string | null): Promise<void> {
     await this.db.write(async (db) => {
       const row = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, UPDATE_AVAILABILITY_KEY)).get();

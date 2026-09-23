@@ -37,5 +37,4 @@ function main() {
 try {
   main();
 } catch {
-  // best-effort; never block an install
 }

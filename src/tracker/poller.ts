@@ -40,7 +40,7 @@ export class TrackerPoller {
     private readonly epics?: EpicIntegrationSync,
     /** `reconcileOnPoll` false ⇒ Epics reconcile through the global Scheduler Job instead.
      * `workStartAllowed` absent ⇒ always allowed; false ⇒ the reconcile tick starts no new
-     * Epic integration/verification/resolution work (issue #9, e.g. an in-progress upgrade). */
+     * Epic integration/verification/resolution work (e.g. an in-progress upgrade). */
     private readonly opts: { reconcileOnPoll?: boolean; yieldOptions?: YieldOptions; workStartAllowed?: () => boolean | Promise<boolean> } = {},
   ) {}
 

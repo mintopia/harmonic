@@ -18,7 +18,7 @@ describe('failed idle upgrade', () => {
     await server.app.ctx.upgrade.arm();
     await server.app.ctx.upgrade.reconcile();
     // The idle handoff now runs outside the coordinator's serialisation lock
-    // (issue #3), so `reconcile()` resolving no longer implies the failure
+    // so `reconcile()` resolving no longer implies the failure
     // -recovery cancel has settled too.
     await waitFor(async () => {
       const state = await server!.app.ctx.upgrade.state();

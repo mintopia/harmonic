@@ -39,7 +39,7 @@ export interface SystemdGuardRevisionDeps {
  * unit path for this process's own HOME, independent of the running process's own uid.
  *
  * A system unit predating the boot guard (ADR-0042) can't be rewritten without root, so it's
- * reported as `guardMissing` instead (Q2: it keeps auto-upgrading, just without rollback safety). A
+ * reported as `guardMissing` instead (it keeps auto-upgrading, just without rollback safety). A
  * user unit self-heals in place. Neither found is unexpected for a `HARMONIC_MANAGED_BY=systemd`
  * process and is reported as `guardMissing` too.
  */
@@ -323,7 +323,7 @@ export function createShutdownHandler(release: () => Promise<void>, exit: (code:
  * The upgrade swap's `releaseLock` step: once it starts, the process must
  * always drop the data-dir lock and exit, or a botched `app.close()`/telemetry
  * shutdown leaves a dead-but-listening process holding the lock forever with
- * systemd unable to restart it (issue #3). `close`/`shutdownTelemetry` failures
+ * systemd unable to restart it. `close`/`shutdownTelemetry` failures
  * or a hang (bounded by `timeoutMs`) are swallowed here and force a non-zero
  * exit instead of propagating — a zero exit is left to the swap's own `exit`
  * step on the clean path.

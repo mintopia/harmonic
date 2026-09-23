@@ -46,8 +46,7 @@ describe('UpdateCheck.run interleaved with an arm', () => {
     await updateCheckStore.set('2.6.0');
 
     // Interleave a real `arm()` right as `set()`'s write reaches the DB's
-    // single-writer queue — the exact race window issue #8 describes: an
-    // update-check write landing around a concurrent arm.
+    // single-writer queue — an update-check write landing around a concurrent arm.
     const realWrite = h.write.bind(h);
     let interleaved = false;
     vi.spyOn(h, 'write').mockImplementation(async (fn, opts) => {
