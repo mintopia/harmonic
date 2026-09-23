@@ -97,6 +97,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const ctx: AppContext = {
     distributionMode,
     runningVersion,
+    installMode: opts.installMode ?? { kind: 'systemd' },
     updateCheck,
     upgrade: runtime.upgrade,
     asyncDb,

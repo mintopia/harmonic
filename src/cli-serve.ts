@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rename, rm } from 'node:fs/promises';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { isAbsolute, join, relative } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './server/app.js';
 import { defaultDataDir, verifyChannelsUnconfigured } from './config.js';
@@ -13,40 +13,18 @@ import { installProcessSafetyNet } from './reliability/process-safety-net.js';
 import { type ServeValues } from './cli-dispatch.js';
 import { UpgradeSwap } from './upgrade/upgrade-swap.js';
 import { SYSTEMD_MIGRATION_NOTICE } from './upgrade/upgrade-coordinator.js';
+import { defaultIsWritable, defaultRealpath, resolveInstallMode, type InstallMode } from './upgrade/install-mode.js';
 import { hasValidInstall, installVersion, readInstalledVersion, type VersionInstallDependencies } from './upgrade/version-install.js';
 import { startOperation } from './telemetry/operations.js';
 import { displayUrl, type CliOutcome } from './cli-commands.js';
-
-export function requiresSystemdInstallMigration({ managedBy, dataDir, cliPath }: { managedBy: string | undefined; dataDir: string; cliPath: string }): boolean {
-  if (managedBy !== 'systemd') return false;
-  const current = join(dataDir, 'app', 'current');
-  const pathFromCurrent = relative(current, cliPath);
-  return pathFromCurrent === '' || pathFromCurrent.startsWith('..') || isAbsolute(pathFromCurrent);
-}
-
-export function detectSystemdInstallMigration({
-  managedBy,
-  dataDir,
-  cliPath,
-  warn,
-}: {
-  managedBy: string | undefined;
-  dataDir: string;
-  cliPath: string;
-  warn: (message: string) => void;
-}): boolean {
-  const migrationRequired = requiresSystemdInstallMigration({ managedBy, dataDir, cliPath });
-  if (migrationRequired) warn(SYSTEMD_MIGRATION_NOTICE);
-  return migrationRequired;
-}
 
 const execFileAsync = promisify(execFile);
 
 export type UpgradeCommand = (file: string, args: readonly string[]) => Promise<unknown>;
 
-export type SystemdUpgradeFsDependencies = Pick<VersionInstallDependencies, 'mkdir' | 'rm' | 'rename' | 'fileExists' | 'readFile'>;
+export type ManagedUpgradeFsDependencies = Pick<VersionInstallDependencies, 'mkdir' | 'rm' | 'rename' | 'fileExists' | 'readFile'>;
 
-const defaultSystemdUpgradeFsDependencies = (): SystemdUpgradeFsDependencies => ({
+const defaultManagedUpgradeFsDependencies = (): ManagedUpgradeFsDependencies => ({
   mkdir: async (path) => { await mkdir(path, { recursive: true }); },
   rm: async (path) => { await rm(path, { recursive: true, force: true }); },
   rename: async (from, to) => { await rename(from, to); },
@@ -54,18 +32,19 @@ const defaultSystemdUpgradeFsDependencies = (): SystemdUpgradeFsDependencies => 
   readFile: (path) => readFileSync(path, 'utf8'),
 });
 
-export async function installSystemdUpgrade({
+/** Installs a pinned version into `app/versions/<target>` and flips `app/current` onto it. Used for both systemd and init.d self-upgrades — both lay out `app/` identically. */
+export async function installManagedUpgrade({
   dataDir,
   target,
   run,
   packageSpec,
-  fs = defaultSystemdUpgradeFsDependencies(),
+  fs = defaultManagedUpgradeFsDependencies(),
 }: {
   dataDir: string;
   target: string;
   run: UpgradeCommand;
   packageSpec?: string;
-  fs?: SystemdUpgradeFsDependencies;
+  fs?: ManagedUpgradeFsDependencies;
 }): Promise<void> {
   const appDir = join(dataDir, 'app');
   const versionDir = await installVersion({
@@ -81,7 +60,7 @@ export async function installSystemdUpgrade({
   await run('ln', ['-sfn', `versions/${target}`, join(appDir, 'current')]);
 }
 
-export function readSystemdInstalledVersion({
+export function readManagedInstalledVersion({
   dataDir,
   readFile,
 }: {
@@ -95,12 +74,15 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
   const dataDir = values['data-dir'] ?? defaultDataDir();
   const port = Number(values.port);
   const host = values.host!;
-  const migrationRequired = detectSystemdInstallMigration({
-    managedBy: process.env.HARMONIC_MANAGED_BY,
+  const installMode: InstallMode = resolveInstallMode({
+    env: process.env,
     dataDir,
     cliPath: process.argv[1] ?? fileURLToPath(import.meta.url),
-    warn: logger.warn,
+    realpath: defaultRealpath,
+    isWritable: defaultIsWritable,
   });
+  const migrationRequired = installMode.kind === 'migration-required';
+  if (migrationRequired) logger.warn(SYSTEMD_MIGRATION_NOTICE);
   const holder = acquireLock(dataDir, { port, host });
   if (holder) {
     logger.error(
@@ -121,78 +103,74 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
   const telemetry = initializeTelemetry(telemetryOptions, { ownsMetricSummaryInterval: false });
   let app: Awaited<ReturnType<typeof buildApp>>;
   let installedCliPath: string | undefined;
+  // Only systemd/init.d installs manage a versioned `app/` directory to self-upgrade into;
+  // npx/npm-global/unknown installs and pre-migration systemd units never get an `onUpgradeIdle`,
+  // so `reconcile()` can never reach a swap for them even if `arm()`'s own guard were bypassed.
+  const selfUpgrading = installMode.kind === 'systemd' || installMode.kind === 'initd';
   try {
     app = await buildApp({
       dataDir,
       password,
       migrationRequired,
+      installMode,
       metricsSummary: { intervalMs: telemetryOptions.metricExportIntervalMillis, flush: () => telemetry.flushMetricSummary() },
-      onUpgradeIdle: async (version) => {
-        const swap = new UpgradeSwap({
-          ...(process.env.HARMONIC_MANAGED_BY === undefined ? {} : { managedBy: process.env.HARMONIC_MANAGED_BY }),
-          ...(migrationRequired ? { migrationRequired: true } : {}),
-          install: async (target) => {
-            if (process.env.HARMONIC_MANAGED_BY === 'systemd') {
-              await installSystemdUpgrade({
+      ...(selfUpgrading ? {
+        onUpgradeIdle: async (version: string) => {
+          const swap = new UpgradeSwap({
+            ...(process.env.HARMONIC_MANAGED_BY === undefined ? {} : { managedBy: process.env.HARMONIC_MANAGED_BY }),
+            install: async (target) => {
+              await installManagedUpgrade({
                 dataDir,
                 target,
                 run: async (file, args) => execFileAsync(file, args),
               });
-              return;
-            }
-            await execFileAsync('npm', ['i', '-g', `@mintopia/harmonic@${target}`]);
-          },
-          installedVersion: async () => {
-            if (process.env.HARMONIC_MANAGED_BY === 'systemd') {
-              return readSystemdInstalledVersion({ dataDir, readFile: readFileSync });
-            }
-            const { stdout } = await execFileAsync('npm', ['root', '-g']);
-            const packageDir = join(stdout.trim(), '@mintopia', 'harmonic');
-            const pkg = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as { version?: unknown };
-            installedCliPath = join(packageDir, 'dist', 'cli.js');
-            return typeof pkg.version === 'string' ? pkg.version : 'unknown';
-          },
-          spawnRelauncher: async () => {
-            if (!installedCliPath) throw new Error('installed Harmonic CLI path was not resolved');
-            const relauncher = fileURLToPath(new URL('./upgrade/relauncher.js', import.meta.url));
-            const child = spawn(process.execPath, [relauncher, dataDir, installedCliPath, JSON.stringify(rest)], {
-              detached: true,
-              stdio: 'ignore',
-            });
-            child.unref();
-          },
-          waitForIdle: () => app.ctx.upgrade.waitForIdle(),
-          releaseLock: createUpgradeReleaseLock({
-            close: () => app.close(),
-            shutdownTelemetry: () => telemetry.shutdown(),
-            releaseLock: () => releaseLock(dataDir),
-            exit: (code) => process.exit(code),
-          }),
-          exit: () => { process.exit(0); },
-          abort: async () => {},
-          operation: async ({ type, version: target }, work) => {
-            const operation = startOperation({ type, attributes: { 'upgrade.version': target } });
-            try {
-              const result = await operation.run(work);
-              operation.end();
-              return result;
-            } catch (error) {
-              operation.fail(error);
-              throw error;
-            }
-          },
-          log: (event) => {
-            const log = event.outcome === 'failed' ? logger.error : logger.info;
-            log(`upgrade ${event.action} ${event.outcome}`, {
-              action: event.action,
-              version: event.version,
-              ...(event.error ? { error: event.error.message } : {}),
-            });
-          },
-        });
-        const outcome = await swap.execute({ version });
-        if (outcome.kind === 'aborted') throw outcome.error;
-      },
+            },
+            installedVersion: async () => {
+              installedCliPath = join(dataDir, 'app', 'current', 'dist', 'cli.js');
+              return readManagedInstalledVersion({ dataDir, readFile: readFileSync });
+            },
+            spawnRelauncher: async () => {
+              if (!installedCliPath) throw new Error('installed Harmonic CLI path was not resolved');
+              const relauncher = fileURLToPath(new URL('./upgrade/relauncher.js', import.meta.url));
+              const child = spawn(process.execPath, [relauncher, dataDir, installedCliPath, JSON.stringify(rest)], {
+                detached: true,
+                stdio: 'ignore',
+              });
+              child.unref();
+            },
+            waitForIdle: () => app.ctx.upgrade.waitForIdle(),
+            releaseLock: createUpgradeReleaseLock({
+              close: () => app.close(),
+              shutdownTelemetry: () => telemetry.shutdown(),
+              releaseLock: () => releaseLock(dataDir),
+              exit: (code) => process.exit(code),
+            }),
+            exit: () => { process.exit(0); },
+            abort: async () => {},
+            operation: async ({ type, version: target }, work) => {
+              const operation = startOperation({ type, attributes: { 'upgrade.version': target } });
+              try {
+                const result = await operation.run(work);
+                operation.end();
+                return result;
+              } catch (error) {
+                operation.fail(error);
+                throw error;
+              }
+            },
+            log: (event) => {
+              const log = event.outcome === 'failed' ? logger.error : logger.info;
+              log(`upgrade ${event.action} ${event.outcome}`, {
+                action: event.action,
+                version: event.version,
+                ...(event.error ? { error: event.error.message } : {}),
+              });
+            },
+          });
+          const outcome = await swap.execute({ version });
+          if (outcome.kind === 'aborted') throw outcome.error;
+        },
+      } : {}),
     });
   } catch (error) {
     await telemetry.shutdown();

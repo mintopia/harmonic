@@ -7,51 +7,12 @@ import { promisify } from 'node:util';
 import {
   createShutdownHandler,
   createUpgradeReleaseLock,
-  detectSystemdInstallMigration,
-  installSystemdUpgrade,
-  readSystemdInstalledVersion,
-  requiresSystemdInstallMigration,
-  type SystemdUpgradeFsDependencies,
+  installManagedUpgrade,
+  readManagedInstalledVersion,
+  type ManagedUpgradeFsDependencies,
 } from '../src/cli-serve.js';
 
 const execFileAsync = promisify(execFile);
-
-describe('requiresSystemdInstallMigration', () => {
-  it('recognizes an npm-global CLI as a legacy systemd install and accepts the stable application path', () => {
-    expect(requiresSystemdInstallMigration({
-      managedBy: 'systemd',
-      dataDir: '/var/lib/harmonic',
-      cliPath: '/usr/lib/node_modules/@mintopia/harmonic/dist/cli-serve.js',
-    })).toBe(true);
-    expect(requiresSystemdInstallMigration({
-      managedBy: 'systemd',
-      dataDir: '/var/lib/harmonic',
-      cliPath: '/var/lib/harmonic/app/current/dist/cli.js',
-    })).toBe(false);
-    expect(requiresSystemdInstallMigration({
-      managedBy: undefined,
-      dataDir: '/var/lib/harmonic',
-      cliPath: '/usr/lib/node_modules/@mintopia/harmonic/dist/cli.js',
-    })).toBe(false);
-  });
-});
-
-describe('detectSystemdInstallMigration', () => {
-  it('logs the operator notice for an old-style systemd ExecStart path', () => {
-    const warnings: string[] = [];
-
-    expect(detectSystemdInstallMigration({
-      managedBy: 'systemd',
-      dataDir: '/var/lib/harmonic',
-      cliPath: '/usr/lib/node_modules/@mintopia/harmonic/dist/cli.js',
-      warn: (message) => warnings.push(message),
-    })).toBe(true);
-
-    expect(warnings).toEqual([
-      "Auto-upgrade is disabled until you re-run sudo harmonic install, which reuses this service's existing port, host, data directory, and password.",
-    ]);
-  });
-});
 
 describe('createShutdownHandler', () => {
   it('calls release then exit(0), in that order', async () => {
@@ -201,7 +162,7 @@ describe('systemd upgrades', () => {
   const versionDir = '/var/lib/harmonic/app/versions/2.6.0';
   const stagingDir = '/var/lib/harmonic/app/versions/.2.6.0.staging';
 
-  function stagedFs(): { fs: SystemdUpgradeFsDependencies; setInstalled: (value: boolean) => void } {
+  function stagedFs(): { fs: ManagedUpgradeFsDependencies; setInstalled: (value: boolean) => void } {
     let installed = false;
     return {
       setInstalled: (value) => { installed = value; },
@@ -219,7 +180,7 @@ describe('systemd upgrades', () => {
     const run = vi.fn(async (_command: string, _args: readonly string[]) => ({}));
     const { fs } = stagedFs();
 
-    await installSystemdUpgrade({ dataDir, target, run, fs });
+    await installManagedUpgrade({ dataDir, target, run, fs });
 
     expect(run.mock.calls).toEqual([
       ['npm', ['pack', '--pack-destination', stagingDir, `@mintopia/harmonic@${target}`]],
@@ -232,7 +193,7 @@ describe('systemd upgrades', () => {
 
   it('throws and never flips current when the staged install fails verification', async () => {
     const run = vi.fn(async (_command: string, _args: readonly string[]) => ({}));
-    const fs: SystemdUpgradeFsDependencies = {
+    const fs: ManagedUpgradeFsDependencies = {
       mkdir: async () => {},
       rm: async () => {},
       rename: async () => {},
@@ -240,7 +201,7 @@ describe('systemd upgrades', () => {
       readFile: () => JSON.stringify({ version: target }),
     };
 
-    await expect(installSystemdUpgrade({ dataDir, target, run, fs })).rejects.toThrow('did not produce a valid install');
+    await expect(installManagedUpgrade({ dataDir, target, run, fs })).rejects.toThrow('did not produce a valid install');
 
     expect(run.mock.calls.some(([command]) => command === 'ln')).toBe(false);
   });
@@ -250,7 +211,7 @@ describe('systemd upgrades', () => {
     const { fs, setInstalled } = stagedFs();
     setInstalled(true);
 
-    await installSystemdUpgrade({ dataDir, target, run, fs });
+    await installManagedUpgrade({ dataDir, target, run, fs });
 
     expect(run.mock.calls).toEqual([
       ['ln', ['-sfn', `versions/${target}`, '/var/lib/harmonic/app/current']],
@@ -260,7 +221,7 @@ describe('systemd upgrades', () => {
   it('reads the installed version straight from app/current/package.json', () => {
     const readFile = vi.fn(() => JSON.stringify({ version: target }));
 
-    expect(readSystemdInstalledVersion({ dataDir, readFile })).toBe(target);
+    expect(readManagedInstalledVersion({ dataDir, readFile })).toBe(target);
     expect(readFile).toHaveBeenCalledWith('/var/lib/harmonic/app/current/package.json', 'utf8');
   });
 
@@ -269,11 +230,11 @@ describe('systemd upgrades', () => {
       throw new Error('ENOENT');
     });
 
-    expect(readSystemdInstalledVersion({ dataDir, readFile })).toBe('unknown');
+    expect(readManagedInstalledVersion({ dataDir, readFile })).toBe('unknown');
   });
 });
 
-describe('installSystemdUpgrade (real filesystem)', () => {
+describe('installManagedUpgrade (real filesystem)', () => {
   const cleanup: string[] = [];
   const run = (command: string, args: readonly string[]) => execFileAsync(command, [...args]);
 
@@ -314,10 +275,10 @@ describe('installSystemdUpgrade (real filesystem)', () => {
     const packageSpec = packFixtureTarball(version);
     const dataDir = tempDir('harmonic-upgrade-datadir-');
 
-    await installSystemdUpgrade({ dataDir, target: version, run, packageSpec });
+    await installManagedUpgrade({ dataDir, target: version, run, packageSpec });
 
     expect(readInstalledCurrentCli(dataDir)).toContain('fixture-cli');
-    expect(readSystemdInstalledVersion({ dataDir, readFile: (path) => readFileSync(path, 'utf8') })).toBe(version);
+    expect(readManagedInstalledVersion({ dataDir, readFile: (path) => readFileSync(path, 'utf8') })).toBe(version);
   }, 30_000);
 
   it('repairs a pre-existing broken versions/<v> (old nested node_modules layout) on retry', async () => {
@@ -332,9 +293,9 @@ describe('installSystemdUpgrade (real filesystem)', () => {
     );
     writeFileSync(join(brokenVersionDir, 'package.json'), JSON.stringify({ name: 'harmonic-npm-wrapper' }));
 
-    await installSystemdUpgrade({ dataDir, target: version, run, packageSpec });
+    await installManagedUpgrade({ dataDir, target: version, run, packageSpec });
 
     expect(readInstalledCurrentCli(dataDir)).toContain('fixture-cli');
-    expect(readSystemdInstalledVersion({ dataDir, readFile: (path) => readFileSync(path, 'utf8') })).toBe(version);
+    expect(readManagedInstalledVersion({ dataDir, readFile: (path) => readFileSync(path, 'utf8') })).toBe(version);
   }, 30_000);
 });

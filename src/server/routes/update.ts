@@ -5,6 +5,18 @@ import type { AppContext } from '../app.js';
 import { DomainError } from '../../domain/errors.js';
 import { errorResponse } from '../schemas.js';
 
+const updateModeSchema = z.object({
+  kind: z.enum(['systemd', 'initd', 'migration-required', 'external']),
+  /** Only set for `external`: the exact command an operator runs to upgrade manually. */
+  command: z.string().optional(),
+});
+
+const updateFailureSchema = z.object({
+  targetVersion: z.string(),
+  reason: z.string(),
+  at: z.string(),
+});
+
 const updateStateSchema = z.object({
   currentVersion: z.string(),
   availableVersion: z.string().nullable(),
@@ -12,6 +24,9 @@ const updateStateSchema = z.object({
   upgradingVersion: z.string().nullable(),
   dismissedVersion: z.string().nullable(),
   migrationRequired: z.boolean(),
+  mode: updateModeSchema,
+  /** Set when the last boot found the running version didn't match the armed target: the swap started but never completed. */
+  failed: updateFailureSchema.nullable(),
   idle: z.object({
     runningAttempts: z.number().int().nonnegative(),
     mergingOrIntegrating: z.boolean(),
@@ -25,19 +40,25 @@ function assertPackaged(distributionMode: AppContext['distributionMode']): void 
 
 export async function updateRoutes(
   fastify: FastifyInstance,
-  ctx: Pick<AppContext, 'distributionMode' | 'upgrade' | 'updateCheck' | 'runningVersion'>,
+  ctx: Pick<AppContext, 'distributionMode' | 'upgrade' | 'updateCheck' | 'runningVersion' | 'installMode'>,
 ): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
   const response = async () => {
     const [state, idle, migrationRequired] = await Promise.all([ctx.upgrade.state(), ctx.upgrade.idleState(), ctx.upgrade.migrationRequired()]);
     const phase = state.phase;
+    const installMode = ctx.installMode;
+    const mode = installMode.kind === 'external'
+      ? { kind: installMode.kind, ...(state.version === null ? {} : { command: installMode.commandFor(state.version) }) }
+      : { kind: installMode.kind };
     return {
       currentVersion: ctx.runningVersion,
       availableVersion: state.version,
-      armedVersion: phase.kind === 'unarmed' ? null : phase.targetVersion,
+      armedVersion: phase.kind === 'armed' || phase.kind === 'upgrading' ? phase.targetVersion : null,
       upgradingVersion: phase.kind === 'upgrading' ? phase.targetVersion : null,
       dismissedVersion: state.dismissedVersion,
       migrationRequired,
+      mode,
+      failed: phase.kind === 'failed' ? { targetVersion: phase.targetVersion, reason: phase.reason, at: phase.at } : null,
       idle,
     };
   };

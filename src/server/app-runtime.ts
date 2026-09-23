@@ -137,6 +137,7 @@ function createUpgrade(deps: {
   notifier: Stores['notifier'];
 }): UpgradeCoordinator {
   const { opts, runningVersion, asyncDb, settingsStore, attempts, conversationDriver, notifier } = deps;
+  const externalInstall = opts.installMode?.kind === 'external';
   const onUpgradeIdle = opts.onUpgradeIdle === undefined
     ? undefined
     : async (version: string): Promise<void> => {
@@ -163,7 +164,10 @@ function createUpgrade(deps: {
     operations: () => operationRegistry.list(),
     conversations: conversationDriver,
     ...(opts.migrationRequired === undefined ? {} : { migrationRequired: opts.migrationRequired }),
+    ...(externalInstall ? { externalInstall: true } : {}),
     ...(onUpgradeIdle === undefined ? {} : { onIdle: onUpgradeIdle }),
+    ...(opts.readRollback === undefined ? {} : { readRollback: opts.readRollback }),
+    ...(opts.clearRollback === undefined ? {} : { clearRollback: opts.clearRollback }),
   });
 }
 
@@ -386,7 +390,7 @@ export async function createRuntime(deps: {
   const upgrade = createUpgrade({ opts, runningVersion, asyncDb, settingsStore, attempts, conversationDriver, notifier });
   upgradeRef = upgrade;
   if (distributionMode === 'packaged') {
-    await upgrade.complete();
+    await upgrade.settleOnBoot();
   }
   const epicService = new TrackerEpicService(
     tasks,

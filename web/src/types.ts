@@ -11,6 +11,8 @@ export interface UpdateState {
   upgradingVersion: string | null;
   dismissedVersion: string | null;
   migrationRequired: boolean;
+  mode: { kind: 'systemd' | 'initd' | 'migration-required' | 'external'; command?: string };
+  failed: { targetVersion: string; reason: string; at: string } | null;
   idle: {
     runningAttempts: number;
     mergingOrIntegrating: boolean;

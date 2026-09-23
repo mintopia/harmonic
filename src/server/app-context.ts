@@ -29,6 +29,7 @@ import { AuthService } from './auth.js';
 import type { DistributionMode } from '../distribution-mode.js';
 import { UpdateCheck } from '../upgrade/update-check.js';
 import { UpgradeCoordinator } from '../upgrade/upgrade-coordinator.js';
+import type { InstallMode } from '../upgrade/install-mode.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import type { StatsWorkerClient } from '../db/stats-reader.js';
 import type { CriticHarnessDrive } from '../verification/critic.js';
@@ -56,11 +57,17 @@ export interface AppOptions {
   version?: string | undefined;
   onUpgradeIdle?: ((version: string) => Promise<void> | void) | undefined;
   migrationRequired?: boolean | undefined;
+  /** How this instance was installed; drives whether arming is allowed and what `GET /update` offers as the manual command. Defaults to `{ kind: 'systemd' }`. */
+  installMode?: InstallMode | undefined;
+  /** Reads `app/rollback.json` written by the boot guard, if the last boot rolled back. */
+  readRollback?: (() => { reason: string } | undefined) | undefined;
+  clearRollback?: (() => void) | undefined;
 }
 
 export interface AppContext {
   distributionMode: DistributionMode;
   runningVersion: string;
+  installMode: InstallMode;
   updateCheck: UpdateCheck;
   upgrade: UpgradeCoordinator;
   asyncDb: AsyncDbHandle;

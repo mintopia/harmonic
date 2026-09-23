@@ -176,6 +176,8 @@ const updateState: UpdateState = {
   upgradingVersion: null,
   dismissedVersion: null,
   migrationRequired: false,
+  mode: { kind: 'systemd' },
+  failed: null,
   idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false },
 };
 

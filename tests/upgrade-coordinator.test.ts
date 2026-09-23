@@ -181,20 +181,11 @@ describe('UpgradeCoordinator', () => {
     await expect(subject.upgrade.state()).resolves.toMatchObject({ phase: { kind: 'unarmed' } });
   });
 
-  it('clears the arming and restores the master switch once relaunched onto the armed version', async () => {
-    const subject = coordinator({ runningVersion: '2.6.0' });
-    await subject.upgrade.arm();
-    expect(subject.config().autoRunner.enabled).toBe(false);
-
-    await expect(subject.upgrade.complete()).resolves.toMatchObject({ phase: { kind: 'unarmed' } });
-    expect(subject.config().autoRunner.enabled).toBe(true);
-  });
-
-  it('leaves the arming in place until the process is actually running the armed version', async () => {
+  it('leaves an armed-but-not-yet-upgrading offer untouched on boot', async () => {
     const subject = coordinator({ runningVersion: '2.0.0' });
     await subject.upgrade.arm();
 
-    await expect(subject.upgrade.complete()).resolves.toMatchObject({ phase: { kind: 'armed', targetVersion: '2.6.0' } });
+    await expect(subject.upgrade.settleOnBoot()).resolves.toMatchObject({ phase: { kind: 'armed', targetVersion: '2.6.0' } });
     expect(subject.config().autoRunner.enabled).toBe(false);
   });
 });

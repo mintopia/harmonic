@@ -60,12 +60,16 @@ const persistedAvailability = z.object({
   upgradingVersion: z.string().nullable().optional(),
   autoRunnerWasEnabled: z.boolean().nullable().optional(),
   dismissedVersion: z.string().nullable().optional(),
+  failedReason: z.string().nullable().optional(),
+  failedAt: z.string().nullable().optional(),
 });
 
-type UpdatePhase =
+export type UpdatePhase =
   | { kind: 'unarmed' }
   | { kind: 'armed'; targetVersion: string; autoRunnerWasEnabled: boolean }
-  | { kind: 'upgrading'; targetVersion: string; autoRunnerWasEnabled: boolean };
+  | { kind: 'upgrading'; targetVersion: string; autoRunnerWasEnabled: boolean }
+  /** A boot found the running version didn't match the armed target: the swap never completed. */
+  | { kind: 'failed'; targetVersion: string; reason: string; at: string };
 
 export type UpdateAvailabilityState = {
   version: string | null;
@@ -89,6 +93,11 @@ function parsePersisted(row: { value: string } | undefined): UpdateAvailabilityS
     };
     const armedVersion = parsed.data.armedVersion ?? null;
     if (armedVersion === null) return { ...state, phase: { kind: 'unarmed' } };
+    const failedReason = parsed.data.failedReason ?? null;
+    if (failedReason !== null) {
+      const at = parsed.data.failedAt ?? new Date(0).toISOString();
+      return { ...state, phase: { kind: 'failed', targetVersion: armedVersion, reason: failedReason, at } };
+    }
     const autoRunnerWasEnabled = parsed.data.autoRunnerWasEnabled ?? false;
     const upgradingVersion = parsed.data.upgradingVersion;
     if (upgradingVersion === armedVersion) return { ...state, phase: { kind: 'upgrading', targetVersion: armedVersion, autoRunnerWasEnabled } };
@@ -106,7 +115,9 @@ function serialize(state: UpdateAvailabilityState): string {
     dismissedVersion: state.dismissedVersion,
     armedVersion: phase.kind === 'unarmed' ? null : phase.targetVersion,
     upgradingVersion: phase.kind === 'upgrading' ? phase.targetVersion : null,
-    autoRunnerWasEnabled: phase.kind === 'unarmed' ? null : phase.autoRunnerWasEnabled,
+    autoRunnerWasEnabled: phase.kind === 'armed' || phase.kind === 'upgrading' ? phase.autoRunnerWasEnabled : null,
+    failedReason: phase.kind === 'failed' ? phase.reason : null,
+    failedAt: phase.kind === 'failed' ? phase.at : null,
   } satisfies z.infer<typeof persistedAvailability>);
 }
 

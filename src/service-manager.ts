@@ -255,7 +255,10 @@ export const shellWord = (value: string): string => /^[A-Za-z0-9_./:-]+$/.test(v
   ? value
   : `'${value.replaceAll("'", "'\"'\"'")}'`;
 
-const initdScript = ({ dataDir, user }: { dataDir: string; user: string }): string => `#!/bin/sh
+export const initdScript = ({ dataDir, user, nodePath }: { dataDir: string; user: string; nodePath: string }): string => {
+  const cli = shellWord(join(dataDir, 'app', 'current', 'dist', 'cli.js'));
+  const runCli = `HARMONIC_INITD_SERVICE=1 HARMONIC_MANAGED_BY=initd runuser -u ${shellWord(user)} -- ${shellWord(nodePath)} ${cli}`;
+  return `#!/bin/sh
 ### BEGIN INIT INFO
 # Provides:          harmonic
 # Required-Start:    $network
@@ -272,13 +275,13 @@ fi
 
 case "$1" in
   start)
-    HARMONIC_INITD_SERVICE=1 runuser -u ${shellWord(user)} -- harmonic start --data-dir ${shellWord(dataDir)}
+    ${runCli} start --data-dir ${shellWord(dataDir)}
     ;;
   stop)
-    HARMONIC_INITD_SERVICE=1 runuser -u ${shellWord(user)} -- harmonic stop --data-dir ${shellWord(dataDir)}
+    ${runCli} stop --data-dir ${shellWord(dataDir)}
     ;;
   status)
-    HARMONIC_INITD_SERVICE=1 runuser -u ${shellWord(user)} -- harmonic status --data-dir ${shellWord(dataDir)}
+    ${runCli} status --data-dir ${shellWord(dataDir)}
     ;;
   restart|force-reload)
     "$0" stop
@@ -290,6 +293,7 @@ case "$1" in
     ;;
 esac
 `;
+};
 
 class SystemdServiceManager implements ServiceManager {
   readonly backend: 'systemd' | 'user-systemd';
@@ -444,8 +448,25 @@ class InitdServiceManager implements ServiceManager {
     if (user === 'root') {
       warn(this.dependencies, 'Harmonic will run as root. Pass --user to run it as a non-root user.');
     }
-    await ensureDataDir(this.dependencies, options.serve.dataDir, user);
-    await this.dependencies.writeFile(initdScriptPath, initdScript({ dataDir: options.serve.dataDir, user }));
+    const dataDir = options.serve.dataDir;
+    await ensureDataDir(this.dependencies, dataDir, user);
+    const appDir = join(dataDir, 'app');
+    const version = packageVersionSchema.parse(this.dependencies.currentVersion);
+    await installVersion({
+      appDir,
+      version,
+      dependencies: {
+        run: this.dependencies.run,
+        mkdir: this.dependencies.mkdir,
+        rm: this.dependencies.removeFile,
+        rename: this.dependencies.rename,
+        fileExists: this.dependencies.fileExists,
+        readFile: this.dependencies.readFile,
+      },
+    });
+    await this.dependencies.run('chown', ['-R', user, appDir]);
+    await this.dependencies.run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
+    await this.dependencies.writeFile(initdScriptPath, initdScript({ dataDir, user, nodePath: this.dependencies.nodePath }));
     await this.dependencies.chmod(initdScriptPath, 0o755);
     await this.dependencies.run('update-rc.d', ['harmonic', 'defaults']);
     await this.start();
