@@ -11,7 +11,6 @@ afterEach(cleanupAll);
 
 const guardSource = readFileSync(fileURLToPath(new URL('../src/upgrade/boot-guard.cjs', import.meta.url)), 'utf8');
 
-/** Fakes just enough of `harmonic status`/`start` to exercise the real pidfile check the shell script relies on. */
 const fakeCliJs = `#!/usr/bin/env node
 const fs = require('node:fs');
 const path = require('node:path');

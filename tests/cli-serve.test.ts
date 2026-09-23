@@ -44,8 +44,6 @@ describe('reconcileSystemdGuardRevision (real filesystem)', () => {
     };
   }
 
-  // Root-vs-non-root would wrongly pick the system unit for a `sudo harmonic install --user harmonic`
-  // deployment (root-owned unit, non-root running process) — this must key off which unit exists, not `getuid()`.
   it('reports guardMissing for a pre-boot-guard SYSTEM unit without attempting a rewrite, even though the running process is non-root', async () => {
     const d = deps();
     writeFileSync(d.systemUnitPath, 'Environment=HARMONIC_UNIT_REVISION=1\n');
@@ -301,7 +299,7 @@ describe('createUpgradeReleaseLock', () => {
   it('bounds a hanging app.close with a timeout, still releasing the lock and forcing a non-zero exit', async () => {
     const calls: string[] = [];
     const releaseLock = createUpgradeReleaseLock({
-      close: () => new Promise(() => {}), // never resolves
+      close: () => new Promise(() => {}),
       shutdownTelemetry: async () => { calls.push('telemetry'); },
       releaseLock: () => { calls.push('releaseLock'); },
       exit: (code) => { calls.push(`exit:${code}`); },

@@ -555,7 +555,6 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
       operations: () => [],
       conversations: { hasInFlightTurn: () => false },
     });
-    // Seed an available version to arm, via the same store the coordinator reads.
     await new SettingsUpdateAvailabilityStore(asyncDb).set('2.7.0');
 
     const resolveAdapter = async (repoRoot: string): Promise<TrackerAdapter> => {
@@ -572,10 +571,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
         reopen: async () => {},
       };
     };
-    // A real, never-`start()`ed Scheduler puts pollers into scheduler-driven
-    // mode (`reconcileOnPoll: false`), so only the explicit
-    // `manager.reconcileEpics()` calls below trigger a reconcile — no
-    // background auto-poll to race against.
+    // A real, never-started Scheduler puts pollers into scheduler-driven mode: only explicit reconcileEpics() calls below trigger a reconcile.
     manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
       resolveAdapter,
       epicService: fakeEpicService,

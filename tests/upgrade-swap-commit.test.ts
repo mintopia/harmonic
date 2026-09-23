@@ -150,9 +150,6 @@ describe('UpgradeSwap commit order (real fixtures, real SQLite)', () => {
 
     const v2Spec = packFixtureTarball(tempDir, { version: '2.0.0' });
     const cancellation = new UpgradeCancellation();
-    // Simulates a Cancel request arriving mid-drain, followed by waitForIdle's
-    // bound elapsing with work still running: the deadline losing the race must
-    // not override an already-accepted cancellation (ADR-0042).
     const { swap, calls } = buildSwap(dataDir, v2Spec, {
       cancellation,
       waitForIdle: async () => {

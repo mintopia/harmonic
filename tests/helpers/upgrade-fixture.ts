@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-/** Tracks temp directories for cleanup; pass the array returned to `afterEach`-style teardown. */
 export function createTempDirTracker(): { tempDir(prefix: string): string; cleanupAll(): void } {
   const cleanup: string[] = [];
   return {
@@ -20,13 +19,9 @@ export function createTempDirTracker(): { tempDir(prefix: string): string; clean
 
 export interface FixturePackageOptions {
   version: string;
-  /** Extra `dist/cli.js` contents; defaults to a marker + `--version` handling (prints `version`, exits 0). */
   cliJs?: string;
-  /** Extra `dist/cli-serve.js` contents; defaults to an empty module that imports cleanly. */
   cliServeJs?: string;
-  /** Extra files to write under the package root, keyed by relative path. */
   files?: Record<string, string>;
-  /** Merged into `package.json`'s `scripts`, alongside the default `prepare: 'exit 1'`. */
   scripts?: Record<string, string>;
 }
 

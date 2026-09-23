@@ -44,7 +44,6 @@ function spawnFixture(fixturePath: string, args: string[]): ChildProcessWithoutN
   const child = spawn(process.execPath, ['--import', 'tsx', fixturePath, ...args], {
     cwd: repoRoot,
     stdio: 'pipe',
-    // Fast polling keeps these tests quick; production leaves this at the watcher's 1s default.
     env: { ...process.env, HARMONIC_STARTUP_WATCHER_POLL_MS: '30', HARMONIC_STARTUP_DEADLINE_MS: '300' },
   });
   runningChildren.push(child);
@@ -76,7 +75,6 @@ describe('startup watchdog: out-of-process watcher (real processes)', () => {
 
     const child = spawnFixture(hangFixturePath, [dataDir]);
     await waitForStdout(child, 'armed\n', 20_000);
-    // The process is now spinning in a synchronous busy-loop with its event loop fully blocked.
     const code = await waitForExit(child, 15_000);
 
     expect(code).not.toBe(0);
@@ -105,11 +103,6 @@ describe('real schema convergence touches startup-progress after every step, not
     const dataDir = tempDataDir('startup-watchdog-real-convergence-');
     mkdirSync(pathJoin(dataDir, 'app'), { recursive: true });
 
-    // Drifts and seeds every FK-free baseline table so each needs schema-sync's real `rebuildTable`
-    // row-copy (src/db/schema-sync.ts) on open — the same real convergence path the deadline-race
-    // version of this test drove, minus any wall clock: this asserts directly on how many times
-    // touchStartupProgress fired, so it fails on its own if per-step touching is ever removed,
-    // instead of failing only under contention on a slow/fast runner.
     const baselinePath = pathJoin(pathDirname(fileURLToPath(new URL('../src/db/async.ts', import.meta.url))), '..', '..', 'drizzle', '0000_baseline.sql');
     const baseline = parseBaseline(readFileSync(baselinePath, 'utf8'));
     const seedTables = baseline.tables.filter((t) => !/FOREIGN KEY/.test(t.sql));
@@ -132,14 +125,7 @@ describe('real schema convergence touches startup-progress after every step, not
     await handle.close();
 
     const touchesForThisBoot = vi.mocked(touchStartupProgress).mock.calls.filter(([dir]) => dir === dataDir);
-    // rebuildTable() (src/db/schema-sync.ts) touches 4 times per rebuilt table (create temp, copy
-    // rows, drop old, rename); backfillWorkspaceAssociationsAsync touches 3 times once a workspace
-    // exists; plus the 3 coarse touches openAsyncDb makes around the whole schema-sync/backfill
-    // calls. Any of those being dropped brings the count below this floor.
-    // Each rebuilt table's 4 touches interleave with that table's own awaited DDL/copy statements
-    // (rebuildTable calls onStep after each one, not once at the end), and the mock records real
-    // call order — so clearing far above the 3-touch floor from openAsyncDb's own fixed call sites
-    // only holds if the per-step touches inside schema-sync/backfill actually fired in sequence.
+    // Floor: 3 coarse touches from openAsyncDb, plus 4 per rebuilt table (rebuildTable's create/copy/drop/rename).
     const minimumExpectedTouches = 3 + seedTables.length * 4;
     expect(touchesForThisBoot.length).toBeGreaterThanOrEqual(minimumExpectedTouches);
   });

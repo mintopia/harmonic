@@ -78,7 +78,6 @@ describe('boot-guard.cjs', () => {
     await snapshotClient.execute("INSERT INTO t (label) VALUES ('pre-upgrade')");
     snapshotClient.close();
 
-    // Simulate the new version running and mutating live data after the snapshot was taken.
     const liveClient = createClient({ url: `file:${dbPath}` });
     await liveClient.execute("DELETE FROM t WHERE label = 'pre-upgrade'");
     await liveClient.execute("INSERT INTO t (label) VALUES ('post-upgrade')");
@@ -101,8 +100,6 @@ describe('boot-guard.cjs', () => {
 
     expect(existsSync(join(appDir, 'pending.json'))).toBe(false);
     expect(readlinkSync(join(appDir, 'current'))).toBe('versions/1.0.0');
-    // The live db/-wal/-shm are moved aside, not deleted: they're never touched once the guard
-    // decides to roll back, only relocated.
     expect(existsSync(`${dbPath}-wal`)).toBe(false);
     expect(existsSync(`${dbPath}-shm`)).toBe(false);
 
@@ -201,7 +198,6 @@ describe('boot-guard.cjs', () => {
     const result = spawnSync('node', ['--require', preloadPath, guardPath, dataDir], { encoding: 'utf8' });
 
     expect(result.status).toBe(0);
-    // The db file (moved first) must be moved back, not left stranded inside the preserved dir.
     expect(existsSync(dbPath)).toBe(true);
     expect(readFileSync(dbPath, 'utf8')).toBe('live-db');
     expect(existsSync(`${dbPath}-wal`)).toBe(true);
@@ -253,7 +249,6 @@ describe('boot-guard.cjs', () => {
     const result = spawnSync('node', ['--require', preloadPath, guardPath, dataDir], { encoding: 'utf8' });
 
     expect(result.status).toBe(0);
-    // The db is stranded in preservedDir (its own reverse move failed); the WAL was never touched.
     expect(existsSync(dbPath)).toBe(false);
     expect(existsSync(`${dbPath}-wal`)).toBe(true);
     expect(readFileSync(`${dbPath}-wal`, 'utf8')).toBe('wal-before');
@@ -422,7 +417,7 @@ describe('boot-guard.cjs', () => {
     const result = spawnSync('node', ['--require', preloadPath, guardPath, dataDir], { encoding: 'utf8' });
     expect(result.status).toBe(0);
     const rolledBackDir = join(dataDir, 'rolled-back');
-    if (existsSync(rolledBackDir)) expect(readdirSync(rolledBackDir)).toEqual([]); // moved back: nothing left preserved
+    if (existsSync(rolledBackDir)) expect(readdirSync(rolledBackDir)).toEqual([]);
 
     const calls = readFileSync(logPath, 'utf8').trim().split('\n').filter(Boolean);
     const dataDirIndices = calls.reduce<number[]>((acc, call, index) => (call === dataDir ? [...acc, index] : acc), []);
@@ -432,7 +427,6 @@ describe('boot-guard.cjs', () => {
     );
     expect(dataDirIndices.length).toBeGreaterThan(0);
     expect(rolledBackParentIndices.length).toBeGreaterThan(0);
-    // The last fsync of dataDir (post move-back) precedes the last fsync of the preserved dir.
     expect(Math.max(...dataDirIndices)).toBeLessThan(Math.max(...rolledBackParentIndices));
   });
 
@@ -465,7 +459,7 @@ describe('boot-guard.cjs', () => {
     const { dataDir, appDir } = makeDataDir();
     const snapshotPath = join(appDir, 'pre-2.0.0.db');
     seedPendingAtFourthBoot(dataDir, appDir, snapshotPath);
-    spawnSync('node', [guardPath, dataDir], { encoding: 'utf8' }); // blocked: snapshot still missing
+    spawnSync('node', [guardPath, dataDir], { encoding: 'utf8' });
     expect(readlinkSync(join(appDir, 'current'))).toBe('versions/2.0.0');
 
     writeFileSync(snapshotPath, 'snapshot');
@@ -494,7 +488,7 @@ describe('boot-guard.cjs', () => {
     expect(readFileSync(join(dataDir, 'harmonic.db'), 'utf8')).toBe(dbBefore);
     expect(readFileSync(join(dataDir, 'harmonic.db-wal'), 'utf8')).toBe(walBefore);
     const rolledBackDir = join(dataDir, 'rolled-back');
-    if (existsSync(rolledBackDir)) expect(readdirSync(rolledBackDir)).toEqual([]); // reverted: nothing left preserved
+    if (existsSync(rolledBackDir)) expect(readdirSync(rolledBackDir)).toEqual([]);
     const rollback = JSON.parse(readFileSync(join(appDir, 'rollback.json'), 'utf8'));
     expect(rollback).toMatchObject({ rolledBack: false, blockedReason: 'database-not-restored' });
     expect(rollback.preservedDatabaseDir).toBeUndefined();
@@ -546,7 +540,7 @@ describe('boot-guard.cjs', () => {
       try {
         execFileSync('node', [join(appDir, 'current', 'dist', 'cli.js')], { env: { ...process.env, MARKER_PATH: markerPath }, stdio: 'pipe' });
       } catch {
-        // v2-broken throws on import; the loop moves on to the next guard run
+        // ignore
       }
     }
 

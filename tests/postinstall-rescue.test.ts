@@ -33,11 +33,10 @@ describe('postinstall-rescue.cjs (real npm install)', () => {
     const versionDir = join(appDir, 'versions', version);
     mkdirSync(versionDir, { recursive: true });
 
-    // 2.18.1's exact broken sequence.
     await run('npm', ['i', '--prefix', versionDir, packageSpec]);
     await run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
 
-    // Old verify: `${join(dataDir,'app','current','dist')}/../package.json`, string concat, not path.join.
+    // Old verify replicated via string concat, not path.join, to match its exact behavior.
     const packageJsonPath = `${join(appDir, 'current', 'dist')}/../package.json`;
     expect(readManifestVersion(packageJsonPath)).toBe(version);
 
@@ -65,7 +64,6 @@ describe('postinstall-rescue.cjs (real npm install)', () => {
     const versionDir = join(appDir, 'versions', version);
     mkdirSync(versionDir, { recursive: true });
 
-    // 2.18.1's exact broken sequence, rescued by postinstall-rescue.cjs running as npm's postinstall hook.
     await run('npm', ['i', '--prefix', versionDir, packageSpec]);
     await run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
     const nestedCliPath = join(versionDir, 'node_modules', '@mintopia', 'harmonic', 'dist', 'cli.js');
@@ -111,8 +109,6 @@ describe('postinstall-rescue.cjs (real npm install)', () => {
     const versionDir = join(appDir, 'versions', version);
     mkdirSync(versionDir, { recursive: true });
 
-    // Same broken 2.18.x sequence, but --ignore-scripts means postinstall-rescue.cjs never ran:
-    // no versions/<v>/dist symlink, so hasValidInstall (and the old verify) both see it as broken.
     await run('npm', ['i', '--prefix', versionDir, '--ignore-scripts', packageSpec]);
     await run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
     expect(existsSync(join(versionDir, 'dist'))).toBe(false);
@@ -174,8 +170,6 @@ describe('readManagedInstalledVersion on a rescued layout (real filesystem)', ()
     await run('npm', ['i', '--prefix', versionDir, packageSpec]);
     flipCurrent({ appDir, version });
 
-    // The npm wrapper manifest npm write at versions/<v>/package.json has no real version field — the
-    // bug that used to feed 'unknown' into writePending's `previous`.
     const wrapperManifest = JSON.parse(readFileSync(join(versionDir, 'package.json'), 'utf8'));
     expect(wrapperManifest.version).toBeUndefined();
 
