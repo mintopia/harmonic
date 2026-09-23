@@ -39,33 +39,36 @@ harmonic stop           # shut it down
 ```
 
 Harmonic checks npm hourly and shows a banner in the app when a newer release
-is out. How it upgrades depends on how you run it:
+is out. The check uses your npm config, so a private registry or mirror sees
+the same versions `npm install` would. How it upgrades depends on how you run it:
 
 - **As an OS service** (`harmonic install`, systemd or init.d): Upgrade in the
   banner installs the new release alongside the current one, checks it, then
   switches over the next time your fleet is idle. If the new release fails to
   start four times, Harmonic switches back to the previous release and restores
-  the database from just before the upgrade — as long as that pre-upgrade copy
+  the database from just before the upgrade, as long as that pre-upgrade copy
   can still be restored. If it can't (for example a missing snapshot), Harmonic
   stays on the failed release instead of risking a database the failed release
   may have already changed, and keeps retrying on every start. The reason is in
   the service log and `<data-dir>/app/rollback.json`; see
   [If an upgrade fails](#if-an-upgrade-fails) below.
 - **Anything else** (a global install, `npx`, `harmonic start`, pm2, Docker):
-  the banner shows the command to run. Harmonic doesn't upgrade itself here,
-  because it can't restart safely under a supervisor it doesn't control.
+  the banner shows the command to run, or tells you to reinstall the way you
+  originally did when it can't tell how Harmonic was installed. Harmonic
+  doesn't upgrade itself here, because it can't restart safely under a
+  supervisor it doesn't control.
 
 ### If an upgrade fails
 
 Check, in order:
 
-- The service log — `journalctl -u harmonic` (systemd) or
+- The service log: `journalctl -u harmonic` (systemd) or
   `<data-dir>/harmonic.log` (init.d/background).
-- `<data-dir>/app/rollback.json` — names why a rollback didn't happen and,
+- `<data-dir>/app/rollback.json` names why a rollback didn't happen and,
   when anything was moved aside, where.
-- `<data-dir>/rolled-back/` — the pre-upgrade database, preserved (never
+- `<data-dir>/rolled-back/` holds the pre-upgrade database, preserved (never
   deleted) if it had to be moved aside during a rollback attempt.
-- `<data-dir>/app/database-incomplete.json` — present only if a blocked
+- `<data-dir>/app/database-incomplete.json` exists only if a blocked
   rollback couldn't move every db/-wal/-shm file back to `<data-dir>`; it
   names the file(s) and where they ended up, and Harmonic refuses to start
   until you move them back and delete this file.

@@ -77,7 +77,7 @@ function resolveExternalMode({ cliPath, realpath, isWritable }: Pick<ResolveInst
   return {
     kind: 'external',
     subkind: 'unknown',
-    instructionFor: (version) => ({ kind: 'manual', instructions: `reinstall @mintopia/harmonic@${version} the way you originally installed it` }),
+    instructionFor: (version) => ({ kind: 'manual', instructions: `Reinstall @mintopia/harmonic@${version} the way you originally installed it.` }),
   };
 }
 
