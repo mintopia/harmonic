@@ -215,7 +215,6 @@ describe('systemd unit (real filesystem)', () => {
         }
       },
     };
-    // Seed the version layout install() expects, so it can find dist/upgrade/boot-guard.cjs without a real npm install.
     mkdirSync(join(dataDir, 'app', 'versions', '2.16.0', 'dist', 'upgrade'), { recursive: true });
     writeFileSync(join(dataDir, 'app', 'versions', '2.16.0', 'package.json'), JSON.stringify({ version: '2.16.0' }));
     writeFileSync(join(dataDir, 'app', 'versions', '2.16.0', 'dist', 'cli.js'), '');
@@ -223,7 +222,6 @@ describe('systemd unit (real filesystem)', () => {
 
     const unitDir = tempDir('service-manager-unit-dir-');
     const manager = createServiceManager(environment({ userSystemdUsable: true }), { ...realFsDeps, homeDir: unitDir });
-    // userSystemdUsable writes to <homeDir>/.config/systemd/user; point homeDir at dataDir's parent so the app tree and unit dir coexist.
     await manager.install({
       startSelfManaged: async () => {},
       serve: { port: '4711', host: '127.0.0.1', dataDir },

@@ -139,7 +139,6 @@ describe('ServiceManager backend detection', () => {
   it('restarts, rather than starts, an already-running init.d service so new code takes effect', async () => {
     const initd = initdDependencies();
     const manager = createServiceManager(environment({ isRoot: true, initdAvailable: true }), initd.dependencies);
-    // Simulate an already-running service by recording a prior start before install() checks status.
     initd.calls.push(['service', 'harmonic', 'start']);
 
     await manager.install({ startSelfManaged: vi.fn(), serve: { port: '4700', host: '0.0.0.0', dataDir: '/srv/harmonic' } });
@@ -269,7 +268,6 @@ describe('systemd ServiceManager', () => {
   it('restarts, rather than starts, an already-running systemd unit so new code takes effect', async () => {
     const deps = dependencies();
     const manager = createServiceManager(environment({ isRoot: true, systemdRunning: true }), deps);
-    // Simulate an already-running service by recording a prior start before install() checks status.
     deps.calls.push(['systemctl', 'start', 'harmonic']);
 
     await manager.install({
@@ -513,17 +511,12 @@ describe('init.d script (real filesystem)', () => {
     const cliDir = join(dataDir, 'app', 'current', 'dist');
     mkdirSync(cliDir, { recursive: true });
     const markerPath = join(dataDir, 'started.marker');
-    // A fixture "cli.js" the script must actually reach through the stubbed runuser: it just
-    // records the arguments it was invoked with, proving the script started app/current, not
-    // some other install.
     writeFileSync(
       join(cliDir, 'cli.js'),
-      // `status` reports not-running so the script's pre-start check falls through to the guard.
       `if (process.argv[2] === 'status') process.exit(1);\n` +
         `require('node:fs').writeFileSync(${JSON.stringify(markerPath)}, process.argv.slice(2).join(' '));\n`,
     );
     const guardMarkerPath = join(dataDir, 'guard.marker');
-    // A fixture boot-guard.cjs, mirroring copyBootGuard's install-time copy into app/boot-guard.cjs.
     writeFileSync(
       join(dataDir, 'app', 'boot-guard.cjs'),
       `require('node:fs').writeFileSync(${JSON.stringify(guardMarkerPath)}, process.argv.slice(2).join(' '));\n`,

@@ -117,15 +117,15 @@ describe('markHealthy', () => {
     seedVersion(appDir, '2.0.0');
     flipCurrent({ appDir, version: '2.0.0' });
     writePending({ appDir, version: '2.0.0', previous: '1.0.0', snapshot: join(appDir, 'pre-2.0.0.db') });
-    seedVersion(appDir, '3.0.0'); // a stray old version pruning should remove
+    seedVersion(appDir, '3.0.0');
 
     markHealthy({ appDir, runningVersion: '2.0.0', guardSource: join(appDir, 'versions', '2.0.0', 'dist', 'upgrade', 'boot-guard.cjs') });
 
     expect(readPending({ appDir })).toBeNull();
     expect(readFileSync(join(appDir, 'boot-guard.cjs'), 'utf8')).toBe('// guard for 2.0.0');
     expect(existsSync(join(appDir, 'versions', '3.0.0'))).toBe(false);
-    expect(existsSync(join(appDir, 'versions', '1.0.0'))).toBe(true); // kept as previous
-    expect(existsSync(join(appDir, 'versions', '2.0.0'))).toBe(true); // kept as current
+    expect(existsSync(join(appDir, 'versions', '1.0.0'))).toBe(true);
+    expect(existsSync(join(appDir, 'versions', '2.0.0'))).toBe(true);
   });
 
   it('leaves pending untouched when the boot does not match the pending version', () => {
@@ -143,10 +143,9 @@ describe('markHealthy', () => {
     const appDir = makeAppDir();
     seedVersion(appDir, '1.0.0');
     seedVersion(appDir, '2.0.0');
-    flipCurrent({ appDir, version: '2.0.0' }); // an upgrade already flipped `current` to v2 ahead of this process restarting
+    flipCurrent({ appDir, version: '2.0.0' });
     writePending({ appDir, version: '2.0.0', previous: '1.0.0', snapshot: join(appDir, 'pre-2.0.0.db') });
 
-    // This process is still running v1: its own guard, not the one under `current`, must be what gets copied.
     markHealthy({ appDir, runningVersion: '1.0.0', guardSource: join(appDir, 'versions', '1.0.0', 'dist', 'upgrade', 'boot-guard.cjs') });
 
     expect(readPending({ appDir })).not.toBeNull();
@@ -185,7 +184,7 @@ describe('pruneVersions', () => {
     const appDir = makeAppDir();
     for (const version of ['1', '2']) seedVersion(appDir, version);
 
-    pruneVersions({ appDir }); // no current at all
+    pruneVersions({ appDir });
     expect(existsSync(join(appDir, 'versions', '1'))).toBe(true);
     expect(existsSync(join(appDir, 'versions', '2'))).toBe(true);
 

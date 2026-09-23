@@ -96,10 +96,9 @@ describe('relaunchWithBootGuard', () => {
         runGuard: () => { guardCalls += 1; },
         launch: () => {
           launchCalls += 1;
-          // never exits: nothing but the overall deadline can end the round
           return fakeChild(launchCalls, (signal) => { killSignals.push(signal); }).child;
         },
-        isPending: () => true, // never clears
+        isPending: () => true,
       }),
     });
 
@@ -119,7 +118,6 @@ describe('relaunchWithBootGuard', () => {
       exitMaxWaitMs: 20,
       dependencies: noWaitDependencies({
         runGuard: () => { guardCalls += 1; },
-        // free before launch (so the pre-round lock wait passes), stuck forever after — as if the exiting process were still tearing down
         isLocked: () => launched,
         launch: () => {
           launched = true;

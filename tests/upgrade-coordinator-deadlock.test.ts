@@ -16,9 +16,6 @@ describe('upgrade coordinator does not block requests for the whole idle handoff
       version: '2.0.0',
       distributionMode: 'packaged',
       updateCheckLatest: async () => '2.6.0',
-      // Simulates the real install+verify+relaunch+release-lock swap, which
-      // can run for minutes and, in production, ends by calling app.close()
-      // and process.exit().
       onUpgradeIdle: async () => { await swapPaused; },
     });
 

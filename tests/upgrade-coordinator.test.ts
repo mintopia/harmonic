@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-/** The idle handoff now runs outside `exclusively`, kicked off via
- * `setImmediate` after `reconcile()`/`arm()` resolves; wait a tick for it (and
- * any failure-recovery cancel chained off it) to settle before asserting. */
 function flushHandoff(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
@@ -220,17 +217,12 @@ describe('UpgradeCoordinator.waitForIdle', () => {
     let now = 0;
     const sleep = async (ms: number): Promise<void> => { now += ms; };
 
-    // Returns false — not just "returns" — a running Attempt at the deadline must
-    // signal the swap to abort before commit rather than let it proceed silently.
     await expect(subject.upgrade.waitForIdle({ sleep, now: () => now, timeoutMs: 5_000, pollMs: 1_000 })).resolves.toBe(false);
 
     await expect(subject.upgrade.idleState()).resolves.toMatchObject({ runningAttempts: 1 });
   });
 });
 
-/** Wires a real `UpgradeSwap` through the coordinator's `onIdle`, matching
- * cli-serve.ts's production wiring, so cancellation/idle-timeout tests exercise
- * the real step boundaries instead of a coordinator-only fake. */
 function realSwapOnIdle(
   calls: string[],
   hooks: { install?: () => Promise<void>; commit?: () => Promise<void>; waitForIdle?: () => Promise<boolean> },
@@ -317,10 +309,6 @@ describe('UpgradeCoordinator cancellation (ADR-0042 Cancel vs commit)', () => {
 describe('UpgradeCoordinator idle-timeout (ADR-0042 Cancel vs commit, waitForIdle bound)', () => {
   it('reverts upgrading to armed — not unarmed — and never commits when waitForIdle times out on work that never drains', async () => {
     const calls: string[] = [];
-    // Idle when arm()/reconcile() start the swap (so it isn't blocked before even
-    // starting); a new running Attempt starts during install, simulating work
-    // beginning right as the swap kicks off, so it's still running once the swap
-    // reaches its bounded await-idle wait.
     let firstAttempt = true;
     const subject = coordinator({
       onIdle: (version, cancellation) =>
@@ -338,7 +326,6 @@ describe('UpgradeCoordinator idle-timeout (ADR-0042 Cancel vs commit, waitForIdl
     expect(calls).toEqual(['install', 'verify', 'abort']);
     expect(calls).not.toContain('commit');
     await expect(subject.upgrade.state()).resolves.toMatchObject({ phase: { kind: 'armed', targetVersion: '2.6.0' } });
-    // Still excluded: armed keeps the Auto-Runner off until the retry succeeds.
     expect(subject.config().autoRunner.enabled).toBe(false);
 
     subject.setRunningAttempts(0);

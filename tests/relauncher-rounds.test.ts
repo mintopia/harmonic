@@ -92,11 +92,7 @@ describe('relauncher rounds (real process, real boot guard)', () => {
   it('a release that hangs forever without an out-of-process watcher of its own is killed once by the overall safety cap and left for an operator, instead of retried round after round', async () => {
     const dataDir = tempDir('relauncher-rounds-hung-');
     const appDir = join(dataDir, 'app');
-    // Never exits and never clears pending.json. Unlike a real `cli-serve.ts` boot, this bare
-    // fixture never spawns its own out-of-process startup watcher (ADR-0042) — that watcher, not the
-    // relauncher, is what's meant to kill a hung boot. The relauncher's own overall safety cap is only
-    // a last-resort fallback for the case nothing else ever kills the child, and it stops immediately
-    // after firing instead of starting another round against a process it isn't sure has died.
+    // No out-of-process startup watcher here (ADR-0042); the relauncher's overall safety cap is the last-resort fallback.
     seedVersion(appDir, '2.0.0', 'setInterval(() => {}, 1000);');
     symlinkSync('versions/2.0.0', join(appDir, 'current'));
     writeFileSync(join(appDir, 'boot-guard.cjs'), readFileSync(guardSourcePath, 'utf8'));
@@ -124,8 +120,6 @@ describe('relauncher rounds (real process, real boot guard)', () => {
     seedVersion(appDir, '2.0.0', "throw new Error('v2 is broken');");
     symlinkSync('versions/2.0.0', join(appDir, 'current'));
     writeFileSync(join(appDir, 'boot-guard.cjs'), readFileSync(guardSourcePath, 'utf8'));
-    // No snapshot file at all: after 4 boots the guard can't restore the database, so it blocks the
-    // rollback and logs the reason instead of flipping `current` back.
     writeFileSync(
       join(appDir, 'pending.json'),
       JSON.stringify({ version: '2.0.0', previous: '1.0.0', snapshot: join(appDir, 'missing-snapshot.db'), boots: 0 }),

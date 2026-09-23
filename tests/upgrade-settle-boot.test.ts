@@ -72,14 +72,11 @@ describe('UpgradeCoordinator.settleOnBoot (real SettingsUpdateAvailabilityStore)
     expect(config.autoRunner.enabled).toBe(true);
     expect(clearRollbackCalls).toBe(1);
 
-    // reconcile() must never call onIdle for a failed phase.
     await expect(upgrade.reconcile()).resolves.toBe(false);
     expect(onIdleCalls).toEqual([]);
 
-    // Manual launch is allowed again once failed.
     await expect(upgrade.assertManualLaunchAllowed()).resolves.toBeUndefined();
 
-    // A second settle is a no-op.
     const resettled = await upgrade.settleOnBoot();
     expect(resettled).toEqual(settled);
     expect(clearRollbackCalls).toBe(1);
@@ -243,7 +240,6 @@ describe('UpgradeCoordinator.settleOnBoot wired to the real boot-state readRollb
     expect(config.autoRunner.enabled).toBe(true);
     expect(existsSync(join(appDir, 'rollback.json'))).toBe(false);
 
-    // Settling again (e.g. a later restart) does not re-surface it — the phase is already `failed`, not `upgrading`.
     const resettled = await upgrade.settleOnBoot();
     expect(resettled).toEqual(settled);
   });

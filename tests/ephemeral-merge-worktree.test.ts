@@ -24,11 +24,7 @@ function makeRepo(): string {
   return dir;
 }
 
-/** Simulate a process killed mid-merge: a `harmonic-merge-*` admin worktree
- * registered in git and present on disk, with no cleanup ever having run.
- * `ageMs` backdates the temp dir's mtime, since that's what staleness is
- * judged on (see ephemeral-merge-worktree.ts for why: it's set once at
- * creation and never refreshed by writes inside `admin/`). */
+// `ageMs` backdates the temp dir's mtime (see ephemeral-merge-worktree.ts for why staleness is judged on it).
 function leaveMergeWorktree(repo: string, ageMs = 0): { tempDir: string; adminPath: string } {
   const tempDir = mkdtempSync(join(tmpdir(), 'harmonic-merge-'));
   tmpDirs.push(tempDir);

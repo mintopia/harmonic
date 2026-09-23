@@ -195,8 +195,7 @@ describe('live structured run event streaming and replay', () => {
       attempts.listToolCalls = listToolCalls;
     }
 
-    // Close before asserting: a failing assertion must not leak this connection's
-    // bus listener into later tests (it would steal delayed calls meant for them).
+    // Close before asserting: a failing assertion must not leak this connection's bus listener into later tests.
     const latest = ws.messages.findLast((m) => m.type === 'attempt_changed' && m.run.id === attemptId);
     ws.close();
     await cancelRunningTasks(server);
@@ -207,9 +206,7 @@ describe('live structured run event streaming and replay', () => {
     const ws = await connectFirehose(server);
     const created = await server.api('POST', '/api/conversations', {});
     const conversationId = created.body.id;
-    // Creation broadcasts its own conversation_changed (and opening the session
-    // broadcasts a second one once sessionId is set); wait for both to land so
-    // the delay patch below only intercepts the 'older' emit, not one of those.
+    // Wait for both the creation and session-open broadcasts, so the delay patch below only intercepts the 'older' emit.
     await waitFor(async () =>
       ws.messages.some((m) => m.type === 'conversation_changed' && m.conversation.id === conversationId && m.conversation.sessionId !== null),
     );
@@ -238,8 +235,7 @@ describe('live structured run event streaming and replay', () => {
     } finally {
       conversations.firstTurnText = firstTurnText;
     }
-    // Close before asserting: a failing assertion must not leak this connection's
-    // bus listener into later tests (it would steal delayed calls meant for them).
+    // Close before asserting: a failing assertion must not leak this connection's bus listener into later tests.
     const latest = ws.messages.findLast((m) => m.type === 'conversation_changed' && m.conversation.id === conversationId);
     ws.close();
     expect(latest.conversation.workingDir).toBe('newer');
