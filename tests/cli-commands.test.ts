@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
 import { mkdir, writeFile, chmod, rm, readFile, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -511,6 +511,13 @@ describe('runCliCommand: install reinstall over a real existing systemd unit', (
           return null;
         }
       },
+      readlink: (p) => {
+        try {
+          return readlinkSync(p);
+        } catch {
+          return null;
+        }
+      },
     };
     const manager = createServiceManager(
       { platform: 'linux', isRoot: false, systemdRunning: false, initdAvailable: false, userSystemdUsable: true },
@@ -534,5 +541,95 @@ describe('runCliCommand: install reinstall over a real existing systemd unit', (
 
     const envContents = await readFile(join(unitDir, 'harmonic.env'), 'utf8');
     expect(envContents).toContain('hunter2');
+  });
+
+  function setUpManager(execStart: (dataDir: string) => string): { unitDir: string; unitPath: string; dataDir: string; deps: CliCommandDependencies } {
+    const unitDir = join(home, '.config', 'systemd', 'user');
+    const unitPath = join(unitDir, 'harmonic.service');
+    const dataDir = join(home, 'srv', 'harmonic');
+    mkdirSync(unitDir, { recursive: true });
+    writeFileSync(
+      unitPath,
+      ['[Unit]', 'Description=Harmonic', '', '[Service]', 'Type=simple', `ExecStart=${execStart(dataDir)}`, '', '[Install]', 'WantedBy=default.target', ''].join('\n'),
+    );
+    const dependencies: ServiceManagerDependencies = {
+      nodePath: '/usr/bin/node',
+      currentVersion: '2.16.0',
+      path: '/usr/bin:/bin',
+      homeDir: home,
+      userName: 'tester',
+      run: async () => ({ stdout: 'active\n' }),
+      mkdir: async (p) => { await mkdir(p, { recursive: true }); },
+      writeFile: async (p, c) => { await writeFile(p, c, 'utf8'); },
+      chmod: async (p, m) => { await chmod(p, m); },
+      removeFile: async (p) => { await rm(p, { recursive: true, force: true }); },
+      rename: async (from, to) => { await rename(from, to); },
+      fileExists: (p) => existsSync(p),
+      readFile: (p) => readFileSync(p, 'utf8'),
+      readTextFile: async (p) => {
+        try {
+          return await readFile(p, 'utf8');
+        } catch {
+          return null;
+        }
+      },
+      readlink: (p) => {
+        try {
+          return readlinkSync(p);
+        } catch {
+          return null;
+        }
+      },
+    };
+    const manager = createServiceManager(
+      { platform: 'linux', isRoot: false, systemdRunning: false, initdAvailable: false, userSystemdUsable: true },
+      dependencies,
+    );
+    const { deps } = fakeDependencies();
+    deps.serviceManager = () => manager;
+    deps.defaultDataDir = () => join(home, 'default');
+    return { unitDir, unitPath, dataDir, deps };
+  }
+
+  it('reuses an existing unit written in --flag=value form', async () => {
+    const { unitDir, dataDir, deps } = setUpManager(
+      (dataDir) => `/usr/bin/node ${dataDir}/app/current/dist/cli.js serve --port=8080 --host=127.0.0.1 --data-dir=${dataDir}`,
+    );
+
+    const dispatch = dispatchCli(['install']);
+    if (dispatch.kind !== 'install') throw new Error('expected install');
+    await runCliCommand(dispatch, [], deps);
+
+    const unitContents = await readFile(join(unitDir, 'harmonic.service'), 'utf8');
+    expect(unitContents).toContain(`--port 8080 --host 127.0.0.1 --data-dir ${dataDir}`);
+  });
+
+  it('refuses to reinstall when the existing unit has a token it cannot understand, and writes nothing', async () => {
+    const { unitPath, dataDir, deps } = setUpManager(
+      (dataDir) => `/usr/bin/node ${dataDir}/app/current/dist/cli.js serve --port 8080 --host 127.0.0.1 --data-dir ${dataDir} --unknown-flag surprise`,
+    );
+    const before = await readFile(unitPath, 'utf8');
+
+    const dispatch = dispatchCli(['install']);
+    if (dispatch.kind !== 'install') throw new Error('expected install');
+    await expect(runCliCommand(dispatch, [], deps)).rejects.toThrow(/unrecognized ExecStart argument.*unknown-flag/);
+
+    expect(await readFile(unitPath, 'utf8')).toBe(before);
+    expect(existsSync(dataDir)).toBe(false);
+  });
+
+  it('proceeds when explicit --port/--host/--data-dir override an unparseable existing unit', async () => {
+    const { unitDir, dataDir, deps } = setUpManager(
+      (dataDir) => `/usr/bin/node ${dataDir}/app/current/dist/cli.js serve --port 8080 --host 127.0.0.1 --data-dir ${dataDir} --unknown-flag surprise`,
+    );
+    const newDataDir = join(dataDir, '..', 'harmonic2');
+    const rest = ['--port', '9000', '--host', '0.0.0.0', '--data-dir', newDataDir];
+
+    const dispatch = dispatchCli(['install', ...rest]);
+    if (dispatch.kind !== 'install') throw new Error('expected install');
+    await runCliCommand(dispatch, rest, deps);
+
+    const unitContents = await readFile(join(unitDir, 'harmonic.service'), 'utf8');
+    expect(unitContents).toContain(`--port 9000 --host 0.0.0.0 --data-dir ${newDataDir}`);
   });
 });

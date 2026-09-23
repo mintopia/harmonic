@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CURRENT_UNIT_REVISION, createServiceManager, unitRevision, type ServiceEnvironment, type ServiceManagerDependencies } from '../src/service-manager.js';
@@ -43,6 +43,7 @@ const dependencies = (): ServiceManagerDependencies & { calls: string[][]; dirs:
       return contents;
     },
     readTextFile: async (path) => files.get(path) ?? null,
+    readlink: () => null,
   };
 };
 
@@ -179,6 +180,13 @@ describe('systemd unit (real filesystem)', () => {
       fileExists: (path) => existsSync(path),
       readFile: (path) => readFileSync(path, 'utf8'),
       readTextFile: async () => null,
+      readlink: (path) => {
+        try {
+          return readlinkSync(path);
+        } catch {
+          return null;
+        }
+      },
     };
     // Seed the version layout install() expects, so it can find dist/upgrade/boot-guard.cjs without a real npm install.
     mkdirSync(join(dataDir, 'app', 'versions', '2.16.0', 'dist', 'upgrade'), { recursive: true });

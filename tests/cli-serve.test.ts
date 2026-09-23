@@ -250,6 +250,7 @@ describe('systemd upgrades', () => {
         rename: async () => { installed = true; },
         fileExists: (path) => installed && path === join(versionDir, 'dist', 'cli.js'),
         readFile: () => JSON.stringify({ version: target }),
+        readlink: () => null,
       },
     };
   }
@@ -277,6 +278,7 @@ describe('systemd upgrades', () => {
       rename: async () => {},
       fileExists: () => false,
       readFile: () => JSON.stringify({ version: target }),
+      readlink: () => null,
     };
 
     await expect(installManagedUpgrade({ dataDir, target, run, fs })).rejects.toThrow('did not produce a valid install');

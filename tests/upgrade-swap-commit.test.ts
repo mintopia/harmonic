@@ -40,7 +40,17 @@ function buildSwap(dataDir: string, packageSpec: string): { swap: UpgradeSwap; c
       await verifyInstall({
         dir: join(dataDir, 'app', 'versions', version),
         version,
-        dependencies: { fileExists: existsSync, readFile: readFileUtf8 },
+        dependencies: {
+          fileExists: existsSync,
+          readFile: readFileUtf8,
+          readlink: (path) => {
+            try {
+              return readlinkSync(path);
+            } catch {
+              return null;
+            }
+          },
+        },
       });
     },
     commit: async (version) => {
