@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import { join } from 'node:path';
@@ -54,6 +54,22 @@ export interface ServiceStatus {
   detail?: string;
 }
 
+/** Settings recovered from a previously installed service, offered as install-time defaults. */
+export interface ExistingServiceSettings {
+  serve: {
+    port: string;
+    host: string;
+    dataDir: string;
+    otelEndpoint?: string | undefined;
+    otelHeaders?: string | undefined;
+    otelExport?: string | undefined;
+    otelMetricExportInterval?: string | undefined;
+    otelStdoutLogLevel?: string | undefined;
+  };
+  user?: string;
+  password?: string;
+}
+
 export interface ServiceManager {
   readonly backend: ServiceBackend;
   install(options: ServiceInstallOptions): Promise<ServiceInstallResult>;
@@ -63,6 +79,8 @@ export interface ServiceManager {
   restart(): Promise<void>;
   status(): Promise<ServiceStatus>;
   isInstalled(): Promise<boolean>;
+  /** Best-effort recovery of the currently installed service's settings, for reuse on reinstall. */
+  readExistingSettings(): Promise<ExistingServiceSettings | null>;
 }
 
 interface CommandResult {
@@ -83,6 +101,8 @@ export interface ServiceManagerDependencies {
   rename(from: string, to: string): Promise<void>;
   fileExists(path: string): boolean;
   readFile(path: string, encoding: 'utf8'): string;
+  /** Returns the file's contents, or null if it doesn't exist or can't be read. */
+  readTextFile(path: string): Promise<string | null>;
   sudoUser?: string;
   warn?(message: string): void;
 }
@@ -104,6 +124,13 @@ const defaultDependencies = (): ServiceManagerDependencies => ({
   rename: async (from, to) => { await rename(from, to); },
   fileExists: existsSync,
   readFile: (path) => readFileSync(path, 'utf8'),
+  readTextFile: async (path) => {
+    try {
+      return await readFile(path, 'utf8');
+    } catch {
+      return null;
+    }
+  },
   ...(process.env.SUDO_USER === undefined ? {} : { sudoUser: process.env.SUDO_USER }),
 });
 
@@ -129,6 +156,92 @@ const environmentFileValue = (value: string): string => JSON.stringify(value);
 const unitEnvironment = (key: string, value: string): string => {
   const assignment = `${key}=${value}`;
   return /^[A-Za-z0-9_./:=+@%,-]+$/.test(assignment) ? assignment : JSON.stringify(assignment);
+};
+
+/** Splits an ExecStart value back into arguments, reversing escapeUnitArgument's quoting. */
+const tokenizeUnitArgs = (execStart: string): string[] | null => {
+  const tokens: string[] = [];
+  let i = 0;
+  const n = execStart.length;
+  while (i < n) {
+    while (i < n && execStart[i] === ' ') i++;
+    if (i >= n) break;
+    if (execStart[i] === '"') {
+      let j = i + 1;
+      while (j < n && execStart[j] !== '"') {
+        j += execStart[j] === '\\' ? 2 : 1;
+      }
+      if (j >= n) return null;
+      try {
+        const value: unknown = JSON.parse(execStart.slice(i, j + 1));
+        if (typeof value !== 'string') return null;
+        tokens.push(value);
+      } catch {
+        return null;
+      }
+      i = j + 1;
+    } else {
+      let j = i;
+      while (j < n && execStart[j] !== ' ') j++;
+      tokens.push(execStart.slice(i, j));
+      i = j;
+    }
+  }
+  return tokens;
+};
+
+const execStartServeSchema = z.object({
+  port: z.string(),
+  host: z.string(),
+  dataDir: z.string(),
+  otelEndpoint: z.string().optional(),
+  otelHeaders: z.string().optional(),
+  otelExport: z.string().optional(),
+  otelMetricExportInterval: z.string().optional(),
+  otelStdoutLogLevel: z.string().optional(),
+});
+
+const execStartFlags: Record<string, keyof z.infer<typeof execStartServeSchema>> = {
+  '--port': 'port',
+  '--host': 'host',
+  '--data-dir': 'dataDir',
+  '--otel-endpoint': 'otelEndpoint',
+  '--otel-headers': 'otelHeaders',
+  '--otel-export': 'otelExport',
+  '--otel-metric-export-interval': 'otelMetricExportInterval',
+  '--otel-stdout-log-level': 'otelStdoutLogLevel',
+};
+
+/** Recovers the `harmonic serve` invocation an ExecStart line encodes, or null if it doesn't match the shape this file writer produces. */
+const parseExecStartServe = (unitContents: string): ExistingServiceSettings['serve'] | null => {
+  const match = /^ExecStart=(.*)$/m.exec(unitContents);
+  if (!match?.[1]) return null;
+  const tokens = tokenizeUnitArgs(match[1]);
+  if (!tokens || tokens.length < 3 || tokens[2] !== 'serve') return null;
+  const collected: Record<string, string> = {};
+  for (let i = 3; i < tokens.length; i += 2) {
+    const flag = tokens[i];
+    const key = flag ? execStartFlags[flag] : undefined;
+    const value = tokens[i + 1];
+    if (!key || value === undefined) return null;
+    collected[key] = value;
+  }
+  const parsed = execStartServeSchema.safeParse(collected);
+  return parsed.success ? parsed.data : null;
+};
+
+const parseUnitUser = (unitContents: string): string | undefined => /^User=(.+)$/m.exec(unitContents)?.[1];
+
+/** Recovers the operator password from a harmonic.env file written by this file writer. */
+const parseEnvPassword = (envContents: string): { ok: true; password: string | undefined } | { ok: false } => {
+  const match = /^HARMONIC_PASSWORD=(.*)$/m.exec(envContents);
+  if (!match) return { ok: true, password: undefined };
+  try {
+    const value: unknown = JSON.parse(match[1]!);
+    return typeof value === 'string' ? { ok: true, password: value } : { ok: false };
+  } catch {
+    return { ok: false };
+  }
 };
 
 const initdScriptPath = '/etc/init.d/harmonic';
@@ -290,6 +403,34 @@ class SystemdServiceManager implements ServiceManager {
   }
 
   async isInstalled(): Promise<boolean> { return this.dependencies.fileExists(this.unitPath); }
+
+  async readExistingSettings(): Promise<ExistingServiceSettings | null> {
+    if (!this.dependencies.fileExists(this.unitPath)) return null;
+    const unitContents = await this.dependencies.readTextFile(this.unitPath);
+    if (unitContents === null) return null;
+    const serve = parseExecStartServe(unitContents);
+    if (serve === null) {
+      warn(
+        this.dependencies,
+        `Could not parse the existing unit at ${this.unitPath}; reinstalling with the values you passed (or their defaults) instead of the running service's settings.`,
+      );
+      return null;
+    }
+    const user = parseUnitUser(unitContents);
+    const settings: ExistingServiceSettings = { serve, ...(user === undefined ? {} : { user }) };
+    if (this.dependencies.fileExists(this.environmentPath)) {
+      const envContents = await this.dependencies.readTextFile(this.environmentPath);
+      if (envContents === null) {
+        throw new Error(`Could not read the existing password file at ${this.environmentPath}; refusing to reinstall without it. Pass --password explicitly to replace it deliberately.`);
+      }
+      const parsedEnv = parseEnvPassword(envContents);
+      if (!parsedEnv.ok) {
+        throw new Error(`Could not read the existing password from ${this.environmentPath}; refusing to reinstall without it. Pass --password explicitly to replace it deliberately.`);
+      }
+      if (parsedEnv.password !== undefined) settings.password = parsedEnv.password;
+    }
+    return settings;
+  }
 }
 
 class InitdServiceManager implements ServiceManager {
@@ -333,6 +474,8 @@ class InitdServiceManager implements ServiceManager {
   }
 
   async isInstalled(): Promise<boolean> { return this.dependencies.fileExists(initdScriptPath); }
+
+  async readExistingSettings(): Promise<ExistingServiceSettings | null> { return null; }
 }
 
 export class UnsupportedServicePlatformError extends Error {
@@ -364,6 +507,10 @@ class SelfManagedServiceManager implements ServiceManager {
 
   async isInstalled(): Promise<boolean> {
     return false;
+  }
+
+  async readExistingSettings(): Promise<ExistingServiceSettings | null> {
+    return null;
   }
 }
 

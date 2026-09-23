@@ -45,6 +45,7 @@ const initdDependencies = () => {
       if (contents === undefined) throw new Error(`ENOENT: ${path}`);
       return contents;
     },
+    readTextFile: async (path: string) => files.get(path) ?? null,
   } satisfies ServiceManagerDependencies;
   return { dependencies, calls, dirs, files, modes, warn };
 };
@@ -183,6 +184,7 @@ describe('systemd ServiceManager', () => {
         if (contents === undefined) throw new Error(`ENOENT: ${path}`);
         return contents;
       },
+      readTextFile: async (path) => files.get(path) ?? null,
     };
   };
 
