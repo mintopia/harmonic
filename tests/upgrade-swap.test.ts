@@ -35,6 +35,29 @@ describe('UpgradeSwap', () => {
     ]);
   });
 
+  it('waits for idle after verify and before relaunch/release-lock when waitForIdle is provided', async () => {
+    const { swap, calls } = subject({ waitForIdle: vi.fn(async () => { calls.push('await-idle'); }) });
+
+    await expect(swap.execute({ version: '2.6.0' })).resolves.toEqual({ kind: 'swapped' });
+
+    expect(calls).toEqual([
+      'log:install:started', 'operation:upgrade.install', 'install:2.6.0', 'log:install:succeeded',
+      'log:verify:started', 'operation:upgrade.verify', 'log:verify:succeeded',
+      'log:await-idle:started', 'operation:upgrade.await-idle', 'await-idle', 'log:await-idle:succeeded',
+      'log:relaunch:started', 'operation:upgrade.relaunch', 'relauncher', 'log:relaunch:succeeded',
+      'log:release-lock:started', 'operation:upgrade.release-lock', 'release-lock', 'log:release-lock:succeeded',
+      'log:exit:started', 'operation:upgrade.exit', 'exit', 'log:exit:succeeded',
+    ]);
+  });
+
+  it('skips the await-idle step entirely when waitForIdle is not provided', async () => {
+    const { swap, calls } = subject();
+
+    await swap.execute({ version: '2.6.0' });
+
+    expect(calls.some((c) => c.includes('await-idle'))).toBe(false);
+  });
+
   it('hands the restart to systemd after installation and verification', async () => {
     const { swap, calls, dependencies } = subject({ managedBy: 'systemd' });
 

@@ -78,6 +78,38 @@ export interface UpdateArmingStore extends UpdateAvailabilityStore {
   setState(state: UpdateAvailabilityState): Promise<void>;
 }
 
+function parsePersisted(row: { value: string } | undefined): UpdateAvailabilityState {
+  if (row === undefined) return { version: null, dismissedVersion: null, phase: { kind: 'unarmed' } };
+  try {
+    const parsed = persistedAvailability.safeParse(JSON.parse(row.value));
+    if (!parsed.success) return { version: null, dismissedVersion: null, phase: { kind: 'unarmed' } };
+    const state = {
+      version: parsed.data.version,
+      dismissedVersion: parsed.data.dismissedVersion ?? null,
+    };
+    const armedVersion = parsed.data.armedVersion ?? null;
+    if (armedVersion === null) return { ...state, phase: { kind: 'unarmed' } };
+    const autoRunnerWasEnabled = parsed.data.autoRunnerWasEnabled ?? false;
+    const upgradingVersion = parsed.data.upgradingVersion;
+    if (upgradingVersion === armedVersion) return { ...state, phase: { kind: 'upgrading', targetVersion: armedVersion, autoRunnerWasEnabled } };
+    return { ...state, phase: { kind: 'armed', targetVersion: armedVersion, autoRunnerWasEnabled } };
+  } catch {
+    // Corrupt/legacy stored JSON degrades to "no known update" rather than crashing the update check.
+    return { version: null, dismissedVersion: null, phase: { kind: 'unarmed' } };
+  }
+}
+
+function serialize(state: UpdateAvailabilityState): string {
+  const phase = state.phase;
+  return JSON.stringify({
+    version: state.version,
+    dismissedVersion: state.dismissedVersion,
+    armedVersion: phase.kind === 'unarmed' ? null : phase.targetVersion,
+    upgradingVersion: phase.kind === 'upgrading' ? phase.targetVersion : null,
+    autoRunnerWasEnabled: phase.kind === 'unarmed' ? null : phase.autoRunnerWasEnabled,
+  } satisfies z.infer<typeof persistedAvailability>);
+}
+
 export class SettingsUpdateAvailabilityStore implements UpdateArmingStore {
   constructor(private readonly db: AsyncDbHandle) {}
 
@@ -89,40 +121,27 @@ export class SettingsUpdateAvailabilityStore implements UpdateArmingStore {
     const row = await this.db.read((db) =>
       db.select({ value: settings.value }).from(settings).where(eq(settings.key, UPDATE_AVAILABILITY_KEY)).get(),
     );
-    if (row === undefined) return { version: null, dismissedVersion: null, phase: { kind: 'unarmed' } };
-    try {
-      const parsed = persistedAvailability.safeParse(JSON.parse(row.value));
-      if (!parsed.success) return { version: null, dismissedVersion: null, phase: { kind: 'unarmed' } };
-      const state = {
-        version: parsed.data.version,
-        dismissedVersion: parsed.data.dismissedVersion ?? null,
-      };
-      const armedVersion = parsed.data.armedVersion ?? null;
-      if (armedVersion === null) return { ...state, phase: { kind: 'unarmed' } };
-      const autoRunnerWasEnabled = parsed.data.autoRunnerWasEnabled ?? false;
-      const upgradingVersion = parsed.data.upgradingVersion;
-      if (upgradingVersion === armedVersion) return { ...state, phase: { kind: 'upgrading', targetVersion: armedVersion, autoRunnerWasEnabled } };
-      return { ...state, phase: { kind: 'armed', targetVersion: armedVersion, autoRunnerWasEnabled } };
-    } catch {
-      // Corrupt/legacy stored JSON degrades to "no known update" rather than crashing the update check.
-      return { version: null, dismissedVersion: null, phase: { kind: 'unarmed' } };
-    }
+    return parsePersisted(row);
   }
 
+  /** Updates only `version`, reading the current row inside the same
+   * serialised write so it can't race a concurrent `setState` (e.g. an arm)
+   * landing between a separate read and write and clobbering it with a stale
+   * merge (issue #8). */
   async set(version: string | null): Promise<void> {
-    const state = await this.getState();
-    await this.setState({ ...state, version });
+    await this.db.write(async (db) => {
+      const row = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, UPDATE_AVAILABILITY_KEY)).get();
+      const value = serialize({ ...parsePersisted(row), version });
+      await db
+        .insert(settings)
+        .values({ key: UPDATE_AVAILABILITY_KEY, value })
+        .onConflictDoUpdate({ target: settings.key, set: { value } })
+        .run();
+    });
   }
 
   async setState(state: UpdateAvailabilityState): Promise<void> {
-    const phase = state.phase;
-    const value = JSON.stringify({
-      version: state.version,
-      dismissedVersion: state.dismissedVersion,
-      armedVersion: phase.kind === 'unarmed' ? null : phase.targetVersion,
-      upgradingVersion: phase.kind === 'upgrading' ? phase.targetVersion : null,
-      autoRunnerWasEnabled: phase.kind === 'unarmed' ? null : phase.autoRunnerWasEnabled,
-    } satisfies z.infer<typeof persistedAvailability>);
+    const value = serialize(state);
     await this.db.write((db) =>
       db
         .insert(settings)

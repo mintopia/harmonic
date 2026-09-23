@@ -161,11 +161,13 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
             });
             child.unref();
           },
-          releaseLock: async () => {
-            await app.close();
-            await telemetry.shutdown();
-            releaseLock(dataDir);
-          },
+          waitForIdle: () => app.ctx.upgrade.waitForIdle(),
+          releaseLock: createUpgradeReleaseLock({
+            close: () => app.close(),
+            shutdownTelemetry: () => telemetry.shutdown(),
+            releaseLock: () => releaseLock(dataDir),
+            exit: (code) => process.exit(code),
+          }),
           exit: () => { process.exit(0); },
           abort: async () => {},
           operation: async ({ type, version: target }, work) => {
@@ -232,5 +234,55 @@ export function createShutdownHandler(release: () => Promise<void>, exit: (code:
     shuttingDown = true;
     await release();
     exit(0);
+  };
+}
+
+/**
+ * The upgrade swap's `releaseLock` step: once it starts, the process must
+ * always drop the data-dir lock and exit, or a botched `app.close()`/telemetry
+ * shutdown leaves a dead-but-listening process holding the lock forever with
+ * systemd unable to restart it (issue #3). `close`/`shutdownTelemetry` failures
+ * or a hang (bounded by `timeoutMs`) are swallowed here and force a non-zero
+ * exit instead of propagating — a zero exit is left to the swap's own `exit`
+ * step on the clean path.
+ */
+export function createUpgradeReleaseLock({
+  close,
+  shutdownTelemetry,
+  releaseLock: releaseLockFile,
+  exit,
+  log,
+  timeoutMs = 10_000,
+}: {
+  close: () => Promise<void>;
+  shutdownTelemetry: () => Promise<void>;
+  releaseLock: () => void;
+  exit: (code: number) => void;
+  log?: (message: string) => void;
+  timeoutMs?: number;
+}): () => Promise<void> {
+  const warn = log ?? logger.error;
+  return async () => {
+    let failed = false;
+    try {
+      await Promise.race([
+        close(),
+        new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => reject(new Error(`app.close() exceeded ${timeoutMs}ms`)), timeoutMs);
+          timer.unref?.();
+        }),
+      ]);
+    } catch (error) {
+      failed = true;
+      warn(`upgrade release-lock: app.close failed, forcing shutdown: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    try {
+      await shutdownTelemetry();
+    } catch (error) {
+      failed = true;
+      warn(`upgrade release-lock: telemetry shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    releaseLockFile();
+    if (failed) exit(1);
   };
 }

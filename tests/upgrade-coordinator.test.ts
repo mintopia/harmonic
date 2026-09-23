@@ -1,4 +1,11 @@
 import { describe, expect, it } from 'vitest';
+
+/** The idle handoff now runs outside `exclusively` (issue #3), kicked off via
+ * `setImmediate` after `reconcile()`/`arm()` resolves; wait a tick for it (and
+ * any failure-recovery cancel chained off it) to settle before asserting. */
+function flushHandoff(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
 import { SpanStatusCode } from '@opentelemetry/api';
 import { baselineConfig, type AppConfig } from '../src/config.js';
 import type { OperationSnapshot } from '../src/telemetry/operations.js';
@@ -126,6 +133,7 @@ describe('UpgradeCoordinator', () => {
     expect(await subject.upgrade.reconcile()).toBe(false);
     subject.setOperations([]);
     expect(await subject.upgrade.reconcile()).toBe(true);
+    await flushHandoff();
     expect(ready).toEqual(['2.6.0']);
     await subject.upgrade.reconcile();
     expect(ready).toEqual(['2.6.0']);
@@ -151,6 +159,7 @@ describe('UpgradeCoordinator', () => {
 
     await subject.upgrade.arm();
     await subject.upgrade.reconcile();
+    await flushHandoff();
 
     await expect(subject.upgrade.state()).resolves.toEqual({
       version: '2.6.0',
@@ -187,5 +196,34 @@ describe('UpgradeCoordinator', () => {
 
     await expect(subject.upgrade.complete()).resolves.toMatchObject({ phase: { kind: 'armed', targetVersion: '2.6.0' } });
     expect(subject.config().autoRunner.enabled).toBe(false);
+  });
+});
+
+describe('UpgradeCoordinator.waitForIdle', () => {
+  it('polls until in-flight work drains instead of proceeding immediately', async () => {
+    const subject = coordinator({ runningAttempts: 1 });
+    let sleeps = 0;
+    const sleep = async (): Promise<void> => {
+      sleeps += 1;
+      if (sleeps === 3) subject.setRunningAttempts(0);
+    };
+
+    await subject.upgrade.waitForIdle({ sleep, timeoutMs: 60_000 });
+
+    expect(sleeps).toBe(3);
+    await expect(subject.upgrade.idleState()).resolves.toMatchObject({ runningAttempts: 0 });
+  });
+
+  it('gives up once the bound elapses instead of waiting forever for work that never drains', async () => {
+    const subject = coordinator({ runningAttempts: 1 });
+    let now = 0;
+    const sleep = async (ms: number): Promise<void> => { now += ms; };
+
+    await subject.upgrade.waitForIdle({ sleep, now: () => now, timeoutMs: 5_000, pollMs: 1_000 });
+
+    // Gave up while still busy, rather than hanging: no assertion needed
+    // beyond `waitForIdle` having resolved at all within a bounded number
+    // of polls.
+    await expect(subject.upgrade.idleState()).resolves.toMatchObject({ runningAttempts: 1 });
   });
 });

@@ -31,7 +31,6 @@ export const SYSTEMD_MIGRATION_NOTICE =
 /** Durable arming state for an offered in-place upgrade. */
 export class UpgradeCoordinator {
   private transitions: Promise<void> = Promise.resolve();
-  private onIdleStartedFor: string | null = null;
   private readonly reconcileIdle = singleFlight(() => this.reconcileOnce());
 
   constructor(private readonly options: UpgradeCoordinatorOptions) {}
@@ -138,10 +137,39 @@ export class UpgradeCoordinator {
     return { runningAttempts, mergingOrIntegrating, conversationMidTurn: this.options.conversations.hasInFlightTurn() };
   }
 
+  private static isIdle(state: UpgradeIdleState): boolean {
+    return state.runningAttempts === 0 && !state.mergingOrIntegrating && !state.conversationMidTurn;
+  }
+
+  /** Best-effort bounded, yielding wait for in-flight work to drain, so the
+   * swap's irreversible release-lock/exit doesn't kill work that started
+   * during install/verify (issue #9); never throws, and gives up (returns)
+   * once `timeoutMs` elapses even if still busy. */
+  async waitForIdle({
+    timeoutMs = 10 * 60_000,
+    pollMs = 1_000,
+    now = Date.now,
+    sleep = (ms: number) => new Promise<void>((resolve) => { const t = setTimeout(resolve, ms); t.unref?.(); }),
+  }: { timeoutMs?: number; pollMs?: number; now?: () => number; sleep?: (ms: number) => Promise<void> } = {}): Promise<void> {
+    const deadline = now() + timeoutMs;
+    for (;;) {
+      const idle = await this.idleState();
+      if (UpgradeCoordinator.isIdle(idle)) return;
+      if (now() >= deadline) return;
+      await sleep(pollMs);
+    }
+  }
+
   reconcile(): Promise<boolean> {
     return this.exclusively(() => this.reconcileIdle());
   }
 
+  /** Transitions `armed` -> `upgrading` and kicks off the handoff, all under the
+   * lock; the handoff itself (the real install/verify/relaunch/release-lock swap,
+   * which can run for minutes and ends the process) runs after this returns, so
+   * the lock never blocks a request for the swap's duration (issue #3). An
+   * already-`upgrading` phase is a no-op: the persisted phase itself is the
+   * re-entry guard, replacing the old in-memory `onIdleStartedFor` flag. */
   private async reconcileOnce(): Promise<boolean> {
     const armed = await this.options.store.getState();
     if (armed.phase.kind === 'unarmed') return false;
@@ -149,25 +177,37 @@ export class UpgradeCoordinator {
       await this.cancelOnce();
       return false;
     }
+    if (armed.phase.kind === 'upgrading') return true;
     const targetVersion = armed.phase.targetVersion;
     const idle = await this.idleState();
     if (idle.runningAttempts !== 0 || idle.mergingOrIntegrating || idle.conversationMidTurn) return false;
-    if (this.onIdleStartedFor === targetVersion) return true;
-    this.onIdleStartedFor = targetVersion;
-    try {
-      await this.options.store.setState({ ...armed, phase: { ...armed.phase, kind: 'upgrading' } });
-      await this.options.onIdle?.(targetVersion);
-    } catch (error) {
-      reportFailure(error, {
-        op: 'upgradeCoordinator.onIdle',
-        level: 'error',
-        context: { armedVersion: targetVersion },
-      });
-      this.onIdleStartedFor = null;
-      await this.cancelOnce();
-      return false;
-    }
+    await this.options.store.setState({ ...armed, phase: { ...armed.phase, kind: 'upgrading' } });
+    setImmediate(() => this.runIdleHandoff(targetVersion));
     return true;
+  }
+
+  /** Runs `onIdle` (the real swap) outside the `exclusively` lock, in a fresh
+   * task so a synchronous throw from `onIdle` can never re-enter the lock from
+   * within the same call stack that's still holding it. */
+  private runIdleHandoff(targetVersion: string): void {
+    void (async () => {
+      try {
+        await this.options.onIdle?.(targetVersion);
+      } catch (error) {
+        reportFailure(error, {
+          op: 'upgradeCoordinator.onIdle',
+          level: 'error',
+          context: { armedVersion: targetVersion },
+        });
+        await this.cancel().catch((cancelError: unknown) => {
+          reportFailure(cancelError, {
+            op: 'upgradeCoordinator.cancelAfterOnIdleFailure',
+            level: 'error',
+            context: { armedVersion: targetVersion },
+          });
+        });
+      }
+    })();
   }
 
   async assertManualLaunchAllowed(): Promise<void> {
