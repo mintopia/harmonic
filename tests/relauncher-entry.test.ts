@@ -54,7 +54,7 @@ describe('relauncher entry guard', () => {
 
     const child = spawn(
       process.execPath,
-      ['--import', 'tsx', relauncherPath, dataDir, '(unused)', JSON.stringify([])],
+      ['--import', 'tsx', relauncherPath, dataDir, JSON.stringify([])],
       { stdio: 'pipe', env: { ...process.env, MARKER_PATH: markerPath, HARMONIC_RELAUNCHER_POLL_MS: '10' } },
     );
     let stderr = '';
@@ -73,7 +73,7 @@ describe('relauncher entry guard', () => {
 
     const child = spawn(
       process.execPath,
-      ['--import', 'tsx', relauncherPath, dataDir, '/unused/cli.js', JSON.stringify([])],
+      ['--import', 'tsx', relauncherPath, dataDir, JSON.stringify([])],
       {
         stdio: 'pipe',
         env: { ...process.env, HARMONIC_RELAUNCHER_MAX_WAIT_MS: '50', HARMONIC_RELAUNCHER_POLL_MS: '10' },

@@ -20,8 +20,10 @@ export function createTempDirTracker(): { tempDir(prefix: string): string; clean
 
 export interface FixturePackageOptions {
   version: string;
-  /** Extra `dist/cli.js` contents; defaults to a console.log marker. */
+  /** Extra `dist/cli.js` contents; defaults to a marker + `--version` handling (prints `version`, exits 0). */
   cliJs?: string;
+  /** Extra `dist/cli-serve.js` contents; defaults to an empty module that imports cleanly. */
+  cliServeJs?: string;
   /** Extra files to write under the package root, keyed by relative path. */
   files?: Record<string, string>;
 }
@@ -31,14 +33,19 @@ export interface FixturePackageOptions {
  * (packing a local directory with `npm pack <dir>` would run `prepare` immediately).
  */
 export function packFixtureTarball(tempDir: (prefix: string) => string, options: FixturePackageOptions): string {
-  const { version, cliJs, files } = options;
+  const { version, cliJs, cliServeJs, files } = options;
   const source = tempDir('harmonic-upgrade-fixture-src-');
   const packageDir = join(source, 'package');
   mkdirSync(join(packageDir, 'dist'), { recursive: true });
-  writeFileSync(join(packageDir, 'dist', 'cli.js'), cliJs ?? '#!/usr/bin/env node\nconsole.log("fixture-cli");\n');
+  writeFileSync(
+    join(packageDir, 'dist', 'cli.js'),
+    cliJs ?? `#!/usr/bin/env node\nif (process.argv.includes('--version')) { console.log(${JSON.stringify(version)}); process.exit(0); }\nconsole.log("fixture-cli");\n`,
+  );
+  writeFileSync(join(packageDir, 'dist', 'cli-serve.js'), cliServeJs ?? 'export {};\n');
   writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
     name: '@mintopia/harmonic',
     version,
+    type: 'module',
     devDependencies: { 'nonexistent-dev-dep': '999.999.999' },
     scripts: { prepare: 'exit 1' },
   }));

@@ -1,5 +1,10 @@
+import { execFile } from 'node:child_process';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
+import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
+
+const execFileAsync = promisify(execFile);
 
 const packageManifestSchema = z.object({ version: z.string() });
 
@@ -36,6 +41,33 @@ export function hasValidInstall(
 ): boolean {
   if (!dependencies.fileExists(join(dir, 'dist', 'cli.js'))) return false;
   return readInstalledVersion({ dir, readFile: dependencies.readFile }) === version;
+}
+
+/**
+ * Verifies a staged install before anything irreversible (the DB snapshot, the `current` flip)
+ * depends on it: the manifest and `dist/cli.js` agree on the pinned version, `--version` actually
+ * runs, and `dist/cli-serve.js` imports without throwing — each bounded so a hang can't block the
+ * swap forever.
+ */
+export async function verifyInstall({
+  dir,
+  version,
+  dependencies,
+  timeoutMs = 15_000,
+}: {
+  dir: string;
+  version: string;
+  dependencies: Pick<VersionInstallDependencies, 'fileExists' | 'readFile'>;
+  timeoutMs?: number;
+}): Promise<void> {
+  if (!hasValidInstall(dir, version, dependencies)) {
+    throw new Error(`installed package at ${dir} does not match pinned version ${version}`);
+  }
+  await execFileAsync(process.execPath, [join(dir, 'dist', 'cli.js'), '--version'], { timeout: timeoutMs });
+
+  const cliServeUrl = pathToFileURL(join(dir, 'dist', 'cli-serve.js')).href;
+  const importScript = `import(${JSON.stringify(cliServeUrl)}).then(() => process.exit(0)).catch((error) => { console.error(error); process.exit(1); });`;
+  await execFileAsync(process.execPath, ['-e', importScript], { timeout: timeoutMs });
 }
 
 // Stages into a sibling directory and renames into place so a crash or retry can never observe a half-written version.
