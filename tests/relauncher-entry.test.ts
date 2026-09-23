@@ -44,15 +44,18 @@ describe('relauncher entry guard', () => {
   it('runs main() when invoked from a path containing a space and non-ASCII character', async () => {
     const relauncherPath = copySrcToWeirdPath();
     const dataDir = freshDir('harmonic-relauncher-data-');
+    mkdirSync(join(dataDir, 'app', 'versions', '1.0.0', 'dist'), { recursive: true });
     const markerPath = join(freshDir('harmonic-relauncher-marker-'), 'launched.marker');
-    const fakeCliDir = freshDir('harmonic-relauncher-cli-');
-    const fakeCliPath = join(fakeCliDir, 'fake-cli.js');
-    writeFileSync(fakeCliPath, "require('fs').writeFileSync(process.argv[3], 'launched');\n");
+    writeFileSync(
+      join(dataDir, 'app', 'versions', '1.0.0', 'dist', 'cli.js'),
+      "require('fs').writeFileSync(process.env.MARKER_PATH, 'launched');\n",
+    );
+    symlinkSync(join('versions', '1.0.0'), join(dataDir, 'app', 'current'));
 
     const child = spawn(
       process.execPath,
-      ['--import', 'tsx', relauncherPath, dataDir, fakeCliPath, JSON.stringify([markerPath])],
-      { stdio: 'pipe', env: { ...process.env, HARMONIC_RELAUNCHER_POLL_MS: '10' } },
+      ['--import', 'tsx', relauncherPath, dataDir, '(unused)', JSON.stringify([])],
+      { stdio: 'pipe', env: { ...process.env, MARKER_PATH: markerPath, HARMONIC_RELAUNCHER_POLL_MS: '10' } },
     );
     let stderr = '';
     child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });

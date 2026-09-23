@@ -232,6 +232,12 @@ const parseExecStartServe = (unitContents: string): ExistingServiceSettings['ser
 
 const parseUnitUser = (unitContents: string): string | undefined => /^User=(.+)$/m.exec(unitContents)?.[1];
 
+/** Reads `HARMONIC_UNIT_REVISION` from a generated unit; 0 if absent (pre-boot-guard units, ADR-0042). */
+export const unitRevision = (unitContents: string): number => {
+  const match = /^Environment=HARMONIC_UNIT_REVISION=(\d+)$/m.exec(unitContents);
+  return match?.[1] ? Number(match[1]) : 0;
+};
+
 /** Recovers the operator password from a harmonic.env file written by this file writer. */
 const parseEnvPassword = (envContents: string): { ok: true; password: string | undefined } | { ok: false } => {
   const match = /^HARMONIC_PASSWORD=(.*)$/m.exec(envContents);
@@ -341,7 +347,11 @@ class SystemdServiceManager implements ServiceManager {
     // install-time PATH so the harness can spawn its agents and in-place upgrades
     // can reach npm.
     const pathEnvironment = this.dependencies.path ? `Environment=${unitEnvironment('PATH', this.dependencies.path)}\n` : '';
-    return `[Unit]\nDescription=Harmonic\nAfter=network.target\n\n[Service]\nType=simple\n${serviceUser}${workingDirectory}ExecStart=${args}\n${environmentFile}${pathEnvironment}Environment=HARMONIC_MANAGED_BY=systemd\nRestart=always\nTimeoutStopSec=60\n\n[Install]\nWantedBy=${wantedBy}\n`;
+    // `-` tells systemd to ignore this step's exit code; the guard always exits 0 anyway (ADR-0042).
+    const execStartPre = [this.dependencies.nodePath, join(serve.dataDir, 'app', 'boot-guard.cjs'), serve.dataDir]
+      .map(escapeUnitArgument)
+      .join(' ');
+    return `[Unit]\nDescription=Harmonic\nAfter=network.target\nStartLimitIntervalSec=120\nStartLimitBurst=10\n\n[Service]\nType=simple\nExecStartPre=-${execStartPre}\n${serviceUser}${workingDirectory}ExecStart=${args}\n${environmentFile}${pathEnvironment}Environment=HARMONIC_MANAGED_BY=systemd\nEnvironment=HARMONIC_UNIT_REVISION=2\nRestart=always\nRestartSec=2\nTimeoutStopSec=60\n\n[Install]\nWantedBy=${wantedBy}\n`;
   }
 
   async install(options: ServiceInstallOptions): Promise<ServiceInstallResult> {
@@ -365,6 +375,10 @@ class SystemdServiceManager implements ServiceManager {
         readFile: this.dependencies.readFile,
       },
     });
+    const guardSource = join(appDir, 'versions', version, 'dist', 'upgrade', 'boot-guard.cjs');
+    if (this.dependencies.fileExists(guardSource)) {
+      await this.dependencies.writeFile(join(appDir, 'boot-guard.cjs'), this.dependencies.readFile(guardSource, 'utf8'));
+    }
     if (user !== undefined) await this.dependencies.run('chown', ['-R', user, appDir]);
     await this.dependencies.run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
     await this.dependencies.mkdir(this.unitDirectory);

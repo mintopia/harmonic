@@ -38,8 +38,10 @@ export class TrackerPoller {
     private readonly onResolved: (r: ResolvedTracker) => void = () => {},
     /** Runs after mirroring; absent ⇒ no Epic integration. Its failure is logged, not fatal. */
     private readonly epics?: EpicIntegrationSync,
-    /** `reconcileOnPoll` false ⇒ Epics reconcile through the global Scheduler Job instead. */
-    private readonly opts: { reconcileOnPoll?: boolean; yieldOptions?: YieldOptions } = {},
+    /** `reconcileOnPoll` false ⇒ Epics reconcile through the global Scheduler Job instead.
+     * `workStartAllowed` absent ⇒ always allowed; false ⇒ the reconcile tick starts no new
+     * Epic integration/verification/resolution work (issue #9, e.g. an in-progress upgrade). */
+    private readonly opts: { reconcileOnPoll?: boolean; yieldOptions?: YieldOptions; workStartAllowed?: () => boolean | Promise<boolean> } = {},
   ) {}
 
   private readonly pollGate = singleFlight(() => this.pollOnce());
@@ -117,6 +119,10 @@ export class TrackerPoller {
   /** Reconcile persisted tracker facts into this Workspace's Epic integration state. */
   async reconcileEpics(): Promise<void> {
     if (!this.epics) return;
+    if (this.opts.workStartAllowed && !(await this.opts.workStartAllowed())) {
+      logger.debug('epic integration reconcile skipped: work-start not allowed', { workspaceId: this.workspaceId });
+      return;
+    }
     const persisted = await persistedTickets(
       await this.tasks.list({ workspaceId: this.workspaceId }),
       await this.tasks.listTrackerContainers(this.workspaceId),
