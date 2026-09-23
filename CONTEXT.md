@@ -918,7 +918,10 @@ _Avoid_: daemon install, systemd install (systemd is one backend of several)
 if it predates the release it's guarding. Runs before every start (systemd
 `ExecStartPre=-`, the init.d script, the relauncher). While a version is
 pending it counts boots; on the fourth boot that never reached `listen` it
-performs the **Rollback**. A release copies its own copy over
+performs the **Rollback**. A boot that hangs instead of crashing still counts:
+a startup watchdog force-exits after `HARMONIC_STARTUP_DEADLINE_MS` (120s
+default) while `pending.json` names the running version, and the init.d
+relauncher independently kills a hung child on its own timeout. A release copies its own copy over
 `app/boot-guard.cjs` only after it clears `pending.json` post-`listen`, so a
 pending boot always runs a guard shipped by a release that already booted a
 prior version. A pre-ADR-0042 systemd unit has no guard at all — reported as
@@ -927,10 +930,14 @@ _Avoid_: startup guard, health check
 
 **Rollback**:
 The Boot Guard's automatic reversion of a version that failed to reach
-`listen` four boots running: flips `current` back to `previous`, restores the
-database from the pre-upgrade `VACUUM INTO` snapshot (discarding anything
-written after it, moving the never-healthy files aside rather than deleting
-them), and writes `app/rollback.json` with the reason. That reason is what the
+`listen` four boots running: flips `current` back to `previous`, then restores
+the database from the pre-upgrade `VACUUM INTO` snapshot — moving the live
+`harmonic.db` (and any `-wal`/`-shm`) aside into
+`app/rolled-back/<version>-<timestamp>/` rather than deleting them, so
+anything written after the snapshot is discarded from `harmonic.db` but not
+lost, and moving the originals back if the snapshot copy itself fails — and
+writes `app/rollback.json` with the reason plus whether the database was
+restored and where the preserved copy landed. That reason is what the
 Update Banner's *failed* state and Armed Upgrade's `failed` phase both surface.
 Never available under `external` Install Mode (which never self-upgrades) and
 off for a systemd unit still on `guardMissing` until `sudo harmonic install`.

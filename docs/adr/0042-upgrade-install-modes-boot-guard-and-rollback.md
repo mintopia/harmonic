@@ -47,23 +47,47 @@ is rejected.
 
 A failure at any step leaves `current` untouched.
 
+**Cancel** is honoured only up to the flip. It can stop the swap at the
+install/verify/await-idle boundaries (steps 1-4), but once step 5 (the flip)
+has started it is rejected — the swap runs to completion instead of racing
+it. If `waitForIdle` times out with work still running, the swap aborts the
+same way, before the flip, and returns to `armed` rather than `unarmed`, so
+the next idle window retries the same target instead of losing the offer.
+
 **Boot guard.** `app/boot-guard.cjs` is dependency-free and unversioned. It runs
 before every start: as `ExecStartPre=-` in the systemd unit, from the init.d
 script, and from the relauncher.
 
 - While a version is pending, the guard counts its boots.
-- On the fourth boot it flips `current` back to `previous`. It restores the
-  pre-upgrade database snapshot, removing the `-wal` and `-shm` files. It then
-  writes `app/rollback.json` and deletes `pending.json`.
+- On the fourth boot it flips `current` back to `previous`. It moves the live
+  `harmonic.db` (and any `-wal`/`-shm`) aside into
+  `app/rolled-back/<version>-<timestamp>/` rather than deleting them, copies
+  the pre-upgrade snapshot into place atomically, and moves the originals
+  back if that copy fails. It then writes `app/rollback.json` — recording
+  whether the database was restored and where the preserved copy landed — and
+  deletes `pending.json`.
+- A release that never reaches `listen` counts as a failed boot too: a startup
+  watchdog force-exits after `HARMONIC_STARTUP_DEADLINE_MS` (120s default) if
+  `pending.json` still names the running version, and the init.d relauncher
+  independently kills a hung child (SIGTERM, then SIGKILL) and moves to the
+  next round on its own timeout.
 - After `listen` succeeds, the new process clears `pending.json`. Only then does
   it copy its own guard over `app/boot-guard.cjs`. A pending boot therefore
   always runs a guard shipped by a release that has already booted.
 
 A rollback discards only what the never-healthy release wrote, plus anything the
-old process wrote between the snapshot and its exit.
+old process wrote between the snapshot and its exit — and even that is preserved
+on disk, not deleted, in case an operator needs it back.
 
 Units gain `RestartSec=2`, `StartLimitIntervalSec=120` and `StartLimitBurst=10`.
 Together these allow the guard to act before systemd gives up.
+
+**`harmonic install` and init.d stay idempotent.** init.d's `start` checks
+`status` first and skips the guard and relaunch entirely when Harmonic is
+already running. `harmonic install` restarts an already-running service
+instead of leaving the old process up after rewriting its unit, and refuses
+outright — rather than guessing — when an explicitly-flagged existing unit
+can't be fully parsed.
 
 **One attempt per arming.** A boot can find the persisted phase `upgrading` for
 a version other than the running one. It then:
@@ -89,7 +113,9 @@ runs only when no upgrade is in flight.
 - npx, npm-global, pm2 and Docker users upgrade by hand, with the exact command
   shown in the UI.
 - A rollback restores the pre-upgrade database. Anything written after the
-  snapshot is lost. The rollback notice says so.
+  snapshot is not restored, but the discarded live files are preserved under
+  `app/rolled-back/`, not deleted. The rollback notice says so and names the
+  preserved copy.
 - Each upgrade keeps an extra copy of the database until pruning removes it.
 
 ## Supersedes
