@@ -5,7 +5,7 @@ import type { OperationSnapshot } from '../telemetry/operations.js';
 import type { ConversationDriver } from '../execution/conversation-driver.js';
 import { reportFailure } from '../error-handling.js';
 import { singleFlight } from '../reliability/single-flight.js';
-import type { UpdateArmingStore, UpdateAvailabilityState } from './update-check.js';
+import type { UpdateArmingStore, UpdateAvailabilityState, UpdatePhase } from './update-check.js';
 
 export interface UpgradeIdleState {
   runningAttempts: number;
@@ -23,10 +23,17 @@ export interface UpgradeCoordinatorOptions {
   conversations: Pick<ConversationDriver, 'hasInFlightTurn'>;
   onIdle?: (version: string) => Promise<void> | void;
   migrationRequired?: boolean;
+  /** Set when this install mode can never self-upgrade (npx, npm-global, unknown); arming is refused. */
+  externalInstall?: boolean;
+  /** Reads `app/rollback.json` written by the boot guard, if the last boot rolled back. */
+  readRollback?: () => { reason: string } | null | undefined;
+  clearRollback?: () => void;
 }
 
 export const SYSTEMD_MIGRATION_NOTICE =
   "Auto-upgrade is disabled until you re-run sudo harmonic install, which reuses this service's existing port, host, data directory, and password.";
+
+export const EXTERNAL_INSTALL_NOTICE = 'Auto-upgrade is not available for this install; see the update banner for the command to run manually.';
 
 /** Durable arming state for an offered in-place upgrade. */
 export class UpgradeCoordinator {
@@ -61,8 +68,9 @@ export class UpgradeCoordinator {
 
   private async armOnce(): Promise<UpdateAvailabilityState> {
     if (this.options.migrationRequired) throw new DomainError('invalid_state', SYSTEMD_MIGRATION_NOTICE);
+    if (this.options.externalInstall) throw new DomainError('invalid_state', EXTERNAL_INSTALL_NOTICE);
     const current = await this.options.store.getState();
-    if (current.phase.kind !== 'unarmed') return current;
+    if (current.phase.kind !== 'unarmed' && current.phase.kind !== 'failed') return current;
     if (current.version === null) throw new DomainError('invalid_state', 'there is no available update to arm');
 
     const targetVersion = current.version;
@@ -89,7 +97,7 @@ export class UpgradeCoordinator {
 
   private async cancelOnce(): Promise<UpdateAvailabilityState> {
     const current = await this.options.store.getState();
-    if (current.phase.kind === 'unarmed') return current;
+    if (current.phase.kind === 'unarmed' || current.phase.kind === 'failed') return current;
     const restored = current.phase.autoRunnerWasEnabled;
     const cancelled: UpdateAvailabilityState = {
       version: current.version,
@@ -106,29 +114,62 @@ export class UpgradeCoordinator {
     }
   }
 
-  complete(): Promise<UpdateAvailabilityState> {
-    return this.exclusively(() => this.completeOnce());
+  settleOnBoot(): Promise<UpdateAvailabilityState> {
+    return this.exclusively(() => this.settleOnBootOnce());
   }
 
-  /** A relaunch onto the armed version settles the upgrade: clear the arming so
-   * reconcile stops re-triggering the swap, and restore the Auto-Runner switch. */
-  private async completeOnce(): Promise<UpdateAvailabilityState> {
+  /** Runs once at boot in place of the old bare "settle": a relaunch onto the
+   * armed target clears the arming and restores the Auto-Runner switch as
+   * before. A relaunch that lands on the wrong version — the swap started but
+   * never completed — instead records `failed` with the rollback reason (if
+   * the boot guard rolled back), restores the Auto-Runner, and leaves arming
+   * available again; it never re-triggers the swap itself. An `armed` phase
+   * that hasn't started upgrading yet is left untouched for `reconcile` to
+   * pick up normally. */
+  private async settleOnBootOnce(): Promise<UpdateAvailabilityState> {
     const current = await this.options.store.getState();
-    if (current.phase.kind === 'unarmed' || current.phase.targetVersion !== this.options.version) return current;
-    const restored = current.phase.autoRunnerWasEnabled;
-    const completed: UpdateAvailabilityState = {
-      version: current.version,
-      dismissedVersion: current.dismissedVersion,
-      phase: { kind: 'unarmed' },
-    };
-    await this.options.store.setState(completed);
+    const phase = current.phase;
+    if (phase.kind !== 'upgrading') return current;
+    if (phase.targetVersion === this.options.version) return this.settleUpgraded(current, phase);
+    return this.settleFailed(current, phase);
+  }
+
+  private async settleUpgraded(current: UpdateAvailabilityState, phase: Extract<UpdatePhase, { kind: 'upgrading' }>): Promise<UpdateAvailabilityState> {
+    const settled: UpdateAvailabilityState = { version: current.version, dismissedVersion: current.dismissedVersion, phase: { kind: 'unarmed' } };
+    await this.options.store.setState(settled);
     try {
-      await this.options.settings.updateGlobal({ autoRunner: { enabled: restored } });
-      return completed;
+      await this.options.settings.updateGlobal({ autoRunner: { enabled: phase.autoRunnerWasEnabled } });
+      return settled;
     } catch (error) {
       await this.options.store.setState(current);
       throw error;
     }
+  }
+
+  private async settleFailed(current: UpdateAvailabilityState, phase: Extract<UpdatePhase, { kind: 'upgrading' }>): Promise<UpdateAvailabilityState> {
+    const rollback = this.options.readRollback?.();
+    const failed: UpdateAvailabilityState = {
+      version: current.version,
+      dismissedVersion: current.dismissedVersion,
+      phase: {
+        kind: 'failed',
+        targetVersion: phase.targetVersion,
+        reason: rollback?.reason ?? `expected to be running ${phase.targetVersion} after the upgrade, still running ${this.options.version}`,
+        at: new Date().toISOString(),
+      },
+    };
+    await this.options.store.setState(failed);
+    try {
+      await this.options.settings.updateGlobal({ autoRunner: { enabled: phase.autoRunnerWasEnabled } });
+    } catch (error) {
+      reportFailure(error, {
+        op: 'upgradeCoordinator.settleOnBoot.restoreAutoRunner',
+        level: 'error',
+        context: { targetVersion: phase.targetVersion },
+      });
+    }
+    this.options.clearRollback?.();
+    return failed;
   }
 
   async idleState(): Promise<UpgradeIdleState> {
@@ -177,7 +218,7 @@ export class UpgradeCoordinator {
    * re-entry guard, replacing the old in-memory `onIdleStartedFor` flag. */
   private async reconcileOnce(): Promise<boolean> {
     const armed = await this.options.store.getState();
-    if (armed.phase.kind === 'unarmed') return false;
+    if (armed.phase.kind === 'unarmed' || armed.phase.kind === 'failed') return false;
     if (this.options.migrationRequired) {
       await this.cancelOnce();
       return false;
@@ -218,9 +259,11 @@ export class UpgradeCoordinator {
   /** False once an update is armed (queued to start), mid idle-handoff, or
    * upgrading — the single gate every work-start path (manual launch routes,
    * the tracker's scheduled epic reconcile) must check before starting new
-   * work (issue #9). */
+   * work (issue #9). A `failed` boot-guard rollback is not itself blocking:
+   * the swap never landed, so ordinary work is safe to resume. */
   async workStartAllowed(): Promise<boolean> {
-    return (await this.options.store.getState()).phase.kind === 'unarmed';
+    const kind = (await this.options.store.getState()).phase.kind;
+    return kind === 'unarmed' || kind === 'failed';
   }
 
   async assertManualLaunchAllowed(): Promise<void> {

@@ -25226,6 +25226,57 @@
                     "migrationRequired": {
                       "type": "boolean"
                     },
+                    "guardMissing": {
+                      "type": "boolean"
+                    },
+                    "mode": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "systemd",
+                            "initd",
+                            "migration-required",
+                            "external"
+                          ]
+                        },
+                        "command": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "failed": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "targetVersion": {
+                              "type": "string"
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "targetVersion",
+                            "reason",
+                            "at"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "idle": {
                       "type": "object",
                       "properties": {
@@ -25256,6 +25307,9 @@
                     "upgradingVersion",
                     "dismissedVersion",
                     "migrationRequired",
+                    "guardMissing",
+                    "mode",
+                    "failed",
                     "idle"
                   ],
                   "additionalProperties": false,
@@ -25335,6 +25389,57 @@
                     "migrationRequired": {
                       "type": "boolean"
                     },
+                    "guardMissing": {
+                      "type": "boolean"
+                    },
+                    "mode": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "systemd",
+                            "initd",
+                            "migration-required",
+                            "external"
+                          ]
+                        },
+                        "command": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "failed": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "targetVersion": {
+                              "type": "string"
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "targetVersion",
+                            "reason",
+                            "at"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "idle": {
                       "type": "object",
                       "properties": {
@@ -25365,6 +25470,9 @@
                     "upgradingVersion",
                     "dismissedVersion",
                     "migrationRequired",
+                    "guardMissing",
+                    "mode",
+                    "failed",
                     "idle"
                   ],
                   "additionalProperties": false,
@@ -25452,6 +25560,57 @@
                     "migrationRequired": {
                       "type": "boolean"
                     },
+                    "guardMissing": {
+                      "type": "boolean"
+                    },
+                    "mode": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "systemd",
+                            "initd",
+                            "migration-required",
+                            "external"
+                          ]
+                        },
+                        "command": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "failed": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "targetVersion": {
+                              "type": "string"
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "targetVersion",
+                            "reason",
+                            "at"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "idle": {
                       "type": "object",
                       "properties": {
@@ -25482,6 +25641,9 @@
                     "upgradingVersion",
                     "dismissedVersion",
                     "migrationRequired",
+                    "guardMissing",
+                    "mode",
+                    "failed",
                     "idle"
                   ],
                   "additionalProperties": false,
@@ -25561,6 +25723,57 @@
                     "migrationRequired": {
                       "type": "boolean"
                     },
+                    "guardMissing": {
+                      "type": "boolean"
+                    },
+                    "mode": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "systemd",
+                            "initd",
+                            "migration-required",
+                            "external"
+                          ]
+                        },
+                        "command": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "failed": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "targetVersion": {
+                              "type": "string"
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "targetVersion",
+                            "reason",
+                            "at"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "idle": {
                       "type": "object",
                       "properties": {
@@ -25591,6 +25804,9 @@
                     "upgradingVersion",
                     "dismissedVersion",
                     "migrationRequired",
+                    "guardMissing",
+                    "mode",
+                    "failed",
                     "idle"
                   ],
                   "additionalProperties": false,
@@ -25670,6 +25886,57 @@
                     "migrationRequired": {
                       "type": "boolean"
                     },
+                    "guardMissing": {
+                      "type": "boolean"
+                    },
+                    "mode": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "systemd",
+                            "initd",
+                            "migration-required",
+                            "external"
+                          ]
+                        },
+                        "command": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "failed": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "targetVersion": {
+                              "type": "string"
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "targetVersion",
+                            "reason",
+                            "at"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "idle": {
                       "type": "object",
                       "properties": {
@@ -25700,6 +25967,9 @@
                     "upgradingVersion",
                     "dismissedVersion",
                     "migrationRequired",
+                    "guardMissing",
+                    "mode",
+                    "failed",
                     "idle"
                   ],
                   "additionalProperties": false,

@@ -1,7 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   UnsupportedServicePlatformError,
   createServiceManager,
+  initdScript,
   resolveServiceUser,
   type ServiceManagerDependencies,
   type ServiceEnvironment,
@@ -86,16 +91,24 @@ describe('ServiceManager backend detection', () => {
       .resolves.toEqual({ backend: 'init.d' });
 
     const script = initd.files.get('/etc/init.d/harmonic') ?? '';
+    const runCli = 'HARMONIC_INITD_SERVICE=1 HARMONIC_MANAGED_BY=initd runuser -u agent -- /usr/bin/node /srv/harmonic/app/current/dist/cli.js';
     expect(script).toContain('### BEGIN INIT INFO');
     expect(script).toContain('if [ "$(id -u)" -ne 0 ]');
-    expect(script).toContain('HARMONIC_INITD_SERVICE=1 runuser -u agent -- harmonic start --data-dir /srv/harmonic');
-    expect(script).toContain('HARMONIC_INITD_SERVICE=1 runuser -u agent -- harmonic stop --data-dir /srv/harmonic');
-    expect(script).toContain('HARMONIC_INITD_SERVICE=1 runuser -u agent -- harmonic status --data-dir /srv/harmonic');
+    expect(script).toContain('runuser -u agent -- /usr/bin/node /srv/harmonic/app/boot-guard.cjs /srv/harmonic || true');
+    expect(script).toContain(`${runCli} start --data-dir /srv/harmonic`);
+    expect(script).toContain(`${runCli} stop --data-dir /srv/harmonic`);
+    expect(script).toContain(`${runCli} status --data-dir /srv/harmonic`);
     expect(script).toContain('restart|force-reload)');
     expect(initd.modes.get('/etc/init.d/harmonic')).toBe(0o755);
     expect(initd.dirs).toContain('/srv/harmonic');
     expect(initd.calls).toEqual([
       ['chown', 'agent', '/srv/harmonic'],
+      ['npm', 'pack', '--pack-destination', '/srv/harmonic/app/versions/.2.16.0.staging', '@mintopia/harmonic@2.16.0'],
+      ['tar', '-xzf', '/srv/harmonic/app/versions/.2.16.0.staging/mintopia-harmonic-2.16.0.tgz', '--strip-components=1', '-C', '/srv/harmonic/app/versions/.2.16.0.staging'],
+      ['npm', 'pkg', 'delete', 'devDependencies', 'scripts.prepare', '--prefix', '/srv/harmonic/app/versions/.2.16.0.staging'],
+      ['npm', 'i', '--prefix', '/srv/harmonic/app/versions/.2.16.0.staging', '--omit=dev'],
+      ['chown', '-R', 'agent', '/srv/harmonic/app'],
+      ['ln', '-sfn', 'versions/2.16.0', '/srv/harmonic/app/current'],
       ['update-rc.d', 'harmonic', 'defaults'],
       ['service', 'harmonic', 'start'],
     ]);
@@ -124,7 +137,7 @@ describe('ServiceManager backend detection', () => {
     });
 
     expect(initd.warn).toHaveBeenCalledWith(expect.stringContaining('root'));
-    expect(initd.files.get('/etc/init.d/harmonic')).toContain('runuser -u root -- harmonic start');
+    expect(initd.files.get('/etc/init.d/harmonic')).toContain('runuser -u root -- /usr/bin/node /srv/harmonic/app/current/dist/cli.js start');
   });
 
   it('stops, deregisters, and removes the init.d script without touching the data directory', async () => {
@@ -431,5 +444,60 @@ describe('systemd ServiceManager', () => {
     ]);
     expect(deps.files.has('/home/ada/.config/systemd/user/harmonic.service')).toBe(false);
     expect(deps.files.has('/home/ada/.harmonic')).toBe(false);
+  });
+});
+
+describe('init.d script (real filesystem)', () => {
+  const cleanup: string[] = [];
+
+  function tempDir(prefix: string): string {
+    const dir = mkdtempSync(join(tmpdir(), prefix));
+    cleanup.push(dir);
+    return dir;
+  }
+
+  afterEach(() => {
+    for (const dir of cleanup.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('passes `sh -n`, runs the boot guard, then starts app/current/dist/cli.js through a stubbed runuser', () => {
+    const dataDir = tempDir('harmonic-initd-real-datadir-');
+    const cliDir = join(dataDir, 'app', 'current', 'dist');
+    mkdirSync(cliDir, { recursive: true });
+    const markerPath = join(dataDir, 'started.marker');
+    // A fixture "cli.js" the script must actually reach through the stubbed runuser: it just
+    // records the arguments it was invoked with, proving the script started app/current, not
+    // some other install.
+    writeFileSync(
+      join(cliDir, 'cli.js'),
+      `require('node:fs').writeFileSync(${JSON.stringify(markerPath)}, process.argv.slice(2).join(' '));\n`,
+    );
+    const guardMarkerPath = join(dataDir, 'guard.marker');
+    // A fixture boot-guard.cjs, mirroring copyBootGuard's install-time copy into app/boot-guard.cjs.
+    writeFileSync(
+      join(dataDir, 'app', 'boot-guard.cjs'),
+      `require('node:fs').writeFileSync(${JSON.stringify(guardMarkerPath)}, process.argv.slice(2).join(' '));\n`,
+    );
+
+    const script = initdScript({ dataDir, user: 'agent', nodePath: process.execPath });
+    const scriptDir = tempDir('harmonic-initd-real-script-');
+    const scriptPath = join(scriptDir, 'harmonic');
+    writeFileSync(scriptPath, script);
+    chmodSync(scriptPath, 0o755);
+
+    execFileSync('sh', ['-n', scriptPath]);
+
+    // Stubs `id -u` (report root) and `runuser -u <user> -- <cmd...>` (drop the user switch and
+    // just exec the command) so the script's real logic runs unprivileged in the test sandbox.
+    const stubDir = tempDir('harmonic-initd-real-stub-');
+    writeFileSync(join(stubDir, 'id'), '#!/bin/sh\necho 0\n');
+    writeFileSync(join(stubDir, 'runuser'), '#!/bin/sh\nshift 3\nexec "$@"\n');
+    chmodSync(join(stubDir, 'id'), 0o755);
+    chmodSync(join(stubDir, 'runuser'), 0o755);
+
+    execFileSync('sh', [scriptPath, 'start'], { env: { ...process.env, PATH: `${stubDir}:${process.env.PATH}` } });
+
+    expect(readFileSync(guardMarkerPath, 'utf8')).toBe(dataDir);
+    expect(readFileSync(markerPath, 'utf8')).toBe(`start --data-dir ${dataDir}`);
   });
 });

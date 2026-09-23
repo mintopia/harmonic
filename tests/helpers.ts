@@ -338,6 +338,8 @@ export async function startServer(
     version?: string | undefined;
     onUpgradeIdle?: ((version: string) => Promise<void> | void) | undefined;
     migrationRequired?: boolean | undefined;
+    installMode?: Parameters<typeof buildApp>[0]['installMode'];
+    guardMissing?: boolean | undefined;
   } = {},
 ): Promise<TestServer> {
   const dataDir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'harmonic-test-'));
@@ -359,6 +361,8 @@ export async function startServer(
     version: opts.version,
     onUpgradeIdle: opts.onUpgradeIdle,
     migrationRequired: opts.migrationRequired,
+    installMode: opts.installMode,
+    guardMissing: opts.guardMissing,
     // Heavy synchronous test setup can trip the event-loop stall monitor.
     reliabilityTuning: { eventLoop: { enabled: false } },
   });
