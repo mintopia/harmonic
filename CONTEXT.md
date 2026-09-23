@@ -931,20 +931,25 @@ _Avoid_: startup guard, health check
 
 **Rollback**:
 The Boot Guard's automatic reversion of a version that failed to reach
-`listen` four boots running: flips `current` back to `previous`, then restores
-the database from the pre-upgrade `VACUUM INTO` snapshot — moving the live
-`harmonic.db` (and any `-wal`/`-shm`) aside into
-`<dataDir>/rolled-back/<version>-<timestamp>/` (next to `harmonic.db` itself,
-not under `app/`, so the move stays on the same filesystem) rather than
-deleting them, so anything written after the snapshot is discarded from
-`harmonic.db` but not lost, and moving the originals back if the snapshot copy
-itself fails — and writes `app/rollback.json` with the reason plus whether the
-database was restored and where the preserved copy landed. A healthy boot's
-pruning pass keeps only the 2 most recent preserved copies. That reason is what the
-Update Banner's *failed* state and Armed Upgrade's `failed` phase both surface.
-Never available under `external` Install Mode (which never self-upgrades) and
-off for a systemd unit still on `guardMissing` until `sudo harmonic install`.
-(ADR-0042.)
+`listen` four boots running. It first restores the database from the
+pre-upgrade `VACUUM INTO` snapshot — moving the live `harmonic.db` (and any
+`-wal`/`-shm`) aside into `<dataDir>/rolled-back/<version>-<timestamp>/`
+(next to `harmonic.db` itself, not under `app/`, so the move stays on the
+same filesystem) rather than deleting them, so anything written after the
+snapshot is discarded from `harmonic.db` but not lost, and moving the
+originals back if the snapshot copy itself fails. Only if that restore
+succeeds does it flip `current` back to `previous` and write
+`app/rollback.json` naming the preserved copy. If the restore fails (missing
+snapshot, failed copy, or failed preservation), `current` is left untouched —
+flipping onto a database the failed release may have already migrated would
+be worse than staying put — `pending.json` stays in place so every later
+boot retries the restore, and `app/rollback.json` instead records a blocked
+state (`rolledBack: false`, `blockedReason`) with the same message on
+stderr. A healthy boot's pruning pass keeps only the 2 most recent preserved
+copies. The rollback (or blocked) reason is what the Update Banner's *failed*
+state and Armed Upgrade's `failed` phase both surface. Never available under
+`external` Install Mode (which never self-upgrades) and off for a systemd
+unit still on `guardMissing` until `sudo harmonic install`. (ADR-0042.)
 _Avoid_: revert, downgrade
 
 **Update Check**:

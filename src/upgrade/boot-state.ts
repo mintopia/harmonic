@@ -24,7 +24,8 @@ const pendingSchema = z.object({
 
 export type PendingUpgrade = z.infer<typeof pendingSchema>;
 
-const rollbackSchema = z.object({
+/** Written when the guard actually flipped `current` back to `previous`. */
+const rollbackDoneSchema = z.object({
   fromVersion: z.string(),
   toVersion: z.string(),
   at: z.string(),
@@ -33,6 +34,22 @@ const rollbackSchema = z.object({
   /** Where the guard preserved the pre-rollback database files, when it needed to move them aside. */
   preservedDatabaseDir: z.string().optional(),
 });
+
+/** Written when the guard could NOT restore the database (missing snapshot, failed copy, or
+ * failed preservation) and therefore did not flip `current` — flipping onto a database the
+ * failed release may have already migrated is worse than staying put. `pending.json` is left in
+ * place so every later boot retries the restore. */
+const rollbackBlockedSchema = z.object({
+  rolledBack: z.literal(false),
+  blockedReason: z.literal('database-not-restored'),
+  fromVersion: z.string(),
+  toVersion: z.string(),
+  at: z.string(),
+  reason: z.string(),
+  preservedDatabaseDir: z.string().optional(),
+});
+
+const rollbackSchema = z.union([rollbackDoneSchema, rollbackBlockedSchema]);
 
 export type RollbackRecord = z.infer<typeof rollbackSchema>;
 

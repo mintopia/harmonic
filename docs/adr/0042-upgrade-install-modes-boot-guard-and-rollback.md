@@ -59,7 +59,7 @@ before every start: as `ExecStartPre=-` in the systemd unit, from the init.d
 script, and from the relauncher.
 
 - While a version is pending, the guard counts its boots.
-- On the fourth boot it flips `current` back to `previous`. It moves the live
+- On the fourth boot it first tries to restore the database: it moves the live
   `harmonic.db` (and any `-wal`/`-shm`) aside into
   `<dataDir>/rolled-back/<version>-<timestamp>/` — next to `harmonic.db`
   itself, not under `app/`, so the move is a same-filesystem rename and can't
@@ -68,10 +68,20 @@ script, and from the relauncher.
   tmp-file-plus-fsync-plus-rename (durable across a power loss), and moves the
   originals back if that copy fails. A partial move (e.g. `harmonic.db` moved
   but `-wal` failing) is itself undone before the guard gives up, so a failure
-  midway through never strands the live database. It then writes
-  `app/rollback.json` — itself fsynced, recording whether the database was
-  restored (`databaseRestored`) and where the preserved copy landed
+  midway through never strands the live database.
+- If the restore succeeds, the guard flips `current` back to `previous`,
+  writes `app/rollback.json` — itself fsynced, recording that the database
+  was restored (`databaseRestored: true`) and where the preserved copy landed
   (`preservedDatabaseDir`) — and deletes `pending.json`.
+- If the restore fails (the snapshot is missing, the copy fails, or the
+  files couldn't even be preserved), the guard does **not** flip `current`:
+  flipping would open the previous release against a database the failed
+  release may already have migrated, which is worse than staying on the
+  broken one. It leaves `pending.json` in place — the live db/-wal/-shm are
+  already back where they were — so every later boot retries the restore,
+  and writes `app/rollback.json` with `rolledBack: false`,
+  `blockedReason: 'database-not-restored'`, and (when anything is stranded)
+  `preservedDatabaseDir`. The same message goes to stderr.
 - A release that never reaches `listen` counts as a failed boot too: a startup
   watchdog force-exits after `HARMONIC_STARTUP_DEADLINE_MS` (120s default) if
   `pending.json` still names the running version, and the init.d relauncher
@@ -127,13 +137,21 @@ disk space.
   shown in the UI.
 - A rollback restores the pre-upgrade database. Anything written after the
   snapshot is not restored, but the discarded live files are preserved under
-  `app/rolled-back/`, not deleted. The rollback notice says so and names the
-  preserved copy.
+  `<dataDir>/rolled-back/`, not deleted. The rollback notice says so and names
+  the preserved copy.
 - Each upgrade keeps an extra copy of the database: the pre-upgrade
   `pre-<v>.db` snapshot, removed by pruning once its version is no longer
   `current`, `previous` or pending, and — only if that upgrade is rolled
   back — a preserved `rolled-back/<v>-<timestamp>/` copy, capped at the 2
   most recent by the same pruning pass.
+- A boot that can't restore the database never flips `current`: the broken
+  release keeps failing to start and the guard keeps retrying the restore on
+  every boot instead of risking the previous release opening a database the
+  broken one may have already migrated. This can wedge indefinitely (e.g. a
+  permanently missing snapshot or persistent disk pressure) until an operator
+  fixes the underlying cause — `app/rollback.json` names it
+  (`blockedReason: 'database-not-restored'`) and the same message goes to
+  stderr.
 
 ## Supersedes
 
