@@ -23,6 +23,8 @@ export interface TrackerPollerManagerOptions {
   scheduler?: Scheduler;
   epicService?: EpicService;
   yieldOptions?: YieldOptions;
+  /** Gates every poller's epic reconcile tick; absent ⇒ always allowed. */
+  workStartAllowed?: () => boolean | Promise<boolean>;
 }
 
 /** Owns tracker polling, mirroring, and tracker resolution for each enabled Workspace. */
@@ -34,6 +36,7 @@ export class TrackerPollerManager {
   private readonly onError: (message: string) => void;
   private readonly scheduler: Scheduler | undefined;
   private readonly yieldOptions: YieldOptions | undefined;
+  private readonly workStartAllowed: (() => boolean | Promise<boolean>) | undefined;
 
   constructor(
     private readonly tasks: TaskService,
@@ -45,6 +48,7 @@ export class TrackerPollerManager {
     this.scheduler = options.scheduler;
     this.epicService = options.epicService ?? new TrackerEpicService(tasks, getWorkspaces, { resolveAdapter: this.resolveAdapter, onError: this.onError });
     this.yieldOptions = options.yieldOptions;
+    this.workStartAllowed = options.workStartAllowed;
   }
 
   async sync(): Promise<void> {
@@ -61,7 +65,7 @@ export class TrackerPollerManager {
 
   private startLoop(workspace: WorkspaceRow): void {
     const mirror = new MirrorCoordinator(this.tasks, workspace.id);
-    const poller = new TrackerPoller(this.tasks, workspace.id, workspace.workingDir, workspace.trackerPollIntervalSeconds * 1000, (dir) => this.resolveAdapter(dir, (slug) => this.tasks.mdFeatureIndex(workspace.id, slug)), this.onError, mirror, (resolved) => this.resolved.set(workspace.id, resolved), this.epicService.startWorkspace(workspace), { reconcileOnPoll: this.scheduler === undefined });
+    const poller = new TrackerPoller(this.tasks, workspace.id, workspace.workingDir, workspace.trackerPollIntervalSeconds * 1000, (dir) => this.resolveAdapter(dir, (slug) => this.tasks.mdFeatureIndex(workspace.id, slug)), this.onError, mirror, (resolved) => this.resolved.set(workspace.id, resolved), this.epicService.startWorkspace(workspace), { reconcileOnPoll: this.scheduler === undefined, ...(this.workStartAllowed ? { workStartAllowed: this.workStartAllowed } : {}) });
     const unregister = this.scheduler
       ? this.scheduler.register({ name: 'Tracker poll', workspaceId: workspace.id, intervalMs: workspace.trackerPollIntervalSeconds * 1000, run: async () => { await poller.poll(); await this.scheduler!.runNow('Epic reconcile'); }, enabled: () => this.resolved.get(workspace.id)?.ok === true })
       : (poller.start(), () => poller.stop());

@@ -132,7 +132,12 @@ export class UpgradeCoordinator {
 
   async idleState(): Promise<UpgradeIdleState> {
     const runningAttempts = await this.options.attempts.countRunning();
-    const mergingOrIntegrating = this.options.operations().some((operation) => operation.type === 'merge' || operation.type === 'integrate');
+    // Whole-Epic work (integrate, merge, and the verify/resolve/cut/member-merge
+    // steps around it) is namespaced `epic.*`, not the bare `merge`/`integrate`
+    // a single-task merge uses — both count as busy (issue #9).
+    const mergingOrIntegrating = this.options.operations().some(
+      (operation) => operation.type === 'merge' || operation.type === 'integrate' || operation.type.startsWith('epic.'),
+    );
     return { runningAttempts, mergingOrIntegrating, conversationMidTurn: this.options.conversations.hasInFlightTurn() };
   }
 
@@ -209,8 +214,16 @@ export class UpgradeCoordinator {
     })();
   }
 
+  /** False once an update is armed (queued to start), mid idle-handoff, or
+   * upgrading — the single gate every work-start path (manual launch routes,
+   * the tracker's scheduled epic reconcile) must check before starting new
+   * work (issue #9). */
+  async workStartAllowed(): Promise<boolean> {
+    return (await this.options.store.getState()).phase.kind === 'unarmed';
+  }
+
   async assertManualLaunchAllowed(): Promise<void> {
-    if ((await this.options.store.getState()).phase.kind !== 'unarmed') {
+    if (!(await this.workStartAllowed())) {
       throw new DomainError('invalid_state', 'the instance is waiting to upgrade; cancel the upgrade before starting new work');
     }
   }
