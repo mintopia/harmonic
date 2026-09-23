@@ -13,6 +13,13 @@ export interface UpgradeIdleState {
   conversationMidTurn: boolean;
 }
 
+/** Reported by `onIdle` when the swap stopped short of commit instead of
+ * completing: `cancelled` unarms outright; `idle-timeout` (waitForIdle's
+ * bound elapsed with work still running, ADR-0042) re-arms so the next idle
+ * window retries instead of losing the offer. `undefined`/no return means the
+ * swap ran to completion (in production this exits the process). */
+export type UpgradeIdleHandoffOutcome = 'cancelled' | 'idle-timeout';
+
 export interface UpgradeCoordinatorOptions {
   /** The version this process is running; an armed upgrade to it has taken effect. */
   version: string;
@@ -21,7 +28,7 @@ export interface UpgradeCoordinatorOptions {
   attempts: Pick<AttemptStore, 'countRunning'>;
   operations: () => readonly OperationSnapshot[];
   conversations: Pick<ConversationDriver, 'hasInFlightTurn'>;
-  onIdle?: (version: string) => Promise<void> | void;
+  onIdle?: (version: string, cancellation: UpgradeCancellation) => Promise<UpgradeIdleHandoffOutcome | void> | UpgradeIdleHandoffOutcome | void;
   migrationRequired?: boolean;
   /** Set when this install mode can never self-upgrade (npx, npm-global, unknown); arming is refused. */
   externalInstall?: boolean;
@@ -35,10 +42,51 @@ export const SYSTEMD_MIGRATION_NOTICE =
 
 export const EXTERNAL_INSTALL_NOTICE = 'Auto-upgrade is not available for this install; see the update banner for the command to run manually.';
 
+export const UPGRADE_ALREADY_SWITCHING_NOTICE = 'upgrade is already switching versions';
+
+/** Coordinates a Cancel request against the in-flight swap's step boundaries
+ * (install/verify/await-idle/commit, ADR-0042). Created fresh for each
+ * `upgrading` phase; the swap consults it before await-idle, after
+ * await-idle, and immediately before commit. */
+export class UpgradeCancellation {
+  private phase: 'pending' | 'cancelled' | 'committing' = 'pending';
+
+  /** Checked by the swap before and after await-idle: false means a cancel
+   * got in first and the swap must stop instead of continuing toward commit. */
+  shouldContinue(): boolean {
+    return this.phase !== 'cancelled';
+  }
+
+  /** Checked by the swap immediately before commit. Returning true latches
+   * out any later cancellation — commit is irreversible once entered.
+   * Returning false means a cancel already won; the swap must stop instead. */
+  enterCommit(): boolean {
+    if (this.phase === 'cancelled') return false;
+    this.phase = 'committing';
+    return true;
+  }
+
+  /** Called by cancel(): true once accepted (the swap will stop before commit,
+   * eventually — never block on that here), false once commit already
+   * started, meaning the caller must reject instead. Idempotent once cancelled. */
+  requestCancel(): boolean {
+    if (this.phase === 'committing') return false;
+    this.phase = 'cancelled';
+    return true;
+  }
+
+  /** True once cancellation won the race against commit. */
+  wasCancelled(): boolean {
+    return this.phase === 'cancelled';
+  }
+}
+
 /** Durable arming state for an offered in-place upgrade. */
 export class UpgradeCoordinator {
   private transitions: Promise<void> = Promise.resolve();
   private readonly reconcileIdle = singleFlight(() => this.reconcileOnce());
+  /** The in-flight swap's cancellation token, set for the duration of `upgrading`. */
+  private activeCancellation: UpgradeCancellation | null = null;
 
   constructor(private readonly options: UpgradeCoordinatorOptions) {}
 
@@ -70,6 +118,7 @@ export class UpgradeCoordinator {
     if (this.options.migrationRequired) throw new DomainError('invalid_state', SYSTEMD_MIGRATION_NOTICE);
     if (this.options.externalInstall) throw new DomainError('invalid_state', EXTERNAL_INSTALL_NOTICE);
     const current = await this.options.store.getState();
+    if (current.phase.kind === 'upgrading') throw new DomainError('conflict', UPGRADE_ALREADY_SWITCHING_NOTICE);
     if (current.phase.kind !== 'unarmed' && current.phase.kind !== 'failed') return current;
     if (current.version === null) throw new DomainError('invalid_state', 'there is no available update to arm');
 
@@ -95,10 +144,26 @@ export class UpgradeCoordinator {
     return this.exclusively(() => this.cancelOnce());
   }
 
+  /** `armed` (the swap hasn't started): unarms immediately, as before. `upgrading`
+   * (the swap is running): only requests cancellation on the in-flight swap's
+   * token — never blocks here on the swap actually stopping, which can take
+   * minutes (the deadlock the lock-vs-swap split exists to avoid). The swap
+   * unarms itself, restoring the Auto-Runner, once it notices at its next
+   * boundary (see `settleCancellation`). Once commit has started the token
+   * refuses, and this rejects with 409 instead of racing the flip. */
   private async cancelOnce(): Promise<UpdateAvailabilityState> {
     const current = await this.options.store.getState();
     if (current.phase.kind === 'unarmed' || current.phase.kind === 'failed') return current;
-    const restored = current.phase.autoRunnerWasEnabled;
+    if (current.phase.kind === 'upgrading') {
+      if (this.activeCancellation === null || !this.activeCancellation.requestCancel()) {
+        throw new DomainError('conflict', UPGRADE_ALREADY_SWITCHING_NOTICE);
+      }
+      return current;
+    }
+    return this.finishUnarm(current, current.phase.autoRunnerWasEnabled);
+  }
+
+  private async finishUnarm(current: UpdateAvailabilityState, autoRunnerWasEnabled: boolean): Promise<UpdateAvailabilityState> {
     const cancelled: UpdateAvailabilityState = {
       version: current.version,
       dismissedVersion: current.dismissedVersion,
@@ -106,12 +171,48 @@ export class UpgradeCoordinator {
     };
     await this.options.store.setState(cancelled);
     try {
-      await this.options.settings.updateGlobal({ autoRunner: { enabled: restored } });
+      await this.options.settings.updateGlobal({ autoRunner: { enabled: autoRunnerWasEnabled } });
       return cancelled;
     } catch (error) {
       await this.options.store.setState(current);
       throw error;
     }
+  }
+
+  /** Force-unarms an `upgrading` phase once the swap has actually stopped
+   * short of commit — either because its token was cancelled (the
+   * counterpart to `cancelOnce`'s request-only path) or because it threw.
+   * Serialised like every other transition, so it can't race a concurrent
+   * `arm()`/`cancel()`. A no-op if something else already resolved the phase
+   * (e.g. a boot settle) between the swap stopping and this running. */
+  private async unarmUpgradingOnce(): Promise<void> {
+    const current = await this.options.store.getState();
+    if (current.phase.kind !== 'upgrading') return;
+    await this.finishUnarm(current, current.phase.autoRunnerWasEnabled);
+  }
+
+  private unarmUpgrading(): Promise<void> {
+    return this.exclusively(() => this.unarmUpgradingOnce());
+  }
+
+  /** Runs once the swap stopped because `waitForIdle` timed out with work
+   * still running: reverts `upgrading` back to `armed` (not `unarmed`) so a
+   * later `reconcile` retries the same target instead of the offer being
+   * lost — the Auto-Runner exclusion stays in force throughout, since armed
+   * still blocks new work via `workStartAllowed`. */
+  private async settleIdleTimeoutOnce(): Promise<void> {
+    const current = await this.options.store.getState();
+    if (current.phase.kind !== 'upgrading') return;
+    const armed: UpdateAvailabilityState = {
+      version: current.version,
+      dismissedVersion: current.dismissedVersion,
+      phase: { kind: 'armed', targetVersion: current.phase.targetVersion, autoRunnerWasEnabled: current.phase.autoRunnerWasEnabled },
+    };
+    await this.options.store.setState(armed);
+  }
+
+  private settleIdleTimeout(): Promise<void> {
+    return this.exclusively(() => this.settleIdleTimeoutOnce());
   }
 
   settleOnBoot(): Promise<UpdateAvailabilityState> {
@@ -187,21 +288,22 @@ export class UpgradeCoordinator {
     return state.runningAttempts === 0 && !state.mergingOrIntegrating && !state.conversationMidTurn;
   }
 
-  /** Best-effort bounded, yielding wait for in-flight work to drain, so the
-   * swap's irreversible release-lock/exit doesn't kill work that started
-   * during install/verify; never throws, and gives up (returns)
-   * once `timeoutMs` elapses even if still busy. */
+  /** Bounded, yielding wait for in-flight work to drain, so the swap's
+   * irreversible release-lock/exit doesn't kill work that started during
+   * install/verify. Never throws; returns whether idle was actually reached
+   * — `false` on a timeout with work still running, which the swap must
+   * treat as a reason to abort before commit rather than proceed over it. */
   async waitForIdle({
     timeoutMs = 10 * 60_000,
     pollMs = 1_000,
     now = Date.now,
     sleep = (ms: number) => new Promise<void>((resolve) => { const t = setTimeout(resolve, ms); t.unref?.(); }),
-  }: { timeoutMs?: number; pollMs?: number; now?: () => number; sleep?: (ms: number) => Promise<void> } = {}): Promise<void> {
+  }: { timeoutMs?: number; pollMs?: number; now?: () => number; sleep?: (ms: number) => Promise<void> } = {}): Promise<boolean> {
     const deadline = now() + timeoutMs;
     for (;;) {
       const idle = await this.idleState();
-      if (UpgradeCoordinator.isIdle(idle)) return;
-      if (now() >= deadline) return;
+      if (UpgradeCoordinator.isIdle(idle)) return true;
+      if (now() >= deadline) return false;
       await sleep(pollMs);
     }
   }
@@ -228,30 +330,39 @@ export class UpgradeCoordinator {
     const idle = await this.idleState();
     if (idle.runningAttempts !== 0 || idle.mergingOrIntegrating || idle.conversationMidTurn) return false;
     await this.options.store.setState({ ...armed, phase: { ...armed.phase, kind: 'upgrading' } });
-    setImmediate(() => this.runIdleHandoff(targetVersion));
+    const cancellation = new UpgradeCancellation();
+    this.activeCancellation = cancellation;
+    setImmediate(() => this.runIdleHandoff(targetVersion, cancellation));
     return true;
   }
 
   /** Runs `onIdle` (the real swap) outside the `exclusively` lock, in a fresh
    * task so a synchronous throw from `onIdle` can never re-enter the lock from
-   * within the same call stack that's still holding it. */
-  private runIdleHandoff(targetVersion: string): void {
+   * within the same call stack that's still holding it. A `cancelled` or
+   * `idle-timeout` return settles the phase the swap itself stopped short of
+   * finishing; anything else (undefined, or a real swap) means it either ran
+   * to completion or the process is already on its way out. */
+  private runIdleHandoff(targetVersion: string, cancellation: UpgradeCancellation): void {
     void (async () => {
       try {
-        await this.options.onIdle?.(targetVersion);
+        const outcome = await this.options.onIdle?.(targetVersion, cancellation);
+        if (outcome === 'cancelled') await this.unarmUpgrading();
+        else if (outcome === 'idle-timeout') await this.settleIdleTimeout();
       } catch (error) {
         reportFailure(error, {
           op: 'upgradeCoordinator.onIdle',
           level: 'error',
           context: { armedVersion: targetVersion },
         });
-        await this.cancel().catch((cancelError: unknown) => {
+        await this.unarmUpgrading().catch((cancelError: unknown) => {
           reportFailure(cancelError, {
             op: 'upgradeCoordinator.cancelAfterOnIdleFailure',
             level: 'error',
             context: { armedVersion: targetVersion },
           });
         });
+      } finally {
+        if (this.activeCancellation === cancellation) this.activeCancellation = null;
       }
     })();
   }

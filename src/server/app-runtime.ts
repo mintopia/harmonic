@@ -26,7 +26,7 @@ import type { MirrorClaim } from '../execution/auto-runner.js';
 import { operationRegistry, startOperation } from '../telemetry/operations.js';
 import { EventBus } from './bus.js';
 import { SettingsUpdateAvailabilityStore } from '../upgrade/update-check.js';
-import { UpgradeCoordinator } from '../upgrade/upgrade-coordinator.js';
+import { UpgradeCoordinator, type UpgradeCancellation, type UpgradeIdleHandoffOutcome } from '../upgrade/upgrade-coordinator.js';
 import { AttemptSettleCoordinator } from '../domain/attempt-settle.js';
 import { SessionRetirementCoordinator } from '../domain/session-retirement-coordinator.js';
 import { EscalationService } from '../domain/escalation.js';
@@ -140,9 +140,9 @@ function createUpgrade(deps: {
   const externalInstall = opts.installMode?.kind === 'external';
   const onUpgradeIdle = opts.onUpgradeIdle === undefined
     ? undefined
-    : async (version: string): Promise<void> => {
+    : async (version: string, cancellation: UpgradeCancellation): Promise<UpgradeIdleHandoffOutcome | void> => {
       try {
-        await opts.onUpgradeIdle?.(version);
+        return await opts.onUpgradeIdle?.(version, cancellation);
       } catch (error) {
         const abort = startOperation({ type: 'upgrade.abort', attributes: { 'upgrade.version': version } });
         try {

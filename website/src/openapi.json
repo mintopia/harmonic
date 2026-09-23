@@ -25482,7 +25482,7 @@
             }
           },
           "409": {
-            "description": "No update is currently available to arm.",
+            "description": "No update is currently available to arm, or a previously armed one is already switching versions.",
             "content": {
               "application/json": {
                 "schema": {
@@ -25508,7 +25508,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The unarmed update state and current drain-to-idle blockers.",
+            "description": "The unarmed update state and current drain-to-idle blockers, or the unchanged state if the swap has already started stopping and hasn't yet.",
             "content": {
               "application/json": {
                 "schema": {
@@ -25647,7 +25647,17 @@
                     "idle"
                   ],
                   "additionalProperties": false,
-                  "description": "The unarmed update state and current drain-to-idle blockers."
+                  "description": "The unarmed update state and current drain-to-idle blockers, or the unchanged state if the swap has already started stopping and hasn't yet."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The swap has already committed to the new version and can no longer be cancelled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

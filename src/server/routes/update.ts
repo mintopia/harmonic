@@ -83,7 +83,7 @@ export async function updateRoutes(
       tags: ['Update'],
       description: 'Pin the currently offered update and quiesce new work until the instance is idle. Operator only.',
       security: [{ bearerAuth: [] }, { sessionCookie: [] }],
-      response: { 200: updateStateSchema.describe('The newly armed update and current drain-to-idle blockers.'), 409: errorResponse('No update is currently available to arm.') },
+      response: { 200: updateStateSchema.describe('The newly armed update and current drain-to-idle blockers.'), 409: errorResponse('No update is currently available to arm, or a previously armed one is already switching versions.') },
     },
   }, async () => {
     assertPackaged(ctx.distributionMode);
@@ -96,7 +96,10 @@ export async function updateRoutes(
       tags: ['Update'],
       description: 'Cancel an armed update and restore the Auto-Runner master switch to its pre-arm value. Operator only.',
       security: [{ bearerAuth: [] }, { sessionCookie: [] }],
-      response: { 200: updateStateSchema.describe('The unarmed update state and current drain-to-idle blockers.') },
+      response: {
+        200: updateStateSchema.describe('The unarmed update state and current drain-to-idle blockers, or the unchanged state if the swap has already started stopping and hasn\'t yet.'),
+        409: errorResponse('The swap has already committed to the new version and can no longer be cancelled.'),
+      },
     },
   }, async () => {
     assertPackaged(ctx.distributionMode);
