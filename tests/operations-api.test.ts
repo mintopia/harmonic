@@ -22,6 +22,8 @@ describe('Operations API (issue #293)', () => {
   it('returns the live operation tree and bounded completed-root history', async () => {
     telemetry = initializeTelemetry(resolveTelemetryOptions({ exportEnabled: 'false' }));
     server = await startServer();
+    // Boot starts Scheduled Jobs fire-and-forget, so zero live operations alone isn't a settled boot.
+    await waitFor(async () => (await server!.app.ctx.scheduler.snapshot()).every((job) => job.lastRunAt !== null));
     await waitFor(async () => (await server!.api('GET', '/api/operations')).body.operations.length === 0);
     await operationRegistry.shutdown();
 
