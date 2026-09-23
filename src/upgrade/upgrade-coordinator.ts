@@ -147,13 +147,9 @@ export class UpgradeCoordinator {
     return this.exclusively(() => this.cancelOnce());
   }
 
-  /** `armed` (the swap hasn't started): unarms immediately, as before. `upgrading`
-   * (the swap is running): only requests cancellation on the in-flight swap's
-   * token — never blocks here on the swap actually stopping, which can take
-   * minutes (the deadlock the lock-vs-swap split exists to avoid). The swap
-   * unarms itself, restoring the Auto-Runner, once it notices at its next
-   * boundary (see `settleCancellation`). Once commit has started the token
-   * refuses, and this rejects with 409 instead of racing the flip. */
+  /** `armed`: unarms immediately. `upgrading`: only requests cancellation on the in-flight
+   * swap's token without blocking for it to stop (ADR-0042); the swap unarms itself once it
+   * notices. Once commit has started this rejects with 409. */
   private async cancelOnce(): Promise<UpdateAvailabilityState> {
     const current = await this.options.store.getState();
     if (current.phase.kind === 'unarmed' || current.phase.kind === 'failed') return current;
@@ -182,12 +178,8 @@ export class UpgradeCoordinator {
     }
   }
 
-  /** Force-unarms an `upgrading` phase once the swap has actually stopped
-   * short of commit — either because its token was cancelled (the
-   * counterpart to `cancelOnce`'s request-only path) or because it threw.
-   * Serialised like every other transition, so it can't race a concurrent
-   * `arm()`/`cancel()`. A no-op if something else already resolved the phase
-   * (e.g. a boot settle) between the swap stopping and this running. */
+  /** Force-unarms an `upgrading` phase once the swap has stopped short of commit (cancelled or
+   * threw). A no-op if something else already resolved the phase. */
   private async unarmUpgradingOnce(): Promise<void> {
     const current = await this.options.store.getState();
     if (current.phase.kind !== 'upgrading') return;
@@ -198,11 +190,8 @@ export class UpgradeCoordinator {
     return this.exclusively(() => this.unarmUpgradingOnce());
   }
 
-  /** Runs once the swap stopped because `waitForIdle` timed out with work
-   * still running: reverts `upgrading` back to `armed` (not `unarmed`) so a
-   * later `reconcile` retries the same target instead of the offer being
-   * lost — the Auto-Runner exclusion stays in force throughout, since armed
-   * still blocks new work via `workStartAllowed`. */
+  /** Runs when `waitForIdle` timed out with work still running: reverts `upgrading` back to
+   * `armed` so a later `reconcile` retries the same target. */
   private async settleIdleTimeoutOnce(): Promise<void> {
     const current = await this.options.store.getState();
     if (current.phase.kind !== 'upgrading') return;
@@ -222,17 +211,8 @@ export class UpgradeCoordinator {
     return this.exclusively(() => this.settleOnBootOnce());
   }
 
-  /** Runs once at boot in place of the old bare "settle": a relaunch onto the
-   * armed target clears the arming and restores the Auto-Runner switch as
-   * before. A relaunch that lands on the wrong version — the swap started but
-   * never completed — instead records `failed` with the rollback reason (if
-   * the boot guard rolled back), restores the Auto-Runner, and leaves arming
-   * available again; it never re-triggers the swap itself. Landing on the
-   * armed target after a *blocked* rollback (the guard couldn't restore the
-   * database and left the failed release running, ADR-0042) is reported the
-   * same way instead of settling cleanly, since the database still doesn't
-   * match what the operator expects. An `armed` phase that hasn't started
-   * upgrading yet is left untouched for `reconcile` to pick up normally. */
+  /** Runs once at boot: dispatches to `settleUpgraded` or `settleFailed` depending on whether
+   * the running version matches the armed target. */
   private async settleOnBootOnce(): Promise<UpdateAvailabilityState> {
     const current = await this.options.store.getState();
     const phase = current.phase;
@@ -257,11 +237,8 @@ export class UpgradeCoordinator {
     }
   }
 
-  /** The running version matches the armed target, but the boot guard's last rollback attempt
-   * was blocked (it couldn't restore the pre-upgrade database) and this boot never retried it —
-   * the target simply started successfully on its own. Reuses the `failed` phase's fields so
-   * `GET /update` and the update banner surface it without new UI, then clears `rollback.json`
-   * so this is reported exactly once. */
+  /** Running version matches the armed target, but the last rollback attempt was blocked;
+   * reports via the `failed` phase and clears `rollback.json` so it's reported once. */
   private async settleBlockedRollbackOnMatchingVersion(
     current: UpdateAvailabilityState,
     phase: Extract<UpdatePhase, { kind: 'upgrading' }>,
@@ -316,9 +293,7 @@ export class UpgradeCoordinator {
 
   async idleState(): Promise<UpgradeIdleState> {
     const runningAttempts = await this.options.attempts.countRunning();
-    // Whole-Epic work (integrate, merge, and the verify/resolve/cut/member-merge
-    // steps around it) is namespaced `epic.*`, not the bare `merge`/`integrate`
-    // a single-task merge uses — both count as busy.
+    // Whole-Epic work is namespaced `epic.*`, not the bare `merge`/`integrate`; both count as busy.
     const mergingOrIntegrating = this.options.operations().some(
       (operation) => operation.type === 'merge' || operation.type === 'integrate' || operation.type.startsWith('epic.'),
     );
@@ -329,11 +304,8 @@ export class UpgradeCoordinator {
     return state.runningAttempts === 0 && !state.mergingOrIntegrating && !state.conversationMidTurn;
   }
 
-  /** Bounded, yielding wait for in-flight work to drain, so the swap's
-   * irreversible release-lock/exit doesn't kill work that started during
-   * install/verify. Never throws; returns whether idle was actually reached
-   * — `false` on a timeout with work still running, which the swap must
-   * treat as a reason to abort before commit rather than proceed over it. */
+  /** Bounded, yielding wait for in-flight work to drain. Never throws; returns whether idle was
+   * actually reached — `false` means the swap must abort before commit. */
   async waitForIdle({
     timeoutMs = 10 * 60_000,
     pollMs = 1_000,
@@ -353,12 +325,9 @@ export class UpgradeCoordinator {
     return this.exclusively(() => this.reconcileIdle());
   }
 
-  /** Transitions `armed` -> `upgrading` and kicks off the handoff, all under the
-   * lock; the handoff itself (the real install/verify/relaunch/release-lock swap,
-   * which can run for minutes and ends the process) runs after this returns, so
-   * the lock never blocks a request for the swap's duration. An
-   * already-`upgrading` phase is a no-op: the persisted phase itself is the
-   * re-entry guard, replacing the old in-memory `onIdleStartedFor` flag. */
+  /** Transitions `armed` -> `upgrading` and kicks off the handoff under the lock; the handoff
+   * itself runs after this returns, so the lock never blocks a request for the swap's duration.
+   * An already-`upgrading` phase is a no-op. */
   private async reconcileOnce(): Promise<boolean> {
     const armed = await this.options.store.getState();
     if (armed.phase.kind === 'unarmed' || armed.phase.kind === 'failed') return false;
@@ -377,12 +346,8 @@ export class UpgradeCoordinator {
     return true;
   }
 
-  /** Runs `onIdle` (the real swap) outside the `exclusively` lock, in a fresh
-   * task so a synchronous throw from `onIdle` can never re-enter the lock from
-   * within the same call stack that's still holding it. A `cancelled` or
-   * `idle-timeout` return settles the phase the swap itself stopped short of
-   * finishing; anything else (undefined, or a real swap) means it either ran
-   * to completion or the process is already on its way out. */
+  /** Runs `onIdle` (the real swap) outside the `exclusively` lock, in a fresh task. A
+   * `cancelled` or `idle-timeout` return settles the phase the swap stopped short of finishing. */
   private runIdleHandoff(targetVersion: string, cancellation: UpgradeCancellation): void {
     void (async () => {
       try {
@@ -408,11 +373,8 @@ export class UpgradeCoordinator {
     })();
   }
 
-  /** False once an update is armed (queued to start), mid idle-handoff, or
-   * upgrading — the single gate every work-start path (manual launch routes,
-   * the tracker's scheduled epic reconcile) must check before starting new
-   * work. A `failed` boot-guard rollback is not itself blocking:
-   * the swap never landed, so ordinary work is safe to resume. */
+  /** False once an update is armed, mid idle-handoff, or upgrading — the gate every
+   * work-start path must check. A `failed` rollback is not itself blocking. */
   async workStartAllowed(): Promise<boolean> {
     const kind = (await this.options.store.getState()).phase.kind;
     return kind === 'unarmed' || kind === 'failed';

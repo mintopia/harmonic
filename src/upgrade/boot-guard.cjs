@@ -74,9 +74,7 @@ function flipCurrent(appDir, version) {
   fsyncDir(appDir);
 }
 
-// Moves the live db/-wal/-shm aside instead of deleting them, so a snapshot copy failure
-// (ENOSPC/EIO) can never destroy committed-but-uncheckpointed writes: the originals are still on
-// disk, just renamed out of the way, and get moved back if the copy fails.
+// Renames instead of deletes, so a failed copy can't destroy the live files; moved back on failure.
 function moveAside(dbPath, preservedDir) {
   const moved = [];
   try {
@@ -87,10 +85,7 @@ function moveAside(dbPath, preservedDir) {
       moved.push(suffix);
     }
   } catch (error) {
-    // Undo whatever this call already moved before the caller sees the failure, so a partial
-    // move (e.g. the db renamed but -wal failing) never strands the live database mid-flight —
-    // unless the reversal itself also fails, in which case tell the caller exactly what's still
-    // sitting in preservedDir instead of letting it assume every file made it back.
+    // Reverts the partial move before the caller sees the failure; strandedSuffixes names anything the reversal itself couldn't move back.
     error.strandedSuffixes = moveBack(dbPath, preservedDir, moved);
     throw error;
   }
@@ -112,11 +107,7 @@ function moveBack(dbPath, preservedDir, moved) {
   return stranded;
 }
 
-// Moves the preserved files back to dbPath and, only once that fully succeeds, fsyncs the
-// destination (now holding the restored files) before the emptied source dir. Returns the
-// suffixes that are still stranded in preservedDir (empty on full success); on any stranded
-// suffix nothing is synced and the caller must keep reporting preservedDir so the still-stranded
-// files stay discoverable.
+// Only fsyncs once every file is fully moved back; returns any suffixes still stranded in preservedDir.
 function moveBackAndSync(dbPath, dataDir, preservedDir, moved) {
   const stranded = moveBack(dbPath, preservedDir, moved);
   if (stranded.length > 0) return stranded;
@@ -133,9 +124,8 @@ function moveBackAndSync(dbPath, dataDir, preservedDir, moved) {
   return [];
 }
 
-// Returns { restored, preservedDir, strandedFiles }. preservedDir is set whenever the
-// pre-rollback database is sitting somewhere other than its original path, so operators can
-// recover it either way; strandedFiles then names which harmonic.db* files are stuck there.
+// Returns { restored, preservedDir, strandedFiles }; preservedDir is set when the pre-rollback
+// database isn't back at its original path, with strandedFiles naming what's stuck there.
 function restoreDatabase(dataDir, appDir, snapshotPath, fromVersion) {
   const dbPath = path.join(dataDir, 'harmonic.db');
   if (!fs.existsSync(snapshotPath)) {
@@ -151,19 +141,14 @@ function restoreDatabase(dataDir, appDir, snapshotPath, fromVersion) {
   try {
     fs.mkdirSync(preservedDir, { recursive: true });
     moved = moveAside(dbPath, preservedDir);
-    // moveAside() undoes its own partial failures, so reaching here means every db/-wal/-shm
-    // file that existed made it into preservedDir intact. Fsync the new files, then the
-    // directory entry that names them, then the source dir whose entries just disappeared, so a
-    // crash never durably removes the originals before the preserved copy is itself durable.
+    // Fsyncs preservedDir then rolledBackDir then dataDir, in that order, so a crash can't durably remove the originals before the preserved copy is durable.
     fsyncDir(preservedDir);
     fsyncDir(rolledBackDir);
     fsyncDir(dataDir);
   } catch (error) {
     logError('database was not restored', error);
     if (moved !== undefined) {
-      // The renames themselves succeeded (moveAside() only throws before returning, having
-      // already reverted any partial rename) — a later step, e.g. an fsync, failed. The live
-      // files are sitting in preservedDir, so move them back rather than stranding them.
+      // moveAside() already succeeded here; a later step (e.g. fsync) failed, so move the files back rather than stranding them.
       const stranded = moveBackAndSync(dbPath, dataDir, preservedDir, moved);
       if (stranded.length === 0) {
         try {
@@ -176,9 +161,7 @@ function restoreDatabase(dataDir, appDir, snapshotPath, fromVersion) {
       logError('original database files could not be moved back; they remain preserved', new Error(preservedDir));
       return { restored: false, preservedDir, strandedFiles: stranded.map((suffix) => `harmonic.db${suffix}`) };
     }
-    // moveAside() itself failed: its own reversal already ran (see moveAside()), and
-    // error.strandedSuffixes names whatever that reversal couldn't put back — never assume
-    // "moved === undefined" means nothing is stranded.
+    // moveAside() failed and already reverted what it could; moved === undefined does not mean nothing is stranded.
     const stranded = Array.isArray(error.strandedSuffixes) ? error.strandedSuffixes : [];
     if (stranded.length === 0) {
       try {
@@ -255,21 +238,15 @@ function main() {
 
   const { restored: databaseRestored, preservedDir, strandedFiles } = restoreDatabase(dataDir, appDir, pending.snapshot, pending.version);
 
-  // The database could not be restored (missing snapshot, failed copy, or failed preservation):
-  // rolling back now would open the previous release against a database the failed release may
-  // have already migrated. Leave `current` and `pending.json` exactly as they are, so every
-  // subsequent boot retries the restore, and a later attempt that succeeds falls through to the
-  // normal flip below. When preservedDir is null the live db/-wal/-shm are confirmed back in
-  // their original place; when it's set, some of them are stranded there instead (named by
-  // strandedFiles) and app/database-incomplete.json blocks the server from opening a live set
-  // that's missing part of the database until an operator recovers them.
+  // Leaves current/pending.json untouched so every later boot retries the restore, rather than
+  // rolling back onto a database the failed release may have already migrated.
   if (!databaseRestored) {
     const reason =
       `Rollback to ${pending.previous} is blocked: the database from before the ${pending.version} upgrade could not be restored` +
       (preservedDir ? ` (the pre-rollback files are preserved at ${preservedDir})` : '') +
       `. Harmonic will retry the restore on every start. Check the service log, available disk space, and that the snapshot at ${pending.snapshot} exists.`;
     logError('rollback blocked', new Error(reason));
-    writeJsonAtomic(pendingPath, { ...pending, boots }); // keep counting so every later boot retries the restore
+    writeJsonAtomic(pendingPath, { ...pending, boots });
     writeJsonAtomic(path.join(appDir, 'rollback.json'), {
       rolledBack: false,
       blockedReason: 'database-not-restored',

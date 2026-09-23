@@ -35,8 +35,7 @@ function main() {
     process.exitCode = 1;
     return;
   }
-  // Only ever act on the process that spawned us: if our own parent isn't the given pid at
-  // startup, refuse to watch anything at all rather than risk killing an unrelated process.
+  // Refuse to watch unless our parent is the given pid, so we never risk killing an unrelated process.
   if (process.ppid !== serverPid) {
     process.stderr.write(`harmonic startup-watcher: refusing to watch pid ${serverPid}; it is not our parent (ppid ${process.ppid})\n`);
     process.exitCode = 1;
@@ -71,7 +70,7 @@ function main() {
   }
 
   const interval = setInterval(() => {
-    // The server we're watching is gone (exited, or we were reparented away from it): nothing left to guard.
+    // Server exited, or we were reparented away from it: nothing left to guard.
     if (process.ppid !== serverPid || !isAlive(serverPid)) {
       stop();
       return;

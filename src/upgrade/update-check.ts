@@ -105,7 +105,6 @@ function parsePersisted(row: { value: string } | undefined): UpdateAvailabilityS
     if (upgradingVersion === armedVersion) return { ...state, phase: { kind: 'upgrading', targetVersion: armedVersion, autoRunnerWasEnabled } };
     return { ...state, phase: { kind: 'armed', targetVersion: armedVersion, autoRunnerWasEnabled } };
   } catch {
-    // Corrupt/legacy stored JSON degrades to "no known update" rather than crashing the update check.
     return { version: null, dismissedVersion: null, phase: { kind: 'unarmed' } };
   }
 }
@@ -137,10 +136,7 @@ export class SettingsUpdateAvailabilityStore implements UpdateArmingStore {
     return parsePersisted(row);
   }
 
-  /** Updates only `version`, reading the current row inside the same
-   * serialised write so it can't race a concurrent `setState` (e.g. an arm)
-   * landing between a separate read and write and clobbering it with a stale
-   * merge. */
+  /** Updates only `version`, reading the current row inside the same serialised write. */
   async set(version: string | null): Promise<void> {
     await this.db.write(async (db) => {
       const row = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, UPDATE_AVAILABILITY_KEY)).get();
@@ -181,9 +177,8 @@ export class UpdateCheck {
   }
 }
 
-/** Goes through `npm view` rather than fetching a registry URL directly, so it follows
- * whatever registry (and auth, and scoped `@mintopia:registry` override) the host's npm
- * config resolves, the same way `npm pack` does when installing an update. */
+/** Goes through `npm view` rather than a direct registry fetch, so it resolves the same
+ * registry/auth config as the actual install in `version-install.ts`. */
 export async function fetchLatestVersion(): Promise<string> {
   let stdout: string;
   try {

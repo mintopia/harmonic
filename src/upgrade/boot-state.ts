@@ -35,10 +35,8 @@ const rollbackDoneSchema = z.object({
   preservedDatabaseDir: z.string().optional(),
 });
 
-/** Written when the guard could NOT restore the database (missing snapshot, failed copy, or
- * failed preservation) and therefore did not flip `current` — flipping onto a database the
- * failed release may have already migrated is worse than staying put. `pending.json` is left in
- * place so every later boot retries the restore. */
+/** Written when the guard could NOT restore the database and therefore did not flip `current`;
+ * `pending.json` is left in place so every later boot retries the restore. */
 const rollbackBlockedSchema = z.object({
   rolledBack: z.literal(false),
   blockedReason: z.literal('database-not-restored'),
@@ -56,8 +54,7 @@ export type RollbackRecord = z.infer<typeof rollbackSchema>;
 const previousSchema = z.object({ version: z.string() });
 
 /** Written by the boot guard whenever a blocked rollback leaves part of the live db/-wal/-shm
- * set stranded away from its original path (see restoreDatabase() in boot-guard.cjs). Read here
- * — not by the guard itself, which is dependency-free — to block the server from opening a
+ * set stranded away from its original path. Read here to block the server from opening a
  * database it knows is incomplete. */
 const databaseIncompleteSchema = z.object({
   dataDir: z.string(),
@@ -93,7 +90,7 @@ function fsyncDir(dirPath: string): void {
 }
 
 /** Atomically and durably overwrite `path`: write to a sibling tmp file, fsync it, rename over the
- * target, then fsync the parent directory so the rename survives a power loss. */
+ * target, then fsync the parent directory. */
 function writeFileAtomic(path: string, contents: string): void {
   const tmpPath = `${path}.tmp`;
   writeFileSync(tmpPath, contents, 'utf8');
@@ -193,11 +190,8 @@ function writePreviousVersion({ appDir, version }: { appDir: string; version: st
 }
 
 /**
- * Marks the running version healthy: clears `pending.json` only if it names the version that's
- * actually running (the caller's own version, not whatever `current` currently points to — those
- * can disagree if `current` was flipped by a later upgrade attempt this process hasn't picked up
- * yet), then copies the caller's own boot-guard over `app/boot-guard.cjs` (so a pending boot always
- * runs a guard shipped by a release that has already booted), then prunes old versions.
+ * Marks the running version healthy: clears `pending.json` if it names the caller's own running
+ * version, copies the caller's boot-guard over `app/boot-guard.cjs`, then prunes old versions.
  */
 export function markHealthy({ appDir, runningVersion, guardSource }: { appDir: string; runningVersion: string; guardSource: string }): void {
   const pending = readPending({ appDir });
@@ -211,9 +205,7 @@ export function markHealthy({ appDir, runningVersion, guardSource }: { appDir: s
   pruneVersions({ appDir });
 }
 
-/** Deletes every `<dataDir>/rolled-back/*` entry except the 2 most recently modified. The boot
- * guard only ever adds entries here on rollback; it never deletes, so this is the sole place
- * that bounds how many preserved pre-rollback database copies accumulate. */
+/** Deletes every `<dataDir>/rolled-back/*` entry except the 2 most recently modified. */
 function pruneRolledBack({ dataDir }: { dataDir: string }): void {
   const rolledBackDir = join(dataDir, 'rolled-back');
   if (!existsSync(rolledBackDir)) return;
