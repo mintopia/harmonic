@@ -195,22 +195,31 @@ describe('live structured run event streaming and replay', () => {
       attempts.listToolCalls = listToolCalls;
     }
 
+    // Close before asserting: a failing assertion must not leak this connection's
+    // bus listener into later tests (it would steal delayed calls meant for them).
     const latest = ws.messages.findLast((m) => m.type === 'attempt_changed' && m.run.id === attemptId);
-    expect(latest.run.prompt).toBe('newer');
     ws.close();
     await cancelRunningTasks(server);
+    expect(latest.run.prompt).toBe('newer');
   });
 
   it('never lets a slow, older conversation_changed overtake a newer one for the same conversation', async () => {
     const ws = await connectFirehose(server);
     const created = await server.api('POST', '/api/conversations', {});
     const conversationId = created.body.id;
+    // Creation broadcasts its own conversation_changed (and opening the session
+    // broadcasts a second one once sessionId is set); wait for both to land so
+    // the delay patch below only intercepts the 'older' emit, not one of those.
+    await waitFor(async () =>
+      ws.messages.some((m) => m.type === 'conversation_changed' && m.conversation.id === conversationId && m.conversation.sessionId !== null),
+    );
+
     const row = await server.app.ctx.conversations.get(conversationId);
     const conversations = server.app.ctx.conversations;
     const firstTurnText = conversations.firstTurnText.bind(conversations);
     let delayNext = true;
     conversations.firstTurnText = async (id) => {
-      if (delayNext) {
+      if (id === conversationId && delayNext) {
         delayNext = false;
         await new Promise((resolve) => setTimeout(resolve, 300));
       }
@@ -229,10 +238,11 @@ describe('live structured run event streaming and replay', () => {
     } finally {
       conversations.firstTurnText = firstTurnText;
     }
-
+    // Close before asserting: a failing assertion must not leak this connection's
+    // bus listener into later tests (it would steal delayed calls meant for them).
     const latest = ws.messages.findLast((m) => m.type === 'conversation_changed' && m.conversation.id === conversationId);
-    expect(latest.conversation.workingDir).toBe('newer');
     ws.close();
+    expect(latest.conversation.workingDir).toBe('newer');
   });
 
   it('re-broadcasts a dependant when its blocker escalates, so blockedOnFailed shows live', async () => {
