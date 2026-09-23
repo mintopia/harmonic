@@ -17,6 +17,7 @@ function appendToDataDirLog(dataDir: string, line: string): void {
 export interface LaunchedProcess {
   pid: number | undefined;
   onExit(callback: () => void): void;
+  kill(signal: NodeJS.Signals): void;
 }
 
 export interface RelauncherDependencies {
@@ -47,7 +48,11 @@ const productionDependencies: RelauncherDependencies = {
       stdio: ['ignore', log, log],
     });
     child.unref();
-    return { pid: child.pid, onExit: (callback) => { child.once('exit', callback); } };
+    return {
+      pid: child.pid,
+      onExit: (callback) => { child.once('exit', callback); },
+      kill: (signal) => { child.kill(signal); },
+    };
   },
   isPending: (dataDir) => existsSync(join(dataDir, 'app', 'pending.json')),
 };
@@ -129,14 +134,45 @@ export interface RelaunchOptions {
   lockMaxWaitMs?: number;
   roundPollMs?: number;
   roundWaitMs?: number;
+  killGraceMs?: number;
   dependencies?: RelauncherDependencies;
+}
+
+/** Terminates a child that timed out without booting: SIGTERM, then SIGKILL if it hasn't exited after `graceMs`. */
+async function killHungChild({
+  child,
+  wait,
+  graceMs,
+}: {
+  child: LaunchedProcess;
+  wait: RelauncherDependencies['wait'];
+  graceMs: number;
+}): Promise<void> {
+  let exited = false;
+  child.onExit(() => { exited = true; });
+  try {
+    child.kill('SIGTERM');
+  } catch {
+    return;
+  }
+  await wait(graceMs);
+  if (!exited) {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      /* already exited */
+    }
+  }
 }
 
 /**
  * Waits for the exiting process to release the upgrade lock, then drives up to `maxRounds` of
- * [boot guard, launch, wait for the boot to clear `pending.json` or die] — the boot guard flips
- * `current` back to the previous version and restores its DB snapshot once it has seen enough
- * failed boots, so a broken release self-heals within this loop rather than crash-looping forever.
+ * [boot guard, launch, wait for the boot to clear `pending.json`, die, or time out] — the boot
+ * guard flips `current` back to the previous version and restores its DB snapshot once it has seen
+ * enough failed boots, so a broken release self-heals within this loop rather than crash-looping
+ * forever. A round that times out (the startup watchdog inside the child should have already fired,
+ * but nothing here depends on that) is killed and counted as a failed boot like a round that exits
+ * on its own, so a release that hangs instead of crashing still rolls back.
  */
 export async function relaunchWithBootGuard({
   dataDir,
@@ -146,6 +182,7 @@ export async function relaunchWithBootGuard({
   lockMaxWaitMs = 5 * 60 * 1000,
   roundPollMs = 200,
   roundWaitMs = 60_000,
+  killGraceMs = 5_000,
   dependencies = productionDependencies,
 }: RelaunchOptions): Promise<void> {
   await waitForLockRelease({
@@ -182,9 +219,13 @@ export async function relaunchWithBootGuard({
     });
     appendToDataDirLog(dataDir, `relauncher round ${round}: ${outcome}`);
 
-    if (outcome !== 'process-exited') {
+    if (outcome === 'pending-cleared') {
       appendToDataDirLog(dataDir, `relauncher finished after round ${round} (${outcome})`);
       return;
+    }
+    if (outcome === 'timed-out') {
+      appendToDataDirLog(dataDir, `relauncher round ${round}: timed out waiting for boot; terminating hung child pid ${child.pid ?? 'unknown'}`);
+      await killHungChild({ child, wait: dependencies.wait, graceMs: killGraceMs });
     }
   }
   appendToDataDirLog(dataDir, `relauncher gave up after ${maxRounds} rounds without a healthy boot`);
@@ -202,12 +243,14 @@ async function main(): Promise<void> {
   const lockMaxWaitMs = process.env.HARMONIC_RELAUNCHER_MAX_WAIT_MS;
   const lockPollMs = process.env.HARMONIC_RELAUNCHER_POLL_MS;
   const roundWaitMs = process.env.HARMONIC_RELAUNCHER_ROUND_WAIT_MS;
+  const killGraceMs = process.env.HARMONIC_RELAUNCHER_KILL_GRACE_MS;
   await relaunchWithBootGuard({
     dataDir,
     serveArgs: parsed,
     ...(lockMaxWaitMs === undefined ? {} : { lockMaxWaitMs: Number(lockMaxWaitMs) }),
     ...(lockPollMs === undefined ? {} : { lockPollMs: Number(lockPollMs) }),
     ...(roundWaitMs === undefined ? {} : { roundWaitMs: Number(roundWaitMs) }),
+    ...(killGraceMs === undefined ? {} : { killGraceMs: Number(killGraceMs) }),
   });
 }
 
