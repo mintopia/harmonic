@@ -108,6 +108,25 @@ function moveBack(dbPath, preservedDir, moved) {
   return ok;
 }
 
+// Moves the preserved files back to dbPath and, only once that fully succeeds, fsyncs the
+// destination (now holding the restored files) before the emptied source dir. Returns whether
+// the move-back succeeded; on failure nothing is synced and the caller must keep reporting
+// preservedDir so the still-stranded files stay discoverable.
+function moveBackAndSync(dbPath, dataDir, preservedDir, moved) {
+  if (!moveBack(dbPath, preservedDir, moved)) return false;
+  try {
+    fsyncDir(dataDir);
+  } catch (error) {
+    logError(`could not fsync ${dataDir} after moving harmonic.db back`, error);
+  }
+  try {
+    fsyncDir(preservedDir);
+  } catch (error) {
+    logError(`could not fsync ${preservedDir} after moving harmonic.db back`, error);
+  }
+  return true;
+}
+
 // Returns { restored, preservedDir }. preservedDir is set whenever the pre-rollback database is
 // sitting somewhere other than its original path, so operators can recover it either way.
 function restoreDatabase(dataDir, appDir, snapshotPath, fromVersion) {
@@ -119,18 +138,36 @@ function restoreDatabase(dataDir, appDir, snapshotPath, fromVersion) {
 
   // Preserved on the same filesystem as harmonic.db (dataDir, not appDir), so moving the live
   // files aside is a same-filesystem rename and can't fail with EXDEV.
-  const preservedDir = path.join(dataDir, 'rolled-back', `${fromVersion}-${Date.now()}`);
+  const rolledBackDir = path.join(dataDir, 'rolled-back');
+  const preservedDir = path.join(rolledBackDir, `${fromVersion}-${Date.now()}`);
   let moved;
   try {
     fs.mkdirSync(preservedDir, { recursive: true });
     moved = moveAside(dbPath, preservedDir);
     // moveAside() undoes its own partial failures, so reaching here means every db/-wal/-shm
-    // file that existed made it into preservedDir intact. Fsync destination then source so the
-    // move survives a crash before the copy below even starts.
+    // file that existed made it into preservedDir intact. Fsync the new files, then the
+    // directory entry that names them, then the source dir whose entries just disappeared, so a
+    // crash never durably removes the originals before the preserved copy is itself durable.
     fsyncDir(preservedDir);
+    fsyncDir(rolledBackDir);
     fsyncDir(dataDir);
   } catch (error) {
     logError('database was not restored', error);
+    if (moved !== undefined) {
+      // The renames themselves succeeded (moveAside() only throws before returning, having
+      // already reverted any partial rename) — a later step, e.g. an fsync, failed. The live
+      // files are sitting in preservedDir, so move them back rather than stranding them.
+      if (moveBackAndSync(dbPath, dataDir, preservedDir, moved)) {
+        try {
+          fs.rmdirSync(preservedDir);
+        } catch {
+          // best-effort cleanup of the now-empty preserved dir
+        }
+        return { restored: false, preservedDir: null };
+      }
+      logError('original database files could not be moved back; they remain preserved', new Error(preservedDir));
+      return { restored: false, preservedDir };
+    }
     try {
       fs.rmdirSync(preservedDir);
     } catch {
@@ -148,8 +185,7 @@ function restoreDatabase(dataDir, appDir, snapshotPath, fromVersion) {
     return { restored: true, preservedDir };
   } catch (error) {
     logError('database was not restored', error);
-    const revertedOk = moveBack(dbPath, preservedDir, moved);
-    if (revertedOk) {
+    if (moveBackAndSync(dbPath, dataDir, preservedDir, moved)) {
       try {
         fs.rmdirSync(preservedDir);
       } catch {
