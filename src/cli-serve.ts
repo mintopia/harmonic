@@ -69,7 +69,7 @@ const execFileAsync = promisify(execFile);
 
 export type UpgradeCommand = (file: string, args: readonly string[]) => Promise<unknown>;
 
-export type ManagedUpgradeFsDependencies = Pick<VersionInstallDependencies, 'mkdir' | 'rm' | 'rename' | 'fileExists' | 'readFile'>;
+export type ManagedUpgradeFsDependencies = Pick<VersionInstallDependencies, 'mkdir' | 'rm' | 'rename' | 'fileExists' | 'readFile' | 'readlink'>;
 
 const defaultManagedUpgradeFsDependencies = (): ManagedUpgradeFsDependencies => ({
   mkdir: async (path) => { await mkdir(path, { recursive: true }); },
@@ -77,6 +77,13 @@ const defaultManagedUpgradeFsDependencies = (): ManagedUpgradeFsDependencies => 
   rename: async (from, to) => { await rename(from, to); },
   fileExists: existsSync,
   readFile: (path) => readFileSync(path, 'utf8'),
+  readlink: (path) => {
+    try {
+      return readlinkSync(path);
+    } catch {
+      return null;
+    }
+  },
 });
 
 /** Installs a pinned version into `app/versions/<target>`. Never touches `app/current` — the swap's commit step owns the flip, after verification. Used for both systemd and init.d self-upgrades — both lay out `app/` identically. */
@@ -242,7 +249,17 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
               await verifyInstall({
                 dir: join(dataDir, 'app', 'versions', target),
                 version: target,
-                dependencies: { fileExists: existsSync, readFile: readFileSync },
+                dependencies: {
+                  fileExists: existsSync,
+                  readFile: readFileSync,
+                  readlink: (path) => {
+                    try {
+                      return readlinkSync(path);
+                    } catch {
+                      return null;
+                    }
+                  },
+                },
               });
             },
             commit: async (target) => {

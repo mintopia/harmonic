@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
@@ -17,6 +17,8 @@ export interface VersionInstallDependencies {
   rename(from: string, to: string): Promise<void>;
   fileExists(path: string): boolean;
   readFile(path: string, encoding: 'utf8'): string;
+  /** The symlink target at `path`, or null if it isn't a symlink (including if it doesn't exist). */
+  readlink(path: string): string | null;
 }
 
 export function readInstalledVersion({
@@ -34,13 +36,36 @@ export function readInstalledVersion({
   }
 }
 
+const readManifestVersionAt = (manifestPath: string, readFile: VersionInstallDependencies['readFile']): string => {
+  try {
+    return packageManifestSchema.parse(JSON.parse(readFile(manifestPath, 'utf8'))).version;
+  } catch {
+    return 'unknown';
+  }
+};
+
+/**
+ * The manifest that actually describes what `dir/dist` resolves to. Ordinarily that's `dir/package.json`.
+ * But the 2.18.0/2.18.1 postinstall rescue leaves `dir/dist` a symlink into a nested
+ * `node_modules/@mintopia/harmonic/dist`, with `dir/package.json` holding npm's wrapper manifest for
+ * that nested install instead (no real `version` field) — so read the manifest beside `dist`'s physical
+ * location, not `dir`'s.
+ */
+const manifestPathForDist = (dir: string, readlink: VersionInstallDependencies['readlink']): string => {
+  const target = readlink(join(dir, 'dist'));
+  if (target === null) return join(dir, 'package.json');
+  const resolvedDistDir = isAbsolute(target) ? target : join(dir, target);
+  return join(resolvedDistDir, '..', 'package.json');
+};
+
 export function hasValidInstall(
   dir: string,
   version: string,
-  dependencies: Pick<VersionInstallDependencies, 'fileExists' | 'readFile'>,
+  dependencies: Pick<VersionInstallDependencies, 'fileExists' | 'readFile' | 'readlink'>,
 ): boolean {
   if (!dependencies.fileExists(join(dir, 'dist', 'cli.js'))) return false;
-  return readInstalledVersion({ dir, readFile: dependencies.readFile }) === version;
+  const manifestPath = manifestPathForDist(dir, dependencies.readlink);
+  return readManifestVersionAt(manifestPath, dependencies.readFile) === version;
 }
 
 /**
@@ -57,7 +82,7 @@ export async function verifyInstall({
 }: {
   dir: string;
   version: string;
-  dependencies: Pick<VersionInstallDependencies, 'fileExists' | 'readFile'>;
+  dependencies: Pick<VersionInstallDependencies, 'fileExists' | 'readFile' | 'readlink'>;
   timeoutMs?: number;
 }): Promise<void> {
   if (!hasValidInstall(dir, version, dependencies)) {
@@ -82,6 +107,8 @@ export async function installVersion({
   packageSpec?: string;
   dependencies: VersionInstallDependencies;
 }): Promise<string> {
+  // Only ever replaces an install that didn't verify as valid — a valid install (whatever `current`
+  // points at, if it's healthy) always hits the no-op return above and is never rm'd.
   const versionsDir = join(appDir, 'versions');
   const versionDir = join(versionsDir, version);
   if (hasValidInstall(versionDir, version, dependencies)) return versionDir;

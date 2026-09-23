@@ -35,7 +35,14 @@ const initdDependencies = () => {
     homeDir: '/home/agent',
     userName: 'agent',
     sudoUser: 'agent',
+    // `service harmonic status` mirrors real init.d: it fails until a start/restart has actually run.
     run: async (command: string, args: readonly string[]) => {
+      if (command === 'service' && args[1] === 'status') {
+        const started = calls.some(([cmd, , verb]) => cmd === 'service' && (verb === 'start' || verb === 'restart'));
+        calls.push([command, ...args]);
+        if (!started) throw new Error('not running');
+        return { stdout: '' };
+      }
       calls.push([command, ...args]);
       return { stdout: '' };
     },
@@ -51,6 +58,7 @@ const initdDependencies = () => {
       return contents;
     },
     readTextFile: async (path: string) => files.get(path) ?? null,
+    readlink: () => null,
   } satisfies ServiceManagerDependencies;
   return { dependencies, calls, dirs, files, modes, warn };
 };
@@ -102,6 +110,7 @@ describe('ServiceManager backend detection', () => {
     expect(initd.modes.get('/etc/init.d/harmonic')).toBe(0o755);
     expect(initd.dirs).toContain('/srv/harmonic');
     expect(initd.calls).toEqual([
+      ['service', 'harmonic', 'status'],
       ['chown', 'agent', '/srv/harmonic'],
       ['npm', 'pack', '--pack-destination', '/srv/harmonic/app/versions/.2.16.0.staging', '@mintopia/harmonic@2.16.0'],
       ['tar', '-xzf', '/srv/harmonic/app/versions/.2.16.0.staging/mintopia-harmonic-2.16.0.tgz', '--strip-components=1', '-C', '/srv/harmonic/app/versions/.2.16.0.staging'],
@@ -124,6 +133,17 @@ describe('ServiceManager backend detection', () => {
     });
 
     expect(initd.files.get('/etc/init.d/harmonic')).toContain("--data-dir '/srv/harmonic'\"'\"'s state'");
+  });
+
+  it('restarts, rather than starts, an already-running init.d service so new code takes effect', async () => {
+    const initd = initdDependencies();
+    const manager = createServiceManager(environment({ isRoot: true, initdAvailable: true }), initd.dependencies);
+    // Simulate an already-running service by recording a prior start before install() checks status.
+    initd.calls.push(['service', 'harmonic', 'start']);
+
+    await manager.install({ startSelfManaged: vi.fn(), serve: { port: '4700', host: '0.0.0.0', dataDir: '/srv/harmonic' } });
+
+    expect(initd.calls.at(-1)).toEqual(['service', 'harmonic', 'restart']);
   });
 
   it('warns when init.d would run Harmonic as root', async () => {
@@ -182,7 +202,14 @@ describe('systemd ServiceManager', () => {
       path: '/opt/tools/bin:/usr/local/bin:/usr/bin:/bin',
       homeDir: '/home/ada',
       userName: 'ada',
+      // `systemctl is-active` mirrors real systemd: it fails until a start/restart has actually run.
       run: async (command, args) => {
+        if (command === 'systemctl' && args.includes('is-active')) {
+          const started = calls.some(([cmd, ...rest]) => cmd === 'systemctl' && (rest.includes('start') || rest.includes('restart')));
+          calls.push([command, ...args]);
+          if (!started) throw new Error('inactive');
+          return { stdout: 'active\n' };
+        }
         calls.push([command, ...args]);
         return { stdout: 'active\n' };
       },
@@ -198,6 +225,7 @@ describe('systemd ServiceManager', () => {
         return contents;
       },
       readTextFile: async (path) => files.get(path) ?? null,
+      readlink: () => null,
     };
   };
 
@@ -221,6 +249,7 @@ describe('systemd ServiceManager', () => {
     expect(deps.dirs).toContain('/var/lib/harmonic');
     expect(deps.dirs).toContain('/var/lib/harmonic/app/versions/.2.16.0.staging');
     expect(deps.calls).toEqual([
+      ['systemctl', 'is-active', 'harmonic'],
       ['chown', 'workspace', '/var/lib/harmonic'],
       ['npm', 'pack', '--pack-destination', '/var/lib/harmonic/app/versions/.2.16.0.staging', '@mintopia/harmonic@2.16.0'],
       ['tar', '-xzf', '/var/lib/harmonic/app/versions/.2.16.0.staging/mintopia-harmonic-2.16.0.tgz', '--strip-components=1', '-C', '/var/lib/harmonic/app/versions/.2.16.0.staging'],
@@ -233,6 +262,21 @@ describe('systemd ServiceManager', () => {
       ['systemctl', 'start', 'harmonic'],
       ['systemctl', 'is-active', 'harmonic'],
     ]);
+  });
+
+  it('restarts, rather than starts, an already-running systemd unit so new code takes effect', async () => {
+    const deps = dependencies();
+    const manager = createServiceManager(environment({ isRoot: true, systemdRunning: true }), deps);
+    // Simulate an already-running service by recording a prior start before install() checks status.
+    deps.calls.push(['systemctl', 'start', 'harmonic']);
+
+    await manager.install({
+      startSelfManaged: vi.fn(),
+      serve: { port: '4700', host: '0.0.0.0', dataDir: '/srv/harmonic' },
+    });
+
+    const verbs = deps.calls.filter(([command]) => command === 'systemctl').map(([, verb]) => verb);
+    expect(verbs.at(-2)).toBe('restart');
   });
 
   it('runs a system unit as the explicit install user and group', async () => {
@@ -350,6 +394,7 @@ describe('systemd ServiceManager', () => {
     expect(deps.dirs).toContain('/home/ada/.harmonic');
     expect(deps.dirs).toContain('/home/ada/.harmonic/app/versions/.2.16.0.staging');
     expect(deps.calls).toEqual([
+      ['systemctl', '--user', 'is-active', 'harmonic'],
       ['loginctl', 'enable-linger', 'ada'],
       ['npm', 'pack', '--pack-destination', '/home/ada/.harmonic/app/versions/.2.16.0.staging', '@mintopia/harmonic@2.16.0'],
       ['tar', '-xzf', '/home/ada/.harmonic/app/versions/.2.16.0.staging/mintopia-harmonic-2.16.0.tgz', '--strip-components=1', '-C', '/home/ada/.harmonic/app/versions/.2.16.0.staging'],
@@ -470,7 +515,9 @@ describe('init.d script (real filesystem)', () => {
     // some other install.
     writeFileSync(
       join(cliDir, 'cli.js'),
-      `require('node:fs').writeFileSync(${JSON.stringify(markerPath)}, process.argv.slice(2).join(' '));\n`,
+      // `status` reports not-running so the script's pre-start check falls through to the guard.
+      `if (process.argv[2] === 'status') process.exit(1);\n` +
+        `require('node:fs').writeFileSync(${JSON.stringify(markerPath)}, process.argv.slice(2).join(' '));\n`,
     );
     const guardMarkerPath = join(dataDir, 'guard.marker');
     // A fixture boot-guard.cjs, mirroring copyBootGuard's install-time copy into app/boot-guard.cjs.

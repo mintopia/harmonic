@@ -292,8 +292,8 @@ function resolveInstallSettings(values: ServeValues, explicit: ReadonlySet<strin
 async function runInstallCommand(values: ServeValues, rest: string[], deps: CliCommandDependencies): Promise<CliOutcome> {
   const manager = deps.serviceManager();
   deps.log.info(`Selected ${manager.backend}.`);
-  const existing = (await manager.isInstalled()) ? await manager.readExistingSettings() : null;
   const explicit = explicitInstallFlags(rest);
+  const existing = (await manager.isInstalled()) ? await manager.readExistingSettings(explicit) : null;
   const resolved = resolveInstallSettings(values, explicit, existing);
   if (resolved.reused.length > 0) {
     deps.log.info(`Reusing existing service settings (${resolved.reused.join(', ')}) since they weren't passed explicitly.`);
