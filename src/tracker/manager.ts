@@ -23,7 +23,7 @@ export interface TrackerPollerManagerOptions {
   scheduler?: Scheduler;
   epicService?: EpicService;
   yieldOptions?: YieldOptions;
-  /** Gates every poller's epic reconcile tick; absent ⇒ always allowed. */
+  /** Absent means epic reconcile always runs. */
   workStartAllowed?: () => boolean | Promise<boolean>;
 }
 

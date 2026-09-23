@@ -49,16 +49,10 @@ const DEFAULT_STALE_AFTER_MS = 60 * 60 * 1000;
 export interface SweepStaleMergeWorktreesOptions {
   /** Only sweep a worktree whose temp dir is at least this old. Default 1h: merges/retirements finish in seconds, but several Harmonic processes on one host can share a repo, so a dir this fresh may still be a live merge in another process. */
   olderThanMs?: number;
-  /** Clock injection for tests. */
   now?: () => number;
 }
 
-/**
- * Remove `harmonic-merge-*` admin worktrees left behind by a process that died between
- * {@link withEphemeralMergeWorktree} creating one and its `finally` removing it. Age-gated
- * (see `olderThanMs`) rather than scoped by owning process, since another process's merge may
- * still be in flight.
- */
+/** Remove `harmonic-merge-*` admin worktrees left by a process that died before {@link withEphemeralMergeWorktree}'s `finally` ran. */
 export async function sweepStaleMergeWorktrees(
   repoDir: string,
   deps: SweepStaleMergeWorktreesDeps = Git,

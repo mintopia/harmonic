@@ -92,7 +92,6 @@ describe('relauncher rounds (real process, real boot guard)', () => {
   it('a release that hangs forever without an out-of-process watcher of its own is killed once by the overall safety cap and left for an operator, instead of retried round after round', async () => {
     const dataDir = tempDir('relauncher-rounds-hung-');
     const appDir = join(dataDir, 'app');
-    // No out-of-process startup watcher here (ADR-0042); the relauncher's overall safety cap is the last-resort fallback.
     seedVersion(appDir, '2.0.0', 'setInterval(() => {}, 1000);');
     symlinkSync('versions/2.0.0', join(appDir, 'current'));
     writeFileSync(join(appDir, 'boot-guard.cjs'), readFileSync(guardSourcePath, 'utf8'));
