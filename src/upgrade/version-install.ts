@@ -47,13 +47,8 @@ const readManifestVersionAt = (manifestPath: string, readFile: VersionInstallDep
   }
 };
 
-/**
- * The manifest that actually describes what `dir/dist` resolves to. Ordinarily that's `dir/package.json`.
- * But the 2.18.0/2.18.1 postinstall rescue leaves `dir/dist` a symlink into a nested
- * `node_modules/@mintopia/harmonic/dist`, with `dir/package.json` holding npm's wrapper manifest for
- * that nested install instead (no real `version` field) — so read the manifest beside `dist`'s physical
- * location, not `dir`'s.
- */
+/** Reads the manifest beside `dist`'s physical location: a legacy nested-install layout can leave
+ * `dir/package.json` holding npm's wrapper manifest instead of the real one. */
 const manifestPathForDist = (dir: string, readlink: VersionInstallDependencies['readlink']): string => {
   const target = readlink(join(dir, 'dist'));
   if (target === null) return join(dir, 'package.json');
@@ -98,11 +93,8 @@ export async function verifyInstall({
   await execFileAsync(process.execPath, ['-e', importScript], { timeout: timeoutMs });
 }
 
-/** Flushes the just-renamed version tree to disk before anything (the commit step's `pending.json`,
- * then `current`) can come to depend on it surviving a crash (ADR-0042). `sync -f <dir>` is a syncfs
- * over the whole filesystem holding `versionDir` in one call — cheap, unlike fsyncing every file under
- * `node_modules`. Falls back to a bare `sync` for coreutils builds without `-f`; a sync failure throws,
- * which fails the install and keeps the swap from ever reaching commit. */
+/** Flushes the just-renamed version tree to disk before commit can depend on it surviving a
+ * crash. Falls back to a bare `sync` for coreutils builds without `-f`. */
 async function syncInstalledTree(run: VersionInstallCommand, versionDir: string): Promise<void> {
   try {
     await run('sync', ['-f', versionDir]);
@@ -111,7 +103,6 @@ async function syncInstalledTree(run: VersionInstallCommand, versionDir: string)
   }
 }
 
-// Stages into a sibling directory and renames into place so a crash or retry can never observe a half-written version.
 export async function installVersion({
   appDir,
   version,
@@ -123,8 +114,7 @@ export async function installVersion({
   packageSpec?: string;
   dependencies: VersionInstallDependencies;
 }): Promise<string> {
-  // Only ever replaces an install that didn't verify as valid — a valid install (whatever `current`
-  // points at, if it's healthy) always hits the no-op return above and is never rm'd.
+  // Only ever replaces an install that didn't verify as valid; a healthy install always hits the no-op return above.
   const versionsDir = join(appDir, 'versions');
   const versionDir = join(versionsDir, version);
   if (hasValidInstall(versionDir, version, dependencies)) return versionDir;

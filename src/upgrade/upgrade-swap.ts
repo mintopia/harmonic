@@ -7,10 +7,7 @@ export interface UpgradeSwapLogEvent {
   error?: Error;
 }
 
-/** Consulted at each step boundary up to commit; see `UpgradeCancellation` in
- * `upgrade-coordinator.ts`, which is the real implementation the coordinator
- * wires in — kept as a narrow interface here so this module doesn't depend
- * on the coordinator. */
+/** Consulted at each step boundary up to commit; see `UpgradeCancellation` in `upgrade-coordinator.ts`. */
 export interface UpgradeSwapCancellation {
   /** Checked before and after await-idle: false means stop instead of
    * continuing toward commit. */
@@ -80,9 +77,7 @@ export class UpgradeSwap {
           version,
           work: () => this.dependencies.abort(new Error('timed out waiting for in-flight work to drain before commit')),
         });
-        // A cancellation requested while waitForIdle was draining always wins over the
-        // timeout: report 'cancelled' so the coordinator unarms instead of re-arming to
-        // retry a target the caller already asked to stop (ADR-0042).
+        // A cancellation requested during the wait wins over the timeout (ADR-0042).
         return this.shouldContinue() ? { kind: 'idle-timeout' } : { kind: 'cancelled' };
       }
     }
@@ -91,8 +86,7 @@ export class UpgradeSwap {
     if (!this.enterCommit()) return { kind: 'cancelled' };
 
     try {
-      // Everything up to here left `current` untouched; a failure here must too, which is why the
-      // DB snapshot happens before `pending.json` is written and the flip happens last (ADR-0042).
+      // Everything up to here leaves `current` untouched on failure.
       await this.step({ action: 'commit', version, work: () => this.dependencies.commit(version) });
     } catch (error) {
       const failure = toError(error);

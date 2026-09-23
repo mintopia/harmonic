@@ -35,9 +35,7 @@ const productionDependencies: RelauncherDependencies = {
     const guardPath = join(dataDir, 'app', 'boot-guard.cjs');
     if (!existsSync(guardPath)) return;
     try {
-      // Appended (not ignored) so the guard's own diagnostics — e.g. a blocked-rollback message
-      // when it can't restore the database snapshot — reach the operator via harmonic.log instead
-      // of being silently discarded.
+      // Appended, not ignored, so the guard's own diagnostics reach the operator via harmonic.log.
       const log = openSync(logFilePath(dataDir), 'a');
       try {
         spawnSync(process.execPath, [guardPath, dataDir], { stdio: ['ignore', log, log] });
@@ -134,13 +132,7 @@ async function waitForRoundOutcome({
   }
 }
 
-/**
- * Bounded wait for the data-dir lock to actually clear after a child is already known to have
- * exited on its own (`waitForRoundOutcome` returned `process-exited`), so the next guard round never
- * runs against files a dying process might still hold open. Only polls `isLocked` — the exit itself
- * is already established, and a fresh `onExit` subscription here would never fire: a process's exit
- * event is emitted once, and a listener added after it already fired never sees it.
- */
+/** Bounded wait for the data-dir lock to clear after a child has already exited on its own. */
 async function waitForLockToClear({
   dataDir,
   isLocked,
@@ -207,19 +199,7 @@ async function killHungChild({
 
 /**
  * Waits for the exiting process to release the upgrade lock, then drives up to `maxRounds` of
- * [boot guard, launch, wait for the boot to clear `pending.json` or the process to exit] — the boot
- * guard flips `current` back to the previous version and restores its DB snapshot once it has seen
- * enough failed boots, so a broken release self-heals within this loop rather than crash-looping
- * forever.
- *
- * This has no per-round kill deadline of its own: killing a hung boot is the in-process startup
- * watcher's job (it runs inside the child, so it can measure real startup progress and isn't fooled
- * by a slow-but-healthy migration), and a shorter relauncher-owned deadline would race it and kill
- * a healthy boot the watcher would have let finish. `overallDeadlineMs` is only a fallback for the
- * case where a boot never exits and never gets killed by anything — set well above the watcher's own
- * deadline. When it fires mid-round, the round's child is killed and the loop stops entirely rather
- * than starting another round: a child that wouldn't die from a normal kill might still be holding
- * the data-dir lock, and the guard must never run against a possibly-still-live process.
+ * [boot guard, launch, wait for the boot to clear `pending.json` or the process to exit].
  */
 export async function relaunchWithBootGuard({
   dataDir,
@@ -287,8 +267,7 @@ export async function relaunchWithBootGuard({
       return;
     }
 
-    // process-exited: confirm the exit actually released the data-dir lock before trusting the next
-    // guard round to run against a fully-stopped process, not one still tearing down.
+    // process-exited: confirm the lock actually cleared before running the guard again.
     const settled = await waitForLockToClear({
       dataDir,
       isLocked: dependencies.isLocked,
