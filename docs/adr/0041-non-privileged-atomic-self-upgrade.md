@@ -4,6 +4,7 @@ Status: accepted
 Date: 2026-09-22
 
 Amends ADR-0030 (in-place self-upgrade) and ADR-0034 (supervised service).
+Amended by ADR-0042 (install modes, boot guard, and rollback).
 
 ## Context
 
