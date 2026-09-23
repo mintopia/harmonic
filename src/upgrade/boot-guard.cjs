@@ -79,11 +79,18 @@ function flipCurrent(appDir, version) {
 // disk, just renamed out of the way, and get moved back if the copy fails.
 function moveAside(dbPath, preservedDir) {
   const moved = [];
-  for (const suffix of ['', '-wal', '-shm']) {
-    const from = `${dbPath}${suffix}`;
-    if (!fs.existsSync(from)) continue;
-    fs.renameSync(from, path.join(preservedDir, `harmonic.db${suffix}`));
-    moved.push(suffix);
+  try {
+    for (const suffix of ['', '-wal', '-shm']) {
+      const from = `${dbPath}${suffix}`;
+      if (!fs.existsSync(from)) continue;
+      fs.renameSync(from, path.join(preservedDir, `harmonic.db${suffix}`));
+      moved.push(suffix);
+    }
+  } catch (error) {
+    // Undo whatever this call already moved before the caller sees the failure, so a partial
+    // move (e.g. the db renamed but -wal failing) never strands the live database mid-flight.
+    moveBack(dbPath, preservedDir, moved);
+    throw error;
   }
   return moved;
 }
@@ -110,13 +117,25 @@ function restoreDatabase(dataDir, appDir, snapshotPath, fromVersion) {
     return { restored: false, preservedDir: null };
   }
 
-  const preservedDir = path.join(appDir, 'rolled-back', `${fromVersion}-${Date.now()}`);
+  // Preserved on the same filesystem as harmonic.db (dataDir, not appDir), so moving the live
+  // files aside is a same-filesystem rename and can't fail with EXDEV.
+  const preservedDir = path.join(dataDir, 'rolled-back', `${fromVersion}-${Date.now()}`);
   let moved;
   try {
     fs.mkdirSync(preservedDir, { recursive: true });
     moved = moveAside(dbPath, preservedDir);
+    // moveAside() undoes its own partial failures, so reaching here means every db/-wal/-shm
+    // file that existed made it into preservedDir intact. Fsync destination then source so the
+    // move survives a crash before the copy below even starts.
+    fsyncDir(preservedDir);
+    fsyncDir(dataDir);
   } catch (error) {
     logError('database was not restored', error);
+    try {
+      fs.rmdirSync(preservedDir);
+    } catch {
+      // best-effort cleanup; moveAside() already reverted any files it moved
+    }
     return { restored: false, preservedDir: null };
   }
 
