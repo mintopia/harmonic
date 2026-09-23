@@ -6,6 +6,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as schema from './schema.js';
 import { syncSchema } from './schema-sync.js';
+import { touchStartupProgress } from '../reliability/startup-progress.js';
 import { conversations, settings, tasks, workspaces } from './schema.js';
 
 /** The libsql-backed Drizzle database; every `.get/.all/.run` is a Promise. */
@@ -165,6 +166,7 @@ export async function openAsyncDb(
   options: { queryTimeoutMs?: number } = {},
 ): Promise<AsyncDbHandle> {
   mkdirSync(dataDir, { recursive: true });
+  touchStartupProgress(dataDir);
   // `@libsql/client` on a local `file:` URL uses a single connection, so these connection-level pragmas apply to every drizzle query.
   const client = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
   await client.execute('PRAGMA journal_mode = WAL');
@@ -172,6 +174,7 @@ export async function openAsyncDb(
   const db = drizzle(client, { schema });
   const baseline = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'drizzle', '0000_baseline.sql');
   await syncSchema(client, readFileSync(baseline, 'utf8'));
+  touchStartupProgress(dataDir);
   const violations = await client.execute('PRAGMA foreign_key_check');
   if (violations.rows.length > 0) {
     throw new Error(
@@ -181,5 +184,6 @@ export async function openAsyncDb(
   await client.execute('PRAGMA foreign_keys = ON');
   const handle = new AsyncDbHandle(db, client, options.queryTimeoutMs ?? DEFAULT_QUERY_TIMEOUT_MS);
   await backfillWorkspaceAssociationsAsync(handle);
+  touchStartupProgress(dataDir);
   return handle;
 }

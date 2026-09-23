@@ -54,7 +54,7 @@ describe('relauncher rounds (real process, real boot guard)', () => {
     writeFileSync(join(appDir, 'pending.json'), JSON.stringify({ version: '2.0.0', previous: '1.0.0', snapshot: join(appDir, 'pre-2.0.0.db'), boots: 0 }));
     writeFileSync(join(dataDir, 'harmonic.db'), '');
 
-    const exitCode = await runRelauncher(dataDir, { HARMONIC_RELAUNCHER_POLL_MS: '10', HARMONIC_RELAUNCHER_ROUND_WAIT_MS: '2000' });
+    const exitCode = await runRelauncher(dataDir, { HARMONIC_RELAUNCHER_POLL_MS: '10' });
 
     expect(exitCode).toBe(0);
     expect(readlinkSync(join(appDir, 'current'))).toBe('versions/1.0.0');
@@ -80,7 +80,7 @@ describe('relauncher rounds (real process, real boot guard)', () => {
     writeFileSync(join(appDir, 'pre-2.0.0.db'), '');
     writeFileSync(join(appDir, 'pending.json'), JSON.stringify({ version: '2.0.0', previous: '1.0.0', snapshot: join(appDir, 'pre-2.0.0.db'), boots: 0 }));
 
-    const exitCode = await runRelauncher(dataDir, { HARMONIC_RELAUNCHER_POLL_MS: '10', HARMONIC_RELAUNCHER_ROUND_WAIT_MS: '2000' });
+    const exitCode = await runRelauncher(dataDir, { HARMONIC_RELAUNCHER_POLL_MS: '10' });
 
     expect(exitCode).toBe(0);
     expect(existsSync(join(appDir, 'pending.json'))).toBe(false);
@@ -88,15 +88,14 @@ describe('relauncher rounds (real process, real boot guard)', () => {
     expect(existsSync(join(appDir, 'rollback.json'))).toBe(false);
   }, 20_000);
 
-  it('a release that hangs forever instead of crashing is killed each round and still rolls back, leaving the previous version running', async () => {
+  it('a release that hangs forever without an out-of-process watcher of its own is killed once by the overall safety cap and left for an operator, instead of retried round after round', async () => {
     const dataDir = tempDir('relauncher-rounds-hung-');
     const appDir = join(dataDir, 'app');
-    const markerPath = join(dataDir, 'v1-marker.txt');
-    seedVersion(appDir, '1.0.0', `
-      require('node:fs').writeFileSync(${JSON.stringify(markerPath)}, 'v1-running');
-      process.exit(0);
-    `);
-    // Never exits and never clears pending.json: the round always times out, not crashes.
+    // Never exits and never clears pending.json. Unlike a real `cli-serve.ts` boot, this bare
+    // fixture never spawns its own out-of-process startup watcher (ADR-0042) — that watcher, not the
+    // relauncher, is what's meant to kill a hung boot. The relauncher's own overall safety cap is only
+    // a last-resort fallback for the case nothing else ever kills the child, and it stops immediately
+    // after firing instead of starting another round against a process it isn't sure has died.
     seedVersion(appDir, '2.0.0', 'setInterval(() => {}, 1000);');
     symlinkSync('versions/2.0.0', join(appDir, 'current'));
     writeFileSync(join(appDir, 'boot-guard.cjs'), readFileSync(guardSourcePath, 'utf8'));
@@ -106,14 +105,14 @@ describe('relauncher rounds (real process, real boot guard)', () => {
 
     const exitCode = await runRelauncher(dataDir, {
       HARMONIC_RELAUNCHER_POLL_MS: '10',
-      HARMONIC_RELAUNCHER_ROUND_WAIT_MS: '300',
+      HARMONIC_RELAUNCHER_OVERALL_DEADLINE_MS: '300',
       HARMONIC_RELAUNCHER_KILL_GRACE_MS: '100',
     });
 
     expect(exitCode).toBe(0);
-    expect(readlinkSync(join(appDir, 'current'))).toBe('versions/1.0.0');
-    expect(existsSync(join(appDir, 'rollback.json'))).toBe(true);
-    await waitFor(() => existsSync(markerPath), 5_000);
-    expect(readFileSync(markerPath, 'utf8')).toBe('v1-running');
+    // Only the first round's guard ever ran: boots advanced to 1, not the 4 needed to roll back.
+    expect(JSON.parse(readFileSync(join(appDir, 'pending.json'), 'utf8')).boots).toBe(1);
+    expect(readlinkSync(join(appDir, 'current'))).toBe('versions/2.0.0');
+    expect(existsSync(join(appDir, 'rollback.json'))).toBe(false);
   }, 20_000);
 });

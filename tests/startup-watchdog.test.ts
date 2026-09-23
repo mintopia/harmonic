@@ -3,9 +3,12 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createTempDirTracker } from './helpers/upgrade-fixture.js';
+import { startStartupWatchdog } from '../src/cli-serve.js';
 
 const { tempDir, cleanupAll } = createTempDirTracker();
-const fixturePath = fileURLToPath(new URL('./fixtures/startup-watchdog-hang.ts', import.meta.url));
+const hangFixturePath = fileURLToPath(new URL('./fixtures/startup-watchdog-hang.ts', import.meta.url));
+const progressFixturePath = fileURLToPath(new URL('./fixtures/startup-watchdog-progress.ts', import.meta.url));
+const watcherPath = fileURLToPath(new URL('../src/upgrade/startup-watcher.cjs', import.meta.url));
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const ownVersion: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
@@ -19,12 +22,21 @@ function join(...segments: string[]): string {
   return segments.join('/');
 }
 
-function spawnFixture(dataDir: string, deadlineMs: number): ChildProcessWithoutNullStreams {
-  const child = spawn(
-    process.execPath,
-    ['--import', 'tsx', fixturePath, dataDir],
-    { cwd: repoRoot, stdio: 'pipe', env: { ...process.env, HARMONIC_STARTUP_DEADLINE_MS: String(deadlineMs) } },
+function writePending(dataDir: string, version: string): void {
+  mkdirSync(join(dataDir, 'app'), { recursive: true });
+  writeFileSync(
+    join(dataDir, 'app', 'pending.json'),
+    JSON.stringify({ version, previous: '0.0.0', snapshot: join(dataDir, 'app', 'pre.db'), boots: 0 }),
   );
+}
+
+function spawnFixture(fixturePath: string, args: string[]): ChildProcessWithoutNullStreams {
+  const child = spawn(process.execPath, ['--import', 'tsx', fixturePath, ...args], {
+    cwd: repoRoot,
+    stdio: 'pipe',
+    // Fast polling keeps these tests quick; production leaves this at the watcher's 1s default.
+    env: { ...process.env, HARMONIC_STARTUP_WATCHER_POLL_MS: '30', HARMONIC_STARTUP_DEADLINE_MS: '300' },
+  });
   runningChildren.push(child);
   return child;
 }
@@ -36,47 +48,122 @@ async function waitForExit(child: ChildProcessWithoutNullStreams, timeoutMs: num
   });
 }
 
-async function waitForArmed(child: ChildProcessWithoutNullStreams): Promise<void> {
+function waitForStdout(child: ChildProcessWithoutNullStreams, marker: string, timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('fixture never armed the watchdog')), 20_000);
+    const timer = setTimeout(() => reject(new Error(`fixture never printed "${marker.trim()}"`)), timeoutMs);
     let output = '';
     child.stdout.on('data', (chunk: Buffer) => {
       output += chunk.toString();
-      if (output.includes('armed\n')) { clearTimeout(timer); resolve(); }
+      if (output.includes(marker)) { clearTimeout(timer); resolve(); }
     });
   });
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => { setTimeout(resolve, ms); });
-}
+describe('startup watchdog: out-of-process watcher (real processes)', () => {
+  it('kills a boot that blocks the Node event loop synchronously, which an in-process timer could never catch', async () => {
+    const dataDir = tempDir('startup-watchdog-sync-hang-');
+    writePending(dataDir, ownVersion);
 
-describe('startup watchdog (real process)', () => {
-  it('exits non-zero within the deadline when pending.json names this process own version and it never listens', async () => {
-    const dataDir = tempDir('startup-watchdog-hung-');
-    mkdirSync(join(dataDir, 'app'), { recursive: true });
-    writeFileSync(
-      join(dataDir, 'app', 'pending.json'),
-      JSON.stringify({ version: ownVersion, previous: '0.0.0', snapshot: join(dataDir, 'app', 'pre.db'), boots: 0 }),
-    );
-
-    const child = spawnFixture(dataDir, 300);
-    const exited = waitForExit(child, 25_000);
-    await waitForArmed(child);
-    const code = await exited;
+    const child = spawnFixture(hangFixturePath, [dataDir]);
+    await waitForStdout(child, 'armed\n', 20_000);
+    // The process is now spinning in a synchronous busy-loop with its event loop fully blocked.
+    const code = await waitForExit(child, 15_000);
 
     expect(code).not.toBe(0);
   }, 30_000);
 
-  it('stays running past the deadline when no pending.json names this process own version', async () => {
-    const dataDir = tempDir('startup-watchdog-idle-');
-    mkdirSync(join(dataDir, 'app'), { recursive: true });
+  it('does not kill a boot that keeps touching startup-progress, even once the deadline window has elapsed several times over', async () => {
+    const dataDir = tempDir('startup-watchdog-progress-');
+    writePending(dataDir, ownVersion);
 
-    const child = spawnFixture(dataDir, 300);
-    await waitForArmed(child);
-    await sleep(1_200);
+    const child = spawnFixture(progressFixturePath, [dataDir, '300', '1500']);
+    await waitForStdout(child, 'armed\n', 20_000);
+    await waitForStdout(child, 'healthy\n', 10_000);
 
     expect(child.exitCode).toBeNull();
     expect(child.killed).toBe(false);
+    child.kill('SIGKILL');
   }, 30_000);
+});
+
+describe('startStartupWatchdog (unit)', () => {
+  it('does not spawn a watcher when there is no pending.json', () => {
+    const dataDir = tempDir('startup-watchdog-no-pending-');
+    let spawned = false;
+    const clear = startStartupWatchdog({
+      dataDir,
+      watcherPath,
+      spawnWatcher: (() => { spawned = true; throw new Error('should not be called'); }) as never,
+    });
+
+    expect(spawned).toBe(false);
+    clear();
+  });
+
+  it('does not spawn a watcher when pending.json names a different version', () => {
+    const dataDir = tempDir('startup-watchdog-other-version-');
+    writePending(dataDir, '9.9.9');
+    let spawned = false;
+    const clear = startStartupWatchdog({
+      dataDir,
+      ownDir: repoRoot,
+      watcherPath,
+      spawnWatcher: (() => { spawned = true; throw new Error('should not be called'); }) as never,
+    });
+
+    expect(spawned).toBe(false);
+    clear();
+  });
+
+  it('spawns the watcher with the data dir, own pid, running version, and deadline when pending.json names the running version', () => {
+    const dataDir = tempDir('startup-watchdog-spawn-');
+    writePending(dataDir, ownVersion);
+    const calls: unknown[][] = [];
+    const clear = startStartupWatchdog({
+      dataDir,
+      ownDir: repoRoot,
+      watcherPath,
+      deadlineMs: 5_000,
+      spawnWatcher: ((...args: unknown[]) => {
+        calls.push(args);
+        return { unref: () => {}, kill: () => {} };
+      }) as never,
+    });
+
+    expect(calls).toHaveLength(1);
+    const [file, spawnArgs] = calls[0] as [string, string[]];
+    expect(file).toBe(process.execPath);
+    expect(spawnArgs).toEqual([watcherPath, dataDir, String(process.pid), ownVersion, '5000']);
+    clear();
+  });
+
+  it('the cleanup function kills the spawned watcher', () => {
+    const dataDir = tempDir('startup-watchdog-cleanup-');
+    writePending(dataDir, ownVersion);
+    let killed = false;
+    const clear = startStartupWatchdog({
+      dataDir,
+      ownDir: repoRoot,
+      watcherPath,
+      spawnWatcher: (() => ({ unref: () => {}, kill: () => { killed = true; } })) as never,
+    });
+
+    clear();
+    expect(killed).toBe(true);
+  });
+
+  it('does not spawn a watcher, and warns instead, when the watcher script is missing', () => {
+    const dataDir = tempDir('startup-watchdog-missing-watcher-');
+    writePending(dataDir, ownVersion);
+    let spawned = false;
+    const clear = startStartupWatchdog({
+      dataDir,
+      ownDir: repoRoot,
+      watcherPath: join(dataDir, 'does-not-exist.cjs'),
+      spawnWatcher: (() => { spawned = true; throw new Error('should not be called'); }) as never,
+    });
+
+    expect(spawned).toBe(false);
+    clear();
+  });
 });

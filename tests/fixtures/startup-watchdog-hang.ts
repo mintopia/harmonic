@@ -1,11 +1,16 @@
+import { fileURLToPath } from 'node:url';
 import { startStartupWatchdog } from '../../src/cli-serve.js';
 
 const dataDir = process.argv[2];
 if (!dataDir) throw new Error('usage: startup-watchdog-hang <dataDir>');
 
-startStartupWatchdog({ dataDir });
+const watcherPath = fileURLToPath(new URL('../../src/upgrade/startup-watcher.cjs', import.meta.url));
+startStartupWatchdog({ dataDir, watcherPath });
 process.stdout.write('armed\n');
 
-// Simulates a release that imports fine but hangs before `listen` (e.g. stuck DB init): keeps the
-// event loop alive (like a real pending DB call would) without ever completing.
-setInterval(() => {}, 1000);
+// Simulates a release whose startup blocks the Node event loop entirely (e.g. a synchronous stuck
+// import): only a separate OS process — not an in-process timer — can still notice this hang.
+const deadline = Date.now() + 60_000;
+while (Date.now() < deadline) {
+  // busy-loop
+}
