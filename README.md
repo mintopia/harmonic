@@ -45,10 +45,34 @@ is out. How it upgrades depends on how you run it:
   banner installs the new release alongside the current one, checks it, then
   switches over the next time your fleet is idle. If the new release fails to
   start four times, Harmonic switches back to the previous release and restores
-  the database from just before the upgrade.
+  the database from just before the upgrade — as long as that pre-upgrade copy
+  can still be restored. If it can't (for example a missing snapshot), Harmonic
+  stays on the failed release instead of risking a database the failed release
+  may have already changed, and keeps retrying on every start. The reason is in
+  the service log and `<data-dir>/app/rollback.json`; see
+  [If an upgrade fails](#if-an-upgrade-fails) below.
 - **Anything else** (a global install, `npx`, `harmonic start`, pm2, Docker):
   the banner shows the command to run. Harmonic doesn't upgrade itself here,
   because it can't restart safely under a supervisor it doesn't control.
+
+### If an upgrade fails
+
+Check, in order:
+
+- The service log — `journalctl -u harmonic` (systemd) or
+  `<data-dir>/harmonic.log` (init.d/background).
+- `<data-dir>/app/rollback.json` — names why a rollback didn't happen and,
+  when anything was moved aside, where.
+- `<data-dir>/rolled-back/` — the pre-upgrade database, preserved (never
+  deleted) if it had to be moved aside during a rollback attempt.
+
+Once you've fixed the underlying cause (disk space, a missing snapshot, etc.),
+restart the service. For systemd, repeated failures can trip the unit's
+restart limit first, so fixing the cause alone may not be enough:
+
+```sh
+sudo systemctl reset-failed harmonic && sudo systemctl start harmonic
+```
 
 ### Upgrading from 2.18.0 or 2.18.1
 

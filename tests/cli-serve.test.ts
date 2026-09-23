@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -97,6 +97,47 @@ describe('reconcileSystemdGuardRevision (real filesystem)', () => {
     const userUnitPath = join(dir, '.config', 'systemd', 'user', 'harmonic.service');
     mkdirSync(join(dir, '.config', 'systemd', 'user'), { recursive: true });
     writeFileSync(userUnitPath, '[Service]\nEnvironment=HARMONIC_MANAGED_BY=systemd\n');
+    const warn = vi.fn();
+    const manager = createServiceManager(
+      { platform: 'linux', isRoot: false, systemdRunning: false, initdAvailable: false, userSystemdUsable: true },
+      {
+        nodePath: '/usr/bin/node',
+        currentVersion: '2.16.0',
+        path: '/usr/local/bin:/usr/bin',
+        homeDir: dir,
+        userName: 'ada',
+        run: async () => { throw new Error('unexpected systemctl call'); },
+        mkdir: async () => {},
+        writeFile: async () => {},
+        chmod: async () => {},
+        removeFile: async () => {},
+        rename: async () => {},
+        fileExists: (path) => path === userUnitPath,
+        readFile: (path) => readFileSync(path, 'utf8'),
+        readTextFile: async (path) => { try { return readFileSync(path, 'utf8'); } catch { return null; } },
+        readlink: () => null,
+      },
+    );
+
+    await expect(reconcileSystemdGuardRevision({
+      systemUnitPath: join(dir, 'system.service'),
+      userUnitPath,
+      fileExists: (path) => path === userUnitPath,
+      readFile: (path) => readFileSync(path, 'utf8'),
+      ensureUserUnitCurrent: () => manager.ensureUnitRevisionCurrent?.(),
+      warn,
+    })).resolves.toBe(true);
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(userUnitPath));
+  });
+
+  it('reports guardMissing and names the unit path when the real user unit exists but cannot be read, wired as in production', async () => {
+    if (process.getuid?.() === 0) return; // root ignores file permissions, so chmod 000 would not reproduce this
+    const dir = tempDir('harmonic-guard-revision-unreadable-');
+    const userUnitPath = join(dir, '.config', 'systemd', 'user', 'harmonic.service');
+    mkdirSync(join(dir, '.config', 'systemd', 'user'), { recursive: true });
+    writeFileSync(userUnitPath, '[Service]\nEnvironment=HARMONIC_MANAGED_BY=systemd\n');
+    chmodSync(userUnitPath, 0o000);
     const warn = vi.fn();
     const manager = createServiceManager(
       { platform: 'linux', isRoot: false, systemdRunning: false, initdAvailable: false, userSystemdUsable: true },

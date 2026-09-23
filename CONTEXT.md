@@ -950,10 +950,16 @@ be worse than staying put — `pending.json` stays in place so every later
 boot retries the restore, and `app/rollback.json` instead records a blocked
 state (`rolledBack: false`, `blockedReason`) with the same message on
 stderr. A healthy boot's pruning pass keeps only the 2 most recent preserved
-copies. The rollback (or blocked) reason is what the Update Banner's *failed*
-state and Armed Upgrade's `failed` phase both surface. Never available under
-`external` Install Mode (which never self-upgrades) and off for a systemd
-unit still on `guardMissing` until `sudo harmonic install`. (ADR-0042.)
+copies. A blocked state can persist indefinitely if the target keeps failing
+to start — no UI boots to show anything, so the reason is only in the service
+log and `app/rollback.json` until either the restored previous release boots
+or the target itself eventually starts despite the blocked restore. Once some
+UI does boot, the rollback (or blocked) reason is what the Update Banner's
+*failed* state and Armed Upgrade's `failed` phase surface — including a
+target that later starts on its own, which is reported once and then clears
+`app/rollback.json`. Never available under `external` Install Mode (which
+never self-upgrades) and off for a systemd unit still on `guardMissing` until
+`sudo harmonic install`. (ADR-0042.)
 _Avoid_: revert, downgrade
 
 **Update Check**:
