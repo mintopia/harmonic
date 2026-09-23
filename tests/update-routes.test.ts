@@ -49,7 +49,7 @@ describe('Update routes (issue #638)', () => {
     expect((await server.api('GET', '/api/update')).body).toMatchObject({ migrationRequired: true });
     const arm = await server.api('POST', '/api/update/arm');
     expect(arm.status).toBe(409);
-    expect(arm.body.error.message).toContain('Auto-upgrade is disabled until you re-run sudo harmonic install');
+    expect(arm.body.error.message).toContain('Upgrading from the app is off until you re-run sudo harmonic install');
   });
 
   it('reports the resolved install mode and refuses to arm an external (npx/npm-global) install', async () => {
@@ -66,7 +66,7 @@ describe('Update routes (issue #638)', () => {
 
     const arm = await server.api('POST', '/api/update/arm');
     expect(arm.status).toBe(409);
-    expect(arm.body.error.message).toContain('not available for this install');
+    expect(arm.body.error.message).toContain("This install can't upgrade itself");
   });
 
   it('POST /api/update/check finds and persists a newer version on demand', async () => {

@@ -62,7 +62,7 @@ export interface AppOptions {
   /** Reads `app/rollback.json` written by the boot guard, if the last boot rolled back. */
   readRollback?: (() => { reason: string } | undefined) | undefined;
   clearRollback?: (() => void) | undefined;
-  /** True for a root system unit that predates the boot guard (ADR-0042): auto-upgrade still runs, but with no automatic rollback until `sudo harmonic install` reinstalls it. */
+  /** True for a root system unit that predates the boot guard (ADR-0042): it still upgrades itself, but with no automatic rollback until `sudo harmonic install` reinstalls it. */
   guardMissing?: boolean | undefined;
 }
 

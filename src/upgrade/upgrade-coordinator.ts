@@ -38,9 +38,9 @@ export interface UpgradeCoordinatorOptions {
 }
 
 export const SYSTEMD_MIGRATION_NOTICE =
-  "Auto-upgrade is disabled until you re-run sudo harmonic install, which reuses this service's existing port, host, data directory, and password.";
+  "Upgrading from the app is off until you re-run sudo harmonic install, which reuses this service's existing port, host, data directory, and password.";
 
-export const EXTERNAL_INSTALL_NOTICE = 'Auto-upgrade is not available for this install; see the update banner for the command to run manually.';
+export const EXTERNAL_INSTALL_NOTICE = "This install can't upgrade itself; run the command in the update banner.";
 
 export const UPGRADE_ALREADY_SWITCHING_NOTICE = 'upgrade is already switching versions';
 

@@ -71,7 +71,7 @@ describe('UpgradeCoordinator', () => {
     const subject = coordinator({ migrationRequired: true });
 
     await expect(subject.upgrade.arm()).rejects.toThrow(
-      "Auto-upgrade is disabled until you re-run sudo harmonic install, which reuses this service's existing port, host, data directory, and password.",
+      "Upgrading from the app is off until you re-run sudo harmonic install, which reuses this service's existing port, host, data directory, and password.",
     );
     await expect(subject.upgrade.migrationRequired()).resolves.toBe(true);
     expect(subject.config().autoRunner.enabled).toBe(true);

@@ -36,7 +36,7 @@ describe('detectSystemdInstallMigration', () => {
     })).toBe(true);
 
     expect(warnings).toEqual([
-      "Auto-upgrade is disabled until you re-run sudo harmonic install, which reuses this service's existing port, host, data directory, and password.",
+      "Upgrading from the app is off until you re-run sudo harmonic install, which reuses this service's existing port, host, data directory, and password.",
     ]);
   });
 });

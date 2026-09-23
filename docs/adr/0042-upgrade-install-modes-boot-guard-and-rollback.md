@@ -82,8 +82,9 @@ runs only when no upgrade is in flight.
 ## Consequences
 
 - Existing system-level units and init.d scripts get the guard only after one
-  `sudo harmonic install`. Until then they keep auto-upgrading, protected by
-  verification before the flip, and the banner says automatic rollback is off.
+  `sudo harmonic install`. Until then they keep upgrading themselves in place,
+  protected by verification before the flip, and the banner says automatic
+  rollback is off.
   User-level units are rewritten in place.
 - npx, npm-global, pm2 and Docker users upgrade by hand, with the exact command
   shown in the UI.

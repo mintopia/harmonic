@@ -8,7 +8,7 @@ export type ExternalInstallSubkind = 'npx' | 'npm-global' | 'unknown';
 export type InstallMode =
   | { kind: 'systemd' }
   | { kind: 'initd' }
-  /** A pre-versions-layout systemd unit; auto-upgrade is disabled until `sudo harmonic install` reinstalls it. */
+  /** A pre-versions-layout systemd unit; upgrading from the app is off until `sudo harmonic install` reinstalls it. */
   | { kind: 'migration-required' }
   /** Neither systemd nor init.d manage this process; Harmonic never self-upgrades here. */
   | { kind: 'external'; subkind: ExternalInstallSubkind; commandFor: (version: string) => string };

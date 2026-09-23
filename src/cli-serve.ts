@@ -39,7 +39,7 @@ export interface SystemdGuardRevisionDeps {
  * unit path for this process's own HOME, independent of the running process's own uid.
  *
  * A system unit predating the boot guard (ADR-0042) can't be rewritten without root, so it's
- * reported as `guardMissing` instead (it keeps auto-upgrading, just without rollback safety). A
+ * reported as `guardMissing` instead (it keeps upgrading itself, just without rollback safety). A
  * user unit self-heals in place. Neither found is unexpected for a `HARMONIC_MANAGED_BY=systemd`
  * process and is reported as `guardMissing` too.
  */

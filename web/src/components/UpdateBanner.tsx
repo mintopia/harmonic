@@ -66,7 +66,7 @@ function primaryBanner({ update, pending, onArm, onCancel, onDismiss }: UpdateBa
   if (update.migrationRequired) {
     return (
       <div role="alert" className="shrink-0 border-b border-await bg-await-tint px-6 py-2.5 text-small text-ink">
-        Auto-upgrade is disabled until you re-run <code>sudo harmonic install</code>, which reuses this
+        Upgrading from the app is off until you re-run <code>sudo harmonic install</code>, which reuses this
         service's existing port, host, data directory, and password.
       </div>
     );
@@ -91,7 +91,7 @@ function primaryBanner({ update, pending, onArm, onCancel, onDismiss }: UpdateBa
       <div role="status" className="flex shrink-0 items-center gap-3 border-b border-await bg-await-tint px-6 py-2.5 text-small text-ink">
         <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-await-dot" />
         <p className="min-w-0 flex-1">
-          Version {update.availableVersion} is available. Auto-upgrade isn't available for this install — run: <code>{update.mode.command}</code>
+          Version {update.availableVersion} is available. This install can't upgrade itself — run: <code>{update.mode.command}</code>
         </p>
         <CopyCommandButton command={update.mode.command} />
         <button type="button" className={`${btnQuiet} shrink-0`} disabled={pending} onClick={onDismiss}>

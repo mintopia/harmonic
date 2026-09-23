@@ -24,7 +24,7 @@ const updateStateSchema = z.object({
   upgradingVersion: z.string().nullable(),
   dismissedVersion: z.string().nullable(),
   migrationRequired: z.boolean(),
-  /** A root system unit that predates the boot guard: still auto-upgrades, but with no automatic rollback until `sudo harmonic install`. */
+  /** A root system unit that predates the boot guard: still upgrades itself, but with no automatic rollback until `sudo harmonic install`. */
   guardMissing: z.boolean(),
   mode: updateModeSchema,
   /** Set when the last boot found the running version didn't match the armed target: the swap started but never completed. */
