@@ -22,10 +22,7 @@ describe('Operations API (issue #293)', () => {
   it('returns the live operation tree and bounded completed-root history', async () => {
     telemetry = initializeTelemetry(resolveTelemetryOptions({ exportEnabled: 'false' }));
     server = await startServer();
-    // Boot fires several Scheduled Jobs (worktree reconciliation, session
-    // retirement, ...) fire-and-forget; a bare `operations.length === 0` poll
-    // can observe a momentary gap before one starts and pass early, leaking
-    // its Operation into the manual assertions below (issue #293 flake).
+    // Boot starts Scheduled Jobs fire-and-forget, so zero live operations alone isn't a settled boot.
     await waitFor(async () => (await server!.app.ctx.scheduler.snapshot()).every((job) => job.lastRunAt !== null));
     await waitFor(async () => (await server!.api('GET', '/api/operations')).body.operations.length === 0);
     await operationRegistry.shutdown();
