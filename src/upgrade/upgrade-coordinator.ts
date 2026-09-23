@@ -26,7 +26,7 @@ export interface UpgradeCoordinatorOptions {
   /** Set when this install mode can never self-upgrade (npx, npm-global, unknown); arming is refused. */
   externalInstall?: boolean;
   /** Reads `app/rollback.json` written by the boot guard, if the last boot rolled back. */
-  readRollback?: () => { reason: string } | undefined;
+  readRollback?: () => { reason: string } | null | undefined;
   clearRollback?: () => void;
 }
 

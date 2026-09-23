@@ -94,6 +94,7 @@ describe('ServiceManager backend detection', () => {
     const runCli = 'HARMONIC_INITD_SERVICE=1 HARMONIC_MANAGED_BY=initd runuser -u agent -- /usr/bin/node /srv/harmonic/app/current/dist/cli.js';
     expect(script).toContain('### BEGIN INIT INFO');
     expect(script).toContain('if [ "$(id -u)" -ne 0 ]');
+    expect(script).toContain('runuser -u agent -- /usr/bin/node /srv/harmonic/app/boot-guard.cjs /srv/harmonic || true');
     expect(script).toContain(`${runCli} start --data-dir /srv/harmonic`);
     expect(script).toContain(`${runCli} stop --data-dir /srv/harmonic`);
     expect(script).toContain(`${runCli} status --data-dir /srv/harmonic`);
@@ -459,7 +460,7 @@ describe('init.d script (real filesystem)', () => {
     for (const dir of cleanup.splice(0)) rmSync(dir, { recursive: true, force: true });
   });
 
-  it('passes `sh -n` and starts app/current/dist/cli.js through a stubbed runuser', () => {
+  it('passes `sh -n`, runs the boot guard, then starts app/current/dist/cli.js through a stubbed runuser', () => {
     const dataDir = tempDir('harmonic-initd-real-datadir-');
     const cliDir = join(dataDir, 'app', 'current', 'dist');
     mkdirSync(cliDir, { recursive: true });
@@ -470,6 +471,12 @@ describe('init.d script (real filesystem)', () => {
     writeFileSync(
       join(cliDir, 'cli.js'),
       `require('node:fs').writeFileSync(${JSON.stringify(markerPath)}, process.argv.slice(2).join(' '));\n`,
+    );
+    const guardMarkerPath = join(dataDir, 'guard.marker');
+    // A fixture boot-guard.cjs, mirroring copyBootGuard's install-time copy into app/boot-guard.cjs.
+    writeFileSync(
+      join(dataDir, 'app', 'boot-guard.cjs'),
+      `require('node:fs').writeFileSync(${JSON.stringify(guardMarkerPath)}, process.argv.slice(2).join(' '));\n`,
     );
 
     const script = initdScript({ dataDir, user: 'agent', nodePath: process.execPath });
@@ -490,6 +497,7 @@ describe('init.d script (real filesystem)', () => {
 
     execFileSync('sh', [scriptPath, 'start'], { env: { ...process.env, PATH: `${stubDir}:${process.env.PATH}` } });
 
+    expect(readFileSync(guardMarkerPath, 'utf8')).toBe(dataDir);
     expect(readFileSync(markerPath, 'utf8')).toBe(`start --data-dir ${dataDir}`);
   });
 });

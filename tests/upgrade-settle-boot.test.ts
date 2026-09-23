@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { baselineConfig, type AppConfig } from '../src/config.js';
 import { UpgradeCoordinator } from '../src/upgrade/upgrade-coordinator.js';
 import { SettingsUpdateAvailabilityStore } from '../src/upgrade/update-check.js';
+import { clearRollback, readRollback } from '../src/upgrade/boot-state.js';
 
 describe('UpgradeCoordinator.settleOnBoot (real SettingsUpdateAvailabilityStore)', () => {
   let dir: string;
@@ -145,5 +146,60 @@ describe('UpgradeCoordinator.settleOnBoot (real SettingsUpdateAvailabilityStore)
 
     expect(settled.phase).toMatchObject({ kind: 'unarmed' });
     expect(config.autoRunner.enabled).toBe(false);
+  });
+});
+
+describe('UpgradeCoordinator.settleOnBoot wired to the real boot-state readRollback/clearRollback', () => {
+  let dir: string;
+  let h: AsyncDbHandle;
+  let store: SettingsUpdateAvailabilityStore;
+  let config: AppConfig;
+  let appDir: string;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'harmonic-settle-boot-real-rollback-'));
+    h = await openAsyncDb(dir);
+    store = new SettingsUpdateAvailabilityStore(h);
+    config = { ...baselineConfig(), autoRunner: { ...baselineConfig().autoRunner, enabled: false } };
+    appDir = join(dir, 'app');
+    mkdirSync(appDir, { recursive: true });
+  });
+
+  afterEach(async () => {
+    await h.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('records the rollback.json reason as failed and removes rollback.json, when upgrading v2 while running v1', async () => {
+    const record = { fromVersion: '1.0.0', toVersion: '2.0.0', at: new Date().toISOString(), reason: 'boot guard: exceeded 3 restarts within the window', databaseRestored: true };
+    writeFileSync(join(appDir, 'rollback.json'), JSON.stringify(record));
+    await store.setState({
+      version: '2.0.0',
+      dismissedVersion: null,
+      phase: { kind: 'upgrading', targetVersion: '2.0.0', autoRunnerWasEnabled: true },
+    });
+
+    const upgrade = new UpgradeCoordinator({
+      version: '1.0.0',
+      store,
+      settings: {
+        getGlobal: () => config,
+        updateGlobal: async (patch) => {
+          config = { ...config, autoRunner: { ...config.autoRunner, ...patch.autoRunner } };
+          return config;
+        },
+      },
+      attempts: { countRunning: async () => 0 },
+      operations: () => [],
+      conversations: { hasInFlightTurn: () => false },
+      readRollback: () => readRollback({ appDir }) ?? undefined,
+      clearRollback: () => { clearRollback({ appDir }); },
+    });
+
+    const settled = await upgrade.settleOnBoot();
+
+    expect(settled.phase).toMatchObject({ kind: 'failed', targetVersion: '2.0.0', reason: record.reason });
+    expect(config.autoRunner.enabled).toBe(true);
+    expect(existsSync(join(appDir, 'rollback.json'))).toBe(false);
   });
 });

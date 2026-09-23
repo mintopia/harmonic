@@ -124,7 +124,7 @@ function stubFetch(opts: {
   updateResponses?: Array<Omit<UpdateState, 'currentVersion'> | 'offline'>;
 }) {
   const workspaces = opts.workspaces ?? [];
-  let update = opts.update ?? { availableVersion: null, armedVersion: null, upgradingVersion: null, dismissedVersion: null, migrationRequired: false, mode: { kind: 'systemd' as const }, failed: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } };
+  let update = opts.update ?? { availableVersion: null, armedVersion: null, upgradingVersion: null, dismissedVersion: null, migrationRequired: false, mode: { kind: 'systemd' as const }, guardMissing: false, failed: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } };
   const updateResponses = opts.updateResponses ? [...opts.updateResponses] : null;
   vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
     const path = String(input instanceof Request ? input.url : input);
@@ -241,7 +241,7 @@ describe('App smoke (issue #452)', () => {
       authenticated: true,
       passwordConfigured: true,
       workspaces: [makeWorkspace()],
-      update: { availableVersion: '2.7.0', armedVersion: null, upgradingVersion: null, dismissedVersion: null, migrationRequired: false, mode: { kind: 'systemd' as const }, failed: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } },
+      update: { availableVersion: '2.7.0', armedVersion: null, upgradingVersion: null, dismissedVersion: null, migrationRequired: false, mode: { kind: 'systemd' as const }, guardMissing: false, failed: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } },
     });
 
     expect(el.textContent).toContain('Version 2.7.0 is available');
@@ -256,7 +256,7 @@ describe('App smoke (issue #452)', () => {
       authenticated: true,
       passwordConfigured: true,
       workspaces: [makeWorkspace()],
-      update: { availableVersion: '2.7.0', armedVersion: null, upgradingVersion: null, dismissedVersion: null, migrationRequired: true, mode: { kind: 'systemd' as const }, failed: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } },
+      update: { availableVersion: '2.7.0', armedVersion: null, upgradingVersion: null, dismissedVersion: null, migrationRequired: true, mode: { kind: 'systemd' as const }, guardMissing: false, failed: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } },
     });
 
     expect(el.textContent).toContain("Auto-upgrade is disabled until you re-run sudo harmonic install, which reuses this service's existing port, host, data directory, and password.");
@@ -267,7 +267,7 @@ describe('App smoke (issue #452)', () => {
       authenticated: true,
       passwordConfigured: true,
       workspaces: [makeWorkspace()],
-      update: { availableVersion: '2.7.0', armedVersion: '2.7.0', upgradingVersion: null, dismissedVersion: null, migrationRequired: false, mode: { kind: 'systemd' as const }, failed: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: true } },
+      update: { availableVersion: '2.7.0', armedVersion: '2.7.0', upgradingVersion: null, dismissedVersion: null, migrationRequired: false, mode: { kind: 'systemd' as const }, guardMissing: false, failed: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: true } },
     });
 
     expect(el.textContent).toContain('waiting for agent before updating');
@@ -279,14 +279,14 @@ describe('App smoke (issue #452)', () => {
       authenticated: true,
       passwordConfigured: true,
       workspaces: [makeWorkspace()],
-      update: { availableVersion: '2.7.0', armedVersion: '2.7.0', upgradingVersion: '2.7.0', dismissedVersion: null, migrationRequired: false, mode: { kind: 'systemd' as const }, failed: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } },
+      update: { availableVersion: '2.7.0', armedVersion: '2.7.0', upgradingVersion: '2.7.0', dismissedVersion: null, migrationRequired: false, mode: { kind: 'systemd' as const }, guardMissing: false, failed: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } },
     });
 
     expect(el.textContent).toContain('Updating to v2.7.0 — Harmonic will restart, this page reconnects automatically.');
   });
 
   it('holds the upgrade takeover through a failed status poll and clears it after reconnecting to the new version', async () => {
-    const upgrading = { availableVersion: '2.7.0', armedVersion: '2.7.0', upgradingVersion: '2.7.0', dismissedVersion: null, migrationRequired: false, mode: { kind: 'systemd' as const }, failed: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } };
+    const upgrading = { availableVersion: '2.7.0', armedVersion: '2.7.0', upgradingVersion: '2.7.0', dismissedVersion: null, migrationRequired: false, mode: { kind: 'systemd' as const }, guardMissing: false, failed: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } };
     const complete = { ...upgrading, armedVersion: null, upgradingVersion: null };
     vi.useFakeTimers();
     const el = await renderApp({
@@ -305,7 +305,7 @@ describe('App smoke (issue #452)', () => {
   });
 
   it('polls immediately after arming so the server-reported handoff reaches the takeover', async () => {
-    const available = { availableVersion: '2.7.0', armedVersion: null, upgradingVersion: null, dismissedVersion: null, migrationRequired: false, mode: { kind: 'systemd' as const }, failed: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } };
+    const available = { availableVersion: '2.7.0', armedVersion: null, upgradingVersion: null, dismissedVersion: null, migrationRequired: false, mode: { kind: 'systemd' as const }, guardMissing: false, failed: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } };
     const upgrading = { ...available, armedVersion: '2.7.0', upgradingVersion: '2.7.0' };
     const el = await renderApp({
       authenticated: true,
@@ -326,7 +326,7 @@ describe('App smoke (issue #452)', () => {
       authenticated: true,
       passwordConfigured: true,
       workspaces: [makeWorkspace()],
-      update: { availableVersion: '2.7.0', armedVersion: null, upgradingVersion: null, dismissedVersion: null, migrationRequired: false, mode: { kind: 'systemd' as const }, failed: null, idle: { runningAttempts: 1, mergingOrIntegrating: false, conversationMidTurn: false } },
+      update: { availableVersion: '2.7.0', armedVersion: null, upgradingVersion: null, dismissedVersion: null, migrationRequired: false, mode: { kind: 'systemd' as const }, guardMissing: false, failed: null, idle: { runningAttempts: 1, mergingOrIntegrating: false, conversationMidTurn: false } },
     });
 
     const upgrade = [...el.querySelectorAll('button')].find((button) => button.textContent === 'Upgrade');

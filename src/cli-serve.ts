@@ -15,9 +15,23 @@ import { UpgradeSwap } from './upgrade/upgrade-swap.js';
 import { SYSTEMD_MIGRATION_NOTICE } from './upgrade/upgrade-coordinator.js';
 import { defaultIsWritable, defaultRealpath, resolveInstallMode, type InstallMode } from './upgrade/install-mode.js';
 import { hasValidInstall, installVersion, readInstalledVersion, type VersionInstallDependencies } from './upgrade/version-install.js';
-import { markHealthy } from './upgrade/boot-state.js';
+import { clearRollback, markHealthy, readRollback } from './upgrade/boot-state.js';
 import { startOperation } from './telemetry/operations.js';
 import { displayUrl, type CliOutcome } from './cli-commands.js';
+import { createServiceManager, CURRENT_UNIT_REVISION, unitRevision } from './service-manager.js';
+
+const systemUnitPath = '/etc/systemd/system/harmonic.service';
+
+/** True when a root-owned system unit predates the boot guard (ADR-0042): automatic rollback is off
+ * until `sudo harmonic install` rewrites it — unlike a user unit, this process can't self-heal it. */
+function systemUnitGuardMissing(): boolean {
+  if (!existsSync(systemUnitPath)) return false;
+  try {
+    return unitRevision(readFileSync(systemUnitPath, 'utf8')) < CURRENT_UNIT_REVISION;
+  } catch {
+    return false;
+  }
+}
 
 const execFileAsync = promisify(execFile);
 
@@ -84,6 +98,8 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
   });
   const migrationRequired = installMode.kind === 'migration-required';
   if (migrationRequired) logger.warn(SYSTEMD_MIGRATION_NOTICE);
+  const isRootSystemUnit = installMode.kind === 'systemd' && process.getuid?.() === 0;
+  const guardMissing = isRootSystemUnit && systemUnitGuardMissing();
   const holder = acquireLock(dataDir, { port, host });
   if (holder) {
     logger.error(
@@ -114,8 +130,11 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
       password,
       migrationRequired,
       installMode,
+      guardMissing,
       metricsSummary: { intervalMs: telemetryOptions.metricExportIntervalMillis, flush: () => telemetry.flushMetricSummary() },
       ...(selfUpgrading ? {
+        readRollback: () => readRollback({ appDir: join(dataDir, 'app') }) ?? undefined,
+        clearRollback: () => { clearRollback({ appDir: join(dataDir, 'app') }); },
         onUpgradeIdle: async (version: string) => {
           const swap = new UpgradeSwap({
             ...(process.env.HARMONIC_MANAGED_BY === undefined ? {} : { managedBy: process.env.HARMONIC_MANAGED_BY }),
@@ -208,6 +227,18 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
       });
     } catch (error) {
       logger.warn('Failed to mark the running version healthy after boot', { error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  if (installMode.kind === 'systemd' && !isRootSystemUnit) {
+    // A user unit can rewrite and reload itself with no elevated privileges, unlike a root system
+    // unit (which needs `sudo harmonic install`) — so a pre-boot-guard user unit self-heals here
+    // instead of surfacing `guardMissing`.
+    try {
+      await createServiceManager({ platform: process.platform, isRoot: false, systemdRunning: false, initdAvailable: false, userSystemdUsable: true })
+        .ensureUnitRevisionCurrent?.();
+    } catch (error) {
+      logger.warn('Failed to self-heal the user systemd unit to the current revision', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 

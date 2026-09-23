@@ -81,6 +81,8 @@ export interface ServiceManager {
   isInstalled(): Promise<boolean>;
   /** Best-effort recovery of the currently installed service's settings, for reuse on reinstall. */
   readExistingSettings(): Promise<ExistingServiceSettings | null>;
+  /** Systemd-only self-heal for a pre-boot-guard unit (ADR-0042); absent on other backends. */
+  ensureUnitRevisionCurrent?(): Promise<boolean>;
 }
 
 interface CommandResult {
@@ -238,6 +240,9 @@ export const unitRevision = (unitContents: string): number => {
   return match?.[1] ? Number(match[1]) : 0;
 };
 
+/** The revision `unit()` currently writes; bump alongside any change `unitRevision` callers must react to. */
+export const CURRENT_UNIT_REVISION = 2;
+
 /** Recovers the operator password from a harmonic.env file written by this file writer. */
 const parseEnvPassword = (envContents: string): { ok: true; password: string | undefined } | { ok: false } => {
   const match = /^HARMONIC_PASSWORD=(.*)$/m.exec(envContents);
@@ -257,6 +262,15 @@ const ensureDataDir = async (dependencies: ServiceManagerDependencies, dataDir: 
   if (user !== undefined) await dependencies.run('chown', [user, dataDir]);
 };
 
+/** Copies the newly installed version's boot guard to `app/boot-guard.cjs`, so a pending boot always
+ * runs a guard shipped by the release it's about to boot (ADR-0042). Absent on pre-guard versions. */
+const copyBootGuard = async (dependencies: ServiceManagerDependencies, appDir: string, version: string): Promise<void> => {
+  const guardSource = join(appDir, 'versions', version, 'dist', 'upgrade', 'boot-guard.cjs');
+  if (dependencies.fileExists(guardSource)) {
+    await dependencies.writeFile(join(appDir, 'boot-guard.cjs'), dependencies.readFile(guardSource, 'utf8'));
+  }
+};
+
 export const shellWord = (value: string): string => /^[A-Za-z0-9_./:-]+$/.test(value)
   ? value
   : `'${value.replaceAll("'", "'\"'\"'")}'`;
@@ -264,6 +278,9 @@ export const shellWord = (value: string): string => /^[A-Za-z0-9_./:-]+$/.test(v
 export const initdScript = ({ dataDir, user, nodePath }: { dataDir: string; user: string; nodePath: string }): string => {
   const cli = shellWord(join(dataDir, 'app', 'current', 'dist', 'cli.js'));
   const runCli = `HARMONIC_INITD_SERVICE=1 HARMONIC_MANAGED_BY=initd runuser -u ${shellWord(user)} -- ${shellWord(nodePath)} ${cli}`;
+  // The guard always exits 0 (ADR-0042); `|| true` is defensive. Runs as the service user, like
+  // systemd's ExecStartPre, so any rollback.json/pending.json it writes stays owned by that user.
+  const runGuard = `runuser -u ${shellWord(user)} -- ${shellWord(nodePath)} ${shellWord(join(dataDir, 'app', 'boot-guard.cjs'))} ${shellWord(dataDir)} || true`;
   return `#!/bin/sh
 ### BEGIN INIT INFO
 # Provides:          harmonic
@@ -281,6 +298,7 @@ fi
 
 case "$1" in
   start)
+    ${runGuard}
     ${runCli} start --data-dir ${shellWord(dataDir)}
     ;;
   stop)
@@ -351,7 +369,7 @@ class SystemdServiceManager implements ServiceManager {
     const execStartPre = [this.dependencies.nodePath, join(serve.dataDir, 'app', 'boot-guard.cjs'), serve.dataDir]
       .map(escapeUnitArgument)
       .join(' ');
-    return `[Unit]\nDescription=Harmonic\nAfter=network.target\nStartLimitIntervalSec=120\nStartLimitBurst=10\n\n[Service]\nType=simple\nExecStartPre=-${execStartPre}\n${serviceUser}${workingDirectory}ExecStart=${args}\n${environmentFile}${pathEnvironment}Environment=HARMONIC_MANAGED_BY=systemd\nEnvironment=HARMONIC_UNIT_REVISION=2\nRestart=always\nRestartSec=2\nTimeoutStopSec=60\n\n[Install]\nWantedBy=${wantedBy}\n`;
+    return `[Unit]\nDescription=Harmonic\nAfter=network.target\nStartLimitIntervalSec=120\nStartLimitBurst=10\n\n[Service]\nType=simple\nExecStartPre=-${execStartPre}\n${serviceUser}${workingDirectory}ExecStart=${args}\n${environmentFile}${pathEnvironment}Environment=HARMONIC_MANAGED_BY=systemd\nEnvironment=HARMONIC_UNIT_REVISION=${CURRENT_UNIT_REVISION}\nRestart=always\nRestartSec=2\nTimeoutStopSec=60\n\n[Install]\nWantedBy=${wantedBy}\n`;
   }
 
   async install(options: ServiceInstallOptions): Promise<ServiceInstallResult> {
@@ -375,10 +393,7 @@ class SystemdServiceManager implements ServiceManager {
         readFile: this.dependencies.readFile,
       },
     });
-    const guardSource = join(appDir, 'versions', version, 'dist', 'upgrade', 'boot-guard.cjs');
-    if (this.dependencies.fileExists(guardSource)) {
-      await this.dependencies.writeFile(join(appDir, 'boot-guard.cjs'), this.dependencies.readFile(guardSource, 'utf8'));
-    }
+    await copyBootGuard(this.dependencies, appDir, version);
     if (user !== undefined) await this.dependencies.run('chown', ['-R', user, appDir]);
     await this.dependencies.run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
     await this.dependencies.mkdir(this.unitDirectory);
@@ -449,6 +464,33 @@ class SystemdServiceManager implements ServiceManager {
     }
     return settings;
   }
+
+  /** Rewrites the unit file and reloads systemd if its `HARMONIC_UNIT_REVISION` predates the boot
+   * guard (ADR-0042); no-op when already current, no unit is installed, or the existing unit can't
+   * be parsed. Only meaningful for user-level units — self-healing a root-owned system unit needs
+   * `sudo harmonic install` instead. Idempotent: a second call after a successful rewrite is a no-op. */
+  async ensureUnitRevisionCurrent(): Promise<boolean> {
+    if (!this.dependencies.fileExists(this.unitPath)) return false;
+    const unitContents = await this.dependencies.readTextFile(this.unitPath);
+    if (unitContents === null || unitRevision(unitContents) >= CURRENT_UNIT_REVISION) return false;
+    const existing = await this.readExistingSettings();
+    if (existing === null) return false;
+    const serve: ServiceServeOptions = {
+      port: existing.serve.port,
+      host: existing.serve.host,
+      dataDir: existing.serve.dataDir,
+      ...(existing.password === undefined ? {} : { password: existing.password }),
+      ...(existing.serve.otelEndpoint === undefined ? {} : { otelEndpoint: existing.serve.otelEndpoint }),
+      ...(existing.serve.otelHeaders === undefined ? {} : { otelHeaders: existing.serve.otelHeaders }),
+      ...(existing.serve.otelExport === undefined ? {} : { otelExport: existing.serve.otelExport }),
+      ...(existing.serve.otelMetricExportInterval === undefined ? {} : { otelMetricExportInterval: existing.serve.otelMetricExportInterval }),
+      ...(existing.serve.otelStdoutLogLevel === undefined ? {} : { otelStdoutLogLevel: existing.serve.otelStdoutLogLevel }),
+    };
+    await this.dependencies.writeFile(this.unitPath, this.unit(serve, existing.user));
+    await this.dependencies.chmod(this.unitPath, 0o644);
+    await this.systemctl('daemon-reload');
+    return true;
+  }
 }
 
 class InitdServiceManager implements ServiceManager {
@@ -478,6 +520,7 @@ class InitdServiceManager implements ServiceManager {
         readFile: this.dependencies.readFile,
       },
     });
+    await copyBootGuard(this.dependencies, appDir, version);
     await this.dependencies.run('chown', ['-R', user, appDir]);
     await this.dependencies.run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
     await this.dependencies.writeFile(initdScriptPath, initdScript({ dataDir, user, nodePath: this.dependencies.nodePath }));

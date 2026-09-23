@@ -98,6 +98,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     distributionMode,
     runningVersion,
     installMode: opts.installMode ?? { kind: 'systemd' },
+    guardMissing: opts.guardMissing ?? false,
     updateCheck,
     upgrade: runtime.upgrade,
     asyncDb,

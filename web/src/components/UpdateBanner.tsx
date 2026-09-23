@@ -43,9 +43,26 @@ function CopyCommandButton({ command }: { command: string }) {
   );
 }
 
+function GuardMissingNotice() {
+  return (
+    <div role="status" className="shrink-0 border-b border-await bg-await-tint px-6 py-1.5 text-label text-ink">
+      Automatic rollback is off for this install until you re-run <code>sudo harmonic install</code>.
+    </div>
+  );
+}
+
 export function UpdateBanner({ update, pending, onArm, onCancel, onDismiss }: UpdateBannerProps) {
   if (update === null) return null;
 
+  return (
+    <>
+      {update.guardMissing && <GuardMissingNotice />}
+      {primaryBanner({ update, pending, onArm, onCancel, onDismiss })}
+    </>
+  );
+}
+
+function primaryBanner({ update, pending, onArm, onCancel, onDismiss }: UpdateBannerProps & { update: UpdateState }) {
   if (update.migrationRequired) {
     return (
       <div role="alert" className="shrink-0 border-b border-await bg-await-tint px-6 py-2.5 text-small text-ink">

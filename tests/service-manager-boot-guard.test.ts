@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createServiceManager, unitRevision, type ServiceEnvironment, type ServiceManagerDependencies } from '../src/service-manager.js';
+import { CURRENT_UNIT_REVISION, createServiceManager, unitRevision, type ServiceEnvironment, type ServiceManagerDependencies } from '../src/service-manager.js';
 import { createTempDirTracker } from './helpers/upgrade-fixture.js';
 
 const environment = (overrides: Partial<ServiceEnvironment> = {}): ServiceEnvironment => ({
@@ -94,6 +94,59 @@ describe('systemd unit boot-guard wiring', () => {
       serve: { port: '4711', host: '127.0.0.1', dataDir: '/var/lib/harmonic' },
     })).resolves.toMatchObject({ backend: 'systemd' });
     expect(deps.files.has('/var/lib/harmonic/app/boot-guard.cjs')).toBe(false);
+  });
+});
+
+describe('ensureUnitRevisionCurrent (user-level self-heal, ADR-0042)', () => {
+  it('rewrites a pre-boot-guard user unit with the recovered settings and reloads', async () => {
+    const deps = dependencies();
+    deps.files.set(
+      '/home/ada/.config/systemd/user/harmonic.service',
+      '[Unit]\nDescription=Harmonic\n\n[Service]\nType=simple\nExecStart=/usr/bin/node /home/ada/.harmonic/app/current/dist/cli.js serve --port 4711 --host 127.0.0.1 --data-dir /home/ada/.harmonic\nEnvironment=HARMONIC_MANAGED_BY=systemd\nRestart=always\n\n[Install]\nWantedBy=default.target\n',
+    );
+    const manager = createServiceManager(environment({ userSystemdUsable: true }), deps);
+
+    await expect(manager.ensureUnitRevisionCurrent?.()).resolves.toBe(true);
+
+    const rewritten = deps.files.get('/home/ada/.config/systemd/user/harmonic.service') ?? '';
+    expect(unitRevision(rewritten)).toBe(CURRENT_UNIT_REVISION);
+    expect(rewritten).toContain('ExecStartPre=-/usr/bin/node /home/ada/.harmonic/app/boot-guard.cjs /home/ada/.harmonic');
+    expect(rewritten).toContain('--port 4711');
+    expect(deps.calls).toContainEqual(['systemctl', '--user', 'daemon-reload']);
+  });
+
+  it('does nothing for a unit that already declares the current revision', async () => {
+    const deps = dependencies();
+    deps.files.set(
+      '/home/ada/.config/systemd/user/harmonic.service',
+      `[Service]\nExecStart=/usr/bin/node /home/ada/.harmonic/app/current/dist/cli.js serve --port 4711 --host 127.0.0.1 --data-dir /home/ada/.harmonic\nEnvironment=HARMONIC_UNIT_REVISION=${CURRENT_UNIT_REVISION}\n`,
+    );
+    const manager = createServiceManager(environment({ userSystemdUsable: true }), deps);
+
+    await expect(manager.ensureUnitRevisionCurrent?.()).resolves.toBe(false);
+    expect(deps.calls).toEqual([]);
+  });
+
+  it('does nothing when no unit is installed', async () => {
+    const deps = dependencies();
+    const manager = createServiceManager(environment({ userSystemdUsable: true }), deps);
+
+    await expect(manager.ensureUnitRevisionCurrent?.()).resolves.toBe(false);
+    expect(deps.calls).toEqual([]);
+  });
+
+  it('is idempotent: a second call after a successful rewrite is a no-op', async () => {
+    const deps = dependencies();
+    deps.files.set(
+      '/home/ada/.config/systemd/user/harmonic.service',
+      '[Service]\nExecStart=/usr/bin/node /home/ada/.harmonic/app/current/dist/cli.js serve --port 4711 --host 127.0.0.1 --data-dir /home/ada/.harmonic\nEnvironment=HARMONIC_MANAGED_BY=systemd\n',
+    );
+    const manager = createServiceManager(environment({ userSystemdUsable: true }), deps);
+
+    await expect(manager.ensureUnitRevisionCurrent?.()).resolves.toBe(true);
+    deps.calls.length = 0;
+    await expect(manager.ensureUnitRevisionCurrent?.()).resolves.toBe(false);
+    expect(deps.calls).toEqual([]);
   });
 });
 

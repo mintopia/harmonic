@@ -25226,6 +25226,9 @@
                     "migrationRequired": {
                       "type": "boolean"
                     },
+                    "guardMissing": {
+                      "type": "boolean"
+                    },
                     "mode": {
                       "type": "object",
                       "properties": {
@@ -25304,6 +25307,7 @@
                     "upgradingVersion",
                     "dismissedVersion",
                     "migrationRequired",
+                    "guardMissing",
                     "mode",
                     "failed",
                     "idle"
@@ -25385,6 +25389,9 @@
                     "migrationRequired": {
                       "type": "boolean"
                     },
+                    "guardMissing": {
+                      "type": "boolean"
+                    },
                     "mode": {
                       "type": "object",
                       "properties": {
@@ -25463,6 +25470,7 @@
                     "upgradingVersion",
                     "dismissedVersion",
                     "migrationRequired",
+                    "guardMissing",
                     "mode",
                     "failed",
                     "idle"
@@ -25552,6 +25560,9 @@
                     "migrationRequired": {
                       "type": "boolean"
                     },
+                    "guardMissing": {
+                      "type": "boolean"
+                    },
                     "mode": {
                       "type": "object",
                       "properties": {
@@ -25630,6 +25641,7 @@
                     "upgradingVersion",
                     "dismissedVersion",
                     "migrationRequired",
+                    "guardMissing",
                     "mode",
                     "failed",
                     "idle"
@@ -25711,6 +25723,9 @@
                     "migrationRequired": {
                       "type": "boolean"
                     },
+                    "guardMissing": {
+                      "type": "boolean"
+                    },
                     "mode": {
                       "type": "object",
                       "properties": {
@@ -25789,6 +25804,7 @@
                     "upgradingVersion",
                     "dismissedVersion",
                     "migrationRequired",
+                    "guardMissing",
                     "mode",
                     "failed",
                     "idle"
@@ -25870,6 +25886,9 @@
                     "migrationRequired": {
                       "type": "boolean"
                     },
+                    "guardMissing": {
+                      "type": "boolean"
+                    },
                     "mode": {
                       "type": "object",
                       "properties": {
@@ -25948,6 +25967,7 @@
                     "upgradingVersion",
                     "dismissedVersion",
                     "migrationRequired",
+                    "guardMissing",
                     "mode",
                     "failed",
                     "idle"

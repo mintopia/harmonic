@@ -24,6 +24,8 @@ const updateStateSchema = z.object({
   upgradingVersion: z.string().nullable(),
   dismissedVersion: z.string().nullable(),
   migrationRequired: z.boolean(),
+  /** A root system unit that predates the boot guard: still auto-upgrades, but with no automatic rollback until `sudo harmonic install`. */
+  guardMissing: z.boolean(),
   mode: updateModeSchema,
   /** Set when the last boot found the running version didn't match the armed target: the swap started but never completed. */
   failed: updateFailureSchema.nullable(),
@@ -40,7 +42,7 @@ function assertPackaged(distributionMode: AppContext['distributionMode']): void 
 
 export async function updateRoutes(
   fastify: FastifyInstance,
-  ctx: Pick<AppContext, 'distributionMode' | 'upgrade' | 'updateCheck' | 'runningVersion' | 'installMode'>,
+  ctx: Pick<AppContext, 'distributionMode' | 'upgrade' | 'updateCheck' | 'runningVersion' | 'installMode' | 'guardMissing'>,
 ): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
   const response = async () => {
@@ -57,6 +59,7 @@ export async function updateRoutes(
       upgradingVersion: phase.kind === 'upgrading' ? phase.targetVersion : null,
       dismissedVersion: state.dismissedVersion,
       migrationRequired,
+      guardMissing: ctx.guardMissing,
       mode,
       failed: phase.kind === 'failed' ? { targetVersion: phase.targetVersion, reason: phase.reason, at: phase.at } : null,
       idle,

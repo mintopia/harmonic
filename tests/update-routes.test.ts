@@ -22,6 +22,22 @@ describe('Update routes (issue #638)', () => {
     expect(res.body).toMatchObject({ currentVersion: '1.2.3', availableVersion: null, upgradingVersion: null });
   });
 
+  it('reports guardMissing for a root system unit that predates the boot guard, while still allowing arming', async () => {
+    server = await startServer(undefined, {
+      distributionMode: 'packaged',
+      version: '1.0.0',
+      guardMissing: true,
+      updateCheckLatest: async () => '1.1.0',
+    });
+    await server.api('POST', '/api/update/check');
+
+    const state = await server.api('GET', '/api/update');
+    expect(state.body).toMatchObject({ guardMissing: true });
+
+    const arm = await server.api('POST', '/api/update/arm');
+    expect(arm.status).toBe(200);
+  });
+
   it('reports a required systemd migration and refuses to arm an update', async () => {
     server = await startServer(undefined, {
       distributionMode: 'packaged',
