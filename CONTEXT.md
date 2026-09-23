@@ -873,12 +873,13 @@ _Avoid_: system load, host metrics
 ### Updates
 
 **Distribution Mode**:
-How this instance was installed, which decides whether it can self-upgrade —
-**packaged** (a global npm install of `@mintopia/harmonic`, upgradable in place)
-or **source** (a git checkout, developer or self-hosted, not upgradable by
-Harmonic itself). Detected at boot from whether a `.git` directory sits at the
-app root. Only *packaged* mode runs the Update Check and shows the Update Banner;
-*source* mode suppresses both, since Harmonic cannot cleanly upgrade a checkout.
+Whether this instance runs from a published package, which decides whether it
+looks for updates at all — **packaged** (installed from `@mintopia/harmonic` on
+npm) or **source** (a git checkout, developer or self-hosted). Detected at boot
+from whether a `.git` directory sits at the app root. Only *packaged* mode runs
+the Update Check and shows the Update Banner; *source* mode suppresses both.
+Whether a packaged instance then upgrades itself or shows a command is decided
+by its Install Mode.
 _Avoid_: install type, dev mode, environment
 
 **Install Mode**:
