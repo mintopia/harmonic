@@ -7,6 +7,20 @@ export interface UpgradeSwapLogEvent {
   error?: Error;
 }
 
+/** Consulted at each step boundary up to commit; see `UpgradeCancellation` in
+ * `upgrade-coordinator.ts`, which is the real implementation the coordinator
+ * wires in — kept as a narrow interface here so this module doesn't depend
+ * on the coordinator. */
+export interface UpgradeSwapCancellation {
+  /** Checked before and after await-idle: false means stop instead of
+   * continuing toward commit. */
+  shouldContinue(): boolean;
+  /** Checked immediately before commit; false means a cancel already won and
+   * the swap must stop instead of committing. True latches out any later
+   * cancellation. */
+  enterCommit(): boolean;
+}
+
 export interface UpgradeSwapDependencies {
   install(version: string): Promise<void>;
   /** Checks the staged install at `versions/<version>` before anything commits to it. */
@@ -17,19 +31,26 @@ export interface UpgradeSwapDependencies {
   commit(version: string): Promise<void>;
   spawnRelauncher(): Promise<void>;
   /** Best-effort bounded wait for in-flight work to drain before the
-   * irreversible commit/relaunch/release-lock; never rejects. Absent ⇒ skipped. */
-  waitForIdle?(): Promise<void>;
+   * irreversible commit/relaunch/release-lock; never rejects, resolves to
+   * whether idle was actually reached. Absent ⇒ skipped. */
+  waitForIdle?(): Promise<boolean>;
   releaseLock(): Promise<void>;
   exit(): void;
   /** Records the failure before the caller restores the armed-update state. */
   abort(error: Error): Promise<void>;
   operation<T>(input: { type: `upgrade.${UpgradeSwapAction}`; version: string }, work: () => Promise<T>): Promise<T>;
   log(event: UpgradeSwapLogEvent): void;
+  /** Absent ⇒ never cancellable. */
+  cancellation?: UpgradeSwapCancellation;
 }
 
 export type UpgradeSwapResult =
   | { kind: 'swapped' }
   | { kind: 'migration-required' }
+  /** A cancellation was requested and honoured before commit; `current` is untouched. */
+  | { kind: 'cancelled' }
+  /** `waitForIdle` timed out with work still running; `current` is untouched. */
+  | { kind: 'idle-timeout' }
   | { kind: 'aborted'; error: Error };
 
 /** Performs the irreversible handoff only after the pinned package is verified. */
@@ -49,9 +70,22 @@ export class UpgradeSwap {
       return { kind: 'aborted', error: failure };
     }
 
+    if (!this.shouldContinue()) return { kind: 'cancelled' };
+
     if (this.dependencies.waitForIdle) {
-      await this.step({ action: 'await-idle', version, work: () => this.dependencies.waitForIdle!() });
+      const idle = await this.step({ action: 'await-idle', version, work: () => this.dependencies.waitForIdle!() });
+      if (!idle) {
+        await this.step({
+          action: 'abort',
+          version,
+          work: () => this.dependencies.abort(new Error('timed out waiting for in-flight work to drain before commit')),
+        });
+        return { kind: 'idle-timeout' };
+      }
     }
+
+    if (!this.shouldContinue()) return { kind: 'cancelled' };
+    if (!this.enterCommit()) return { kind: 'cancelled' };
 
     try {
       // Everything up to here left `current` untouched; a failure here must too, which is why the
@@ -69,6 +103,14 @@ export class UpgradeSwap {
     await this.step({ action: 'release-lock', version, work: () => this.dependencies.releaseLock() });
     await this.step({ action: 'exit', version, work: async () => { this.dependencies.exit(); } });
     return { kind: 'swapped' };
+  }
+
+  private shouldContinue(): boolean {
+    return this.dependencies.cancellation?.shouldContinue() ?? true;
+  }
+
+  private enterCommit(): boolean {
+    return this.dependencies.cancellation?.enterCommit() ?? true;
   }
 
   private async step<T>({

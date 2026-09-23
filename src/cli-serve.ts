@@ -13,7 +13,7 @@ import { logger } from './logger.js';
 import { installProcessSafetyNet } from './reliability/process-safety-net.js';
 import { type ServeValues } from './cli-dispatch.js';
 import { UpgradeSwap } from './upgrade/upgrade-swap.js';
-import { SYSTEMD_MIGRATION_NOTICE } from './upgrade/upgrade-coordinator.js';
+import { SYSTEMD_MIGRATION_NOTICE, type UpgradeCancellation } from './upgrade/upgrade-coordinator.js';
 import { defaultIsWritable, defaultRealpath, resolveInstallMode, type InstallMode } from './upgrade/install-mode.js';
 import { hasValidInstall, installVersion, readInstalledVersion, verifyInstall, type VersionInstallDependencies } from './upgrade/version-install.js';
 import { clearRollback, flipCurrent, markHealthy, readRollback, snapshotDatabase, writePending } from './upgrade/boot-state.js';
@@ -193,8 +193,9 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
       ...(selfUpgrading ? {
         readRollback: () => readRollback({ appDir: join(dataDir, 'app') }) ?? undefined,
         clearRollback: () => { clearRollback({ appDir: join(dataDir, 'app') }); },
-        onUpgradeIdle: async (version: string) => {
+        onUpgradeIdle: async (version: string, cancellation: UpgradeCancellation) => {
           const swap = new UpgradeSwap({
+            cancellation,
             ...(process.env.HARMONIC_MANAGED_BY === undefined ? {} : { managedBy: process.env.HARMONIC_MANAGED_BY }),
             install: async (target) => {
               await installManagedUpgrade({
@@ -257,6 +258,7 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
           });
           const outcome = await swap.execute({ version });
           if (outcome.kind === 'aborted') throw outcome.error;
+          if (outcome.kind === 'cancelled' || outcome.kind === 'idle-timeout') return outcome.kind;
         },
       } : {}),
     });

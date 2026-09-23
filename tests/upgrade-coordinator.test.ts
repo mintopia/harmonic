@@ -9,7 +9,8 @@ function flushHandoff(): Promise<void> {
 import { SpanStatusCode } from '@opentelemetry/api';
 import { baselineConfig, type AppConfig } from '../src/config.js';
 import type { OperationSnapshot } from '../src/telemetry/operations.js';
-import { UpgradeCoordinator } from '../src/upgrade/upgrade-coordinator.js';
+import { UpgradeCoordinator, type UpgradeCancellation, type UpgradeIdleHandoffOutcome } from '../src/upgrade/upgrade-coordinator.js';
+import { UpgradeSwap } from '../src/upgrade/upgrade-swap.js';
 import type { UpdateArmingStore, UpdateAvailabilityState } from '../src/upgrade/update-check.js';
 
 class MemoryStore implements UpdateArmingStore {
@@ -28,7 +29,7 @@ function coordinator(input: {
   runningAttempts?: number;
   conversationMidTurn?: boolean;
   operations?: OperationSnapshot[];
-  onIdle?: (version: string) => Promise<void> | void;
+  onIdle?: (version: string, cancellation: UpgradeCancellation) => Promise<UpgradeIdleHandoffOutcome | void> | UpgradeIdleHandoffOutcome | void;
   migrationRequired?: boolean;
   armedVersion?: string | null;
 } = {}) {
@@ -208,7 +209,7 @@ describe('UpgradeCoordinator.waitForIdle', () => {
       if (sleeps === 3) subject.setRunningAttempts(0);
     };
 
-    await subject.upgrade.waitForIdle({ sleep, timeoutMs: 60_000 });
+    await expect(subject.upgrade.waitForIdle({ sleep, timeoutMs: 60_000 })).resolves.toBe(true);
 
     expect(sleeps).toBe(3);
     await expect(subject.upgrade.idleState()).resolves.toMatchObject({ runningAttempts: 0 });
@@ -219,11 +220,131 @@ describe('UpgradeCoordinator.waitForIdle', () => {
     let now = 0;
     const sleep = async (ms: number): Promise<void> => { now += ms; };
 
-    await subject.upgrade.waitForIdle({ sleep, now: () => now, timeoutMs: 5_000, pollMs: 1_000 });
+    // Returns false — not just "returns" — a running Attempt at the deadline must
+    // signal the swap to abort before commit rather than let it proceed silently.
+    await expect(subject.upgrade.waitForIdle({ sleep, now: () => now, timeoutMs: 5_000, pollMs: 1_000 })).resolves.toBe(false);
 
-    // Gave up while still busy, rather than hanging: no assertion needed
-    // beyond `waitForIdle` having resolved at all within a bounded number
-    // of polls.
     await expect(subject.upgrade.idleState()).resolves.toMatchObject({ runningAttempts: 1 });
+  });
+});
+
+/** Wires a real `UpgradeSwap` through the coordinator's `onIdle`, matching
+ * cli-serve.ts's production wiring, so cancellation/idle-timeout tests exercise
+ * the real step boundaries instead of a coordinator-only fake. */
+function realSwapOnIdle(
+  calls: string[],
+  hooks: { install?: () => Promise<void>; commit?: () => Promise<void>; waitForIdle?: () => Promise<boolean> },
+) {
+  return async (version: string, cancellation: UpgradeCancellation): Promise<UpgradeIdleHandoffOutcome | void> => {
+    const swap = new UpgradeSwap({
+      cancellation,
+      install: async () => { calls.push('install'); await hooks.install?.(); },
+      verify: async () => { calls.push('verify'); },
+      commit: async () => { calls.push('commit'); await hooks.commit?.(); },
+      spawnRelauncher: async () => { calls.push('relauncher'); },
+      releaseLock: async () => { calls.push('release-lock'); },
+      exit: () => { calls.push('exit'); },
+      abort: async () => { calls.push('abort'); },
+      operation: async (_input, work) => work(),
+      log: () => {},
+      ...(hooks.waitForIdle ? { waitForIdle: hooks.waitForIdle } : {}),
+    });
+    const outcome = await swap.execute({ version });
+    if (outcome.kind === 'aborted') throw outcome.error;
+    if (outcome.kind === 'cancelled' || outcome.kind === 'idle-timeout') return outcome.kind;
+  };
+}
+
+describe('UpgradeCoordinator cancellation (ADR-0042 Cancel vs commit)', () => {
+  it('rejects a second arm with 409 while a swap is upgrading, before any cancel', async () => {
+    const calls: string[] = [];
+    let releaseInstall: (() => void) | undefined;
+    const installPaused = new Promise<void>((resolve) => { releaseInstall = resolve; });
+    const subject = coordinator({ onIdle: realSwapOnIdle(calls, { install: () => installPaused }) });
+
+    await subject.upgrade.arm();
+    await subject.upgrade.reconcile();
+    await flushHandoff();
+    expect(calls).toEqual(['install']);
+
+    await expect(subject.upgrade.arm()).rejects.toThrow('upgrade is already switching versions');
+
+    releaseInstall?.();
+  });
+
+  it('stops the swap before commit when cancelled during install, restoring unarmed state without ever committing', async () => {
+    const calls: string[] = [];
+    let releaseInstall: (() => void) | undefined;
+    const installPaused = new Promise<void>((resolve) => { releaseInstall = resolve; });
+    const subject = coordinator({ onIdle: realSwapOnIdle(calls, { install: () => installPaused }) });
+
+    await subject.upgrade.arm();
+    await subject.upgrade.reconcile();
+    await flushHandoff();
+    expect(calls).toEqual(['install']);
+
+    await expect(subject.upgrade.cancel()).resolves.toMatchObject({ phase: { kind: 'upgrading' } });
+
+    releaseInstall?.();
+    await flushHandoff();
+    await flushHandoff();
+
+    expect(calls).toEqual(['install', 'verify']);
+    expect(calls).not.toContain('commit');
+    await expect(subject.upgrade.state()).resolves.toMatchObject({ phase: { kind: 'unarmed' } });
+    expect(subject.config().autoRunner.enabled).toBe(true);
+  });
+
+  it('rejects cancel with 409 once commit has already started, and does not stop the commit', async () => {
+    const calls: string[] = [];
+    let releaseCommit: (() => void) | undefined;
+    const commitPaused = new Promise<void>((resolve) => { releaseCommit = resolve; });
+    const subject = coordinator({ onIdle: realSwapOnIdle(calls, { commit: () => commitPaused }) });
+
+    await subject.upgrade.arm();
+    await subject.upgrade.reconcile();
+    await flushHandoff();
+    expect(calls).toEqual(['install', 'verify', 'commit']);
+
+    await expect(subject.upgrade.cancel()).rejects.toThrow('upgrade is already switching versions');
+
+    releaseCommit?.();
+    await flushHandoff();
+    expect(calls).toContain('release-lock');
+  });
+});
+
+describe('UpgradeCoordinator idle-timeout (ADR-0042 Cancel vs commit, waitForIdle bound)', () => {
+  it('reverts upgrading to armed — not unarmed — and never commits when waitForIdle times out on work that never drains', async () => {
+    const calls: string[] = [];
+    // Idle when arm()/reconcile() start the swap (so it isn't blocked before even
+    // starting); a new running Attempt starts during install, simulating work
+    // beginning right as the swap kicks off, so it's still running once the swap
+    // reaches its bounded await-idle wait.
+    let firstAttempt = true;
+    const subject = coordinator({
+      onIdle: (version, cancellation) =>
+        realSwapOnIdle(calls, {
+          install: async () => { if (firstAttempt) { firstAttempt = false; subject.setRunningAttempts(1); } },
+          waitForIdle: () => subject.upgrade.waitForIdle({ timeoutMs: 30, pollMs: 5 }),
+        })(version, cancellation),
+    });
+
+    await subject.upgrade.arm();
+    await subject.upgrade.reconcile();
+    await flushHandoff();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    expect(calls).toEqual(['install', 'verify', 'abort']);
+    expect(calls).not.toContain('commit');
+    await expect(subject.upgrade.state()).resolves.toMatchObject({ phase: { kind: 'armed', targetVersion: '2.6.0' } });
+    // Still excluded: armed keeps the Auto-Runner off until the retry succeeds.
+    expect(subject.config().autoRunner.enabled).toBe(false);
+
+    subject.setRunningAttempts(0);
+    calls.length = 0;
+    await expect(subject.upgrade.reconcile()).resolves.toBe(true);
+    await flushHandoff();
+    expect(calls).toEqual(['install', 'verify', 'commit', 'relauncher', 'release-lock', 'exit']);
   });
 });

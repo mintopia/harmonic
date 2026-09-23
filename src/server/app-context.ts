@@ -28,7 +28,7 @@ import { EventBus } from './bus.js';
 import { AuthService } from './auth.js';
 import type { DistributionMode } from '../distribution-mode.js';
 import { UpdateCheck } from '../upgrade/update-check.js';
-import { UpgradeCoordinator } from '../upgrade/upgrade-coordinator.js';
+import { UpgradeCoordinator, type UpgradeCancellation, type UpgradeIdleHandoffOutcome } from '../upgrade/upgrade-coordinator.js';
 import type { InstallMode } from '../upgrade/install-mode.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import type { StatsWorkerClient } from '../db/stats-reader.js';
@@ -55,7 +55,7 @@ export interface AppOptions {
   updateCheckLatest?: (() => Promise<string>) | undefined;
   /** Test-only running-version override, so Update Check tests don't track the release version. */
   version?: string | undefined;
-  onUpgradeIdle?: ((version: string) => Promise<void> | void) | undefined;
+  onUpgradeIdle?: ((version: string, cancellation: UpgradeCancellation) => Promise<UpgradeIdleHandoffOutcome | void> | UpgradeIdleHandoffOutcome | void) | undefined;
   migrationRequired?: boolean | undefined;
   /** How this instance was installed; drives whether arming is allowed and what `GET /update` offers as the manual command. Defaults to `{ kind: 'systemd' }`. */
   installMode?: InstallMode | undefined;
