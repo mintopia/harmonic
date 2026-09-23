@@ -23,6 +23,21 @@ function isValidPending(value) {
   );
 }
 
+function logError(message, error) {
+  process.stderr.write(`harmonic boot-guard: ${message}: ${error && error.message ? error.message : String(error)}\n`);
+}
+
+function removeIfPresent(filePath) {
+  try {
+    fs.unlinkSync(filePath);
+    return true;
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return true;
+    logError(`could not remove ${filePath}`, error);
+    return false;
+  }
+}
+
 function readCurrentVersion(appDir) {
   try {
     const target = fs.readlinkSync(path.join(appDir, 'current'));
@@ -35,24 +50,26 @@ function readCurrentVersion(appDir) {
 
 function flipCurrent(appDir, version) {
   const tmpPath = path.join(appDir, '.current.tmp');
-  try {
-    fs.unlinkSync(tmpPath);
-  } catch {
-    // best-effort: the guard must never fail a boot
-  }
+  removeIfPresent(tmpPath);
   fs.symlinkSync(`versions/${version}`, tmpPath);
   fs.renameSync(tmpPath, path.join(appDir, 'current'));
 }
 
+// The WAL must go before the snapshot lands, or SQLite replays the newer release's writes onto it.
 function restoreDatabase(dataDir, snapshotPath) {
   const dbPath = path.join(dataDir, 'harmonic.db');
-  fs.copyFileSync(snapshotPath, dbPath);
-  for (const suffix of ['-wal', '-shm']) {
-    try {
-      fs.unlinkSync(`${dbPath}${suffix}`);
-    } catch {
-      // best-effort: the guard must never fail a boot
-    }
+  try {
+    if (!fs.existsSync(snapshotPath)) throw new Error(`snapshot ${snapshotPath} is missing`);
+    const walRemoved = removeIfPresent(`${dbPath}-wal`);
+    const shmRemoved = removeIfPresent(`${dbPath}-shm`);
+    if (!walRemoved || !shmRemoved) throw new Error('the database write-ahead log could not be cleared');
+    const tmpPath = `${dbPath}.restore.tmp`;
+    fs.copyFileSync(snapshotPath, tmpPath);
+    fs.renameSync(tmpPath, dbPath);
+    return true;
+  } catch (error) {
+    logError('database was not restored', error);
+    return false;
   }
 }
 
@@ -71,19 +88,18 @@ function main() {
   let pending;
   try {
     pending = readJson(pendingPath);
-  } catch {
-    return; // no pending.json, or unreadable: nothing to guard
+  } catch (error) {
+    if (!error || error.code !== 'ENOENT') logError('could not read pending.json', error);
+    return;
   }
-  if (!isValidPending(pending)) return; // corrupt pending: leave current untouched
+  if (!isValidPending(pending)) {
+    logError('ignoring pending.json', new Error('unexpected shape'));
+    return;
+  }
 
   const currentVersion = readCurrentVersion(appDir);
   if (currentVersion !== pending.version) {
-    // Stale: current no longer matches what this pending record is guarding.
-    try {
-      fs.unlinkSync(pendingPath);
-    } catch {
-      // best-effort: the guard must never fail a boot
-    }
+    removeIfPresent(pendingPath);
     return;
   }
 
@@ -93,27 +109,22 @@ function main() {
     return;
   }
 
-  try {
-    restoreDatabase(dataDir, pending.snapshot);
-  } catch {
-    // best-effort: still flip current back even if the DB restore failed
-  }
+  const databaseRestored = restoreDatabase(dataDir, pending.snapshot);
   flipCurrent(appDir, pending.previous);
   writeJsonAtomic(path.join(appDir, 'rollback.json'), {
     fromVersion: pending.version,
     toVersion: pending.previous,
     at: new Date().toISOString(),
-    reason: `boot-guard: exceeded 3 restart attempts on ${pending.version}`,
-    databaseRestored: true,
+    reason: databaseRestored
+      ? `${pending.version} failed to start 4 times, so Harmonic rolled back to ${pending.previous} and restored the database from before the upgrade. Changes made after the upgrade started were discarded.`
+      : `${pending.version} failed to start 4 times, so Harmonic rolled back to ${pending.previous}. The database could not be restored from before the upgrade; check the service log.`,
+    databaseRestored,
   });
-  try {
-    fs.unlinkSync(pendingPath);
-  } catch {
-    // best-effort: the guard must never fail a boot
-  }
+  removeIfPresent(pendingPath);
 }
 
 try {
   main();
-} catch {
+} catch (error) {
+  logError('failed', error);
 }

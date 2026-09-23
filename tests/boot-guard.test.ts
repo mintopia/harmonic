@@ -1,7 +1,7 @@
 import { createClient } from '@libsql/client';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTempDirTracker } from './helpers/upgrade-fixture.js';
@@ -106,11 +106,57 @@ describe('boot-guard.cjs', () => {
 
     const rollback = JSON.parse(readFileSync(join(appDir, 'rollback.json'), 'utf8'));
     expect(rollback).toMatchObject({ fromVersion: '2.0.0', toVersion: '1.0.0', databaseRestored: true });
+    expect(rollback.reason).toMatch(/restored the database/);
 
     const restoredClient = createClient({ url: `file:${dbPath}` });
     const rows = await restoredClient.execute('SELECT label FROM t');
     restoredClient.close();
     expect(rows.rows).toEqual([{ label: 'pre-upgrade' }]);
+  });
+
+  function seedPendingAtFourthBoot(dataDir: string, appDir: string, snapshotPath: string): void {
+    seedVersion(appDir, '1.0.0', '');
+    seedVersion(appDir, '2.0.0', '');
+    symlinkSync('versions/2.0.0', join(appDir, 'current'));
+    writeFileSync(join(appDir, 'pending.json'), JSON.stringify({ version: '2.0.0', previous: '1.0.0', snapshot: snapshotPath, boots: 3 }));
+    writeFileSync(join(dataDir, 'harmonic.db'), 'live-db');
+  }
+
+  it('still rolls back but reports databaseRestored false, and says why, when the snapshot is missing', () => {
+    const { dataDir, appDir } = makeDataDir();
+    seedPendingAtFourthBoot(dataDir, appDir, join(appDir, 'pre-2.0.0.db'));
+
+    const result = spawnSync('node', [guardPath, dataDir], { encoding: 'utf8' });
+
+    expect(result.status).toBe(0);
+    expect(readlinkSync(join(appDir, 'current'))).toBe('versions/1.0.0');
+    expect(JSON.parse(readFileSync(join(appDir, 'rollback.json'), 'utf8'))).toMatchObject({ databaseRestored: false });
+    expect(readFileSync(join(dataDir, 'harmonic.db'), 'utf8')).toBe('live-db');
+    expect(result.stderr).toMatch(/database was not restored/);
+    expect(JSON.parse(readFileSync(join(appDir, 'rollback.json'), 'utf8')).reason).toMatch(/could not be restored/);
+  });
+
+  it.skipIf(process.getuid?.() === 0)('does not restore the snapshot under a write-ahead log it could not clear', () => {
+    const { dataDir, appDir } = makeDataDir();
+    const snapshotPath = join(appDir, 'pre-2.0.0.db');
+    writeFileSync(snapshotPath, 'snapshot-db');
+    seedPendingAtFourthBoot(dataDir, appDir, snapshotPath);
+    writeFileSync(join(dataDir, 'harmonic.db-wal'), 'newer-wal');
+    chmodSync(dataDir, 0o555);
+
+    let result;
+    try {
+      result = spawnSync('node', [guardPath, dataDir], { encoding: 'utf8' });
+    } finally {
+      chmodSync(dataDir, 0o755);
+    }
+
+    expect(result.status).toBe(0);
+    expect(readlinkSync(join(appDir, 'current'))).toBe('versions/1.0.0');
+    expect(readFileSync(join(dataDir, 'harmonic.db'), 'utf8')).toBe('live-db');
+    expect(readFileSync(join(dataDir, 'harmonic.db-wal'), 'utf8')).toBe('newer-wal');
+    expect(JSON.parse(readFileSync(join(appDir, 'rollback.json'), 'utf8'))).toMatchObject({ databaseRestored: false });
+    expect(result.stderr).toMatch(/could not remove .*harmonic\.db-wal/);
   });
 
   it('end-to-end: a broken release rolls back across restart attempts and leaves the previous version running', () => {
