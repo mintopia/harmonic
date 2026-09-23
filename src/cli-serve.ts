@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readlinkSync } from 'node:fs';
+import { closeSync, existsSync, fsyncSync, openSync, readFileSync, readlinkSync } from 'node:fs';
 import { mkdir, rename, rm } from 'node:fs/promises';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -69,7 +69,7 @@ const execFileAsync = promisify(execFile);
 
 export type UpgradeCommand = (file: string, args: readonly string[]) => Promise<unknown>;
 
-export type ManagedUpgradeFsDependencies = Pick<VersionInstallDependencies, 'mkdir' | 'rm' | 'rename' | 'fileExists' | 'readFile' | 'readlink'>;
+export type ManagedUpgradeFsDependencies = Pick<VersionInstallDependencies, 'mkdir' | 'rm' | 'rename' | 'fileExists' | 'readFile' | 'readlink' | 'fsyncDir'>;
 
 const defaultManagedUpgradeFsDependencies = (): ManagedUpgradeFsDependencies => ({
   mkdir: async (path) => { await mkdir(path, { recursive: true }); },
@@ -82,6 +82,14 @@ const defaultManagedUpgradeFsDependencies = (): ManagedUpgradeFsDependencies => 
       return readlinkSync(path);
     } catch {
       return null;
+    }
+  },
+  fsyncDir: (path) => {
+    const fd = openSync(path, 'r');
+    try {
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
     }
   },
 });

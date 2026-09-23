@@ -19,6 +19,9 @@ export interface VersionInstallDependencies {
   readFile(path: string, encoding: 'utf8'): string;
   /** The symlink target at `path`, or null if it isn't a symlink (including if it doesn't exist). */
   readlink(path: string): string | null;
+  /** Fsyncs a directory's own metadata so a rename inside it survives a crash. Absent ⇒ that
+   * durability step is skipped (callers that don't touch a real filesystem, e.g. tests). */
+  fsyncDir?(path: string): void;
 }
 
 export function readInstalledVersion({
@@ -95,6 +98,19 @@ export async function verifyInstall({
   await execFileAsync(process.execPath, ['-e', importScript], { timeout: timeoutMs });
 }
 
+/** Flushes the just-renamed version tree to disk before anything (the commit step's `pending.json`,
+ * then `current`) can come to depend on it surviving a crash (ADR-0042). `sync -f <dir>` is a syncfs
+ * over the whole filesystem holding `versionDir` in one call — cheap, unlike fsyncing every file under
+ * `node_modules`. Falls back to a bare `sync` for coreutils builds without `-f`; a sync failure throws,
+ * which fails the install and keeps the swap from ever reaching commit. */
+async function syncInstalledTree(run: VersionInstallCommand, versionDir: string): Promise<void> {
+  try {
+    await run('sync', ['-f', versionDir]);
+  } catch {
+    await run('sync', []);
+  }
+}
+
 // Stages into a sibling directory and renames into place so a crash or retry can never observe a half-written version.
 export async function installVersion({
   appDir,
@@ -124,5 +140,7 @@ export async function installVersion({
 
   await dependencies.rm(versionDir);
   await dependencies.rename(stagingDir, versionDir);
+  await syncInstalledTree(dependencies.run, versionDir);
+  dependencies.fsyncDir?.(versionsDir);
   return versionDir;
 }

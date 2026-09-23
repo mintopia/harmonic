@@ -136,6 +136,18 @@ describe('ensureUnitRevisionCurrent (user-level self-heal, ADR-0042)', () => {
     expect(deps.calls).toEqual([]);
   });
 
+  it('throws instead of silently reporting success when the existing unit cannot be reconstructed', async () => {
+    const deps = dependencies();
+    deps.files.set(
+      '/home/ada/.config/systemd/user/harmonic.service',
+      '[Service]\nEnvironment=HARMONIC_MANAGED_BY=systemd\n',
+    );
+    const manager = createServiceManager(environment({ userSystemdUsable: true }), deps);
+
+    await expect(manager.ensureUnitRevisionCurrent?.()).rejects.toThrow(/harmonic\.service/);
+    expect(deps.calls).toEqual([]);
+  });
+
   it('is idempotent: a second call after a successful rewrite is a no-op', async () => {
     const deps = dependencies();
     deps.files.set(

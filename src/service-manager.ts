@@ -532,7 +532,9 @@ class SystemdServiceManager implements ServiceManager {
     const unitContents = await this.dependencies.readTextFile(this.unitPath);
     if (unitContents === null || unitRevision(unitContents) >= CURRENT_UNIT_REVISION) return false;
     const existing = await this.readExistingSettings();
-    if (existing === null || existing.serve.port === undefined || existing.serve.host === undefined || existing.serve.dataDir === undefined) return false;
+    if (existing === null || existing.serve.port === undefined || existing.serve.host === undefined || existing.serve.dataDir === undefined) {
+      throw new Error(`could not fully parse the existing unit at ${this.unitPath}; refusing to self-heal without its settings`);
+    }
     const serve: ServiceServeOptions = {
       port: existing.serve.port,
       host: existing.serve.host,

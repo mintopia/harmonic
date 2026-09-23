@@ -12,6 +12,7 @@ import {
   reconcileSystemdGuardRevision,
   type ManagedUpgradeFsDependencies,
 } from '../src/cli-serve.js';
+import { createServiceManager } from '../src/service-manager.js';
 import { readInstalledVersion } from '../src/upgrade/version-install.js';
 import { createTempDirTracker, packFixtureTarball } from './helpers/upgrade-fixture.js';
 
@@ -89,6 +90,45 @@ describe('reconcileSystemdGuardRevision (real filesystem)', () => {
     await expect(reconcileSystemdGuardRevision(d)).resolves.toBe(true);
 
     expect(d.warn).toHaveBeenCalledWith(expect.stringContaining('daemon-reload failed'));
+  });
+
+  it('reports guardMissing and names the unit path when the real self-heal cannot reconstruct the unit, wired as in production', async () => {
+    const dir = tempDir('harmonic-guard-revision-real-');
+    const userUnitPath = join(dir, '.config', 'systemd', 'user', 'harmonic.service');
+    mkdirSync(join(dir, '.config', 'systemd', 'user'), { recursive: true });
+    writeFileSync(userUnitPath, '[Service]\nEnvironment=HARMONIC_MANAGED_BY=systemd\n');
+    const warn = vi.fn();
+    const manager = createServiceManager(
+      { platform: 'linux', isRoot: false, systemdRunning: false, initdAvailable: false, userSystemdUsable: true },
+      {
+        nodePath: '/usr/bin/node',
+        currentVersion: '2.16.0',
+        path: '/usr/local/bin:/usr/bin',
+        homeDir: dir,
+        userName: 'ada',
+        run: async () => { throw new Error('unexpected systemctl call'); },
+        mkdir: async () => {},
+        writeFile: async () => {},
+        chmod: async () => {},
+        removeFile: async () => {},
+        rename: async () => {},
+        fileExists: (path) => path === userUnitPath,
+        readFile: (path) => readFileSync(path, 'utf8'),
+        readTextFile: async (path) => { try { return readFileSync(path, 'utf8'); } catch { return null; } },
+        readlink: () => null,
+      },
+    );
+
+    await expect(reconcileSystemdGuardRevision({
+      systemUnitPath: join(dir, 'system.service'),
+      userUnitPath,
+      fileExists: (path) => path === userUnitPath,
+      readFile: (path) => readFileSync(path, 'utf8'),
+      ensureUserUnitCurrent: () => manager.ensureUnitRevisionCurrent?.(),
+      warn,
+    })).resolves.toBe(true);
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(userUnitPath));
   });
 });
 
@@ -266,6 +306,7 @@ describe('systemd upgrades', () => {
       ['tar', ['-xzf', `${stagingDir}/mintopia-harmonic-${target}.tgz`, '--strip-components=1', '-C', stagingDir]],
       ['npm', ['pkg', 'delete', 'devDependencies', 'scripts.prepare', '--prefix', stagingDir]],
       ['npm', ['i', '--prefix', stagingDir, '--omit=dev']],
+      ['sync', ['-f', versionDir]],
     ]);
     expect(run.mock.calls.some(([command]) => command === 'ln')).toBe(false);
   });
