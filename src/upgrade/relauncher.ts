@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync, openSync, realpathSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, openSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { daemonStatus, logFilePath } from '../daemon.js';
@@ -35,7 +35,15 @@ const productionDependencies: RelauncherDependencies = {
     const guardPath = join(dataDir, 'app', 'boot-guard.cjs');
     if (!existsSync(guardPath)) return;
     try {
-      spawnSync(process.execPath, [guardPath, dataDir], { stdio: 'ignore' });
+      // Appended (not ignored) so the guard's own diagnostics — e.g. a blocked-rollback message
+      // when it can't restore the database snapshot — reach the operator via harmonic.log instead
+      // of being silently discarded.
+      const log = openSync(logFilePath(dataDir), 'a');
+      try {
+        spawnSync(process.execPath, [guardPath, dataDir], { stdio: ['ignore', log, log] });
+      } finally {
+        closeSync(log);
+      }
     } catch (error) {
       logger.warn('relauncher: boot guard failed to run', { dataDir, error: error instanceof Error ? error.message : String(error) });
     }

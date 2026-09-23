@@ -58,37 +58,44 @@ function normalizeDefinition(sql: string): string {
   return sql.trim().replace(/;$/, '').replace(/[`"']/g, '').replace(/\s+/g, ' ').replace(/\s*,\s*/g, ',').toLowerCase();
 }
 
-async function rebuildTable(client: Client, table: BaselineTable, liveColumns: string[]): Promise<void> {
+async function rebuildTable(client: Client, table: BaselineTable, liveColumns: string[], onStep: () => void): Promise<void> {
   const temporaryName = `__schema_sync_${table.name}_new`;
   const temporarySql = table.sql.replace(`CREATE TABLE \`${table.name}\``, `CREATE TABLE \`${temporaryName}\``);
   const commonColumns = table.columns.map((column) => column.name).filter((name) => liveColumns.includes(name));
   logger.info('schema-sync: rebuilding table for definition drift', { table: table.name });
   await client.execute(temporarySql);
+  onStep();
   if (commonColumns.length > 0) {
     const columns = commonColumns.map((name) => `\`${name}\``).join(', ');
     await client.execute(`INSERT INTO \`${temporaryName}\` (${columns}) SELECT ${columns} FROM \`${table.name}\``);
+    onStep();
   }
   await client.execute(`DROP TABLE \`${table.name}\``);
+  onStep();
   await client.execute(`ALTER TABLE \`${temporaryName}\` RENAME TO \`${table.name}\``);
+  onStep();
 }
 
-async function convergeIncremental(client: Client, baseline: Baseline): Promise<void> {
+async function convergeIncremental(client: Client, baseline: Baseline, onStep: () => void): Promise<void> {
   const declaredTables = new Set(baseline.tables.map((t) => t.name));
   const declaredIndexes = new Set(baseline.indexes.map((i) => i.name));
   for (const name of await liveNames(client, 'index')) {
     if (declaredIndexes.has(name)) continue;
     logger.info('schema-sync: dropping index', { index: name });
     await client.execute(`DROP INDEX \`${name}\``);
+    onStep();
   }
   for (const name of await liveNames(client, 'table')) {
     if (declaredTables.has(name)) continue;
     logger.info('schema-sync: dropping table', { table: name });
     await client.execute(`DROP TABLE \`${name}\``);
+    onStep();
   }
   const existingTables = new Set(await liveNames(client, 'table'));
   for (const table of baseline.tables) {
     if (!existingTables.has(table.name)) {
       await client.execute(table.sql);
+      onStep();
       continue;
     }
     const live = (await client.execute(`pragma table_info(\`${table.name}\`)`)).rows.map((row) => String(row.name));
@@ -97,15 +104,17 @@ async function convergeIncremental(client: Client, baseline: Baseline): Promise<
       if (declared.has(column)) continue;
       logger.info('schema-sync: dropping column', { table: table.name, column });
       await client.execute(`ALTER TABLE \`${table.name}\` DROP COLUMN \`${column}\``);
+      onStep();
     }
     const columns = (await client.execute(`pragma table_info(\`${table.name}\`)`)).rows.map((row) => String(row.name));
     const definition = (await client.execute(`select sql from sqlite_master where type = 'table' and name = '${table.name}'`)).rows[0]?.sql;
     if (typeof definition !== 'string' || normalizeDefinition(definition) !== normalizeDefinition(table.sql)) {
-      await rebuildTable(client, table, columns);
+      await rebuildTable(client, table, columns, onStep);
     }
   }
   for (const index of baseline.indexes) {
     await client.execute(index.sql.replace(/^CREATE (UNIQUE )?INDEX /, 'CREATE $1INDEX IF NOT EXISTS '));
+    onStep();
   }
 }
 
@@ -115,22 +124,26 @@ async function convergeIncremental(client: Client, baseline: Baseline): Promise<
  * index and recreate the baseline from scratch. Data loss is the intended fallback,
  * not a bug — there is no backup path.
  */
-async function cleanBreakRecreate(client: Client, baseline: Baseline): Promise<void> {
+async function cleanBreakRecreate(client: Client, baseline: Baseline, onStep: () => void): Promise<void> {
   await client.execute('BEGIN');
   try {
     for (const name of await liveNames(client, 'index')) {
       logger.info('schema-sync: clean-break dropping index', { index: name });
       await client.execute(`DROP INDEX \`${name}\``);
+      onStep();
     }
     for (const name of await liveNames(client, 'table')) {
       logger.info('schema-sync: clean-break dropping table', { table: name });
       await client.execute(`DROP TABLE \`${name}\``);
+      onStep();
     }
     for (const table of baseline.tables) {
       await client.execute(table.sql);
+      onStep();
     }
     for (const index of baseline.indexes) {
       await client.execute(index.sql);
+      onStep();
     }
     await client.execute('COMMIT');
   } catch (err) {
@@ -158,11 +171,11 @@ async function cleanBreakRecreate(client: Client, baseline: Baseline): Promise<v
  * Uses raw BEGIN/COMMIT rather than `client.transaction()` so every statement
  * (and the caller's surrounding pragmas) stays on the one shared connection.
  */
-export async function syncSchema(client: Client, baselineSql: string): Promise<void> {
+export async function syncSchema(client: Client, baselineSql: string, onStep: () => void = () => {}): Promise<void> {
   const baseline = parseBaseline(baselineSql);
   await client.execute('BEGIN');
   try {
-    await convergeIncremental(client, baseline);
+    await convergeIncremental(client, baseline, onStep);
     await client.execute('COMMIT');
   } catch (err) {
     await client.execute('ROLLBACK').catch(() => {});
@@ -172,6 +185,6 @@ export async function syncSchema(client: Client, baselineSql: string): Promise<v
     logger.warn('schema-sync: incremental convergence hit an unreconcilable schema divergence, falling back to ADR-0007 clean-break recreate', {
       reason: err instanceof Error ? err.message : String(err),
     });
-    await cleanBreakRecreate(client, baseline);
+    await cleanBreakRecreate(client, baseline, onStep);
   }
 }

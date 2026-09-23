@@ -35,6 +35,7 @@ import type { Stores } from './app-stores.js';
 import type { WorktreeServices } from './app-worktrees.js';
 import { createPostMergeCheck } from '../verification/post-merge-check.js';
 import type { DistributionMode } from '../distribution-mode.js';
+import { touchStartupProgress } from '../reliability/startup-progress.js';
 
 function createLifecycleTracking(
   bus: EventBus,
@@ -255,7 +256,9 @@ export async function createRuntime(deps: {
     verificationAttempts,
     criticDrive: opts.criticDrive,
   });
+  touchStartupProgress(opts.dataDir);
   await runStartupRecovery({ attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus });
+  touchStartupProgress(opts.dataDir);
   const getWorkspaceRow = async (id: number | null) => {
     if (id == null) return undefined;
     try {
@@ -361,14 +364,18 @@ export async function createRuntime(deps: {
   const globalPause = new GlobalPause(tasks, runner, asyncDb);
   globalPauseRef = globalPause;
   await globalPause.rebuild();
+  touchStartupProgress(opts.dataDir);
   await runner.backfillUsage();
+  touchStartupProgress(opts.dataDir);
   const escalation = new EscalationService(attempts, tasks, operatorSettle, mergeEffectsFor, {
     resume: (task, guidance, startNow) => runner.resumeWithGuidance(task, guidance, startNow),
     cleanup: (task, run) => runner.cleanupClosed(task, run),
     candidateHead: (task, run) => runner.candidateHead(task, run),
     advance: (task, run, failedStep) => runner.advanceAccepted(task, run, failedStep),
   });
+  touchStartupProgress(opts.dataDir);
   await drainRetirement();
+  touchStartupProgress(opts.dataDir);
   const { loopMonitor, hostLoad, workspaceWatcher } = createObservability(opts, bus, settingsStore);
   const mirror: MirrorClaim = {
     advertiseClaim: async (task) => {
@@ -390,7 +397,9 @@ export async function createRuntime(deps: {
   const upgrade = createUpgrade({ opts, runningVersion, asyncDb, settingsStore, attempts, conversationDriver, notifier });
   upgradeRef = upgrade;
   if (distributionMode === 'packaged') {
+    touchStartupProgress(opts.dataDir);
     await upgrade.settleOnBoot();
+    touchStartupProgress(opts.dataDir);
   }
   const epicService = new TrackerEpicService(
     tasks,

@@ -27,3 +27,31 @@ export function touchStartupProgress(dataDir: string): void {
     }
   }
 }
+
+let bootProgressDataDir: string | undefined;
+let lastThrottledTouchAt = 0;
+const THROTTLED_TOUCH_INTERVAL_MS = 2000;
+
+/**
+ * Marks boot as in progress so every {@link yieldToEventLoop} call (and so every
+ * `forEachYielding` loop, which every growing-collection boot loop already uses per
+ * AGENTS.md's "Background loops must yield") touches startup progress while it runs, not just
+ * around whole boot phases. Always pair with {@link endBootProgress}.
+ */
+export function beginBootProgress(dataDir: string): void {
+  bootProgressDataDir = dataDir;
+  lastThrottledTouchAt = 0;
+}
+
+export function endBootProgress(): void {
+  bootProgressDataDir = undefined;
+}
+
+/** Throttled to {@link THROTTLED_TOUCH_INTERVAL_MS} so calling it on every yield stays cheap. No-op unless a boot is in progress. */
+export function touchStartupProgressIfBooting(now: () => number = Date.now): void {
+  if (!bootProgressDataDir) return;
+  const at = now();
+  if (at - lastThrottledTouchAt < THROTTLED_TOUCH_INTERVAL_MS) return;
+  lastThrottledTouchAt = at;
+  touchStartupProgress(bootProgressDataDir);
+}

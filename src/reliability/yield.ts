@@ -1,5 +1,8 @@
+import { touchStartupProgressIfBooting } from './startup-progress.js';
+
 /** Resolve on the next event-loop turn, after pending I/O callbacks run. */
 export function yieldToEventLoop(): Promise<void> {
+  touchStartupProgressIfBooting();
   return new Promise((resolve) => {
     setImmediate(resolve);
   });
@@ -27,6 +30,7 @@ export async function forEachYielding<T>(
   let index = 0;
   for (const item of items) {
     await fn(item, index++);
+    touchStartupProgressIfBooting();
     if (now() - sliceStart >= budgetMs) {
       await yieldNow();
       sliceStart = now();

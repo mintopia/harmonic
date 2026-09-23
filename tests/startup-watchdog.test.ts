@@ -8,6 +8,7 @@ import { startStartupWatchdog } from '../src/cli-serve.js';
 const { tempDir, cleanupAll } = createTempDirTracker();
 const hangFixturePath = fileURLToPath(new URL('./fixtures/startup-watchdog-hang.ts', import.meta.url));
 const progressFixturePath = fileURLToPath(new URL('./fixtures/startup-watchdog-progress.ts', import.meta.url));
+const realBootFixturePath = fileURLToPath(new URL('./fixtures/startup-watchdog-real-boot.ts', import.meta.url));
 const watcherPath = fileURLToPath(new URL('../src/upgrade/startup-watcher.cjs', import.meta.url));
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const ownVersion: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -36,6 +37,16 @@ function spawnFixture(fixturePath: string, args: string[]): ChildProcessWithoutN
     stdio: 'pipe',
     // Fast polling keeps these tests quick; production leaves this at the watcher's 1s default.
     env: { ...process.env, HARMONIC_STARTUP_WATCHER_POLL_MS: '30', HARMONIC_STARTUP_DEADLINE_MS: '300' },
+  });
+  runningChildren.push(child);
+  return child;
+}
+
+function spawnFixtureWithEnv(fixturePath: string, args: string[], env: Record<string, string>): ChildProcessWithoutNullStreams {
+  const child = spawn(process.execPath, ['--import', 'tsx', fixturePath, ...args], {
+    cwd: repoRoot,
+    stdio: 'pipe',
+    env: { ...process.env, ...env },
   });
   runningChildren.push(child);
   return child;
@@ -83,6 +94,26 @@ describe('startup watchdog: out-of-process watcher (real processes)', () => {
     expect(child.exitCode).toBeNull();
     expect(child.killed).toBe(false);
     child.kill('SIGKILL');
+  }, 30_000);
+
+  it('does not kill a real boot running schema convergence (src/db/async.ts) against a tiny deadline window', async () => {
+    const dataDir = tempDir('startup-watchdog-real-boot-');
+    writePending(dataDir, ownVersion);
+
+    // The fixture drifts and seeds every FK-free baseline table (except `workspaces`, kept tiny) with
+    // 100k rows, forcing schema-sync's real `rebuildTable` row-copy for each (src/db/schema-sync.ts):
+    // individual steps take up to ~45ms, the whole convergence takes 150ms+. A 90ms deadline sits
+    // comfortably above any single step but well below the total, so surviving it depends on per-step
+    // progress touches, not just the touches around the whole DB open.
+    const child = spawnFixtureWithEnv(realBootFixturePath, [dataDir, '100000'], {
+      HARMONIC_STARTUP_WATCHER_POLL_MS: '15',
+      HARMONIC_STARTUP_DEADLINE_MS: '90',
+    });
+    await waitForStdout(child, 'armed\n', 20_000);
+    await waitForStdout(child, 'healthy\n', 20_000);
+    const code = await waitForExit(child, 5_000);
+
+    expect(code).toBe(0);
   }, 30_000);
 });
 
