@@ -36,6 +36,17 @@ async function waitForExit(child: ChildProcessWithoutNullStreams, timeoutMs: num
   });
 }
 
+async function waitForArmed(child: ChildProcessWithoutNullStreams): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('fixture never armed the watchdog')), 20_000);
+    let output = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      output += chunk.toString();
+      if (output.includes('armed\n')) { clearTimeout(timer); resolve(); }
+    });
+  });
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
 }
@@ -50,19 +61,22 @@ describe('startup watchdog (real process)', () => {
     );
 
     const child = spawnFixture(dataDir, 300);
-    const code = await waitForExit(child, 3_000);
+    const exited = waitForExit(child, 25_000);
+    await waitForArmed(child);
+    const code = await exited;
 
     expect(code).not.toBe(0);
-  }, 10_000);
+  }, 30_000);
 
   it('stays running past the deadline when no pending.json names this process own version', async () => {
     const dataDir = tempDir('startup-watchdog-idle-');
     mkdirSync(join(dataDir, 'app'), { recursive: true });
 
     const child = spawnFixture(dataDir, 300);
-    await sleep(1_000);
+    await waitForArmed(child);
+    await sleep(1_200);
 
     expect(child.exitCode).toBeNull();
     expect(child.killed).toBe(false);
-  }, 10_000);
+  }, 30_000);
 });
