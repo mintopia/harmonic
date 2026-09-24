@@ -11,7 +11,6 @@ import { permissionRuleRoutes } from './routes/permission-rules.js';
 import { configRoutes } from './routes/config.js';
 import { globalPauseRoutes } from './routes/global-pause.js';
 import { wsRoutes } from './ws.js';
-import { requestIsOperator } from './auth.js';
 import { authRoutes } from './routes/auth.js';
 import { statsRoutes } from './routes/stats.js';
 import { activityRoutes } from './routes/activity.js';
@@ -61,8 +60,7 @@ export async function registerRoutes(app: App, ctx: AppContext, contexts: AppCon
   await app.register(openapiRoutes, { prefix: '/api' });
 
   app.post('/mcp', { schema: { hide: true } }, async (req, reply) => {
-    const operator = await requestIsOperator(req, ctx.auth);
-    const mcp = buildMcpServer(ctx, { operator });
+    const mcp = buildMcpServer(ctx);
     // MCP SDK option/interface types don't satisfy this project's exactOptionalPropertyTypes; both casts erase that mismatch, not our types.
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined } as any);
     reply.hijack();

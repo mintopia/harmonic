@@ -107,16 +107,15 @@ export interface EpicIntegrateTarget {
   title?: string;
   body?: string;
   url?: string;
-  /** Each member's reduced merge state. An empty array is only safe under an
-   * operator force-integrate (which bypasses the per-member gate); a non-force
-   * submit with `[]` decides `noop` and never integrates. */
+  /** Each member's reduced merge state. An empty array decides `noop` and never
+   * integrates. */
   members: MemberMergeState[];
   /** The Epic's member refs, snapshotted onto the stored Epic record at integration.
    * Absent ⇒ an empty snapshot. */
   memberRefs?: number[];
   /** Every member is a direct-isolation mirrored Task: this Epic completes in
    * place rather than merging, whether or not a leftover `epic/<ref>` exists.
-   * Defaults `false` (a force-integrate submit never sets it). */
+   * Defaults `false`. */
   inPlace?: boolean;
   /** The name of a leftover `epic/<ref>` that still exists despite `inPlace` —
    * never touched, only reported so the operator knows it is there. */
@@ -241,20 +240,17 @@ export class EpicCoordinator {
   }
 
   /**
-   * Attempt a whole-Epic integrate for `target`. `force` is the operator's explicit
-   * force-integrate-the-ready-subset override — set only by the operator action,
-   * never by the automatic poll trigger. Idempotent and re-entrancy-safe: an
-   * in-flight attempt for the same Epic returns `busy`.
+   * Attempt a whole-Epic integrate for `target`. Idempotent and
+   * re-entrancy-safe: an in-flight attempt for the same Epic returns `busy`.
    */
-  async submit(target: EpicIntegrateTarget, opts?: { force?: boolean }): Promise<EpicIntegrateOutcome> {
-    const force = opts?.force ?? false;
+  async submit(target: EpicIntegrateTarget): Promise<EpicIntegrateOutcome> {
     if (this.inFlight.has(target.ref)) return { status: 'busy' };
     this.inFlight.add(target.ref);
     try {
       if (target.inPlace) return await this.attemptInPlace(target);
       const existing = this.operations.has({ repoDir: this.repoDir, epicRef: target.ref });
       if (!existing && !(await this.git.branchExists(this.repoDir, integrationBranchName(target.ref)))) {
-        return await this.attempt(target, force);
+        return await this.attempt(target);
       }
       return await this.operations.run({
         repoDir: this.repoDir,
@@ -262,7 +258,7 @@ export class EpicCoordinator {
         ...withEpicTitle(target.title),
         type: 'integrate',
         attributes: { 'epic.integration_branch': integrationBranchName(target.ref) },
-        work: () => this.attempt(target, force),
+        work: () => this.attempt(target),
       });
     } finally {
       this.inFlight.delete(target.ref);
@@ -271,7 +267,7 @@ export class EpicCoordinator {
   }
 
   private async attemptInPlace(target: EpicIntegrateTarget): Promise<EpicIntegrateOutcome> {
-    const gate = decideEpicIntegrate({ integrationExists: false, members: target.members, verification: null, force: false, inPlace: true });
+    const gate = decideEpicIntegrate({ integrationExists: false, members: target.members, verification: null, inPlace: true });
     switch (gate.action) {
       case 'noop':
         this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
@@ -288,14 +284,14 @@ export class EpicCoordinator {
     }
   }
 
-  private async attempt(target: EpicIntegrateTarget, force: boolean): Promise<EpicIntegrateOutcome> {
+  private async attempt(target: EpicIntegrateTarget): Promise<EpicIntegrateOutcome> {
     const branch = integrationBranchName(target.ref);
     const integrationExists = await this.git.branchExists(this.repoDir, branch);
     if (!integrationExists) {
       this.forget(target.ref);
     }
 
-    const gate = decideEpicIntegrate({ integrationExists, members: target.members, verification: null, force, inPlace: false });
+    const gate = decideEpicIntegrate({ integrationExists, members: target.members, verification: null, inPlace: false });
     switch (gate.action) {
       case 'noop':
         this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
@@ -320,11 +316,11 @@ export class EpicCoordinator {
       return await this.retireContained(target, branch);
     }
 
-    if (!force && this.settledEscalated.get(target.ref) === this.signatureOf(target.members)) {
+    if (this.settledEscalated.get(target.ref) === this.signatureOf(target.members)) {
       return { status: 'escalated', reason: STICKY_ESCALATION_HOLD_REASON };
     }
 
-    if (!force) {
+    {
       const at = this.now();
       const last = this.lastVerifyAttemptAt.get(target.ref);
       if (last !== undefined && at - last < this.verifyBackoffMs) {
@@ -356,7 +352,7 @@ export class EpicCoordinator {
       return this.escalate(target, `whole-Epic verification could not run: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    const verdict = decideEpicIntegrate({ integrationExists: true, members: target.members, verification, force, inPlace: false });
+    const verdict = decideEpicIntegrate({ integrationExists: true, members: target.members, verification, inPlace: false });
     if (verdict.action === 'escalate') {
       this.lastVerification.set(target.ref, 'fail');
       if (this.resolve) {
@@ -613,7 +609,7 @@ export class EpicRefresh {
 const PRE_SPAWN: ReadonlySet<string> = new Set(['draft', 'ready']);
 
 export interface EpicIntegrateTrigger {
-  submit(target: EpicIntegrateTarget, opts?: { force?: boolean }): Promise<unknown>;
+  submit(target: EpicIntegrateTarget): Promise<unknown>;
 }
 
 export interface EpicRefreshTrigger {
@@ -773,11 +769,11 @@ export class EpicLifecycle {
 
     // Closed-but-unintegrated Epics: a leaf Epic whose ticket was closed while its
     // integration branch still holds unmerged work would otherwise strand forever
-    // (the open-only derivation above never surfaces it, and there is no operator
-    // force path). Offer any closed leaf with a live integration branch to the same
-    // integrate; the whole-Epic verify gate inside `submit` is what protects against
-    // folding abandoned or broken work — an already-merged branch short-circuits to
-    // integrated, an unverifiable one escalates.
+    // (the open-only derivation above never surfaces it). Offer any closed leaf
+    // with a live integration branch to the same integrate; the whole-Epic verify
+    // gate inside `submit` is what protects against folding abandoned or broken
+    // work — an already-merged branch short-circuits to integrated, an
+    // unverifiable one escalates.
     if (this.epicIntegrate) {
       const closed = deriveLeafEpics(tickets, readinessByRef, { includeClosed: true }).filter(
         (epic) => !this.leafEpicRefs.has(epic.ref),

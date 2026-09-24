@@ -10,6 +10,9 @@ export interface BuildCriticPromptArgs {
   verifiedHeadOid: string;
   /** The base revision the candidate diverged from; absent ⇒ the critic reviews the candidate alone. */
   baseOid?: string;
+  /** True when the worktree still carries uncommitted work on top of {@link verifiedHeadOid}, pending a
+   * pre-merge commit — the true candidate is the working tree, not the `verifiedHeadOid` commit alone. */
+  dirty?: boolean;
 }
 
 /** Build the critic's review prompt: operator prompt, revision block, restraint instruction, output contract. Pure, so the settings preview renders the same compiled prompt. */
@@ -18,6 +21,7 @@ export function buildCriticPrompt({
   fields,
   verifiedHeadOid,
   baseOid,
+  dirty,
 }: BuildCriticPromptArgs): string {
   const hasTicket = fields.ref.trim() !== '' || fields.url.trim() !== '';
   const interpolated = fillTemplate(operatorPrompt, fields);
@@ -29,8 +33,16 @@ export function buildCriticPrompt({
   const ticketFirst = hasTicket
     ? 'First read the referenced ticket (named in the review instructions above) to understand the outcome it requires, and judge the candidate against that outcome.'
     : 'Judge the candidate against the review instructions above — they are the whole specification; there is no external ticket to consult.';
+  const workingTreeNote = dirty
+    ? ` The worktree also carries uncommitted changes on top of ${verifiedHeadOid} that have not
+been committed yet (they will be, once review passes) — they are part of the candidate too.
+A revision-only diff will miss them; compare the working tree itself against the base, e.g.
+\`git diff ${baseOid ?? verifiedHeadOid}\` (no second revision, so it includes uncommitted
+changes) plus \`git status --porcelain\` to catch new untracked files, and read those files
+directly.`
+    : '';
   const revisionBlock =
-    baseOid && baseOid === verifiedHeadOid
+    baseOid && baseOid === verifiedHeadOid && !dirty
       ? `${ticketFirst} The candidate revision ${verifiedHeadOid} is IDENTICAL to the base revision it
 integrates with — the builder made no code change. A no-change result is correct
 when ${spec} required none (the work was already done, the right answer was to
@@ -41,9 +53,9 @@ because there is no diff.`
         ? `${ticketFirst} Then review the candidate revision ${verifiedHeadOid}, which branched from the
 base revision ${baseOid}: derive what the change did by comparing the two
 revisions yourself — read the files and run read-only git commands (for example,
-\`git diff ${baseOid} ${verifiedHeadOid}\`). You are NOT handed a diff.`
+\`git diff ${baseOid} ${verifiedHeadOid}\`). You are NOT handed a diff.${workingTreeNote}`
         : `${ticketFirst} Then review the candidate revision ${verifiedHeadOid} on its own merits — the
-base revision it diverged from is unknown.`;
+base revision it diverged from is unknown.${workingTreeNote}`;
   return `${interpolated}
 
 ${revisionBlock}

@@ -257,6 +257,7 @@ export class Runner {
       settleEscalated: (task, run, reason, patch) => this.settleEscalated(task, run, reason, patch),
       settleAutoCompleted: (task, run, patch) => this.settleAutoCompleted(task, run, patch),
       diffSnapshotFor: (task, attemptId) => this.diffSnapshotFor(task, attemptId),
+      worktreePathForTask: (task) => this.workspaceProvisioner.worktreePathForTask(task),
       kill: (active) => this.kill(active),
     };
   }

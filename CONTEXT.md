@@ -348,8 +348,8 @@ _Avoid_: merge status, merge train (deleted concept — Members merge by the
 one merge policy under the mutex, ADR-0001)
 
 **Blocking member**:
-A Member whose merge status is *blocked* that stalls the whole Epic on the
-automatic path until it clears or the operator Force-integrates.
+A Member whose merge status is *blocked* that stalls the whole Epic until it
+clears.
 _Avoid_: stuck task
 
 **Epic Pre-Merge Verification** (was *Whole-Epic Verification*):
@@ -380,13 +380,6 @@ then retiring the branch. Runs only when the integrate gate is open and Epic
 Pre-Merge Verification passes; a cheap ancestor check first keeps it idempotent
 when the work is already contained.
 _Avoid_: final merge
-
-**Force-integrate the ready subset**:
-The operator-only override that opens an Epic's integrate gate unconditionally —
-integrating whatever Members are already folded into the Integration branch even
-while a sibling is stuck — without bypassing Epic Pre-Merge Verification. The one
-escape hatch when a Blocking Member stalls the Epic.
-_Avoid_: force merge, partial integrate
 
 ### Conversations
 

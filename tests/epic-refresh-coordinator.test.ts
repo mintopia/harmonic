@@ -12,11 +12,31 @@ import { WorkspaceService } from '../src/domain/workspaces.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { Runner } from '../src/execution/runner.js';
 import { TrackerEpicService } from '../src/tracker/epic-service.js';
+import { mirrorScan } from '../src/tracker/mirror.js';
+import type { Ticket } from '../src/tracker/adapter.js';
 import type { CriticDriveRequest } from '../src/verification/critic.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, waitFor, seedWorkspace } from './helpers.js';
 
 const fakeGit = { revParse: async () => 'develop-tip' };
+
+const ticket = (over: Partial<Ticket>): Ticket => ({
+  number: 100,
+  title: 'A ticket',
+  state: 'open',
+  body: '',
+  createdAt: '2026-08-07T00:00:00Z',
+  closedAt: null,
+  labels: [],
+  assignees: [],
+  parent: null,
+  blockedBy: [],
+  blocking: [],
+  comments: [],
+  isMap: false,
+  url: 'https://github.com/mintopia/harmonic/issues/100',
+  ...over,
+});
 
 const conflict = (detail = 'both changed package.json'): MergeIntoBaseOutcome => ({
   ok: false,
@@ -207,6 +227,20 @@ describe('epic refresh corrective turn (issue #315)', () => {
     await tasks.setState(task.id, 'working');
   }
 
+  const epicTickets = (): Ticket[] => [
+    ticket({ number: 5, title: 'Resolver epic' }),
+    ticket({ number: 6, parent: 5 }),
+  ];
+
+  /** Mirrors a done, worktree-mode member for Epic 5 onto `workspaceId`, so the
+   * whole-Epic integrate gate opens without a force override. */
+  async function readyEpicMember(workspaceId: number, tickets: Ticket[]): Promise<void> {
+    const mirrored = await mirrorScan(tasks, tickets, workspaceId);
+    const member = mirrored.find((t) => t.trackerRef === 6)!;
+    await tasks.update(member.id, { isolationMode: 'worktree' });
+    await tasks.setState(member.id, 'done');
+  }
+
   it('conflict → one corrective turn against epic/<ref> → the refresh completes', async () => {
     const driveCalls: CriticDriveRequest[] = [];
     const escalations: string[] = [];
@@ -392,7 +426,8 @@ describe('epic refresh corrective turn (issue #315)', () => {
   it('keeps the Epic checkout in place from failed verification through the resolver', async () => {
     const workspaces = new WorkspaceService(asyncDb, settingsStore);
     const workspace = await workspaces.create({ name: 'Epic attempt', workingDir: repo });
-    await tasks.syncEpics(workspace.id, [{ ref: 5, kind: 'epic' }]);
+    const tickets = epicTickets();
+    await readyEpicMember(workspace.id, tickets);
     const config = baselineConfig();
     config.verify.epic.preMerge.commands = [{
       id: 'cmd-exit-1',
@@ -420,23 +455,24 @@ describe('epic refresh corrective turn (issue #315)', () => {
         onEpicAttemptChanged: (attempt) => { attemptStates.push(attempt.state); },
       },
     );
-    service.startWorkspace(workspace);
+    const epics = service.startWorkspace(workspace);
 
-    await expect(service.forceIntegrateEpic(workspace.id, 5)).resolves.toEqual({
-      status: 'waiting', reason: 'whole-Epic verification failed; resolver dispatched',
-    });
+    await epics.reconcile(tickets, await tasks.list({ workspaceId: workspace.id }));
+    await waitFor(async () => (paths.length > 0 ? true : undefined));
 
     const [worktreePath] = paths;
     expect(worktreePath).toBe(join(worktreesDir, `epic-${workspace.id}-5`));
     expect(existsSync(worktreePath!)).toBe(true);
     expect(git(repo, 'worktree', 'list')).toContain(worktreePath!);
+    await waitFor(async () => (attemptStates.includes('failed') ? true : undefined));
     expect(attemptStates).toEqual(['running', 'failed']);
   });
 
   it('requeues an escalated Epic with guidance and resets its resolver budget', async () => {
     const workspaces = new WorkspaceService(asyncDb, settingsStore);
     const workspace = await workspaces.create({ name: 'Epic manual resume', workingDir: repo });
-    await tasks.syncEpics(workspace.id, [{ ref: 5, kind: 'epic' }]);
+    const tickets = epicTickets();
+    await readyEpicMember(workspace.id, tickets);
     const config = baselineConfig();
     config.maxAttempts = 1;
     config.verify.epic.preMerge.commands = [{ id: 'cmd-exit-1', command: 'node', args: ['-e', 'process.exit(1)'], env: {}, timeoutSeconds: 10 }];
@@ -453,11 +489,15 @@ describe('epic refresh corrective turn (issue #315)', () => {
         worktreesDir: join(dir, 'worktrees'),
       },
     );
-    service.startWorkspace(workspace);
+    const epics = service.startWorkspace(workspace);
 
-    await expect(service.forceIntegrateEpic(workspace.id, 5)).resolves.toMatchObject({ status: 'escalated' });
-    const escalated = await attempts.currentForEpic({ workspaceId: workspace.id, epicRef: 5 });
-    expect(escalated.state).toBe('escalated');
+    await epics.reconcile(tickets, await tasks.list({ workspaceId: workspace.id }));
+
+    const escalated = await waitFor(async () => {
+      const rows = await attempts.listForEpic({ workspaceId: workspace.id, epicRef: 5 });
+      const row = rows.at(-1);
+      return row?.state === 'escalated' ? row : undefined;
+    });
 
     await expect(service.rejectEpic(workspace.id, 5, 'Keep the public API compatible.', 'fresh')).resolves.toMatchObject({ status: 'waiting' });
     expect(await attempts.get(escalated.id)).toMatchObject({ id: escalated.id, number: escalated.number, state: 'failed', feedback: 'Keep the public API compatible.' });
@@ -467,7 +507,8 @@ describe('epic refresh corrective turn (issue #315)', () => {
   it('reclaims a crashed deterministic Epic checkout before retrying verification', async () => {
     const workspaces = new WorkspaceService(asyncDb, settingsStore);
     const workspace = await workspaces.create({ name: 'Epic attempt recovery', workingDir: repo });
-    await tasks.syncEpics(workspace.id, [{ ref: 5, kind: 'epic' }]);
+    const tickets = epicTickets();
+    await readyEpicMember(workspace.id, tickets);
     const config = baselineConfig();
     const worktreesDir = join(dir, 'worktrees');
     const stale = join(worktreesDir, `epic-${workspace.id}-5`);
@@ -484,12 +525,10 @@ describe('epic refresh corrective turn (issue #315)', () => {
         worktreesDir,
       },
     );
-    service.startWorkspace(workspace);
+    const epics = service.startWorkspace(workspace);
 
-    await expect(service.forceIntegrateEpic(workspace.id, 5)).resolves.toEqual({
-      status: 'integrated',
-      oid: 'unused',
-    });
+    await epics.reconcile(tickets, await tasks.list({ workspaceId: workspace.id }));
+    await waitFor(async () => ((await tasks.epicState(workspace.id, 5)) === 'integrated' ? true : undefined));
 
     expect(existsSync(stale)).toBe(false);
     expect(git(repo, 'worktree', 'list')).not.toContain(stale);

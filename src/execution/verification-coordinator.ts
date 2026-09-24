@@ -281,6 +281,7 @@ export class VerificationCoordinator {
     if (criticEnabled && verdicts.every((entry) => entry.verdict === 'pass')) {
       const criticCwd = run.branch ? this.deps.worktreePathForTask(task) : task.workingDir;
       if (run.branch && critics.length > 0) await indexWorktree(criticCwd);
+      const dirty = run.branch && critics.length > 0 ? await Git.isDirty(criticCwd).catch(() => false) : false;
       await Promise.all(critics.map(async (configuredCritic, index) => {
       const critic = this.buildCriticInput(task, configuredCritic);
       if (!oid) {
@@ -300,6 +301,7 @@ export class VerificationCoordinator {
           cwd: criticCwd,
           verifiedHeadOid: oid,
           ...(baseOid ? { baseOid } : {}),
+          ...(dirty ? { dirty } : {}),
           critic,
           timeoutMs: configuredCritic.timeoutSeconds * 1000,
           fields: driveFields(task, this.deps.urlFor),

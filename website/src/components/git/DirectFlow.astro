@@ -1,0 +1,22 @@
+<figure class="git-diagram" role="img" aria-label="Direct mode: your commit, then two agent commits, then verification passes and there is nothing to merge, then your next commit — all on the same branch, no worktree.">
+  <svg viewBox="0 0 860 130" xmlns="http://www.w3.org/2000/svg">
+    <text x="20" y="36" class="gd-muted">main (your checkout)</text>
+    <line x1="20" y1="60" x2="840" y2="60" stroke="var(--sl-color-gray-4)" stroke-width="3"></line>
+
+    <circle cx="70" cy="60" r="7" fill="var(--sl-color-gray-4)"></circle>
+    <text x="70" y="92" text-anchor="middle" class="gd-muted">your commit</text>
+
+    <circle cx="270" cy="60" r="7" fill="var(--sl-color-accent)"></circle>
+    <text x="270" y="92" text-anchor="middle">agent commit</text>
+
+    <circle cx="470" cy="60" r="7" fill="var(--sl-color-accent)"></circle>
+    <text x="470" y="92" text-anchor="middle">agent commit</text>
+
+    <circle cx="650" cy="60" r="7" fill="var(--paper-done)"></circle>
+    <text x="650" y="92" text-anchor="middle">verify ✓</text>
+    <text x="650" y="114" text-anchor="middle" class="gd-muted">done, nothing to merge</text>
+
+    <circle cx="780" cy="60" r="7" fill="var(--sl-color-gray-4)"></circle>
+    <text x="780" y="92" text-anchor="middle" class="gd-muted">your next commit</text>
+  </svg>
+</figure>

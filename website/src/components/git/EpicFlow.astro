@@ -1,0 +1,36 @@
+<figure class="git-diagram" role="img" aria-label="Epic with worktree Members: the epic branch forks from main. Two Member task branches fork from the epic branch, each commits and passes verification, then merges back in. A Refresh merges a new commit from main into the epic branch. Once the whole Epic passes verification it merges into main and the epic branch is deleted.">
+  <svg viewBox="0 0 860 290" xmlns="http://www.w3.org/2000/svg">
+    <text x="20" y="30" class="gd-muted">main</text>
+    <line x1="20" y1="44" x2="840" y2="44" stroke="var(--sl-color-gray-4)" stroke-width="3"></line>
+    <circle cx="60" cy="44" r="7" fill="var(--sl-color-gray-4)"></circle>
+    <circle cx="340" cy="44" r="7" fill="var(--sl-color-gray-4)"></circle>
+    <text x="340" y="28" text-anchor="middle" class="gd-muted">someone else's commit</text>
+    <circle cx="795" cy="44" r="9" fill="var(--sl-color-accent)" stroke="var(--sl-color-gray-6)" stroke-width="3"></circle>
+    <text x="795" y="24" text-anchor="middle" class="gd-accent">Epic merge</text>
+
+    <path d="M60,44 C100,44 100,120 140,120 L760,120 C785,120 785,44 795,44" stroke="var(--paper-epic)" stroke-width="3" fill="none"></path>
+    <text x="120" y="104" class="gd-epic">epic/42</text>
+    <path d="M340,44 C380,44 380,120 400,120" stroke="var(--sl-color-gray-4)" stroke-width="2" stroke-dasharray="5 4" fill="none"></path>
+    <circle cx="400" cy="120" r="7" fill="var(--paper-epic)"></circle>
+    <text x="410" y="104" class="gd-muted">Refresh</text>
+    <circle cx="320" cy="120" r="7" fill="var(--paper-epic)"></circle>
+    <circle cx="580" cy="120" r="7" fill="var(--paper-epic)"></circle>
+    <circle cx="680" cy="120" r="7" fill="var(--paper-done)"></circle>
+    <text x="680" y="104" text-anchor="middle">Epic verify ✓</text>
+    <text x="820" y="104" text-anchor="middle" class="gd-muted">deleted</text>
+
+    <path d="M140,120 C160,120 160,210 190,210 L300,210 C312,210 312,120 320,120" stroke="var(--sl-color-accent)" stroke-width="3" fill="none"></path>
+    <circle cx="200" cy="210" r="7" fill="var(--sl-color-accent)"></circle>
+    <text x="200" y="238" text-anchor="middle">commit</text>
+    <circle cx="290" cy="210" r="7" fill="var(--paper-done)"></circle>
+    <text x="290" y="238" text-anchor="middle">verify ✓</text>
+    <text x="245" y="262" text-anchor="middle" class="gd-accent">harmonic/task-51</text>
+
+    <path d="M400,120 C420,120 420,210 450,210 L560,210 C572,210 572,120 580,120" stroke="var(--sl-color-accent)" stroke-width="3" fill="none"></path>
+    <circle cx="460" cy="210" r="7" fill="var(--sl-color-accent)"></circle>
+    <text x="460" y="238" text-anchor="middle">commit</text>
+    <circle cx="550" cy="210" r="7" fill="var(--paper-done)"></circle>
+    <text x="550" y="238" text-anchor="middle">verify ✓</text>
+    <text x="505" y="262" text-anchor="middle" class="gd-accent">harmonic/task-52</text>
+  </svg>
+</figure>

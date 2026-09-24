@@ -117,7 +117,7 @@ describe('derived-rollup pagination (epics, maps)', () => {
     vi.spyOn(server.app.ctx.trackerManager, 'listEpics').mockResolvedValue([
       epic(1, 'Parallel operator UI'),
       epic(2, 'Async DB migration'),
-      epic(3, 'Operator force-integrate'),
+      epic(3, 'Operator reject with guidance'),
     ]);
 
     const res = await server.api('GET', `/api/workspaces/${workspaceId}/epics?q=operator`);

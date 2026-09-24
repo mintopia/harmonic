@@ -39,6 +39,12 @@ the order you set. It's off until you configure it, and when on it's an
 additional gate: the change merges only if every check passes. Set it up in
 [Settings & overrides](/harmonic/run/settings/).
 
+Verification runs against the live worktree, including any work the agent
+hasn't committed yet, and critics read that same working tree. Harmonic
+only commits leftover changes after verification passes, right before the
+merge. See [Branches & worktrees](/harmonic/work/branches-and-worktrees/)
+for what that merge looks like.
+
 ## Tickets you queue by hand
 
 A one-off task you create yourself works differently: it stops for **you**.

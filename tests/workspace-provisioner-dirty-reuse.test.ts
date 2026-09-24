@@ -55,25 +55,17 @@ describe('WorkspaceProvisioner.prepareWorkspace reusing a worktree left dirty by
     rmSync(worktreesDir, { recursive: true, force: true });
   });
 
-  it('commits leftover uncommitted work onto the branch so the rebase step no longer refuses a dirty tree (issue: killed attempt skips finalizeWorkspace)', async () => {
+  it('reuses a worktree left dirty by a killed attempt without committing the leftover work (the start-of-Attempt rebase autostashes it instead)', async () => {
     const task = await tasks.create({ prompt: 'recover me', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
     const branch = `harmonic/task-${task.id}`;
     const run = await attempts.update((await attempts.create(task.id)).id, { branch, baseBranch: 'main' });
     const worktreePath = join(worktreesDir, `task-${task.id}`);
 
-    // Simulate a prior attempt that provisioned the worktree and got killed
-    // before finalizeWorkspace's commitAll ran.
+    // Simulate a prior attempt that provisioned the worktree and was killed mid-turn.
     git(repo, 'worktree', 'add', '-b', branch, worktreePath, 'main');
     writeFileSync(join(worktreePath, 'README.md'), 'uncommitted work from the killed attempt\n');
     expect(git(worktreePath, 'status', '--porcelain')).not.toBe('');
-
-    // Base branch advances externally, so a real rebase has something to replay.
-    writeFileSync(join(repo, 'unrelated.txt'), 'advanced on main\n');
-    git(repo, 'add', '-A');
-    git(repo, 'commit', '-m', 'main advanced externally');
-
-    const rebaseFailsOnDirtyTree = () => git(worktreePath, 'rebase', 'main');
-    expect(rebaseFailsOnDirtyTree).toThrow();
+    const dirtyOid = git(worktreePath, 'rev-parse', 'HEAD');
 
     const provisioner = new WorkspaceProvisioner({
       attempts,
@@ -88,15 +80,12 @@ describe('WorkspaceProvisioner.prepareWorkspace reusing a worktree left dirty by
     const workspace = await provisioner.prepareWorkspace(task, run, true);
 
     expect(workspace.cwd).toBe(worktreePath);
-    expect(git(worktreePath, 'status', '--porcelain')).toBe('');
-    expect(git(worktreePath, 'log', '-1', '--format=%s')).toBe(`harmonic: task ${task.id} recovered leftover work`);
-    const recoveredOid = git(worktreePath, 'rev-parse', 'HEAD');
-
-    expect(() => git(worktreePath, 'rebase', 'main')).not.toThrow();
-    expect(git(worktreePath, 'log', '--format=%s').split('\n')).toContain('main advanced externally');
+    expect(git(worktreePath, 'status', '--porcelain')).not.toBe('');
+    expect(git(worktreePath, 'rev-parse', 'HEAD')).toBe(dirtyOid);
+    expect(git(worktreePath, 'diff', 'README.md')).toContain('uncommitted work from the killed attempt');
 
     const events = (await attempts.listEvents(run.id)).map((e) => e.payload as Record<string, unknown>);
-    expect(events).toContainEqual({ event: 'work-committed', oid: recoveredOid, reason: 'recovered' });
+    expect(events.find((e) => e.event === 'work-committed')).toBeUndefined();
   });
 });
 
@@ -250,18 +239,21 @@ describe('WorkspaceProvisioner git-visibility events', () => {
     expect(existsSync(workspace.cwd)).toBe(true);
   });
 
-  it('finalizeWorkspace records work-committed with the Attempt number for uncommitted work at attempt end', async () => {
+  it('finalizeWorkspace leaves uncommitted work at attempt end uncommitted (no auto-commit)', async () => {
     const task = await tasks.create({ prompt: 'p', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
     const run = await attempts.create(task.id);
     const provisionerInstance = provisioner();
     const workspace = await provisionerInstance.prepareWorkspace(task, run, false);
     writeFileSync(join(workspace.cwd, 'work.txt'), 'uncommitted\n');
+    const headBefore = git(workspace.cwd, 'rev-parse', 'HEAD');
 
     await provisionerInstance.finalizeWorkspace(task, run, 3, workspace);
 
+    const branch = (await attempts.get(run.id)).branch;
+    expect(branch).toBeTruthy();
+    expect(git(repo, 'rev-parse', branch!)).toBe(headBefore);
     const events = await eventsFor(run.id);
-    const committed = events.find((e) => e.event === 'work-committed');
-    expect(committed).toMatchObject({ reason: 'attempt-end', attempt: 3 });
+    expect(events.find((e) => e.event === 'work-committed')).toBeUndefined();
   });
 
   it('cleanupClosed falls back to the Task\'s own event log when there is no Attempt to attach worktree/branch cleanup to (owner decision: task_events)', async () => {

@@ -351,7 +351,6 @@ export const api: typeof RealApi = {
   epics: (_workspaceId: number, _opts?: { limit?: number; offset?: number; q?: string }) => ok({ epics: [f.epic], total: 1 }),
   epic: (_workspaceId: number, _epicRef: number) => ok(f.epic),
   epicAttempts: (_workspaceId: number, _epicRef: number) => ok({ attempts: [] }),
-  forceIntegrateEpic: (_workspaceId: number, _epicRef: number) => ok<EpicIntegrateOutcome>({ status: 'integrated', oid: 'a1b2c3d' }),
   epicDiffFiles: (_workspaceId: number, _epicRef: number) => ok({ files: f.diffFiles, total: f.diffFiles.length }),
   maps: (_opts?: { workspaceId?: number; limit?: number; offset?: number; q?: string }) => ok({ maps: [], total: 0 }),
 };

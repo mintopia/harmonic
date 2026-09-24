@@ -28,7 +28,7 @@ export function Gate({
   onGoToCurrent: (attemptId: number) => void;
 }) {
   if (model.kind === 'none') {
-    if (taskActions(task.state).length === 0) return null;
+    if (taskActions(task.state, task.wallClockDeadline).length === 0) return null;
     return (
       <div className={WRAP}>
         <TaskActions task={task} variant="footer" onEdit={onEdit} onChanged={onChanged} />

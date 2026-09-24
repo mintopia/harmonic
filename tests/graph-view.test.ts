@@ -58,6 +58,7 @@ const task = ({
   contextWindow: null,
   verifiedRef: null,
   hasCandidate: false,
+  wallClockDeadline: null,
   skipReason: null,
 });
 

@@ -208,6 +208,8 @@ const taskSchema = taskWithDepsSchema
     verifiedRef: z.string().nullable().meta({ example: 'refs/harmonic/direct/attempt-9137' }),
     /** Whether the branch holds commits ahead of base an Accept could merge. */
     hasCandidate: z.boolean().meta({ example: true }),
+    /** Epoch ms; null unless working with a budgeted running Attempt. */
+    wallClockDeadline: z.number().nullable().meta({ example: 1784032620000 }),
   })
   .meta({ id: 'Task' });
 

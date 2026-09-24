@@ -101,17 +101,14 @@ describe('mcp server & scoped keys', () => {
     await expect(mcpClient(server, key.body.token)).rejects.toThrow();
   });
 
-  it('falls back to the operator cookie credential when the Bearer is not an operator key (#276)', async () => {
+  it('falls back to the session cookie credential when the Bearer is invalid or insufficiently scoped (#276)', async () => {
     const runKey = await server.app.ctx.auth.createKey('run-1', { scope: 'attempt', attemptId: 1 });
     const readKey = await server.app.ctx.auth.createKey('read-1', { scope: 'read' });
 
     for (const bearer of ['adk_bogus', runKey.token, readKey.token, token]) {
       const cookieClient = await mcpClient(server, bearer, { headers: { cookie: `harmonic_session=${server.sessionToken}` } });
-      const cookieResult: any = await cookieClient.callTool({
-        name: 'force_integrate_epic',
-        arguments: { workspaceId: 999_999_999, epicRef: 1 },
-      });
-      expect(cookieResult.content[0].text).not.toContain('operator-only');
+      const cookieResult: any = await cookieClient.callTool({ name: 'list_tasks', arguments: {} });
+      expect(cookieResult.isError).toBeFalsy();
       await cookieClient.close();
     }
   });

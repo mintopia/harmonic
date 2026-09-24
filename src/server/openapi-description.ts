@@ -11,10 +11,7 @@ agent task surface as MCP tools (task CRUD, dependencies, queue/cancel,
 attempts and events). Accept/Reject are human-only and are never exposed as
 MCP tools — a verifier's pass is the accept (#140, ADR-0021). An attempt-scoped
 Attempt Key may call \`/mcp\` regardless of the REST restrictions noted per
-endpoint below. \`force_integrate_epic\` is an operator-only tool, the same
-footing as Accept/Reject: an Attempt Key can call \`/mcp\` but gets a \`forbidden\`
-error from it specifically — only an operator API key (\`scope: 'full'\`) or
-an authenticated session may call it.
+endpoint below.
 
 ## WebSocket
 

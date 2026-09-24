@@ -10,8 +10,8 @@ not a type error. Do not deviate without messaging the orchestrator.
 - `GET /api/workspaces/:workspaceId/epics` → `{ epics: Epic[] }`
 - `GET /api/workspaces/:workspaceId/epics/:epicRef` → `Epic` (404 if no such derived Epic)
 
-Both are **operator-scope only** (mirror the force-integrate allowlist: not in the
-read-scope or scoped-key allowlists → require a full operator credential).
+Both are **operator-scope only** (not in the read-scope or scoped-key
+allowlists → require a full operator credential).
 
 ## Types
 
@@ -61,15 +61,6 @@ interface Epic {
   memberCount: number;         // members.length
 }
 ```
-
-## Force-integrate binding (already exists server-side)
-
-`POST /api/workspaces/:workspaceId/epics/:epicRef/force-integrate` →
-`EpicLandOutcome` = discriminated union on `status`:
-`{status:'integrated', oid} | {status:'blocked', reason} | {status:'waiting', reason}
-| {status:'escalated', reason} | {status:'noop', reason} | {status:'busy'}`.
-
-Add `api.forceLandEpic(workspaceId, epicRef)` in `web/src/api.ts`.
 
 ## Sourcing notes (server)
 

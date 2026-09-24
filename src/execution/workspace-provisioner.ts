@@ -183,20 +183,6 @@ export class WorkspaceProvisioner {
       await this.record(run, { event: 'worktree-discarded', worktree });
     }
 
-    // A killed prior attempt skips finalizeWorkspace's commitAll, so a reused
-    // worktree can still be dirty here; the rebase step below refuses to run
-    // on a dirty tree, so snapshot any leftovers first (no-op if clean).
-    if (existsSync(path)) {
-      const recovered = await attempted(() => Git.commitAll(path, `harmonic: task ${task.id} recovered leftover work`), {
-        op: 'runner.prepareWorkspace.commitAll',
-        level: 'error',
-        context: { taskId: task.id, attemptId: run.id, path },
-      });
-      if (recovered.ok && recovered.value !== null) {
-        await this.record(run, { event: 'work-committed', oid: recovered.value, reason: 'recovered' });
-      }
-    }
-
     if (resume) {
       const persisted = await this.deps.attempts.get(run.id);
       const branch = persisted.branch ?? this.branchForTask(task);
@@ -250,16 +236,6 @@ export class WorkspaceProvisioner {
     if (!workspace.worktree) return;
     const { repoDir, path } = workspace.worktree;
     const worktree = basename(path);
-    const committed = await attempted(() => Git.commitAll(path, `harmonic: task ${task.id} attempt ${attemptNumber}`), {
-      op: 'runner.finalizeWorkspace.commitAll',
-      level: 'error',
-      context: { taskId: task.id, attemptId: run.id, attemptNumber, path },
-    });
-    if (committed.ok) {
-      if (committed.value !== null) await this.record(run, { event: 'work-committed', oid: committed.value, reason: 'attempt-end', attempt: attemptNumber });
-    } else {
-      await this.record(run, { event: 'commit-failed', error: committed.message });
-    }
     const sessionRowId = (await this.deps.attempts.get(run.id)).sessionRowId;
     let retained = false;
     if (sessionRowId != null) {

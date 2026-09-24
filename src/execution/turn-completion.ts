@@ -40,6 +40,7 @@ export interface TurnCompletionDeps {
   diffSnapshotFor: (
     task: TaskRow, attemptId: number,
   ) => Promise<Pick<AttemptRow, 'stat' | 'diffBaseOid' | 'diffHeadOid'>>;
+  worktreePathForTask: (task: TaskRow) => string;
   updateStep: (
     taskId: number, id: number, patch: Parameters<AttemptStore['updateStep']>[1],
   ) => Promise<Awaited<ReturnType<AttemptStore['updateStep']>>>;
@@ -263,7 +264,7 @@ export class TurnCompletion {
     result: PromptResult;
     record: RunEventRecorder;
   }): Promise<{ connectionGone: boolean; result: PromptResult; implementationHead: string | null; noChangeFinishHead: string | null }> {
-    const { task, run, workspace, active, attemptNumber, escalating, stoppedShort, record } = input;
+    const { run, workspace, active, escalating, stoppedShort, record } = input;
     let { connectionGone, result } = input;
     let implementationHead: string | null = null;
     let noChangeFinishHead: string | null = null;
@@ -277,19 +278,12 @@ export class TurnCompletion {
       if (turn.result) result = turn.result;
       active.idle = true;
     }
-    if (workspace.worktree && !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
-      const committed = await attempted(() => Git.commitAll(workspace.cwd, `harmonic: task ${task.id} attempt ${attemptNumber}`), {
-        op: 'runner.finishDrivenTurn.commitAll',
-        level: 'error',
-        context: { taskId: task.id, attemptId: run.id, attemptNumber },
-      });
-      if (committed.ok && committed.value !== null) record('lifecycle', { event: 'work-committed', oid: committed.value, reason: 'turn-end' });
-    }
+    const dirty = !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false));
     const [head, base] = await Promise.all([
       Git.revParse(workspace.cwd, 'HEAD').catch(() => null),
       workspace.baseRev ? Git.revParse(workspace.cwd, workspace.baseRev).catch(() => null) : Promise.resolve(null),
     ]);
-    if (head && head !== base) {
+    if (head && (head !== base || dirty)) {
       implementationHead = head;
       await this.deps.attempts.update(run.id, { verifiedHeadOid: head });
     } else if (run.verifiedHeadOid) {
@@ -311,9 +305,29 @@ export class TurnCompletion {
     advanceTask: (to: 'verifying' | 'merging') => Promise<void>;
   }): Promise<TurnOutcome> {
     const { task, run, record, signal, patch, autoDriven, noChange, advanceTask } = input;
+    const worktreeMerge = task.isolationMode === 'worktree';
+    if (worktreeMerge) {
+      const cwd = this.deps.worktreePathForTask(task);
+      if (await Git.isDirty(cwd).catch(() => false)) {
+        const committed = await attempted(() => Git.commitAll(cwd, `harmonic: task ${task.id} attempt ${run.number}`), {
+          op: 'runner.mergeAndSettle.commitAll',
+          level: 'error',
+          context: { taskId: task.id, attemptId: run.id, attemptNumber: run.number },
+        });
+        if (!committed.ok) {
+          const reason = `could not commit outstanding work before merge: ${committed.message}`;
+          record('lifecycle', { event: 'escalated', reason });
+          await this.deps.settleEscalated(task, run, reason, patch);
+          return { kind: 'terminal' };
+        }
+        if (committed.value !== null) {
+          record('lifecycle', { event: 'work-committed', oid: committed.value, reason: 'pre-merge' });
+          await this.deps.attempts.update(run.id, { verifiedHeadOid: committed.value });
+        }
+      }
+    }
     const diff = await this.deps.diffSnapshotFor(task, run.id);
     const current = await this.deps.attempts.get(run.id);
-    const worktreeMerge = task.isolationMode === 'worktree';
     const deps = this.deps.mergeCoordinator.mergePolicyDeps(task, run, record, signal, patch);
     const mergeWorktreeBranch = async (): Promise<boolean> => {
       await this.deps.taskService.setMergeStatus(task.id, 'merging');

@@ -1,0 +1,50 @@
+<figure class="git-diagram" role="img" aria-label="Worktree-mode task: the branch forks from main when Attempt 1 starts. Attempt 1 rebases, commits, has uncommitted work, then fails verification. Attempt 2 rebases the branch onto the moved base with autostash, commits, passes verification, Harmonic commits leftovers, then merges into main and deletes the branch.">
+  <svg viewBox="0 0 860 310" xmlns="http://www.w3.org/2000/svg">
+    <text x="20" y="36" class="gd-muted">main</text>
+    <line x1="20" y1="50" x2="840" y2="50" stroke="var(--sl-color-gray-4)" stroke-width="3"></line>
+
+    <path d="M60,50 C100,50 100,140 140,140 L355,140" stroke="var(--sl-color-accent)" stroke-width="3" fill="none" opacity="0.4"></path>
+    <text x="120" y="92" class="gd-accent" opacity="0.6">harmonic/task-42 (Attempt 1)</text>
+
+    <path d="M340,50 C380,50 380,200 420,200 L750,200 C780,200 780,50 790,50" stroke="var(--sl-color-accent)" stroke-width="3" fill="none"></path>
+    <text x="440" y="186" class="gd-accent">harmonic/task-42 (rebased)</text>
+
+    <path d="M285,140 C330,140 360,200 400,200" stroke="var(--sl-color-accent)" stroke-width="1.5" stroke-dasharray="4 4" fill="none"></path>
+    <text x="330" y="228" class="gd-muted" text-anchor="middle">autostash</text>
+
+    <circle cx="60" cy="50" r="7" fill="var(--sl-color-gray-4)"></circle>
+    <circle cx="340" cy="50" r="7" fill="var(--sl-color-gray-4)"></circle>
+    <text x="340" y="34" text-anchor="middle" class="gd-muted">someone else's commit</text>
+    <circle cx="700" cy="50" r="7" fill="var(--sl-color-gray-4)"></circle>
+    <text x="700" y="34" text-anchor="middle" class="gd-muted">and another</text>
+    <circle cx="790" cy="50" r="9" fill="var(--sl-color-accent)" stroke="var(--sl-color-gray-6)" stroke-width="3"></circle>
+    <text x="790" y="30" text-anchor="middle" class="gd-accent">merge</text>
+    <text x="800" y="86" class="gd-muted">branch</text>
+    <text x="800" y="100" class="gd-muted">deleted</text>
+
+    <g opacity="0.45">
+      <circle cx="150" cy="140" r="7" fill="var(--sl-color-accent)"></circle>
+      <text x="150" y="124" text-anchor="middle">rebase</text>
+      <circle cx="230" cy="140" r="7" fill="var(--sl-color-accent)"></circle>
+      <text x="230" y="124" text-anchor="middle">commit</text>
+      <circle cx="285" cy="140" r="7" fill="var(--sl-color-gray-6)" stroke="var(--sl-color-accent)" stroke-width="2.5"></circle>
+      <circle cx="340" cy="140" r="7" fill="var(--paper-fail)"></circle>
+      <text x="340" y="124" text-anchor="middle">verify ✗</text>
+    </g>
+
+    <circle cx="440" cy="200" r="7" fill="var(--sl-color-accent)"></circle>
+    <text x="440" y="228" text-anchor="middle">commit′</text>
+    <circle cx="540" cy="200" r="7" fill="var(--sl-color-accent)"></circle>
+    <text x="540" y="228" text-anchor="middle">commit</text>
+    <circle cx="640" cy="200" r="7" fill="var(--paper-done)"></circle>
+    <text x="640" y="228" text-anchor="middle">verify ✓</text>
+    <circle cx="730" cy="200" r="7" fill="var(--sl-color-accent)"></circle>
+    <text x="730" y="228" text-anchor="middle">commit</text>
+    <text x="730" y="244" text-anchor="middle" class="gd-muted">leftovers</text>
+
+    <path d="M140,268 v8 h300 v-8" stroke="var(--sl-color-gray-5)" fill="none"></path>
+    <text x="290" y="288" text-anchor="middle" class="gd-muted">Attempt 1</text>
+    <path d="M440,268 v8 h310 v-8" stroke="var(--sl-color-gray-5)" fill="none"></path>
+    <text x="595" y="288" text-anchor="middle" class="gd-muted">Attempt 2</text>
+  </svg>
+</figure>

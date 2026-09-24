@@ -298,38 +298,6 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
   );
 
-  app.post(
-    '/workspaces/:workspaceId/epics/:epicRef/force-integrate',
-    {
-      schema: {
-        tags: ['Epics'],
-        description:
-          "Force-integrate an Epic's ready subset: merge whatever is folded into its integration branch into the " +
-          'default branch now, bypassing the all-members-completed gate — but not Verification, which still ' +
-          'gates the merge. Operator only.',
-        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
-        params: epicParamsSchema,
-        response: {
-          200: epicIntegrateOutcomeSchema.describe("The force-integrate attempt's outcome."),
-          404: errorResponse('No Workspace has that id.'),
-          409: errorResponse('No active whole-Epic integrate coordinator for this Workspace (tracking is off or the loop has not started).'),
-        },
-      },
-    },
-    async (req) => {
-      await ctx.workspaces.assertExists(req.params.workspaceId);
-      await ctx.upgrade.assertManualLaunchAllowed();
-      const outcome = await ctx.trackerManager.forceIntegrateEpic(req.params.workspaceId, req.params.epicRef);
-      if (!outcome) {
-        throw new DomainError(
-          'conflict',
-          `no active whole-Epic integrate coordinator for workspace ${req.params.workspaceId} (tracking is off or the loop has not started)`,
-        );
-      }
-      return outcome;
-    },
-  );
-
   app.get(
     '/workspaces/:workspaceId/epics/:epicRef/diff/files',
     {
