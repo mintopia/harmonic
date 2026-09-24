@@ -17,11 +17,13 @@ import {
   EpicRefresh,
   integrationBranchName,
   parseIntegrationBranch,
+  reduceMemberState,
   type EpicIntegrateOutcome,
   type EpicRefreshResolveDispatchOutcome,
   type EpicRefreshTarget,
   type EpicResolve,
 } from '../execution/epic-coordinator.js';
+import type { MemberMergeState } from '../domain/epic-integrate-decision.js';
 import type { EpicTimelineStep } from '../domain/epic-merge-events.js';
 import { EpicWorktreePool } from '../execution/epic-worktree-pool.js';
 import { Git } from '../execution/git.js';
@@ -65,7 +67,6 @@ export type { EpicIntegrateOutcome };
 export interface EpicService {
   startWorkspace(workspace: WorkspaceRow): EpicIntegrationSync;
   stopWorkspace(workspaceId: number): void;
-  forceIntegrateEpic(workspaceId: number, epicRef: number): Promise<EpicIntegrateOutcome | null>;
   rejectEpic(workspaceId: number, epicRef: number, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null>;
   epicBaseNotReady(task: TaskRow): Promise<boolean>;
   refreshAfterDefaultBranchAdvance(workingDir: string, defaultBranch: string): Promise<void>;
@@ -246,13 +247,13 @@ export class TrackerEpicService implements EpicService {
 
   stopWorkspace(workspaceId: number): void { this.entries.delete(workspaceId); }
 
-  async forceIntegrateEpic(workspaceId: number, epicRef: number): Promise<EpicIntegrateOutcome | null> {
-    const entry = this.entries.get(workspaceId);
-    if (!entry) return null;
-    if (entry.epics.isInPlace(epicRef, await this.tasks.list({ workspaceId }))) {
-      return { status: 'noop', reason: 'direct-mode epic completes in place; nothing to integrate' };
-    }
-    return entry.epicIntegrate?.submit({ ref: epicRef, members: [], memberRefs: entry.epics.membersOf(epicRef) }, { force: true }) ?? null;
+  private async currentMemberStates(workspaceId: number, memberRefs: readonly number[]): Promise<MemberMergeState[]> {
+    const byRef = new Map<number, TaskRow>();
+    for (const row of await this.tasks.list({ workspaceId })) if (row.trackerRef != null) byRef.set(row.trackerRef, row);
+    return Promise.all(memberRefs.map(async (ref) => {
+      const task = byRef.get(ref);
+      return reduceMemberState(task ? await this.tasks.get(task.id) : undefined);
+    }));
   }
 
   async rejectEpic(workspaceId: number, epicRef: number, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null> {
@@ -279,7 +280,9 @@ export class TrackerEpicService implements EpicService {
         ? { id: attempt.sessionId, rowId: attempt.sessionRowId }
         : undefined,
     );
-    return coordinator.submit({ ref: epicRef, members: [], memberRefs: entry.epics.membersOf(epicRef) }, { force: true });
+    const memberRefs = entry.epics.membersOf(epicRef);
+    const members = await this.currentMemberStates(workspaceId, memberRefs);
+    return coordinator.submit({ ref: epicRef, members, memberRefs });
   }
 
   async epicBaseNotReady(task: TaskRow): Promise<boolean> {

@@ -109,8 +109,8 @@ export function excludeEpicDrivers<T extends Pick<Task, 'trackerRef' | 'isEpic'>
 }
 
 /**
- * Force-integrate's six-state discriminated union (already exists server-side;
- * `POST …/epics/:ref/force-integrate`).
+ * A whole-Epic integrate attempt's outcome, shared by the automatic poll
+ * trigger and `POST …/epics/:ref/reject`.
  */
 export type EpicIntegrateOutcome =
   | { status: 'integrated'; oid: string }
@@ -176,15 +176,14 @@ export function epicByTaskId(epics: Epic[]): Map<number, Epic> {
 }
 
 /**
- * Maps a force-integrate result to a plain sentence and a tone for the transient
- * banner.
+ * Maps a whole-Epic integrate outcome to a plain sentence and a tone for the
+ * transient banner.
  *
  * - `integrated` → ok: it reached the default branch.
  * - `noop` → info: nothing to do, not a problem (no integration branch).
  * - `waiting` → warn: a transient condition (default branch busy/detached);
- *   the operator should retry shortly, same as `busy`.
- * - `blocked` → bad: the integrate gate wouldn't open — "shouldn't normally
- *   happen under force", so it reads as a real problem, not a retry hint.
+ *   retry shortly, same as `busy`.
+ * - `blocked` → bad: a member cannot merge — a real problem, not a retry hint.
  * - `escalated` → bad: whole-Epic verification failed — nothing integrated,
  *   it's the operator's now.
  * - `busy` → warn: an integrate is already in flight; retry later. No `reason`

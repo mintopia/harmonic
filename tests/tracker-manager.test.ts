@@ -530,7 +530,6 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     const fakeEpicService: EpicService = {
       startWorkspace: () => ({ reconcile: async () => { reconciled.push(1); } }),
       stopWorkspace: () => {},
-      forceIntegrateEpic: async () => null,
       rejectEpic: async () => null,
       epicBaseNotReady: async () => false,
       refreshAfterDefaultBranchAdvance: async () => {},

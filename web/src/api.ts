@@ -347,8 +347,6 @@ export const api = {
     request<Epic>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}`),
   epicAttempts: (workspaceId: number, epicRef: number) =>
     request<{ attempts: EpicAttempt[] }>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/attempts`),
-  forceIntegrateEpic: (workspaceId: number, epicRef: number) =>
-    request<EpicIntegrateOutcome>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/force-integrate`),
   epicDiffFiles: (workspaceId: number, epicRef: number) =>
     request<{ files: DiffFile[]; total: number }>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/diff/files`),
 

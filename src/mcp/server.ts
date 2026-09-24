@@ -11,23 +11,14 @@ const taskId = { taskId: z.number().int().positive().describe('Task id') };
 /**
  * The agent-facing MCP surface: task CRUD, dependencies, queue/cancel, and
  * read access to Attempts and Attempt events. Built per request (stateless
- * streamable HTTP). `opts.operator` gates the operator-only tools
- * (e.g. `force_integrate_epic`) and defaults to `false`, so an unspecified
- * caller fails closed.
+ * streamable HTTP).
  */
-export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {}): McpServer {
-  const operator = opts.operator ?? false;
+export function buildMcpServer(ctx: AppContext): McpServer {
   const server = new McpServer({ name: 'harmonic', version: '0.1.0' });
 
   const json = (value: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],
   });
-
-  const requireOperator = () => {
-    if (!operator) {
-      throw new DomainError('forbidden', 'operator-only: this action requires an operator credential');
-    }
-  };
 
   const wrapAsync = <A, R>(fn: (args: A) => Promise<R>) => {
     return async (args: A) => {
@@ -211,34 +202,6 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
     wrapAsync(async ({ taskId, reason }) => {
       await ctx.tasks.get(taskId); // 404s a bad id via DomainError
       return { acknowledged: true, running: ctx.runner.markEscalate(taskId, reason) };
-    }),
-  );
-
-  server.registerTool(
-    'force_integrate_epic',
-    {
-      description:
-        "Operator only. Force-integrate an Epic's ready subset: merge whatever is folded into its integration branch " +
-        'into the default branch now, bypassing the all-members-completed gate — but not Verification, which ' +
-        'still gates the merge (a failing whole-Epic Verification still escalates rather than merging). Returns ' +
-        'the merge attempt outcome, or a forbidden/not-found domain error when tracking is off for the Workspace.',
-      inputSchema: {
-        workspaceId: z.number().int().positive().describe('The owning Workspace id'),
-        epicRef: z.number().int().positive().describe("The Epic's tracker ref"),
-      },
-    },
-    wrapAsync(async ({ workspaceId, epicRef }) => {
-      requireOperator();
-      await ctx.upgrade.assertManualLaunchAllowed();
-      await ctx.workspaces.get(workspaceId); // 404s an unknown Workspace before touching the tracker
-      const outcome = await ctx.trackerManager.forceIntegrateEpic(workspaceId, epicRef);
-      if (!outcome) {
-        throw new DomainError(
-          'conflict',
-          `no active whole-Epic integrate coordinator for workspace ${workspaceId} (tracking is off or the loop has not started)`,
-        );
-      }
-      return outcome;
     }),
   );
 
