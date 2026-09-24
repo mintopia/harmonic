@@ -28,8 +28,9 @@ whole instance:
 - its name and folder,
 - whether its tracker is on and how often it polls,
 - whether the Auto-Runner is on for it,
-- and its defaults for new tickets (harness, model, isolation, priority)
-  and how many agents it may run at once.
+- and its defaults for new tickets (harness, model,
+  [isolation](/harmonic/work/branches-and-worktrees/), priority) and how
+  many agents it may run at once.
 
 **Per ticket** — override any of those defaults for a single ticket when
 it needs something different.

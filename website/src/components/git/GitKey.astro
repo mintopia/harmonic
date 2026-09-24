@@ -1,0 +1,31 @@
+---
+interface Props {
+  /** Include the Epic-branch swatch (diagrams 2-4). Default true. */
+  epic?: boolean;
+}
+const { epic = true } = Astro.props as Props;
+---
+
+<figure class="git-diagram" role="img" aria-label={`Key: gray dot is someone else's commit, teal dot is a Harmonic or agent commit${epic ? ', purple dot is an Epic commit' : ''}, hollow dot is uncommitted or temporary, red and green dots are verification fail and pass.`}>
+  <svg viewBox="0 0 860 40" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="20" cy="20" r="7" fill="var(--sl-color-gray-4)"></circle>
+    <text x="34" y="24" class="gd-muted">someone else's</text>
+
+    <circle cx="170" cy="20" r="7" fill="var(--sl-color-accent)"></circle>
+    <text x="184" y="24" class="gd-muted">{epic ? 'task commit' : "Harmonic or agent commit"}</text>
+
+    {epic && (
+      <>
+        <circle cx="300" cy="20" r="7" fill="var(--paper-epic)"></circle>
+        <text x="314" y="24" class="gd-muted">Epic</text>
+      </>
+    )}
+
+    <circle cx={epic ? 380 : 440} cy="20" r="7" fill="var(--sl-color-gray-6)" stroke="var(--sl-color-accent)" stroke-width="2.5"></circle>
+    <text x={epic ? 394 : 454} y="24" class="gd-muted">{epic ? 'uncommitted / temporary' : 'uncommitted work'}</text>
+
+    <circle cx={epic ? 590 : 610} cy="20" r="7" fill="var(--paper-fail)"></circle>
+    <circle cx={epic ? 608 : 628} cy="20" r="7" fill="var(--paper-done)"></circle>
+    <text x={epic ? 622 : 642} y="24" class="gd-muted">verify fail / pass</text>
+  </svg>
+</figure>
