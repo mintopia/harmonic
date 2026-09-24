@@ -594,9 +594,9 @@ describe('EpicLifecycle whole-Epic integrate trigger (issue #161)', () => {
   });
 
   class FakeIntegrate implements EpicIntegrateTrigger {
-    readonly calls: { ref: number; members: MemberMergeState[]; force: boolean }[] = [];
-    async submit(target: { ref: number; members: MemberMergeState[] }, opts?: { force?: boolean }) {
-      this.calls.push({ ref: target.ref, members: target.members, force: opts?.force ?? false });
+    readonly calls: { ref: number; members: MemberMergeState[] }[] = [];
+    async submit(target: { ref: number; members: MemberMergeState[] }) {
+      this.calls.push({ ref: target.ref, members: target.members });
       return { status: 'noop' as const };
     }
   }
@@ -620,7 +620,7 @@ describe('EpicLifecycle whole-Epic integrate trigger (issue #161)', () => {
 
     await coord.reconcile(tickets, mirrored);
 
-    expect(trigger.calls).toEqual([{ ref: 10, members: ['completed', 'completed'], force: false }]);
+    expect(trigger.calls).toEqual([{ ref: 10, members: ['completed', 'completed'] }]);
   });
 
   it('reduces an escalated member to blocked in the integrate attempt', async () => {
@@ -669,7 +669,7 @@ describe('EpicLifecycle whole-Epic integrate trigger (issue #161)', () => {
 
     await coord.reconcile(tickets, mirrored);
 
-    expect(trigger.calls).toEqual([{ ref: 10, members: ['completed', 'completed'], force: false }]);
+    expect(trigger.calls).toEqual([{ ref: 10, members: ['completed', 'completed'] }]);
   });
 
   it('does not offer a closed Epic with no integration branch (nothing to fold)', async () => {
@@ -949,18 +949,5 @@ describe('EpicLifecycle direct-mode Epics (isolationMode "direct", ADR-0001 dire
     await coord.reconcile(tickets, mirrored);
 
     expect(refresh.calls).toEqual([]);
-  });
-
-  it('force-integrate on an in-place Epic returns noop and never touches the coordinator/git', async () => {
-    const tickets = epicTickets();
-    const mirrored = await mscan(tickets);
-    const workspace = (await allWorkspaces(asyncDb, settingsStore)()).find((w) => w.id === wsId)!;
-    const service = new TrackerEpicService(tasks, async () => [workspace], {});
-    const epics = service.startWorkspace(workspace);
-    await epics.reconcile(tickets, mirrored);
-
-    const outcome = await service.forceIntegrateEpic(wsId, 10);
-
-    expect(outcome).toEqual({ status: 'noop', reason: 'direct-mode epic completes in place; nothing to integrate' });
   });
 });

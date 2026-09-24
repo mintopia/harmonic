@@ -7,7 +7,7 @@ import { type Epic } from '../src/domain/epic-view.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import { type PostMergeHook } from '../src/execution/branch-merge.js';
-import { EpicCoordinator, type EpicGit, type EpicIntegrate, type EpicIntegrateOutcome, integrationBranchName } from '../src/execution/epic-coordinator.js';
+import { EpicCoordinator, type EpicGit, type EpicIntegrate, integrationBranchName } from '../src/execution/epic-coordinator.js';
 import { type MergePolicyDeps, type MergePolicyOutcome, type PostMergeCheckResult, runMergePolicy } from '../src/execution/merge-policy.js';
 import { Runner } from '../src/execution/runner.js';
 import { type AttemptUsage } from '../src/execution/usage.js';
@@ -17,8 +17,6 @@ import { closeIntegratedEpic, recordAndCloseIntegratedEpic } from '../src/tracke
 import { TrackerPollerManager } from '../src/tracker/manager.js';
 import { type VerificationDecision } from '../src/verification/combine.js';
 import { allWorkspaces, captureRunEnv, makeSettingsStore, startServer, stubHarness, type TestServer, seedWorkspace } from './helpers.js';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { eq } from 'drizzle-orm';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -37,7 +35,6 @@ describe('epic-routes', () => {
       integrationExists: true,
       members: [],
       verification: null,
-      force: false,
       inPlace: false,
       ...over,
     });
@@ -47,10 +44,9 @@ describe('epic-routes', () => {
     describe('decideEpicIntegrate', () => {
       it('is a noop when the integration branch does not exist (already integrated/retired or never cut)', () => {
         expect(decideEpicIntegrate(facts({ integrationExists: false, members: members('completed') })).action).toBe('noop');
-        expect(decideEpicIntegrate(facts({ integrationExists: false, force: true })).action).toBe('noop');
       });
 
-      it('is a noop for an Epic with no members on the automatic path', () => {
+      it('is a noop for an Epic with no members', () => {
         expect(decideEpicIntegrate(facts({ members: [] })).action).toBe('noop');
       });
 
@@ -74,11 +70,6 @@ describe('epic-routes', () => {
           expect(d.action).toBe('complete');
         });
 
-        it('force never bypasses the in-place member gate', () => {
-          expect(decideEpicIntegrate(facts({ integrationExists: false, inPlace: true, members: members('completed', 'pending'), force: true })).action).toBe('wait');
-          expect(decideEpicIntegrate(facts({ integrationExists: false, inPlace: true, members: members('completed', 'blocked'), force: true })).action).toBe('blocked');
-        });
-
         it('completes in place even when a leftover Integration branch still exists (direct mode never merges)', () => {
           const d = decideEpicIntegrate(facts({ integrationExists: true, inPlace: true, members: members('completed') }));
           expect(d.action).toBe('complete');
@@ -89,7 +80,7 @@ describe('epic-routes', () => {
         expect(decideEpicIntegrate(facts({ integrationExists: false, inPlace: false, members: members('completed') })).action).toBe('noop');
       });
 
-      describe('automatic path (force=false)', () => {
+      describe('member gate', () => {
         it('waits while any member is still pending', () => {
           const d = decideEpicIntegrate(facts({ members: members('completed', 'pending') }));
           expect(d.action).toBe('wait');
@@ -126,38 +117,14 @@ describe('epic-routes', () => {
         });
       });
 
-      describe('operator force-integrate-ready-subset (force=true)', () => {
-        it('opens the gate despite a blocked member, going straight to verify', () => {
-          const d = decideEpicIntegrate(facts({ members: members('completed', 'blocked'), force: true, verification: null }));
-          expect(d.action).toBe('verify');
-        });
-
-        it('opens the gate despite pending members', () => {
-          const d = decideEpicIntegrate(facts({ members: members('pending', 'pending'), force: true, verification: null }));
-          expect(d.action).toBe('verify');
-        });
-
-        it('still requires a passing verification — a force-integrate does not bypass Verification', () => {
-          expect(decideEpicIntegrate(facts({ force: true, verification: block })).action).toBe('escalate');
-          expect(decideEpicIntegrate(facts({ force: true, verification: escalate })).action).toBe('escalate');
-        });
-
-        it('integrates the subset when verification proceeds', () => {
-          const d = decideEpicIntegrate(facts({ members: members('completed', 'blocked'), force: true, verification: proceed }));
-          expect(d.action).toBe('integrate');
-        });
-      });
-
       it('is total: never throws across the fact space', () => {
         const states: MemberMergeState[] = ['completed', 'blocked', 'pending'];
         const verds: (VerificationDecision | null)[] = [null, proceed, block, escalate];
         for (const integrationExists of [true, false]) {
-          for (const force of [true, false]) {
-            for (const inPlace of [true, false]) {
-              for (const verification of verds) {
-                for (const m of [[] as MemberMergeState[], ...states.map((s) => [s]), states]) {
-                  expect(() => decideEpicIntegrate({ integrationExists, members: m, verification, force, inPlace })).not.toThrow();
-                }
+          for (const inPlace of [true, false]) {
+            for (const verification of verds) {
+              for (const m of [[] as MemberMergeState[], ...states.map((s) => [s]), states]) {
+                expect(() => decideEpicIntegrate({ integrationExists, members: m, verification, inPlace })).not.toThrow();
               }
             }
           }
@@ -342,166 +309,6 @@ describe('epic-routes', () => {
           expect(outcome).toMatchObject({ kind: 'escalated', reason: 'post-merge-red' });
           expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('develop');
         });
-      });
-    });
-  });
-
-  describe('epic-integrate-routes', () => {
-    async function mcpClient(server: TestServer, token: string): Promise<Client> {
-      const client = new Client({ name: 'test', version: '0.0.0' });
-      const transport = new StreamableHTTPClientTransport(new URL(`${server.baseUrl}/mcp`), {
-        requestInit: { headers: { authorization: `Bearer ${token}` } },
-      });
-      await client.connect(transport as any);
-      return client;
-    }
-    const parse = (result: any) => JSON.parse(result.content[0].text);
-
-    describe('Whole-Epic force-integrate operator surface (issue #161)', () => {
-      let server: TestServer;
-
-      beforeEach(async () => {
-        server = await startServer(stubHarness());
-      });
-      afterEach(async () => {
-        await server.close();
-      });
-
-      const ctx = () => server.app.ctx;
-      const defaultWorkspaceId = async () => (await ctx().workspaces.list())[0]!.id;
-
-      describe('POST /api/workspaces/:workspaceId/epics/:epicRef/force-integrate', () => {
-        it('returns the outcome from TrackerPollerManager.forceIntegrateEpic on a 200', async () => {
-          const outcome: EpicIntegrateOutcome = { status: 'integrated', oid: 'deadbeef' };
-          const spy = vi.spyOn(ctx().trackerManager, 'forceIntegrateEpic').mockResolvedValue(outcome);
-
-          const res = await server.api('POST', `/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-integrate`);
-          expect(res.status).toBe(200);
-          expect(res.body).toEqual(outcome);
-          expect(spy).toHaveBeenCalledWith((await defaultWorkspaceId()), 42);
-        });
-
-        it('passes through a non-integrated outcome (e.g. escalated) unchanged', async () => {
-          const outcome: EpicIntegrateOutcome = { status: 'escalated', reason: 'whole-Epic verification failed' };
-          vi.spyOn(ctx().trackerManager, 'forceIntegrateEpic').mockResolvedValue(outcome);
-
-          const res = await server.api('POST', `/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-integrate`);
-          expect(res.status).toBe(200);
-          expect(res.body).toEqual(outcome);
-        });
-
-        it('404s when the Workspace does not exist', async () => {
-          const res = await server.api('POST', '/api/workspaces/999999/epics/42/force-integrate');
-          expect(res.status).toBe(404);
-        });
-
-        it('409s when the Workspace exists but has no active integrate coordinator (tracking off, the default in tests)', async () => {
-          const res = await server.api('POST', `/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-integrate`);
-          expect(res.status).toBe(409);
-        });
-
-        it('400s on a non-numeric workspaceId or epicRef', async () => {
-          expect((await server.api('POST', '/api/workspaces/abc/epics/42/force-integrate')).status).toBe(400);
-          expect((await server.api('POST', `/api/workspaces/${(await defaultWorkspaceId())}/epics/xyz/force-integrate`)).status).toBe(400);
-        });
-      });
-
-      describe('operator-only gating', () => {
-        it('denies an attempt-scoped Attempt Key on POST /api/workspaces/:id/epics/:ref/force-integrate', async () => {
-          const { env } = await captureRunEnv(server, ['HARMONIC_API_KEY']);
-          const token = env.HARMONIC_API_KEY as string;
-
-          const res = await fetch(`${server.baseUrl}/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-integrate`, {
-            method: 'POST',
-            headers: { authorization: `Bearer ${token}` },
-          });
-          expect(res.status).toBe(403);
-        });
-
-        it('denies a read-scoped key', async () => {
-          const { body } = await server.api('POST', '/api/keys', { name: 'viz', scope: 'read' });
-          const res = await fetch(`${server.baseUrl}/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-integrate`, {
-            method: 'POST',
-            headers: { authorization: `Bearer ${body.token}` },
-          });
-          expect(res.status).toBe(403);
-        });
-      });
-    });
-
-    describe('force_integrate_epic MCP tool (issue #161)', () => {
-      let server: TestServer;
-      let operatorToken: string;
-
-      beforeAll(async () => {
-        server = await startServer(stubHarness());
-        const key = await server.api('POST', '/api/keys', { name: 'mcp-operator' });
-        operatorToken = key.body.token;
-      });
-      afterAll(async () => {
-        await server.close();
-      });
-      afterEach(() => {
-        vi.restoreAllMocks();
-      });
-
-      const ctx = () => server.app.ctx;
-      const defaultWorkspaceId = async () => (await ctx().workspaces.list())[0]!.id;
-
-      it('is registered and returns the outcome to a full-scope operator key', async () => {
-        const client = await mcpClient(server, operatorToken);
-        const tools = (await client.listTools()).tools.map((t) => t.name);
-        expect(tools).toEqual(expect.arrayContaining(['force_integrate_epic']));
-
-        const outcome: EpicIntegrateOutcome = { status: 'integrated', oid: 'cafef00d' };
-        const spy = vi.spyOn(ctx().trackerManager, 'forceIntegrateEpic').mockResolvedValue(outcome);
-
-        const result = parse(
-          await client.callTool({
-            name: 'force_integrate_epic',
-            arguments: { workspaceId: (await defaultWorkspaceId()), epicRef: 7 },
-          }),
-        );
-        expect(result).toEqual(outcome);
-        expect(spy).toHaveBeenCalledWith((await defaultWorkspaceId()), 7);
-
-        await client.close();
-      });
-
-      it('reports a not-found/conflict domain error, not a raw 500, when tracking is off for the Workspace', async () => {
-        const client = await mcpClient(server, operatorToken);
-        const result = await client.callTool({
-          name: 'force_integrate_epic',
-          arguments: { workspaceId: (await defaultWorkspaceId()), epicRef: 7 },
-        });
-        expect(result.isError).toBe(true);
-        expect((result.content as any)[0].text).toContain('no active whole-Epic integrate coordinator');
-        await client.close();
-      });
-
-      it('validates its input (rejects a missing epicRef)', async () => {
-        const client = await mcpClient(server, operatorToken);
-        const result = await client.callTool({
-          name: 'force_integrate_epic',
-          arguments: { workspaceId: (await defaultWorkspaceId()) },
-        });
-        expect(result.isError).toBe(true);
-        expect((result.content as any)[0].text).toContain('epicRef');
-        await client.close();
-      });
-
-      it('rejects an attempt-scoped Attempt Key with a forbidden domain error, even though /mcp itself admits it', async () => {
-        const { env } = await captureRunEnv(server, ['HARMONIC_API_KEY']);
-        const runToken = env.HARMONIC_API_KEY as string;
-
-        const client = await mcpClient(server, runToken);
-        const forbidden = await client.callTool({
-          name: 'force_integrate_epic',
-          arguments: { workspaceId: (await defaultWorkspaceId()), epicRef: 7 },
-        });
-        expect(forbidden.isError).toBe(true);
-        expect((forbidden.content as any)[0].text).toContain('forbidden');
-        await client.close();
       });
     });
   });
@@ -1631,45 +1438,6 @@ describe('epic-integrate-git', () => {
         expect(verify).toHaveBeenCalledTimes(2);
       });
 
-      it('an operator force-integrate bypasses the backoff', async () => {
-        let clock = 0;
-        const { coord, verify } = build({
-          verify: vi.fn<VerifyFn>().mockResolvedValueOnce(inconclusive).mockResolvedValue(proceed),
-          now: () => clock,
-          verifyBackoffMs: 60_000,
-        });
-        const first = await coord.submit({ ref: 42, members: members('completed') });
-        expect(first.status).toBe('escalated');
-        clock = 10_000;
-        const forced = await coord.submit({ ref: 42, members: members('completed') }, { force: true });
-        expect(forced.status).toBe('integrated');
-        expect(verify).toHaveBeenCalledTimes(2);
-      });
-    });
-
-    describe('operator force-integrate-ready-subset', () => {
-      it('integrates the subset past a blocked member when verification proceeds', async () => {
-        const { coord, integrate, retire } = build();
-        const out = await coord.submit({ ref: 42, members: members('completed', 'blocked') }, { force: true });
-        expect(out.status).toBe('integrated');
-        expect(integrate).toHaveBeenCalled();
-        expect(retire).toHaveBeenCalledWith(42);
-      });
-
-      it('still escalates on a failing verification — force does not bypass Verification', async () => {
-        const { coord, integrate, escalate } = build({ verify: async () => block });
-        const out = await coord.submit({ ref: 42, members: members('completed', 'blocked') }, { force: true });
-        expect(out.status).toBe('escalated');
-        expect(integrate).not.toHaveBeenCalled();
-        expect(escalate).toHaveBeenCalled();
-      });
-
-      it('is still a noop with no integration branch to merge', async () => {
-        const { coord, verify } = build({ git: new FakeGit(new Set()) });
-        const out = await coord.submit({ ref: 42, members: [] }, { force: true });
-        expect(out.status).toBe('noop');
-        expect(verify).not.toHaveBeenCalled();
-      });
     });
 
     describe('sticky escalation (level-trigger terminal guard)', () => {
@@ -1707,19 +1475,6 @@ describe('epic-integrate-git', () => {
         expect(verify).toHaveBeenCalledTimes(2);
       });
 
-      it('an operator force-integrate always retries past a sticky escalation', async () => {
-        const { coord, verify, integrate } = build({
-          verify: vi
-            .fn<VerifyFn>()
-            .mockResolvedValueOnce(block)
-            .mockResolvedValue(proceed),
-        });
-        await coord.submit({ ref: 42, members: members('completed') });
-        const forced = await coord.submit({ ref: 42, members: members('completed') }, { force: true });
-        expect(forced.status).toBe('integrated');
-        expect(verify).toHaveBeenCalledTimes(2);
-        expect(integrate).toHaveBeenCalledTimes(1);
-      });
     });
 
     describe('retained verification status (issue #178)', () => {
