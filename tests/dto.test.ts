@@ -422,6 +422,47 @@ describe('taskToApiDto', () => {
     const dto = taskToApiDto(taskWithDeps({ workspaceId: 3 }), [], resolved);
     expect(dto.workspaceId).toBe(3);
   });
+
+  describe('wallClockDeadline', () => {
+    const guardrailConfig = JSON.stringify({
+      budget: { wallClockMinutes: 60 },
+      progress: false,
+      toolTimeoutMinutes: 10,
+    });
+
+    it('is the running Attempt startedAt plus its wall-clock budget, while the task is working', () => {
+      const runs = [attemptRow({ id: 11, number: 1, state: 'running', startedAt: 5_000, guardrailConfig })];
+      const dto = taskToApiDto(taskWithDeps({ state: 'working' }), runs, resolved);
+      expect(dto.wallClockDeadline).toBe(5_000 + 60 * 60_000);
+    });
+
+    it('is null when the task is not working, even with a running-shaped Attempt row', () => {
+      const runs = [attemptRow({ id: 11, number: 1, state: 'running', startedAt: 5_000, guardrailConfig })];
+      const dto = taskToApiDto(taskWithDeps({ state: 'ready' }), runs, resolved);
+      expect(dto.wallClockDeadline).toBeNull();
+    });
+
+    it('is null when working with no running Attempt', () => {
+      const runs = [attemptRow({ id: 10, number: 1, state: 'passed', guardrailConfig })];
+      const dto = taskToApiDto(taskWithDeps({ state: 'working' }), runs, resolved);
+      expect(dto.wallClockDeadline).toBeNull();
+    });
+
+    it('is null when the running Attempt carries no guardrail budget', () => {
+      const runs = [attemptRow({ id: 11, number: 1, state: 'running', startedAt: 5_000, guardrailConfig: null })];
+      const dto = taskToApiDto(taskWithDeps({ state: 'working' }), runs, resolved);
+      expect(dto.wallClockDeadline).toBeNull();
+    });
+
+    it('moves forward by N minutes after an extend rewrites the persisted guardrailConfig', () => {
+      const runs = [attemptRow({ id: 11, number: 1, state: 'running', startedAt: 5_000, guardrailConfig })];
+      const before = taskToApiDto(taskWithDeps({ state: 'working' }), runs, resolved).wallClockDeadline!;
+      const extendedConfig = JSON.stringify({ budget: { wallClockMinutes: 90 }, progress: false, toolTimeoutMinutes: 10 });
+      const extendedRuns = [attemptRow({ id: 11, number: 1, state: 'running', startedAt: 5_000, guardrailConfig: extendedConfig })];
+      const after = taskToApiDto(taskWithDeps({ state: 'working' }), extendedRuns, resolved).wallClockDeadline!;
+      expect(after - before).toBe(30 * 60_000);
+    });
+  });
 });
 
 describe('epicToListRow', () => {

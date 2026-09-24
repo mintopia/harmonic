@@ -140,6 +140,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     contextWindow: null,
     verifiedRef: null,
     hasCandidate: false,
+    wallClockDeadline: null,
     skipReason: null,
     ...overrides,
   };

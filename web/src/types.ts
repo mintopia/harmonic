@@ -476,6 +476,8 @@ export interface Task {
    * Context is already occupied (e.g. "Work Context held by task
    * 12 (working)"); null normally, including once the Task starts working. */
   skipReason: string | null;
+  /** Epoch ms; null unless working with a budgeted running Attempt. */
+  wallClockDeadline: number | null;
 }
 
 /** Aggregate token counters on an Attempt's usage snapshot, as the ticket UI

@@ -142,31 +142,27 @@ export class RunControl {
     }
   }
 
-  /**
-   * Extend the wall-clock guardrail of a working Task's live Attempt by
-   * `addMinutes`. Persists the raised cap onto the Attempt's frozen
-   * `guardrailConfig` (so a re-prime keeps it) and re-arms the live supervisor's
-   * deadline in place. A no-op returning false when the Task is not working, has
-   * no active Attempt, or carries no wall-clock budget to extend.
-   */
+  /** Reads the running Attempt from the DB: between turns a working Task has no ActiveRun. */
   async extendGuardrail(taskId: number, addMinutes: number): Promise<boolean> {
     const task = await this.deps.taskService.get(taskId);
     if (task.state !== 'working') return false;
-    const active = this.deps.activeRuns.forTask(taskId);
-    if (!active) return false;
-    const run = await this.deps.attempts.get(active.attemptId);
+    const run = await this.deps.attempts.getRunningForTask(taskId);
+    if (!run) return false;
     const config = run.guardrailConfig ? (JSON.parse(run.guardrailConfig) as ResolvedGuardrails) : null;
     if (!config?.budget) return false;
     const wallClockMinutes = config.budget.wallClockMinutes + addMinutes;
     const updated: ResolvedGuardrails = { ...config, budget: { ...config.budget, wallClockMinutes } };
-    await this.deps.attempts.update(active.attemptId, { guardrailConfig: JSON.stringify(updated) });
-    active.guardrails?.extendWallClock(addMinutes);
-    const event = await this.deps.attempts.appendEvent(active.attemptId, {
+    await this.deps.attempts.update(run.id, { guardrailConfig: JSON.stringify(updated) });
+    const active = this.deps.activeRuns.forTask(taskId);
+    if (active && active.attemptId === run.id) {
+      active.guardrails?.extendWallClock(addMinutes);
+    }
+    const event = await this.deps.attempts.appendEvent(run.id, {
       type: 'lifecycle',
       payload: { event: 'guardrail_extended', dimension: 'wall-clock', addMinutes, wallClockMinutes },
     });
     this.deps.events.onAttemptEvent?.(event);
-    logger.info('Wall-clock guardrail extended', { taskId, attemptId: active.attemptId, addMinutes, wallClockMinutes });
+    logger.info('Wall-clock guardrail extended', { taskId, attemptId: run.id, addMinutes, wallClockMinutes });
     return true;
   }
 

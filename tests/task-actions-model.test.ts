@@ -17,8 +17,13 @@ describe('taskActions', () => {
     expect(taskActions('draft')).toEqual(['delete', 'ready', 'edit', 'cancel']);
   });
 
-  it('offers pause, extend, complete (operator override), and cancel while a task is working, no delete', () => {
-    expect(taskActions('working')).toEqual(['pause', 'extend', 'complete', 'cancel']);
+  it('offers pause, extend, complete (operator override), and cancel while a task is working with a wall-clock deadline, no delete', () => {
+    expect(taskActions('working', 1_000)).toEqual(['pause', 'extend', 'complete', 'cancel']);
+  });
+
+  it('withholds extend while working with no known wall-clock deadline — the server would refuse it (409)', () => {
+    expect(taskActions('working')).toEqual(['pause', 'complete', 'cancel']);
+    expect(taskActions('working', null)).toEqual(['pause', 'complete', 'cancel']);
   });
 
   it('offers delete, resume, and cancel while a task is paused', () => {

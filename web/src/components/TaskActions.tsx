@@ -34,7 +34,7 @@ export function TaskActions({
   const [resumeOpen, setResumeOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
 
-  const actions = taskActions(task.state);
+  const actions = taskActions(task.state, task.wallClockDeadline);
   const escalation = escalationActions(task);
   // An Accept in flight (merging) is persisted on the Task, not just in this
   // component's `accepting` flag — so the actions stay disabled across a reload

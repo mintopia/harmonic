@@ -46,6 +46,7 @@ const task = (id: number, state: TaskState = 'ready', extra: Partial<Task> = {})
   contextWindow: null,
   verifiedRef: null,
   hasCandidate: false,
+  wallClockDeadline: null,
   skipReason: null,
   ...extra,
 });

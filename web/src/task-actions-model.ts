@@ -21,7 +21,7 @@ export type TaskAction =
   | 'uncancel'
   | 'delete';
 
-export function taskActions(state: TaskState): TaskAction[] {
+export function taskActions(state: TaskState, wallClockDeadline: number | null = null): TaskAction[] {
   switch (state) {
     case 'escalated':
       return ['delete', 'close', 'reject', 'accept'];
@@ -30,7 +30,7 @@ export function taskActions(state: TaskState): TaskAction[] {
     case 'draft':
       return ['delete', 'ready', 'edit', 'cancel'];
     case 'working':
-      return ['pause', 'extend', 'complete', 'cancel'];
+      return wallClockDeadline != null ? ['pause', 'extend', 'complete', 'cancel'] : ['pause', 'complete', 'cancel'];
     case 'paused':
       return ['delete', 'resume', 'cancel'];
     case 'cancelled':

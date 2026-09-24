@@ -148,10 +148,12 @@ describe('task-steering', () => {
       expect(started.status).toBe(201);
       const attemptId = started.body.id;
 
-      const extended = await waitFor(async () => {
-        const res = await server.api('POST', `/api/tasks/${taskId}/extend-guardrail`, { minutes: 60 });
-        return res.status === 200 ? res : undefined;
-      });
+      // Extend resolves the running Attempt from the durable store, not the
+      // in-memory ActiveRun — it must succeed as soon as the Task is working,
+      // with no wait for a turn to actually be in flight (issue: between-turn
+      // 409 on "Extend time").
+      const extended = await server.api('POST', `/api/tasks/${taskId}/extend-guardrail`, { minutes: 60 });
+      expect(extended.status).toBe(200);
       expect(extended.body.state).toBe('working');
 
       await waitFor(async () => {
