@@ -21,6 +21,8 @@ import type { AttemptUsage, AttemptUsageSnapshot, ProcessTree } from '../executi
 import type { OperationEvent, OperationSnapshot } from '../telemetry/operations.js';
 import { z } from 'zod';
 import type { AdvertisedCommand } from '../execution/conversation-driver.js';
+import type { ResolvedGuardrails } from '../domain/setting-override.js';
+import { wallClockBudgetMs } from '../domain/guardrail-budget.js';
 
 export const parseUsage = (raw: string | null): AttemptUsage | null => (raw ? (JSON.parse(raw) as AttemptUsage) : null);
 export const parseCost = (raw: string | null): Cost | null => (raw ? (JSON.parse(raw) as Cost) : null);
@@ -379,6 +381,9 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'isolationMode' | 'prio
   verifiedRef: string | null;
   /** Whether the branch holds commits ahead of base an Accept could merge. */
   hasCandidate: boolean;
+  /** Epoch ms the running Attempt's wall-clock budget expires at; null unless the
+   * Task is `working` with a running Attempt that carries a wall-clock budget. */
+  wallClockDeadline: number | null;
 };
 
 /** Every {@link ApiTask} field except `prompt`; list surfaces render {@link ApiTask.summary} instead. */
@@ -445,6 +450,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiTaskListR
     skipReason: null,
     verifiedRef: null,
     hasCandidate: false,
+    wallClockDeadline: null,
   };
 }
 
@@ -461,6 +467,21 @@ function stripTrackerFactCols(task: TaskWithDeps): Omit<TaskWithDeps, TrackerFac
 export function latestVerifiedRef(run: AttemptRow | undefined): string | null {
   if (!run) return null;
   return run.verifiedRef ?? (run.verifiedHeadOid && run.branch ? run.branch : null);
+}
+
+/** Epoch ms the running Attempt's wall-clock budget expires at, from its frozen
+ * `guardrailConfig` and `startedAt` (rewritten on resume, so paused time is
+ * excluded). Null when there is no running Attempt or it carries no wall-clock budget. */
+export function wallClockDeadlineOf(run: AttemptRow | undefined): number | null {
+  if (!run?.guardrailConfig) return null;
+  let config: ResolvedGuardrails;
+  try {
+    config = JSON.parse(run.guardrailConfig) as ResolvedGuardrails;
+  } catch {
+    return null;
+  }
+  if (!config.budget) return null;
+  return run.startedAt + wallClockBudgetMs(config.budget);
 }
 
 /** A Task projected onto its API shape from its batched Attempts and the builder-resolved values. */
@@ -503,6 +524,7 @@ export function taskToApiDto(
     skipReason: resolved.skipReason,
     verifiedRef: latestVerifiedRef(runs.at(-1)),
     hasCandidate: resolved.hasCandidate,
+    wallClockDeadline: task.state === 'working' ? wallClockDeadlineOf(running) : null,
   };
 }
 

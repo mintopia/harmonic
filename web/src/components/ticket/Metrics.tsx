@@ -6,6 +6,7 @@ import { sumCosts } from '../../activity-model';
 import { Icon } from '../Icon';
 import { Fact } from '../Fact';
 import { harnessLabel } from '../../task-detail-model';
+import { wallClockRemaining } from '../../wall-clock-model';
 
 export function fmtDur(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -51,18 +52,22 @@ export function Metrics({
         {del > 0 && <span className="ml-1.5 text-fail">−{del}</span>}
       </>
     );
-  const items: Array<[string, ReactNode]> = [
+  const items: Array<[string, ReactNode, boolean?]> = [
     ['Cost', formatCost(cost) ?? '—'],
     ['Elapsed', runs.length ? fmtDur(elapsed) : '—'],
     ['Attempts', `${runs.length}`],
     ['Diff', diff],
   ];
+  if (task.wallClockDeadline != null) {
+    const remaining = wallClockRemaining(task.wallClockDeadline, now);
+    items.push(['Time left', remaining.label, remaining.overdue]);
+  }
   return (
     <div className="mb-[18px] flex flex-wrap gap-y-3 tabular-nums">
-      {items.map(([k, v]) => (
+      {items.map(([k, v, danger]) => (
         <div key={k} className="mr-5 min-w-0 border-r border-hairline pr-5 last:mr-0 last:border-r-0 last:pr-0">
           <div className="mb-[5px] text-[10px] font-bold uppercase tracking-[0.07em] text-faint">{k}</div>
-          <div className="text-[16px] font-bold leading-none text-ink">{v}</div>
+          <div className={`text-[16px] font-bold leading-none ${danger ? 'text-fail' : 'text-ink'}`}>{v}</div>
         </div>
       ))}
     </div>
