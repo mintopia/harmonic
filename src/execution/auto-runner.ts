@@ -9,6 +9,7 @@ import { repoKey } from './repo-lock.js';
 import type { GitCircuitBreaker } from './git-failure.js';
 import type { Runner } from './runner.js';
 import { forEachYielding } from '../reliability/yield.js';
+import { DomainError } from '../domain/errors.js';
 import { startOperation, type Operation } from '../telemetry/operations.js';
 
 function failureReason(error: unknown): string {
@@ -60,6 +61,8 @@ export interface AutoRunnerOptions {
   mirror?: MirrorClaim;
   epicBaseNotReady?: (task: TaskRow) => boolean | Promise<boolean>;
   gitBreaker?: GitCircuitBreaker;
+  /** A Task's `skipReason` is scheduler memory, not a row write, so a live board only sees it change through this. */
+  onSkipReasonChanged?: (task: TaskRow) => void;
   /** Fixed scheduler cadence; tests inject a short interval. */
   intervalMs?: number;
   /** How long a confirmed absent assigned integration branch has to recover
@@ -90,6 +93,7 @@ export class AutoRunner {
   private readonly mirror: MirrorClaim | undefined;
   private readonly epicBaseNotReady: ((task: TaskRow) => boolean | Promise<boolean>) | undefined;
   private readonly gitBreaker: GitCircuitBreaker | undefined;
+  private readonly onSkipReasonChanged: (task: TaskRow) => void;
   private readonly intervalMs: number;
   private readonly missingEpicBaseGraceMs: number;
   private readonly clock: () => number;
@@ -110,6 +114,7 @@ export class AutoRunner {
     this.mirror = options.mirror;
     this.epicBaseNotReady = options.epicBaseNotReady;
     this.gitBreaker = options.gitBreaker;
+    this.onSkipReasonChanged = options.onSkipReasonChanged ?? (() => {});
     this.intervalMs = options.intervalMs ?? 1_000;
     this.missingEpicBaseGraceMs = options.missingEpicBaseGraceMs ?? DEFAULT_MISSING_EPIC_BASE_GRACE_MS;
     this.clock = options.clock ?? Date.now;
@@ -191,7 +196,7 @@ export class AutoRunner {
           return false;
         }
         pick.update({ 'auto-runner.claimed': true });
-        this.schedulerSkipReasons.delete(task.id);
+        if (this.schedulerSkipReasons.delete(task.id)) this.onSkipReasonChanged(claimed);
         this.contextWaitingSince.delete(task.id);
         this.missingEpicBaseSince.delete(task.id);
         if (claimed.origin === 'mirrored' && this.mirror) {
@@ -309,7 +314,16 @@ export class AutoRunner {
         this.recordWaiting(task.id);
       }
     });
+    const previous = this.schedulerSkipReasons;
     this.schedulerSkipReasons = next;
+    await forEachYielding(all, async ({ id }) => {
+      if (previous.get(id) === next.get(id)) return;
+      const fresh = await this.taskService.get(id).catch((error: unknown) => {
+        if (error instanceof DomainError && error.code === 'not_found') return undefined;
+        throw error;
+      });
+      if (fresh) this.onSkipReasonChanged(fresh);
+    });
     this.missingEpicBaseSince.clear();
     await forEachYielding(missingThisPass, ([taskId, since]) => {
       this.missingEpicBaseSince.set(taskId, since);
