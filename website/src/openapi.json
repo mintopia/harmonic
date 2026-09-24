@@ -2253,6 +2253,17 @@
           "hasCandidate": {
             "type": "boolean",
             "example": true
+          },
+          "wallClockDeadline": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784032620000
           }
         },
         "required": [
@@ -2300,7 +2311,8 @@
           "contextWindow",
           "skipReason",
           "verifiedRef",
-          "hasCandidate"
+          "hasCandidate",
+          "wallClockDeadline"
         ]
       },
       "TaskListRowInput": {
@@ -2758,6 +2770,17 @@
           "hasCandidate": {
             "type": "boolean",
             "example": true
+          },
+          "wallClockDeadline": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784032620000
           }
         },
         "required": [
@@ -2804,7 +2827,8 @@
           "contextWindow",
           "skipReason",
           "verifiedRef",
-          "hasCandidate"
+          "hasCandidate",
+          "wallClockDeadline"
         ]
       },
       "AttemptSummaryInput": {
@@ -8810,6 +8834,17 @@
           "hasCandidate": {
             "type": "boolean",
             "example": true
+          },
+          "wallClockDeadline": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784032620000
           }
         },
         "required": [
@@ -8857,7 +8892,8 @@
           "contextWindow",
           "skipReason",
           "verifiedRef",
-          "hasCandidate"
+          "hasCandidate",
+          "wallClockDeadline"
         ],
         "additionalProperties": false
       },
@@ -9317,6 +9353,17 @@
           "hasCandidate": {
             "type": "boolean",
             "example": true
+          },
+          "wallClockDeadline": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784032620000
           }
         },
         "required": [
@@ -9363,7 +9410,8 @@
           "contextWindow",
           "skipReason",
           "verifiedRef",
-          "hasCandidate"
+          "hasCandidate",
+          "wallClockDeadline"
         ],
         "additionalProperties": false
       },
