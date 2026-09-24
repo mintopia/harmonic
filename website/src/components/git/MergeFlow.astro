@@ -1,0 +1,38 @@
+<figure class="git-diagram" role="img" aria-label="How the merge reaches your checkout: Harmonic builds a merge commit in a temporary harmonic-merge worktree, reconciling it onto main's current tip even if main moved, then syncs the changed files into your checkout. Your checkout's branch is never switched and your uncommitted edits are kept.">
+  <svg viewBox="0 0 860 380" xmlns="http://www.w3.org/2000/svg">
+    <text x="20" y="36" class="gd-muted">main</text>
+    <line x1="20" y1="50" x2="840" y2="50" stroke="var(--sl-color-gray-4)" stroke-width="3"></line>
+    <circle cx="140" cy="50" r="7" fill="var(--sl-color-gray-4)"></circle>
+    <text x="140" y="34" text-anchor="middle" class="gd-muted">base tip</text>
+    <circle cx="460" cy="50" r="7" fill="var(--sl-color-gray-4)"></circle>
+    <text x="460" y="34" text-anchor="middle" class="gd-muted">someone else's commit</text>
+    <circle cx="660" cy="50" r="9" fill="var(--sl-color-accent)" stroke="var(--sl-color-gray-6)" stroke-width="3"></circle>
+    <text x="660" y="30" text-anchor="middle" class="gd-accent">published merge</text>
+
+    <path d="M140,50 C180,50 180,160 220,160 L333,160" stroke="var(--sl-color-text-accent)" stroke-width="2" stroke-dasharray="6 5" fill="none"></path>
+    <text x="140" y="82" class="gd-muted">harmonic-merge-* (temporary worktree)</text>
+    <circle cx="340" cy="160" r="7" fill="var(--sl-color-gray-6)" stroke="var(--sl-color-accent)" stroke-width="2.5"></circle>
+    <text x="352" y="182">merge --no-ff</text>
+    <path d="M347,160 C520,160 600,50 651,50" stroke="var(--sl-color-text-accent)" stroke-width="2" stroke-dasharray="6 5" fill="none"></path>
+    <text x="480" y="110" text-anchor="middle" class="gd-muted">reconcile onto</text>
+    <text x="480" y="124" text-anchor="middle" class="gd-muted">moved base</text>
+
+    <text x="20" y="216" class="gd-accent">harmonic/task-42</text>
+    <line x1="20" y1="230" x2="260" y2="230" stroke="var(--sl-color-accent)" stroke-width="3"></line>
+    <circle cx="100" cy="230" r="7" fill="var(--sl-color-accent)"></circle>
+    <circle cx="180" cy="230" r="7" fill="var(--sl-color-accent)"></circle>
+    <circle cx="260" cy="230" r="7" fill="var(--paper-done)"></circle>
+    <text x="260" y="258" text-anchor="middle">verified tip</text>
+    <path d="M260,230 C300,230 300,160 333,160" stroke="var(--sl-color-accent)" stroke-width="3" fill="none"></path>
+
+    <path d="M660,62 V296" stroke="var(--sl-color-gray-4)" stroke-width="1.5" marker-end="url(#git-merge-arrow)"></path>
+    <defs>
+      <marker id="git-merge-arrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 Z" fill="var(--sl-color-gray-4)"></path>
+      </marker>
+    </defs>
+    <rect x="440" y="302" width="400" height="54" rx="4" fill="var(--sl-color-gray-6)" stroke="var(--sl-color-hairline)"></rect>
+    <text x="456" y="326">your checkout (main)</text>
+    <text x="456" y="346" class="gd-muted">files synced · branch not switched · edits kept</text>
+  </svg>
+</figure>

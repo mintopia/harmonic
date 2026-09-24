@@ -47,6 +47,8 @@ export default defineConfig({
             { label: 'Steering the fleet', link: '/work/steering-the-fleet/' },
             { label: 'The fleet dashboard', link: '/work/fleet-dashboard/' },
             { label: 'Review & merge', link: '/work/reviewing-and-merging/' },
+            { label: 'Branches & worktrees', link: '/work/branches-and-worktrees/' },
+            { label: 'Epics', link: '/work/epics/' },
             { label: 'Browsing & editing files', link: '/work/files/' },
             { label: 'Conversations', link: '/work/conversations/' },
             { label: 'Notifications', link: '/work/notifications/' },

@@ -1,0 +1,99 @@
+---
+title: Branches & worktrees
+description: The two isolation modes a task can run in, what happens across Attempts, and how a merge reaches your checkout without switching its branch.
+---
+
+import DirectFlow from '../../../components/git/DirectFlow.astro';
+import TaskFlow from '../../../components/git/TaskFlow.astro';
+import MergeFlow from '../../../components/git/MergeFlow.astro';
+import EpicFlow from '../../../components/git/EpicFlow.astro';
+import GitKey from '../../../components/git/GitKey.astro';
+
+Every task runs in one of two **isolation modes**: direct or worktree. It's
+a per-workspace default you can override per ticket, in
+[Settings & overrides](/harmonic/run/settings/).
+
+## Direct mode
+
+The agent commits straight onto your checkout's current branch. No task
+branch, no worktree.
+
+<DirectFlow />
+<GitKey epic={false} />
+
+Pick direct when you want the agent working on the same branch you're
+looking at, and you're fine with its commits arriving there as it goes.
+There's nothing to merge when it finishes, since the commits are already
+on your branch.
+
+## Worktree mode
+
+The agent works in its own git worktree, on a branch named
+`harmonic/task-<id>`, and Harmonic merges that branch back for you when the
+work is done.
+
+<TaskFlow />
+
+The branch forks from your base branch's tip when the first Attempt starts,
+and every later Attempt on the same task reuses it (it isn't recreated).
+
+What happens across Attempts:
+
+- Each new Attempt rebases the branch onto the current base, so it starts
+  from the latest commits rather than wherever the last Attempt left off.
+- If the worktree had uncommitted changes, `--autostash` carries them
+  through the rebase.
+- A conflict during that rebase is handed to the agent to resolve.
+- An Attempt ending doesn't commit anything on its own. If it stops with
+  changes still uncommitted, they stay uncommitted.
+- Once verification passes, Harmonic commits anything left over, then
+  merges the branch. That merge is always a `--no-ff` merge commit, never a
+  fast-forward or squash.
+- The task branch is deleted once it's fully merged into the base.
+
+Pick worktree mode when you want the agent working somewhere separate from
+what's currently checked out, or when a ticket needs multiple Attempts and
+you don't want a failed one polluting your working tree.
+
+The task's timeline shows each branch, worktree, and commit step as its
+own row, so you can watch the rebase, the leftover commit, and the merge
+happen.
+
+## How the merge reaches your checkout
+
+<MergeFlow />
+
+Harmonic never builds the merge in your checkout. It creates a temporary
+`harmonic-merge-*` worktree, merges the task branch into the base there with
+`--no-ff`, and only then touches your checkout.
+
+If your base branch moved while the task was running, the merge is
+reconciled onto the new tip rather than rejected. You don't get a stale
+merge or a manual conflict to sort out because someone else pushed in the
+meantime.
+
+Once the merge commit exists, the changed files are synced into your
+checkout. Your checkout's branch is never switched, and any uncommitted
+edits you had sitting in it are kept.
+
+## Epics
+
+<EpicFlow />
+<GitKey />
+
+A worktree-mode Epic gets its own `epic/<ref>` branch, forked from your base
+branch. Each Member task branches from the epic branch instead of the base,
+and merges back into the epic branch when it's done rather than into your
+base branch directly.
+
+If your base branch moves while the Epic is running, a **Refresh** merges
+those new commits into the epic branch, so Members keep rebasing onto
+something current. Once every Member is done, the whole Epic is verified
+together, merged into your base branch, and the epic branch is deleted.
+
+An Epic where every Member runs in direct mode has no epic branch at all.
+There's nothing to fork or merge, so it finishes in place, the same way a
+single direct-mode task does.
+
+See [Epics](/harmonic/work/epics/) for how to set one up and work through
+its Members.
