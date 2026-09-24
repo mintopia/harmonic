@@ -381,8 +381,7 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'isolationMode' | 'prio
   verifiedRef: string | null;
   /** Whether the branch holds commits ahead of base an Accept could merge. */
   hasCandidate: boolean;
-  /** Epoch ms the running Attempt's wall-clock budget expires at; null unless the
-   * Task is `working` with a running Attempt that carries a wall-clock budget. */
+  /** Epoch ms; null unless working with a budgeted running Attempt. */
   wallClockDeadline: number | null;
 };
 
@@ -469,9 +468,7 @@ export function latestVerifiedRef(run: AttemptRow | undefined): string | null {
   return run.verifiedRef ?? (run.verifiedHeadOid && run.branch ? run.branch : null);
 }
 
-/** Epoch ms the running Attempt's wall-clock budget expires at, from its frozen
- * `guardrailConfig` and `startedAt` (rewritten on resume, so paused time is
- * excluded). Null when there is no running Attempt or it carries no wall-clock budget. */
+/** `startedAt` is rewritten on resume, so paused time is excluded. */
 export function wallClockDeadlineOf(run: AttemptRow | undefined): number | null {
   if (!run?.guardrailConfig) return null;
   let config: ResolvedGuardrails;

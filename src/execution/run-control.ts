@@ -142,18 +142,7 @@ export class RunControl {
     }
   }
 
-  /**
-   * Extend the wall-clock guardrail of a working Task's running Attempt by
-   * `addMinutes`. The Attempt is resolved from the durable `running` row, not
-   * the in-memory ActiveRun — a Task stays `working` between turns (gates,
-   * verification, continuations, pre-first-turn provisioning) with no
-   * ActiveRun registered, and extend must still succeed there. Persists the
-   * raised cap onto the Attempt's frozen `guardrailConfig` (so a later
-   * `prime()` picks it up) before touching any live supervisor, then re-arms
-   * the live deadline in place when a turn happens to be in flight. A no-op
-   * returning false when the Task is not working, has no running Attempt, or
-   * carries no wall-clock budget to extend.
-   */
+  /** Reads the running Attempt from the DB: between turns a working Task has no ActiveRun. */
   async extendGuardrail(taskId: number, addMinutes: number): Promise<boolean> {
     const task = await this.deps.taskService.get(taskId);
     if (task.state !== 'working') return false;

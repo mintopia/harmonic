@@ -21,11 +21,6 @@ export type TaskAction =
   | 'uncancel'
   | 'delete';
 
-/**
- * The operator actions available for `state`. `wallClockDeadline` gates
- * 'extend': the server refuses to extend a wall-clock budget it doesn't know
- * about (409), so the UI must never offer 'extend' unless the Task carries one.
- */
 export function taskActions(state: TaskState, wallClockDeadline: number | null = null): TaskAction[] {
   switch (state) {
     case 'escalated':
