@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { baselineConfig, type AppConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { AutoRunner, type MirrorClaim } from '../src/execution/auto-runner.js';
+import { AutoRunner, type AutoRunnerOptions, type MirrorClaim } from '../src/execution/auto-runner.js';
 import { GitCircuitBreaker } from '../src/execution/git-failure.js';
 import { repoKey } from '../src/execution/repo-lock.js';
 import type { AttemptStore } from '../src/domain/attempts.js';
@@ -371,7 +371,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     rmSync(dir, { recursive: true, force: true });
   });
 
-  const build = () => {
+  const build = (options?: AutoRunnerOptions) => {
     const started: number[] = [];
     const runner = {
       escalateUnspawned: async () => {},
@@ -386,7 +386,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
       countRunningByWorkspace: () => new Map<number, number>(),
     } as unknown as AttemptStore;
     const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 10 } };
-    const ar = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), undefined);
+    const ar = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), options);
     return { ar, started };
   };
 
@@ -423,6 +423,27 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     ar.poke();
 
     await vi.waitFor(() => expect(ar.skipReasonFor(dependent.id)).toBe(`blocked-by #${openBlocker.id}`));
+  });
+
+  it('announces a Task only when its skip reason changes, so a live board never keeps a stale one', async () => {
+    const blocker = await tasks.create({ prompt: 'blocker', workingDir: freshDir() });
+    const dependent = await tasks.create({ prompt: 'dependent', workingDir: freshDir(), dependsOn: [blocker.id] });
+    const announced: number[] = [];
+
+    const { ar, started } = build({ onSkipReasonChanged: (task) => announced.push(task.id) });
+    ar.poke();
+    await vi.waitFor(() => expect(started).toEqual([blocker.id]));
+    await vi.waitFor(() => expect(ar.skipReasonFor(dependent.id)).toBe(`blocked-by #${blocker.id}`));
+    await vi.waitFor(() => expect(announced).toEqual([dependent.id]));
+
+    ar.poke();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(announced).toEqual([dependent.id]);
+
+    await tasks.setState(blocker.id, 'done');
+    ar.poke();
+    await vi.waitFor(() => expect(announced).toEqual([dependent.id, dependent.id]));
+    expect(ar.skipReasonFor(dependent.id)).toBeUndefined();
   });
 
   it('an escalated occupant no longer holds the context — its Run settled and the branch is evidence, not live work', async () => {

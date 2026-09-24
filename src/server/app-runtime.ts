@@ -392,6 +392,7 @@ export async function createRuntime(deps: {
       mirror,
       epicBaseNotReady: (task) => epicServiceRef?.epicBaseNotReady(task) ?? false,
       gitBreaker,
+      onSkipReasonChanged: (task) => bus.emit('task_changed', task),
     },
   );
   const upgrade = createUpgrade({ opts, runningVersion, asyncDb, settingsStore, attempts, conversationDriver, notifier });
