@@ -24,6 +24,7 @@ import type { TaskService } from '../domain/tasks.js';
 import { resolveScoped, resolveTaskPrompt } from '../domain/setting-override.js';
 import { SessionContinuation, type PersistSessionContext } from './session-continuation.js';
 import { MergeCoordinator, BaseBranchUnresolved, EpicBaseNotReady } from './merge-coordinator.js';
+import type { RunBoundaryResult } from './run-control.js';
 import type { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { logger } from '../logger.js';
 import type { SpanContext } from '@opentelemetry/api';
@@ -95,7 +96,7 @@ export interface TurnDriverDeps {
   updateStep: (
     taskId: number, id: number, patch: Parameters<AttemptStore['updateStep']>[1],
   ) => Promise<Awaited<ReturnType<AttemptStore['updateStep']>>>;
-  pauseIfGloballyPaused: (taskId: number) => Promise<boolean>;
+  checkRunBoundary: (taskId: number) => Promise<RunBoundaryResult>;
   latestAttemptFor: (task: Pick<TaskRow, 'id'>) => Promise<AttemptRow>;
   recordRunEvent: (
     task: TaskRow, run: AttemptRow,
@@ -190,6 +191,11 @@ export class TurnDriver {
       }
     } finally {
       this.deps.activeRuns.releaseAttempt(run.id);
+      // A pending pause only ever gets consumed at the next driveOnce boundary; if
+      // this drive loop instead ended some other way (settled done/escalated,
+      // cancelled, completed) that marker would otherwise leak onto whatever this
+      // Task's id is next used for.
+      this.deps.activeRuns.clearPendingPause(task.id);
     }
   }
 
@@ -204,8 +210,9 @@ export class TurnDriver {
     const record = (type: 'permission_request' | 'lifecycle', payload: unknown) => {
       this.deps.recordRunEvent(task, run, type, payload);
     };
-    if (await this.deps.pauseIfGloballyPaused(task.id)) {
-      record('lifecycle', { event: 'paused' });
+    const boundary = await this.deps.checkRunBoundary(task.id);
+    if (boundary.stop) {
+      if (boundary.reason !== 'settled') record('lifecycle', { event: 'paused' });
       return { kind: 'terminal' };
     }
     const attemptAtStart = await this.deps.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
@@ -250,9 +257,13 @@ export class TurnDriver {
     });
 
     try {
-      if (await this.deps.pauseIfGloballyPaused(task.id)) {
-        const pausedEvent = await this.deps.attempts.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'paused', reason: 'global pause' } });
-        this.deps.events.onAttemptEvent?.(pausedEvent);
+      const boundary = await this.deps.checkRunBoundary(task.id);
+      if (boundary.stop) {
+        if (boundary.reason !== 'settled') {
+          const reason = boundary.reason === 'global-pause' ? 'global pause' : boundary.pauseReason;
+          const pausedEvent = await this.deps.attempts.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'paused', reason } });
+          this.deps.events.onAttemptEvent?.(pausedEvent);
+        }
         await finalize();
         return { kind: 'terminal' };
       }

@@ -39,7 +39,8 @@ export class ActiveRuns {
   private readonly operations = new Map<number, Operation>();
   private readonly toolCallTotals = new Map<number, Map<string, number>>();
   private readonly lastTurnContextTokens = new Map<number, number>();
-  private readonly pendingOperatorSeed = new Map<number, string>();
+  private readonly pendingOperatorSeed = new Map<number, string[]>();
+  private readonly pendingPause = new Map<number, string>();
   private readonly pendingContinuation = new Map<number, DeterministicContinuation>();
   private readonly pendingManualResume = new Map<number, AttemptRow>();
   private readonly progressTraces = new Map<number, ProgressEvent[]>();
@@ -135,18 +136,52 @@ export class ActiveRuns {
     this.outstandingProgressActions.delete(attemptId);
   }
 
+  // A list, not a single value: two steers accepted while driving between turns
+  // (ADR-0005 §6) must both survive — a second set must never overwrite the first.
   setPendingOperatorSeed(taskId: number, text: string): void {
-    this.pendingOperatorSeed.set(taskId, text);
+    const queued = this.pendingOperatorSeed.get(taskId) ?? [];
+    queued.push(text);
+    this.pendingOperatorSeed.set(taskId, queued);
   }
 
+  /** Every pending message for this Task, joined in acceptance order. */
   takePendingOperatorSeed(taskId: number): string | undefined {
-    const seed = this.pendingOperatorSeed.get(taskId);
+    const queued = this.pendingOperatorSeed.get(taskId);
+    if (!queued || queued.length === 0) return undefined;
     this.pendingOperatorSeed.delete(taskId);
-    return seed;
+    return queued.join('\n\n');
+  }
+
+  /** Removes only the one message an error-path caller itself queued, leaving any other operator's pending seed intact. */
+  removePendingOperatorSeed(taskId: number, text: string): void {
+    const queued = this.pendingOperatorSeed.get(taskId);
+    if (!queued) return;
+    const idx = queued.indexOf(text);
+    if (idx === -1) return;
+    queued.splice(idx, 1);
+    if (queued.length === 0) this.pendingOperatorSeed.delete(taskId);
   }
 
   clearPendingOperatorSeed(taskId: number): void {
     this.pendingOperatorSeed.delete(taskId);
+  }
+
+  setPendingPause(taskId: number, reason: string): void {
+    this.pendingPause.set(taskId, reason);
+  }
+
+  hasPendingPause(taskId: number): boolean {
+    return this.pendingPause.has(taskId);
+  }
+
+  takePendingPause(taskId: number): string | undefined {
+    const reason = this.pendingPause.get(taskId);
+    this.pendingPause.delete(taskId);
+    return reason;
+  }
+
+  clearPendingPause(taskId: number): void {
+    this.pendingPause.delete(taskId);
   }
 
   setPendingContinuation(taskId: number, continuation: DeterministicContinuation): void {
