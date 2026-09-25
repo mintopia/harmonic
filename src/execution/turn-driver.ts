@@ -700,11 +700,29 @@ export class TurnDriver {
     const operatorSeed = this.deps.activeRuns.takePendingOperatorSeed(task.id);
     let condensed: string | null = null;
     if (operatorSeed !== undefined && !healCtx) {
-      promptText = `## Operator message\n\n${operatorSeed}`;
+      if (run.sessionRowId !== null) {
+        // Reusing the retained Session (continue-full): it already holds the
+        // full prior conversation, so the bare operator message is enough.
+        promptText = `## Operator message\n\n${operatorSeed}`;
+      } else {
+        // A fresh Session (start-condensed fallback, or no prior Session at
+        // all): the agent needs SOME context, not just the bare message.
+        const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
+        const priorContext = src ? await this.deps.sessionContinuation.condensedContext(src.prior) : null;
+        promptText = priorContext
+          ? `${priorContext}\n\n## Operator message\n\n${operatorSeed}`
+          : `${promptText}\n\n## Operator message\n\n${operatorSeed}`;
+      }
     } else if (healCtx) {
       promptText = `${promptText}\n\n## Previous attempt failed — fix required (self-heal ${healCtx.attempt})\n` +
         `Your previous attempt did not pass:\n${healCtx.reason}\n\n${healCtx.output}\n\nFix the cause so the full verification suite passes, then finish.`;
       condensed = healCtx.condensedContext ?? null;
+      // A steer landing exactly as a self-heal retry starts still reaches this
+      // turn — the self-heal prompt takes precedence, but the operator message
+      // rides alongside it rather than being silently dropped (ADR-0005 §6).
+      if (operatorSeed !== undefined) {
+        promptText = `${promptText}\n\n## Operator message\n\n${operatorSeed}`;
+      }
     } else if (task.continuationChoice === 'condensed') {
       const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
       condensed = src ? await this.deps.sessionContinuation.condensedContext(src.prior) : null;
