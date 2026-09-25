@@ -57,6 +57,8 @@ export class TurnCompletion {
     listeners: TurnListeners;
     autoDriven: boolean;
     promptText: string;
+    /** An operator steer accepted before this turn existed, folded into `promptText`. */
+    operatorSeed?: string | undefined;
     record: RunEventRecorder;
   }): Promise<{ result: PromptResult; connectionGone: boolean; escalating: string | null }> {
     const { task, driver, active, guardrails, listeners, autoDriven, record } = input;
@@ -65,6 +67,7 @@ export class TurnCompletion {
     if (active.pauseRequested) return { result: {}, connectionGone: false, escalating: null };
     active.steerable = true;
     let connectionGone = false;
+    if (input.operatorSeed !== undefined) record('lifecycle', { event: 'steer_delivered', text: input.operatorSeed });
     const first = await promptTurn(driver, promptText, record);
     connectionGone ||= first.connectionGone;
     let result: PromptResult = first.result ?? {};

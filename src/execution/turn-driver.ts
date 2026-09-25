@@ -256,7 +256,7 @@ export class TurnDriver {
         await finalize();
         return { kind: 'terminal' };
       }
-      const promptText = await this.initializeTurn({
+      const { promptText, operatorSeed } = await this.initializeTurn({
         task,
         run,
         harness,
@@ -271,7 +271,9 @@ export class TurnDriver {
         rebaseConflict,
         record,
       });
-      const driven = await this.completion.drivePromptCycle({ task, driver, active, guardrails, listeners, autoDriven, promptText, record });
+      const driven = await this.completion.drivePromptCycle({
+        task, driver, active, guardrails, listeners, autoDriven, promptText, operatorSeed, record,
+      });
       escalating = driven.escalating;
       if (active.externallySettled) {
         await finalize();
@@ -576,7 +578,7 @@ export class TurnDriver {
     healCtx: HealContext | undefined;
     rebaseConflict: boolean;
     record: RunEventRecorder;
-  }): Promise<string> {
+  }): Promise<{ promptText: string; operatorSeed: string | undefined }> {
     const {
       task,
       run,
@@ -733,7 +735,7 @@ export class TurnDriver {
     if (condensed) promptText = `${promptText}\n\n${condensed}`;
     if (codeIndexRepoId) promptText = `${promptText}${codeIndexRepoGuidance(codeIndexRepoId)}`;
     await this.deps.attempts.update(run.id, { prompt: promptText });
-    return promptText;
+    return { promptText, operatorSeed };
   }
 
 }
