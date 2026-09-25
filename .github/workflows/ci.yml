@@ -1,30 +1,39 @@
 name: CI
 
-# Typecheck + tests on every branch push and PR. Tag pushes are intentionally
-# excluded (the `branches` filter never matches a tag) — releases run their own
-# gated checks in release.yml.
+# Typecheck + tests on every branch push and PR, except main (release.yml
+# calls this workflow for main so the matrix runs once per push there, not
+# twice). Tag pushes are intentionally excluded (the `branches-ignore` filter
+# never matches a tag) — releases run their own gated checks in release.yml.
 on:
   push:
-    branches: ['**']
+    branches-ignore: [main]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
 
-# A newer push to the same ref supersedes an in-flight run.
+# A newer push to the same ref supersedes an in-flight run. Scoped by workflow
+# + event name too: on a workflow_call from release.yml, github.ref/workflow
+# resolve to the caller's (main / Release), so without this a same-ref release
+# run could collide with, or be cancelled by, an unrelated push/PR run.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   check:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24, 26]
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
           cache: npm
 
       # `prepare` builds dist/ on install, so this also proves the build.

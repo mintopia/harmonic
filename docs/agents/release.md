@@ -47,7 +47,17 @@ accrues on `develop`. To ship what's on `develop`:
   (`npm run docs:openapi`, commit `website/src/openapi.json`) — CI fails a stale
   snapshot. `info.version` rides on release-please's `extra-files`, so a plain
   regen never touches it.
-- **The `publish` job re-runs `npm test`.** A flaky test there blocks the
-  publish even though the same code already passed CI on merge. Re-run just the
-  failed job (`gh run rerun <run-id> --failed`) rather than re-cutting the
-  release.
+- **`publish` needs the `test` job, which reruns the CI matrix on the release
+  commit.** A flaky test on any Node line there blocks the publish even though
+  the same code already passed CI on merge. Re-run just the failed job
+  (`gh run rerun <run-id> --failed`) rather than re-cutting the release.
+
+## Supported Node/npm
+
+CI (`ci.yml`) runs the matrix `node: [22, 24, 26]`, each against its own
+**bundled** npm — tests never install a different npm. The policy is
+maintained Node LTS lines plus the upcoming LTS; see
+`docs/adr/0043-supported-node-and-npm-versions.md` for the full rationale and
+the drop/add schedule. `publish` only upgrades npm (currently to npm 11) for
+the one step that needs it, Trusted Publishing, right before `npm publish` —
+never for typecheck or tests.
