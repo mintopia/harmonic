@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.19.3](https://github.com/mintopia/harmonic/compare/v2.19.2...v2.19.3) (2026-09-25)
+
+
+### Bug Fixes
+
+* **release:** pin npm 11 in the publish job so npm 12 stops blocking publishing ([2b5f81a](https://github.com/mintopia/harmonic/commit/2b5f81a94f98dce3a07018688e43507727cc32d3))
+* **upgrade:** read the latest dist-tag from npm 12's array-wrapped npm view output ([4da8feb](https://github.com/mintopia/harmonic/commit/4da8feb15d90cf86103255d0a40b8f350e49d6ae))
+
 ## [2.19.2](https://github.com/mintopia/harmonic/compare/v2.19.1...v2.19.2) (2026-09-25)
 
 
