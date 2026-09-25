@@ -185,6 +185,47 @@ describe('steering/resuming a Task whose Session is incompatible or stranded (is
     expect(running.id).toBe(attemptBefore.id);
   });
 
+  describe('Runner.redeliverOrphanedSteer — a drive loop settling with a seed no turn consumed', () => {
+    it('routes it back through the steer chain when the Task ended up somewhere still steerable', async () => {
+      const created = await server.api('POST', '/api/tasks', { prompt: 'x' });
+      const taskId = created.body.id;
+      await server.app.ctx.tasks.setState(taskId, 'ready');
+      await server.app.ctx.tasks.setState(taskId, 'working');
+      const attempt = await server.app.ctx.attempts.create(taskId);
+      await server.app.ctx.tasks.setState(taskId, 'paused');
+
+      await (server.app.ctx.runner as unknown as {
+        redeliverOrphanedSteer: (taskId: number, text: string) => Promise<void>;
+      }).redeliverOrphanedSteer(taskId, 'left over from a turn that never came');
+
+      const latest = await waitFor(async () => {
+        const all = await server.app.ctx.attempts.listForTask(taskId);
+        const last = all.at(-1);
+        return all.length === 1 && last?.prompt?.includes('left over from a turn that never came') ? last : undefined;
+      });
+      expect(latest.id).toBe(attempt.id);
+
+      const events = await server.app.ctx.attempts.listEvents(attempt.id);
+      expect(events.some((e) => (e.payload as { event?: string }).event === 'steer_undelivered')).toBe(false);
+    });
+
+    it('records an undelivered-steer lifecycle event when nothing can accept it', async () => {
+      const created = await server.api('POST', '/api/tasks', { prompt: 'quick native task' });
+      const taskId = created.body.id;
+      await server.api('POST', `/api/tasks/${taskId}/run`);
+      await waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done' ? true : undefined));
+      const attempt = (await server.app.ctx.attempts.listForTask(taskId)).at(-1)!;
+
+      await (server.app.ctx.runner as unknown as {
+        redeliverOrphanedSteer: (taskId: number, text: string) => Promise<void>;
+      }).redeliverOrphanedSteer(taskId, 'nobody home');
+
+      const events = await server.app.ctx.attempts.listEvents(attempt.id);
+      const undelivered = events.find((e) => (e.payload as { event?: string; text?: string }).event === 'steer_undelivered');
+      expect(undelivered?.payload).toMatchObject({ event: 'steer_undelivered', text: 'nobody home' });
+    });
+  });
+
   it('409s a steer on a done task, and on a cancelled task', async () => {
     const done = await server.api('POST', '/api/tasks', { prompt: 'quick native task' });
     await server.api('POST', `/api/tasks/${done.body.id}/run`);

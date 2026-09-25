@@ -525,6 +525,14 @@ export class Runner {
           this.activeRuns.deleteOperation(bound.id);
         } finally {
           this.activeRuns.clearDriving(task.id);
+          // The drive loop settled (terminal, no next turn) with a steer seeded
+          // for a turn that never came: nothing else will consume it. Route it
+          // through the same chain the steer route tries, so it lands wherever
+          // the Task ended up rather than being silently lost (ADR-0005 §6).
+          const leftoverSeed = this.activeRuns.takePendingOperatorSeed(task.id);
+          if (leftoverSeed !== undefined) {
+            await this.redeliverOrphanedSteer(task.id, leftoverSeed);
+          }
         }
       });
       return bound;
@@ -673,6 +681,28 @@ export class Runner {
   /** @see {@link RunControl.resumePaused} */
   async resumePaused(taskId: number, continuation?: 'full' | 'condensed'): Promise<TaskRow> {
     return this.runControl.resumePaused(taskId, continuation);
+  }
+
+  /**
+   * A drive loop settled with an operator seed still pending (set while
+   * driving between turns, but no further turn started to consume it): tries
+   * the same chain the steer route does, so it lands wherever the Task ended
+   * up. If nothing accepts it, records an undelivered-steer lifecycle event
+   * instead of losing it silently (ADR-0005 §6).
+   */
+  private async redeliverOrphanedSteer(taskId: number, text: string): Promise<void> {
+    const delivered =
+      (await this.steer(taskId, text)) ||
+      (await this.steerSettled(taskId, text)) ||
+      (await this.steerPaused(taskId, text)) ||
+      (await this.steerWorking(taskId, text));
+    if (delivered) return;
+    logger.warn('Steer could not be redelivered after its drive loop settled', { taskId });
+    const run = await this.attempts.getRunningForTask(taskId);
+    const attemptId = run?.id ?? (await this.attempts.listForTask(taskId)).at(-1)?.id;
+    if (attemptId === undefined) return;
+    const event = await this.attempts.appendEvent(attemptId, { type: 'lifecycle', payload: { event: 'steer_undelivered', text } });
+    this.events.onAttemptEvent?.(event);
   }
 
   private forActiveTask(taskId: number, fn: (active: ActiveRun) => void): boolean {
