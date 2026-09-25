@@ -593,4 +593,25 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await manager.reconcileEpics();
     expect(reconciled).toEqual([1]);
   });
+
+  it('two overlapping sync() calls for the same newly tracker-enabled Workspace register its Scheduler job only once', async () => {
+    manager.stopAll();
+    let releaseGate: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { releaseGate = resolve; });
+    manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+      resolveAdapter: async (repoRoot: string) => {
+        await gate; // hold both syncs inside the not-yet-registered window at once
+        polled.push(repoRoot);
+        return { name: 'stub', scan: async () => [], readTicket: async (r) => ticket(r.number), claim: async () => {}, release: async () => {}, close: async () => {}, reopen: async () => {} };
+      },
+      scheduler: new Scheduler(asyncDb),
+    });
+    const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+
+    const first = manager.sync();
+    const second = manager.sync();
+    releaseGate();
+    await expect(Promise.all([first, second])).resolves.toBeDefined();
+    expect(manager.coordinatorFor(a.id)).toBeDefined();
+  });
 });
