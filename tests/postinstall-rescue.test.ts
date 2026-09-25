@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
 import { rename, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { installManagedUpgrade, readManagedInstalledVersion } from '../src/cli-serve.js';
@@ -16,6 +16,15 @@ const run = (command: string, args: readonly string[]) => execFileAsync(command,
 const rescueScriptSource = readFileSync(fileURLToPath(new URL('../scripts/postinstall-rescue.cjs', import.meta.url)), 'utf8');
 const rescueFixtureFiles = { 'scripts/postinstall-rescue.cjs': rescueScriptSource };
 const rescueFixtureScripts = { postinstall: 'node scripts/postinstall-rescue.cjs' };
+
+/** 2.18.1's `npm i --prefix <versionDir> <spec>`. npm 12 blocks dependency install scripts by
+ * default, so this carries the operator's `allow-scripts` opt-in (keyed by the tarball path, since
+ * npm matches local specs by path, not name). npm 10 ignores the unknown key. */
+async function legacyNestedInstall(prefix: string, packageSpec: string): Promise<void> {
+  const userConfig = join(dirname(packageSpec), 'legacy-install.npmrc');
+  writeFileSync(userConfig, `allow-scripts=${packageSpec}\n`);
+  await run('npm', ['i', '--userconfig', userConfig, '--prefix', prefix, packageSpec]);
+}
 
 function readManifestVersion(packageJsonPath: string): string {
   return JSON.parse(readFileSync(packageJsonPath, 'utf8')).version;
@@ -33,7 +42,7 @@ describe('postinstall-rescue.cjs (real npm install)', () => {
     const versionDir = join(appDir, 'versions', version);
     mkdirSync(versionDir, { recursive: true });
 
-    await run('npm', ['i', '--prefix', versionDir, packageSpec]);
+    await legacyNestedInstall(versionDir, packageSpec);
     await run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
 
     // Old verify replicated via string concat, not path.join, to match its exact behavior.
@@ -49,7 +58,7 @@ describe('postinstall-rescue.cjs (real npm install)', () => {
     const packageSpec = packFixtureTarball(tempDir, { version, scripts: rescueFixtureScripts, files: rescueFixtureFiles });
     const otherDir = tempDir('harmonic-rescue-other-');
 
-    await run('npm', ['i', '--prefix', otherDir, packageSpec]);
+    await legacyNestedInstall(otherDir, packageSpec);
 
     const nestedDist = join(otherDir, 'node_modules', '@mintopia', 'harmonic', 'dist');
     expect(existsSync(nestedDist)).toBe(true);
@@ -64,7 +73,7 @@ describe('postinstall-rescue.cjs (real npm install)', () => {
     const versionDir = join(appDir, 'versions', version);
     mkdirSync(versionDir, { recursive: true });
 
-    await run('npm', ['i', '--prefix', versionDir, packageSpec]);
+    await legacyNestedInstall(versionDir, packageSpec);
     await run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
     const nestedCliPath = join(versionDir, 'node_modules', '@mintopia', 'harmonic', 'dist', 'cli.js');
     expect(existsSync(nestedCliPath)).toBe(true);
@@ -167,7 +176,7 @@ describe('readManagedInstalledVersion on a rescued layout (real filesystem)', ()
     const versionDir = join(appDir, 'versions', version);
     mkdirSync(versionDir, { recursive: true });
 
-    await run('npm', ['i', '--prefix', versionDir, packageSpec]);
+    await legacyNestedInstall(versionDir, packageSpec);
     flipCurrent({ appDir, version });
 
     const wrapperManifest = JSON.parse(readFileSync(join(versionDir, 'package.json'), 'utf8'));

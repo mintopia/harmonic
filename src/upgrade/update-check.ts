@@ -9,7 +9,9 @@ const execFileAsync = promisify(execFile);
 
 const stableVersion = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const prereleaseVersion = /^(?:v)?(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)-(?:[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
-const npmDistTags = z.object({ latest: z.string() });
+const npmDistTagsObject = z.object({ latest: z.string() });
+// npm 12 made `npm view --json` always wrap its result in an array.
+const npmDistTags = z.union([npmDistTagsObject, z.tuple([npmDistTagsObject]).transform(([tags]) => tags)]);
 
 type StableVersion = readonly [string, string, string];
 
@@ -186,6 +188,10 @@ export async function fetchLatestVersion(): Promise<string> {
   } catch (error) {
     throw new Error(`npm registry request failed: ${error instanceof Error ? error.message : String(error)}`);
   }
+  return parseLatestDistTag(stdout);
+}
+
+export function parseLatestDistTag(stdout: string): string {
   let json: unknown;
   try {
     json = JSON.parse(stdout);
