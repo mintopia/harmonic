@@ -35,6 +35,7 @@ export interface ActiveRun {
 
 export class ActiveRuns {
   private readonly runs = new Map<number, ActiveRun>();
+  private readonly driving = new Set<number>();
   private readonly operations = new Map<number, Operation>();
   private readonly toolCallTotals = new Map<number, Map<string, number>>();
   private readonly lastTurnContextTokens = new Map<number, number>();
@@ -76,6 +77,21 @@ export class ActiveRuns {
 
   hasTask(taskId: number): boolean {
     return this.forTask(taskId) !== undefined;
+  }
+
+  /** Marks a Task as having a `beginRun`/`drive()` loop in flight, including
+   * the pre-spawn/between-turns gaps where no per-turn {@link ActiveRun}
+   * exists. A stranded Task is one with no ActiveRun AND not driving. */
+  markDriving(taskId: number): void {
+    this.driving.add(taskId);
+  }
+
+  clearDriving(taskId: number): void {
+    this.driving.delete(taskId);
+  }
+
+  isDriving(taskId: number): boolean {
+    return this.driving.has(taskId);
   }
 
   // Clears only the active-run map; the other 10 maps are released per-attempt via releaseAttempt.

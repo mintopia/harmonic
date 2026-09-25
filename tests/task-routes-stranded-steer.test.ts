@@ -147,6 +147,44 @@ describe('steering/resuming a Task whose Session is incompatible or stranded (is
     expect(latest.prompt).toContain('## Operator message');
   });
 
+  it('POST /tasks/:id/resume reattaches the running Attempt row instead of orphaning it under a new one', async () => {
+    const created = await server.api('POST', '/api/tasks', { prompt: 'x' });
+    const taskId = created.body.id;
+    await server.app.ctx.tasks.setState(taskId, 'ready');
+    await server.app.ctx.tasks.setState(taskId, 'working');
+    const attempt = await server.app.ctx.attempts.create(taskId);
+    await server.app.ctx.tasks.setState(taskId, 'paused');
+
+    const resumed = await server.api('POST', `/api/tasks/${taskId}/resume`, {});
+    expect(resumed.status).toBe(200);
+
+    const running = await waitFor(async () => {
+      const attempts = await server.app.ctx.attempts.listForTask(taskId);
+      const row = attempts.find((a) => a.id === attempt.id);
+      return attempts.length === 1 && row?.state === 'running' ? row : undefined;
+    });
+    expect(running.id).toBe(attempt.id);
+
+    await waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done' ? true : undefined));
+  });
+
+  it('POST /tasks/:id/resume falls back to start-condensed for a paused Task with an incompatible retained Session', async () => {
+    const mirrored = await escalateWithSession(93004);
+    await server.app.ctx.tasks.setState(mirrored.id, 'ready');
+    await server.app.ctx.tasks.setState(mirrored.id, 'working');
+    await server.app.ctx.tasks.setState(mirrored.id, 'paused');
+    const attemptBefore = await breakSessionCompatibility(mirrored.id);
+
+    const resumed = await server.api('POST', `/api/tasks/${mirrored.id}/resume`, {});
+    expect(resumed.status).toBe(200);
+
+    const running = await waitFor(async () => {
+      const attempt = await server.app.ctx.attempts.get(attemptBefore.id);
+      return attempt.state === 'running' && attempt.sessionRowId === null ? attempt : undefined;
+    });
+    expect(running.id).toBe(attemptBefore.id);
+  });
+
   it('409s a steer on a done task, and on a cancelled task', async () => {
     const done = await server.api('POST', '/api/tasks', { prompt: 'quick native task' });
     await server.api('POST', `/api/tasks/${done.body.id}/run`);
