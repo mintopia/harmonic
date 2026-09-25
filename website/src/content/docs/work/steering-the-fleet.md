@@ -58,10 +58,33 @@ directly, or however you'd normally resolve it. Answer what the agent
 couldn't, and either finish it yourself or hand it back for another
 automatic run once it's unblocked.
 
+## Steering, pausing, and resuming a ticket
+
+You don't have to wait for a ticket to come back to you. Type into the steer
+box on a running ticket and your message goes straight to the agent's
+current conversation, or waits for the end of its current turn if it can't
+be interrupted.
+
+**Pause** asks the agent to finish what it's doing and stop, keeping its
+work and its conversation. **Resume** picks the same attempt back up.
+Steering a paused ticket resumes it and delivers your message in one step.
+
+A pause can last as long as you like. If the saved conversation can't be
+reloaded as it was, for example after you upgrade Harmonic, the agent starts
+again from a summary of the work so far. Resuming a ticket that's been left
+a while costs more, because the provider's cache has gone cold, but it's
+never refused. The same goes for a ticket whose agent process has gone:
+steer or resume it and it picks up again.
+
+If a running ticket is close to its time limit, **Extend** gives it more
+time without restarting it. The ticket shows how much time it has left.
+
 ## Pausing everything
 
-When you want hands on the wheel across the board, the master switch in the
-header pauses all automatic running at once, every Workspace, immediately.
-Flip it back on and the queue picks up where it left off. Per-Workspace
+The **Pause** button in the header freezes every running ticket in every
+Workspace, and anything that starts while it's on is paused straight away.
+Press **Resume** and paused tickets carry on. The **Auto-runner** switch
+next to it is separate: turning it off stops Harmonic picking up new work,
+but leaves running tickets alone. Per-Workspace
 throughput dials (priority and concurrency) live in
 [Settings & overrides](/harmonic/run/settings/).
