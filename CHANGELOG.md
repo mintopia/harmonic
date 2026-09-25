@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.19.1](https://github.com/mintopia/harmonic/compare/v2.19.0...v2.19.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* autostash a dirty worktree at Attempt-start rebase instead of auto-committing leftovers ([587088c](https://github.com/mintopia/harmonic/commit/587088c0c343ea09c3dea6ff6c5ccfb27702f3a9))
+* broadcast task_changed when a Task's skip reason changes ([17fcd4d](https://github.com/mintopia/harmonic/commit/17fcd4d428860e2761443488c62d7fac0a3f7af5))
+* commit leftover worktree work only after verification passes, just before merge ([98a4406](https://github.com/mintopia/harmonic/commit/98a44067ee861a71da457f32257843c8059a9867))
+* extend a working Task's wall-clock budget between turns ([f3bf169](https://github.com/mintopia/harmonic/commit/f3bf1692e3c4602b8268b2b791ecefa91e1e850e))
+* report unresolved autostash conflicts as a conflict on the next rebase ([a3e6890](https://github.com/mintopia/harmonic/commit/a3e689040a69fae2be38e5254262c2df53631b18))
+
 ## [2.19.0](https://github.com/mintopia/harmonic/compare/v2.18.1...v2.19.0) (2026-09-23)
 
 
