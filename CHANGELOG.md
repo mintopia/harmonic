@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.19.2](https://github.com/mintopia/harmonic/compare/v2.19.1...v2.19.2) (2026-09-25)
+
+
+### Bug Fixes
+
+* claim the driving marker synchronously to close a concurrent-launch race ([ca93d2a](https://github.com/mintopia/harmonic/commit/ca93d2ad07bd2b6ab12ac20b32d164903b9fd497))
+* never refuse a steer on paused/working/escalated tasks with an incompatible or missing Session ([26bc475](https://github.com/mintopia/harmonic/commit/26bc475d751f3a2da3131d5022d49d65f107a0c8))
+* never silently lose an operator steer seeded while a Task's drive loop is in flight ([66830b3](https://github.com/mintopia/harmonic/commit/66830b33938a238d6575b3baac677c1af1573c76))
+* prevent duplicate drive loops and orphaned Attempts on stranded/paused Task resume ([d91837c](https://github.com/mintopia/harmonic/commit/d91837ca0acba163faecbf6d0f4adcebc83e08f8))
+* read "Overdue" and announce the wall-clock deadline once it passes ([f457f15](https://github.com/mintopia/harmonic/commit/f457f158e7fdb9430c49205ed55a19cafed5ad34))
+
 ## [2.19.1](https://github.com/mintopia/harmonic/compare/v2.19.0...v2.19.1) (2026-09-24)
 
 
