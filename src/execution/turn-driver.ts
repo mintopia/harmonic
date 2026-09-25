@@ -280,6 +280,7 @@ export class TurnDriver {
         autoDriven,
         healCtx,
         rebaseConflict,
+        opensAttempt,
         record,
       });
       const driven = await this.completion.drivePromptCycle({
@@ -292,6 +293,12 @@ export class TurnDriver {
       }
 
       if (active.pauseRequested) {
+        // A pause requested before drivePromptCycle ever sent a prompt already
+        // consumed the seed out of the pending map (see initializeTurn); put it
+        // back for the resumed turn rather than lose it (ADR-0005 §6).
+        if (operatorSeed !== undefined && !driven.operatorSeedDelivered) {
+          this.deps.activeRuns.setPendingOperatorSeed(task.id, operatorSeed);
+        }
         if ((await this.deps.taskService.get(task.id)).state === 'working') await this.deps.taskService.pause(task.id);
         const usage = await this.deps.usage.collectUsageSafe({
           harnessId: task.harness,
@@ -588,6 +595,9 @@ export class TurnDriver {
     autoDriven: boolean;
     healCtx: HealContext | undefined;
     rebaseConflict: boolean;
+    /** No Step recorded yet on this Attempt: this is its own opening turn, distinct
+     * from a manual resume/steer-continue reusing an already-open Attempt's row. */
+    opensAttempt: boolean;
     record: RunEventRecorder;
   }): Promise<{ promptText: string; operatorSeed: string | undefined }> {
     const {
@@ -603,6 +613,7 @@ export class TurnDriver {
       autoDriven,
       healCtx,
       rebaseConflict,
+      opensAttempt,
       record,
     } = input;
     const modelId = adapterFor(task.harness).sessionModelId?.(task.model);
@@ -713,9 +724,16 @@ export class TurnDriver {
     const operatorSeed = this.deps.activeRuns.takePendingOperatorSeed(task.id);
     let condensed: string | null = null;
     if (operatorSeed !== undefined && !healCtx) {
-      if (run.sessionRowId !== null) {
+      if (run.sessionRowId !== null && !opensAttempt) {
+        // Continuing an already-open Attempt (a manual resume/steer-continue):
         // continue-full already holds the full prior conversation.
         promptText = `## Operator message\n\n${operatorSeed}`;
+      } else if (run.sessionRowId !== null) {
+        // This Attempt's own opening turn, even though it opportunistically bound a
+        // warm Session (bindContinuationIfEligible): that memory belongs to an
+        // earlier Attempt, not this one — still send the real instructions, with
+        // the operator's message appended, not swapped in for them.
+        promptText = `${promptText}\n\n## Operator message\n\n${operatorSeed}`;
       } else {
         // Fresh Session: the agent needs some context, not just the bare message.
         const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
