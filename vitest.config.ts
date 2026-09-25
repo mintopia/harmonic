@@ -14,7 +14,7 @@ const shared = {
   // full servers (Fastify + libsql + a worker_threads stats worker), so on a
   // shared/loaded box that default fork count can out-run available memory and
   // get forks OOM-killed mid-run — silently dropping whichever files they held.
-  poolOptions: { forks: { maxForks: 4 } },
+  maxWorkers: 4,
   setupFiles: ['./tests/setup-env.ts'],
 } as const;
 
