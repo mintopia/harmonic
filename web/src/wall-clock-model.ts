@@ -7,7 +7,8 @@ export interface WallClockRemaining {
 export function wallClockRemaining(deadline: number, now: number): WallClockRemaining {
   const remainingMs = deadline - now;
   const overdue = remainingMs <= 0;
-  const totalMinutes = overdue ? 0 : Math.ceil(remainingMs / 60_000);
+  if (overdue) return { label: 'Overdue', overdue };
+  const totalMinutes = Math.ceil(remainingMs / 60_000);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   const label = hours > 0 ? `${hours}h ${String(minutes).padStart(2, '0')}m left` : `${minutes}m left`;

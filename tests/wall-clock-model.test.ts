@@ -20,13 +20,13 @@ describe('wallClockRemaining', () => {
     expect(wallClockRemaining(deadline, now)).toEqual({ label: '2m left', overdue: false });
   });
 
-  it('reports "0m left" and overdue once the deadline has passed', () => {
+  it('reports "Overdue" once the deadline has passed', () => {
     const now = 10_000;
     const deadline = 0;
-    expect(wallClockRemaining(deadline, now)).toEqual({ label: '0m left', overdue: true });
+    expect(wallClockRemaining(deadline, now)).toEqual({ label: 'Overdue', overdue: true });
   });
 
   it('treats the deadline instant itself as overdue', () => {
-    expect(wallClockRemaining(1_000, 1_000)).toEqual({ label: '0m left', overdue: true });
+    expect(wallClockRemaining(1_000, 1_000)).toEqual({ label: 'Overdue', overdue: true });
   });
 });
