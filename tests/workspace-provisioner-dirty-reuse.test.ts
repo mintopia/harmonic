@@ -61,7 +61,6 @@ describe('WorkspaceProvisioner.prepareWorkspace reusing a worktree left dirty by
     const run = await attempts.update((await attempts.create(task.id)).id, { branch, baseBranch: 'main' });
     const worktreePath = join(worktreesDir, `task-${task.id}`);
 
-    // Simulate a prior attempt that provisioned the worktree and was killed mid-turn.
     git(repo, 'worktree', 'add', '-b', branch, worktreePath, 'main');
     writeFileSync(join(worktreePath, 'README.md'), 'uncommitted work from the killed attempt\n');
     expect(git(worktreePath, 'status', '--porcelain')).not.toBe('');
