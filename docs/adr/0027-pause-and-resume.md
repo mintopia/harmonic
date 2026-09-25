@@ -81,7 +81,12 @@ operator retry. All manual resumes flow through one surface:
   path is pre-selected.
 - **Lift the warm-only gate** in `steerSettled`: a **cold** Session is offered,
   never refused. Cold only raises the surfaced Cost — it never removes an option
-  or blocks the resume (ADR-0001: reuse is always valid).
+  or blocks the resume (ADR-0001: reuse is always valid). The same holds when a
+  retained Session is *incompatible* for continue-full (harness/adapter-version/
+  cwd/permission-mode moved, e.g. across an upgrade): that only rules out
+  continue-full, so Manual Resume silently falls back to start-condensed — a
+  fresh Session is unaffected by the old one's compatibility axes. It is never a
+  refusal.
 
 Resuming continues the **same Attempt** — the Attempt counter advances only on a
 failed verdict, and a pause carries no verdict. The condensed path rebinds a new

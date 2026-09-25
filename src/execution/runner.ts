@@ -649,6 +649,11 @@ export class Runner {
     return this.runControl.steerPaused(taskId, text);
   }
 
+  /** @see {@link RunControl.steerWorking} */
+  async steerWorking(taskId: number, text: string): Promise<boolean> {
+    return this.runControl.steerWorking(taskId, text);
+  }
+
   /** @see {@link RunControl.resumePaused} */
   async resumePaused(taskId: number, continuation?: 'full' | 'condensed'): Promise<TaskRow> {
     return this.runControl.resumePaused(taskId, continuation);
