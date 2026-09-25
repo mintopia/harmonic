@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer, type Server } from 'node:http';
-import { UpdateCheck, compareStableVersions, fetchLatestVersion, type UpdateAvailabilityStore } from '../src/upgrade/update-check.js';
+import { UpdateCheck, compareStableVersions, fetchLatestVersion, parseLatestDistTag, type UpdateAvailabilityStore } from '../src/upgrade/update-check.js';
 
 function store(initial: string | null = null): UpdateAvailabilityStore {
   let version = initial;
@@ -104,4 +104,22 @@ describe('fetchLatestVersion', () => {
 
     await expect(fetchLatestVersion()).resolves.toBe('9.9.9');
   }, 20_000);
+});
+
+describe('parseLatestDistTag', () => {
+  it.each([
+    ['npm 10 object', '{ "latest": "2.18.1", "next": "2.19.0-beta.1" }'],
+    ['npm 12 array', '[ { "latest": "2.18.1", "next": "2.19.0-beta.1" } ]'],
+  ])('reads the latest dist-tag from %s output', (_shape, stdout) => {
+    expect(parseLatestDistTag(stdout)).toBe('2.18.1');
+  });
+
+  it.each([
+    ['no latest tag', '{ "next": "2.19.0-beta.1" }'],
+    ['an empty array', '[]'],
+    ['an ambiguous multi-entry array', '[ { "latest": "2.18.1" }, { "latest": "2.18.0" } ]'],
+    ['invalid JSON', 'npm warn something'],
+  ])('rejects %s', (_case, stdout) => {
+    expect(() => parseLatestDistTag(stdout)).toThrow();
+  });
 });
