@@ -127,18 +127,35 @@ export class RunControl {
       logger.info('Task resumed', { taskId, attemptId: active.attemptId, reason });
       return true;
     }
-    const run = await this.deps.attempts.getRunningForTask(taskId);
-    if (!run) return false;
-    await this.deps.attempts.update(run.id, { startedAt });
-    await this.deps.taskService.resume(taskId);
-    await this.deps.recordLifecycleTransition(taskId, 'resumed', reason);
-    logger.info('Task resumed', { taskId, attemptId: run.id, reason });
+    // Mid-drive between turns isn't stranded; its own loop picks the paused state up.
+    if (this.deps.activeRuns.isDriving(taskId)) return false;
+    // Claimed synchronously, before the first await, so a second concurrent
+    // caller sees isDriving() true rather than racing this one to launch.
+    this.deps.activeRuns.markDriving(taskId);
+    let launched = false;
     try {
-      await this.deps.launchClaimed(taskId);
-      return true;
-    } catch (error) {
-      await this.deps.taskService.pause(taskId);
-      throw error;
+      const run = await this.deps.attempts.getRunningForTask(taskId);
+      if (!run) return false;
+      await this.deps.attempts.update(run.id, { startedAt });
+      const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
+      const eligible = src ? this.deps.sessionContinuation.resumeEligibilityFor(task, src.session).eligible : false;
+      if (src && !eligible) await this.deps.taskService.setContinuationChoice(taskId, 'condensed');
+      await this.deps.taskService.resume(taskId);
+      await this.deps.recordLifecycleTransition(taskId, 'resumed', reason);
+      logger.info('Task resumed', { taskId, attemptId: run.id, reason });
+      try {
+        this.deps.activeRuns.setPendingManualResume(taskId, run);
+        await this.deps.launchClaimed(taskId);
+        launched = true;
+        return true;
+      } catch (error) {
+        await this.deps.taskService.pause(taskId);
+        throw error;
+      }
+    } finally {
+      // beginRun owns clearing the marker from here once it has launched;
+      // any other exit (early return, thrown error) must release it itself.
+      if (!launched) this.deps.activeRuns.clearDriving(taskId);
     }
   }
 
@@ -175,22 +192,17 @@ export class RunControl {
     return true;
   }
 
-  /**
-   * Continue a settled Task's Session with an operator message. A cold Session
-   * remains eligible: cache warmth changes the cost estimate, never whether the
-   * operator can continue it. The settled Attempt is resumed in place.
-   */
+  /** A resume is never refused; an incompatible or missing Session falls back to start-condensed. */
   async steerSettled(taskId: number, text: string): Promise<boolean> {
     if (this.deps.activeRuns.hasTask(taskId)) return false;
     const task = await this.deps.taskService.get(taskId);
     if (task.state !== 'escalated') return false;
     const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
-    if (!src) return false;
-    if (!this.deps.sessionContinuation.resumeEligibilityFor(task, src.session).eligible) return false;
+    const eligible = src ? this.deps.sessionContinuation.resumeEligibilityFor(task, src.session).eligible : false;
     this.deps.activeRuns.setPendingOperatorSeed(taskId, text);
     try {
-      await this.deps.taskService.requeue(taskId, undefined, 'full');
-      this.deps.activeRuns.setPendingManualResume(taskId, src.prior);
+      await this.deps.taskService.requeue(taskId, undefined, src ? (eligible ? 'full' : 'condensed') : undefined);
+      if (src) this.deps.activeRuns.setPendingManualResume(taskId, src.prior);
       await this.deps.start(taskId);
     } catch (err) {
       this.deps.activeRuns.clearPendingOperatorSeed(taskId);
@@ -199,21 +211,13 @@ export class RunControl {
     return true;
   }
 
-  /**
-   * Steer a paused Task: resume it to `working` and deliver the operator message.
-   * A live paused Attempt is reattached (its wall-clock guardrail restarts) and
-   * the message is steered into it; a torn-down one is continued from its
-   * retained Session with the message as the seed of a fresh Attempt. Returns
-   * false when the Task isn't paused or has no Session to continue.
-   */
+  /** Resumes a paused Task to `working` and delivers the operator message; never refuses. */
   async steerPaused(taskId: number, text: string): Promise<boolean> {
     const task = await this.deps.taskService.get(taskId);
     if (task.state !== 'paused') return false;
     if (this.deps.activeRuns.hasTask(taskId)) {
       return (await this.resume(taskId)) && (await this.steer(taskId, text));
     }
-    const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
-    if (!src || !this.deps.sessionContinuation.resumeEligibilityFor(task, src.session).eligible) return false;
     this.deps.activeRuns.setPendingOperatorSeed(taskId, text);
     try {
       await this.resumePaused(taskId);
@@ -224,27 +228,72 @@ export class RunControl {
     return true;
   }
 
-  /**
-   * Resume a paused Task in its latest compatible Session when one is retained.
-   * `continuation` is the operator's explicit pick: `condensed` starts a fresh
-   * Session from a summary, `full`/undefined reuses the retained one. A Session
-   * that is still live is always continued — a running process can't be forked
-   * into a fresh attempt.
-   */
+  /** Mid-drive between turns just seeds the next turn; genuinely stranded relaunches the same Attempt. */
+  async steerWorking(taskId: number, text: string): Promise<boolean> {
+    if (this.deps.activeRuns.hasTask(taskId)) return false;
+    const task = await this.deps.taskService.get(taskId);
+    if (task.state !== 'working') return false;
+    const run = await this.deps.attempts.getRunningForTask(taskId);
+    if (!run) return false;
+    if (this.deps.activeRuns.isDriving(taskId)) {
+      this.deps.activeRuns.setPendingOperatorSeed(taskId, text);
+      const event = await this.deps.attempts.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'steer_queued', text } });
+      this.deps.events.onAttemptEvent?.(event);
+      this.deps.emitSteerLog({ attemptId: run.id, text, queued: true });
+      return true;
+    }
+    // Claimed synchronously, before the first await, so a second concurrent
+    // caller sees isDriving() true rather than racing this one to launch.
+    this.deps.activeRuns.markDriving(taskId);
+    let launched = false;
+    try {
+      const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
+      const eligible = src ? this.deps.sessionContinuation.resumeEligibilityFor(task, src.session).eligible : false;
+      if (src && !eligible) await this.deps.taskService.setContinuationChoice(taskId, 'condensed');
+      this.deps.activeRuns.setPendingOperatorSeed(taskId, text);
+      try {
+        this.deps.activeRuns.setPendingManualResume(taskId, run);
+        await this.deps.launchClaimed(taskId);
+        launched = true;
+      } catch (err) {
+        this.deps.activeRuns.clearPendingOperatorSeed(taskId);
+        throw err;
+      }
+    } finally {
+      if (!launched) this.deps.activeRuns.clearDriving(taskId);
+    }
+    return true;
+  }
+
+  /** Continues a paused Task's retained Attempt; falls back to start-condensed/fresh rather than refusing. */
   async resumePaused(taskId: number, continuation?: 'full' | 'condensed'): Promise<TaskRow> {
     const task = await this.deps.taskService.get(taskId);
     if (task.state !== 'paused') return this.deps.taskService.resume(taskId);
-    if (this.deps.activeRuns.hasTask(taskId)) return this.deps.taskService.resume(taskId);
-    const chosen = continuation ? await this.deps.taskService.setContinuationChoice(taskId, continuation) : task;
-    const src = await this.deps.sessionContinuation.resolveContinuationSource(chosen);
-    const resumed = await this.deps.taskService.resume(taskId);
-    if (!src || !this.deps.sessionContinuation.resumeEligibilityFor(chosen, src.session).eligible) return resumed;
+    if (this.deps.activeRuns.hasTask(taskId) || this.deps.activeRuns.isDriving(taskId)) return this.deps.taskService.resume(taskId);
+    // Claimed synchronously, before the first await, so a second concurrent
+    // caller sees isDriving() true rather than racing this one to launch.
+    this.deps.activeRuns.markDriving(taskId);
+    let launched = false;
     try {
-      await this.deps.beginRun(resumed, undefined, src.prior);
-    } catch (err) {
-      await this.deps.taskService.setState(taskId, 'paused');
-      throw err;
+      const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
+      const eligible = src ? this.deps.sessionContinuation.resumeEligibilityFor(task, src.session).eligible : false;
+      const effectiveContinuation = continuation ?? (src && !eligible ? 'condensed' : undefined);
+      if (effectiveContinuation) await this.deps.taskService.setContinuationChoice(taskId, effectiveContinuation);
+      // Reuse the same Attempt: prefer the Task's still-running row (the one
+      // actually paused), else fall back to the retained Session's Attempt
+      // (no running row survived, e.g. after a restart).
+      const resumedAttempt = (await this.deps.attempts.getRunningForTask(taskId)) ?? src?.prior;
+      const resumed = await this.deps.taskService.resume(taskId);
+      try {
+        await this.deps.beginRun(resumed, undefined, resumedAttempt);
+        launched = true;
+      } catch (err) {
+        await this.deps.taskService.setState(taskId, 'paused');
+        throw err;
+      }
+      return this.deps.taskService.get(taskId);
+    } finally {
+      if (!launched) this.deps.activeRuns.clearDriving(taskId);
     }
-    return this.deps.taskService.get(taskId);
   }
 }

@@ -58,12 +58,15 @@ export function Metrics({
     ['Attempts', `${runs.length}`],
     ['Diff', diff],
   ];
-  if (task.wallClockDeadline != null) {
-    const remaining = wallClockRemaining(task.wallClockDeadline, now);
-    items.push(['Time left', remaining.label, remaining.overdue]);
-  }
+  const remaining = task.wallClockDeadline != null ? wallClockRemaining(task.wallClockDeadline, now) : null;
+  if (remaining) items.push(['Time left', remaining.label, remaining.overdue]);
   return (
     <div className="mb-[18px] flex flex-wrap gap-y-3 tabular-nums">
+      {remaining && (
+        <div aria-live="polite" className="sr-only">
+          {remaining.overdue ? 'Time limit reached' : ''}
+        </div>
+      )}
       {items.map(([k, v, danger]) => (
         <div key={k} className="mr-5 min-w-0 border-r border-hairline pr-5 last:mr-0 last:border-r-0 last:pr-0">
           <div className="mb-[5px] text-[10px] font-bold uppercase tracking-[0.07em] text-faint">{k}</div>

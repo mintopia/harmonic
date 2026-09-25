@@ -460,62 +460,78 @@ export class Runner {
   }
 
   private async beginRun(task: TaskRow, parent?: SpanContext, resumedAttempt?: AttemptRow): Promise<AttemptRow> {
-    if (await this.epicBaseNotReady?.(task)) {
-      throw new DomainError(
-        'invalid_state',
-        `task ${task.id} is an Epic member whose integration branch (${task.baseBranch ?? 'unassigned'}) is not ready yet; ` +
-          'it is cut/re-cut on the next tracker poll — retry shortly',
-      );
-    }
-    const config = this.getConfig();
-    const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
-    if (!harness) throw new DomainError('validation', `harness '${task.harness}' is not configured`);
-    const ws = (await this.getWorkspace?.(task.workspaceId)) ?? { guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null };
-    const snapshot: AttemptGuardrailSnapshot = {
-      guardrailConfig: resolveGuardrails(ws, config),
-      priceTable: pricesForHarness(harness),
-    };
-    const created = resumedAttempt
-      ? await this.attempts.update(resumedAttempt.id, {
-          state: 'running',
-          startedAt: Date.now(),
-          endedAt: null,
-          reason: null,
-          detail: null,
-          guardrailConfig: JSON.stringify(snapshot.guardrailConfig),
-          priceTable: JSON.stringify(snapshot.priceTable),
-          ...(task.continuationChoice === 'condensed' ? { sessionRowId: null, sessionId: null } : {}),
-        })
-      : await this.attempts.create(task.id, snapshot);
-    const pendingContinuation = this.activeRuns.takePendingContinuation(task.id);
-    if (pendingContinuation !== undefined) {
-      await this.attempts.setContinuation(created.id, pendingContinuation);
-    }
-    const run = created;
-    const bound = await this.sessionContinuation.bindContinuationIfEligible(task, run);
-    if (await this.pauseIfGloballyPaused(task.id)) return bound;
-    const operation = startOperation({
-      type: 'attempt',
-      parent,
-      attributes: {
-        'task.id': task.id,
-        'task.title': task.trackerTitle ?? task.prompt.split('\n').find((line) => line.trim().length > 0)?.trim() ?? `Task ${task.id}`,
-        'attempt.id': bound.id,
-        'task.origin': task.origin,
-        ...(task.workspaceId == null ? {} : { 'workspace.id': task.workspaceId }),
-      },
-    });
-    this.activeRuns.setOperation(bound.id, operation);
-    void operation.run(async () => {
-      try {
-        await this.turnDriver.drive(task, bound, harness, operation.spanContext);
-        await this.finishRunOperation(bound.id);
-      } catch (error) {
-        operation.fail(error instanceof Error ? error.message : String(error));
-        this.activeRuns.deleteOperation(bound.id);
+    // Covers the pre-spawn/between-turns gaps too, so a steer can't mistake a healthy Task for stranded.
+    this.activeRuns.markDriving(task.id);
+    try {
+      if (await this.epicBaseNotReady?.(task)) {
+        throw new DomainError(
+          'invalid_state',
+          `task ${task.id} is an Epic member whose integration branch (${task.baseBranch ?? 'unassigned'}) is not ready yet; ` +
+            'it is cut/re-cut on the next tracker poll — retry shortly',
+        );
       }
-    });
-    return bound;
+      const config = this.getConfig();
+      const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
+      if (!harness) throw new DomainError('validation', `harness '${task.harness}' is not configured`);
+      const ws = (await this.getWorkspace?.(task.workspaceId)) ?? { guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null };
+      const snapshot: AttemptGuardrailSnapshot = {
+        guardrailConfig: resolveGuardrails(ws, config),
+        priceTable: pricesForHarness(harness),
+      };
+      const created = resumedAttempt
+        ? await this.attempts.update(resumedAttempt.id, {
+            state: 'running',
+            startedAt: Date.now(),
+            endedAt: null,
+            reason: null,
+            detail: null,
+            guardrailConfig: JSON.stringify(snapshot.guardrailConfig),
+            priceTable: JSON.stringify(snapshot.priceTable),
+            ...(task.continuationChoice === 'condensed' ? { sessionRowId: null, sessionId: null } : {}),
+          })
+        : await this.attempts.create(task.id, snapshot);
+      const pendingContinuation = this.activeRuns.takePendingContinuation(task.id);
+      if (pendingContinuation !== undefined) {
+        await this.attempts.setContinuation(created.id, pendingContinuation);
+      }
+      const run = created;
+      const bound = await this.sessionContinuation.bindContinuationIfEligible(task, run);
+      if (await this.pauseIfGloballyPaused(task.id)) {
+        this.activeRuns.clearDriving(task.id);
+        return bound;
+      }
+      const operation = startOperation({
+        type: 'attempt',
+        parent,
+        attributes: {
+          'task.id': task.id,
+          'task.title': task.trackerTitle ?? task.prompt.split('\n').find((line) => line.trim().length > 0)?.trim() ?? `Task ${task.id}`,
+          'attempt.id': bound.id,
+          'task.origin': task.origin,
+          ...(task.workspaceId == null ? {} : { 'workspace.id': task.workspaceId }),
+        },
+      });
+      this.activeRuns.setOperation(bound.id, operation);
+      void operation.run(async () => {
+        try {
+          await this.turnDriver.drive(task, bound, harness, operation.spanContext);
+          await this.finishRunOperation(bound.id);
+        } catch (error) {
+          operation.fail(error instanceof Error ? error.message : String(error));
+          this.activeRuns.deleteOperation(bound.id);
+        } finally {
+          this.activeRuns.clearDriving(task.id);
+          const leftoverSeed = this.activeRuns.takePendingOperatorSeed(task.id);
+          if (leftoverSeed !== undefined) {
+            await this.redeliverOrphanedSteer(task.id, leftoverSeed);
+          }
+        }
+      });
+      return bound;
+    } catch (err) {
+      this.activeRuns.clearDriving(task.id);
+      throw err;
+    }
   }
 
   operationParent(attemptId: number): SpanContext | undefined {
@@ -649,9 +665,30 @@ export class Runner {
     return this.runControl.steerPaused(taskId, text);
   }
 
+  /** @see {@link RunControl.steerWorking} */
+  async steerWorking(taskId: number, text: string): Promise<boolean> {
+    return this.runControl.steerWorking(taskId, text);
+  }
+
   /** @see {@link RunControl.resumePaused} */
   async resumePaused(taskId: number, continuation?: 'full' | 'condensed'): Promise<TaskRow> {
     return this.runControl.resumePaused(taskId, continuation);
+  }
+
+  /** Tries the same chain as the steer route for a seed left over when its drive loop settled; else records it undelivered. */
+  private async redeliverOrphanedSteer(taskId: number, text: string): Promise<void> {
+    const delivered =
+      (await this.steer(taskId, text)) ||
+      (await this.steerSettled(taskId, text)) ||
+      (await this.steerPaused(taskId, text)) ||
+      (await this.steerWorking(taskId, text));
+    if (delivered) return;
+    logger.warn('Steer could not be redelivered after its drive loop settled', { taskId });
+    const run = await this.attempts.getRunningForTask(taskId);
+    const attemptId = run?.id ?? (await this.attempts.listForTask(taskId)).at(-1)?.id;
+    if (attemptId === undefined) return;
+    const event = await this.attempts.appendEvent(attemptId, { type: 'lifecycle', payload: { event: 'steer_undelivered', text } });
+    this.events.onAttemptEvent?.(event);
   }
 
   private forActiveTask(taskId: number, fn: (active: ActiveRun) => void): boolean {

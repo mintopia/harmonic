@@ -14125,7 +14125,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Steer a running task: send an operator message to its active Attempt. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no Attempt is active but the task's last Attempt left a resumable session (an escalated task that ended without closure), the message continues that session in a fresh Attempt. A paused task is resumed to working and the message delivered the same way. A cold cache changes the estimated cost, never eligibility. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, continue one whose Attempt just ended, or resume a paused one. Operator only.",
+        "description": "Steer a running task: send an operator message to its active Attempt. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no Attempt is active but the task's last Attempt left a resumable session (an escalated task that ended without closure), the message continues that session in a fresh Attempt. A paused task is resumed to working and the message delivered the same way; a working task whose Attempt is no longer running (restarted, upgraded, or torn down between turns) is relaunched. A resume is never refused: a cold cache only changes the estimated cost, and a Session incompatible for continue-full (harness/adapter-version/cwd/permission-mode changed) falls back to start-condensed rather than blocking. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, continue one whose Attempt just ended, resume a paused one, or relaunch a stranded one. Operator only.",
         "requestBody": {
           "required": true,
           "content": {
@@ -14161,7 +14161,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The message was injected into the running turn or queued at the next boundary of the task's active Attempt, continued its last Attempt's resumable session in a fresh Attempt, or resumed a paused task and delivered the message.",
+            "description": "The message was injected into the running turn or queued at the next boundary of the task's active Attempt, continued its last Attempt's resumable session in a fresh Attempt, resumed a paused task and delivered the message, or relaunched a stranded working task.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14171,7 +14171,7 @@
             }
           },
           "409": {
-            "description": "The task has no active Attempt to steer and no resumable session to continue.",
+            "description": "The task is in a state that cannot be steered (draft, ready, done, or cancelled).",
             "content": {
               "application/json": {
                 "schema": {

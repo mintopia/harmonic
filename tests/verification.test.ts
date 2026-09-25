@@ -263,6 +263,36 @@ describe('verification-selfheal', () => {
       ]);
     });
 
+    it('a steer landing between a failed attempt and its self-heal retry rides along in the retry prompt', async () => {
+      await server.app.ctx.workspaces.update(workspaceId, {
+        taskPreMergeCommands: localCommands(markerCommand('ok')),
+      });
+
+      const { taskId } = await runWorktreeTask({
+        turns: [{ writeFiles: { 'marker.txt': 'bad\n' } }, { writeFiles: { 'marker.txt': 'ok\n' } }],
+      });
+
+      // Attempt 2's row is created (ensureForRun) well before its prompt is
+      // built — workspace prep, rebase, and the harness spawn all happen in
+      // between. That's the window: no ActiveRun for the Task (attempt 1's
+      // was torn down), but its drive loop is still in flight (isDriving).
+      await waitFor(async () => ((await ticketAttempts(taskId)).length === 2 ? true : undefined));
+      const steered = await server.api('POST', `/api/tasks/${taskId}/steer`, { text: 'watch the whitespace' });
+      expect(steered.status).toBe(200);
+
+      const task = await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+        return body.state === 'done' ? body : undefined;
+      });
+      expect(task.state).toBe('done');
+
+      const attemptsAfter = await ticketAttempts(taskId);
+      expect(attemptsAfter).toHaveLength(2);
+      expect(attemptsAfter[1]!.prompt).toContain('## Previous attempt failed — fix required (self-heal 1)');
+      expect(attemptsAfter[1]!.prompt).toContain('## Operator message');
+      expect(attemptsAfter[1]!.prompt).toContain('watch the whitespace');
+    });
+
     async function implementationSession(attemptId: number) {
       const steps = await new AttemptStore(server.app.ctx.asyncDb).listSteps(attemptId);
       const locator = steps.find((step) => step.type === 'implementation')?.logLocator ?? '';
