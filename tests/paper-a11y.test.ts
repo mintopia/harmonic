@@ -58,6 +58,13 @@ describe('Paper accessibility contract (issue #266)', () => {
     expect(epic).toContain("import { Fact } from './Fact';");
   });
 
+  it('announces the wall-clock overdue transition without making the countdown itself live', () => {
+    const metrics = source('web/src/components/ticket/Metrics.tsx');
+
+    expect(metrics).toContain('aria-live="polite"');
+    expect(metrics).toContain('Time limit reached');
+  });
+
   it('keeps source-control actions labelled, touchable, and confirmation-gated', () => {
     const files = source('web/src/components/FilesPage.tsx');
 

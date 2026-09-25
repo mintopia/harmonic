@@ -54,7 +54,6 @@ describe('RunControl.resumePaused — a paused Task with no retained Session at 
       isGloballyPaused: undefined,
       onGloballyPaused: undefined,
       sessionContinuation: {
-        // No prior Attempt ever recorded a Session.
         resolveContinuationSource: vi.fn(async () => null),
         resumeEligibilityFor: vi.fn(),
       } as unknown as RunControlDeps['sessionContinuation'],
@@ -256,7 +255,6 @@ describe('RunControl.steerSettled — an escalated Task that never recorded a Se
       isGloballyPaused: undefined,
       onGloballyPaused: undefined,
       sessionContinuation: {
-        // No prior Attempt ever recorded a Session.
         resolveContinuationSource: vi.fn(async () => null),
         resumeEligibilityFor: vi.fn(),
       } as unknown as RunControlDeps['sessionContinuation'],
@@ -274,5 +272,135 @@ describe('RunControl.steerSettled — an escalated Task that never recorded a Se
     expect(requeue).toHaveBeenCalledWith(7, undefined, undefined);
     expect(start).toHaveBeenCalledWith(7);
     expect(activeRuns.takePendingOperatorSeed(7)).toBe('pick this back up');
+  });
+});
+
+describe('RunControl — concurrent launch race on the same stranded/paused Task', () => {
+  it('resume: two concurrent calls launch exactly once, the loser returns false', async () => {
+    const task = { id: 7, state: 'paused', continuationChoice: null } as TaskRow;
+    const attempt = runningAttempt();
+    const activeRuns = new ActiveRuns();
+    const launchClaimed = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return { ...attempt, state: 'running' } as TaskAttemptRow;
+    });
+
+    const deps: RunControlDeps = {
+      taskService: {
+        get: vi.fn(async () => task),
+        resume: vi.fn(async () => ({ ...task, state: 'working' }) as TaskRow),
+        setContinuationChoice: vi.fn(async () => task),
+      } as unknown as RunControlDeps['taskService'],
+      attempts: {
+        getRunningForTask: vi.fn(async () => attempt),
+        update: vi.fn(async () => attempt),
+      } as unknown as RunControlDeps['attempts'],
+      activeRuns,
+      events: {} as unknown as RunControlDeps['events'],
+      getWorkspace: undefined,
+      getConfig: vi.fn() as unknown as RunControlDeps['getConfig'],
+      isGloballyPaused: undefined,
+      onGloballyPaused: undefined,
+      sessionContinuation: {
+        resolveContinuationSource: vi.fn(async () => null),
+        resumeEligibilityFor: vi.fn(),
+      } as unknown as RunControlDeps['sessionContinuation'],
+      emitSteerLog: vi.fn(),
+      recordLifecycleTransition: vi.fn(async () => {}),
+      start: vi.fn() as unknown as RunControlDeps['start'],
+      launchClaimed: launchClaimed as unknown as RunControlDeps['launchClaimed'],
+      beginRun: vi.fn() as unknown as RunControlDeps['beginRun'],
+    };
+
+    const runControl = new RunControl(deps);
+    const [a, b] = await Promise.all([runControl.resume(7), runControl.resume(7)]);
+
+    expect(launchClaimed).toHaveBeenCalledTimes(1);
+    expect([a, b].filter((v) => v === true)).toHaveLength(1);
+    expect([a, b].filter((v) => v === false)).toHaveLength(1);
+  });
+
+  it('steerWorking: two concurrent calls launch exactly once, the loser delivers via the seed path', async () => {
+    const task = { id: 7, state: 'working', continuationChoice: null } as TaskRow;
+    const attempt = runningAttempt();
+    const activeRuns = new ActiveRuns();
+    const launchClaimed = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return { ...attempt, state: 'running' } as TaskAttemptRow;
+    });
+
+    const deps: RunControlDeps = {
+      taskService: { get: vi.fn(async () => task) } as unknown as RunControlDeps['taskService'],
+      attempts: {
+        getRunningForTask: vi.fn(async () => attempt),
+        appendEvent: vi.fn(async () => ({}) as never),
+      } as unknown as RunControlDeps['attempts'],
+      activeRuns,
+      events: { onAttemptEvent: vi.fn() } as unknown as RunControlDeps['events'],
+      getWorkspace: undefined,
+      getConfig: vi.fn() as unknown as RunControlDeps['getConfig'],
+      isGloballyPaused: undefined,
+      onGloballyPaused: undefined,
+      sessionContinuation: {
+        resolveContinuationSource: vi.fn(async () => null),
+        resumeEligibilityFor: vi.fn(),
+      } as unknown as RunControlDeps['sessionContinuation'],
+      emitSteerLog: vi.fn(),
+      recordLifecycleTransition: vi.fn(async () => {}),
+      start: vi.fn() as unknown as RunControlDeps['start'],
+      launchClaimed: launchClaimed as unknown as RunControlDeps['launchClaimed'],
+      beginRun: vi.fn() as unknown as RunControlDeps['beginRun'],
+    };
+
+    const runControl = new RunControl(deps);
+    const [a, b] = await Promise.all([runControl.steerWorking(7, 'first'), runControl.steerWorking(7, 'second')]);
+
+    expect(launchClaimed).toHaveBeenCalledTimes(1);
+    expect(a).toBe(true);
+    expect(b).toBe(true);
+  });
+
+  it('resumePaused: two concurrent calls call beginRun exactly once', async () => {
+    const task = { id: 7, state: 'paused', continuationChoice: null } as TaskRow;
+    const attempt = runningAttempt();
+    const activeRuns = new ActiveRuns();
+    let taskState = 'paused';
+    const beginRun = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return { ...attempt, state: 'running' } as TaskAttemptRow;
+    });
+
+    const deps: RunControlDeps = {
+      taskService: {
+        get: vi.fn(async () => ({ ...task, state: taskState }) as TaskRow),
+        resume: vi.fn(async () => {
+          taskState = 'working';
+          return { ...task, state: 'working' } as TaskRow;
+        }),
+      } as unknown as RunControlDeps['taskService'],
+      attempts: { getRunningForTask: vi.fn(async () => attempt) } as unknown as RunControlDeps['attempts'],
+      activeRuns,
+      events: {} as unknown as RunControlDeps['events'],
+      getWorkspace: undefined,
+      getConfig: vi.fn() as unknown as RunControlDeps['getConfig'],
+      isGloballyPaused: undefined,
+      onGloballyPaused: undefined,
+      sessionContinuation: {
+        resolveContinuationSource: vi.fn(async () => null),
+        resumeEligibilityFor: vi.fn(),
+      } as unknown as RunControlDeps['sessionContinuation'],
+      emitSteerLog: vi.fn(),
+      recordLifecycleTransition: vi.fn(async () => {}),
+      start: vi.fn() as unknown as RunControlDeps['start'],
+      launchClaimed: vi.fn() as unknown as RunControlDeps['launchClaimed'],
+      beginRun: beginRun as unknown as RunControlDeps['beginRun'],
+    };
+
+    const runControl = new RunControl(deps);
+    const [a, b] = await Promise.all([runControl.resumePaused(7), runControl.resumePaused(7)]);
+
+    expect(beginRun).toHaveBeenCalledTimes(1);
+    expect(a.state).toBe('working');
+    expect(b.state).toBe('working');
   });
 });

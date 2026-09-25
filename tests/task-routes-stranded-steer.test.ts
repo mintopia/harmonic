@@ -22,7 +22,6 @@ describe('steering/resuming a Task whose Session is incompatible or stranded (is
     await server.close();
   });
 
-  /** Runs a mirrored task to escalated with a real, persisted Session. */
   async function escalateWithSession(trackerRef: number) {
     const seed = (await server.api('POST', '/api/tasks', { prompt: 'workspace seed' })).body;
     const workspaceId = (await server.app.ctx.tasks.get(seed.id)).workspaceId ?? undefined;
@@ -39,9 +38,7 @@ describe('steering/resuming a Task whose Session is incompatible or stranded (is
     return mirrored;
   }
 
-  /** Mutates the persisted Session for `taskId`'s latest Attempt so it is
-   * incompatible for continue-full (a stand-in for an adapter bump across
-   * an upgrade), returning the Attempt it lives on. */
+  /** Stand-in for an adapter bump across an upgrade. */
   async function breakSessionCompatibility(taskId: number) {
     const attempts = await server.app.ctx.attempts.listForTask(taskId);
     const attempt = attempts.at(-1)!;

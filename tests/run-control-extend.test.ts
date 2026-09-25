@@ -60,8 +60,6 @@ describe('RunControl.extendGuardrail — between-turns (no ActiveRun)', () => {
     }) as unknown as AttemptEventRow);
     const onAttemptEvent = vi.fn();
 
-    // A real, empty ActiveRuns: there is genuinely no live ActiveRun for this
-    // task — the between-turns case (gates, verification, continuations).
     const activeRuns = new ActiveRuns();
 
     const deps: RunControlDeps = {
