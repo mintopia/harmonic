@@ -65,7 +65,7 @@ jobs:
       # Installs deps and, via `prepare`, builds dist/ (server + SPA).
       - run: npm ci
 
-      # Trusted Publishing (OIDC) needs npm >= 11.5.1; Node 22 ships npm 10. Pinned to 11: npm 12 breaks the self-upgrade tests.
+      # Trusted Publishing (OIDC) needs npm >= 11.5.1; Node 22 ships npm 10. Pinned to a tested major; bump deliberately.
       - run: npm install -g npm@11
 
       - run: npm run typecheck
