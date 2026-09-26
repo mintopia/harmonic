@@ -11,7 +11,9 @@ import { stopDaemon, writeDaemon } from '../src/daemon.js';
 const telemetryUrl = pathToFileURL(new URL('../src/telemetry.ts', import.meta.url).pathname).href;
 const loggerUrl = pathToFileURL(new URL('../src/logger.ts', import.meta.url).pathname).href;
 const operationsUrl = pathToFileURL(new URL('../src/telemetry/operations.ts', import.meta.url).pathname).href;
-const apiUrl = pathToFileURL(new URL('../node_modules/@opentelemetry/api/build/src/index.js', import.meta.url).pathname).href;
+// Bare specifier, not a hardcoded node_modules path: lets Node's own resolver walk up
+// to an ancestor node_modules, which is what happens in a nested/worktree checkout.
+const apiSpecifier = '@opentelemetry/api';
 
 const savedEnv = {
   endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
@@ -92,7 +94,7 @@ it('flushes a trace-correlated log, span, and metric before daemon stop returns'
 
   const script = [
     `import { initializeTelemetry, resolveTelemetryOptions } from '${telemetryUrl}';`,
-    `import { context, metrics, trace } from '${apiUrl}';`,
+    `import { context, metrics, trace } from '${apiSpecifier}';`,
     `import { logger } from '${loggerUrl}';`,
     `import { startOperation } from '${operationsUrl}';`,
     `const telemetry = initializeTelemetry(resolveTelemetryOptions({ endpoint: 'http://127.0.0.1:${address.port}', headers: 'authorization=smoke-token', exportEnabled: 'true', metricExportIntervalMillis: '60000' }));`,

@@ -26,6 +26,7 @@ import {
 } from './onboarding-model';
 import { btnQuiet } from './ui';
 import { Toaster, toastError } from './toast';
+import { ConnectionBanner } from './components/ConnectionBanner';
 import { ReviewLiveRegions } from './components/ReviewLiveRegions';
 import { useAuth } from './useAuth';
 import { useRoute } from './useRoute';
@@ -85,6 +86,7 @@ export function App() {
     refreshTracker,
     refreshingTracker,
     openTask,
+    taskNotFound,
     needsYouCount,
     politeReviewAnnouncement,
     assertiveMergeAnnouncement,
@@ -244,7 +246,12 @@ export function App() {
 
   return (
     <AppContextProvider value={{ config, workspace: activeWorkspace, refresh }}>
-    <div className="flex min-h-screen flex-col rail:h-screen rail:overflow-hidden rail:flex-row">
+    {/* Own flex-col wrapper, always a column (never rail:flex-row), so the banner
+        takes its own row above the shell instead of becoming a sidebar-height
+        column when the inner shell switches to a row at the desktop breakpoint. */}
+    <div className="flex min-h-screen flex-col">
+    <ConnectionBanner />
+    <div className="flex min-h-0 flex-1 flex-col rail:h-screen rail:overflow-hidden rail:flex-row">
       <ReviewLiveRegions polite={politeReviewAnnouncement} assertive={assertiveMergeAnnouncement} />
       <a
         href="#main-content"
@@ -378,6 +385,7 @@ export function App() {
           activeWorkspaceId={activeWorkspaceId}
           activeWorkspace={activeWorkspace}
           openTask={openTask}
+          taskNotFound={taskNotFound}
           epics={epics}
           error={error}
           showRunHint={showRunHint}
@@ -434,6 +442,7 @@ export function App() {
           }}
         />
       )}
+    </div>
     </div>
     </AppContextProvider>
   );

@@ -2,6 +2,7 @@ import type { TaskRow, WorkspaceRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
 import { logger } from '../logger.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
+import { singleFlight } from '../reliability/single-flight.js';
 import type { Scheduler } from '../scheduler/scheduler.js';
 import type { ResolvedTracker, TrackerAdapter } from './adapter.js';
 import { resolveTracker, resolveTrackerAdapter } from './adapter.js';
@@ -37,6 +38,7 @@ export class TrackerPollerManager {
   private readonly scheduler: Scheduler | undefined;
   private readonly yieldOptions: YieldOptions | undefined;
   private readonly workStartAllowed: (() => boolean | Promise<boolean>) | undefined;
+  readonly sync: () => Promise<void>;
 
   constructor(
     private readonly tasks: TaskService,
@@ -49,9 +51,13 @@ export class TrackerPollerManager {
     this.epicService = options.epicService ?? new TrackerEpicService(tasks, getWorkspaces, { resolveAdapter: this.resolveAdapter, onError: this.onError });
     this.yieldOptions = options.yieldOptions;
     this.workStartAllowed = options.workStartAllowed;
+    // Boot, every workspace POST/PATCH/DELETE, and the workspace watcher all call
+    // sync() independently; two overlapping passes both see a not-yet-registered
+    // workspace and double-register its Scheduler job. Single-flight it.
+    this.sync = singleFlight(() => this.syncOnce());
   }
 
-  async sync(): Promise<void> {
+  private async syncOnce(): Promise<void> {
     const workspaces = new Map((await this.getWorkspaces()).map((workspace) => [workspace.id, workspace]));
     await forEachYielding(this.entries, async ([id, entry]) => { const workspace = workspaces.get(id); if (!workspace || !workspace.trackerEnabled || entry.sig !== sigOf(workspace)) this.stopEntry(id, entry); }, this.yieldOptions);
     await forEachYielding(this.resolved.keys(), async (id) => { const workspace = workspaces.get(id); if (!workspace || !workspace.trackerEnabled) this.resolved.delete(id); }, this.yieldOptions);

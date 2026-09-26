@@ -55,6 +55,14 @@ describe('lifecycleTimelineRows', () => {
     ]);
   });
 
+  it('flags a steer that could not be redelivered after its drive loop settled', () => {
+    const rows = lifecycleTimelineRows([lifecycle(10, { event: 'steer_undelivered', text: 'left over from a turn that never came' })]);
+
+    expect(rows.map((row) => [row.label, row.detail, row.tone])).toEqual([
+      ['Steer not delivered', 'left over from a turn that never came', 'failed'],
+    ]);
+  });
+
   it('makes an unattended permission-mode fallback visible', () => {
     const rows = lifecycleTimelineRows([
       lifecycle(10, {

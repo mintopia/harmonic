@@ -399,7 +399,7 @@ export function ApiReference() {
         Endpoint reference
         {groups && <span className="text-small font-normal tabular-nums text-muted">{filteredCount}</span>}
       </h3>
-      {error && <p className="text-fail">Failed to load the API reference ({error}).</p>}
+      {error && <p role="alert" className="text-fail">Failed to load the API reference ({error}).</p>}
       {!error && !groups && <p className="text-muted">Loading reference…</p>}
       {groups && groups.length === 0 && (
         <EmptyState title="No endpoints documented" className="my-8">

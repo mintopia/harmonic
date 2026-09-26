@@ -57,14 +57,20 @@ export class TurnCompletion {
     listeners: TurnListeners;
     autoDriven: boolean;
     promptText: string;
+    /** An operator steer accepted before this turn existed, folded into `promptText`. */
+    operatorSeed?: string | undefined;
     record: RunEventRecorder;
-  }): Promise<{ result: PromptResult; connectionGone: boolean; escalating: string | null }> {
+  }): Promise<{ result: PromptResult; connectionGone: boolean; escalating: string | null; operatorSeedDelivered: boolean }> {
     const { task, driver, active, guardrails, listeners, autoDriven, record } = input;
     let promptText = input.promptText;
     let escalating: string | null = null;
-    if (active.pauseRequested) return { result: {}, connectionGone: false, escalating: null };
+    // A pause requested before this turn's first prompt: bail before promptText — including
+    // input.operatorSeed — ever reaches the harness. The caller must put the seed back rather
+    // than treat it as delivered (ADR-0005 §6).
+    if (active.pauseRequested) return { result: {}, connectionGone: false, escalating: null, operatorSeedDelivered: false };
     active.steerable = true;
     let connectionGone = false;
+    if (input.operatorSeed !== undefined) record('lifecycle', { event: 'steer_delivered', text: input.operatorSeed });
     const first = await promptTurn(driver, promptText, record);
     connectionGone ||= first.connectionGone;
     let result: PromptResult = first.result ?? {};
@@ -110,7 +116,7 @@ export class TurnCompletion {
       connectionGone ||= turn.connectionGone;
       if (turn.result) result = turn.result;
     }
-    return { result, connectionGone, escalating };
+    return { result, connectionGone, escalating, operatorSeedDelivered: input.operatorSeed !== undefined };
   }
 
   async finishDrivenTurn(input: {

@@ -76,7 +76,7 @@ function CriticSession({ attemptId, label, model, agent }: { attemptId: number; 
   if (state === 'loading') return <p className="mt-3 text-[12px] text-muted">Loading critic session…</p>;
   if (state === 'empty') return <p className="mt-3 text-[12px] text-muted">No critic session events recorded.</p>;
   if (state === 'unavailable') return <p className="mt-3 text-[12px] text-muted">Critic session log could not be loaded.</p>;
-  if (state === 'error') return <p className="mt-3 text-[12px] text-fail">Failed to load critic session{error ? `: ${error}` : '.'}</p>;
+  if (state === 'error') return <p role="alert" className="mt-3 text-[12px] text-fail">Failed to load critic session{error ? `: ${error}` : '.'}</p>;
   return <ChatTranscript events={events} unavailable={false} model={model} agent={agent} stepLabel={label} />;
 }
 

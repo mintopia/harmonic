@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { api } from '../api';
+import { api, ApiError } from '../api';
 import { subscribe } from '../ws';
 import { useLiveEffect } from '../useLiveEffect';
 import { useScrollToPanel } from '../useScrollToPanel';
@@ -24,6 +24,7 @@ import {
   railNavIdle,
   btnAccept,
   btnReject,
+  btnGhost,
   PHASE_NODE_STYLES,
   type PhaseNodeVisual,
 } from '../ui';
@@ -602,9 +603,21 @@ export function EpicPage({
   // Bumped by the WS subscription below to re-run the epic/stats/children fetches
   // when a member Task changes, so the page updates live without a manual refresh.
   const [refreshKey, setRefreshKey] = useState(0);
+  const [notFound, setNotFound] = useState(false);
 
   useLiveEffect((live) => {
-    api.epic(workspaceId, epicRef).then((e) => live() && setEpic(e), toastError);
+    api.epic(workspaceId, epicRef).then(
+      (e) => {
+        if (!live()) return;
+        setEpic(e);
+        setNotFound(false);
+      },
+      (e) => {
+        if (!live()) return;
+        if (e instanceof ApiError && e.status === 404) setNotFound(true);
+        else toastError(e);
+      },
+    );
   }, [workspaceId, epicRef, refreshKey]);
 
   useLiveEffect((live) => {
@@ -681,6 +694,16 @@ export function EpicPage({
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   useScrollToPanel(scrollRef, contentRef, selection.kind !== 'none', selection);
+
+  if (notFound) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center">
+        <EmptyState title="Epic not found" action={<button type="button" className={btnGhost} onClick={onClose}>Back to Board</button>}>
+          {`epic/${epicRef} doesn't exist, or it's been merged and closed.`}
+        </EmptyState>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col">
