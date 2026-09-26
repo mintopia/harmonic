@@ -26,6 +26,7 @@ import {
 } from './onboarding-model';
 import { btnQuiet } from './ui';
 import { Toaster, toastError } from './toast';
+import { ConnectionBanner } from './components/ConnectionBanner';
 import { ReviewLiveRegions } from './components/ReviewLiveRegions';
 import { useAuth } from './useAuth';
 import { useRoute } from './useRoute';
@@ -85,6 +86,7 @@ export function App() {
     refreshTracker,
     refreshingTracker,
     openTask,
+    taskNotFound,
     needsYouCount,
     politeReviewAnnouncement,
     assertiveMergeAnnouncement,
@@ -252,6 +254,7 @@ export function App() {
       >
         Skip to content
       </a>
+      <ConnectionBanner />
       {menuOpen && (
         <button
           type="button"
@@ -378,6 +381,7 @@ export function App() {
           activeWorkspaceId={activeWorkspaceId}
           activeWorkspace={activeWorkspace}
           openTask={openTask}
+          taskNotFound={taskNotFound}
           epics={epics}
           error={error}
           showRunHint={showRunHint}
