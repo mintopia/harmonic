@@ -19,7 +19,7 @@ import type { Epic } from '../epic-model';
 import type { HostLoad } from '../ws';
 import type { View } from '../rail-model';
 import { NO_SELECTION, type Route, type TableFilters } from '../router-model';
-import { btnPrimary, btnQuiet } from '../ui';
+import { btnGhost, btnPrimary, btnQuiet } from '../ui';
 import type { PendingPermissionAlert } from '../usePendingPermissionAlerts';
 import type { NavigateFn } from '../useRoute';
 
@@ -273,7 +273,7 @@ export function AppContent({
             action={
               <button
                 type="button"
-                className={btnQuiet}
+                className={btnGhost}
                 onClick={() => navigate({ ...route, task: null, panel: NO_SELECTION }, { replace: true })}
               >
                 Back to Board

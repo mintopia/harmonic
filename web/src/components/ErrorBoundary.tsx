@@ -27,8 +27,8 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
             <h1 className={displayTitle}>Harmonic</h1>
           </div>
           <p className="mb-5 mt-1.5 text-muted">
-            Something went wrong and the console can't recover on its own. Reloading usually fixes it; your tasks and
-            runs are unaffected.
+            Something went wrong and the console can't recover on its own. Reloading usually fixes it — your tasks
+            and their Attempts are unaffected.
           </p>
           <div className="flex gap-2">
             <button type="button" className={`${btnPrimary} flex-1`} onClick={() => window.location.reload()}>
