@@ -62,7 +62,7 @@ export function NewWorkspaceForm({ onClose, onCreated }: { onClose: () => void; 
           />
         </div>
 
-        {error && <p className="mb-3 text-fail">{error}</p>}
+        {error && <p role="alert" className="mb-3 text-fail">{error}</p>}
 
         <div className="flex justify-end gap-2">
           <button type="button" className={btnGhost} onClick={onClose}>
