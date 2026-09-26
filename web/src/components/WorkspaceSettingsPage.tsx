@@ -204,9 +204,9 @@ function DeleteWorkspaceDialog({
           }}
         />
         {blockedByRunningTask && (
-          <p className="mt-3 text-fail">A Task is running here. Stop it before deleting this Workspace.</p>
+          <p role="alert" className="mt-3 text-fail">A Task is running here. Stop it before deleting this Workspace.</p>
         )}
-        {error && <p className="mt-3 text-fail">{error}</p>}
+        {error && <p role="alert" className="mt-3 text-fail">{error}</p>}
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" className={btnGhost} onClick={onClose} disabled={busy}>
             Cancel

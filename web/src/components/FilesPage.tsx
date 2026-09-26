@@ -442,7 +442,7 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
           <IconButton icon="collapse" title="Collapse folders" onClick={() => setExpanded(new Set())} />
         </div>
         <div role="tree" aria-label="Workspace files" ref={treeRef} onKeyDown={onTreeKeyDown} className="min-h-0 flex-1 overflow-auto py-1">
-          {errors[''] && <p className="px-3 py-2 text-small text-fail">{errors['']}</p>}
+          {errors[''] && <p role="alert" className="px-3 py-2 text-small text-fail">{errors['']}</p>}
           {visibleRows.length === 0 && !errors[''] && <p className="px-3 py-2 text-small text-muted">This workspace is empty.</p>}
           {visibleRows.map(({ entry, depth }) => {
             const { path } = entry;
@@ -514,7 +514,7 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
           <button type="button" aria-label="Close diff" title="Close diff" className="flex size-7 items-center justify-center rounded-sm text-faint hover:bg-raised hover:text-ink" onClick={() => setDiff(null)}><Icon name="close" /></button>
         </div>
         <div className="min-h-0 flex-1 overflow-auto">
-          {diff.loading ? <p className="p-4 text-small text-muted">Loading diff…</p> : diff.error ? <p className="p-4 text-small text-fail">{diff.error}</p> : diff.file ? <DiffViewer file={diff.file} headerless /> : <p className="p-4 text-small text-muted">No textual changes to show for this file.</p>}
+          {diff.loading ? <p className="p-4 text-small text-muted">Loading diff…</p> : diff.error ? <p role="alert" className="p-4 text-small text-fail">{diff.error}</p> : diff.file ? <DiffViewer file={diff.file} headerless /> : <p className="p-4 text-small text-muted">No textual changes to show for this file.</p>}
         </div>
       </> : <>
         {openPaths.length > 0 && <header className="flex min-h-9 items-stretch overflow-x-auto border-b border-hairline bg-shell">
@@ -536,13 +536,13 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
           {['.md', '.markdown'].some((extension) => selectedPath.toLowerCase().endsWith(extension)) && <button type="button" aria-label={markdownPreview[selectedPath] ? 'Edit source' : 'Preview'} title={markdownPreview[selectedPath] ? 'Edit source' : 'Preview'} className="flex size-7 items-center justify-center rounded-sm text-faint hover:bg-raised hover:text-ink" onClick={() => setMarkdownPreview((current) => ({ ...current, [selectedPath]: !current[selectedPath] }))}><Icon name={markdownPreview[selectedPath] ? 'edit' : 'eye'} /></button>}
           <button type="button" aria-label="Save file" title="Save (⌘S)" disabled={drafts[selectedPath].text === drafts[selectedPath].saved || saving} className="flex size-7 items-center justify-center rounded-sm text-accent hover:bg-accent-tint disabled:text-faint disabled:hover:bg-transparent" onClick={save}><Icon name="save" /></button>
         </div>}
-        {saveError && <p className="border-b border-hairline bg-shell px-4 py-2 text-small text-fail">{saveError}</p>}
+        {saveError && <p role="alert" className="border-b border-hairline bg-shell px-4 py-2 text-small text-fail">{saveError}</p>}
         {staleFile && selectedPath && <div className="flex items-center gap-3 border-b border-hairline bg-running-tint px-3 py-2 text-small text-running" role="status">
           <span className="min-w-0 flex-1">{staleFile === 'deleted' ? 'This file was deleted on disk — saving will recreate it.' : 'This file changed on disk since you opened it.'}</span>
           {staleFile === 'changed' && <button type="button" className="shrink-0 rounded-sm border border-edge px-2 py-0.5 font-semibold text-ink hover:bg-surface" onClick={reloadOpenFile}>Reload</button>}
           <button type="button" aria-label="Dismiss" className="shrink-0 hover:text-ink" onClick={() => setStaleFile(null)}><Icon name="close" /></button>
         </div>}
-        {fileError ? <p className="p-4 text-small text-fail">{fileError}</p> : file && selectedPath && file.isTooLarge ? <div className="p-4 text-small text-muted"><p>This file is too large to edit.</p><a href={api.workspaceRawUrl(workspaceId, selectedPath)} download={selectedPath.split('/').at(-1)} className="mt-3 inline-block text-accent hover:underline">Download</a></div> : file && selectedPath && ['image/gif', 'image/jpeg', 'image/png', 'image/webp'].includes(file.mime) ? <img src={api.workspaceRawUrl(workspaceId, selectedPath)} alt={`Preview of ${selectedPath}`} className="min-h-0 max-h-full max-w-full object-contain p-4" /> : file && selectedPath && file.mime.startsWith('audio/') ? <audio controls src={api.workspaceRawUrl(workspaceId, selectedPath)} className="m-4" /> : file && selectedPath && file.isBinary ? <div className="p-4 text-small text-muted"><p>This binary file cannot be displayed.</p><a href={api.workspaceRawUrl(workspaceId, selectedPath)} download={selectedPath.split('/').at(-1)} className="mt-3 inline-block text-accent hover:underline">Download</a></div> : file && selectedPath && drafts[selectedPath] && markdownPreview[selectedPath] && ['.md', '.markdown'].some((extension) => selectedPath.toLowerCase().endsWith(extension)) ? <Markdown source={drafts[selectedPath].text} className="markdown-doc min-h-0 flex-1 overflow-auto p-6" onFileLink={(href) => openRelative(selectedPath, href)} /> : file && selectedPath && drafts[selectedPath] ? <CodeViewer path={selectedPath} text={drafts[selectedPath].text} onChange={(text) => setDrafts((current) => {
+        {fileError ? <p role="alert" className="p-4 text-small text-fail">{fileError}</p> : file && selectedPath && file.isTooLarge ? <div className="p-4 text-small text-muted"><p>This file is too large to edit.</p><a href={api.workspaceRawUrl(workspaceId, selectedPath)} download={selectedPath.split('/').at(-1)} className="mt-3 inline-block text-accent hover:underline">Download</a></div> : file && selectedPath && ['image/gif', 'image/jpeg', 'image/png', 'image/webp'].includes(file.mime) ? <img src={api.workspaceRawUrl(workspaceId, selectedPath)} alt={`Preview of ${selectedPath}`} className="min-h-0 max-h-full max-w-full object-contain p-4" /> : file && selectedPath && file.mime.startsWith('audio/') ? <audio controls src={api.workspaceRawUrl(workspaceId, selectedPath)} className="m-4" /> : file && selectedPath && file.isBinary ? <div className="p-4 text-small text-muted"><p>This binary file cannot be displayed.</p><a href={api.workspaceRawUrl(workspaceId, selectedPath)} download={selectedPath.split('/').at(-1)} className="mt-3 inline-block text-accent hover:underline">Download</a></div> : file && selectedPath && drafts[selectedPath] && markdownPreview[selectedPath] && ['.md', '.markdown'].some((extension) => selectedPath.toLowerCase().endsWith(extension)) ? <Markdown source={drafts[selectedPath].text} className="markdown-doc min-h-0 flex-1 overflow-auto p-6" onFileLink={(href) => openRelative(selectedPath, href)} /> : file && selectedPath && drafts[selectedPath] ? <CodeViewer path={selectedPath} text={drafts[selectedPath].text} onChange={(text) => setDrafts((current) => {
           const draft = current[selectedPath];
           return draft ? { ...current, [selectedPath]: { saved: draft.saved, text } } : current;
         })} onSave={save} onCursor={setCursor} /> : <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 text-small text-faint"><Icon name="files" className="size-6 opacity-60" /><p>Select a file to view or edit it.</p></div>}
@@ -686,7 +686,7 @@ function NameDialog({ intent, onCancel, onSubmit }: { intent: NameIntent & { err
         {renamePrefix && <span className="flex shrink-0 items-center pl-2.5 font-code text-small text-faint">{renamePrefix}</span>}
         <input autoFocus value={value} onChange={(event) => setValue(event.target.value)} aria-label={title} placeholder={rename ? 'name' : 'name'} className={`min-w-0 flex-1 bg-transparent py-2 font-code text-small text-ink focus:outline-none ${renamePrefix ? 'pr-2.5' : 'px-2.5'}`} />
       </div>
-      {intent.error && <p className="mt-2 text-small text-fail">{intent.error}</p>}
+      {intent.error && <p role="alert" className="mt-2 text-small text-fail">{intent.error}</p>}
       <div className="mt-5 flex justify-end gap-2">
         <button type="button" className={`${btnGhost} px-3 py-1.5`} onClick={onCancel}>Cancel</button>
         <button type="submit" disabled={!value.trim()} className={`${btnPrimary} px-3 py-1.5`}>{rename ? 'Rename' : 'Create'}</button>

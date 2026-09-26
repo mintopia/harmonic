@@ -64,11 +64,11 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   } catch {
     // Not JSON — a proxy or the server itself returned plain text/HTML. Never
     // surface that raw body to the operator.
-    throw new ApiError(res.status, res.ok ? `Malformed response from ${method} ${path}` : res.statusText);
+    throw new ApiError(res.status, `${method} ${path} failed (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`);
   }
   if (!res.ok) {
     const message = json && typeof json === 'object' && 'error' in json ? (json as { error?: { message?: string } }).error?.message : undefined;
-    throw new ApiError(res.status, message ?? res.statusText);
+    throw new ApiError(res.status, message ?? `${method} ${path} failed (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`);
   }
   if (json === null && res.status !== 204) {
     throw new ApiError(res.status, `Empty response from ${method} ${path}`);

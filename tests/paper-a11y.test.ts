@@ -76,4 +76,21 @@ describe('Paper accessibility contract (issue #266)', () => {
     expect(files).toContain('<ConfirmDialog');
     expect(files).toContain('title="Discard changes?"');
   });
+
+  it('gives every error surface an accessible role and never a blank crash screen', () => {
+    const errorBoundary = source('web/src/components/ErrorBoundary.tsx');
+    const connectionBanner = source('web/src/components/ConnectionBanner.tsx');
+    const appContent = source('web/src/components/AppContent.tsx');
+    const epicPage = source('web/src/components/EpicPage.tsx');
+    const login = source('web/src/components/Login.tsx');
+    const fieldError = source('web/src/components/SettingsSection.tsx');
+
+    expect(errorBoundary).toContain('role="alert"');
+    expect(connectionBanner).toContain('role="status"');
+    expect(connectionBanner).toContain('aria-live="polite"');
+    expect(appContent).toContain('title="Task not found"');
+    expect(epicPage).toContain('title="Epic not found"');
+    expect(login).toContain("Couldn't reach Harmonic");
+    expect(fieldError).toContain('export function FieldError({ message }: { message?: string }) {\n  if (!message) return null;\n  return <p role="alert"');
+  });
 });
