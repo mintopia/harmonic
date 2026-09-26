@@ -28,11 +28,14 @@ export function ConnectionBanner() {
   }, []);
 
   if (!visible) return null;
+  // Fixed, not in-flow: the app shell is a flex row at the desktop breakpoint,
+  // so an in-flow banner here would become a sidebar-height column instead of
+  // a top bar.
   return (
     <div
       role="status"
       aria-live="polite"
-      className="flex shrink-0 items-center justify-center gap-2 bg-running-tint px-3 py-1.5 text-small text-running"
+      className="fixed inset-x-0 top-0 z-50 flex items-center justify-center gap-2 bg-running-tint px-3 py-1.5 text-small text-running shadow-bar"
     >
       <span aria-hidden="true" className="size-1.5 shrink-0 animate-pulse rounded-full bg-running-dot motion-reduce:animate-none" />
       Reconnecting to Harmonic — the view may be out of date.
