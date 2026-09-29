@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { dropIndexForPath } from '../execution/code-index.js';
 import { isInside, WorktreeReconciler } from '../domain/worktree-reconciler.js';
 import { worktreeId, WorktreeInventory } from '../domain/worktree-inventory.js';
+import { singleFlight } from '../reliability/single-flight.js';
 import { Git } from '../execution/git.js';
 import { DomainError } from '../domain/errors.js';
 import type { TaskRow } from '../db/schema.js';
@@ -44,9 +45,9 @@ export function createWorktreeServices(deps: {
     worktreesDir,
     dropIndexForPath,
   );
-  const publishWorktrees = async (): Promise<void> => {
+  const publishWorktrees = singleFlight(async (): Promise<void> => {
     bus.emit('worktrees', await worktreeInventory.snapshot());
-  };
+  });
   const forceCleanupWorktree = async (id: string, workspaceId?: number): Promise<boolean | null> => {
     const entry = (await worktreeInventory.snapshot()).find(
       (candidate) => worktreeId(candidate) === id,

@@ -90,6 +90,26 @@ const INITIAL_RETRY_MS = 1000;
 const MAX_RETRY_MS = 30_000;
 let consecutiveFailedOpens = 0;
 
+/** Shared live/reconnecting status for the firehose socket, so a UI banner
+ * can tell the operator their view may be stale without tying into any one
+ * subscriber. `connecting` covers both the first open and every retry after a
+ * drop — the banner only needs "trust what's on screen" vs. "don't". */
+export type ConnectionState = 'connecting' | 'connected';
+let connectionState: ConnectionState = 'connecting';
+const connectionListeners = new Set<() => void>();
+function setConnectionState(next: ConnectionState): void {
+  if (connectionState === next) return;
+  connectionState = next;
+  for (const listener of connectionListeners) listener();
+}
+export function subscribeConnectionState(listener: () => void): () => void {
+  connectionListeners.add(listener);
+  return () => connectionListeners.delete(listener);
+}
+export function getConnectionState(): ConnectionState {
+  return connectionState;
+}
+
 function permissionResolutionReqId(payload: unknown): string | null {
   if (typeof payload !== 'object' || payload === null || !('reqId' in payload)) return null;
   return typeof payload.reqId === 'string' ? payload.reqId : null;
@@ -125,6 +145,7 @@ function connect(): void {
   ws = socket;
   socket.onopen = () => {
     consecutiveFailedOpens = 0;
+    setConnectionState('connected');
     for (const listener of listeners) listener.onOpen?.(socket);
   };
   socket.onmessage = (ev) => {
@@ -136,6 +157,7 @@ function connect(): void {
     if (ws !== socket) return;
     ws = null;
     pendingPermissions.clear();
+    if (listeners.size > 0) setConnectionState('connecting');
     if (listeners.size > 0 && retry === null) {
       const delay = fullJitterBackoffMs(consecutiveFailedOpens);
       consecutiveFailedOpens += 1;

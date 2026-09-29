@@ -107,6 +107,8 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
     case 'steer_queued':
     case 'steer_injected':
       return { label: 'Steered', detail: clip(text(payload?.text)), tone: 'neutral', tag: null };
+    case 'steer_undelivered':
+      return { label: 'Steer not delivered', detail: clip(text(payload?.text)), tone: 'failed', tag: null };
     case 'paused':
       return { label: 'Paused', detail: clip(text(payload?.reason)), tone: 'awaiting', tag: null };
     case 'resumed':

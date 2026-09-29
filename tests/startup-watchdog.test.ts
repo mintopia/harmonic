@@ -84,14 +84,17 @@ describe('startup watchdog: out-of-process watcher (real processes)', () => {
     const dataDir = tempDir('startup-watchdog-progress-');
     writePending(dataDir, ownVersion);
 
-    const child = spawnFixture(progressFixturePath, [dataDir, '300', '1500']);
+    // A 2s deadline with touches every 250ms (deadline/8, see the fixture)
+    // gives real scheduling jitter room to breathe under CPU contention,
+    // unlike the previous 300ms/150ms pairing which left none.
+    const child = spawnFixture(progressFixturePath, [dataDir, '2000', '8000']);
     await waitForStdout(child, 'armed\n', 20_000);
-    await waitForStdout(child, 'healthy\n', 10_000);
+    await waitForStdout(child, 'healthy\n', 20_000);
 
     expect(child.exitCode).toBeNull();
     expect(child.killed).toBe(false);
     child.kill('SIGKILL');
-  }, 30_000);
+  }, 45_000);
 
 });
 

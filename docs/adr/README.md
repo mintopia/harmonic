@@ -60,6 +60,7 @@ not-yet-torn-down machinery is marked `legacy until ADR-1 epic`.
 | 0040 | [The merge reconciles base movement by re-merging, not by a SHA assertion](0040-merge-reconciles-base-movement-without-a-sha-assertion.md) |
 | 0041 | [Non-privileged atomic self-upgrade](0041-non-privileged-atomic-self-upgrade.md) |
 | 0042 | [Upgrade install modes, boot guard, and rollback](0042-upgrade-install-modes-boot-guard-and-rollback.md) |
+| 0043 | [Supported Node and npm versions](0043-supported-node-and-npm-versions.md) |
 
 ## Where every pre-reset ADR went
 

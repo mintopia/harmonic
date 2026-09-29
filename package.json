@@ -25,6 +25,9 @@
   "author": "",
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "bin": {
     "harmonic": "dist/cli.js"
   },

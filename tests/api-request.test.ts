@@ -46,6 +46,16 @@ describe('api request()', () => {
     await expect(api.task(99999)).rejects.toThrow('task 99999 not found');
   });
 
+  it('never leaks a raw JSON-parse error when a non-JSON body reaches the operator (e.g. a proxy error page)', async () => {
+    vi.stubGlobal('fetch', fakeFetch('<html>502 Bad Gateway</html>', { status: 502 }));
+    const error: unknown = await api.task(1).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    const message = (error as Error).message;
+    expect(message).toContain('502');
+    expect(message).not.toContain('<html>');
+    expect(message).not.toContain('Unexpected token');
+  });
+
   it('allows a genuine 204 No Content to resolve (empty body is legitimate there)', async () => {
     vi.stubGlobal('fetch', fakeFetch(null, { status: 204 }));
     await expect(api.deletePermissionRule(1)).resolves.toBeNull();

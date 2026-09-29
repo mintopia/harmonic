@@ -3,6 +3,8 @@ import { tasks, workspaces } from '../src/db/schema.js';
 import { WorktreeInventory, type WorktreeInventoryRepository } from '../src/domain/worktree-inventory.js';
 import { WorktreeReconciler, type WorktreeRepository } from '../src/domain/worktree-reconciler.js';
 import { Git } from '../src/execution/git.js';
+import { createWorktreeServices } from '../src/server/app-worktrees.js';
+import { EventBus } from '../src/server/bus.js';
 import { startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
 import { eq } from 'drizzle-orm';
 import { execFileSync } from 'node:child_process';
@@ -736,5 +738,115 @@ describe('worktree-inventory', () => {
         { workspaceId: 1, path: '/trees/task-7', branch: 'harmonic/task-7', subject: null, sizeBytes: 42, dirty: false, changeCount: 0, state: 'Orphan' },
       ]);
     });
+  });
+});
+
+describe('Git.worktreeSize', () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+  const tmp = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harmonic-size-'));
+    dirs.push(dir);
+    return dir;
+  };
+
+  it('measures a real tree including nested node_modules, and grows with content', async () => {
+    const dir = tmp();
+    mkdirSync(join(dir, 'node_modules', 'pkg', 'lib'), { recursive: true });
+    writeFileSync(join(dir, 'a.txt'), 'hello');
+    writeFileSync(join(dir, 'node_modules', 'pkg', 'lib', 'index.js'), 'module.exports = 1;');
+    const before = await Git.worktreeSize(dir);
+    expect(before).toBeGreaterThan(0);
+
+    writeFileSync(join(dir, 'node_modules', 'pkg', 'big.bin'), Buffer.alloc(1024 * 1024, 1));
+    const after = await Git.worktreeSize(dir);
+    expect(after! - before!).toBeGreaterThanOrEqual(1024 * 1024);
+  });
+
+  it('does not interpret the path through a shell', async () => {
+    const dir = tmp();
+    const odd = join(dir, 'a b; $(touch pwned)');
+    mkdirSync(odd);
+    expect(await Git.worktreeSize(odd)).not.toBeNull();
+    expect(existsSync(join(dir, 'pwned'))).toBe(false);
+  });
+
+  it('returns null for a nonexistent path', async () => {
+    expect(await Git.worktreeSize(join(tmp(), 'missing'))).toBeNull();
+  });
+});
+
+describe('worktree inventory size failure', () => {
+  it('keeps the entry state with sizeBytes null when the size cannot be read', async () => {
+    const inventory = new WorktreeInventory(
+      async () => [{ id: 1, workingDir: '/repo' }],
+      async () => [],
+      {
+        listWorktrees: async () => [{ path: '/trees/task-7', branch: 'harmonic/task-7' }],
+        isValidWorktree: async () => true,
+        pathExists: async () => true,
+        changeCount: async () => 2,
+        worktreeSize: async () => null,
+      },
+      '/trees',
+    );
+    await expect(inventory.snapshot()).resolves.toEqual([
+      { workspaceId: 1, path: '/trees/task-7', branch: 'harmonic/task-7', subject: null, sizeBytes: null, dirty: true, changeCount: 2, state: 'Orphan' },
+    ]);
+  });
+
+  it('keeps the entry state when the size probe throws', async () => {
+    const inventory = new WorktreeInventory(
+      async () => [{ id: 1, workingDir: '/repo' }],
+      async () => [],
+      {
+        listWorktrees: async () => [{ path: '/trees/task-7', branch: 'harmonic/task-7' }],
+        isValidWorktree: async () => true,
+        pathExists: async () => true,
+        changeCount: async () => 0,
+        worktreeSize: async () => {
+          throw new Error('boom');
+        },
+      },
+      '/trees',
+    );
+    const [entry] = await inventory.snapshot();
+    expect(entry).toMatchObject({ sizeBytes: null, state: 'Orphan' });
+  });
+});
+
+describe('publishWorktrees single-flight', () => {
+  it('coalesces a burst into at most an in-flight pass plus one trailing pass and emits the final snapshot', async () => {
+    let snapshots = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const bus = new EventBus();
+    const services = createWorktreeServices({
+      workspaces: {
+        list: async () => {
+          snapshots += 1;
+          await gate;
+          return [];
+        },
+      } as any,
+      tasks: { list: async () => [] } as any,
+      bus,
+      worktreesDir: '/trees',
+      managedWorktreesRoot: '/trees',
+    });
+    const emitted: number[] = [];
+    bus.on('worktrees', () => emitted.push(snapshots));
+
+    const burst = Array.from({ length: 50 }, () => services.publishWorktrees());
+    release();
+    await Promise.all(burst);
+
+    expect(snapshots).toBe(2);
+    expect(emitted.length).toBeGreaterThanOrEqual(1);
+    expect(emitted.at(-1)).toBe(2);
   });
 });

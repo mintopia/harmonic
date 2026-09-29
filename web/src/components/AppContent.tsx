@@ -19,7 +19,7 @@ import type { Epic } from '../epic-model';
 import type { HostLoad } from '../ws';
 import type { View } from '../rail-model';
 import { NO_SELECTION, type Route, type TableFilters } from '../router-model';
-import { btnPrimary, btnQuiet } from '../ui';
+import { btnGhost, btnPrimary, btnQuiet } from '../ui';
 import type { PendingPermissionAlert } from '../usePendingPermissionAlerts';
 import type { NavigateFn } from '../useRoute';
 
@@ -165,6 +165,7 @@ interface AppContentProps {
   activeWorkspaceId: number | null;
   activeWorkspace: Workspace | null;
   openTask: Task | null;
+  taskNotFound: boolean;
   epics: Epic[];
   error: string | null;
   showRunHint: boolean;
@@ -206,6 +207,7 @@ export function AppContent({
   activeWorkspaceId,
   activeWorkspace,
   openTask,
+  taskNotFound,
   epics,
   error,
   showRunHint,
@@ -264,6 +266,23 @@ export function AppContent({
           parentEpicRef={epics.find((e) => e.members.some((m) => m.taskId === openTask.id))?.ref ?? null}
           error={error}
         />
+      ) : route.task !== null && taskNotFound ? (
+        <div className="flex h-full flex-col items-center justify-center">
+          <EmptyState
+            title="Task not found"
+            action={
+              <button
+                type="button"
+                className={btnGhost}
+                onClick={() => navigate({ ...route, task: null, panel: NO_SELECTION }, { replace: true })}
+              >
+                Back to Board
+              </button>
+            }
+          >
+            {`Task ${route.task} doesn't exist, or it's been deleted.`}
+          </EmptyState>
+        </div>
       ) : (
         <div className="flex h-full flex-col">
           {error && (

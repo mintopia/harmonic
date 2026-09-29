@@ -177,6 +177,47 @@ describe('RunControl — a working Task mid-drive between turns (no ActiveRun, b
     expect(emitSteerLog).toHaveBeenCalledWith({ attemptId: attempt.id, text: 'still there?', queued: true });
   });
 
+  it('two steers accepted while driving between turns both survive, in order (ADR-0005 §6)', async () => {
+    const task = workingTask();
+    const attempt = runningAttempt();
+    const activeRuns = new ActiveRuns();
+    activeRuns.markDriving(7);
+
+    const deps: RunControlDeps = {
+      taskService: { get: vi.fn(async () => task) } as unknown as RunControlDeps['taskService'],
+      attempts: {
+        getRunningForTask: vi.fn(async () => attempt),
+        appendEvent: vi.fn(async () => ({}) as never),
+      } as unknown as RunControlDeps['attempts'],
+      activeRuns,
+      events: { onAttemptEvent: vi.fn() } as unknown as RunControlDeps['events'],
+      getWorkspace: undefined,
+      getConfig: vi.fn() as unknown as RunControlDeps['getConfig'],
+      isGloballyPaused: undefined,
+      onGloballyPaused: undefined,
+      sessionContinuation: {
+        resolveContinuationSource: vi.fn(async () => null),
+        resumeEligibilityFor: vi.fn(),
+      } as unknown as RunControlDeps['sessionContinuation'],
+      emitSteerLog: vi.fn(),
+      recordLifecycleTransition: vi.fn(async () => {}),
+      start: vi.fn() as unknown as RunControlDeps['start'],
+      launchClaimed: vi.fn() as unknown as RunControlDeps['launchClaimed'],
+      beginRun: vi.fn() as unknown as RunControlDeps['beginRun'],
+    };
+
+    const runControl = new RunControl(deps);
+    expect(await runControl.steerWorking(7, 'first message')).toBe(true);
+    expect(await runControl.steerWorking(7, 'second message')).toBe(true);
+
+    // The next turn's prompt build calls takePendingOperatorSeed exactly once —
+    // it must see both, not just the second overwriting the first.
+    const seed = activeRuns.takePendingOperatorSeed(7);
+    expect(seed).toContain('first message');
+    expect(seed).toContain('second message');
+    expect(seed!.indexOf('first message')).toBeLessThan(seed!.indexOf('second message'));
+  });
+
   it('resume returns false rather than relaunching a second drive loop', async () => {
     const task = { id: 7, state: 'paused', continuationChoice: null } as TaskRow;
     const activeRuns = new ActiveRuns();

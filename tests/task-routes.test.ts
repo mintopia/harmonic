@@ -4,7 +4,7 @@ import { Git } from '../src/execution/git.js';
 import { type Ticket } from '../src/tracker/adapter.js';
 import { startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -63,6 +63,47 @@ describe('task-steering', () => {
       } finally {
         await noSteerServer.close();
       }
+    });
+
+    it('records a steer accepted before the first turn exists as delivered with that turn', async () => {
+      const repo = mkdtempSync(join(tmpdir(), 'harmonic-steer-prespawn-'));
+      execFileSync('git', ['init', '-b', 'main', repo]);
+      execFileSync('git', ['-C', repo, 'config', 'user.name', 'Test']);
+      execFileSync('git', ['-C', repo, 'config', 'user.email', 'test@example.com']);
+      execFileSync('git', ['-C', repo, 'commit', '--allow-empty', '-m', 'init']);
+      const gate = mkdtempSync(join(tmpdir(), 'harmonic-steer-gate-'));
+      const held = join(gate, 'held');
+      const release = join(gate, 'release');
+      // Holds the drive inside workspace prep (`git worktree add`), before any ActiveRun exists.
+      writeFileSync(
+        join(repo, '.git', 'hooks', 'post-checkout'),
+        `#!/bin/sh\ntouch '${held}'\ni=0\nwhile [ ! -e '${release}' ] && [ $i -lt 1500 ]; do sleep 0.01; i=$((i+1)); done\n`,
+      );
+      chmodSync(join(repo, '.git', 'hooks', 'post-checkout'), 0o755);
+
+      const created = await server.api('POST', '/api/tasks', { prompt: 'quick task', workingDir: repo, isolationMode: 'worktree' });
+      expect(created.status).toBe(201);
+      const taskId = created.body.id;
+      const started = await server.api('POST', `/api/tasks/${taskId}/run`);
+      expect(started.status).toBe(201);
+      const attemptId = started.body.id;
+
+      await waitFor(async () => existsSync(held));
+      const steered = await server.api('POST', `/api/tasks/${taskId}/steer`, { text: 'mind the parser' });
+      expect(steered.status).toBe(200);
+      writeFileSync(release, '');
+
+      await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+        return body.state !== 'working' ? body : undefined;
+      });
+
+      const { body } = await server.api('GET', `/api/attempts/${attemptId}/events`);
+      const lifecycle = body.events.filter((e: any) => e.type === 'lifecycle');
+      expect(lifecycle.find((e: any) => e.payload.event === 'steer_queued')?.payload.text).toBe('mind the parser');
+      expect(lifecycle.find((e: any) => e.payload.event === 'steer_delivered')?.payload.text).toBe('mind the parser');
+      const attempts = await server.app.ctx.attempts.listForTask(taskId);
+      expect(attempts.find((a) => a.id === attemptId)?.prompt).toContain('## Operator message\n\nmind the parser');
     });
 
     it('injects a steer into the running turn when the harness supports it', async () => {

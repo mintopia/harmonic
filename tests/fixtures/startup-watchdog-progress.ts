@@ -21,7 +21,11 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const stepMs = deadlineMs / 2;
+  // 1/8, not 1/2, of the deadline: under real scheduling jitter a touch can
+  // land late, and a cadence that only halves the deadline leaves no room to
+  // absorb that before the out-of-process watcher (polling independently)
+  // decides the boot is hung.
+  const stepMs = deadlineMs / 8;
   let elapsed = 0;
   while (elapsed < totalMs) {
     await sleep(stepMs);

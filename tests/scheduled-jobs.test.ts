@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { seedLocalMarkdownTicket, startServer, waitFor, connectFirehose, type TestServer } from './helpers.js';
@@ -33,10 +34,15 @@ describe('Scheduled Job registry', () => {
     });
     const eventCount = messages.length;
     server.app.ctx.bus.emit('scheduled_jobs', snapshot.jobs);
+    // Other registered jobs (e.g. Worktree reconciliation) can broadcast their
+    // own 'scheduled-jobs' event around the same time, each computing its own
+    // live `nextRunAt`; matching on payload, not just message type, finds this
+    // emit's own event instead of racing whichever background one lands first.
     const event = await waitFor(async () =>
       messages.slice(eventCount).find(
         (message): message is { type: string; jobs: unknown } =>
-          typeof message === 'object' && message !== null && 'type' in message && message.type === 'scheduled-jobs',
+          typeof message === 'object' && message !== null && 'type' in message && message.type === 'scheduled-jobs'
+          && isDeepStrictEqual((message as { jobs: unknown }).jobs, snapshot.jobs),
       ),
     );
     expect(event.jobs).toEqual(snapshot.jobs);

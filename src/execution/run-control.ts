@@ -10,6 +10,16 @@ import type { SessionContinuation } from './session-continuation.js';
 import { logger } from '../logger.js';
 import type { RunnerEvents, RunnerOptions } from './runner-options.js';
 
+/** The result of a per-turn boundary check a drive loop runs before spawning its
+ * next turn. `settled` covers every externally-settled Task (operator cancel,
+ * force-complete, or a race that already paused it another way) — the caller
+ * that settled it already did every write this loop needs to respect. */
+export type RunBoundaryResult =
+  | { stop: false }
+  | { stop: true; reason: 'settled' }
+  | { stop: true; reason: 'global-pause' }
+  | { stop: true; reason: 'operator-pause'; pauseReason: string };
+
 export interface RunControlDeps {
   taskService: TaskService;
   attempts: AttemptStore;
@@ -67,12 +77,52 @@ export class RunControl {
     return true;
   }
 
-  /** Deliver the configured pause steer, then pause at the next prompt boundary. */
+  /** A Task with no ActiveRun and no drive loop in flight: nothing will ever honour a
+   * boundary marker for it, so pause it in the DB right now — the same fact a
+   * stranded Task's Resume already expects to find. */
+  private async pauseStrandedNow(taskId: number, reason: string): Promise<boolean> {
+    await this.deps.taskService.pause(taskId);
+    await this.deps.recordLifecycleTransition(taskId, 'paused', reason);
+    logger.info('Task paused', { taskId, reason });
+    return true;
+  }
+
+  /**
+   * Pause a working Task (ADR-0027: graceful, freezes at the next boundary; ADR-0005
+   * §6: delivered or refused, never accepted and lost). Handles every shape a
+   * working Task can be in:
+   *  - a live, steerable turn: deliver the configured pause steer and freeze once it arrives;
+   *  - an ActiveRun mid-verify/merge (not steerable): mark intent and a pending
+   *    per-Task boundary marker so the next `driveOnce` honours it — a settle that
+   *    reaches `done`/`escalated` first wins outright, since this never writes Task
+   *    state itself (see {@link checkRunBoundary});
+   *  - driving between turns with no ActiveRun: same pending-boundary marker;
+   *  - stranded (no ActiveRun, no drive loop in flight): pause immediately.
+   */
   async pause(taskId: number): Promise<boolean> {
     const task = await this.deps.taskService.get(taskId);
     if (task.state !== 'working') return false;
     const active = this.deps.activeRuns.forTask(taskId);
-    if (!active || active.pauseRequested) return false;
+    if (!active) {
+      if (this.deps.activeRuns.isDriving(taskId)) {
+        if (this.deps.activeRuns.hasPendingPause(taskId)) return false;
+        this.deps.activeRuns.setPendingPause(taskId, 'operator request');
+        logger.info('Task pause requested (between turns)', { taskId });
+        return true;
+      }
+      // Stranded means a running Attempt row survives with nothing driving it; a
+      // working Task with no Attempt at all (never spawned) has nothing to freeze.
+      if (!(await this.deps.attempts.getRunningForTask(taskId))) return false;
+      return this.pauseStrandedNow(taskId, 'operator request');
+    }
+    if (active.pauseRequested) return false;
+    if (!active.steerable) {
+      active.pauseRequested = true;
+      active.pauseReason = 'operator request';
+      this.deps.activeRuns.setPendingPause(taskId, 'operator request');
+      logger.info('Task pause requested (settling)', { taskId, attemptId: active.attemptId });
+      return true;
+    }
     const message = resolvePauseMessage(await this.deps.getWorkspace?.(task.workspaceId), this.deps.getConfig());
     if (!(await this.steer(taskId, message))) return false;
     active.pauseRequested = true;
@@ -85,20 +135,16 @@ export class RunControl {
     const task = await this.deps.taskService.get(taskId);
     if (task.state !== 'working') return false;
     const active = this.deps.activeRuns.forTask(taskId);
-    if (!active) {
-      await this.deps.taskService.pause(taskId);
-      await this.deps.recordLifecycleTransition(taskId, 'paused', 'global pause');
-      logger.info('Task paused', { taskId, reason: 'global pause' });
-      return true;
-    }
+    if (!active) return this.pauseStrandedNow(taskId, 'global pause');
     if (!active.steerable) {
       active.pauseRequested = true;
       active.pauseReason = 'global pause';
       active.globalPauseRequested = true;
-      await this.deps.taskService.pause(taskId);
-      await this.deps.recordLifecycleTransition(taskId, 'paused', 'global pause');
-      active.pauseFactRecorded = true;
-      logger.info('Task paused', { taskId, attemptId: active.attemptId, reason: active.pauseReason });
+      // No DB write here: the global flag itself is the persistent boundary
+      // trigger (checkRunBoundary rechecks it on every turn), so a settle that
+      // reaches done/escalated before the next boundary wins outright instead of
+      // stranding the Task paused underneath an already-terminal Attempt.
+      logger.info('Task pause requested (settling)', { taskId, attemptId: active.attemptId, reason: 'global pause' });
       return true;
     }
     const paused = await this.pause(taskId);
@@ -183,13 +229,28 @@ export class RunControl {
     return true;
   }
 
-  async pauseIfGloballyPaused(taskId: number): Promise<boolean> {
-    if (!this.deps.isGloballyPaused?.()) return false;
-    if ((await this.deps.taskService.get(taskId)).state === 'working') {
+  /**
+   * The check a drive loop runs before spawning its next turn (the initial one
+   * and every self-heal retry): honours a global pause, a per-Task pending pause
+   * (issue: operator-control gaps outside a live turn), or notices the Task was
+   * already settled externally (operator cancel/force-complete) so the loop must
+   * not spawn another turn for it.
+   */
+  async checkRunBoundary(taskId: number): Promise<RunBoundaryResult> {
+    const task = await this.deps.taskService.get(taskId);
+    if (task.state !== 'working') return { stop: true, reason: 'settled' };
+    if (this.deps.isGloballyPaused?.()) {
       await this.deps.taskService.pause(taskId);
       await this.deps.onGloballyPaused?.(taskId);
+      return { stop: true, reason: 'global-pause' };
     }
-    return true;
+    const pauseReason = this.deps.activeRuns.takePendingPause(taskId);
+    if (pauseReason !== undefined) {
+      await this.deps.taskService.pause(taskId);
+      await this.deps.recordLifecycleTransition(taskId, 'paused', pauseReason);
+      return { stop: true, reason: 'operator-pause', pauseReason };
+    }
+    return { stop: false };
   }
 
   /** A resume is never refused; an incompatible or missing Session falls back to start-condensed. */
@@ -205,7 +266,7 @@ export class RunControl {
       if (src) this.deps.activeRuns.setPendingManualResume(taskId, src.prior);
       await this.deps.start(taskId);
     } catch (err) {
-      this.deps.activeRuns.clearPendingOperatorSeed(taskId);
+      this.deps.activeRuns.removePendingOperatorSeed(taskId, text);
       throw err;
     }
     return true;
@@ -222,7 +283,7 @@ export class RunControl {
     try {
       await this.resumePaused(taskId);
     } catch (err) {
-      this.deps.activeRuns.clearPendingOperatorSeed(taskId);
+      this.deps.activeRuns.removePendingOperatorSeed(taskId, text);
       throw err;
     }
     return true;
@@ -256,7 +317,7 @@ export class RunControl {
         await this.deps.launchClaimed(taskId);
         launched = true;
       } catch (err) {
-        this.deps.activeRuns.clearPendingOperatorSeed(taskId);
+        this.deps.activeRuns.removePendingOperatorSeed(taskId, text);
         throw err;
       }
     } finally {

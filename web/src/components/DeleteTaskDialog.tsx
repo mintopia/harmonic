@@ -46,7 +46,7 @@ export function DeleteTaskDialog({
             re-create it.
           </p>
         )}
-        {error && <p className="mt-3 text-fail">{error}</p>}
+        {error && <p role="alert" className="mt-3 text-fail">{error}</p>}
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" className={`${btnGhost} px-3 py-1.5`} onClick={onClose} disabled={busy}>
             Cancel

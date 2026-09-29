@@ -24,6 +24,7 @@ import type { TaskService } from '../domain/tasks.js';
 import { resolveScoped, resolveTaskPrompt } from '../domain/setting-override.js';
 import { SessionContinuation, type PersistSessionContext } from './session-continuation.js';
 import { MergeCoordinator, BaseBranchUnresolved, EpicBaseNotReady } from './merge-coordinator.js';
+import type { RunBoundaryResult } from './run-control.js';
 import type { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { logger } from '../logger.js';
 import type { SpanContext } from '@opentelemetry/api';
@@ -95,7 +96,7 @@ export interface TurnDriverDeps {
   updateStep: (
     taskId: number, id: number, patch: Parameters<AttemptStore['updateStep']>[1],
   ) => Promise<Awaited<ReturnType<AttemptStore['updateStep']>>>;
-  pauseIfGloballyPaused: (taskId: number) => Promise<boolean>;
+  checkRunBoundary: (taskId: number) => Promise<RunBoundaryResult>;
   latestAttemptFor: (task: Pick<TaskRow, 'id'>) => Promise<AttemptRow>;
   recordRunEvent: (
     task: TaskRow, run: AttemptRow,
@@ -190,6 +191,11 @@ export class TurnDriver {
       }
     } finally {
       this.deps.activeRuns.releaseAttempt(run.id);
+      // A pending pause only ever gets consumed at the next driveOnce boundary; if
+      // this drive loop instead ended some other way (settled done/escalated,
+      // cancelled, completed) that marker would otherwise leak onto whatever this
+      // Task's id is next used for.
+      this.deps.activeRuns.clearPendingPause(task.id);
     }
   }
 
@@ -204,8 +210,9 @@ export class TurnDriver {
     const record = (type: 'permission_request' | 'lifecycle', payload: unknown) => {
       this.deps.recordRunEvent(task, run, type, payload);
     };
-    if (await this.deps.pauseIfGloballyPaused(task.id)) {
-      record('lifecycle', { event: 'paused' });
+    const boundary = await this.deps.checkRunBoundary(task.id);
+    if (boundary.stop) {
+      if (boundary.reason !== 'settled') record('lifecycle', { event: 'paused' });
       return { kind: 'terminal' };
     }
     const attemptAtStart = await this.deps.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
@@ -250,13 +257,17 @@ export class TurnDriver {
     });
 
     try {
-      if (await this.deps.pauseIfGloballyPaused(task.id)) {
-        const pausedEvent = await this.deps.attempts.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'paused', reason: 'global pause' } });
-        this.deps.events.onAttemptEvent?.(pausedEvent);
+      const boundary = await this.deps.checkRunBoundary(task.id);
+      if (boundary.stop) {
+        if (boundary.reason !== 'settled') {
+          const reason = boundary.reason === 'global-pause' ? 'global pause' : boundary.pauseReason;
+          const pausedEvent = await this.deps.attempts.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'paused', reason } });
+          this.deps.events.onAttemptEvent?.(pausedEvent);
+        }
         await finalize();
         return { kind: 'terminal' };
       }
-      const promptText = await this.initializeTurn({
+      const { promptText, operatorSeed } = await this.initializeTurn({
         task,
         run,
         harness,
@@ -269,9 +280,12 @@ export class TurnDriver {
         autoDriven,
         healCtx,
         rebaseConflict,
+        opensAttempt,
         record,
       });
-      const driven = await this.completion.drivePromptCycle({ task, driver, active, guardrails, listeners, autoDriven, promptText, record });
+      const driven = await this.completion.drivePromptCycle({
+        task, driver, active, guardrails, listeners, autoDriven, promptText, operatorSeed, record,
+      });
       escalating = driven.escalating;
       if (active.externallySettled) {
         await finalize();
@@ -279,6 +293,12 @@ export class TurnDriver {
       }
 
       if (active.pauseRequested) {
+        // A pause requested before drivePromptCycle ever sent a prompt already
+        // consumed the seed out of the pending map (see initializeTurn); put it
+        // back for the resumed turn rather than lose it (ADR-0005 §6).
+        if (operatorSeed !== undefined && !driven.operatorSeedDelivered) {
+          this.deps.activeRuns.setPendingOperatorSeed(task.id, operatorSeed);
+        }
         if ((await this.deps.taskService.get(task.id)).state === 'working') await this.deps.taskService.pause(task.id);
         const usage = await this.deps.usage.collectUsageSafe({
           harnessId: task.harness,
@@ -575,8 +595,11 @@ export class TurnDriver {
     autoDriven: boolean;
     healCtx: HealContext | undefined;
     rebaseConflict: boolean;
+    /** No Step recorded yet on this Attempt: this is its own opening turn, distinct
+     * from a manual resume/steer-continue reusing an already-open Attempt's row. */
+    opensAttempt: boolean;
     record: RunEventRecorder;
-  }): Promise<string> {
+  }): Promise<{ promptText: string; operatorSeed: string | undefined }> {
     const {
       task,
       run,
@@ -590,6 +613,7 @@ export class TurnDriver {
       autoDriven,
       healCtx,
       rebaseConflict,
+      opensAttempt,
       record,
     } = input;
     const modelId = adapterFor(task.harness).sessionModelId?.(task.model);
@@ -700,9 +724,16 @@ export class TurnDriver {
     const operatorSeed = this.deps.activeRuns.takePendingOperatorSeed(task.id);
     let condensed: string | null = null;
     if (operatorSeed !== undefined && !healCtx) {
-      if (run.sessionRowId !== null) {
+      if (run.sessionRowId !== null && !opensAttempt) {
+        // Continuing an already-open Attempt (a manual resume/steer-continue):
         // continue-full already holds the full prior conversation.
         promptText = `## Operator message\n\n${operatorSeed}`;
+      } else if (run.sessionRowId !== null) {
+        // This Attempt's own opening turn, even though it opportunistically bound a
+        // warm Session (bindContinuationIfEligible): that memory belongs to an
+        // earlier Attempt, not this one — still send the real instructions, with
+        // the operator's message appended, not swapped in for them.
+        promptText = `${promptText}\n\n## Operator message\n\n${operatorSeed}`;
       } else {
         // Fresh Session: the agent needs some context, not just the bare message.
         const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
@@ -733,7 +764,7 @@ export class TurnDriver {
     if (condensed) promptText = `${promptText}\n\n${condensed}`;
     if (codeIndexRepoId) promptText = `${promptText}${codeIndexRepoGuidance(codeIndexRepoId)}`;
     await this.deps.attempts.update(run.id, { prompt: promptText });
-    return promptText;
+    return { promptText, operatorSeed };
   }
 
 }

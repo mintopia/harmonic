@@ -126,7 +126,7 @@ export function ChannelsSection({
               <input aria-label="To address" className={`${field} font-data`} placeholder="To address" value={smtp.to} onChange={(e) => setSmtp({ ...smtp, to: e.target.value })} />
             </div>
           )}
-          {error && <p className="mb-2 text-fail">{error}</p>}
+          {error && <p role="alert" className="mb-2 text-fail">{error}</p>}
           <div className="flex items-center gap-3">
             <button disabled={!name} onClick={create} className={btnGhost}>
               Add channel

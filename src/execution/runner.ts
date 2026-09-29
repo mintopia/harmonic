@@ -13,7 +13,7 @@ import { VerificationCoordinator, type EpicVerificationResolutionInput, type Ver
 import { TurnDriver, type TurnDriverDeps } from './turn-driver.js';
 import { EpicRefreshResolver, type EpicRefreshResolverDeps } from './epic-refresh-resolver.js';
 import { WorkspaceProvisioner, type WorkspaceProvisionerDeps } from './workspace-provisioner.js';
-import { RunControl, type RunControlDeps } from './run-control.js';
+import { RunControl, type RunControlDeps, type RunBoundaryResult } from './run-control.js';
 import { UsageBackfiller, type UsageBackfillerDeps } from './usage-backfiller.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig } from '../config.js';
@@ -250,7 +250,7 @@ export class Runner {
       finalizeWorkspace: (task, run, attemptNumber, workspace) => this.workspaceProvisioner.finalizeWorkspace(task, run, attemptNumber, workspace),
       spawnHarness: (task, harness, cwd, extraEnv, unattended) => this.workspaceProvisioner.spawnHarness(task, harness, cwd, extraEnv, unattended),
       updateStep: (taskId, id, patch) => this.updateStep(taskId, id, patch),
-      pauseIfGloballyPaused: (taskId) => this.pauseIfGloballyPaused(taskId),
+      checkRunBoundary: (taskId) => this.checkRunBoundary(taskId),
       latestAttemptFor: (task) => this.latestAttemptFor(task),
       recordRunEvent: (task, run, type, payload) => this.recordRunEvent(task, run, type, payload),
       coordinateSettle: (task, run, type, projection, patch) => this.coordinateSettle(task, run, type, projection, patch),
@@ -496,7 +496,7 @@ export class Runner {
       }
       const run = created;
       const bound = await this.sessionContinuation.bindContinuationIfEligible(task, run);
-      if (await this.pauseIfGloballyPaused(task.id)) {
+      if ((await this.checkRunBoundary(task.id)).stop) {
         this.activeRuns.clearDriving(task.id);
         return bound;
       }
@@ -651,8 +651,8 @@ export class Runner {
     return this.runControl.extendGuardrail(taskId, addMinutes);
   }
 
-  private async pauseIfGloballyPaused(taskId: number): Promise<boolean> {
-    return this.runControl.pauseIfGloballyPaused(taskId);
+  private async checkRunBoundary(taskId: number): Promise<RunBoundaryResult> {
+    return this.runControl.checkRunBoundary(taskId);
   }
 
   /** @see {@link RunControl.steerSettled} */

@@ -1,20 +1,32 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, cpSync, existsSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeDaemon, logFilePath } from '../src/daemon.js';
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const srcRoot = join(repoRoot, 'src');
 
+// Resolve via Node's own resolver (which walks up ancestor directories) rather than
+// hardcoding `repoRoot/node_modules`, which may not exist in a worktree of its own.
+function findNodeModulesRoot(): string {
+  const require = createRequire(import.meta.url);
+  const entryPath = require.resolve('@opentelemetry/api');
+  const marker = `${sep}node_modules${sep}`;
+  const markerIndex = entryPath.lastIndexOf(marker);
+  if (markerIndex === -1) throw new Error('could not locate a node_modules root for @opentelemetry/api');
+  return entryPath.slice(0, markerIndex + marker.length - 1);
+}
+
 function copySrcToWeirdPath(): string {
   const parent = mkdtempSync(join(tmpdir(), 'harmonic-relauncher-'));
   const weird = join(parent, 'weird dir café');
   mkdirSync(weird);
   cpSync(srcRoot, weird, { recursive: true });
-  symlinkSync(join(repoRoot, 'node_modules'), join(weird, 'node_modules'));
+  symlinkSync(findNodeModulesRoot(), join(weird, 'node_modules'));
   return join(weird, 'upgrade', 'relauncher.ts');
 }
 

@@ -308,7 +308,7 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
       )}
 
       {error && (
-        <p className="rounded-lg bg-fail-tint px-4 py-2 text-fail">Couldn’t load statistics: {error}</p>
+        <p role="alert" className="rounded-lg bg-fail-tint px-4 py-2 text-fail">Couldn’t load statistics: {error}</p>
       )}
 
       {!stats && !error && <div className={`${card} p-5 text-muted`}>Loading…</div>}

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startServer, type TestServer } from './helpers.js';
+import { startServer, stubHarness, type TestServer } from './helpers.js';
 import { resolveGuardrails } from '../src/domain/setting-override.js';
 
 describe('Workspace CRUD (ADR-0008, issue #41)', () => {
@@ -260,7 +260,11 @@ describe('Task/Conversation binding + scoping (issue #41)', () => {
   let dirB: string;
 
   beforeAll(async () => {
-    server = await startServer();
+    // Conversation creation spawns the configured harness; the default (real
+    // npx package resolution) is genuinely slow and network-dependent, which
+    // is what made the Conversation test here flaky under load. Use the local,
+    // instant stub like every other harness-spawning test does.
+    server = await startServer(stubHarness());
     dirB = mkdtempSync(join(tmpdir(), 'harmonic-workspace-b-'));
     const defaultWs = await server.api('GET', '/api/workspaces');
     workspaceA = defaultWs.body.workspaces[0].id;

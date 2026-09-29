@@ -41,7 +41,7 @@ import type { Epic, EpicIntegrateOutcome } from './epic-model.js';
 import type { Stats } from './stats-model.js';
 import type { WorktreeInventoryEntry } from './worktree-inventory-model.js';
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
@@ -58,8 +58,18 @@ export async function request<T>(method: string, path: string, body?: unknown): 
       : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
   });
   const text = await res.text();
-  const json = text ? JSON.parse(text) : null;
-  if (!res.ok) throw new ApiError(res.status, json?.error?.message ?? res.statusText);
+  let json: unknown = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    // Not JSON — a proxy or the server itself returned plain text/HTML. Never
+    // surface that raw body to the operator.
+    throw new ApiError(res.status, `${method} ${path} failed (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`);
+  }
+  if (!res.ok) {
+    const message = json && typeof json === 'object' && 'error' in json ? (json as { error?: { message?: string } }).error?.message : undefined;
+    throw new ApiError(res.status, message ?? `${method} ${path} failed (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`);
+  }
   if (json === null && res.status !== 204) {
     throw new ApiError(res.status, `Empty response from ${method} ${path}`);
   }

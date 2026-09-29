@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api } from './api';
+import { api, ApiError } from './api';
 import { boardSections } from './board-sections-model';
 import { debounce } from './debounce';
 import type { Epic } from './epic-model';
@@ -91,6 +91,7 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
   const [refreshingTracker, setRefreshingTracker] = useState(false);
   const fetchedTaskIdRef = useRef<number | null>(null);
   const [fetchedTask, setFetchedTask] = useState<Task | null>(null);
+  const [taskNotFound, setTaskNotFound] = useState(false);
 
   const failStreak = useRef(0);
   const refresh = useCallback(async () => {
@@ -244,13 +245,28 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
   useLiveEffect((live) => {
     if (route.task === null) {
       setFetchedTask(null);
+      setTaskNotFound(false);
       fetchedTaskIdRef.current = null;
       return;
     }
-    if ((tasks ?? []).some((t) => t.id === route.task)) return;
+    if ((tasks ?? []).some((t) => t.id === route.task)) {
+      setTaskNotFound(false);
+      return;
+    }
     if (fetchedTaskIdRef.current === route.task) return;
     fetchedTaskIdRef.current = route.task;
-    apiImpl.task(route.task).then((t) => live() && setFetchedTask(t), toastError);
+    apiImpl.task(route.task).then(
+      (t) => {
+        if (!live()) return;
+        setFetchedTask(t);
+        setTaskNotFound(false);
+      },
+      (e) => {
+        if (!live()) return;
+        if (e instanceof ApiError && e.status === 404) setTaskNotFound(true);
+        else toastError(e);
+      },
+    );
   }, [route.task, tasks, apiImpl]);
 
   const needsYouCount = useMemo(
@@ -337,6 +353,7 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
     refreshTracker,
     refreshingTracker,
     openTask,
+    taskNotFound,
     needsYouCount,
     politeReviewAnnouncement,
     assertiveMergeAnnouncement,

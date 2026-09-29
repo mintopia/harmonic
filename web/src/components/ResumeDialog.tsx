@@ -149,7 +149,7 @@ export function ResumeDialog({
           </>
         )}
 
-        {error && <p className="mb-3 text-fail">{error}</p>}
+        {error && <p role="alert" className="mb-3 text-fail">{error}</p>}
         <div className="flex justify-end gap-2">
           <button type="button" className={`${btnGhost} px-3 py-1.5`} onClick={onClose} disabled={busy}>
             Cancel

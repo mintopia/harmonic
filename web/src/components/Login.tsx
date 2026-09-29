@@ -11,14 +11,19 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password }),
-    });
-    if (res.ok) onLoggedIn();
-    else {
-      setError(res.status === 401 ? 'Wrong password.' : `Login failed (${res.status}).`);
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      if (res.ok) onLoggedIn();
+      else {
+        setError(res.status === 401 ? 'Wrong password.' : `Login failed (${res.status}).`);
+        setBusy(false);
+      }
+    } catch {
+      setError("Couldn't reach Harmonic. Check your connection and try again.");
       setBusy(false);
     }
   };

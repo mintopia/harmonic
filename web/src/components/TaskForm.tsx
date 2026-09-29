@@ -210,7 +210,7 @@ export function TaskForm({
           </div>
         )}
 
-        {error && <p className="mb-3 text-fail">{error}</p>}
+        {error && <p role="alert" className="mb-3 text-fail">{error}</p>}
 
         <div className="flex justify-end gap-2">
           {!task && (
