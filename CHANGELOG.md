@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.19.4](https://github.com/mintopia/harmonic/compare/v2.19.3...v2.19.4) (2026-09-29)
+
+
+### Bug Fixes
+
+* **steer:** record a pre-turn seeded steer as delivered ([873154e](https://github.com/mintopia/harmonic/commit/873154eda0db73ff6f0f364e59b42d7e80e89fff))
+* **steer:** stop losing a pending operator seed to a pre-prompt pause or a warm-Session opening turn ([a241d7a](https://github.com/mintopia/harmonic/commit/a241d7a3e84e84b12ca11aff384908cba73c86f6))
+* **test:** cap the fork pool so a loaded box can't OOM it mid-run ([a69b689](https://github.com/mintopia/harmonic/commit/a69b689c46906b5d096228c471750621dfbc25c3))
+* **test:** match the firehose 'scheduled-jobs' event by payload, not just type ([74182b8](https://github.com/mintopia/harmonic/commit/74182b8227deab0b62c7ce0655f20241fb278638))
+* **tests:** resolve @opentelemetry/api via Node's resolver, not a hardcoded node_modules path ([ee5ec20](https://github.com/mintopia/harmonic/commit/ee5ec20947e3fe321f76643ad197cc92b7e497b1))
+* **test:** stop guessing worker survival from a 300ms silence window ([489003a](https://github.com/mintopia/harmonic/commit/489003a0459ea4f5d2477b734b1f0b62597a0d97))
+* **test:** stub the harness for the Task/Conversation scoping server ([49bc402](https://github.com/mintopia/harmonic/commit/49bc40276b9decf7930e8dffee1726667089f5d5))
+* **test:** use vitest 4's top-level maxWorkers, not the removed poolOptions ([65a7601](https://github.com/mintopia/harmonic/commit/65a7601aca5df0410f9f076023ead86f5706caee))
+* **test:** widen the startup-watchdog progress-touch margin ([eab9108](https://github.com/mintopia/harmonic/commit/eab910872ec3e03e0d093431545b025adcdb66e1))
+* **tracker:** single-flight TrackerPollerManager.sync to stop a real double-register race ([e0c99a5](https://github.com/mintopia/harmonic/commit/e0c99a5a63ad867c9ffcad5998307808391e10ea))
+* **web:** add missing error surfaces — crash boundary, not-found, WS status ([cf1114f](https://github.com/mintopia/harmonic/commit/cf1114ffaca443d545ccf6703ab4bdbcccfeb914))
+* **web:** fix review findings on the connection banner, not-found link, and crash copy ([0ad9b49](https://github.com/mintopia/harmonic/commit/0ad9b490aa31ae768902c81a71a1eb4cb6656d7d))
+* **web:** fix the connection banner to a top bar, not a sidebar-height column ([c2031f5](https://github.com/mintopia/harmonic/commit/c2031f5ae1cf07cb9f85a579ab628ab0a2929e86))
+* **web:** give every dialog/panel error message an accessible alert role ([2c5259b](https://github.com/mintopia/harmonic/commit/2c5259b2a3f1a886d1271c56d94ca94fbf343afe))
+* **worktrees:** stop worktree inventory exhausting the heap on large trees ([fc9a105](https://github.com/mintopia/harmonic/commit/fc9a10508025290896c6e11488477b158a65c146))
+
 ## [2.19.3](https://github.com/mintopia/harmonic/compare/v2.19.2...v2.19.3) (2026-09-25)
 
 
