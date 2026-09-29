@@ -32,6 +32,16 @@ describe('baseline model catalog', () => {
         contextWindow: 1_000_000,
       },
       {
+        id: 'openrouter/anthropic/claude-sonnet-5.5',
+        price: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+        contextWindow: 1_000_000,
+      },
+      {
+        id: 'openrouter/openai/gpt-6.1-sol',
+        price: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
+        contextWindow: 1_050_000,
+      },
+      {
         id: 'openrouter/anthropic/claude-sonnet-5',
         price: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
         contextWindow: 1_000_000,

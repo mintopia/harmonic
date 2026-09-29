@@ -49,7 +49,7 @@ describe('claimReady pins resolved defaults onto the row (issue #480)', () => {
     const after = await rawRow(task.id);
     expect(after.state).toBe('working');
     expect(after.harness).toBe('claude');
-    expect(after.model).toBe('claude-sonnet-5');
+    expect(after.model).toBe('claude-sonnet-5-5');
     expect(after.isolationMode).toBe('direct');
     expect(after.priority).toBe('normal');
     expect(after.conflictResolveTurns).toBe(2);
@@ -61,7 +61,7 @@ describe('claimReady pins resolved defaults onto the row (issue #480)', () => {
     await taskService.claimReady(task.id);
     const pinned = await rawRow(task.id);
     expect(pinned.harness).toBe('claude');
-    expect(pinned.model).toBe('claude-sonnet-5');
+    expect(pinned.model).toBe('claude-sonnet-5-5');
     expect(pinned.isolationMode).toBe('direct');
     expect(pinned.priority).toBe('normal');
     expect(pinned.conflictResolveTurns).toBe(2);
@@ -73,14 +73,14 @@ describe('claimReady pins resolved defaults onto the row (issue #480)', () => {
 
     const stillPinned = await rawRow(task.id);
     expect(stillPinned.harness).toBe('claude');
-    expect(stillPinned.model).toBe('claude-sonnet-5');
+    expect(stillPinned.model).toBe('claude-sonnet-5-5');
     expect(stillPinned.isolationMode).toBe('direct');
     expect(stillPinned.priority).toBe('normal');
     expect(stillPinned.conflictResolveTurns).toBe(2);
 
     const resolved = await taskService.get(task.id);
     expect(resolved.harness).toBe('claude');
-    expect(resolved.model).toBe('claude-sonnet-5');
+    expect(resolved.model).toBe('claude-sonnet-5-5');
     expect(resolved.isolationMode).toBe('direct');
     expect(resolved.priority).toBe('normal');
     expect(resolved.conflictResolveTurns).toBe(2);
