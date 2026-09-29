@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, realpathSync, rmSync } from 'node:fs';
-import { access, lstat, readdir } from 'node:fs/promises';
+import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { Attributes } from '@opentelemetry/api';
@@ -16,6 +16,8 @@ const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 120_000;
 
 const CLONE_TIMEOUT_MS = 600_000;
+
+const DU_TIMEOUT_MS = 30_000;
 
 async function git(cwd: string, ...args: string[]): Promise<string> {
   return gitEnv(cwd, {}, ...args);
@@ -436,20 +438,21 @@ export const Git = {
     });
   },
 
-  async worktreeSize(path: string): Promise<number> {
-    let total = 0;
-    const pending = [path];
-    while (pending.length > 0) {
-      const batch = pending.splice(0, 64);
-      await forEachYielding(batch, async (entry) => {
-        const stat = await lstat(entry);
-        total += stat.size;
-        if (!stat.isDirectory() || stat.isSymbolicLink()) return;
-        const children = await readdir(entry);
-        pending.push(...children.map((child) => join(entry, child)));
-      });
+  /** Bytes on disk via `du`, keeping big trees off the JS heap; null when the size can't be read. */
+  async worktreeSize(path: string): Promise<number | null> {
+    let stdout: string;
+    try {
+      ({ stdout } = await execFileAsync('du', ['-sk', '--', path], {
+        maxBuffer: 1024 * 1024,
+        timeout: DU_TIMEOUT_MS,
+        killSignal: 'SIGKILL',
+      }));
+    } catch (err) {
+      // du exits non-zero on unreadable subdirs but still prints a usable total.
+      stdout = err instanceof Error && 'stdout' in err && typeof err.stdout === 'string' ? err.stdout : '';
     }
-    return total;
+    const kib = /^(\d+)/.exec(stdout.trim());
+    return kib ? Number(kib[1]) * 1024 : null;
   },
 
   async pathExists(path: string): Promise<boolean> {

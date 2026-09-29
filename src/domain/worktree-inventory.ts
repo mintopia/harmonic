@@ -45,7 +45,7 @@ export interface WorktreeInventoryRepository {
   changeCount(dir: string): Promise<number>;
   isValidWorktree(repoDir: string, worktreePath: string): Promise<boolean>;
   pathExists(path: string): Promise<boolean>;
-  worktreeSize(path: string): Promise<number>;
+  worktreeSize(path: string): Promise<number | null>;
 }
 
 type WorkspaceSource = () => Promise<readonly InventoryWorkspace[]>;
@@ -147,7 +147,7 @@ export class WorktreeInventory {
         }
         return { workspaceId: workspace.id, path, branch: worktree.branch, subject, sizeBytes: null, dirty: null, changeCount: null, state: 'Unreadable' };
       }
-      const [sizeBytes, changeCount] = await Promise.all([this.git.worktreeSize(path), this.git.changeCount(path)]);
+      const [sizeBytes, changeCount] = await Promise.all([this.git.worktreeSize(path).catch(() => null), this.git.changeCount(path)]);
       const dirty = changeCount > 0;
       const state: WorktreeState = !task ? 'Orphan' : terminalStates.has(task.state) ? 'Stale' : dirty ? 'Dirty' : 'Active';
       return { workspaceId: workspace.id, path, branch: worktree.branch, subject, sizeBytes, dirty, changeCount, state };
