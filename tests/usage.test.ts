@@ -306,10 +306,10 @@ describe('per-tool output-token attribution (issue #195)', () => {
 
     expect(attributed).toEqual({
       toolTokens: {
-        Read: { outputTokens: 8, cost: 0.00010999999999999999 },
-        Write: { outputTokens: 3, cost: 0.000055 },
+        Read: { outputTokens: 8, cost: 0.00007333333333333334 },
+        Write: { outputTokens: 3, cost: 0.000036666666666666666 },
       },
-      reasoning: { outputTokens: 5, cost: 0.000075 },
+      reasoning: { outputTokens: 5, cost: 0.00005 },
     });
   });
 

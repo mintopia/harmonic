@@ -130,7 +130,7 @@ describe('pricing math', () => {
   it('keeps prices in each harness catalog', async () => {
     const { baselineConfig } = await import('../src/config.js');
     const prices = pricesForHarness(baselineConfig().harnesses.claude);
-    expect(prices['claude-sonnet-5']!.input).toBe(3);
+    expect(prices['claude-sonnet-5']!.input).toBe(2);
     expect(prices['claude-opus-4-8']!.input).toBe(5);
   });
 });
