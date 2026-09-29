@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.20.0](https://github.com/mintopia/harmonic/compare/v2.19.4...v2.20.0) (2026-09-29)
+
+
+### Features
+
+* **config:** add Claude Sonnet 5.5 and GPT-6.1 Sol, default to Sonnet 5.5 ([2a94aaa](https://github.com/mintopia/harmonic/commit/2a94aaa69e1e46fe23ad9936de6a41f12645ea65))
+
+
+### Bug Fixes
+
+* **config:** match Anthropic's current Claude Sonnet 5 price ([cfe4274](https://github.com/mintopia/harmonic/commit/cfe427449cb2da432d997929dda3677c325d65cb))
+
 ## [2.19.4](https://github.com/mintopia/harmonic/compare/v2.19.3...v2.19.4) (2026-09-29)
 
 
