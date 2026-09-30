@@ -251,4 +251,52 @@ describe('TaskArchive', () => {
     expect(readFileSync(join(stepDir, 'prompt.md'), 'utf8')).toBe('epic prompt');
     expect(JSON.parse(readFileSync(join(stepDir, 'acp.jsonl'), 'utf8')).update).toEqual({ n: 1 });
   });
+
+  describe('operator input record', () => {
+    const readLines = (path: string) => readFileSync(path, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
+
+    it('appends ordered JSONL lines with ts, actor, action and text', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const archive = archiveFor();
+      await archive.recordOperatorInput(task, { actor: 'operator', action: 'steer', text: 'look again' });
+      await archive.recordOperatorInput(task, { actor: 'agent', action: 'pause', text: null });
+      const lines = readLines(join(await archive.ensure(task), 'operator-inputs.jsonl'));
+      expect(lines).toEqual([
+        { ts: expect.stringMatching(/^\d{4}-\d\d-\d\dT/), actor: 'operator', action: 'steer', text: 'look again' },
+        { ts: expect.any(String), actor: 'agent', action: 'pause', text: null },
+      ]);
+    });
+
+    it('keeps concurrent appends whole and in call order', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const archive = archiveFor();
+      const texts = Array.from({ length: 25 }, (_, n) => `input ${n} ${'x'.repeat(n * 50)}`);
+      await Promise.all(texts.map((text) => archive.recordOperatorInput(task, { actor: 'operator', action: 'steer', text })));
+      const lines = readLines(join(await archive.ensure(task), 'operator-inputs.jsonl'));
+      expect(lines.map((l) => l.text)).toEqual(texts);
+    });
+
+    it('marks deletion in archive.json and preserves the other fields', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const archive = archiveFor();
+      const archiveDir = await archive.ensure(task);
+      const before = JSON.parse(readFileSync(join(archiveDir, 'archive.json'), 'utf8'));
+      await archive.recordDeletion(task, 'operator');
+      const after = JSON.parse(readFileSync(join(archiveDir, 'archive.json'), 'utf8'));
+      expect(after).toEqual({ ...before, deleted: { at: expect.stringMatching(/^\d{4}-/), actor: 'operator' } });
+      expect(readdirSync(archiveDir).filter((n) => n.endsWith('.tmp'))).toEqual([]);
+    });
+
+    it('does not create an Archive just to mark it deleted', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      await archiveFor().recordDeletion(task, 'agent');
+      expect(existsSync(join(dir, 'archive'))).toBe(false);
+    });
+
+    it('never throws when the write fails', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const archive = new TaskArchive({ dataDir: dir, ensureArchiveId: () => Promise.reject(new Error('boom')), workspaceName: async () => null });
+      await expect(archive.recordOperatorInput({ ...task, archiveId: null }, { actor: 'operator', action: 'pause', text: null })).resolves.toBeUndefined();
+    });
+  });
 });

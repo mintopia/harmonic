@@ -16,8 +16,8 @@
 
 - [ ] 3.1 Pipe full verify-command stdout/stderr to `output.log` (pre- and post-merge)
 - [ ] 3.2 DB preview becomes head+tail with truncation marker
-- [ ] 3.3 Record Accept, Close/Cancel (actor, reason) as Facts
-- [ ] 3.4 Append every operator input to `operator-inputs.jsonl`
+- [x] 3.3 Record Accept, Close/Cancel (actor, reason) as Facts
+- [x] 3.4 Append every operator input to `operator-inputs.jsonl`
 
 ## 4. Export builder
 

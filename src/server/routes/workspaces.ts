@@ -13,6 +13,9 @@ import {
   unpricedModelsForCostCap,
   costCapMessage,
 } from '../../config.js';
+import { forEachYielding } from '../../reliability/yield.js';
+import { requestActor } from '../operator-inputs.js';
+import type { AppContext } from '../app.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
@@ -80,7 +83,7 @@ const workspaceSchema = z
 
 const workspacesListResponseSchema = listResponse('workspaces', workspaceSchema);
 
-export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces' | 'settingsStore' | 'trackerManager' | 'workspaceWatcher'>): Promise<void> {
+export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces' | 'settingsStore' | 'trackerManager' | 'workspaceWatcher'> & Pick<AppContext, 'auth' | 'tasks' | 'archive'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   const serializeResolvedTracker = (r: ResolvedTracker | null) =>
@@ -211,7 +214,14 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
       },
     },
     async (req, reply) => {
+      const actor = await requestActor(req, ctx);
+      const archived: Array<{ dir: string; taskId: number }> = [];
+      await forEachYielding(await ctx.tasks.list({ workspaceId: req.params.id }), async (task) => {
+        const dir = await ctx.archive.existingDir(task);
+        if (dir) archived.push({ dir, taskId: task.id });
+      });
       await ctx.workspaces.delete(req.params.id);
+      await forEachYielding(archived, ({ dir, taskId }) => ctx.archive.markDeleted(dir, actor, taskId));
       await ctx.trackerManager.sync();
       await ctx.workspaceWatcher.sync(await ctx.workspaces.list());
       return reply.status(204).send(null);

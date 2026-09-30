@@ -24,6 +24,7 @@ import { TrackerPollerManager } from '../tracker/manager.js';
 import type { EpicService } from '../tracker/epic-service.js';
 import { ChannelService } from '../notifications/channels.js';
 import { Notifier } from '../notifications/notifier.js';
+import type { TaskArchive } from '../archive/task-archive.js';
 import { EventBus } from './bus.js';
 import { AuthService } from './auth.js';
 import type { DistributionMode } from '../distribution-mode.js';
@@ -66,6 +67,7 @@ export interface AppOptions {
 }
 
 export interface AppContext {
+  archive: TaskArchive;
   distributionMode: DistributionMode;
   runningVersion: string;
   installMode: InstallMode;
