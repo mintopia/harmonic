@@ -110,10 +110,11 @@ _Avoid_: task (the board unit), run, phase, stage
 
 **Activity Event**:
 One ACP `session/update` (message chunk, thought, tool call, plan update)
-rendered in the Activity/transcript views. The stream is **not persisted**:
-it is parsed on demand from the harness's native transcript via the persisted
-locator; the DB keeps only tool-call aggregates and small structured facts
-(ADR-0007).
+rendered in the Activity/transcript views. The stream is **never persisted
+in the DB**: it is parsed on demand from the harness's native transcript via
+the persisted locator, falling back to the Task's **Archive** copy when the
+native file is gone; the DB keeps only tool-call aggregates and small
+structured facts (ADR-0007).
 _Avoid_: log line, message, run event (pre-reset name)
 
 **Fact**:
@@ -862,6 +863,34 @@ readout that drives no scheduling. The host is **saturated** when the 1-minute
 load reaches the CPU core count (more runnable work than cores); saturation
 tints the header readout and is edge-logged with hysteresis.
 _Avoid_: system load, host metrics
+
+### Archive and Export
+
+**Archive**:
+The always-on, Harmonic-owned, per-Task collection of everything that happened
+while the Task was worked — every agent transcript (implementation and Critic,
+both the ACP stream and a copy of the Harness's native transcript), the full
+uncapped output of every verify command, every prompt sent to any Session, and
+every operator input. Lives as files in the data directory, **never in the
+DB**, so it survives a database recreate and a Harness pruning its own logs.
+Kept raw (unredacted); it **outlives the Task** — Delete leaves it in place —
+and is removed only by the configured retention cap.
+_Avoid_: log, record, history, audit log
+
+**Export**:
+One redacted tarball of a Task's Archive plus its ticket snapshot and
+timeline, produced on every **terminal disposition** — *done*, *cancelled*,
+or Delete (of a Task with any Attempt) — and written to every configured
+Export Destination. Never overwritten — each disposition yields a new Export.
+A failed Export never blocks or reverts the disposition; it is surfaced on the
+Ticket page. Governed by ADR-0044.
+_Avoid_: bundle, backup, dump
+
+**Export Destination**:
+A place an Export is written — a directory, or an S3-compatible bucket.
+Configured globally with a per-Workspace override; each Destination succeeds
+or fails independently.
+_Avoid_: target, sink, bucket (a bucket is one kind of Destination)
 
 ### Updates
 
