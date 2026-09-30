@@ -1,5 +1,5 @@
 import { createWriteStream, type WriteStream } from 'node:fs';
-import { access, copyFile, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { createHash, randomBytes } from 'node:crypto';
 import { basename, dirname, join } from 'node:path';
 import type { TaskRow } from '../db/schema.js';
@@ -10,6 +10,15 @@ export interface ArchiveDeps {
   dataDir: string;
   ensureArchiveId: (taskId: number) => Promise<string>;
   workspaceName: (workspaceId: number) => Promise<string | null>;
+}
+
+export interface ExportRecord {
+  destination: 'directory';
+  disposition: string;
+  file: string | null;
+  status: 'succeeded' | 'failed';
+  at: string;
+  error?: string;
 }
 
 export interface StepArchiveWriter {
@@ -98,6 +107,7 @@ class AppendFile {
 
 export class TaskArchive {
   private readonly ensuring = new Map<string, Promise<string>>();
+  private readonly manifestWrites = new Map<string, Promise<void>>();
 
   constructor(private readonly deps: ArchiveDeps) {}
 
@@ -137,6 +147,32 @@ export class TaskArchive {
       throw err;
     }
     return dir;
+  }
+
+  async recordExport(task: TaskRow, entry: ExportRecord): Promise<void> {
+    const dir = await this.ensure(task);
+    const previous = this.manifestWrites.get(dir) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(() => this.appendExport(dir, entry));
+    this.manifestWrites.set(dir, next);
+    try {
+      await next;
+    } finally {
+      if (this.manifestWrites.get(dir) === next) this.manifestWrites.delete(dir);
+    }
+  }
+
+  private async appendExport(dir: string, entry: ExportRecord): Promise<void> {
+    const manifest = join(dir, 'archive.json');
+    const body = JSON.parse(await readFile(manifest, 'utf8')) as { exports?: ExportRecord[] };
+    body.exports = [...(body.exports ?? []), entry];
+    const tmp = `${manifest}.${randomBytes(6).toString('hex')}.tmp`;
+    try {
+      await writeFile(tmp, `${JSON.stringify(body, null, 2)}\n`);
+      await rename(tmp, manifest);
+    } catch (err) {
+      await rm(tmp, { force: true });
+      throw err;
+    }
   }
 
   private async implementationDir(task: TaskRow, attemptNumber: number): Promise<string> {

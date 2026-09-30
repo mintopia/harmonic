@@ -112,3 +112,8 @@ guardrails:
   progress: false
   toolTimeoutMinutes: 20
   promptInactivityTimeoutMinutes: 15
+export:
+  enabled: false
+  includeStates: [done, cancelled, deleted]
+  directory:
+    path: null

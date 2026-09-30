@@ -202,6 +202,13 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
     }
     case 'branch-delete-failed':
       return { label: `Branch ${text(payload?.branch) ?? ''} could not be deleted`, detail: text(payload?.error), tone: 'failed', tag: 'GIT' };
+    case 'export': {
+      const destination = text(payload?.destination) ?? 'destination';
+      if (text(payload?.status) === 'failed') {
+        return { label: `Export to ${destination} failed`, detail: clip(text(payload?.error)), tone: 'failed', tag: null };
+      }
+      return { label: `Exported to ${destination}`, detail: text(payload?.file), tone: 'passed', tag: null };
+    }
     default:
       return { label: event ? humanizeEvent(event) : 'Lifecycle event', detail: null, tone: 'neutral', tag: null };
   }

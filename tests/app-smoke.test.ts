@@ -78,6 +78,8 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     epicPreMergeCritics: null,
     guardrailBudget: null,
     guardrailProgress: null,
+    exportEnabled: null,
+    exportDirectoryPath: null,
     toolTimeoutMinutes: null,
     drivePrompt: null,
     driveUnattendedReminder: null,
