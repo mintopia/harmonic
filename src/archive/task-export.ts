@@ -487,8 +487,6 @@ export class TaskExporter {
         outcomes.push(outcome);
       }
     }
-    for (const outcome of outcomes) await this.record(task, disposition, outcome, at, 0, built?.meta);
-
     let nextRetryAt: string | null = null;
     if (built !== null && retryable.length > 0) {
       try {
@@ -499,6 +497,7 @@ export class TaskExporter {
       }
     }
     if (built !== null && nextRetryAt === null) await rm(built.staged, { force: true }).catch(() => undefined);
+    for (const outcome of outcomes) await this.record(task, disposition, outcome, at, 0, built?.meta);
     for (const outcome of outcomes) {
       if (outcome.status !== 'failed') continue;
       this.notifyFailure({ task, disposition, destination: outcome.destination, error: outcome.error ?? 'export failed', retry: 0, nextRetryAt });

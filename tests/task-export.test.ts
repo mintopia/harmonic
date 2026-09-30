@@ -216,6 +216,22 @@ describe('TaskExporter (#734)', () => {
     expect(archiveJson.exports[0]).toMatchObject({ status: 'failed' });
   });
 
+  it('writes the retry sidecar before recording the failed Fact', async () => {
+    const blocked = join(dest, 'blocked');
+    writeFileSync(blocked, 'not a directory');
+    settingsFor = () => resolveExportSettings(globalWith(blocked), undefined);
+    const sidecarsAtRecord: string[][] = [];
+
+    await exporter({
+      recordFact: async () => {
+        sidecarsAtRecord.push(staging().filter((n) => n.endsWith('.pending.json') || n.endsWith('.tar.gz')));
+      },
+    }).run(task, 'done');
+
+    expect(sidecarsAtRecord).toHaveLength(1);
+    expect(sidecarsAtRecord[0]).toHaveLength(2);
+  });
+
   it.skipIf(process.getuid?.() === 0)('records a failed Fact when the destination directory is read-only', async () => {
     const readOnly = join(dest, 'ro');
     mkdirSync(readOnly);
