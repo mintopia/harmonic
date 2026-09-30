@@ -1,4 +1,4 @@
-import { isEpicAttempt, isTaskAttempt, type AttemptRow, type EpicAttemptRow, type TaskRow } from '../db/schema.js';
+import { isEpicAttempt, isTaskAttempt, type AttemptRow, type EpicAttemptRow, type TaskAttemptRow, type TaskRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { TaskService } from '../domain/tasks.js';
 import type { AttemptSettleCoordinator } from '../domain/attempt-settle.js';
@@ -10,6 +10,7 @@ import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
 import { ProcGroupReaper, type ProcessReaper } from './process-reaper.js';
 import { logger } from '../logger.js';
+import type { TaskArchive } from '../archive/task-archive.js';
 
 /**
  * Boot-time crash recovery, run once before anything can execute. A
@@ -36,6 +37,8 @@ export class CrashRecoveryCoordinator {
       onEpicAttemptInterrupted?: (attempt: EpicAttemptRow) => Promise<void> | void;
       yieldOptions?: YieldOptions;
       reaper?: ProcessReaper;
+      archive?: TaskArchive;
+      sessionTranscriptPath?: (sessionRowId: number) => Promise<string | null>;
     },
   ) {
     this.reaper = deps.reaper ?? new ProcGroupReaper();
@@ -62,6 +65,25 @@ export class CrashRecoveryCoordinator {
     await forEachYielding(
       interrupted.filter(isEpicAttempt),
       async (attempt) => { await this.deps.onEpicAttemptInterrupted?.(attempt); },
+      this.deps.yieldOptions,
+    );
+    await this.archiveInterruptedTranscripts(interrupted.filter(isTaskAttempt));
+  }
+
+  private async archiveInterruptedTranscripts(orphans: TaskAttemptRow[]): Promise<void> {
+    const { archive } = this.deps;
+    if (!archive) return;
+    await forEachYielding(
+      orphans,
+      async (attempt) => {
+        try {
+          const task = await this.taskService.get(attempt.taskId);
+          const path = attempt.sessionRowId != null ? (await this.deps.sessionTranscriptPath?.(attempt.sessionRowId)) ?? null : null;
+          await archive.copyNative(task, attempt.number, task.harness, path);
+        } catch (error) {
+          logger.warn('crash-recovery: archive native transcript failed', { attemptId: attempt.id, error: error instanceof Error ? error.message : String(error) });
+        }
+      },
       this.deps.yieldOptions,
     );
   }

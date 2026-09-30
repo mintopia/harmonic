@@ -83,6 +83,10 @@ retention machinery exists, because that would re-introduce the persistence
 this decision removes. Harnesses that write no native JSONL simply show "log
 unavailable".
 
+> **Superseded in part by ADR-0044:** the "no tee-to-file, copy-on-dispatch,
+> or retention machinery" clause is replaced by the per-Task file Archive. The
+> DB still never stores the event stream.
+
 ## Consequences
 
 - The schema after the ADR-0001 implementation epic: `tasks`, `attempts` (the

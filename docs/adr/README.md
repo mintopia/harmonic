@@ -61,6 +61,7 @@ not-yet-torn-down machinery is marked `legacy until ADR-1 epic`.
 | 0041 | [Non-privileged atomic self-upgrade](0041-non-privileged-atomic-self-upgrade.md) |
 | 0042 | [Upgrade install modes, boot guard, and rollback](0042-upgrade-install-modes-boot-guard-and-rollback.md) |
 | 0043 | [Supported Node and npm versions](0043-supported-node-and-npm-versions.md) |
+| 0044 | [Every Task keeps a file Archive, exported on terminal disposition](0044-task-archive-and-export.md) |
 
 ## Where every pre-reset ADR went
 
