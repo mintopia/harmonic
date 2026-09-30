@@ -1,3 +1,4 @@
+import type { TaskArchive } from '../archive/task-archive.js';
 import type { AppConfig } from '../config.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import { DomainError } from '../domain/errors.js';
@@ -17,8 +18,9 @@ export function createPostMergeCheck(deps: {
   settingsStore: SettingsStore;
   verificationAttempts: VerificationAttemptStore;
   criticDrive?: CriticHarnessDrive | undefined;
+  archive?: TaskArchive | undefined;
 }): (input: { task: TaskRow; run: AttemptRow; mergeOid: string; baseDir: string }) => Promise<{ pass: boolean; output: string }> {
-  const { workspaces, settingsStore, verificationAttempts, criticDrive } = deps;
+  const { workspaces, settingsStore, verificationAttempts, criticDrive, archive } = deps;
   return async ({
     task,
     run,
@@ -46,7 +48,9 @@ export function createPostMergeCheck(deps: {
     );
     const { commands, critics } = resolvedTask.postMerge;
     for (const command of commands) {
+      const outputLogPath = (await archive?.verificationOutputLog(task, run.number, 'post-merge', command.id)) ?? null;
       const cmdAttempt = await runCommandVerifier({
+        outputLogPath,
         cwd: baseDir,
         verifiedHeadOid: mergeOid,
         command,

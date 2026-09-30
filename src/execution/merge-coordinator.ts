@@ -77,6 +77,7 @@ export interface MergeCoordinatorDeps {
   getWorkspace: RunnerOptions['getWorkspace'];
   criticDrive: RunnerOptions['criticDrive'];
   postMerge: RunnerOptions['postMerge'];
+  archive?: RunnerOptions['archive'];
   urlFor: (task: TaskRow) => string | null;
   listWorkingTasks: () => Promise<TaskRow[]>;
   latestAttemptFor: (task: Pick<TaskRow, 'id'>) => Promise<AttemptRow>;
@@ -325,7 +326,9 @@ export class MergeCoordinator {
         const { commands, critics } = resolvedTask.postMerge;
         const timelineAttempt = await this.deps.latestAttemptFor(task);
         for (const command of commands) {
+          const outputLogPath = (await this.deps.archive?.verificationOutputLog(task, run.number, 'post-merge', command.id)) ?? null;
           const attempt = await runCommandVerifier({
+            outputLogPath,
             cwd: baseDir,
             verifiedHeadOid: mergeOid,
             command,

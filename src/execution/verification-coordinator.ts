@@ -19,6 +19,7 @@ import type { TaskService } from '../domain/tasks.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { resolveVerifiers, type ResolvedVerifiers } from '../domain/setting-override.js';
 import { pricesForHarness } from '../domain/pricing.js';
+import type { TaskArchive } from '../archive/task-archive.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { createAcpCriticDrive, runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
@@ -69,6 +70,7 @@ export interface VerificationCoordinatorDeps {
   criticDrive: CriticHarnessDrive | undefined;
   urlFor: (task: TaskRow) => string | null;
   worktreePathForTask: (task: TaskRow) => string;
+  archive?: TaskArchive | undefined;
   latestAttemptFor: (task: Pick<TaskRow, 'id'>) => Promise<AttemptRow>;
   updateStep: (
     taskId: number,
@@ -249,7 +251,9 @@ export class VerificationCoordinator {
       } else {
         const { timelineAttempt, timelineStep, label } = await this.openLiveVerificationStep(task, command, record);
         const relay = this.verificationOutputRelay(run.id, 'command', label);
+        const outputLogPath = (await this.deps.archive?.verificationOutputLog(task, run.number, 'pre-merge', command.id)) ?? null;
         const attempt = await runCommandVerifier({
+          outputLogPath,
           cwd: run.branch ? this.deps.worktreePathForTask(task) : task.workingDir,
           verifiedHeadOid: oid,
           command,
@@ -387,7 +391,9 @@ export class VerificationCoordinator {
     const { commands, critics } = resolvedTask.postMerge;
     const timelineAttempt = await this.deps.latestAttemptFor(task);
     for (const command of commands) {
+      const outputLogPath = (await this.deps.archive?.verificationOutputLog(task, run.number, 'post-merge', command.id)) ?? null;
       const attempt = await runCommandVerifier({
+        outputLogPath,
         cwd: baseDir,
         verifiedHeadOid: mergeOid,
         command,

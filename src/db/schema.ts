@@ -116,9 +116,11 @@ export const tasks = sqliteTable('tasks', {
   trackerBody: text('tracker_body'),
   trackerUrl: text('tracker_url'),
   trackerCreatedAt: text('tracker_created_at'),
+  archiveId: text('archive_id'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [
+  uniqueIndex('tasks_archive_id_idx').on(t.archiveId),
   // SQLite treats NULLs as distinct, so native Tasks (null trackerRef) are unconstrained.
   uniqueIndex('tasks_tracker_ref_idx').on(t.workspaceId, t.trackerRef),
   index('tasks_workspace_id_idx').on(t.workspaceId),

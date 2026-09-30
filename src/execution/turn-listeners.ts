@@ -10,12 +10,14 @@ import type { TaskRow, AttemptRow } from '../db/schema.js';
 import type { ActiveRun } from './active-runs.js';
 import type { GuardrailSupervisor } from './guardrail-supervisor.js';
 import type { RunnerEvents } from './runner.js';
+import type { StepArchiveWriter } from '../archive/task-archive.js';
 
 /** State owned by one drive, released when that drive ends. */
 export class TurnState {
   sessionInit: AcpInitializeResult | undefined;
   sessionRowId: number | undefined;
   toolCallFlushTimer: ReturnType<typeof setInterval> | undefined;
+  archive: StepArchiveWriter | undefined;
 
   constructor(
     readonly attemptAtStart: AttemptRow,
@@ -54,6 +56,10 @@ export class TurnListeners {
     },
   ) {}
 
+  get archive(): StepArchiveWriter | undefined {
+    return this.input.state.archive;
+  }
+
   setRuntime(runtime: TurnListenerRuntime): void {
     this.runtime = runtime;
   }
@@ -66,6 +72,7 @@ export class TurnListeners {
     if (replay) return;
     const runtime = this.runtime;
     const { task, run, state } = this.input;
+    state.archive?.appendUpdate(update);
     const seq = this.input.nextProgressSequence();
     this.input.events.onAttemptLogEvent?.({
       id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
