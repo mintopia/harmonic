@@ -1085,6 +1085,16 @@ _Avoid_: git panel, SCM, changes view
 A configured destination — Discord webhook, Slack webhook, Generic webhook,
 or Email — subscribed to a set of event types, overridable per Task.
 
+**Notification**:
+One recorded server-side outcome worth the operator's attention — a Task
+failed, escalated, or merged; an Export failed — the same events Notification
+Channels are sent. Kept in the in-app inbox (the bell and the Notifications
+page) with one global read/unread state, whether or not a browser was open
+when it happened; a toast is only how a Notification first appears. A local
+request error (the operator's own click failing) is a toast only, never a
+Notification.
+_Avoid_: alert, toast (the transient display, not the record), message
+
 **API Key**:
 A named, revocable bearer token for the REST API and MCP server, created
 and managed by the operator. Full scope by default (drives the whole fleet);
