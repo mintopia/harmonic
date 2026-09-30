@@ -57,14 +57,14 @@ class AppendFile {
           const path = join(await this.dir, this.name);
           this.hasContent = await stat(path).then((s) => s.size > 0, () => false);
           this.stream = createWriteStream(path, { flags: 'a' });
+          this.stream.on('error', (err) => warn('archive: append stream failed', err, { file: this.name }));
         }
         const stream = this.stream;
+        if (stream.destroyed) return;
         if (this.hasContent) data = `${separator}${data}`;
         this.hasContent = true;
         await new Promise<void>((resolve, reject) => {
-          stream.once('error', reject);
           stream.write(data, (err) => {
-            stream.off('error', reject);
             if (err) reject(err);
             else resolve();
           });
@@ -80,10 +80,11 @@ class AppendFile {
     await this.chain;
     const stream = this.stream;
     this.stream = null;
-    if (!stream) return;
+    if (!stream || stream.destroyed) return;
     await new Promise<void>((resolve) => {
-      stream.once('error', resolve);
-      stream.end(resolve);
+      stream.once('error', () => resolve());
+      stream.once('close', () => resolve());
+      stream.end();
     });
   }
 }
@@ -160,7 +161,7 @@ export class TaskArchive {
         updates.write(`${line}\n`);
       },
       copyNative: (harness, transcriptPath) => {
-        natives = natives.then(() => this.copyNativeInto(dir, task.id, harness, transcriptPath));
+        natives = natives.then(() => this.copyNativeInto(() => dir, task.id, harness, transcriptPath));
         return natives;
       },
       close: () => (closing ??= Promise.all([prompts.close(), updates.close(), natives]).then(() => undefined)),
@@ -169,17 +170,13 @@ export class TaskArchive {
 
   async copyNative(task: TaskRow, attemptNumber: number, harness: string, transcriptPath: string | null): Promise<void> {
     if (!transcriptPath) return;
-    try {
-      await this.copyNativeInto(this.implementationDir(task, attemptNumber), task.id, harness, transcriptPath);
-    } catch (err) {
-      warn('archive: native transcript copy failed', err, { taskId: task.id, harness });
-    }
+    await this.copyNativeInto(() => this.implementationDir(task, attemptNumber), task.id, harness, transcriptPath);
   }
 
-  private async copyNativeInto(dir: Promise<string>, taskId: number, harness: string, transcriptPath: string | null): Promise<void> {
+  private async copyNativeInto(dir: () => Promise<string>, taskId: number, harness: string, transcriptPath: string | null): Promise<void> {
     if (!transcriptPath || !(await pathExists(transcriptPath))) return;
     try {
-      const native = join(await dir, 'native');
+      const native = join(await dir(), 'native');
       await mkdir(native, { recursive: true });
       await copyFile(transcriptPath, join(native, basename(transcriptPath)));
       const subagents = join(dirname(transcriptPath), basename(transcriptPath, '.jsonl'), 'subagents');
