@@ -55,7 +55,7 @@ export function TaskActions({
   const onAccept = () => {
     setAccepting(true);
     api.acceptTask(task.id).then(() => {
-      toastSuccess(`${taskLabel(task.id)} accepted — merging`, { sticky: true });
+      toastSuccess(`${taskLabel(task.id)} accepted — merging`);
       onChanged();
     }, toastError).finally(() => setAccepting(false));
   };
