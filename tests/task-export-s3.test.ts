@@ -140,6 +140,8 @@ describe.skipIf(!dockerAvailable())('TaskExporter S3 destination (#737)', () => 
       version: '9.9.9',
       ...(now ? { now } : {}),
       settings: async () => resolveExportSettings(cfg, workspace),
+      epicSettings: async () => resolveExportSettings(cfg, workspace),
+      epicSnapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, members: [] }),
       workspaceName: async () => 'My Workspace',
       snapshot: async () => ({ ticket: { title: 'T' }, timeline: {}, attemptCount: 1 }),
       recordFact: async (_id, payload) => {

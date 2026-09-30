@@ -66,6 +66,7 @@ const summarize = (event: NotificationEvent, task?: TaskRow, context?: NotifyCon
     'task.failed': 'FAILED',
     'queue.idle': 'queue idle',
     'update.failed': 'update failed',
+    'export.failed': 'export failed',
   };
   return `Harmonic: task ${task.id} ${label[event]} — "${excerpt}"`;
 };

@@ -19,6 +19,7 @@ import { registerRouteRecorder, registerErrorHandler } from './app-hooks.js';
 import { registerShutdown, registerStartup } from './app-lifecycle.js';
 import { registerRoutes } from './app-routes.js';
 import { TaskExporter } from '../archive/task-export.js';
+import { pruneArchives } from '../archive/archive-retention.js';
 import { resolveExportSettings } from '../archive/export-settings.js';
 import type { TaskRow } from '../db/schema.js';
 import { epicAttemptTimelineToApi, taskToApi, ticketTimelineToApi } from './serialize.js';
@@ -195,6 +196,20 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         () => stores.notifier.notify('export.failed', task, { export: { destination, disposition, error, retry, nextRetryAt } }),
         { op: 'export.notifyFailure', level: 'warn', context: { taskId: task.id } },
       );
+    },
+  });
+  scheduler.register({
+    name: 'Archive retention',
+    intervalMs: 60 * 60_000,
+    run: async () => {
+      await pruneArchives({
+        dataDir: opts.dataDir,
+        retention: () => stores.settingsStore.getGlobal().archive.retain,
+        taskTerminalAt: async (taskId) => {
+          const task = await orFallback(() => ctx.tasks.get(taskId), { op: 'archive.retention.task', context: { taskId } }, null);
+          return task && (task.state === 'done' || task.state === 'cancelled') ? task.updatedAt : null;
+        },
+      });
     },
   });
   scheduler.register({ name: 'Export retry', intervalMs: 60_000, run: () => exporter.retryDue() });

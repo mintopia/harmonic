@@ -112,6 +112,10 @@ guardrails:
   progress: false
   toolTimeoutMinutes: 20
   promptInactivityTimeoutMinutes: 15
+archive:
+  retain:
+    days: null
+    maxTotalMB: null
 export:
   enabled: false
   includeStates: [done, cancelled, deleted]
