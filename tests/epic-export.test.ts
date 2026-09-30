@@ -12,6 +12,7 @@ import { resolveExportSettings } from '../src/archive/export-settings.js';
 import { TaskArchive } from '../src/archive/task-archive.js';
 import { TaskExporter, type EpicExportSnapshot, type TaskExporterDeps } from '../src/archive/task-export.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { emptyGitProvenance } from '../src/archive/git-provenance.js';
 
 const EPIC = 77;
 
@@ -57,7 +58,7 @@ describe('Epic Export (#739)', () => {
       epicSettings: async () => resolveExportSettings(config(dest, enabled), undefined),
       epicSnapshot: async () => snapshot(),
       workspaceName: async () => 'My Workspace',
-      snapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0 }),
+      snapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, git: emptyGitProvenance() }),
       recordFact: async () => undefined,
       ...overrides,
     });
@@ -190,7 +191,7 @@ describe('Epic Export (#739)', () => {
     const ex = exporter({
       snapshot: async () => {
         await gate;
-        return { ticket: {}, timeline: {}, attemptCount: 0 };
+        return { ticket: {}, timeline: {}, attemptCount: 0, git: emptyGitProvenance() };
       },
     });
     ex.trigger(member, 'done');
