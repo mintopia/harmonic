@@ -33,8 +33,9 @@ export type ExportWorkspaceOverrides = Pick<
 function resolveS3(global: AppConfig['export']['s3'], workspace: Partial<ExportWorkspaceOverrides> | undefined): ResolvedS3Settings | null {
   const bucket = workspace?.exportS3Bucket ?? global.bucket;
   if (bucket === null) return null;
-  const accessKeyId = workspace?.exportS3AccessKeyId ?? global.accessKeyId;
-  const secretAccessKey = workspace?.exportS3SecretAccessKey ?? global.secretAccessKey;
+  const workspaceKeys = (workspace?.exportS3AccessKeyId ?? null) !== null || (workspace?.exportS3SecretAccessKey ?? null) !== null;
+  const accessKeyId = workspaceKeys ? (workspace?.exportS3AccessKeyId ?? null) : global.accessKeyId;
+  const secretAccessKey = workspaceKeys ? (workspace?.exportS3SecretAccessKey ?? null) : global.secretAccessKey;
   return {
     endpoint: workspace?.exportS3Endpoint ?? global.endpoint,
     region: workspace?.exportS3Region ?? global.region,

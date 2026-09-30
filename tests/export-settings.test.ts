@@ -48,10 +48,26 @@ describe('resolveExportSettings s3', () => {
     expect(resolveExportSettings(cfg, undefined).s3?.credentials).toEqual({ accessKeyId: 'AK', secretAccessKey: 'SK' });
     expect(resolveExportSettings(s3Global({ bucket: 'b', accessKeyId: 'AK' }), undefined).s3?.credentials).toBeNull();
     expect(resolveExportSettings(s3Global({ bucket: 'b' }), { exportS3SecretAccessKey: 'SK' }).s3?.credentials).toBeNull();
-    expect(resolveExportSettings(s3Global({ bucket: 'b', accessKeyId: 'AK' }), { exportS3SecretAccessKey: 'SK' }).s3?.credentials).toEqual({
+  });
+
+  it('resolves the key pair as a unit, never mixing Workspace and global keys', () => {
+    const cfg = s3Global({ bucket: 'b', accessKeyId: 'AK', secretAccessKey: 'SK' });
+    expect(resolveExportSettings(cfg, { exportS3SecretAccessKey: 'WSK' }).s3?.credentials).toBeNull();
+    expect(resolveExportSettings(cfg, { exportS3AccessKeyId: 'WAK', exportS3SecretAccessKey: 'WSK' }).s3?.credentials).toEqual({
+      accessKeyId: 'WAK',
+      secretAccessKey: 'WSK',
+    });
+    expect(resolveExportSettings(cfg, { exportS3AccessKeyId: null, exportS3SecretAccessKey: null }).s3?.credentials).toEqual({
       accessKeyId: 'AK',
       secretAccessKey: 'SK',
     });
+  });
+
+  it('rejects an endpoint carrying credentials in the URL', () => {
+    expect(workspaceOverridesSchema.safeParse({ exportS3Endpoint: 'https://user:pw@minio.local' }).success).toBe(false);
+    const cfg = baselineConfig();
+    cfg.export.s3.endpoint = 'https://user:pw@minio.local';
+    expect(appConfigSchema.safeParse(cfg).success).toBe(false);
   });
 
   it('validates the Workspace endpoint override as a URL', () => {

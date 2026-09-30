@@ -16,7 +16,7 @@ import {
   type WorkspaceRow,
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
-import { exportDirectoryPathSchema } from '../config.js';
+import { exportDirectoryPathSchema, exportS3EndpointSchema } from '../config.js';
 import { DomainError } from './errors.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
 import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
@@ -103,7 +103,7 @@ export const workspaceOverridesSchema = z.object({
   exportEnabled: z.boolean().nullable().optional(),
   /** Export directory override (absolute); null inherits `config.export.directory.path`. */
   exportDirectoryPath: exportDirectoryPathSchema.nullable().optional().meta({ example: '/srv/harmonic-exports' }),
-  exportS3Endpoint: z.url().nullable().optional().meta({ example: 'https://s3.eu-west-2.amazonaws.com' }),
+  exportS3Endpoint: exportS3EndpointSchema.nullable().optional().meta({ example: 'https://s3.eu-west-2.amazonaws.com' }),
   exportS3Region: z.string().min(1).nullable().optional().meta({ example: 'eu-west-2' }),
   exportS3Bucket: z.string().min(1).nullable().optional().meta({ example: 'harmonic-exports' }),
   exportS3Prefix: z.string().nullable().optional().meta({ example: 'harmonic/' }),

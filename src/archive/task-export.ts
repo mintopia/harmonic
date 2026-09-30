@@ -9,7 +9,7 @@ import { logger } from '../logger.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { hasExportDestination, type ResolvedExportSettings } from './export-settings.js';
 import { uploadToS3 } from './s3-destination.js';
-import { workspaceSlug, type ExportRecord, type TaskArchive } from './task-archive.js';
+import { workspaceSlug, type ExportDestination, type ExportRecord, type TaskArchive } from './task-archive.js';
 import { TarGzWriter, addDirectory } from './tar-gz.js';
 
 export type ExportDisposition = ExportState;
@@ -20,7 +20,11 @@ export interface ExportSnapshot {
   attemptCount: number;
 }
 
-export type ExportDestination = 'directory' | 's3';
+interface StagedExport {
+  staged: string;
+  slug: string;
+  base: string;
+}
 
 export interface ExportOutcome {
   destination: ExportDestination;
@@ -183,22 +187,19 @@ export class TaskExporter {
     if (!settings.enabled || !settings.includeStates.includes(disposition) || !hasExportDestination(settings)) return null;
 
     const at = (this.deps.now ?? (() => new Date()))();
-    const destinations: ExportDestination[] = [];
-    if (settings.directoryPath !== null) destinations.push('directory');
-    if (settings.s3 !== null) destinations.push('s3');
+    const { directoryPath, s3 } = settings;
+    const destinations: { destination: ExportDestination; deliver: (built: StagedExport) => Promise<string> }[] = [];
+    if (directoryPath !== null) destinations.push({ destination: 'directory', deliver: (b) => this.deliver(b.staged, join(directoryPath, b.slug), b.base) });
+    if (s3 !== null) destinations.push({ destination: 's3', deliver: (b) => uploadToS3(s3, b.staged, b.slug, b.base) });
     const outcomes: ExportOutcome[] = [];
     let staged: string | null = null;
     try {
       const built = await this.stage(task, disposition, at, snapshot);
       staged = built.staged;
-      for (const destination of destinations) {
+      for (const { destination, deliver } of destinations) {
         let outcome: ExportOutcome;
         try {
-          const file =
-            destination === 'directory'
-              ? await this.deliver(built.staged, join(settings.directoryPath!, built.slug), built.base)
-              : await uploadToS3(settings.s3!, built.staged, built.slug, built.base);
-          outcome = { destination, status: 'succeeded', file };
+          outcome = { destination, status: 'succeeded', file: await deliver(built) };
         } catch (err) {
           outcome = { destination, status: 'failed', file: null, error: message(err) };
           logger.warn('export: failed', { taskId: task.id, disposition, destination, error: outcome.error });
@@ -206,7 +207,7 @@ export class TaskExporter {
         outcomes.push(outcome);
       }
     } catch (err) {
-      for (const destination of destinations) {
+      for (const { destination } of destinations) {
         outcomes.push({ destination, status: 'failed', file: null, error: message(err) });
       }
       logger.warn('export: failed', { taskId: task.id, disposition, error: message(err) });
@@ -235,7 +236,7 @@ export class TaskExporter {
     }
   }
 
-  private async stage(task: TaskRow, disposition: ExportDisposition, at: Date, pending?: Promise<ExportSnapshot>): Promise<{ staged: string; slug: string; base: string }> {
+  private async stage(task: TaskRow, disposition: ExportDisposition, at: Date, pending?: Promise<ExportSnapshot>): Promise<StagedExport> {
     const snapshot = await (pending ?? this.deps.snapshot(task));
     const archiveDir = await this.deps.archive.ensure(task);
     const workspace = task.workspaceId === null ? null : await this.deps.workspaceName(task.workspaceId);
