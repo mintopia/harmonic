@@ -53,6 +53,18 @@ describe('computeGitProvenance', () => {
     expect(result).toMatchObject({ baseBranch: null, startCommit: 'abc', endCommit: 'def', mergeCommit: null });
   });
 
+  it('baseBranch falls back from the last Attempt to the Task column to the current branch', () => {
+    const base = (over: Partial<Parameters<typeof computeGitProvenance>[0]>) =>
+      computeGitProvenance({ attempts: [], facts: [], remoteUrl: null, ...over }).baseBranch;
+    const attempts = [attempt({ id: 1, number: 1, baseBranch: 'old' }), attempt({ id: 2, number: 2, baseBranch: 'wt' })];
+    expect(base({ attempts, taskBaseBranch: 'task', currentBranch: 'cur' })).toBe('wt');
+    expect(base({ attempts: [attempt({ id: 1, number: 1 })], taskBaseBranch: 'task', currentBranch: 'cur' })).toBe('task');
+    expect(base({ taskBaseBranch: null, currentBranch: 'cur' })).toBe('cur');
+    expect(base({ taskBaseBranch: '', currentBranch: 'cur' })).toBe('cur');
+    expect(base({ taskBaseBranch: null, currentBranch: null })).toBeNull();
+    expect(base({})).toBeNull();
+  });
+
   it('falls back to diffBaseOid when an Attempt predates startOid capture', () => {
     const result = computeGitProvenance({ attempts: [attempt({ id: 1, number: 1, diffBaseOid: 'base', diffHeadOid: 'head' })], facts: [], remoteUrl: null });
     expect(result.startCommit).toBe('base');

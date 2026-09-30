@@ -189,11 +189,12 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         ticketTimelineToApi(ctx, task.id),
         stores.attempts.listForTask(task.id),
       ]);
-      const [remoteUrl, facts] = await Promise.all([
+      const [remoteUrl, currentBranch, facts] = await Promise.all([
         orFallback(() => Git.originUrl(task.workingDir), { op: 'export.snapshot.originUrl', level: 'warn', context: { taskId: task.id } }, null),
+        orFallback(() => Git.symbolicBranch(task.workingDir), { op: 'export.snapshot.currentBranch', level: 'warn', context: { taskId: task.id } }, null),
         orFallback(() => stores.attempts.listMergedFacts(taskAttempts.map((a) => a.id)), { op: 'export.snapshot.mergedFacts', level: 'warn', context: { taskId: task.id } }, [] as unknown[]),
       ]);
-      return { ticket, timeline, attemptCount: taskAttempts.length, git: computeGitProvenance({ attempts: taskAttempts, facts, remoteUrl }) };
+      return { ticket, timeline, attemptCount: taskAttempts.length, git: computeGitProvenance({ attempts: taskAttempts, facts, remoteUrl, taskBaseBranch: task.baseBranch, currentBranch }) };
     },
     recordFact: async (taskId, payload) => {
       await stores.taskEvents.appendEvent(taskId, payload);
