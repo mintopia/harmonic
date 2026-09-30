@@ -1,5 +1,43 @@
 # Changelog
 
+## [2.21.0](https://github.com/mintopia/harmonic/compare/v2.20.0...v2.21.0) (2026-09-30)
+
+
+### Features
+
+* **archive:** Attempt and Critic logs fall back to the Archive copy ([#733](https://github.com/mintopia/harmonic/issues/733)) ([ada1dc2](https://github.com/mintopia/harmonic/commit/ada1dc272c44f7069b52b80697601436ae42d709))
+* **archive:** capture Critic Step transcripts in the Archive ([dcf69a7](https://github.com/mintopia/harmonic/commit/dcf69a7fb3856039ce4f3fe1c8f8b0973c1c2aba))
+* **archive:** optional retention prune Scheduled Job ([da47340](https://github.com/mintopia/harmonic/commit/da4734049a748cb5b92e1f441ac834c3b04070e5))
+* **archive:** per-Task Archive identity and implementation transcripts ([0c5d6c5](https://github.com/mintopia/harmonic/commit/0c5d6c55dfdf2fd7fef45c275587d690730c1111)), closes [#728](https://github.com/mintopia/harmonic/issues/728)
+* **archive:** record every operator input and keep Archives past Delete ([01da277](https://github.com/mintopia/harmonic/commit/01da27745d74087094ab31b29b12fd78177f8b7a)), closes [#732](https://github.com/mintopia/harmonic/issues/732)
+* **archive:** stream full verify-command output to the Archive ([6fb5d78](https://github.com/mintopia/harmonic/commit/6fb5d78e5da7cbda07a4cbbd30516d3371b48a0a)), closes [#731](https://github.com/mintopia/harmonic/issues/731)
+* **export:** deliver Exports to an S3-compatible Destination ([ac1f75c](https://github.com/mintopia/harmonic/commit/ac1f75cbd6afdbcf9ac7cca50e7260dd704376ae)), closes [#737](https://github.com/mintopia/harmonic/issues/737)
+* **export:** export a Task's Archive on cancelled and Delete ([72ccb9e](https://github.com/mintopia/harmonic/commit/72ccb9ea8438b957203a089c515be7c09008aceb)), closes [#735](https://github.com/mintopia/harmonic/issues/735)
+* **export:** export a Task's Archive to a directory on done ([e75d570](https://github.com/mintopia/harmonic/commit/e75d570f21a3dd82809aa666e32ecd0500e365a0)), closes [#734](https://github.com/mintopia/harmonic/issues/734)
+* **export:** export an Epic's Archive when it reaches done ([a06ec50](https://github.com/mintopia/harmonic/commit/a06ec50229e39b66e4197605339875ba379865a8)), closes [#739](https://github.com/mintopia/harmonic/issues/739)
+* **export:** redact secrets while building an Export ([1e947df](https://github.com/mintopia/harmonic/commit/1e947df40b49867b9640f12154a3b9951a6e93a9)), closes [#736](https://github.com/mintopia/harmonic/issues/736)
+* **export:** retry failed Export Destinations and surface failures ([78df6cf](https://github.com/mintopia/harmonic/commit/78df6cfc48451460352f4be4e5c46777562d5edd)), closes [#738](https://github.com/mintopia/harmonic/issues/738)
+* **export:** Ticket-page Export panel with Export again and Download ([a690218](https://github.com/mintopia/harmonic/commit/a690218a715e7279d30f8077ca147436476ce785))
+* **notifications:** bell dropdown and Notifications page ([da896c4](https://github.com/mintopia/harmonic/commit/da896c4f872975a661d8608ae8a2903a37f675be)), closes [#745](https://github.com/mintopia/harmonic/issues/745)
+* **notifications:** store Notifications with list/read API, live push and retention ([63296c3](https://github.com/mintopia/harmonic/commit/63296c31e851aa954b6796eb24448ef378c6dac4)), closes [#744](https://github.com/mintopia/harmonic/issues/744)
+* **settings:** Archive & Export tab with Test Destination ([84f72ce](https://github.com/mintopia/harmonic/commit/84f72ceb327761f9d6e3d9a0cdd6f47584f9fb57))
+* **settings:** per-Workspace override for Archive retention and export dispositions ([2813983](https://github.com/mintopia/harmonic/commit/281398392f1afaa3b17dac466b60208dcaa7197d))
+* **toast:** auto-dismiss with draining bar, pause on hover/focus, drop sticky ([#746](https://github.com/mintopia/harmonic/issues/746)) ([d96993f](https://github.com/mintopia/harmonic/commit/d96993fe1e5e92f859972cc950ddb0926966f2dc))
+
+
+### Bug Fixes
+
+* **archive:** fail the Epic review Step when its critic run throws ([86e35e5](https://github.com/mintopia/harmonic/commit/86e35e5201a0b1352ac77e2fcace06b64cff1682))
+* **archive:** harden append streams against unhandled errors ([ec71f5a](https://github.com/mintopia/harmonic/commit/ec71f5a5df7b293458504f024791a20bfa7e036e)), closes [#728](https://github.com/mintopia/harmonic/issues/728)
+* **build:** drop duplicate archive declarations left by task merges ([1494d94](https://github.com/mintopia/harmonic/commit/1494d9411cb4843d50e9097b35a3906c4bf8d063))
+* clear typecheck errors (export test deps, export.failed label) ([8f57c69](https://github.com/mintopia/harmonic/commit/8f57c694e23f7524283da38e8f894c9cdb63be92))
+* drop duplicate archive deps left by merge ([4cc58e8](https://github.com/mintopia/harmonic/commit/4cc58e8e0b5885324d6aefd0d9a5eed0ee12f813))
+* **export:** harden Export retry against corrupt sidecars and boot races ([a222c5b](https://github.com/mintopia/harmonic/commit/a222c5bf8d82ee1e4527da625e63811f4fc958c4)), closes [#738](https://github.com/mintopia/harmonic/issues/738)
+* **export:** resolve S3 key pair as a unit and reject credentialed endpoints ([331749d](https://github.com/mintopia/harmonic/commit/331749d3f0e99e8f52d56860db65375cb65f2990)), closes [#737](https://github.com/mintopia/harmonic/issues/737)
+* **test:** wait for the export retry sidecar before asserting staging ([6c22d84](https://github.com/mintopia/harmonic/commit/6c22d84b7de8173a2d330cf4781940d61fe533ae))
+* **web:** keep Ticket-page actions in view on long transcripts ([b01575c](https://github.com/mintopia/harmonic/commit/b01575c4dc1f2a4db66acca6a1a005d508725ab6))
+* **web:** pin app shell to viewport height so Ticket actions stay in view ([82e2119](https://github.com/mintopia/harmonic/commit/82e21190678c068bd7fe89eb60b48553d54b7722))
+
 ## [2.20.0](https://github.com/mintopia/harmonic/compare/v2.19.4...v2.20.0) (2026-09-29)
 
 
