@@ -14,7 +14,8 @@ import { ApiPage } from './ApiPage';
 import { SettingsPage } from './SettingsPage';
 import { WorkspaceSettingsPage } from './WorkspaceSettingsPage';
 import { EmptyState } from './EmptyState';
-import type { AppConfig, Task, Workspace } from '../types';
+import { NotificationsPage } from './NotificationsPage';
+import type { AppConfig, Notification, Task, Workspace } from '../types';
 import type { Epic } from '../epic-model';
 import type { HostLoad } from '../ws';
 import type { View } from '../rail-model';
@@ -22,6 +23,7 @@ import { NO_SELECTION, type Route, type TableFilters } from '../router-model';
 import { btnGhost, btnPrimary, btnQuiet } from '../ui';
 import type { PendingPermissionAlert } from '../usePendingPermissionAlerts';
 import type { NavigateFn } from '../useRoute';
+import type { NotificationsApi } from '../useNotifications';
 
 const GraphView = lazy(() => import('./GraphView').then((m) => ({ default: m.GraphView })));
 
@@ -51,6 +53,9 @@ interface MainViewContentProps {
   handleWorkspaceSaved: (workspace: Workspace) => void;
   handleWorkspaceDeleted: (id: number) => void;
   pickConversation: (conversationId: number | null) => void;
+  notifications: NotificationsApi;
+  ticketHref: (n: Notification) => string | null;
+  onOpenNotification: (n: Notification, navigate: boolean) => void;
 }
 
 /** The routed page content for the current rail `view` — everything under the
@@ -81,6 +86,9 @@ function MainViewContent({
   handleWorkspaceSaved,
   handleWorkspaceDeleted,
   pickConversation,
+  notifications,
+  ticketHref,
+  onOpenNotification,
 }: MainViewContentProps) {
   return (
     <>
@@ -144,6 +152,17 @@ function MainViewContent({
       {view === 'operations' && (
         <OperationsPage workspaceId={activeWorkspaceId} tasks={taskList} epics={epics} onOpenTask={onOpenTask} onOpenEpic={onOpenEpic} />
       )}
+      {view === 'notifications' && (
+        <NotificationsPage
+          state={notifications.state}
+          allRetainedLoaded={notifications.allRetainedLoaded}
+          workspaces={workspaces}
+          scopeWorkspace={route.scope.kind === 'workspace' ? activeWorkspace : null}
+          ticketHref={ticketHref}
+          onOpenNotification={onOpenNotification}
+          onMarkAllRead={notifications.markAllRead}
+        />
+      )}
       {view === 'api' && <ApiPage />}
       {view === 'settings' && <SettingsPage onSaved={setConfig} />}
       {view === 'workspace' && config && activeWorkspace && (
@@ -199,6 +218,9 @@ interface AppContentProps {
   handleConversationOpened: () => void;
   expandConversation: (conversationId: number | null) => void;
   pickConversation: (conversationId: number | null) => void;
+  notifications: NotificationsApi;
+  ticketHref: (n: Notification) => string | null;
+  onOpenNotification: (n: Notification, navigate: boolean) => void;
 }
 
 export function AppContent({
@@ -241,6 +263,9 @@ export function AppContent({
   handleConversationOpened,
   expandConversation,
   pickConversation,
+  notifications,
+  ticketHref,
+  onOpenNotification,
 }: AppContentProps) {
   return (
     <div className="relative min-h-0 flex-1">
@@ -367,6 +392,9 @@ export function AppContent({
                 handleWorkspaceSaved={handleWorkspaceSaved}
                 handleWorkspaceDeleted={handleWorkspaceDeleted}
                 pickConversation={pickConversation}
+                notifications={notifications}
+                ticketHref={ticketHref}
+                onOpenNotification={onOpenNotification}
               />
             )}
           </main>

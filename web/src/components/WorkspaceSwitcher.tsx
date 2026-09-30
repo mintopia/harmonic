@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { Workspace } from '../types';
 import { Modal } from './Modal';
 import { Icon } from './Icon';
 import { DirectoryPicker } from './DirectoryPicker';
 import { btnGhost, btnPrimary, field, labelType, panelTitle } from '../ui';
+import { useDismissable } from '../useDismissable';
 
 export function NewWorkspaceForm({ onClose, onCreated }: { onClose: () => void; onCreated: (w: Workspace) => void }) {
   const [name, setName] = useState('');
@@ -94,21 +95,7 @@ export function WorkspaceSwitcher({
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('pointerdown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
+  useDismissable(open, wrap, () => setOpen(false));
 
   const active = workspaces.find((w) => w.id === activeId) ?? workspaces[0];
   const label = activeId === null ? 'Global' : active?.name ?? 'Global';

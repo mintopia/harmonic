@@ -82,3 +82,17 @@ describe('last route storage', () => {
     expect(loadLastRoute(storage)).toEqual(DEFAULT_ROUTE);
   });
 });
+
+describe('notifications route', () => {
+  it('parses and serializes the global and workspace forms', () => {
+    expect(parseRoute('/notifications', '')).toMatchObject({ scope: { kind: 'global' }, view: 'notifications' });
+    expect(parseRoute('/workspace/42/notifications', '')).toMatchObject({ scope: { kind: 'workspace', workspaceId: 42 }, view: 'notifications' });
+    expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'notifications' })).toBe('/notifications');
+    expect(serializeRoute(workspace('notifications'))).toBe('/workspace/42/notifications');
+  });
+
+  it('keeps the page when the scope switches', () => {
+    expect(scopeSwitchRoute({ ...DEFAULT_ROUTE, view: 'notifications' }, { kind: 'workspace', workspaceId: 7 }).view).toBe('notifications');
+    expect(scopeSwitchRoute(workspace('notifications'), { kind: 'global' }).view).toBe('notifications');
+  });
+});

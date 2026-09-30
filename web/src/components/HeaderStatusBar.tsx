@@ -1,4 +1,5 @@
 import { Icon } from './Icon';
+import type { ReactNode } from 'react';
 import type { AppConfig } from '../types';
 import type { HostLoad } from '../ws';
 import type { View } from '../rail-model';
@@ -29,6 +30,7 @@ interface HeaderStatusBarProps {
   onNewTask: () => void;
   onOpenAbout: () => void;
   onOpenActivity: () => void;
+  bell?: ReactNode;
 }
 
 export function HeaderStatusBar({
@@ -54,6 +56,7 @@ export function HeaderStatusBar({
   onNewTask,
   onOpenAbout,
   onOpenActivity,
+  bell,
 }: HeaderStatusBarProps) {
   return (
     <header
@@ -108,6 +111,7 @@ export function HeaderStatusBar({
         />
       </div>
       <div className="flex-1 rail:hidden" />
+      {bell}
       <button
         onClick={onNewTask}
         className={`${btnPrimary} shrink-0 gap-1.5 ${view === 'conversations' ? 'max-md:hidden' : ''}`}
