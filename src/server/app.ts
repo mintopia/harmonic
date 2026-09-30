@@ -19,6 +19,8 @@ import { registerRouteRecorder, registerErrorHandler } from './app-hooks.js';
 import { registerShutdown, registerStartup } from './app-lifecycle.js';
 import { registerRoutes } from './app-routes.js';
 import { TaskExporter } from '../archive/task-export.js';
+import { computeGitProvenance } from '../archive/git-provenance.js';
+import { Git } from '../execution/git.js';
 import { pruneArchives, type ArchiveRetention } from '../archive/archive-retention.js';
 import { workspaceSlug } from '../archive/task-archive.js';
 import { resolveExportSettings } from '../archive/export-settings.js';
@@ -187,7 +189,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         ticketTimelineToApi(ctx, task.id),
         stores.attempts.listForTask(task.id),
       ]);
-      return { ticket, timeline, attemptCount: taskAttempts.length };
+      const [remoteUrl, facts] = await Promise.all([
+        orFallback(() => Git.originUrl(task.workingDir), { op: 'export.snapshot.originUrl', level: 'warn', context: { taskId: task.id } }, null),
+        orFallback(() => stores.attempts.listMergedFacts(taskAttempts.map((a) => a.id)), { op: 'export.snapshot.mergedFacts', level: 'warn', context: { taskId: task.id } }, [] as unknown[]),
+      ]);
+      return { ticket, timeline, attemptCount: taskAttempts.length, git: computeGitProvenance({ attempts: taskAttempts, facts, remoteUrl }) };
     },
     recordFact: async (taskId, payload) => {
       await stores.taskEvents.appendEvent(taskId, payload);

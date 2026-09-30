@@ -152,6 +152,21 @@ export class WorkspaceProvisioner {
   }
 
   async prepareWorkspace(task: TaskRow, run: AttemptRow, resume = false): Promise<Workspace> {
+    const workspace = await this.provision(task, run, resume);
+    if (run.startOid == null) await this.captureStartOid(task, run, workspace.cwd);
+    return workspace;
+  }
+
+  private async captureStartOid(task: TaskRow, run: AttemptRow, cwd: string): Promise<void> {
+    await bestEffort(
+      async () => {
+        await this.deps.attempts.update(run.id, { startOid: await Git.revParse(cwd, 'HEAD') });
+      },
+      { op: 'runner.prepareWorkspace.startOid', level: 'warn', context: { taskId: task.id, attemptId: run.id, cwd } },
+    );
+  }
+
+  private async provision(task: TaskRow, run: AttemptRow, resume: boolean): Promise<Workspace> {
     if (task.isolationMode !== 'worktree') {
       const workspace: Workspace = { cwd: task.workingDir, env: {} };
       const resolved = await attempted(

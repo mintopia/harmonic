@@ -196,6 +196,8 @@ export const attempts = sqliteTable('attempts', {
   /** Worktree mode: the attempt's branch and the branch it was cut from. */
   branch: text('branch'),
   baseBranch: text('base_branch'),
+  /** `rev-parse HEAD` of the working directory when the Attempt started, both isolation modes; null when unreadable. */
+  startOid: text('start_oid'),
   /** Immutable revisions for the settled worktree diff. They outlive the
    * attempt branch, which merging or cleanup can advance or delete. */
   diffBaseOid: text('diff_base_oid'),

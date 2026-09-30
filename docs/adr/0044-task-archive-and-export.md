@@ -81,6 +81,18 @@ retries it 3× (5 min / 30 min / 2 h) before leaving it for a manual
 Settings offers **Test Destination**. No backfill for pre-existing Tasks;
 **Export again** on one yields an Export flagged `partial: true`.
 
+**Git provenance (manifest `formatVersion` 2).** A Task Export's
+`manifest.json` carries a `git` block so a consumer can compute and display a
+diff without the repository's help: the Workspace `remoteUrl` (URL userinfo
+stripped, then the same redaction as the rest of the Export), `baseBranch`,
+`startCommit` (first Attempt), `endCommit` (the Merge commit when merged, else
+the last Attempt's settled head), `mergeCommit`, and the same start/end pair
+per Attempt. Every Attempt records `startOid` — `HEAD` of the directory it
+works in — when it starts, in both isolation modes; direct mode had no start
+commit before this. An unreadable `HEAD` stores null and never fails the
+Attempt, and any git failure at Export time yields nulls, never a failed
+Export. The Export carries no diff itself.
+
 The Export hook hangs off the Task's terminal transition
 (`attempt-settle.ts`) and the Delete path, not `postMerge`, which has five
 call sites and does not see cancellation.
