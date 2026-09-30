@@ -27,7 +27,7 @@ export interface BusEvents {
   /** Live-usage snapshot pushed ~1s while an Attempt tails its native log. */
   attempt_usage: (payload: { attemptId: number; snapshot: AttemptUsageSnapshot }) => void;
   task_changed: (task: TaskRow) => void;
-  task_disposition: (payload: { task: TaskRow; disposition: 'done' }) => void;
+  task_disposition: (payload: { task: TaskRow; disposition: 'done' | 'cancelled' }) => void;
   /** A Task's row was hard-deleted; a live board drops it immediately. */
   task_removed: (payload: { id: number }) => void;
   /** An Epic's integration merge advanced a step; a live board refreshes its
