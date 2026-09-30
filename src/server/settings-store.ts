@@ -12,6 +12,7 @@ import {
   type AppConfig,
   type DeepPartial,
 } from '../config.js';
+import { isMaskedWorkspaceSecret, restoreConfigSecrets } from '../archive/export-secrets.js';
 
 export type { WorkspaceOverrides };
 
@@ -246,7 +247,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
 
   async updateGlobal(patch: DeepPartial<AppConfig>): Promise<AppConfig> {
     this.reloadIfChanged();
-    this.global = mergeConfig(this.global, patch);
+    this.global = mergeConfig(this.global, restoreConfigSecrets(patch, this.global));
     this.globalPatch = deepDiff(baselineConfig(), this.global) ?? {};
     this.persist();
     return this.global;
@@ -254,7 +255,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
 
   async replaceGlobal(config: AppConfig): Promise<AppConfig> {
     this.reloadIfChanged();
-    this.global = appConfigSchema.parse(config);
+    this.global = appConfigSchema.parse(restoreConfigSecrets(config, this.global));
     this.globalPatch = deepDiff(baselineConfig(), this.global) ?? {};
     this.persist();
     return this.global;
@@ -284,7 +285,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
     const merged: Record<string, unknown> = { ...current };
     for (const field of OVERRIDE_KEYS) {
       const next = patch[field];
-      if (next === undefined) continue;
+      if (next === undefined || isMaskedWorkspaceSecret(field, next)) continue;
       if (next === null) {
         delete merged[field];
       } else {

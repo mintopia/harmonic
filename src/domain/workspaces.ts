@@ -103,6 +103,14 @@ export const workspaceOverridesSchema = z.object({
   exportEnabled: z.boolean().nullable().optional(),
   /** Export directory override (absolute); null inherits `config.export.directory.path`. */
   exportDirectoryPath: exportDirectoryPathSchema.nullable().optional().meta({ example: '/srv/harmonic-exports' }),
+  exportS3Endpoint: z.url().nullable().optional().meta({ example: 'https://s3.eu-west-2.amazonaws.com' }),
+  exportS3Region: z.string().min(1).nullable().optional().meta({ example: 'eu-west-2' }),
+  exportS3Bucket: z.string().min(1).nullable().optional().meta({ example: 'harmonic-exports' }),
+  exportS3Prefix: z.string().nullable().optional().meta({ example: 'harmonic/' }),
+  exportS3ForcePathStyle: z.boolean().nullable().optional(),
+  /** Write-only in effect: responses carry the mask, and sending the mask back keeps the stored value. */
+  exportS3AccessKeyId: z.string().min(1).nullable().optional(),
+  exportS3SecretAccessKey: z.string().min(1).nullable().optional(),
 });
 export type WorkspaceOverrides = z.infer<typeof workspaceOverridesSchema>;
 
@@ -138,6 +146,13 @@ export const OVERRIDE_KEYS = [
   'pauseMessage',
   'exportEnabled',
   'exportDirectoryPath',
+  'exportS3Endpoint',
+  'exportS3Region',
+  'exportS3Bucket',
+  'exportS3Prefix',
+  'exportS3ForcePathStyle',
+  'exportS3AccessKeyId',
+  'exportS3SecretAccessKey',
 ] as const;
 
 /** A fully-populated overrides object: every key present, `null` meaning
@@ -212,6 +227,13 @@ export class WorkspaceService {
       pauseMessage: o.pauseMessage,
       exportEnabled: o.exportEnabled,
       exportDirectoryPath: o.exportDirectoryPath,
+      exportS3Endpoint: o.exportS3Endpoint,
+      exportS3Region: o.exportS3Region,
+      exportS3Bucket: o.exportS3Bucket,
+      exportS3Prefix: o.exportS3Prefix,
+      exportS3ForcePathStyle: o.exportS3ForcePathStyle,
+      exportS3AccessKeyId: o.exportS3AccessKeyId,
+      exportS3SecretAccessKey: o.exportS3SecretAccessKey,
     };
   }
 

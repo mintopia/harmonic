@@ -292,6 +292,16 @@ export const appConfigSchema = z.object({
     directory: z.object({
       path: exportDirectoryPathSchema.nullable().meta({ example: '/srv/harmonic-exports' }),
     }),
+    /** S3-compatible Export Destination; enabled when `bucket` is set. Credentials fall back to the AWS default chain unless both keys are set. */
+    s3: z.object({
+      endpoint: z.url().nullable().meta({ example: 'https://s3.eu-west-2.amazonaws.com' }),
+      region: z.string().min(1).nullable().meta({ example: 'eu-west-2' }),
+      bucket: z.string().min(1).nullable().meta({ example: 'harmonic-exports' }),
+      prefix: z.string().meta({ example: 'harmonic/' }),
+      forcePathStyle: z.boolean().meta({ example: false }),
+      accessKeyId: z.string().min(1).nullable().meta({ example: null }),
+      secretAccessKey: z.string().min(1).nullable().meta({ example: null }),
+    }),
   }),
 }).superRefine((config, ctx) => {
   for (const [id, harness] of Object.entries(config.harnesses)) {

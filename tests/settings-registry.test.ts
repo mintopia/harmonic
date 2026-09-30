@@ -53,6 +53,13 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
     'taskPrompt',
     'exportEnabled',
     'exportDirectoryPath',
+    'exportS3Endpoint',
+    'exportS3Region',
+    'exportS3Bucket',
+    'exportS3Prefix',
+    'exportS3ForcePathStyle',
+    'exportS3AccessKeyId',
+    'exportS3SecretAccessKey',
   ];
 
   it('declares every Workspace override column as overridable', () => {

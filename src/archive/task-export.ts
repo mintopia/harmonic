@@ -7,7 +7,8 @@ import type { TaskRow } from '../db/schema.js';
 import { fireAndForget } from '../error-handling.js';
 import { logger } from '../logger.js';
 import { forEachYielding } from '../reliability/yield.js';
-import type { ResolvedExportSettings } from './export-settings.js';
+import { hasExportDestination, type ResolvedExportSettings } from './export-settings.js';
+import { uploadToS3 } from './s3-destination.js';
 import { workspaceSlug, type ExportRecord, type TaskArchive } from './task-archive.js';
 import { TarGzWriter, addDirectory } from './tar-gz.js';
 
@@ -19,7 +20,10 @@ export interface ExportSnapshot {
   attemptCount: number;
 }
 
+export type ExportDestination = 'directory' | 's3';
+
 export interface ExportOutcome {
+  destination: ExportDestination;
   status: 'succeeded' | 'failed';
   file: string | null;
   error?: string;
@@ -143,7 +147,7 @@ export class TaskExporter {
   async captureForDelete(task: TaskRow): Promise<void> {
     try {
       const settings = await this.deps.settings(task);
-      if (!settings.enabled || !settings.includeStates.includes('deleted') || !settings.directoryPath) return;
+      if (!settings.enabled || !settings.includeStates.includes('deleted') || !hasExportDestination(settings)) return;
       const snapshot = await this.deps.snapshot(task);
       if (snapshot.attemptCount === 0) return;
       this.enqueue(task, 'deleted', Promise.resolve(snapshot));
@@ -168,7 +172,7 @@ export class TaskExporter {
     );
   }
 
-  async run(task: TaskRow, disposition: ExportDisposition, snapshot?: Promise<ExportSnapshot>): Promise<ExportOutcome | null> {
+  async run(task: TaskRow, disposition: ExportDisposition, snapshot?: Promise<ExportSnapshot>): Promise<ExportOutcome[] | null> {
     let settings: ResolvedExportSettings;
     try {
       settings = await this.deps.settings(task);
@@ -176,22 +180,45 @@ export class TaskExporter {
       logger.warn('export: settings unavailable', { taskId: task.id, error: message(err) });
       return null;
     }
-    if (!settings.enabled || !settings.includeStates.includes(disposition) || !settings.directoryPath) return null;
+    if (!settings.enabled || !settings.includeStates.includes(disposition) || !hasExportDestination(settings)) return null;
 
     const at = (this.deps.now ?? (() => new Date()))();
-    let outcome: ExportOutcome;
+    const destinations: ExportDestination[] = [];
+    if (settings.directoryPath !== null) destinations.push('directory');
+    if (settings.s3 !== null) destinations.push('s3');
+    const outcomes: ExportOutcome[] = [];
+    let staged: string | null = null;
     try {
-      outcome = { status: 'succeeded', file: await this.exportToDirectory(task, disposition, settings.directoryPath, at, snapshot) };
+      const built = await this.stage(task, disposition, at, snapshot);
+      staged = built.staged;
+      for (const destination of destinations) {
+        let outcome: ExportOutcome;
+        try {
+          const file =
+            destination === 'directory'
+              ? await this.deliver(built.staged, join(settings.directoryPath!, built.slug), built.base)
+              : await uploadToS3(settings.s3!, built.staged, built.slug, built.base);
+          outcome = { destination, status: 'succeeded', file };
+        } catch (err) {
+          outcome = { destination, status: 'failed', file: null, error: message(err) };
+          logger.warn('export: failed', { taskId: task.id, disposition, destination, error: outcome.error });
+        }
+        outcomes.push(outcome);
+      }
     } catch (err) {
-      outcome = { status: 'failed', file: null, error: message(err) };
-      logger.warn('export: failed', { taskId: task.id, disposition, error: outcome.error });
+      for (const destination of destinations) {
+        outcomes.push({ destination, status: 'failed', file: null, error: message(err) });
+      }
+      logger.warn('export: failed', { taskId: task.id, disposition, error: message(err) });
+    } finally {
+      if (staged !== null) await rm(staged, { force: true });
     }
-    await this.record(task, disposition, outcome, at);
-    return outcome;
+    for (const outcome of outcomes) await this.record(task, disposition, outcome, at);
+    return outcomes;
   }
 
   private async record(task: TaskRow, disposition: ExportDisposition, outcome: ExportOutcome, at: Date): Promise<void> {
-    const base = { destination: 'directory' as const, disposition, file: outcome.file, status: outcome.status };
+    const base = { destination: outcome.destination, disposition, file: outcome.file, status: outcome.status };
     const error = outcome.error === undefined ? {} : { error: outcome.error };
     if (disposition !== 'deleted') {
       try {
@@ -208,7 +235,7 @@ export class TaskExporter {
     }
   }
 
-  private async exportToDirectory(task: TaskRow, disposition: ExportDisposition, root: string, at: Date, pending?: Promise<ExportSnapshot>): Promise<string> {
+  private async stage(task: TaskRow, disposition: ExportDisposition, at: Date, pending?: Promise<ExportSnapshot>): Promise<{ staged: string; slug: string; base: string }> {
     const snapshot = await (pending ?? this.deps.snapshot(task));
     const archiveDir = await this.deps.archive.ensure(task);
     const workspace = task.workspaceId === null ? null : await this.deps.workspaceName(task.workspaceId);
@@ -218,10 +245,11 @@ export class TaskExporter {
     const staged = join(stagingDir, `${task.id}-${randomBytes(6).toString('hex')}.tar.gz`);
     try {
       await this.build(staged, archiveDir, task, disposition, workspace, snapshot, at);
-      return await this.deliver(staged, join(root, slug), this.fileName(task, disposition, at));
-    } finally {
+    } catch (err) {
       await rm(staged, { force: true });
+      throw err;
     }
+    return { staged, slug, base: this.fileName(task, disposition, at) };
   }
 
   private fileName(task: TaskRow, disposition: ExportDisposition, at: Date): string {

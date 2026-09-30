@@ -13,7 +13,7 @@ export interface ArchiveDeps {
 }
 
 export interface ExportRecord {
-  destination: 'directory';
+  destination: 'directory' | 's3';
   disposition: string;
   file: string | null;
   status: 'succeeded' | 'failed';

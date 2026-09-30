@@ -1,19 +1,59 @@
 import type { AppConfig, ExportState } from '../config.js';
 import type { WorkspaceRow } from '../db/schema.js';
 
+export interface ResolvedS3Settings {
+  endpoint: string | null;
+  region: string | null;
+  bucket: string;
+  prefix: string;
+  forcePathStyle: boolean;
+  credentials: { accessKeyId: string; secretAccessKey: string } | null;
+}
+
 export interface ResolvedExportSettings {
   enabled: boolean;
   includeStates: readonly ExportState[];
   directoryPath: string | null;
+  s3: ResolvedS3Settings | null;
 }
 
-export function resolveExportSettings(
-  global: AppConfig,
-  workspace: Pick<WorkspaceRow, 'exportEnabled' | 'exportDirectoryPath'> | undefined,
-): ResolvedExportSettings {
+export type ExportWorkspaceOverrides = Pick<
+  WorkspaceRow,
+  | 'exportEnabled'
+  | 'exportDirectoryPath'
+  | 'exportS3Endpoint'
+  | 'exportS3Region'
+  | 'exportS3Bucket'
+  | 'exportS3Prefix'
+  | 'exportS3ForcePathStyle'
+  | 'exportS3AccessKeyId'
+  | 'exportS3SecretAccessKey'
+>;
+
+function resolveS3(global: AppConfig['export']['s3'], workspace: Partial<ExportWorkspaceOverrides> | undefined): ResolvedS3Settings | null {
+  const bucket = workspace?.exportS3Bucket ?? global.bucket;
+  if (bucket === null) return null;
+  const accessKeyId = workspace?.exportS3AccessKeyId ?? global.accessKeyId;
+  const secretAccessKey = workspace?.exportS3SecretAccessKey ?? global.secretAccessKey;
+  return {
+    endpoint: workspace?.exportS3Endpoint ?? global.endpoint,
+    region: workspace?.exportS3Region ?? global.region,
+    bucket,
+    prefix: workspace?.exportS3Prefix ?? global.prefix,
+    forcePathStyle: workspace?.exportS3ForcePathStyle ?? global.forcePathStyle,
+    credentials: accessKeyId !== null && secretAccessKey !== null ? { accessKeyId, secretAccessKey } : null,
+  };
+}
+
+export function resolveExportSettings(global: AppConfig, workspace: Partial<ExportWorkspaceOverrides> | undefined): ResolvedExportSettings {
   return {
     enabled: workspace?.exportEnabled ?? global.export.enabled,
     includeStates: global.export.includeStates,
     directoryPath: workspace?.exportDirectoryPath ?? global.export.directory.path,
+    s3: resolveS3(global.export.s3, workspace),
   };
+}
+
+export function hasExportDestination(settings: ResolvedExportSettings): boolean {
+  return settings.directoryPath !== null || settings.s3 !== null;
 }

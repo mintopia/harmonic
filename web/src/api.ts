@@ -194,6 +194,13 @@ export const api = {
       guardrailProgress?: boolean | null;
       exportEnabled?: boolean | null;
       exportDirectoryPath?: string | null;
+      exportS3Endpoint?: string | null;
+      exportS3Region?: string | null;
+      exportS3Bucket?: string | null;
+      exportS3Prefix?: string | null;
+      exportS3ForcePathStyle?: boolean | null;
+      exportS3AccessKeyId?: string | null;
+      exportS3SecretAccessKey?: string | null;
       toolTimeoutMinutes?: number | null;
       drivePrompt?: string | null;
       driveUnattendedReminder?: string | null;
