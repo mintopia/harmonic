@@ -62,6 +62,17 @@ export type ServerMessage =
   | { type: 'worktrees'; worktrees: WorktreeInventoryEntry[] }
   // Host load-average reading, pushed on a fixed tick and once on connect. Sent to read keys too.
   | { type: 'host_load'; load: HostLoad }
+  // Sent to every client regardless of workspace; nextRetryAt is null when no further retry is scheduled.
+  | {
+      type: 'export_failed';
+      taskId: number;
+      trackerRef: number | null;
+      destination: string;
+      disposition: string;
+      error: string;
+      retry: number;
+      nextRetryAt: string | null;
+    }
   | { type: 'fs_changed'; workspaceId: number }
   | { type: 'git_status'; workspaceId: number; entries: import('./types.js').GitStatusEntry[] }
   | { type: 'conversation_event'; event: ConversationEvent }

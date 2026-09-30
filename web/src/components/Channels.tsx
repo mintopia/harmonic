@@ -4,7 +4,7 @@ import type { Channel } from '../types';
 import { btnGhost, btnQuiet, btnQuietDestructive, chip, field, selectField } from '../ui';
 import { EmptyState } from './EmptyState';
 
-const EVENTS = ['task.created', 'run.started', 'task.escalated', 'task.done', 'queue.idle'] as const;
+const EVENTS = ['task.created', 'run.started', 'task.escalated', 'task.done', 'queue.idle', 'export.failed'] as const;
 
 /**
  * Event subscriptions buffer through the settings save bar: a

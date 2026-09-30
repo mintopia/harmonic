@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, utimesSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,7 +9,7 @@ import type { TaskRow } from '../src/db/schema.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { resolveExportSettings } from '../src/archive/export-settings.js';
 import { TaskArchive } from '../src/archive/task-archive.js';
-import { TaskExporter, type TaskExporterDeps } from '../src/archive/task-export.js';
+import { EXPORT_RETRY_DELAYS_MS, TaskExporter, type ExportFailure, type TaskExporterDeps } from '../src/archive/task-export.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 const TARBALL = /^(\d+)-(\d+-)?done-\d{8}T\d{6}\.\d{3}Z(-\d+)?\.tar\.gz$/;
@@ -210,7 +210,7 @@ describe('TaskExporter (#734)', () => {
     expect(outcome?.[0]?.status).toBe('failed');
     expect(facts[0]!.payload).toMatchObject({ event: 'export', status: 'failed', destination: 'directory' });
     expect(typeof facts[0]!.payload.error).toBe('string');
-    expect(staging()).toEqual([]);
+    expect(staging().filter((n) => n.endsWith('.pending.json'))).toHaveLength(1);
     const archiveJson = JSON.parse(readFileSync(join(await archive.ensure(task), 'archive.json'), 'utf8'));
     expect(archiveJson.exports[0]).toMatchObject({ status: 'failed' });
   });
@@ -225,7 +225,6 @@ describe('TaskExporter (#734)', () => {
 
     expect(outcome?.[0]?.status).toBe('failed');
     expect(facts[0]!.payload.status).toBe('failed');
-    expect(staging()).toEqual([]);
     chmodSync(readOnly, 0o700);
   });
 
@@ -323,6 +322,223 @@ describe('TaskExporter (#734)', () => {
     expect(tarballs()).toEqual([`${task.id}-42-done-20260102T030405.006Z.tar.gz`]);
   });
 
+  describe('failure handling and retries (#738)', () => {
+    const MIN = 60_000;
+    const T0 = Date.parse('2026-01-01T00:00:00.000Z');
+    let clock: number;
+    let failures: ExportFailure[];
+    let blocked: string;
+
+    const sut = (): TaskExporter =>
+      exporter({
+        now: () => new Date(clock),
+        onFailure: (f) => {
+          failures.push(f);
+        },
+      });
+    const sidecars = (): string[] => staging().filter((n) => n.endsWith('.pending.json'));
+    const stagedTarballs = (): string[] => staging().filter((n) => n.endsWith('.tar.gz'));
+    const heal = (): void => {
+      rmSync(blocked, { force: true });
+      mkdirSync(blocked);
+    };
+    const breakIt = (): void => {
+      rmSync(blocked, { recursive: true, force: true });
+      writeFileSync(blocked, 'not a directory');
+    };
+
+    beforeEach(() => {
+      clock = T0;
+      failures = [];
+      blocked = join(dest, 'blocked');
+      writeFileSync(blocked, 'not a directory');
+      settingsFor = () => resolveExportSettings(globalWith(blocked), undefined);
+    });
+
+    it('fails without touching Task state and schedules the first retry at +5m', async () => {
+      const outcome = await sut().run(task, 'done');
+
+      expect(outcome?.[0]?.status).toBe('failed');
+      expect(task.state).toBe('ready');
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toMatchObject({ destination: 'directory', disposition: 'done', retry: 0, nextRetryAt: new Date(T0 + 5 * MIN).toISOString() });
+      expect(failures[0]!.task.id).toBe(task.id);
+      expect(stagedTarballs()).toHaveLength(1);
+      expect(sidecars()).toHaveLength(1);
+      expect(EXPORT_RETRY_DELAYS_MS).toEqual([5 * MIN, 30 * MIN, 120 * MIN]);
+    });
+
+    it('a throwing onFailure hook never breaks the export', async () => {
+      const outcome = await exporter({
+        onFailure: () => {
+          throw new Error('boom');
+        },
+      }).run(task, 'done');
+      expect(outcome?.[0]?.status).toBe('failed');
+    });
+
+    it('a build failure has nothing to retry and reports nextRetryAt null', async () => {
+      const outcome = await sut().run(task, 'done', Promise.reject(new Error('snapshot broke')));
+      expect(outcome?.[0]?.status).toBe('failed');
+      expect(failures[0]).toMatchObject({ retry: 0, nextRetryAt: null, error: 'snapshot broke' });
+      expect(staging()).toEqual([]);
+    });
+
+    it('does nothing before a retry is due', async () => {
+      const e = sut();
+      await e.run(task, 'done');
+      clock = T0 + 5 * MIN - 1;
+      await e.retryDue();
+      expect(failures).toHaveLength(1);
+      expect(facts).toHaveLength(1);
+    });
+
+    it('retries at +5m, +30m and +2h from the first failure, then stops', async () => {
+      const e = sut();
+      await e.run(task, 'done');
+      const expected = [30 * MIN, 120 * MIN, null];
+      for (const [i, delay] of EXPORT_RETRY_DELAYS_MS.entries()) {
+        clock = T0 + delay;
+        await e.retryDue();
+        expect(failures).toHaveLength(i + 2);
+        const f = failures[i + 1]!;
+        expect(f.retry).toBe(i + 1);
+        expect(f.nextRetryAt).toBe(expected[i] === null ? null : new Date(T0 + expected[i]!).toISOString());
+      }
+      expect(sidecars()).toEqual([]);
+      expect(stagedTarballs()).toEqual([]);
+      expect(facts).toHaveLength(4);
+      expect(facts[3]!.payload).toMatchObject({ status: 'failed', retry: 3 });
+
+      clock = T0 + 600 * MIN;
+      await e.retryDue();
+      expect(failures).toHaveLength(4);
+      expect(facts).toHaveLength(4);
+      const archiveJson = JSON.parse(readFileSync(join(await archive.ensure(task), 'archive.json'), 'utf8'));
+      expect(archiveJson.exports).toHaveLength(4);
+    });
+
+    it('a successful retry records a succeeded Fact, cleans staging and raises no failure', async () => {
+      const e = sut();
+      await e.run(task, 'done');
+      heal();
+      clock = T0 + 5 * MIN;
+      await e.retryDue();
+
+      expect(failures).toHaveLength(1);
+      expect(facts).toHaveLength(2);
+      expect(facts[1]!.payload).toMatchObject({ status: 'succeeded', retry: 1 });
+      expect(staging()).toEqual([]);
+      const delivered = readdirSync(join(blocked, 'my-workspace'));
+      expect(delivered).toHaveLength(1);
+      expect(delivered[0]).toMatch(TARBALL);
+      const archiveJson = JSON.parse(readFileSync(join(await archive.ensure(task), 'archive.json'), 'utf8'));
+      expect(archiveJson.exports.map((x: { status: string }) => x.status)).toEqual(['failed', 'succeeded']);
+    });
+
+    it('retries after an intermediate failure can still succeed', async () => {
+      const e = sut();
+      await e.run(task, 'done');
+      clock = T0 + 5 * MIN;
+      await e.retryDue();
+      heal();
+      clock = T0 + 30 * MIN;
+      await e.retryDue();
+      expect(failures).toHaveLength(2);
+      expect(staging()).toEqual([]);
+      expect(readdirSync(join(blocked, 'my-workspace'))).toHaveLength(1);
+      breakIt();
+    });
+
+    it('sweepStaging keeps pending pairs and removes orphans', async () => {
+      await sut().run(task, 'done');
+      const stagingDir = join(dir, 'archive', '.staging');
+      const kept = [...staging()].sort();
+      writeFileSync(join(stagingDir, '9-orphan.tar.gz'), 'x');
+      writeFileSync(join(stagingDir, '9-lonely.pending.json'), '{}');
+      writeFileSync(join(stagingDir, '9-x.pending.json.abc.tmp'), '{}');
+      const old = new Date(Date.now() - 60_000);
+      for (const n of ['9-orphan.tar.gz', '9-lonely.pending.json', '9-x.pending.json.abc.tmp']) utimesSync(join(stagingDir, n), old, old);
+
+      await sut().sweepStaging();
+
+      expect([...staging()].sort()).toEqual(kept);
+      expect(kept).toHaveLength(2);
+    });
+
+    it('sweepStaging skips entries created by this process', async () => {
+      const e = sut();
+      await new Promise((r) => setTimeout(r, 20));
+      const stagingDir = join(dir, 'archive', '.staging');
+      mkdirSync(stagingDir, { recursive: true });
+      writeFileSync(join(stagingDir, '5-fresh.tar.gz'), 'in flight');
+      await e.sweepStaging();
+      expect(staging()).toEqual(['5-fresh.tar.gz']);
+    });
+
+    it('discards a malformed sidecar and its tarball', async () => {
+      const e = sut();
+      await e.run(task, 'done');
+      const stagingDir = join(dir, 'archive', '.staging');
+      const [sidecar] = sidecars();
+      const value = JSON.parse(readFileSync(join(stagingDir, sidecar!), 'utf8'));
+      value.destinations[0].nextRetryAt = 'not a date';
+      writeFileSync(join(stagingDir, sidecar!), JSON.stringify(value));
+      clock = T0 + 5 * MIN;
+      await e.retryDue();
+      expect(staging()).toEqual([]);
+      expect(failures).toHaveLength(1);
+    });
+
+    it('a fresh exporter after restart sweeps, then retries and delivers', async () => {
+      await sut().run(task, 'done');
+      const before = [...staging()].sort();
+      await new Promise((r) => setTimeout(r, 20));
+      const restarted = sut();
+      await restarted.sweepStaging();
+      expect([...staging()].sort()).toEqual(before);
+      heal();
+      clock = T0 + 5 * MIN;
+      await restarted.retryDue();
+      expect(staging()).toEqual([]);
+      expect(readdirSync(join(blocked, 'my-workspace'))).toHaveLength(1);
+      expect(facts.at(-1)!.payload).toMatchObject({ status: 'succeeded', retry: 1 });
+    });
+
+    it('a corrupt sidecar does not break the retry loop', async () => {
+      const e = sut();
+      await e.run(task, 'done');
+      writeFileSync(join(dir, 'archive', '.staging', '0-corrupt.pending.json'), '{not json');
+      heal();
+      clock = T0 + 5 * MIN;
+      await expect(e.retryDue()).resolves.toBeUndefined();
+      expect(facts.at(-1)!.payload.status).toBe('succeeded');
+    });
+
+    it('bounds one retry pass to 20 deliveries', async () => {
+      const e = sut();
+      await e.run(task, 'done');
+      const stagingDir = join(dir, 'archive', '.staging');
+      const [sidecar] = sidecars();
+      const [tarball] = stagedTarballs();
+      const template = JSON.parse(readFileSync(join(stagingDir, sidecar!), 'utf8'));
+      for (let i = 0; i < 24; i++) {
+        writeFileSync(join(stagingDir, `${task.id}-copy${i}.tar.gz`), readFileSync(join(stagingDir, tarball!)));
+        const entry = { ...template, destinations: [{ ...template.destinations[0], dir: join(dest, 'ok'), base: `copy${i}` }] };
+        writeFileSync(join(stagingDir, `${task.id}-copy${i}.pending.json`), JSON.stringify(entry));
+      }
+      heal();
+      clock = T0 + 5 * MIN;
+      await e.retryDue();
+
+      expect(sidecars()).toHaveLength(5);
+      const count = (d: string): number => (existsSync(d) ? readdirSync(d).length : 0);
+      expect(count(join(dest, 'ok')) + count(join(blocked, 'my-workspace'))).toBe(20);
+      await e.retryDue();
+      expect(sidecars()).toEqual([]);
+    });
+  });
+
   it('sweepStaging removes leftovers and tolerates a missing directory', async () => {
     const sut = exporter();
     await expect(sut.sweepStaging()).resolves.toBeUndefined();
@@ -330,6 +546,8 @@ describe('TaskExporter (#734)', () => {
     mkdirSync(join(stagingDir, 'stale-dir'), { recursive: true });
     writeFileSync(join(stagingDir, 'stale-dir', 'x'), 'x');
     writeFileSync(join(stagingDir, '1-abc.tar.gz'), 'partial');
+    const old = new Date(Date.now() - 60_000);
+    for (const p of [join(stagingDir, 'stale-dir'), join(stagingDir, '1-abc.tar.gz')]) utimesSync(p, old, old);
 
     await sut.sweepStaging();
 
