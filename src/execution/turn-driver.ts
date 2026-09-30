@@ -30,6 +30,7 @@ import { logger } from '../logger.js';
 import type { SpanContext } from '@opentelemetry/api';
 import type { RunnerEvents, RunnerOptions, Workspace } from './runner.js';
 import { TurnListeners, TurnState } from './turn-listeners.js';
+import type { TaskArchive } from '../archive/task-archive.js';
 import { TurnCompletion, noteModelMismatch, type TurnOutcome, type RunEventRecorder, type TurnCompletionDeps } from './turn-completion.js';
 
 const STDERR_TAIL_CAP = 8000;
@@ -74,6 +75,7 @@ export interface TurnDriverDeps {
   mergeCoordinator: MergeCoordinator;
   verification: VerificationCoordinator;
   sessionContinuation: SessionContinuation;
+  archive?: TaskArchive | undefined;
 
   events: RunnerEvents;
   autoDrive: AutoDrive | undefined;
@@ -401,6 +403,7 @@ export class TurnDriver {
         const implementation = await this.deps.attempts.createStep(turn.attemptAtStart.id, { type: 'implementation', logLocator: 'session:pending' });
         await this.deps.updateStep(task.id, implementation.id, { state: 'running', startedAt: Date.now() });
       }
+      turn.archive = this.deps.archive?.implementationStep(task, attemptNumber);
       this.deps.gitBreaker?.recordSuccess(repoKey(task.workingDir));
       let mcpServers: unknown[] = [];
       const mcpUrl = this.deps.mcpUrl();
@@ -578,6 +581,14 @@ export class TurnDriver {
         level: 'error',
         context: { taskId: task.id, attemptId: run.id, attemptNumber },
       });
+      const archive = turn.archive;
+      if (archive) {
+        await bestEffort(async () => {
+          const path = turn.sessionRowId !== undefined ? await this.deps.sessionContinuation.ensureSessionTranscript(turn.sessionRowId) : null;
+          await archive.copyNative(task.harness, path);
+        }, { op: 'runner.finalize.archiveNative', level: 'warn', context: { attemptId: run.id } });
+        await bestEffort(() => archive.close(), { op: 'runner.finalize.archiveClose', level: 'warn', context: { attemptId: run.id } });
+      }
     };
     return { active, driver, guardrails, listeners, finalize };
   }

@@ -265,11 +265,13 @@ CREATE TABLE `tasks` (
 	`tracker_body` text,
 	`tracker_url` text,
 	`tracker_created_at` text,
+	`archive_id` text,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL,
 	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX `tasks_archive_id_idx` ON `tasks` (`archive_id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `tasks_tracker_ref_idx` ON `tasks` (`workspace_id`,`tracker_ref`);--> statement-breakpoint
 CREATE INDEX `tasks_workspace_id_idx` ON `tasks` (`workspace_id`);--> statement-breakpoint
 CREATE TABLE `tracker_containers` (

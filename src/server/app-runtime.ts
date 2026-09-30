@@ -7,6 +7,8 @@ import type { MergeEffectExec } from '../domain/merge.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import { CrashRecoveryCoordinator } from '../execution/crash-recovery.js';
 import { Runner } from '../execution/runner.js';
+import { TaskArchive } from '../archive/task-archive.js';
+import { TranscriptCapture } from '../execution/transcript-capture.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
@@ -92,12 +94,16 @@ async function runStartupRecovery(deps: {
   postMergeCheck: ReturnType<typeof createPostMergeCheck>;
   postMerge: PostMergeHook;
   bus: EventBus;
+  archive: TaskArchive;
+  sessionTranscriptPath: (sessionRowId: number) => Promise<string | null>;
 }): Promise<void> {
-  const { attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus } = deps;
+  const { attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus, archive, sessionTranscriptPath } = deps;
   const crashRecovery = new CrashRecoveryCoordinator(attempts, tasks, operatorSettle, {
     runPostMergeCheck: postMergeCheck,
     postMerge,
     onEpicAttemptInterrupted: (attempt) => { bus.emit('attempt_changed', attempt); },
+    archive,
+    sessionTranscriptPath,
   });
   await crashRecovery.reconcile();
   for (const orphan of await tasks.list({ state: 'working' })) {
@@ -257,7 +263,22 @@ export async function createRuntime(deps: {
     criticDrive: opts.criticDrive,
   });
   touchStartupProgress(opts.dataDir);
-  await runStartupRecovery({ attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus });
+  const archive = new TaskArchive({
+    dataDir: opts.dataDir,
+    ensureArchiveId: (taskId) => tasks.ensureArchiveId(taskId),
+    workspaceName: async (workspaceId) => {
+      try {
+        return (await workspaces.get(workspaceId)).name;
+      } catch {
+        return null;
+      }
+    },
+  });
+  const transcripts = new TranscriptCapture(sessionStore, verificationAttempts, () => settingsStore.getGlobal());
+  await runStartupRecovery({
+    attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus, archive,
+    sessionTranscriptPath: (id) => transcripts.ensureSessionTranscript(id),
+  });
   touchStartupProgress(opts.dataDir);
   const getWorkspaceRow = async (id: number | null) => {
     if (id == null) return undefined;
@@ -359,6 +380,7 @@ export async function createRuntime(deps: {
     autoDrive,
     urlFor: (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
     getWorkspace: getWorkspaceRow,
+    archive,
   });
   runnerRef = runner;
   const globalPause = new GlobalPause(tasks, runner, asyncDb);

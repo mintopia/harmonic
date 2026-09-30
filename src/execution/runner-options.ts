@@ -1,3 +1,4 @@
+import type { TaskArchive } from '../archive/task-archive.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { TailerCadence } from './live-usage-tailer.js';
 import type { GitCircuitBreaker } from './git-failure.js';
@@ -40,6 +41,7 @@ export interface TaskEventAppender {
 }
 
 export interface RunnerOptions {
+  archive?: TaskArchive;
   isGloballyPaused?: () => boolean;
   onGloballyPaused?: (taskId: number) => Promise<void>;
   events?: RunnerEvents;
