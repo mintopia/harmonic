@@ -62,7 +62,7 @@ export function SettingsForm({
         className="mt-5 grid gap-4 xl:grid-cols-2 xl:items-start"
       >
         {sections.map((section) => {
-          const { title: sectionTitle, description, body } = renderSection(section, ctx);
+          const { title: sectionTitle, description, body } = renderSection(section, { ...ctx, dirty });
           return (
             <SettingsSection
               key={`${section.tab}:${sectionTitle}`}

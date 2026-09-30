@@ -1057,6 +1057,32 @@ export interface AppConfig {
   };
   /** The Task Prompt template for native Attempts, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
   taskPrompt: string;
+  archive: { retain: { days: number | null; maxTotalMB: number | null } };
+  /** S3 credentials arrive masked (`********`) when set; writing the mask back keeps the stored value. */
+  export: {
+    enabled: boolean;
+    includeStates: ExportState[];
+    directory: { path: string | null };
+    s3: {
+      endpoint: string | null;
+      region: string | null;
+      bucket: string | null;
+      prefix: string;
+      forcePathStyle: boolean;
+      accessKeyId: string | null;
+      secretAccessKey: string | null;
+    };
+    redact: { patterns: { id: string; regex: string }[] };
+  };
+}
+
+export type ExportState = 'done' | 'cancelled' | 'deleted';
+
+export interface ExportDestinationTestResult {
+  destination: 'directory' | 's3';
+  ok: boolean;
+  error?: string;
+  testedAt: string;
 }
 
 export interface ConfigLayers {

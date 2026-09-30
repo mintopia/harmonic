@@ -23,6 +23,7 @@ import { HarnessesSection } from './HarnessSettings';
 import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
 import { SecuritySection } from './SecuritySection';
+import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection } from './ArchiveExportSettings';
 import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './VerificationSettings';
 import { settingsRegistry, type SettingKey, type SettingTab } from '../../../src/domain/settings-registry.js';
 import { WORKSPACE_COLORS } from '../../../src/domain/workspace-colors.js';
@@ -38,6 +39,8 @@ export interface GlobalRenderCtx {
   setConfig: (config: AppConfig) => void;
   errors: Record<string, string>;
   harnessPermissionModes: ConfigLayers['harnessPermissionModes'];
+  /** Unsaved edits exist; a Destination test runs against saved settings. */
+  dirty?: boolean;
   channels: {
     list: Channel[];
     onToggleEvent: (id: number, event: string) => void;
@@ -58,6 +61,7 @@ export interface WorkspaceRenderCtx {
   errors: Record<string, string>;
   blockedByRunningTask: boolean;
   onRequestDelete: () => void;
+  dirty?: boolean;
 }
 
 export type RenderCtx = GlobalRenderCtx | WorkspaceRenderCtx;
@@ -1259,6 +1263,46 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     title: 'Security',
     description: 'The operator password for this console.',
     body: () => <SecuritySection />,
+  },
+
+  {
+    tab: 'archive',
+    surfaces: BOTH,
+    title: 'Archive retention',
+    description:
+      'Every Task keeps a raw file Archive. Leave both limits blank to keep Archives forever. Archives are never pruned while an Export is pending or failed.',
+    body: (ctx) => <ArchiveRetentionSection ctx={ctx} />,
+  },
+  {
+    tab: 'archive',
+    surfaces: BOTH,
+    title: 'Export',
+    description: {
+      global: 'Build a redacted .tar.gz of the Archive when a Task reaches a terminal disposition and deliver it to every enabled Destination.',
+      workspace: 'Whether this Workspace exports Task Archives on a terminal disposition. Inherits the global setting until overridden.',
+    },
+    body: (ctx) => <ExportSection ctx={ctx} />,
+  },
+  {
+    tab: 'archive',
+    surfaces: BOTH,
+    title: 'Export Destinations',
+    wide: true,
+    description: {
+      global:
+        'Each Destination receives every Export independently — one failing never blocks the other. A failed Destination is retried 3 times (5 min, 30 min, 2 h), then left for a manual Export again on the Ticket.',
+      workspace:
+        'Each field inherits the global Destination until overridden. A failed Destination is retried 3 times (5 min, 30 min, 2 h), then left for a manual Export again on the Ticket.',
+    },
+    body: (ctx) => <DestinationsSection ctx={ctx} />,
+  },
+  {
+    tab: 'archive',
+    surfaces: BOTH,
+    title: 'Redaction patterns',
+    wide: true,
+    description: 'Applied at Export time only. Matches are replaced with [REDACTED:<pattern-id>]. The local Archive stays raw.',
+    body: (ctx) => <RedactionSection ctx={ctx} />,
   },
 ];
 

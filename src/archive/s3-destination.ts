@@ -1,9 +1,11 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { randomUUID } from 'node:crypto';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import type { ResolvedS3Settings } from './export-settings.js';
 
 const MAX_COLLISIONS = 1000;
+const PROBE_TIMEOUT_MS = 15_000;
 
 function isCollision(err: unknown): boolean {
   const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
@@ -48,6 +50,25 @@ export async function uploadToS3(s3: ResolvedS3Settings, staged: string, slug: s
       }
     }
     throw new Error(`no free S3 key for ${base} after ${MAX_COLLISIONS} attempts`);
+  } finally {
+    s3Client.destroy();
+  }
+}
+
+/** Puts then deletes a uniquely named probe object under the prefix; throws the S3 error on failure. */
+export async function probeS3(s3: ResolvedS3Settings): Promise<void> {
+  const s3Client = client(s3);
+  try {
+    const key = `${keyPrefix(s3.prefix)}.harmonic-test-${randomUUID()}`;
+    const abortSignal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+    await s3Client.send(new PutObjectCommand({ Bucket: s3.bucket, Key: key, Body: 'harmonic export destination test' }), { abortSignal });
+    try {
+      await s3Client.send(new DeleteObjectCommand({ Bucket: s3.bucket, Key: key }), { abortSignal });
+    } catch (err) {
+      const e = err as Error;
+      e.message = `${e.message} (probe object ${key} was not deleted)`;
+      throw e;
+    }
   } finally {
     s3Client.destroy();
   }

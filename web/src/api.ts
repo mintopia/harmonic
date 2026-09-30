@@ -2,6 +2,7 @@ import type {
   Attempt,
   ActivityProcess,
   AppConfig,
+  ExportDestinationTestResult,
   ConfigLayers,
   AttemptUsage,
   BudgetGuardrail,
@@ -93,6 +94,8 @@ export const api = {
   resumeGlobal: () => request<{ paused: boolean }>('DELETE', '/api/global-pause'),
   configLayers: () => request<ConfigLayers>('GET', '/api/config/layers'),
   updateConfig: (patch: object) => request<AppConfig>('PATCH', '/api/config', patch),
+  testExportDestination: (body: { workspaceId: number | null; destination: 'directory' | 's3' }) =>
+    request<ExportDestinationTestResult>('POST', '/api/export/test-destination', body),
   replaceConfig: (config: AppConfig) => request<AppConfig>('PUT', '/api/config', config),
   revertConfig: () => request<AppConfig>('DELETE', '/api/config/overrides'),
   /** `open` is an explicit board optimization. Omit it for full task history.

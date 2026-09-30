@@ -47,6 +47,14 @@ function makeConfig(): AppConfig {
     contextReuseTokenLimit: 100_000,
     editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
+    archive: { retain: { days: null, maxTotalMB: null } },
+    export: {
+      enabled: false,
+      includeStates: ['done', 'cancelled', 'deleted'],
+      directory: { path: null },
+      s3: { endpoint: null, region: null, bucket: null, prefix: '', forcePathStyle: false, accessKeyId: null, secretAccessKey: null },
+      redact: { patterns: [] },
+    },
   };
 }
 

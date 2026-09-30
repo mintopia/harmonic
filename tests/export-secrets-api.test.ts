@@ -20,6 +20,19 @@ describe('S3 export credentials never leave the API', () => {
     await server.close();
   });
 
+  it('PATCH /config persists export and archive settings and keeps masked secrets', async () => {
+    await putS3({ bucket: 'b', accessKeyId: 'AKIA-REAL', secretAccessKey: 'SECRET-REAL' });
+    const patched = await server.api('PATCH', '/api/config', {
+      export: { enabled: true, directory: { path: '/tmp/exports' }, s3: { region: 'eu-west-2', accessKeyId: SECRET_MASK } },
+      archive: { retain: { days: 30 } },
+    });
+    expect(patched.status).toBe(200);
+    const config = (await server.api('GET', '/api/config')).body;
+    expect(config.export).toMatchObject({ enabled: true, directory: { path: '/tmp/exports' }, s3: { bucket: 'b', region: 'eu-west-2', accessKeyId: SECRET_MASK } });
+    expect(config.archive.retain.days).toBe(30);
+    expect(storedYaml()).toContain('AKIA-REAL');
+  });
+
   it('masks global keys on GET /config, /config/layers, PUT and DELETE /config/overrides; null stays null', async () => {
     expect((await server.api('GET', '/api/config')).body.export.s3.accessKeyId).toBeNull();
     const put = await putS3({ bucket: 'b', accessKeyId: 'AKIA-REAL', secretAccessKey: 'SECRET-REAL' });

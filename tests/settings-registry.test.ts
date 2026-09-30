@@ -108,11 +108,11 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
     }
   });
 
-  it('declares exactly 6 tabs, unique ids, in the expected order', () => {
-    expect(SETTING_TABS).toHaveLength(6);
+  it('declares exactly 7 tabs, unique ids, in the expected order', () => {
+    expect(SETTING_TABS).toHaveLength(7);
     const ids = SETTING_TABS.map((t) => t.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids).toEqual(['general', 'execution', 'verification', 'prompts', 'integrations', 'security']);
+    expect(ids).toEqual(['general', 'execution', 'verification', 'prompts', 'integrations', 'security', 'archive']);
   });
 
   it('settingsForTab("verification") returns exactly the verification settings', () => {
@@ -163,7 +163,7 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
   });
 
   it('workspaceTabs drops the tabs with no overridable field', () => {
-    expect(workspaceTabs().map((t) => t.id)).toEqual(['general', 'execution', 'verification', 'prompts']);
+    expect(workspaceTabs().map((t) => t.id)).toEqual(['general', 'execution', 'verification', 'prompts', 'archive']);
   });
 
   it('a tab whose only field turns global-only drops off the Workspace surface', () => {
