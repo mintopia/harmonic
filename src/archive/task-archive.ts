@@ -1,6 +1,6 @@
 import { createWriteStream, type WriteStream } from 'node:fs';
 import { access, copyFile, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { basename, dirname, join } from 'node:path';
 import type { TaskRow } from '../db/schema.js';
 import { logger } from '../logger.js';
@@ -35,6 +35,13 @@ function taskTitle(task: TaskRow): string {
   if (task.trackerTitle?.trim()) return task.trackerTitle.trim();
   const line = task.prompt.split('\n').find((l) => l.trim() !== '') ?? '';
   return line.trim().slice(0, 200);
+}
+
+function safeSegment(id: string): string {
+  const cleaned = id.replace(/[^A-Za-z0-9._-]/g, '-');
+  if (cleaned === id && id !== '.' && id !== '..' && id !== '') return id;
+  const hash = createHash('sha256').update(id).digest('hex').slice(0, 8);
+  return `${cleaned.replace(/^\.+/, '') || 'step'}-${hash}`;
 }
 
 async function pathExists(path: string): Promise<boolean> {
@@ -136,6 +143,22 @@ export class TaskArchive {
     const dir = join(await this.ensure(task), 'attempts', String(attemptNumber), 'implementation');
     await mkdir(dir, { recursive: true });
     return dir;
+  }
+
+  async verificationOutputLog(
+    task: TaskRow,
+    attemptNumber: number,
+    stage: 'pre-merge' | 'post-merge',
+    stepId: string,
+  ): Promise<string | null> {
+    try {
+      const dir = join(await this.ensure(task), 'attempts', String(attemptNumber), 'verification', stage, safeSegment(stepId));
+      await mkdir(dir, { recursive: true });
+      return join(dir, 'output.log');
+    } catch (err) {
+      warn('archive: verification output directory failed', err, { taskId: task.id, attemptNumber, stage });
+      return null;
+    }
   }
 
   implementationStep(task: TaskRow, attemptNumber: number): StepArchiveWriter {

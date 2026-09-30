@@ -1,8 +1,10 @@
 import { spawn } from 'node:child_process';
+import { createWriteStream, type WriteStream } from 'node:fs';
 import { join } from 'node:path';
 import type { Attributes, SpanContext } from '@opentelemetry/api';
 import type { VerificationCommand } from '../config.js';
 import { withDetachedWorktree } from '../execution/detached-worktree.js';
+import { logger } from '../logger.js';
 import { startOperation } from '../telemetry/operations.js';
 import type { Verdict } from './critic-schema.js';
 import type { VerificationAttemptInput } from '../domain/verification-attempts.js';
@@ -12,7 +14,7 @@ export interface CommandAttempt {
   verifier: 'command';
   verdict: Verdict;
   summary: string;
-  /** Combined stdout+stderr, capped at {@link OUTPUT_CHAR_CAP}. */
+  /** Combined stdout+stderr preview: head and tail within {@link OUTPUT_CHAR_CAP}, elided middle marked. */
   output: string;
   /** The candidate OID this attempt verified. */
   inputOid: string;
@@ -20,6 +22,63 @@ export interface CommandAttempt {
 
 /** Combined stdout+stderr past this many characters is truncated. */
 export const OUTPUT_CHAR_CAP = 200_000;
+
+export function truncationMarker(elided: number, fullOutputPath?: string): string {
+  return fullOutputPath
+    ? `\n…[truncated ${elided} chars; full output: ${fullOutputPath}]…\n`
+    : `\n…[truncated ${elided} chars]…\n`;
+}
+
+function isHighSurrogate(code: number): boolean {
+  return code >= 0xd800 && code <= 0xdbff;
+}
+
+function isLowSurrogate(code: number): boolean {
+  return code >= 0xdc00 && code <= 0xdfff;
+}
+
+export interface OutputPreview {
+  append(chunk: string): void;
+  text(): string;
+  /** Stop advertising the full-output file (it failed and is no longer complete). */
+  dropFullOutputPath(): void;
+}
+
+/** Bounded-memory head+tail preview of a stream; total length never exceeds `cap` once truncated. */
+export function createOutputPreview(cap: number, fullOutputPath?: string): OutputPreview {
+  let linkPath = fullOutputPath;
+  const headCap = Math.floor(cap / 2);
+  const tailCap = cap - headCap;
+  let head = '';
+  let tail = '';
+  let total = 0;
+  return {
+    append(chunk) {
+      total += chunk.length;
+      if (head.length < headCap) {
+        const take = headCap - head.length;
+        head += chunk.slice(0, take);
+        chunk = chunk.slice(take);
+      }
+      if (chunk.length === 0) return;
+      tail += chunk;
+      if (tail.length > tailCap * 2) tail = tail.slice(-tailCap);
+    },
+    text() {
+      if (total <= cap) return head + tail;
+      const avail = Math.max(0, cap - truncationMarker(total, linkPath).length);
+      let headKeep = Math.min(head.length, Math.floor(avail / 2));
+      if (isHighSurrogate(head.charCodeAt(headKeep - 1))) headKeep -= 1;
+      const tailKeep = avail - headKeep;
+      let tailText = tailKeep > 0 ? tail.slice(-tailKeep) : '';
+      if (isLowSurrogate(tailText.charCodeAt(0))) tailText = tailText.slice(1);
+      return head.slice(0, headKeep) + truncationMarker(total - headKeep - tailText.length, linkPath) + tailText;
+    },
+    dropFullOutputPath() {
+      linkPath = undefined;
+    },
+  };
+}
 
 /** What one spawn resolved to; exactly one failure flag is set, or none (a clean `code`). */
 export interface CommandSpawnResult {
@@ -33,7 +92,7 @@ export interface CommandSpawnResult {
   code: number | null;
   /** Signal that killed the process, when there was no exit code. */
   signal: NodeJS.Signals | null;
-  /** Combined stdout+stderr, already capped by the spawner. */
+  /** Combined stdout+stderr preview (head + marker + tail) already capped by the spawner. */
   output: string;
 }
 
@@ -44,6 +103,8 @@ export interface CommandSpawnRequest {
   cwd: string;
   timeoutMs: number;
   outputCap: number;
+  /** Write the full, uncapped combined output here; a file error never affects the verdict. */
+  outputLogPath?: string | undefined;
   /** Each stdout/stderr chunk as it arrives, for a live progress view. */
   onOutput?: (chunk: string) => void;
   /** Cancellation: an abort kills the child (mirrors the timeout kill). */
@@ -64,15 +125,36 @@ export function createChildProcessSpawn(): CommandSpawn {
         delete env.HARMONIC_API_KEY;
         delete env.HARMONIC_MCP_URL;
 
-        let output = '';
-        let capped = false;
+        const preview = createOutputPreview(req.outputCap, req.outputLogPath);
+        let file: WriteStream | undefined;
+        let fileClosed: Promise<void> = Promise.resolve();
+        if (req.outputLogPath) {
+          const stream = createWriteStream(req.outputLogPath, { flags: 'w' });
+          file = stream;
+          let closeResolve!: () => void;
+          fileClosed = new Promise<void>((r) => {
+            closeResolve = r;
+          });
+          stream.on('close', closeResolve);
+          stream.on('drain', () => {
+            child.stdout?.resume();
+            child.stderr?.resume();
+          });
+          stream.on('error', (error) => {
+            logger.warn('verify output.log write failed; continuing without it', { error: error.message });
+            file = undefined;
+            preview.dropFullOutputPath();
+            stream.destroy();
+            child.stdout?.resume();
+            child.stderr?.resume();
+          });
+        }
         const append = (chunk: string): void => {
           req.onOutput?.(chunk);
-          if (capped) return;
-          output += chunk;
-          if (output.length > req.outputCap) {
-            output = output.slice(0, req.outputCap);
-            capped = true;
+          preview.append(chunk);
+          if (file && !file.write(chunk)) {
+            child.stdout?.pause();
+            child.stderr?.pause();
           }
         };
 
@@ -112,7 +194,10 @@ export function createChildProcessSpawn(): CommandSpawn {
           settled = true;
           clearTimeout(timer);
           req.signal?.removeEventListener('abort', onAbort);
-          resolve(result);
+          const stream = file;
+          file = undefined;
+          if (stream && !stream.destroyed) stream.end();
+          void fileClosed.then(() => resolve({ ...result, output: preview.text() }));
         };
 
         child.stdout?.setEncoding('utf8');
@@ -121,8 +206,8 @@ export function createChildProcessSpawn(): CommandSpawn {
         child.stderr?.on('data', append);
 
         // node emits 'error' (ENOENT/EACCES) before 'close' for an unspawnable command; `finish` is idempotent so the later 'close' is ignored.
-        child.on('error', (err) => finish({ spawnError: err, code: null, signal: null, output }));
-        child.on('close', (code, signal) => finish({ timedOut, aborted, code, signal, output }));
+        child.on('error', (err) => finish({ spawnError: err, code: null, signal: null, output: '' }));
+        child.on('close', (code, signal) => finish({ timedOut, aborted, code, signal, output: '' }));
       });
     },
   };
@@ -170,6 +255,8 @@ export interface RunCommandVerifierArgs {
   attributes?: Attributes;
   /** Each output chunk as the command produces it, for a live progress view. */
   onOutput?: (chunk: string) => void;
+  /** Stream the full uncapped output here; forwarded to the spawner when set. */
+  outputLogPath?: string | null | undefined;
 }
 
 /** Run the command verifier in {@link RunCommandVerifierArgs.cwd} and resolve a {@link CommandAttempt}. Never throws for a verdict outcome. */
@@ -202,6 +289,7 @@ async function runCommandVerifierUnchecked(args: RunCommandVerifierArgs): Promis
     timeoutMs,
     outputCap: OUTPUT_CHAR_CAP,
     signal: args.signal,
+    ...(args.outputLogPath ? { outputLogPath: args.outputLogPath } : {}),
     ...(args.onOutput ? { onOutput: args.onOutput } : {}),
   });
   const mapped = exitCodeToVerdict(result);
