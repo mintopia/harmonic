@@ -134,8 +134,7 @@ export class TaskArchive {
 
   private async archiveDir(task: TaskRow, archiveId: string): Promise<{ dir: string; workspaceName: string | null }> {
     const workspaceName = task.workspaceId === null ? null : await this.deps.workspaceName(task.workspaceId);
-    const dir = join(this.deps.dataDir, 'archive', workspaceSlug(workspaceName, task.workspaceId), `${task.id}-${archiveId}`);
-    return { dir, workspaceName };
+    return { dir: this.taskDir(task, archiveId, workspaceName), workspaceName };
   }
 
   private enqueue(taskId: number, work: () => Promise<void>): Promise<void> {
@@ -213,6 +212,41 @@ export class TaskArchive {
     return dir;
   }
 
+  private taskDir(task: TaskRow, archiveId: string, workspaceName: string | null): string {
+    return join(this.deps.dataDir, 'archive', workspaceSlug(workspaceName, task.workspaceId), `${task.id}-${archiveId}`);
+  }
+
+  async exportHistory(task: TaskRow): Promise<ExportRecord[]> {
+    if (task.archiveId === null) return [];
+    try {
+      const workspaceName = task.workspaceId === null ? null : await this.deps.workspaceName(task.workspaceId);
+      return await this.readExports(this.taskDir(task, task.archiveId, workspaceName));
+    } catch (err) {
+      warn('archive: export history unreadable', err, { taskId: task.id });
+      return [];
+    }
+  }
+
+  async epicExportHistory(workspaceId: number, epicRef: number): Promise<ExportRecord[]> {
+    try {
+      const workspaceName = await this.deps.workspaceName(workspaceId);
+      return await this.readExports(join(this.deps.dataDir, 'archive', workspaceSlug(workspaceName, workspaceId), `epic-${epicRef}`));
+    } catch (err) {
+      warn('archive: epic export history unreadable', err, { workspaceId, epicRef });
+      return [];
+    }
+  }
+
+  private async readExports(dir: string): Promise<ExportRecord[]> {
+    try {
+      const body = JSON.parse(await readFile(join(dir, 'archive.json'), 'utf8')) as { exports?: ExportRecord[] };
+      return body.exports ?? [];
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw err;
+    }
+  }
+
   private async writeManifestIfAbsent(dir: string, body: Record<string, unknown>): Promise<void> {
     const manifest = join(dir, 'archive.json');
     if (await pathExists(manifest)) return;
@@ -227,7 +261,14 @@ export class TaskArchive {
   }
 
   async recordExport(task: TaskRow, entry: ExportRecord): Promise<void> {
-    const dir = await this.ensure(task);
+    await this.appendExportSerialised(await this.ensure(task), entry);
+  }
+
+  async recordEpicExport(workspaceId: number, epicRef: number, entry: ExportRecord): Promise<void> {
+    await this.appendExportSerialised(await this.ensureEpic(workspaceId, epicRef), entry);
+  }
+
+  private async appendExportSerialised(dir: string, entry: ExportRecord): Promise<void> {
     const previous = this.manifestWrites.get(dir) ?? Promise.resolve();
     const next = previous.catch(() => undefined).then(() => this.appendExport(dir, entry));
     this.manifestWrites.set(dir, next);
@@ -270,6 +311,17 @@ export class TaskArchive {
       return join(dir, 'output.log');
     } catch (err) {
       warn('archive: verification output directory failed', err, { taskId: task.id, attemptNumber, stage });
+      return null;
+    }
+  }
+
+  async epicVerificationOutputLog(workspaceId: number, epicRef: number, attemptNumber: number, commandId: string): Promise<string | null> {
+    try {
+      const dir = join(await this.ensureEpic(workspaceId, epicRef), 'attempts', String(attemptNumber), 'verification', 'pre-merge', safeSegment(commandId));
+      await mkdir(dir, { recursive: true });
+      return join(dir, 'output.log');
+    } catch (err) {
+      warn('archive: epic verification output directory failed', err, { workspaceId, epicRef, attemptNumber });
       return null;
     }
   }

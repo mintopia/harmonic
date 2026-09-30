@@ -20,7 +20,8 @@ import { registerShutdown, registerStartup } from './app-lifecycle.js';
 import { registerRoutes } from './app-routes.js';
 import { TaskExporter } from '../archive/task-export.js';
 import { resolveExportSettings } from '../archive/export-settings.js';
-import { taskToApi, ticketTimelineToApi } from './serialize.js';
+import type { TaskRow } from '../db/schema.js';
+import { epicAttemptTimelineToApi, taskToApi, ticketTimelineToApi } from './serialize.js';
 import { fireAndForget, orFallback } from '../error-handling.js';
 import {
   createAppContexts,
@@ -151,6 +152,26 @@ export async function buildApp(opts: AppOptions): Promise<App> {
           : await stores.workspaces.get(task.workspaceId);
       return resolveExportSettings(stores.settingsStore.getGlobal(), workspace);
     },
+    epicSettings: async (workspaceId) =>
+      resolveExportSettings(stores.settingsStore.getGlobal(), await stores.workspaces.get(workspaceId)),
+    epicSnapshot: async (workspaceId, epicRef) => {
+      const [detail, stored, timeline, workspaceTasks] = await Promise.all([
+        ctx.trackerManager.epicDetail(workspaceId, epicRef),
+        ctx.tasks.listStoredEpics(workspaceId),
+        epicAttemptTimelineToApi(ctx, { workspaceId, epicRef }),
+        ctx.tasks.list({ workspaceId }),
+      ]);
+      const row = stored.find((r) => r.trackerRef === epicRef);
+      const byRef = new Map<number, TaskRow>();
+      for (const t of workspaceTasks) if (t.trackerRef != null) byRef.set(t.trackerRef, t);
+      const members = (row?.memberRefs ?? []).map((ref) => ({ ref, task: byRef.get(ref) ?? null }));
+      return {
+        ticket: detail ?? { ref: epicRef, state: row?.state ?? null, mergeCommit: row?.mergeCommit ?? null },
+        timeline: { events: detail?.timelineEvents ?? [], ...timeline },
+        attemptCount: timeline.attempts.length,
+        members,
+      };
+    },
     workspaceName: async (workspaceId) =>
       (await orFallback(() => stores.workspaces.get(workspaceId), { op: 'export.workspaceName', context: { workspaceId } }, null))?.name ?? null,
     snapshot: async (task) => {
@@ -168,6 +189,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   });
   stores.tasks.setBeforeDelete((task) => exporter.captureForDelete(task));
   bus.on('task_disposition', ({ task, disposition }) => exporter.trigger(task, disposition));
+  bus.on('epic_integrated', ({ workspaceId, epicRef }) => exporter.triggerEpic(workspaceId, epicRef, 'done'));
   fireAndForget(() => exporter.sweepStaging(), { op: 'export.sweepStaging', level: 'warn' });
 
   const app = Fastify({ logger: false }) as unknown as App;

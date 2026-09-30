@@ -64,11 +64,15 @@ export class EpicVerificationRunner {
       this.publishEpicAttempt(attempt);
     }
     try {
+      const archive = this.deps.archive;
       const worktreePath = await this.deps.worktrees.acquire(repoDir, epicRef);
       const decision = await verifyEpicIntegration({
         worktreePath,
         verifiedHeadOid,
         verifiers: (await this.resolveWorkspaceVerifiers()).epic.preMerge,
+        ...(attempt && archive
+          ? { outputLogPath: (command: EpicVerificationStage['commands'][number]) => archive.epicVerificationOutputLog(attempt.workspaceId, epicRef, attempt.number, command.id) }
+          : {}),
         onCommand: (commandAttempt, command) => this.recordCommandStep(attempt, commandAttempt, command),
         runCritic: (args) => this.runEpicCritic({ repoDir, epicRef, attempt, criticUsages, ...args }),
       });

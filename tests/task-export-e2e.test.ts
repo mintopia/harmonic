@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { eq } from 'drizzle-orm';
+import { epics, tasks, workspaces } from '../src/db/schema.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AppConfig, DeepPartial } from '../src/config.js';
@@ -54,6 +56,31 @@ describe('Export on done (#734)', () => {
     const files = readdirSync(join(good, slugDirs[0]!));
     expect(files).toHaveLength(1);
     expect(files[0]).toMatch(new RegExp(`^${taskId}-done-\\d{8}T\\d{6}\\.\\d{3}Z\\.tar\\.gz$`));
+  });
+
+  it('exports an integrated Epic with its Members referenced', async () => {
+    const { ctx } = okServer.app;
+    const workspaceId = (await ctx.asyncDb.read((d) => d.select().from(workspaces).get()))!.id;
+    const memberId = await driveToDone(okServer, root);
+    await ctx.asyncDb.write((d) => d.update(tasks).set({ trackerRef: 31 }).where(eq(tasks.id, memberId)).run());
+    await waitFor(async () => ((await exportFacts(okServer, memberId)).length > 0 ? true : undefined));
+    await ctx.asyncDb.write((d) => d.insert(epics).values({ workspaceId, trackerRef: 30, kind: 'epic', state: 'open' } as typeof epics.$inferInsert).run());
+    await ctx.tasks.markEpicIntegrated(workspaceId, 30, { mergeCommit: 'abc', memberRefs: [31] });
+    ctx.bus.emit('epic_integrated', { workspaceId, epicRef: 30 });
+
+    const slugDir = join(good, readdirSync(good)[0]!);
+    const tarball = await waitFor(async () => readdirSync(slugDir).find((n) => n.startsWith('epic-30-done-')));
+    const out = mkdtempSync(join(tmpdir(), 'harmonic-epic-e2e-extract-'));
+    try {
+      execFileSync('tar', ['-xzf', join(slugDir, tarball), '-C', out]);
+      const manifest = JSON.parse(readFileSync(join(out, 'manifest.json'), 'utf8'));
+      expect(manifest).toMatchObject({ format: 'harmonic-epic-export', epicRef: 30 });
+      expect(manifest.members).toHaveLength(1);
+      expect(manifest.members[0]).toMatchObject({ ref: 31, taskId: memberId, status: 'done' });
+      expect(manifest.members[0].export).toMatch(new RegExp(`^${memberId}-done-`));
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
   });
 
   it('leaves the transition intact when the destination is unwritable', async () => {
