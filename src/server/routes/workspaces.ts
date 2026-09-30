@@ -5,6 +5,7 @@ import type { TrackingContext } from '../app.js';
 import type { WorkspaceRow } from '../../db/schema.js';
 import type { ResolvedTracker } from '../../tracker/adapter.js';
 import { createWorkspaceInputSchema, updateWorkspaceInputSchema } from '../../domain/workspaces.js';
+import { redactPatternsSchema } from '../../config.js';
 import {
   verificationCommandOverrideSchema,
   taskVerificationCriticOverrideSchema,
@@ -76,6 +77,7 @@ const workspaceSchema = z
     taskPrompt: z.string().nullable().meta({ example: null }),
     exportEnabled: z.boolean().nullable().meta({ example: null }),
     exportDirectoryPath: z.string().nullable().meta({ example: null }),
+    exportRedactPatterns: redactPatternsSchema.nullable().meta({ example: null }),
     createdAt: z.number().meta({ example: 1784030400000 }),
     updatedAt: z.number().meta({ example: 1784032260000 }),
   })
@@ -102,6 +104,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     taskPostMergeCritics: ws.taskPostMergeCritics ? JSON.parse(ws.taskPostMergeCritics) : null,
     epicPreMergeCommands: ws.epicPreMergeCommands ? JSON.parse(ws.epicPreMergeCommands) : null,
     epicPreMergeCritics: ws.epicPreMergeCritics ? JSON.parse(ws.epicPreMergeCritics) : null,
+    exportRedactPatterns: ws.exportRedactPatterns ? JSON.parse(ws.exportRedactPatterns) : null,
     guardrailBudget: ws.guardrailBudget ? JSON.parse(ws.guardrailBudget) : null,
     resolvedTracker: serializeResolvedTracker(ctx.trackerManager.resolvedTracker(ws.id)),
   });

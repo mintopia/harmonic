@@ -221,6 +221,16 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(cleared.guardrailProgress).toBeNull();
   });
 
+  it('persists exportRedactPatterns as JSON, reads them back via get(), and clears with null', async () => {
+    const ws = (await workspaces.list())[0]!;
+    const patterns = [{ id: 'internal-host', regex: 'corp\\.example\\.internal' }];
+    const updated = await workspaces.update(ws.id, { exportRedactPatterns: patterns });
+    expect(JSON.parse(updated.exportRedactPatterns!)).toEqual(patterns);
+    expect(JSON.parse((await workspaces.get(ws.id)).exportRedactPatterns!)).toEqual(patterns);
+    const cleared = await workspaces.update(ws.id, { exportRedactPatterns: null });
+    expect(cleared.exportRedactPatterns).toBeNull();
+  });
+
   it('keeps a false guardrailProgress override distinct from inherit (null) (issue #126)', async () => {
     const ws = (await workspaces.list())[0]!;
     const off = await workspaces.update(ws.id, { guardrailProgress: false });
@@ -318,6 +328,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       pauseMessage: null,
       exportEnabled: null,
       exportDirectoryPath: null,
+      exportRedactPatterns: null,
     });
   });
 });

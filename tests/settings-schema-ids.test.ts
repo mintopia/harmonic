@@ -58,6 +58,7 @@ function makeWorkspace(): Workspace {
     guardrailProgress: null,
     exportEnabled: null,
     exportDirectoryPath: null,
+    exportRedactPatterns: null,
     toolTimeoutMinutes: null,
     drivePrompt: null,
     driveUnattendedReminder: null,

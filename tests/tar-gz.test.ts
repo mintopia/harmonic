@@ -67,6 +67,23 @@ describe('TarGzWriter', () => {
     expect((await readFile(join(dest, 'empty'))).length).toBe(0);
   });
 
+  it('sizes and writes a file through a length-changing transform', async () => {
+    await writeFile(join(tmp, 'log.txt'), 'a-b-c\n'.repeat(50_000));
+    await writeFile(join(tmp, 'after.txt'), 'next');
+    const passes: string[] = [];
+    const archive = await build(async (w) => {
+      await w.addFile('log.txt', join(tmp, 'log.txt'), (pass) => {
+        passes.push(pass);
+        return { push: (chunk) => Buffer.from(chunk.toString('latin1').replaceAll('-', '--'), 'latin1'), end: () => Buffer.from('END') };
+      });
+      await w.addFile('after.txt', join(tmp, 'after.txt'));
+    });
+    expect(passes).toEqual(['measure', 'write']);
+    const dest = await extract(archive);
+    expect(await readFile(join(dest, 'log.txt'), 'utf8')).toBe(`${'a--b--c\n'.repeat(50_000)}END`);
+    expect(await readFile(join(dest, 'after.txt'), 'utf8')).toBe('next');
+  });
+
   it('adds a nested directory sorted, skipping symlinks', async () => {
     const root = join(tmp, 'src');
     await mkdir(join(root, 'sub/deep'), { recursive: true });

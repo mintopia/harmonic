@@ -16,7 +16,7 @@ import {
   type WorkspaceRow,
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
-import { exportDirectoryPathSchema } from '../config.js';
+import { exportDirectoryPathSchema, redactPatternsSchema } from '../config.js';
 import { DomainError } from './errors.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
 import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
@@ -103,6 +103,7 @@ export const workspaceOverridesSchema = z.object({
   exportEnabled: z.boolean().nullable().optional(),
   /** Export directory override (absolute); null inherits `config.export.directory.path`. */
   exportDirectoryPath: exportDirectoryPathSchema.nullable().optional().meta({ example: '/srv/harmonic-exports' }),
+  exportRedactPatterns: redactPatternsSchema.nullable().optional().meta({ example: [{ id: 'internal-host', regex: 'corp\\.example\\.internal' }] }),
 });
 export type WorkspaceOverrides = z.infer<typeof workspaceOverridesSchema>;
 
@@ -138,6 +139,7 @@ export const OVERRIDE_KEYS = [
   'pauseMessage',
   'exportEnabled',
   'exportDirectoryPath',
+  'exportRedactPatterns',
 ] as const;
 
 /** A fully-populated overrides object: every key present, `null` meaning
@@ -212,6 +214,7 @@ export class WorkspaceService {
       pauseMessage: o.pauseMessage,
       exportEnabled: o.exportEnabled,
       exportDirectoryPath: o.exportDirectoryPath,
+      exportRedactPatterns: o.exportRedactPatterns != null ? JSON.stringify(o.exportRedactPatterns) : null,
     };
   }
 

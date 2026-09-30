@@ -117,3 +117,5 @@ export:
   includeStates: [done, cancelled, deleted]
   directory:
     path: null
+  redact:
+    patterns: []

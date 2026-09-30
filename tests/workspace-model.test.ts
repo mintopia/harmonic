@@ -46,6 +46,7 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   guardrailProgress: null,
   exportEnabled: null,
   exportDirectoryPath: null,
+  exportRedactPatterns: null,
   toolTimeoutMinutes: null,
   drivePrompt: null,
   driveUnattendedReminder: null,

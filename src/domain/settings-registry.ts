@@ -219,6 +219,13 @@ export const settingsRegistry = {
     label: 'Export directory',
     help: 'Absolute directory for Task Archive tarballs (<path>/<workspace>/<taskId>-<trackerRef>-done-<timestamp>.tar.gz); inherits the global path when unset.',
   },
+  exportRedactPatterns: {
+    scope: 'overridable',
+    control: 'json',
+    tab: 'execution',
+    label: 'Export redaction patterns',
+    help: 'Extra { id, regex } patterns redacted from Exports as [REDACTED:<id>], added to the baseline and global patterns; a Workspace cannot remove those.',
+  },
 } as const satisfies Record<string, SettingSpec>;
 
 /** A key naming a setting declared in the registry. */

@@ -84,6 +84,7 @@ export function WorkspaceSettingsPage({
         guardrailProgress: local.guardrailProgress,
         exportEnabled: local.exportEnabled,
         exportDirectoryPath: local.exportDirectoryPath,
+        exportRedactPatterns: local.exportRedactPatterns,
         toolTimeoutMinutes: local.toolTimeoutMinutes,
         drivePrompt: local.drivePrompt,
         driveUnattendedReminder: local.driveUnattendedReminder,

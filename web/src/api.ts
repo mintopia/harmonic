@@ -194,6 +194,7 @@ export const api = {
       guardrailProgress?: boolean | null;
       exportEnabled?: boolean | null;
       exportDirectoryPath?: string | null;
+      exportRedactPatterns?: { id: string; regex: string }[] | null;
       toolTimeoutMinutes?: number | null;
       drivePrompt?: string | null;
       driveUnattendedReminder?: string | null;

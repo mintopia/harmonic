@@ -83,6 +83,7 @@ export function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     guardrailProgress: null,
     exportEnabled: null,
     exportDirectoryPath: null,
+    exportRedactPatterns: null,
     toolTimeoutMinutes: null,
     drivePrompt: null,
     driveUnattendedReminder: null,

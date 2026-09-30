@@ -284,6 +284,7 @@ export interface Workspace {
   guardrailProgress: boolean | null;
   exportEnabled: boolean | null;
   exportDirectoryPath: string | null;
+  exportRedactPatterns: { id: string; regex: string }[] | null;
   /** Tool-timeout override; `null` inherits `config.guardrails.toolTimeoutMinutes`. */
   toolTimeoutMinutes: number | null;
   /** Drive overrides, decomposed into independently-inheritable

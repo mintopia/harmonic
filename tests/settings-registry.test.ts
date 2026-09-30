@@ -53,6 +53,7 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
     'taskPrompt',
     'exportEnabled',
     'exportDirectoryPath',
+    'exportRedactPatterns',
   ];
 
   it('declares every Workspace override column as overridable', () => {

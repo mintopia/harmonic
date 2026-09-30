@@ -133,7 +133,7 @@ describe('TaskExporter (#734)', () => {
         taskId: task.id,
         workspace: 'My Workspace',
         disposition: 'done',
-        redaction: { applied: false, matches: {} },
+        redaction: { applied: true, matches: { 'github-token': 0, bearer: 0 } },
         partial: false,
       });
       expect(typeof manifest.format).toBe('string');
@@ -191,7 +191,7 @@ describe('TaskExporter (#734)', () => {
   it('honours the Workspace override path', async () => {
     const override = mkdtempSync(join(tmpdir(), 'harmonic-export-override-'));
     try {
-      settingsFor = () => resolveExportSettings(globalWith(dest), { exportEnabled: null, exportDirectoryPath: override });
+      settingsFor = () => resolveExportSettings(globalWith(dest), { exportEnabled: null, exportDirectoryPath: override, exportRedactPatterns: null });
       await exporter().run(task, 'done');
       expect(readdirSync(join(override, 'my-workspace'))).toHaveLength(1);
       expect(existsSync(join(dest, 'my-workspace'))).toBe(false);
@@ -432,6 +432,71 @@ describe('TaskExporter (#734)', () => {
       settingsFor = withStates(['cancelled']);
       await exporter().run(task, 'cancelled');
       expect(tarballs()).toHaveLength(1);
+    });
+  });
+
+  describe('redaction (#736)', () => {
+    const token = `ghp_${'A1b2C3d4E5'.repeat(3)}abcdef`;
+    let outputLog: string;
+
+    beforeEach(async () => {
+      const log = await archive.verificationOutputLog(task, 1, 'pre-merge', 'test');
+      outputLog = log!;
+    });
+
+    const exportedFile = (rel: string): { text: string; manifest: { redaction: { applied: boolean; matches: Record<string, number> } } } => {
+      const out = extract(join(dest, 'my-workspace', tarballs()[0]!));
+      try {
+        return { text: readFileSync(join(out, rel), 'utf8'), manifest: JSON.parse(readFileSync(join(out, 'manifest.json'), 'utf8')) };
+      } finally {
+        rmSync(out, { recursive: true, force: true });
+      }
+    };
+
+    it('redacts a GitHub token in verify output and leaves the local Archive raw', async () => {
+      writeFileSync(outputLog, `$ npm test\nusing ${token}\nok\n`);
+      expect((await exporter().run(task, 'done'))?.status).toBe('succeeded');
+      const { text, manifest } = exportedFile('attempts/1/verification/pre-merge/test/output.log');
+      expect(text).toBe('$ npm test\nusing [REDACTED:github-token]\nok\n');
+      expect(readFileSync(outputLog, 'utf8')).toContain(token);
+      expect(manifest.redaction.applied).toBe(true);
+      expect(manifest.redaction.matches).toMatchObject({ 'github-token': 1, 'aws-access-key': 0, 'aws-secret-key': 0, 'gitlab-token': 0, bearer: 0, 'sk-api-key': 0 });
+    });
+
+    it('applies a Workspace pattern alongside the baseline and global patterns', async () => {
+      writeFileSync(outputLog, `curl https://corp.example.internal/${token} secret-marker\n`);
+      const global = globalWith(dest);
+      global.export.redact.patterns = [{ id: 'global-marker', regex: 'secret-marker' }];
+      settingsFor = () =>
+        resolveExportSettings(global, {
+          exportEnabled: null,
+          exportDirectoryPath: null,
+          exportRedactPatterns: JSON.stringify([{ id: 'internal-host', regex: 'corp\\.example\\.internal' }]),
+        });
+      await exporter().run(task, 'done');
+      const { text, manifest } = exportedFile('attempts/1/verification/pre-merge/test/output.log');
+      expect(text).toBe('curl https://[REDACTED:internal-host]/[REDACTED:github-token] [REDACTED:global-marker]\n');
+      expect(manifest.redaction.matches).toMatchObject({ 'internal-host': 1, 'github-token': 1, 'global-marker': 1 });
+    });
+
+    it('redacts a token that straddles a read-stream chunk boundary', async () => {
+      const padding = 'x'.repeat(64 * 1024 - 10);
+      writeFileSync(outputLog, `${padding} ${token} ${'y'.repeat(100 * 1024)}\n`);
+      await exporter().run(task, 'done');
+      const { text, manifest } = exportedFile('attempts/1/verification/pre-merge/test/output.log');
+      expect(text).toBe(`${padding} [REDACTED:github-token] ${'y'.repeat(100 * 1024)}\n`);
+      expect(manifest.redaction.matches['github-token']).toBe(1);
+    });
+
+    it('redacts the ticket and timeline documents too', async () => {
+      await exporter({
+        snapshot: async () => ({ ticket: { title: `leak ${token}` }, timeline: { note: `Bearer abcdefghijkl` }, attemptCount: 1 }),
+      }).run(task, 'done');
+      expect(exportedFile('ticket.json').text).toContain('leak [REDACTED:github-token]');
+      const { text, manifest } = exportedFile('timeline.json');
+      expect(text).toContain('Bearer [REDACTED:bearer]');
+      expect(exportedFile('README.md').text).toContain('# leak [REDACTED:github-token]');
+      expect(manifest.redaction.matches).toMatchObject({ 'github-token': 2, bearer: 1 });
     });
   });
 });

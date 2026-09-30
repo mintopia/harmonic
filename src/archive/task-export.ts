@@ -9,6 +9,7 @@ import { logger } from '../logger.js';
 import { forEachYielding } from '../reliability/yield.js';
 import type { ResolvedExportSettings } from './export-settings.js';
 import { workspaceSlug, type ExportRecord, type TaskArchive } from './task-archive.js';
+import { Redactor, type RedactionPattern } from './redact.js';
 import { TarGzWriter, addDirectory } from './tar-gz.js';
 
 export type ExportDisposition = ExportState;
@@ -258,7 +259,7 @@ export class TaskExporter {
     const at = (this.deps.now ?? (() => new Date()))();
     let outcome: ExportOutcome;
     try {
-      outcome = { status: 'succeeded', file: await this.epicToDirectory(workspaceId, epicRef, disposition, settings.directoryPath, at, snapshot) };
+      outcome = { status: 'succeeded', file: await this.epicToDirectory(workspaceId, epicRef, disposition, settings.directoryPath, settings.redactPatterns, at, snapshot) };
     } catch (err) {
       outcome = { status: 'failed', file: null, error: message(err) };
       logger.warn('export: epic failed', { workspaceId, epicRef, disposition, error: outcome.error });
@@ -300,7 +301,7 @@ export class TaskExporter {
     const at = (this.deps.now ?? (() => new Date()))();
     let outcome: ExportOutcome;
     try {
-      outcome = { status: 'succeeded', file: await this.exportToDirectory(task, disposition, settings.directoryPath, at, snapshot) };
+      outcome = { status: 'succeeded', file: await this.exportToDirectory(task, disposition, settings.directoryPath, settings.redactPatterns, at, snapshot) };
     } catch (err) {
       outcome = { status: 'failed', file: null, error: message(err) };
       logger.warn('export: failed', { taskId: task.id, disposition, error: outcome.error });
@@ -326,7 +327,15 @@ export class TaskExporter {
     }
   }
 
-  private async epicToDirectory(workspaceId: number, epicRef: number, disposition: ExportDisposition, root: string, at: Date, pending?: Promise<EpicExportSnapshot>): Promise<string> {
+  private async epicToDirectory(
+    workspaceId: number,
+    epicRef: number,
+    disposition: ExportDisposition,
+    root: string,
+    patterns: readonly RedactionPattern[],
+    at: Date,
+    pending?: Promise<EpicExportSnapshot>,
+  ): Promise<string> {
     const snapshot = await (pending ?? this.deps.epicSnapshot(workspaceId, epicRef));
     const members = await this.memberEntries(snapshot.members);
     const archiveDir = await this.deps.archive.ensureEpic(workspaceId, epicRef);
@@ -336,7 +345,7 @@ export class TaskExporter {
       root: join(root, workspaceSlug(workspace, workspaceId)),
       base: `epic-${epicRef}-${disposition}-${exportTimestamp(at)}`,
       build: (staged) =>
-        this.buildTarball(staged, archiveDir, snapshot, at, ({ files, partial }) => ({
+        this.buildTarball(staged, archiveDir, snapshot, patterns, at, ({ files, partial, redaction }) => ({
           manifest: {
             format: 'harmonic-epic-export',
             formatVersion: 1,
@@ -347,7 +356,7 @@ export class TaskExporter {
             disposition,
             exportedAt: at.toISOString(),
             counts: { archiveFiles: files, attempts: snapshot.attemptCount, members: members.length },
-            redaction: { applied: false, matches: {} },
+            redaction,
             partial,
             members,
           },
@@ -356,7 +365,14 @@ export class TaskExporter {
     });
   }
 
-  private async exportToDirectory(task: TaskRow, disposition: ExportDisposition, root: string, at: Date, pending?: Promise<ExportSnapshot>): Promise<string> {
+  private async exportToDirectory(
+    task: TaskRow,
+    disposition: ExportDisposition,
+    root: string,
+    patterns: readonly RedactionPattern[],
+    at: Date,
+    pending?: Promise<ExportSnapshot>,
+  ): Promise<string> {
     const snapshot = await (pending ?? this.deps.snapshot(task));
     const archiveDir = await this.deps.archive.ensure(task);
     const workspace = task.workspaceId === null ? null : await this.deps.workspaceName(task.workspaceId);
@@ -365,7 +381,7 @@ export class TaskExporter {
       root: join(root, workspaceSlug(workspace, task.workspaceId)),
       base: this.fileName(task, disposition, at),
       build: (staged) =>
-        this.buildTarball(staged, archiveDir, snapshot, at, ({ files, partial }) => ({
+        this.buildTarball(staged, archiveDir, snapshot, patterns, at, ({ files, partial, redaction }) => ({
           manifest: {
             format: 'harmonic-task-export',
             formatVersion: 1,
@@ -377,7 +393,7 @@ export class TaskExporter {
             disposition,
             exportedAt: at.toISOString(),
             counts: { archiveFiles: files, attempts: snapshot.attemptCount },
-            redaction: { applied: false, matches: {} },
+            redaction,
             partial,
           },
           readme: readme({ task, ticket: snapshot.ticket, workspace, disposition, exportedAt: at.toISOString(), attemptCount: snapshot.attemptCount }),
@@ -406,28 +422,32 @@ export class TaskExporter {
     staged: string,
     archiveDir: string,
     snapshot: ExportSnapshot,
+    patterns: readonly RedactionPattern[],
     at: Date,
-    describe: (result: { files: number; partial: boolean }) => { manifest: unknown; readme: string },
+    describe: (result: { files: number; partial: boolean; redaction: { applied: true; matches: Record<string, number> } }) => { manifest: unknown; readme: string },
   ): Promise<void> {
+    const redactor = new Redactor(patterns);
+    const redacted = (pass: 'measure' | 'write') => redactor.stream({ count: pass === 'write' });
     const writer = new TarGzWriter(createWriteStream(staged));
     const entries = (await readdir(archiveDir, { withFileTypes: true })).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     const hasAttempts = entries.some((e) => e.isDirectory() && e.name === 'attempts');
     let files = 0;
     try {
-      await writer.addBuffer('ticket.json', json(snapshot.ticket), at);
-      await writer.addBuffer('timeline.json', json(snapshot.timeline), at);
-      await writer.addBuffer('operator-inputs.json', json(await readOperatorInputs(archiveDir)), at);
+      await writer.addBuffer('ticket.json', redactor.redactText(json(snapshot.ticket)), at);
+      await writer.addBuffer('timeline.json', redactor.redactText(json(snapshot.timeline)), at);
+      await writer.addBuffer('operator-inputs.json', redactor.redactText(json(await readOperatorInputs(archiveDir))), at);
       for (const entry of entries) {
         if (entry.isFile() && entry.name !== OPERATOR_INPUTS_FILE && !entry.name.endsWith('.tmp')) {
-          await writer.addFile(entry.name, join(archiveDir, entry.name));
+          await writer.addFile(entry.name, join(archiveDir, entry.name), redacted);
           files++;
         } else if (entry.isDirectory()) {
-          files += await addDirectory(writer, join(archiveDir, entry.name), entry.name);
+          files += await addDirectory(writer, join(archiveDir, entry.name), entry.name, redacted);
         }
       }
-      const described = describe({ files, partial: snapshot.attemptCount > 0 && !hasAttempts });
+      const described = describe({ files, partial: snapshot.attemptCount > 0 && !hasAttempts, redaction: { applied: true, matches: redactor.counts } });
+      const readmeText = redactor.redactText(described.readme);
       await writer.addBuffer('manifest.json', json(described.manifest), at);
-      await writer.addBuffer('README.md', described.readme, at);
+      await writer.addBuffer('README.md', readmeText, at);
       await writer.finish();
     } catch (err) {
       writer.abort(err instanceof Error ? err : new Error(message(err)));
