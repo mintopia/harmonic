@@ -490,7 +490,7 @@ describe('TaskExporter (#734)', () => {
 
     it('redacts the ticket and timeline documents too', async () => {
       await exporter({
-        snapshot: async () => ({ ticket: { title: `leak ${token}` }, timeline: { note: `Bearer abcdefghijkl` }, attemptCount: 1 }),
+        snapshot: async () => ({ ticket: { title: `leak ${token}` }, timeline: { note: 'Bearer abcdefgh1jklmnopqr' }, attemptCount: 1 }),
       }).run(task, 'done');
       expect(exportedFile('ticket.json').text).toContain('leak [REDACTED:github-token]');
       const { text, manifest } = exportedFile('timeline.json');

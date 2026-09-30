@@ -1,4 +1,5 @@
 import type { RedactPattern } from '../config.js';
+import type { ByteTransform } from './tar-gz.js';
 
 export interface RedactionPattern extends RedactPattern {
   flags?: string;
@@ -13,14 +14,13 @@ export const BASELINE_REDACT_PATTERNS: readonly RedactionPattern[] = [
   },
   { id: 'github-token', regex: '\\b(?:gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{22,255})\\b' },
   { id: 'gitlab-token', regex: '\\bglpat-[A-Za-z0-9_-]{20,255}' },
-  { id: 'bearer', regex: '(?<=\\bbearer\\s+)[A-Za-z0-9._~+/-]{8,2048}=*', flags: 'i' },
+  { id: 'bearer', regex: '(?<=\\bbearer\\s+)(?=[A-Za-z._~+/-]*[0-9])[A-Za-z0-9._~+/-]{16,2048}=*', flags: 'i' },
   { id: 'sk-api-key', regex: '\\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,255}' },
 ];
 
-/** Matches longer than this may be missed when they straddle a chunk boundary. */
-const WINDOW = 4096;
-/** Lookbehind and `\b` see this much already-emitted text. */
-const CONTEXT = 256;
+const LOSSLESS_ENCODING = 'latin1';
+const MAX_STRADDLING_MATCH = 4096;
+const LOOKBEHIND_CONTEXT = 256;
 const MAX_CARRY = 64 * 1024;
 
 interface Compiled {
@@ -44,15 +44,6 @@ function find(re: RegExp, text: string, from: number): Span | null {
   return null;
 }
 
-export interface RedactionStream {
-  push(chunk: Buffer): Buffer;
-  end(): Buffer;
-}
-
-/**
- * Text is handled as latin1 so every byte round-trips unchanged; patterns
- * therefore match ASCII secrets, not arbitrary non-ASCII literals.
- */
 export class Redactor {
   readonly counts: Record<string, number> = {};
   private readonly compiled: Compiled[];
@@ -67,13 +58,13 @@ export class Redactor {
     return Buffer.concat([stream.push(Buffer.from(text, 'utf8')), stream.end()]).toString('utf8');
   }
 
-  stream(opts: { count?: boolean } = {}): RedactionStream {
+  stream(opts: { count?: boolean } = {}): ByteTransform {
     const count = opts.count ?? true;
     let text = '';
     let from = 0;
     const run = (final: boolean): Buffer => {
       const out: string[] = [];
-      const limit = final ? text.length : Math.max(from, text.length - WINDOW);
+      const limit = final ? text.length : Math.max(from, text.length - MAX_STRADDLING_MATCH);
       const next: Array<Span | null | undefined> = new Array(this.compiled.length);
       let pos = from;
       let cut: number | null = null;
@@ -97,14 +88,14 @@ export class Redactor {
       }
       const end = cut ?? Math.max(limit, pos);
       out.push(text.slice(pos, end));
-      const keep = Math.max(0, end - CONTEXT);
+      const keep = Math.max(0, end - LOOKBEHIND_CONTEXT);
       text = text.slice(keep);
       from = end - keep;
-      return Buffer.from(out.join(''), 'latin1');
+      return Buffer.from(out.join(''), LOSSLESS_ENCODING);
     };
     return {
       push: (chunk) => {
-        text += chunk.toString('latin1');
+        text += chunk.toString(LOSSLESS_ENCODING);
         return run(false);
       },
       end: () => run(true),

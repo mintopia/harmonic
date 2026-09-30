@@ -39,6 +39,11 @@ describe('Redactor', () => {
     expect(redactor.counts[id]).toBe(1);
   });
 
+  it('leaves prose after "Bearer" alone', () => {
+    const text = 'Use Bearer authentication with a Bearer token.';
+    expect(new Redactor(BASELINE_REDACT_PATTERNS).redactText(text)).toBe(text);
+  });
+
   it('leaves a 40-hex commit SHA alone', () => {
     const sha = 'a06ec50229e39b66e4197605339875ba379865a8';
     expect(new Redactor(BASELINE_REDACT_PATTERNS).redactText(`commit ${sha}`)).toBe(`commit ${sha}`);
@@ -76,7 +81,7 @@ describe('Redactor', () => {
   });
 
   it.each([1, 3, 7, 13, 64, 4096])('redacts a secret split across %i-byte chunks', (size) => {
-    const input = `${'x'.repeat(5000)} before ${GITHUB} mid Bearer abcdefghijklmnop\n${'é'.repeat(3000)} AKIAIOSFODNN7EXAMPLE tail`;
+    const input = `${'x'.repeat(5000)} before ${GITHUB} mid Bearer abcdefgh1jklmnopqr\n${'é'.repeat(3000)} AKIAIOSFODNN7EXAMPLE tail`;
     const redactor = new Redactor(BASELINE_REDACT_PATTERNS);
     const out = streamThrough(redactor, input, size);
     expect(out).toBe(new Redactor(BASELINE_REDACT_PATTERNS).redactText(input));

@@ -10,7 +10,7 @@ import { forEachYielding } from '../reliability/yield.js';
 import type { ResolvedExportSettings } from './export-settings.js';
 import { workspaceSlug, type ExportRecord, type TaskArchive } from './task-archive.js';
 import { Redactor, type RedactionPattern } from './redact.js';
-import { TarGzWriter, addDirectory } from './tar-gz.js';
+import { TarGzWriter, addDirectory, type TransformFactory } from './tar-gz.js';
 
 export type ExportDisposition = ExportState;
 
@@ -427,7 +427,7 @@ export class TaskExporter {
     describe: (result: { files: number; partial: boolean; redaction: { applied: true; matches: Record<string, number> } }) => { manifest: unknown; readme: string },
   ): Promise<void> {
     const redactor = new Redactor(patterns);
-    const redacted = (pass: 'measure' | 'write') => redactor.stream({ count: pass === 'write' });
+    const redacted: TransformFactory = (pass) => redactor.stream({ count: pass === 'write' });
     const writer = new TarGzWriter(createWriteStream(staged));
     const entries = (await readdir(archiveDir, { withFileTypes: true })).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     const hasAttempts = entries.some((e) => e.isDirectory() && e.name === 'attempts');

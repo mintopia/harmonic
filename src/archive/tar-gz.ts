@@ -11,6 +11,8 @@ export interface ByteTransform {
   end(): Buffer;
 }
 
+export type TransformFactory = (pass: 'measure' | 'write') => ByteTransform;
+
 async function* readRange(path: string, size: number): AsyncGenerator<Buffer> {
   if (size === 0) return;
   const source = createReadStream(path, { start: 0, end: size - 1 });
@@ -131,8 +133,7 @@ export class TarGzWriter {
     });
   }
 
-  /** A `transform` is run twice: once to size the tar entry, once to write it. */
-  async addFile(name: string, path: string, transform?: (pass: 'measure' | 'write') => ByteTransform): Promise<void> {
+  async addFile(name: string, path: string, transform?: TransformFactory): Promise<void> {
     await this.exclusive(async () => {
       const info = await stat(path);
       if (!info.isFile()) throw new Error(`not a regular file: ${path}`);
@@ -215,7 +216,7 @@ export async function addDirectory(
   writer: TarGzWriter,
   root: string,
   prefix: string,
-  transform?: (pass: 'measure' | 'write') => ByteTransform,
+  transform?: TransformFactory,
 ): Promise<number> {
   let count = 0;
   const walk = async (dir: string, rel: string): Promise<void> => {
