@@ -73,6 +73,8 @@ export type ServerMessage =
       retry: number;
       nextRetryAt: string | null;
     }
+  | { type: 'notification_created'; notification: import('./types.js').Notification }
+  | { type: 'notifications_read'; ids: number[] }
   | { type: 'fs_changed'; workspaceId: number }
   | { type: 'git_status'; workspaceId: number; entries: import('./types.js').GitStatusEntry[] }
   | { type: 'conversation_event'; event: ConversationEvent }

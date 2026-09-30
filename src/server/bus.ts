@@ -10,6 +10,7 @@ import type { OperationEvent } from '../telemetry/operations.js';
 import type { WorktreeInventoryEntry } from '../domain/worktree-inventory.js';
 import type { HostLoad } from '../host-load.js';
 import type { GitStatusEntry } from '../domain/git-status.js';
+import type { NotificationRow } from '../db/schema.js';
 
 export interface BusEvents {
   operations: (event: OperationEvent) => void;
@@ -57,6 +58,8 @@ export interface BusEvents {
     nextRetryAt: string | null;
   }) => void;
   fs_changed: (payload: { workspaceId: number }) => void;
+  notification_created: (notification: NotificationRow) => void;
+  notifications_read: (payload: { ids: number[] }) => void;
   git_status: (payload: { workspaceId: number; entries: GitStatusEntry[] }) => void;
 }
 

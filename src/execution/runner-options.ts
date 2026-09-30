@@ -90,6 +90,8 @@ export interface RunnerOptions {
   criticDrive?: CriticHarnessDrive | undefined;
   /** Session retirement hook; absent → Sessions are never retired. */
   sessionRetirement?: SessionRetirementHook;
+  onFailedAttemptRequeued?: (task: TaskRow, reason: string) => void;
+  onTaskMerged?: (task: TaskRow) => void;
   /** Per-context git circuit breaker, shared with the Auto-Runner (which must
    * be given the SAME instance). Absent → no breaker. */
   gitBreaker?: GitCircuitBreaker;

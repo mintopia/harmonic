@@ -9,6 +9,8 @@ export const NOTIFICATION_EVENTS = [
   'run.started',
   'task.escalated',
   'task.done',
+  'task.failed',
+  'export.failed',
   'queue.idle',
   'update.failed',
   'export.failed',

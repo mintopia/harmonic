@@ -247,6 +247,10 @@ export async function createRuntime(deps: {
       }
     },
   );
+  const onFailedAttemptRequeued = (task: TaskRow, reason: string): void =>
+    fireAndForget(() => notifier.notify('task.failed', task, { reason }), { op: 'notifier.taskFailed', level: 'warn', context: { taskId: task.id } });
+  const onTaskMerged = (task: TaskRow): void =>
+    fireAndForget(() => notifier.recordMerged(task), { op: 'notifier.taskMerged', level: 'warn', context: { taskId: task.id } });
   const operatorSettle = new AttemptSettleCoordinator(
     tasks,
     attempts,
@@ -256,6 +260,7 @@ export async function createRuntime(deps: {
     },
     sessionRetirement,
     branchRetirement,
+    { onFailedAttemptRequeued, onTaskMerged },
   );
   const archive = new TaskArchive({
     dataDir: opts.dataDir,
@@ -374,6 +379,8 @@ export async function createRuntime(deps: {
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
     criticDrive: opts.criticDrive,
     sessionRetirement,
+    onFailedAttemptRequeued,
+    onTaskMerged,
     taskEvents,
     keys: {
       mint: async (attemptId) => (await auth.createKey(`attempt-${attemptId}`, { scope: 'attempt', attemptId })).token,

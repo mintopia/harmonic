@@ -135,6 +135,8 @@ export class Runner {
       this.attempts,
       (run) => this.events.onAttemptFinished?.(run),
       options.sessionRetirement,
+      undefined,
+      { onFailedAttemptRequeued: options.onFailedAttemptRequeued, onTaskMerged: options.onTaskMerged },
     );
     this.sessionRetirement = options.sessionRetirement;
     this.isGloballyPaused = options.isGloballyPaused;

@@ -24,6 +24,7 @@ import type {
   AttemptEvent,
   EpicAttempt,
   AttemptLogEvent,
+  Notification,
   Task,
   TicketTimelineEvent,
   VerificationAttempt,
@@ -107,6 +108,17 @@ export const api = {
     return request<{ tasks: Task[]; total: number }>('GET', query ? `/api/tasks?${query}` : '/api/tasks');
   },
   task: (id: number) => request<Task>('GET', `/api/tasks/${id}`),
+  notifications: ({ workspaceId, limit, before }: { workspaceId?: number; limit?: number; before?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (workspaceId !== undefined) params.set('workspaceId', String(workspaceId));
+    if (limit !== undefined) params.set('limit', String(limit));
+    if (before !== undefined) params.set('before', String(before));
+    const query = params.toString();
+    return request<{ items: Notification[]; unreadCount: number }>('GET', query ? `/api/notifications?${query}` : '/api/notifications');
+  },
+  markNotificationRead: (id: number) => request<{ notification: Notification }>('POST', `/api/notifications/${id}/read`),
+  markAllNotificationsRead: (workspaceId?: number) =>
+    request<{ updated: number }>('POST', '/api/notifications/read-all', workspaceId === undefined ? {} : { workspaceId }),
   stats: (from: number, to: number, workspaceId?: number) => {
     const query = new URLSearchParams({ from: String(from), to: String(to) });
     if (workspaceId !== undefined) query.set('workspaceId', String(workspaceId));
