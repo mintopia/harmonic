@@ -182,7 +182,6 @@ export interface RunCriticArgs {
   onUpdate?: (update: { sessionUpdate: string; [key: string]: unknown }) => void;
   /** Receives the prompt, the ACP update stream and the native transcript for the Archive. */
   archive?: StepArchiveWriter;
-  /** Waits between transcript-resolve retries; the native log is often flushed after the turn returns. */
   transcriptRetryDelaysMs?: number[];
 }
 
@@ -225,12 +224,12 @@ export async function runCritic(args: RunCriticArgs): Promise<CriticAttempt> {
   }
 }
 
-const TRANSCRIPT_RETRY_DELAYS_MS = [100, 500, 2_000];
+const NATIVE_LOG_FLUSH_RETRY_DELAYS_MS = [100, 500, 2_000];
 
 async function resolveTranscriptWithRetry(args: RunCriticArgs, sessionId: string): Promise<string | null> {
   const resolver = adapterFor(args.harnessId).usage?.resolveTranscriptPath;
   if (!resolver) return null;
-  const delays = args.transcriptRetryDelaysMs ?? TRANSCRIPT_RETRY_DELAYS_MS;
+  const delays = args.transcriptRetryDelaysMs ?? NATIVE_LOG_FLUSH_RETRY_DELAYS_MS;
   let resolved: string | null = null;
   for (let i = 0; i <= delays.length; i++) {
     if (i > 0) await new Promise<void>((resolve) => setTimeout(resolve, delays[i - 1]));

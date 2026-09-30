@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -216,6 +216,34 @@ describe('Critic Step archive wiring (#730)', () => {
       expectStepTrio(byMarker.get('alpha')!, 'alpha');
       expectStepTrio(byMarker.get('beta')!, 'beta');
       expect(steps.every((step) => step.state === 'passed' && step.logLocator?.startsWith('verification_attempt:'))).toBe(true);
+    });
+
+    it('fails the Epic review Step instead of leaving it running when recording the critic throws', async () => {
+      const wsRow = (await asyncDb.read((d) => d.select().from(workspacesTable).get()))!;
+      const settingsStore = await makeSettingsStore(dir);
+      const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
+      const epicAttempts = new AttemptStore(asyncDb);
+      await tasks.syncEpics(wsRow.id, [{ ref: 78, kind: 'epic' }]);
+      const workspace = { ...wsRow, epicPreMergeCommands: null, epicPreMergeCritics: JSON.stringify(twoCritics) };
+      const store = new VerificationAttemptStore(asyncDb);
+      store.append = async () => { throw new Error('db down'); };
+      const runner = new EpicVerificationRunner({
+        workspace: workspace as never,
+        getWorkspaces: async () => [workspace as never],
+        getConfig: () => criticConfig(logDir),
+        worktrees: { acquire: async () => repoDir, get: () => repoDir } as unknown as EpicWorktreePool,
+        epicAttempts,
+        verificationAttemptStore: store,
+        criticDrive: drive,
+      });
+
+      await runner.verify({ repoDir, epicRef: 78, verifiedHeadOid: git(repoDir, 'rev-parse', 'HEAD') }).catch(() => undefined);
+
+      const epicAttempt = (await epicAttempts.listForEpic({ workspaceId: wsRow.id, epicRef: 78 }))[0]!;
+      await vi.waitFor(async () => {
+        const steps = (await epicAttempts.listSteps(epicAttempt.id)).filter((step) => step.type === 'review');
+        expect(steps.map((step) => [step.state, step.endedAt !== null])).toEqual([['failed', true], ['failed', true]]);
+      });
     });
   });
 });
