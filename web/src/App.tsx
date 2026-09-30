@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import { formatCost } from './cost';
-import type { Task, Workspace } from './types';
+import type { Notification, Task, Workspace } from './types';
 import { AppSidebar } from './components/AppSidebar';
 import { AppContent } from './components/AppContent';
 import { AppContextProvider } from './app-context';
@@ -13,7 +13,7 @@ import { NewWorkspaceForm } from './components/WorkspaceSwitcher';
 import { TaskForm } from './components/TaskForm';
 import { isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import type { View } from './rail-model';
-import { NO_SELECTION, scopeSwitchRoute, type TableFilters } from './router-model';
+import { NO_SELECTION, scopeSwitchRoute, serializeRoute, type TableFilters } from './router-model';
 import { hasNoWorkspaces } from './workspace-model';
 import { applyTheme, loadTheme, nextTheme, storeTheme, type ThemePref } from './theme';
 import {
@@ -34,6 +34,9 @@ import { useRailBreakpoint } from './useRailBreakpoint';
 import { useAppSync } from './useAppSync';
 import { usePendingPermissionAlerts } from './usePendingPermissionAlerts';
 import { useHostLoad } from './useHostLoad';
+import { NotificationBell } from './components/NotificationBell';
+import { ticketRoute } from './notifications-model';
+import { useNotifications } from './useNotifications';
 import { useFleetActivity } from './useFleetActivity';
 import { usePeriodCost } from './usePeriodCost';
 
@@ -104,6 +107,8 @@ export function App() {
   const hostLoad = useHostLoad(authed, activeWorkspaceId);
   const globalRunningCount = useFleetActivity(authed);
   const periodCost = usePeriodCost(authed === true, tasks, activeWorkspaceId);
+  const scopeWorkspaceId = route.scope.kind === 'workspace' ? route.scope.workspaceId : null;
+  const notifications = useNotifications(authed === true, scopeWorkspaceId, view === 'notifications');
 
   // Only the initial landing on the sole Workspace's board is automatic — once
   // decided, an operator who explicitly navigates back to the global Dashboard
@@ -139,6 +144,26 @@ export function App() {
       navigate({ ...route, view: 'conversations', conversation: conversationId, task: null, epic: null, panel: NO_SELECTION }),
     [navigate, route],
   );
+
+  const ticketHref = (n: Notification) => {
+    const next = ticketRoute(route, n);
+    return next ? serializeRoute(next) : null;
+  };
+  const openNotification = (n: Notification, followLink: boolean) => {
+    if (!n.read) notifications.markRead(n.id);
+    const next = followLink ? ticketRoute(route, n) : null;
+    if (!next) return;
+    if (next.scope.kind === 'workspace' && next.scope.workspaceId !== scopeWorkspaceId) {
+      setTasks(null);
+      setEpics([]);
+    }
+    navigate(next);
+    setMenuOpen(false);
+  };
+  const openNotificationsPage = () => {
+    navigate({ ...route, view: 'notifications', task: null, epic: null, conversation: null, panel: NO_SELECTION, file: null });
+    setMenuOpen(false);
+  };
 
   const activeWorkspaceName =
     workspaces.find((w) => w.id === activeWorkspaceId)?.name ?? null;
@@ -333,6 +358,18 @@ export function App() {
           onNewTask={() => setEditing('new')}
           onOpenAbout={() => setAboutOpen(true)}
           onOpenActivity={openGlobalActivity}
+          bell={
+            <NotificationBell
+              state={notifications.state}
+              workspaces={workspaces}
+              scopeWorkspace={workspaces.find((w) => w.id === scopeWorkspaceId) ?? null}
+              active={view === 'notifications'}
+              ticketHref={ticketHref}
+              onOpenNotification={openNotification}
+              onMarkAllRead={notifications.markAllRead}
+              onViewAll={openNotificationsPage}
+            />
+          }
         />
         <UpdateBanner
           update={update}
@@ -392,6 +429,9 @@ export function App() {
           dismissRunHint={dismissRunHint}
           showEscalationHint={showEscalationHint}
           dismissEscalationHint={dismissEscalationHint}
+          notifications={notifications}
+          ticketHref={ticketHref}
+          onOpenNotification={openNotification}
           showWorkspaceEmptyState={showWorkspaceEmptyState}
           setCreatingWorkspace={setCreatingWorkspace}
           taskList={taskList}

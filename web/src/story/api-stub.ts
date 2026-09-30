@@ -248,6 +248,10 @@ export const api: typeof RealApi = {
   tasks: (opts?: { workspaceId?: number; state?: 'open'; parent?: number; limit?: number; offset?: number }) =>
     opts?.parent !== undefined ? ok({ tasks: f.epicChildren, total: f.epicChildren.length }) : ok({ tasks: [f.task], total: 1 }),
   task: (_id: number) => ok(f.task),
+  notifications: (_opts?: { workspaceId?: number; limit?: number; before?: number }) => ok({ items: [], unreadCount: 0 }),
+  markNotificationRead: (id: number) =>
+    ok({ notification: { id, severity: 'failure' as const, title: '', detail: null, workspaceId: null, taskId: null, createdAt: 0, readAt: 0, read: true } }),
+  markAllNotificationsRead: (_workspaceId?: number) => ok({ updated: 0 }),
   stats: (_from: number, _to: number, _workspaceId?: number) => ok(dashboardStats),
   activity: () => ok({ processes: activityProcesses }),
   timeline: (_workspaceId: number | undefined, from: number, to: number) =>

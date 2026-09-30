@@ -19,15 +19,16 @@ export function storeRailCollapsed(storage: StorageLike, collapsed: boolean): vo
   }
 }
 
-export const VIEWS = ['board', 'conversations', 'graph', 'activity', 'table', 'timeline', 'stats', 'files', 'operations', 'api', 'settings', 'workspace'] as const;
+export const VIEWS = ['board', 'conversations', 'graph', 'activity', 'table', 'timeline', 'stats', 'files', 'operations', 'api', 'settings', 'workspace', 'notifications'] as const;
 export type View = (typeof VIEWS)[number];
+export type SidebarView = Exclude<View, 'notifications'>;
 
 export const GLOBAL_RAIL_VIEWS: readonly View[] = ['board', 'table', 'activity', 'timeline', 'stats', 'operations', 'api', 'settings'];
 export const WORKSPACE_RAIL_VIEWS: readonly View[] = ['board', 'conversations', 'graph', 'activity', 'table', 'timeline', 'stats', 'files', 'operations', 'workspace'];
 
 export interface RailGroup {
   label: string;
-  views: readonly View[];
+  views: readonly SidebarView[];
 }
 
 export const GLOBAL_RAIL_GROUPS: readonly RailGroup[] = [
@@ -62,6 +63,7 @@ export const VIEW_LABELS: Record<View, string> = {
   api: 'API',
   settings: 'Settings',
   workspace: 'Settings',
+  notifications: 'Notifications',
 };
 
 export const GLOBAL_VIEW_LABELS: Partial<Record<View, string>> = {
