@@ -1,3 +1,4 @@
+import type { TaskArchive } from '../archive/task-archive.js';
 import type { AppConfig } from '../config.js';
 import { isEpicAttempt, type AttemptRow, type EpicAttemptRow, type WorkspaceRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
@@ -24,6 +25,7 @@ export interface EpicVerificationRunnerDeps {
   verificationAttemptStore?: VerificationAttemptStore | undefined;
   onEpicAttemptChanged?: ((attempt: EpicAttemptRow) => void) | undefined;
   criticDrive?: CriticHarnessDrive | undefined;
+  archive?: TaskArchive | undefined;
 }
 
 /**
@@ -62,11 +64,15 @@ export class EpicVerificationRunner {
       this.publishEpicAttempt(attempt);
     }
     try {
+      const archive = this.deps.archive;
       const worktreePath = await this.deps.worktrees.acquire(repoDir, epicRef);
       const decision = await verifyEpicIntegration({
         worktreePath,
         verifiedHeadOid,
         verifiers: (await this.resolveWorkspaceVerifiers()).epic.preMerge,
+        ...(attempt && archive
+          ? { outputLogPath: (command: EpicVerificationStage['commands'][number]) => archive.epicVerificationOutputLog(attempt.workspaceId, epicRef, attempt.number, command.id) }
+          : {}),
         onCommand: (commandAttempt, command) => this.recordCommandStep(attempt, commandAttempt, command),
         runCritic: (args) => this.runEpicCritic({ repoDir, epicRef, attempt, criticUsages, ...args }),
       });
@@ -143,41 +149,52 @@ export class EpicVerificationRunner {
     const baseOid = defaultBranch === null
       ? null
       : await Git.mergeBase(repoDir, defaultBranch, integrationBranchName(epicRef)).catch(() => null);
-    const criticAttempt = await runCritic({
-      cwd,
-      verifiedHeadOid: criticHeadOid,
-      ...(baseOid ? { baseOid } : {}),
-      critic: { prompt: critic.prompt, model: critic.model, ...(critic.harness ? { harness: critic.harness } : {}) },
-      timeoutMs: critic.timeoutSeconds * 1000,
-      fields: { taskId: '', skill: '/implement', ref: String(epicRef), url: '', title: `Epic #${epicRef}`, description: '' },
-      harness,
-      harnessId,
-      ...(criticDrive ? { drive: criticDrive } : {}),
-    });
-    const usage = collectUsage({
-      harnessId,
-      harness,
-      cwd,
-      sessionId: criticAttempt.sessionId,
-      ...(criticAttempt.usage ? { promptResult: { usage: criticAttempt.usage } } : {}),
-      prices: pricesForHarness(harness),
-    });
-    if (usage) criticUsages.push({ usage, prices: pricesForHarness(harness) });
-    if (attempt && verificationAttemptStore && epicAttempts) {
-      const persisted = await verificationAttemptStore.append(attempt.id, {
-        ...criticAttemptToInput(criticAttempt),
-        ...(usage ? { usage: JSON.stringify(usage) } : {}),
+    const tracked = attempt && verificationAttemptStore && epicAttempts ? { attempt, verificationAttemptStore, epicAttempts } : undefined;
+    const step = tracked ? await tracked.epicAttempts.createStep(tracked.attempt.id, { type: 'review' }) : undefined;
+    if (tracked && step) await tracked.epicAttempts.updateStep(step.id, { state: 'running', startedAt: Date.now() });
+    const archive = tracked && step
+      ? this.deps.archive?.epicCriticStep(tracked.attempt.workspaceId, epicRef, tracked.attempt.number, String(step.id))
+      : undefined;
+    let criticAttempt: Awaited<ReturnType<typeof runCritic>>;
+    try {
+      criticAttempt = await runCritic({
+        cwd,
+        verifiedHeadOid: criticHeadOid,
+        ...(baseOid ? { baseOid } : {}),
+        critic: { prompt: critic.prompt, model: critic.model, ...(critic.harness ? { harness: critic.harness } : {}) },
+        timeoutMs: critic.timeoutSeconds * 1000,
+        fields: { taskId: '', skill: '/implement', ref: String(epicRef), url: '', title: `Epic #${epicRef}`, description: '' },
+        harness,
+        harnessId,
+        ...(criticDrive ? { drive: criticDrive } : {}),
+        ...(archive ? { archive } : {}),
       });
-      const step = await epicAttempts.createStep(attempt.id, {
-        type: 'review',
-        logLocator: `verification_attempt:${persisted.id}`,
+      const usage = collectUsage({
+        harnessId,
+        harness,
+        cwd,
+        sessionId: criticAttempt.sessionId,
+        ...(criticAttempt.usage ? { promptResult: { usage: criticAttempt.usage } } : {}),
+        prices: pricesForHarness(harness),
       });
-      await epicAttempts.updateStep(step.id, {
-        state: criticAttempt.verdict === 'pass' ? 'passed' : 'failed',
-        verdict: criticAttempt.verdict,
-        startedAt: persisted.ts,
-        endedAt: Date.now(),
-      });
+      if (usage) criticUsages.push({ usage, prices: pricesForHarness(harness) });
+      if (tracked && step) {
+        const persisted = await tracked.verificationAttemptStore.append(tracked.attempt.id, {
+          ...criticAttemptToInput(criticAttempt),
+          ...(usage ? { usage: JSON.stringify(usage) } : {}),
+        });
+        await tracked.epicAttempts.updateStep(step.id, {
+          state: criticAttempt.verdict === 'pass' ? 'passed' : 'failed',
+          verdict: criticAttempt.verdict,
+          logLocator: `verification_attempt:${persisted.id}`,
+          endedAt: Date.now(),
+        });
+      }
+    } catch (error) {
+      if (tracked && step) {
+        await tracked.epicAttempts.updateStep(step.id, { state: 'failed', verdict: 'inconclusive', endedAt: Date.now() }).catch(() => undefined);
+      }
+      throw error;
     }
     return {
       verifier: criticAttempt.verifier,

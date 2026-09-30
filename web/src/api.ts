@@ -2,6 +2,7 @@ import type {
   Attempt,
   ActivityProcess,
   AppConfig,
+  ExportDestinationTestResult,
   ConfigLayers,
   AttemptUsage,
   BudgetGuardrail,
@@ -24,6 +25,7 @@ import type {
   AttemptEvent,
   EpicAttempt,
   AttemptLogEvent,
+  Notification,
   Task,
   TicketTimelineEvent,
   VerificationAttempt,
@@ -36,6 +38,9 @@ import type {
   HarnessProvider,
   DiscoveredHarnessModel,
   TimelineResponse,
+  TaskExportStatus,
+  TaskExportAgainResult,
+  ExportState,
 } from './types.js';
 import type { Epic, EpicIntegrateOutcome } from './epic-model.js';
 import type { Stats } from './stats-model.js';
@@ -90,6 +95,8 @@ export const api = {
   resumeGlobal: () => request<{ paused: boolean }>('DELETE', '/api/global-pause'),
   configLayers: () => request<ConfigLayers>('GET', '/api/config/layers'),
   updateConfig: (patch: object) => request<AppConfig>('PATCH', '/api/config', patch),
+  testExportDestination: (body: { workspaceId: number | null; destination: 'directory' | 's3' }) =>
+    request<ExportDestinationTestResult>('POST', '/api/export/test-destination', body),
   replaceConfig: (config: AppConfig) => request<AppConfig>('PUT', '/api/config', config),
   revertConfig: () => request<AppConfig>('DELETE', '/api/config/overrides'),
   /** `open` is an explicit board optimization. Omit it for full task history.
@@ -107,6 +114,17 @@ export const api = {
     return request<{ tasks: Task[]; total: number }>('GET', query ? `/api/tasks?${query}` : '/api/tasks');
   },
   task: (id: number) => request<Task>('GET', `/api/tasks/${id}`),
+  notifications: ({ workspaceId, limit, before }: { workspaceId?: number; limit?: number; before?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (workspaceId !== undefined) params.set('workspaceId', String(workspaceId));
+    if (limit !== undefined) params.set('limit', String(limit));
+    if (before !== undefined) params.set('before', String(before));
+    const query = params.toString();
+    return request<{ items: Notification[]; unreadCount: number }>('GET', query ? `/api/notifications?${query}` : '/api/notifications');
+  },
+  markNotificationRead: (id: number) => request<{ notification: Notification }>('POST', `/api/notifications/${id}/read`),
+  markAllNotificationsRead: (workspaceId?: number) =>
+    request<{ updated: number }>('POST', '/api/notifications/read-all', workspaceId === undefined ? {} : { workspaceId }),
   stats: (from: number, to: number, workspaceId?: number) => {
     const query = new URLSearchParams({ from: String(from), to: String(to) });
     if (workspaceId !== undefined) query.set('workspaceId', String(workspaceId));
@@ -192,6 +210,19 @@ export const api = {
       epicPreMergeCritics?: EpicCriticOverlayEntry[] | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
+      exportEnabled?: boolean | null;
+      exportDirectoryPath?: string | null;
+      exportS3Endpoint?: string | null;
+      exportS3Region?: string | null;
+      exportS3Bucket?: string | null;
+      exportS3Prefix?: string | null;
+      exportS3ForcePathStyle?: boolean | null;
+      exportS3AccessKeyId?: string | null;
+      exportS3SecretAccessKey?: string | null;
+      exportRedactPatterns?: { id: string; regex: string }[] | null;
+      exportIncludeStates?: ExportState[] | null;
+      archiveRetentionDays?: number | null;
+      archiveRetentionMaxTotalMB?: number | null;
       toolTimeoutMinutes?: number | null;
       drivePrompt?: string | null;
       driveUnattendedReminder?: string | null;
@@ -263,6 +294,9 @@ export const api = {
   taskAttemptTimeline: (id: number) => request<{ attempts: Attempt[]; budgetBase: number; total: number }>('GET', `/api/tasks/${id}/attempts/timeline`),
   /** Ticket-wide chronological lifecycle audit projection. */
   taskTimeline: (id: number) => request<{ events: TicketTimelineEvent[]; total: number }>('GET', `/api/tasks/${id}/timeline`),
+  taskExport: (id: number) => request<TaskExportStatus>('GET', `/api/tasks/${id}/export`),
+  exportTaskAgain: (id: number) => request<TaskExportAgainResult>('POST', `/api/tasks/${id}/export`),
+  taskExportDownloadUrl: (id: number) => `/api/tasks/${id}/export/download`,
   taskUsage: (id: number) =>
     request<AttemptUsage & { cost: Cost | null; attemptCount: number }>('GET', `/api/tasks/${id}/usage`),
   attempt: (id: number) => request<AttemptSummary>('GET', `/api/attempts/${id}`),
@@ -270,7 +304,7 @@ export const api = {
   currentAttempt: (taskId: number) => request<AttemptSummary>('GET', `/api/tasks/${taskId}/attempts/current`),
   attemptEvents: (id: number) => request<{ events: AttemptEvent[]; total: number }>('GET', `/api/attempts/${id}/events`),
   attemptLog: (id: number) =>
-    request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number } | { status: 'unavailable'; liveCursor: number }>('GET', `/api/attempts/${id}/log`),
+    request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number; fromArchive?: boolean } | { status: 'unavailable'; liveCursor: number }>('GET', `/api/attempts/${id}/log`),
   attemptGuardrailEvents: (id: number) =>
     request<{ guardrailEvents: GuardrailEvent[]; total: number }>('GET', `/api/attempts/${id}/guardrail-events`),
   attemptVerificationAttempts: (id: number) =>

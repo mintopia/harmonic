@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { type HarnessId, type VerificationCommand, verificationCommandSchema } from '../src/config.js';
+import { TaskArchive } from '../src/archive/task-archive.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import { resetCodeIndexAvailabilityForTest } from '../src/execution/code-index.js';
@@ -922,6 +923,33 @@ describe('verification-command', () => {
       expect(await verdictEvents(attemptId)).toEqual([
         { event: 'verification', mechanism: 'command', verdict: 'pass', summary: 'command exited 0' },
       ]);
+    });
+
+    it('the pre-merge command streams its full output to the Task Archive output.log', async () => {
+      const echo = verificationCommandSchema.parse({
+        id: 'pre-echo',
+        command: process.execPath,
+        args: ['-e', "console.log('pre-merge-out')"],
+        timeoutSeconds: 30,
+      });
+      await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCommands: localCommands(echo) });
+      const { taskId, attemptId } = await createAndRun();
+      await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+        return body.state === 'done' ? body : undefined;
+      });
+
+      const ctx = server.app.ctx;
+      const archive = new TaskArchive({
+        dataDir: server.dataDir,
+        ensureArchiveId: (id) => ctx.tasks.ensureArchiveId(id),
+        workspaceName: async (id) => (await ctx.workspaces.get(id)).name,
+      });
+      const task = await ctx.tasks.get(taskId);
+      const run = await ctx.attempts.get(attemptId);
+      const root = await archive.ensure(task);
+      const log = readFileSync(join(root, 'attempts', String(run.number), 'verification', 'pre-merge', 'pre-echo', 'output.log'), 'utf8');
+      expect(log).toContain('pre-merge-out');
     });
 
     it('a direct Run works in place: its verified commit is the base branch tip, with no private ref and no run branch', async () => {

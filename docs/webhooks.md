@@ -8,12 +8,12 @@ event of a Task that overrides to the Channel).
 
 ```json
 {
-  "event": "task.awaiting-review",
+  "event": "task.escalated",
   "timestamp": 1784020800000,
   "task": {
     "id": 3,
     "prompt": "Fix the flaky login test",
-    "state": "awaiting-review",
+    "state": "escalated",
     "harness": "claude",
     "model": "claude-sonnet-5",
     "priority": "normal",
@@ -23,10 +23,14 @@ event of a Task that overrides to the Channel).
 }
 ```
 
-- `event` — one of `task.created`, `run.started`, `task.awaiting-review`,
-  `task.completed`, `task.failed`, `queue.idle`.
+- `event` — one of `task.created`, `run.started`, `task.escalated`,
+  `task.done`, `task.failed`, `queue.idle`, `update.failed`, `export.failed`.
+  `task.failed` fires when a failed Attempt re-queues its Task;
+  `export.failed` when an Export Destination fails.
 - `timestamp` — milliseconds since the Unix epoch, set at send time.
 - `task` — present for every event except `queue.idle`.
+- `export` — present on `export.failed` only: `destination`, `disposition`, `error`,
+  `retry` (0 = first attempt) and `nextRetryAt` (ISO timestamp, `null` when no further retry is scheduled).
 
 ## Headers
 

@@ -5,6 +5,7 @@ import type { TrackingContext } from '../app.js';
 import type { WorkspaceRow } from '../../db/schema.js';
 import type { ResolvedTracker } from '../../tracker/adapter.js';
 import { createWorkspaceInputSchema, updateWorkspaceInputSchema } from '../../domain/workspaces.js';
+import { EXPORT_STATES, redactPatternsSchema } from '../../config.js';
 import {
   verificationCommandOverrideSchema,
   taskVerificationCriticOverrideSchema,
@@ -13,9 +14,13 @@ import {
   unpricedModelsForCostCap,
   costCapMessage,
 } from '../../config.js';
+import { forEachYielding } from '../../reliability/yield.js';
+import { requestActor } from '../operator-inputs.js';
+import type { AppContext } from '../app.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
+import { maskWorkspaceSecrets } from '../../archive/export-secrets.js';
 
 /** The Resolved Tracker flattened for the API; `null` when tracking is off. `ok` discriminates `label` vs (`code`, `reason`). */
 const resolvedTrackerSchema = z
@@ -71,6 +76,20 @@ const workspaceSchema = z
     driveContinueAttempts: z.number().nullable().meta({ example: null }),
     /** Task Prompt override; null inherits `config.taskPrompt`. */
     taskPrompt: z.string().nullable().meta({ example: null }),
+    exportEnabled: z.boolean().nullable().meta({ example: null }),
+    exportDirectoryPath: z.string().nullable().meta({ example: null }),
+    exportS3Endpoint: z.string().nullable().meta({ example: null }),
+    exportS3Region: z.string().nullable().meta({ example: null }),
+    exportS3Bucket: z.string().nullable().meta({ example: null }),
+    exportS3Prefix: z.string().nullable().meta({ example: null }),
+    exportS3ForcePathStyle: z.boolean().nullable().meta({ example: null }),
+    /** Masked when set: a set key is always returned as the mask, never the value. */
+    exportS3AccessKeyId: z.string().nullable().meta({ example: null }),
+    exportS3SecretAccessKey: z.string().nullable().meta({ example: null }),
+    exportRedactPatterns: redactPatternsSchema.nullable().meta({ example: null }),
+    exportIncludeStates: z.array(z.enum(EXPORT_STATES)).nullable().meta({ example: null }),
+    archiveRetentionDays: z.number().nullable().meta({ example: null }),
+    archiveRetentionMaxTotalMB: z.number().nullable().meta({ example: null }),
     createdAt: z.number().meta({ example: 1784030400000 }),
     updatedAt: z.number().meta({ example: 1784032260000 }),
   })
@@ -78,7 +97,7 @@ const workspaceSchema = z
 
 const workspacesListResponseSchema = listResponse('workspaces', workspaceSchema);
 
-export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces' | 'settingsStore' | 'trackerManager' | 'workspaceWatcher'>): Promise<void> {
+export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces' | 'settingsStore' | 'trackerManager' | 'workspaceWatcher'> & Pick<AppContext, 'auth' | 'tasks' | 'archive'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   const serializeResolvedTracker = (r: ResolvedTracker | null) =>
@@ -90,13 +109,15 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
 
   /** A Workspace row plus its live Resolved Tracker; JSON-text override columns parsed back to the shape a client PATCHes. */
   const serialize = (ws: WorkspaceRow) => ({
-    ...ws,
+    ...maskWorkspaceSecrets(ws),
     taskPreMergeCommands: ws.taskPreMergeCommands ? JSON.parse(ws.taskPreMergeCommands) : null,
     taskPreMergeCritics: ws.taskPreMergeCritics ? JSON.parse(ws.taskPreMergeCritics) : null,
     taskPostMergeCommands: ws.taskPostMergeCommands ? JSON.parse(ws.taskPostMergeCommands) : null,
     taskPostMergeCritics: ws.taskPostMergeCritics ? JSON.parse(ws.taskPostMergeCritics) : null,
     epicPreMergeCommands: ws.epicPreMergeCommands ? JSON.parse(ws.epicPreMergeCommands) : null,
     epicPreMergeCritics: ws.epicPreMergeCritics ? JSON.parse(ws.epicPreMergeCritics) : null,
+    exportRedactPatterns: ws.exportRedactPatterns ? JSON.parse(ws.exportRedactPatterns) : null,
+    exportIncludeStates: ws.exportIncludeStates ? JSON.parse(ws.exportIncludeStates) : null,
     guardrailBudget: ws.guardrailBudget ? JSON.parse(ws.guardrailBudget) : null,
     resolvedTracker: serializeResolvedTracker(ctx.trackerManager.resolvedTracker(ws.id)),
   });
@@ -209,7 +230,14 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
       },
     },
     async (req, reply) => {
+      const actor = await requestActor(req, ctx);
+      const archived: Array<{ dir: string; taskId: number }> = [];
+      await forEachYielding(await ctx.tasks.list({ workspaceId: req.params.id }), async (task) => {
+        const dir = await ctx.archive.existingDir(task);
+        if (dir) archived.push({ dir, taskId: task.id });
+      });
       await ctx.workspaces.delete(req.params.id);
+      await forEachYielding(archived, ({ dir, taskId }) => ctx.archive.markDeleted(dir, actor, taskId));
       await ctx.trackerManager.sync();
       await ctx.workspaceWatcher.sync(await ctx.workspaces.list());
       return reply.status(204).send(null);

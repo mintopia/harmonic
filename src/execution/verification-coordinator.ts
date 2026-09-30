@@ -9,6 +9,7 @@ import { LIVE_RUN_LOG_EVENT_ID_OFFSET } from './live-events.js';
 import type { RunnerEvents } from './runner.js';
 import type { ActiveRuns } from './active-runs.js';
 import type { PostMergeCheckResult } from './merge-policy.js';
+import type { TaskArchive } from '../archive/task-archive.js';
 import type { TranscriptCapture } from './transcript-capture.js';
 import type { AppConfig, HarnessConfig, TaskVerificationCritic, VerificationCommand } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow, StepRow, VerificationAttemptRow } from '../db/schema.js';
@@ -67,6 +68,7 @@ export interface VerificationCoordinatorDeps {
   getConfig: () => AppConfig;
   getWorkspace: ((workspaceId: number | null) => Promise<VerifierWorkspace | undefined>) | undefined;
   criticDrive: CriticHarnessDrive | undefined;
+  archive?: TaskArchive | undefined;
   urlFor: (task: TaskRow) => string | null;
   worktreePathForTask: (task: TaskRow) => string;
   latestAttemptFor: (task: Pick<TaskRow, 'id'>) => Promise<AttemptRow>;
@@ -249,7 +251,9 @@ export class VerificationCoordinator {
       } else {
         const { timelineAttempt, timelineStep, label } = await this.openLiveVerificationStep(task, command, record);
         const relay = this.verificationOutputRelay(run.id, 'command', label);
+        const outputLogPath = (await this.deps.archive?.verificationOutputLog(task, run.number, 'pre-merge', command.id)) ?? null;
         const attempt = await runCommandVerifier({
+          outputLogPath,
           cwd: run.branch ? this.deps.worktreePathForTask(task) : task.workingDir,
           verifiedHeadOid: oid,
           command,
@@ -297,6 +301,7 @@ export class VerificationCoordinator {
         const timelineStep = await this.deps.attempts.createStep(timelineAttempt.id, { type: 'review' });
         await this.deps.updateStep(task.id, timelineStep.id, { state: 'running', startedAt: Date.now() });
         record('lifecycle', { event: 'verification-started', mechanism: 'critic', model: critic.model });
+        const archive = this.deps.archive?.criticStep(task, timelineAttempt.number, 'pre-merge', String(timelineStep.id));
         const attempt = await runCritic({
           cwd: criticCwd,
           verifiedHeadOid: oid,
@@ -311,6 +316,7 @@ export class VerificationCoordinator {
           attributes: { 'task.id': task.id, 'attempt.id': run.id },
           // `exactOptionalPropertyTypes` forbids an explicit `undefined`.
           ...(this.deps.criticDrive ? { drive: this.deps.criticDrive } : {}),
+          ...(archive ? { archive } : {}),
           onUpdate: this.relayCriticUpdateAsBuilderEvent(run.id),
         });
         const persisted = await this.deps.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
@@ -387,7 +393,9 @@ export class VerificationCoordinator {
     const { commands, critics } = resolvedTask.postMerge;
     const timelineAttempt = await this.deps.latestAttemptFor(task);
     for (const command of commands) {
+      const outputLogPath = (await this.deps.archive?.verificationOutputLog(task, run.number, 'post-merge', command.id)) ?? null;
       const attempt = await runCommandVerifier({
+        outputLogPath,
         cwd: baseDir,
         verifiedHeadOid: mergeOid,
         command,

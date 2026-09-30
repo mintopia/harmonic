@@ -243,11 +243,16 @@ export const api: typeof RealApi = {
   resumeGlobal: () => ok({ paused: false }),
   configLayers: () => ok(configLayers),
   updateConfig: (_patch: object) => ok(f.config),
+  testExportDestination: (body: { destination: 'directory' | 's3' }) => ok({ destination: body.destination, ok: true, testedAt: new Date().toISOString() }),
   replaceConfig: (_config: AppConfig) => ok(f.config),
   revertConfig: () => ok(f.config),
   tasks: (opts?: { workspaceId?: number; state?: 'open'; parent?: number; limit?: number; offset?: number }) =>
     opts?.parent !== undefined ? ok({ tasks: f.epicChildren, total: f.epicChildren.length }) : ok({ tasks: [f.task], total: 1 }),
   task: (_id: number) => ok(f.task),
+  notifications: (_opts?: { workspaceId?: number; limit?: number; before?: number }) => ok({ items: [], unreadCount: 0 }),
+  markNotificationRead: (id: number) =>
+    ok({ notification: { id, severity: 'failure' as const, title: '', detail: null, workspaceId: null, taskId: null, createdAt: 0, readAt: 0, read: true } }),
+  markAllNotificationsRead: (_workspaceId?: number) => ok({ updated: 0 }),
   stats: (_from: number, _to: number, _workspaceId?: number) => ok(dashboardStats),
   activity: () => ok({ processes: activityProcesses }),
   timeline: (_workspaceId: number | undefined, from: number, to: number) =>
@@ -314,6 +319,9 @@ export const api: typeof RealApi = {
       : ok({ attempts: f.attempts, budgetBase: 0, total: f.attempts.length });
   },
   taskTimeline: (_id: number) => ok({ events: f.timeline, total: f.timeline.length }),
+  taskExport: (_id: number) => ok({ exportable: true, latest: null, earlier: [] }),
+  exportTaskAgain: (_id: number) => ok({ outcomes: [], export: { exportable: true, latest: null, earlier: [] } }),
+  taskExportDownloadUrl: (id: number) => `/api/tasks/${id}/export/download`,
   taskUsage: (id: number) =>
     ok(f.epicChildUsage[id] ?? { models: {}, agents: {}, toolCalls: {}, totals: null, source: null, cost: null, attemptCount: 0 }),
   attempt: (_id: number) => ok(f.runs[2] ?? f.runs[0]!),

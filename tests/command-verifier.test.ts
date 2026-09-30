@@ -1,5 +1,6 @@
 import { describe, it, expect, afterAll, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,6 +16,8 @@ import {
   exitCodeToVerdict,
   createChildProcessSpawn,
   OUTPUT_CHAR_CAP,
+  truncationMarker,
+  createOutputPreview,
   type CommandSpawn,
   type CommandSpawnResult,
 } from '../src/verification/command-verifier.js';
@@ -289,7 +292,134 @@ describe('command verifier (issue #135)', () => {
       command: nodeCommand(`const s="x".repeat(10000); for(let i=0;i<25;i++) process.stdout.write(s);`),
       spawn: createChildProcessSpawn(),
     });
-    expect(attempt.output.length).toBe(OUTPUT_CHAR_CAP);
+    expect(attempt.output.length).toBeLessThanOrEqual(OUTPUT_CHAR_CAP);
+    expect(attempt.output).toContain('truncated');
     expect(attempt.verdict).toBe('pass');
+  });
+
+  describe('full output log', () => {
+    const script = `process.stdout.write('a'.repeat(1_000_000)); process.stdout.write('TAIL-MARK')`;
+    const total = 1_000_009;
+    const logDir = (): string => {
+      const d = mkdtempSync(join(tmpdir(), 'harmonic-cmdverify-log-'));
+      tmpDirs.push(d);
+      return d;
+    };
+    const run = (outputLogPath: string, s = script) =>
+      createChildProcessSpawn().run({
+        command: nodeCommand(s),
+        cwd: tmpdir(),
+        timeoutMs: 30_000,
+        outputCap: OUTPUT_CHAR_CAP,
+        outputLogPath,
+      });
+
+    it('writes the full uncapped output to disk', async () => {
+      const path = join(logDir(), 'output.log');
+      await run(path);
+      expect((await stat(path)).size).toBe(total);
+      expect((await readFile(path, 'utf8')).endsWith('TAIL-MARK')).toBe(true);
+    });
+
+    it('preview keeps head and tail with an exact elided count', async () => {
+      const logPath = join(logDir(), 'output.log');
+      const r = await run(logPath);
+      expect(r.output.length).toBeLessThanOrEqual(OUTPUT_CHAR_CAP);
+      expect(r.output.startsWith('aaaa')).toBe(true);
+      expect(r.output.endsWith('TAIL-MARK')).toBe(true);
+      const m = /\n…\[truncated (\d+) chars; full output: (.+)\]…\n/.exec(r.output);
+      expect(m).not.toBeNull();
+      const elided = Number(m![1]);
+      expect(m![2]).toBe(logPath);
+      expect(r.output).toContain(truncationMarker(elided, logPath));
+      expect(r.output.length - truncationMarker(elided, logPath).length + elided).toBe(total);
+    });
+
+    it('small output equals the file and has no marker', async () => {
+      const path = join(logDir(), 'output.log');
+      const r = await run(path, `process.stdout.write('hello '); process.stderr.write('world')`);
+      expect(r.output).toBe('hello world');
+      expect(await readFile(path, 'utf8')).toBe('hello world');
+    });
+
+    it('a re-run replaces the previous run output', async () => {
+      const path = join(logDir(), 'output.log');
+      await run(path, `process.stdout.write('one')`);
+      await run(path, `process.stdout.write('two')`);
+      expect(await readFile(path, 'utf8')).toBe('two');
+    });
+
+    it('an unwritable path does not change the verdict', async () => {
+      const bad = join(logDir(), 'missing', 'output.log');
+      const { repo, oid } = await repoWithCandidate();
+      const attempt = await runCommandVerifier({
+        cwd: repo,
+        verifiedHeadOid: oid,
+        command: nodeCommand(script),
+        outputLogPath: bad,
+      });
+      expect(attempt.verdict).toBe('pass');
+      expect(attempt.output.endsWith('TAIL-MARK')).toBe(true);
+    });
+
+    it('an unwritable path leaves no file link in the truncation marker', async () => {
+      const bad = join(logDir(), 'missing', 'output.log');
+      const r = await run(bad);
+      expect(r.output).toContain('truncated');
+      expect(r.output).not.toContain('full output');
+      expect(r.output).not.toContain(bad);
+      expect(r.output.length).toBeLessThanOrEqual(OUTPUT_CHAR_CAP);
+    });
+
+    it('runCommandVerifier forwards outputLogPath', async () => {
+      const path = join(logDir(), 'output.log');
+      const { repo, oid } = await repoWithCandidate();
+      const attempt = await runCommandVerifier({
+        cwd: repo,
+        verifiedHeadOid: oid,
+        command: nodeCommand(script),
+        outputLogPath: path,
+      });
+      expect(attempt.verdict).toBe('pass');
+      expect((await stat(path)).size).toBe(total);
+    });
+  });
+
+  describe('createOutputPreview', () => {
+    it('output equal to the cap has no marker; cap+1 does', () => {
+      const a = createOutputPreview(100);
+      a.append('x'.repeat(100));
+      expect(a.text()).toBe('x'.repeat(100));
+      const b = createOutputPreview(100);
+      b.append('x'.repeat(50));
+      b.append('y'.repeat(51));
+      const t = b.text();
+      expect(t).toContain('truncated');
+      expect(t.length).toBeLessThanOrEqual(100);
+    });
+
+    it('keeps head and tail across many small chunks', () => {
+      const p = createOutputPreview(200);
+      const all = Array.from({ length: 5000 }, (_, i) => String(i % 10)).join('');
+      for (const c of all) p.append(c);
+      const t = p.text();
+      expect(t.length).toBeLessThanOrEqual(200);
+      expect(t.startsWith(all.slice(0, 20))).toBe(true);
+      expect(t.endsWith(all.slice(-20))).toBe(true);
+      const m = /truncated (\d+) chars/.exec(t)!;
+      expect(t.length - truncationMarker(Number(m[1])).length + Number(m[1])).toBe(all.length);
+    });
+
+    it('never splits a surrogate pair at the head or tail cut', () => {
+      for (let cap = 60; cap < 80; cap += 1) {
+        const p = createOutputPreview(cap);
+        p.append('😀'.repeat(200));
+        const t = p.text();
+        expect(t.length).toBeLessThanOrEqual(cap);
+        expect(Buffer.from(t, 'utf8').toString('utf8')).toBe(t);
+        const elided = Number(/truncated (\d+) chars/.exec(t)![1]);
+        expect(t.length - truncationMarker(elided).length + elided).toBe(400);
+      }
+    });
   });
 });

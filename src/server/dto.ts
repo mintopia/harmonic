@@ -8,6 +8,7 @@ import type {
   ConversationState,
   VerificationAttemptRow,
   TaskRow,
+  NotificationRow,
 } from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import type { IsolationMode, Priority } from '../config.js';
@@ -23,12 +24,39 @@ import { z } from 'zod';
 import type { AdvertisedCommand } from '../execution/conversation-driver.js';
 import type { ResolvedGuardrails } from '../domain/setting-override.js';
 import { wallClockBudgetMs } from '../domain/guardrail-budget.js';
+import { firstLineTitle } from '../domain/task-title.js';
+
+export { firstLineTitle, taskDisplayTitle } from '../domain/task-title.js';
 
 export const parseUsage = (raw: string | null): AttemptUsage | null => (raw ? (JSON.parse(raw) as AttemptUsage) : null);
 export const parseCost = (raw: string | null): Cost | null => (raw ? (JSON.parse(raw) as Cost) : null);
 
 /** `workspaceId` is nullable only because SQLite can't ADD COLUMN NOT NULL without a default; every row has one at rest. */
 export const atRestWorkspaceId = (workspaceId: number | null): number => workspaceId!;
+
+export interface ApiNotification {
+  id: number;
+  severity: NotificationRow['severity'];
+  title: string;
+  detail: string | null;
+  workspaceId: number | null;
+  taskId: number | null;
+  createdAt: number;
+  readAt: number | null;
+  read: boolean;
+}
+
+export const notificationToApi = (row: NotificationRow): ApiNotification => ({
+  id: row.id,
+  severity: row.severity,
+  title: row.title,
+  detail: row.detail,
+  workspaceId: row.workspaceId,
+  taskId: row.taskId,
+  createdAt: row.createdAt,
+  readAt: row.readAt,
+  read: row.readAt !== null,
+});
 
 export const scheduledJobsToApi = (jobs: ScheduledJobSnapshot[]): ScheduledJobSnapshot[] => jobs;
 
@@ -342,7 +370,7 @@ type TrackerFactColumns =
   | 'trackerUrl'
   | 'trackerCreatedAt';
 
-export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'isolationMode' | 'priority' | 'overrides' | TrackerFactColumns> & {
+export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'isolationMode' | 'priority' | 'overrides' | 'archiveId' | TrackerFactColumns> & {
   workspaceId: number;
   /** Resolved effective value; always one of `ISOLATION_MODES` (`config.ts`) at rest. */
   isolationMode: IsolationMode;
@@ -453,8 +481,9 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiTaskListR
   };
 }
 
-function stripTrackerFactCols(task: TaskWithDeps): Omit<TaskWithDeps, TrackerFactColumns> {
+function stripTrackerFactCols(task: TaskWithDeps): Omit<TaskWithDeps, TrackerFactColumns | 'archiveId'> {
   const {
+    archiveId,
     trackerState, trackerParent, trackerBlockedBy, trackerLabels,
     trackerTitle, trackerBody, trackerUrl, trackerCreatedAt,
     ...rest
@@ -691,16 +720,6 @@ export type ApiConversation = Omit<ConversationRow, 'usage' | 'workspaceId'> & {
   commands: AdvertisedCommand[];
   commandPrefix: string;
 };
-
-const DERIVED_TITLE_MAX = 80;
-
-/** First non-empty line of `text`, clamped to `DERIVED_TITLE_MAX` with an ellipsis; null when blank. */
-export function firstLineTitle(text: string | null): string | null {
-  if (!text) return null;
-  const line = text.split('\n').find((l) => l.trim().length > 0)?.trim();
-  if (!line) return null;
-  return line.length > DERIVED_TITLE_MAX ? `${line.slice(0, DERIVED_TITLE_MAX - 1).trimEnd()}…` : line;
-}
 
 export function deriveConversationTitle(firstTurnText: string | null): string | null {
   return firstLineTitle(firstTurnText);

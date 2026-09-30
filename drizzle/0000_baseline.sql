@@ -143,6 +143,20 @@ CREATE TABLE `guardrail_events` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `guardrail_events_attempt_seq_unique` ON `guardrail_events` (`attempt_id`,`seq`);--> statement-breakpoint
+CREATE TABLE `notifications` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`severity` text NOT NULL,
+	`title` text NOT NULL,
+	`detail` text,
+	`workspace_id` integer,
+	`task_id` integer,
+	`created_at` integer NOT NULL,
+	`read_at` integer,
+	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE set null
+);
+--> statement-breakpoint
+CREATE INDEX `notifications_created_at_idx` ON `notifications` (`created_at`);--> statement-breakpoint
+CREATE INDEX `notifications_workspace_id_idx` ON `notifications` (`workspace_id`);--> statement-breakpoint
 CREATE TABLE `permission_rules` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`kind` text NOT NULL,
@@ -265,11 +279,13 @@ CREATE TABLE `tasks` (
 	`tracker_body` text,
 	`tracker_url` text,
 	`tracker_created_at` text,
+	`archive_id` text,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL,
 	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX `tasks_archive_id_idx` ON `tasks` (`archive_id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `tasks_tracker_ref_idx` ON `tasks` (`workspace_id`,`tracker_ref`);--> statement-breakpoint
 CREATE INDEX `tasks_workspace_id_idx` ON `tasks` (`workspace_id`);--> statement-breakpoint
 CREATE TABLE `tracker_containers` (

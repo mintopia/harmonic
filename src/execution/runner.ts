@@ -59,6 +59,7 @@ export class Runner {
   private readonly worktreesDir: string;
   private readonly keys: RunnerOptions['keys'];
   private readonly autoDrive: AutoDrive | undefined;
+  private readonly archive: RunnerOptions['archive'];
   private readonly taskEvents: RunnerOptions['taskEvents'];
   private readonly getWorkspace: RunnerOptions['getWorkspace'];
   private readonly postMerge: RunnerOptions['postMerge'];
@@ -97,6 +98,7 @@ export class Runner {
     this.worktreesDir = options.worktreesDir ?? join(tmpdir(), 'harmonic-worktrees');
     this.keys = options.keys;
     this.autoDrive = options.autoDrive;
+    this.archive = options.archive;
     this.taskEvents = options.taskEvents;
     this.getWorkspace = options.getWorkspace;
     this.postMerge = options.postMerge;
@@ -133,6 +135,8 @@ export class Runner {
       this.attempts,
       (run) => this.events.onAttemptFinished?.(run),
       options.sessionRetirement,
+      undefined,
+      { onFailedAttemptRequeued: options.onFailedAttemptRequeued, onTaskMerged: options.onTaskMerged },
     );
     this.sessionRetirement = options.sessionRetirement;
     this.isGloballyPaused = options.isGloballyPaused;
@@ -169,6 +173,7 @@ export class Runner {
       transcripts: this.transcripts,
       getWorkspace: this.getWorkspace,
       criticDrive: this.criticDrive,
+      archive: this.archive,
       postMerge: this.postMerge,
       urlFor: this.urlFor,
       listWorkingTasks: () => this.taskService.list({ state: 'working' }),
@@ -211,6 +216,7 @@ export class Runner {
       sessionStore: this.sessionStore,
       transcripts: this.transcripts,
       activeRuns: this.activeRuns,
+      archive: this.archive,
       events: this.events,
       getConfig: this.getConfig,
       getWorkspace: this.getWorkspace,
@@ -235,6 +241,7 @@ export class Runner {
       mergeCoordinator: this.mergeCoordinator,
       verification: this.verification,
       sessionContinuation: this.sessionContinuation,
+      archive: this.archive,
       events: this.events,
       autoDrive: this.autoDrive,
       keys: this.keys,

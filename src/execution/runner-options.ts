@@ -1,3 +1,4 @@
+import type { TaskArchive } from '../archive/task-archive.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { TailerCadence } from './live-usage-tailer.js';
 import type { GitCircuitBreaker } from './git-failure.js';
@@ -40,6 +41,7 @@ export interface TaskEventAppender {
 }
 
 export interface RunnerOptions {
+  archive?: TaskArchive;
   isGloballyPaused?: () => boolean;
   onGloballyPaused?: (taskId: number) => Promise<void>;
   events?: RunnerEvents;
@@ -88,6 +90,8 @@ export interface RunnerOptions {
   criticDrive?: CriticHarnessDrive | undefined;
   /** Session retirement hook; absent → Sessions are never retired. */
   sessionRetirement?: SessionRetirementHook;
+  onFailedAttemptRequeued?: (task: TaskRow, reason: string) => void;
+  onTaskMerged?: (task: TaskRow) => void;
   /** Per-context git circuit breaker, shared with the Auto-Runner (which must
    * be given the SAME instance). Absent → no breaker. */
   gitBreaker?: GitCircuitBreaker;

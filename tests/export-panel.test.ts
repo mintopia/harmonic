@@ -1,0 +1,115 @@
+// @vitest-environment jsdom
+import { createElement } from 'react';
+import { act } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ExportPanel } from '../web/src/components/ticket/ExportPanel.js';
+import type { TaskExportDeps } from '../web/src/components/useTaskExport.js';
+import type { ExportSummary, TaskExportStatus } from '../web/src/types.js';
+import { cleanup, flush, mountComponent } from './component-smoke-harness.js';
+
+afterEach(cleanup);
+
+const latest: ExportSummary = {
+  name: '412-done.tar.gz',
+  disposition: 'done',
+  builtAt: '2026-09-30T11:42:07.000Z',
+  bytes: 19_293_798,
+  partial: false,
+  redactions: { bearer: 4 },
+  destinations: [
+    { destination: 'directory', location: '/srv/x', status: 'succeeded', lastAttemptAt: '2026-09-30T11:42:09.000Z', file: '/srv/x/412.tar.gz', error: null, retry: null },
+    {
+      destination: 's3',
+      location: 's3://b/p/',
+      status: 'failed',
+      lastAttemptAt: '2026-09-30T11:42:11.000Z',
+      file: null,
+      error: 'AccessDenied: s3:PutObject',
+      retry: { count: 0, max: 3, nextRetryAt: new Date(Date.now() + 5 * 60_000).toISOString(), exhausted: false },
+    },
+  ],
+};
+
+const status = (over: Partial<TaskExportStatus> = {}): TaskExportStatus => ({ exportable: true, latest, earlier: [], ...over });
+
+function deps(over: Partial<TaskExportDeps> = {}): TaskExportDeps {
+  return { load: async () => status(), exportAgain: async () => ({ outcomes: [], export: status() }), ...over };
+}
+
+async function mount(d: TaskExportDeps, state = 'done') {
+  return mountComponent(createElement(ExportPanel, { taskId: 7, state, refreshKey: 0, deps: d }));
+}
+
+describe('ExportPanel', () => {
+  it('shows the latest Export, per-Destination status, error and retry, with Download', async () => {
+    const host = await mount(deps());
+
+    expect(host.textContent).toContain('412-done.tar.gz');
+    expect(host.textContent).toContain('Delivered');
+    expect(host.textContent).toContain('AccessDenied: s3:PutObject');
+    expect(host.textContent).toContain('Retry 1 of 3 in 5 min');
+    expect(host.querySelector('a[download]')?.getAttribute('href')).toBe('/api/tasks/7/export/download');
+    expect(host.textContent).not.toContain('partial');
+  });
+
+  it('shows the partial variant', async () => {
+    const host = await mount(deps({ load: async () => status({ latest: { ...latest, partial: true } }) }));
+
+    expect(host.textContent).toContain('partial');
+    expect(host.textContent).toContain('This Task predates the Archive');
+  });
+
+  it('renders nothing for an unfinished Task and does not fetch', async () => {
+    const load = vi.fn(async () => status());
+    const host = await mount(deps({ load }), 'working');
+
+    expect(host.querySelector('#export-panel')).toBeNull();
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it('runs Export again: disables the button while busy, then shows success and the refreshed status', async () => {
+    let resolve!: (v: Awaited<ReturnType<TaskExportDeps['exportAgain']>>) => void;
+    const exportAgain = vi.fn(() => new Promise<Awaited<ReturnType<TaskExportDeps['exportAgain']>>>((r) => (resolve = r)));
+    const host = await mount(deps({ exportAgain }));
+    const button = [...host.querySelectorAll('button')].find((b) => b.textContent?.includes('Export again'))!;
+
+    await act(async () => button.click());
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toContain('Exporting');
+
+    const refreshed = status({ latest: { ...latest, name: '412-done-2.tar.gz', destinations: [latest.destinations[0]!] } });
+    await act(async () => {
+      resolve({ outcomes: [{ destination: 'directory', status: 'succeeded', file: 'f', error: null }], export: refreshed });
+      await flush();
+    });
+
+    expect(button.disabled).toBe(false);
+    expect(host.textContent).toContain('Export delivered to Directory.');
+    expect(host.textContent).toContain('412-done-2.tar.gz');
+  });
+
+  it('shows the error message inline when Export again is refused', async () => {
+    const host = await mount(deps({ exportAgain: async () => Promise.reject(new Error('No Export Destination is enabled for this Task')) }));
+    const button = [...host.querySelectorAll('button')].find((b) => b.textContent?.includes('Export again'))!;
+
+    await act(async () => {
+      button.click();
+      await flush();
+    });
+
+    expect(host.querySelector('[role=alert]')?.textContent).toContain('No Export Destination is enabled');
+    expect(button.disabled).toBe(false);
+  });
+});
+
+describe('ChatTranscript from Archive tag', () => {
+  it('shows the tag only when the transcript is the Archive copy', async () => {
+    const { ChatTranscript } = await import('../web/src/components/ticket/ChatTranscript.js');
+    const render = (fromArchive: boolean) =>
+      mountComponent(createElement(ChatTranscript, { events: [], unavailable: false, fromArchive, model: 'm', agent: 'Claude' }));
+
+    expect((await render(true)).textContent).toContain('from Archive');
+    await cleanup();
+    expect((await render(false)).textContent).not.toContain('from Archive');
+  });
+});

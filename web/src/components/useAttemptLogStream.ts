@@ -15,9 +15,11 @@ import type { AttemptLogEvent } from '../types';
 export function useAttemptLogStream(attemptId: number | null): {
   events: AttemptLogEvent[];
   logUnavailable: boolean;
+  fromArchive: boolean;
 } {
   const [events, setEvents] = useState<AttemptLogEvent[]>([]);
   const [logUnavailable, setLogUnavailable] = useState(false);
+  const [fromArchive, setFromArchive] = useState(false);
 
   useLiveEffect((live) => {
     if (attemptId === null) return;
@@ -26,6 +28,7 @@ export function useAttemptLogStream(attemptId: number | null): {
     let cursor = 0;
     setEvents([]);
     setLogUnavailable(false);
+    setFromArchive(false);
     const unsubscribe = subscribeAttemptLog({ attemptId, after: () => cursor, onEvent: (event) => {
       cursor = Math.max(cursor, event.seq);
       if (!hydrated) {
@@ -43,6 +46,7 @@ export function useAttemptLogStream(attemptId: number | null): {
           additions: log.status === 'available' ? eventsForAttemptLogHydration({ events: pending, liveCursor: log.liveCursor }) : pending,
         });
         setLogUnavailable(log.status === 'unavailable' && hydratedEvents.length === 0);
+        setFromArchive(log.status === 'available' && log.fromArchive === true);
         cursor = Math.max(log.liveCursor, attemptLogCursor({ events: pending }));
         setEvents(hydratedEvents);
         hydrated = true;
@@ -61,5 +65,5 @@ export function useAttemptLogStream(attemptId: number | null): {
     };
   }, [attemptId]);
 
-  return { events, logUnavailable };
+  return { events, logUnavailable, fromArchive };
 }

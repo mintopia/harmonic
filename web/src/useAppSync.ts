@@ -57,6 +57,12 @@ export interface UseAppSyncArgs {
   storage?: StorageLike;
 }
 
+function exportRetryText(retry: number, nextRetryAt: string | null): string {
+  if (nextRetryAt === null) return retry === 0 ? 'not retried' : 'retries exhausted';
+  const minutes = Math.max(1, Math.round((Date.parse(nextRetryAt) - Date.now()) / 60_000));
+  return minutes >= 120 ? `retrying in ${Math.round(minutes / 60)} h` : `retrying in ${minutes} min`;
+}
+
 export function useAppSync({ authed, route, navigate, onEscalationHandled, apiImpl = api, storage = localStorage }: UseAppSyncArgs) {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<number | null>(() => loadActiveWorkspaceId(storage));
   useEffect(() => {
@@ -160,6 +166,14 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
   }, [authed, apiImpl, updatePollKey]);
 
   useLiveEffect((live) => {
+    if (!authed) return;
+    return subscribe((msg) => {
+      if (!live() || msg.type !== 'export_failed') return;
+      toastFail(`Export of ${taskLabel(msg.taskId)} to ${msg.destination} failed — ${exportRetryText(msg.retry, msg.nextRetryAt)}`);
+    });
+  }, [authed]);
+
+  useLiveEffect((live) => {
     if (!authed || activeWorkspaceId === null) return;
     setHasHistory(null);
     apiImpl.tasks({ workspaceId: activeWorkspaceId, limit: 1 }).then(
@@ -182,7 +196,7 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
         setTasks((current) => {
           const prev = (current ?? []).find((t) => t.id === msg.task.id);
           if (prev?.mergeStatus && !msg.task.mergeStatus && msg.task.state === 'done') {
-            outcomes.push(() => toastSuccess(`${taskLabel(msg.task.id)} merged`, { sticky: true }));
+            outcomes.push(() => toastSuccess(`${taskLabel(msg.task.id)} merged`));
           } else if (prev && prev.state !== 'escalated' && msg.task.state === 'escalated') {
             outcomes.push(() => toastFail(`${taskLabel(msg.task.id)} escalated — needs a decision`));
           }
@@ -201,7 +215,7 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
         debouncedRefreshEpics();
       }
       if (msg.type === 'epic_integrated' && msg.workspaceId === activeWorkspaceId) {
-        toastSuccess(`Epic #${msg.epicRef} merged`, { sticky: true });
+        toastSuccess(`Epic #${msg.epicRef} merged`);
         debouncedRefreshEpics();
       }
       if (msg.type === 'task_removed') {

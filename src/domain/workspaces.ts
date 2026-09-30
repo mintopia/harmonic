@@ -16,6 +16,7 @@ import {
   type WorkspaceRow,
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
+import { EXPORT_STATES, exportDirectoryPathSchema, exportS3EndpointSchema, redactPatternsSchema } from '../config.js';
 import { DomainError } from './errors.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
 import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
@@ -98,6 +99,24 @@ export const workspaceOverridesSchema = z.object({
   /** Task Prompt override; null inherits `config.taskPrompt`. */
   taskPrompt: z.string().min(1).nullable().optional(),
   pauseMessage: z.string().min(1).nullable().optional(),
+  /** Export-on-terminal toggle override; null inherits `config.export.enabled`. */
+  exportEnabled: z.boolean().nullable().optional(),
+  /** Export directory override (absolute); null inherits `config.export.directory.path`. */
+  exportDirectoryPath: exportDirectoryPathSchema.nullable().optional().meta({ example: '/srv/harmonic-exports' }),
+  exportS3Endpoint: exportS3EndpointSchema.nullable().optional().meta({ example: 'https://s3.eu-west-2.amazonaws.com' }),
+  exportS3Region: z.string().min(1).nullable().optional().meta({ example: 'eu-west-2' }),
+  exportS3Bucket: z.string().min(1).nullable().optional().meta({ example: 'harmonic-exports' }),
+  exportS3Prefix: z.string().nullable().optional().meta({ example: 'harmonic/' }),
+  exportS3ForcePathStyle: z.boolean().nullable().optional(),
+  /** Write-only in effect: responses carry the mask, and sending the mask back keeps the stored value. */
+  exportS3AccessKeyId: z.string().min(1).nullable().optional(),
+  exportS3SecretAccessKey: z.string().min(1).nullable().optional(),
+  exportRedactPatterns: redactPatternsSchema.nullable().optional().meta({ example: [{ id: 'internal-host', regex: 'corp\\.example\\.internal' }] }),
+  /** Dispositions-to-export override; null inherits `config.export.includeStates`. */
+  exportIncludeStates: z.array(z.enum(EXPORT_STATES)).nullable().optional().meta({ example: ['done'] }),
+  /** Archive retention overrides; a null field inherits `config.archive.retain`. */
+  archiveRetentionDays: z.number().int().positive().nullable().optional().meta({ example: 90 }),
+  archiveRetentionMaxTotalMB: z.number().positive().nullable().optional().meta({ example: 2048 }),
 });
 export type WorkspaceOverrides = z.infer<typeof workspaceOverridesSchema>;
 
@@ -131,6 +150,19 @@ export const OVERRIDE_KEYS = [
   'driveContinueAttempts',
   'taskPrompt',
   'pauseMessage',
+  'exportEnabled',
+  'exportDirectoryPath',
+  'exportS3Endpoint',
+  'exportS3Region',
+  'exportS3Bucket',
+  'exportS3Prefix',
+  'exportS3ForcePathStyle',
+  'exportS3AccessKeyId',
+  'exportS3SecretAccessKey',
+  'exportRedactPatterns',
+  'exportIncludeStates',
+  'archiveRetentionDays',
+  'archiveRetentionMaxTotalMB',
 ] as const;
 
 /** A fully-populated overrides object: every key present, `null` meaning
@@ -203,6 +235,19 @@ export class WorkspaceService {
       driveContinueAttempts: o.driveContinueAttempts,
       taskPrompt: o.taskPrompt,
       pauseMessage: o.pauseMessage,
+      exportEnabled: o.exportEnabled,
+      exportDirectoryPath: o.exportDirectoryPath,
+      exportS3Endpoint: o.exportS3Endpoint,
+      exportS3Region: o.exportS3Region,
+      exportS3Bucket: o.exportS3Bucket,
+      exportS3Prefix: o.exportS3Prefix,
+      exportS3ForcePathStyle: o.exportS3ForcePathStyle,
+      exportS3AccessKeyId: o.exportS3AccessKeyId,
+      exportS3SecretAccessKey: o.exportS3SecretAccessKey,
+      exportRedactPatterns: o.exportRedactPatterns != null ? JSON.stringify(o.exportRedactPatterns) : null,
+      exportIncludeStates: o.exportIncludeStates != null ? JSON.stringify(o.exportIncludeStates) : null,
+      archiveRetentionDays: o.archiveRetentionDays,
+      archiveRetentionMaxTotalMB: o.archiveRetentionMaxTotalMB,
     };
   }
 

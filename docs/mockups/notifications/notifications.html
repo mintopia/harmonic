@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en" data-scope="global">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notifications mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+/* Tokens copied from web/src/index.css (Paper, 2026-09-11 graphite pass) */
+:root{
+  color-scheme:light;
+  --canvas:#edeeeb;--shell:#fff;--surface:#fff;--sunken:#f5f5f3;--field:#fff;--raised:#ededea;
+  --hairline:#e0e0db;--edge:#d0d0ca;--edge-strong:#c3c3bc;--switch-off:#858983;
+  --ink:#1b1e24;--muted:#656b73;--faint:#61676f;
+  --accent:#077067;--accent-hot:#0a6f66;--accent-tint:#b6ece4;--on-accent:#fff;
+  --running:#a74d08;--running-dot:#cf6a12;--running-tint:#fdeacc;
+  --ready:#1160ae;--ready-tint:#cee3fa;
+  --await:#4740c6;--await-tint:#d6d2fc;--on-await:#fff;
+  --merged:#0d7734;--merged-dot:#14a049;--merged-tint:#c2f2cd;
+  --done:#0d7734;--on-done:#fff;
+  --fail:#b3253f;--fail-dot:#ca2947;--fail-tint:#ffccd6;--on-fail:#fff;
+  --blocked:#5b616a;--tool:#077067;--tool-tint:#b6ece4;
+  --shadow-card:0 1px 2px rgb(27 30 36/.06),0 6px 18px rgb(27 30 36/.07);
+  --shadow-float:0 8px 20px rgb(23 26 34/.12),0 24px 60px rgb(23 26 34/.16);
+  --shadow-bar:0 16px 44px rgb(27 30 36/.16),0 0 0 1px var(--hairline);
+  --shadow-btn:0 1px 2px rgb(13 114 113/.32);
+  --mock:#b0208a;--mock-tint:#fbe6f5;
+}
+:root[data-theme=dark]{
+  color-scheme:dark;
+  --canvas:#141416;--shell:#191a1c;--surface:#1e1f22;--sunken:#141416;--field:#191a1c;--raised:#292a2e;
+  --hairline:#2f3035;--edge:#414248;--edge-strong:#4e4f55;--switch-off:#696c73;
+  --ink:#e9e9ec;--muted:#a5a6ab;--faint:#949599;
+  --accent:#2ed3c4;--accent-hot:#5fe6da;--accent-tint:#0f3e38;--on-accent:#04120f;
+  --running:#ffb524;--running-dot:#ffb524;--running-tint:#51360a;
+  --ready:#4ca8f5;--ready-tint:#0b2740;
+  --await:#bd9dff;--await-tint:#372f97;--on-await:#0b0b18;
+  --merged:#2bf58e;--merged-dot:#2bf58e;--merged-tint:#0d5531;
+  --done:#2bf58e;--on-done:#04120c;
+  --fail:#ff5570;--fail-dot:#ff5570;--fail-tint:#4d121f;--on-fail:#1a0308;
+  --blocked:#9aa0a9;--tool:#2ed3c4;--tool-tint:#0f3e38;
+  --shadow-card:0 0 0 1px var(--hairline),0 2px 10px rgb(0 0 0/.4);
+  --shadow-float:0 12px 40px rgb(0 0 0/.55);
+  --shadow-bar:0 0 0 1px var(--edge),0 14px 40px rgb(0 0 0/.5);
+  --shadow-btn:none;
+  --mock:#ff8fd8;--mock-tint:#3a1230;
+}
+@media (prefers-color-scheme:dark){
+:root:not([data-theme=light]){
+  color-scheme:dark;
+  --canvas:#141416;--shell:#191a1c;--surface:#1e1f22;--sunken:#141416;--field:#191a1c;--raised:#292a2e;
+  --hairline:#2f3035;--edge:#414248;--edge-strong:#4e4f55;--switch-off:#696c73;
+  --ink:#e9e9ec;--muted:#a5a6ab;--faint:#949599;
+  --accent:#2ed3c4;--accent-hot:#5fe6da;--accent-tint:#0f3e38;--on-accent:#04120f;
+  --running:#ffb524;--running-dot:#ffb524;--running-tint:#51360a;
+  --ready:#4ca8f5;--ready-tint:#0b2740;
+  --await:#bd9dff;--await-tint:#372f97;--on-await:#0b0b18;
+  --merged:#2bf58e;--merged-dot:#2bf58e;--merged-tint:#0d5531;
+  --done:#2bf58e;--on-done:#04120c;
+  --fail:#ff5570;--fail-dot:#ff5570;--fail-tint:#4d121f;--on-fail:#1a0308;
+  --blocked:#9aa0a9;--tool:#2ed3c4;--tool-tint:#0f3e38;
+  --shadow-card:0 0 0 1px var(--hairline),0 2px 10px rgb(0 0 0/.4);
+  --shadow-float:0 12px 40px rgb(0 0 0/.55);
+  --shadow-bar:0 0 0 1px var(--edge),0 14px 40px rgb(0 0 0/.5);
+  --shadow-btn:none;
+  --mock:#ff8fd8;--mock-tint:#3a1230;
+}}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--canvas);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:14px;line-height:1.5;font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;cursor:pointer;background:none;border:0;padding:0}
+input,select{font:inherit;color:inherit}
+h1,h2,h3,p,ul,ol,dl,dd{margin:0;padding:0}
+ul,ol{list-style:none}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ic{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.ic.s12{width:12px;height:12px}.ic.s14{width:14px;height:14px}
+.mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* type roles */
+.display{font-size:23px;line-height:1.2;letter-spacing:-.025em;font-weight:750;margin:0}
+.title{font-size:15px;line-height:1.4;font-weight:600;color:var(--ink)}
+.small{font-size:12px;line-height:1.45}
+.muted{color:var(--muted)}.faint{color:var(--faint)}
+.label{font-size:10px;line-height:1.2;letter-spacing:.09em;text-transform:uppercase;font-weight:600;color:var(--muted)}
+.caps{font-size:10px;line-height:1.2;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:var(--faint)}
+.count{border-radius:999px;background:var(--raised);padding:0 7px;font-size:11px;font-weight:700;letter-spacing:0;text-transform:none;color:var(--muted)}
+
+/* surfaces */
+.card{border-radius:4px;background:var(--surface);box-shadow:var(--shadow-card)}
+
+/* buttons (ui.ts btnPrimary / btnGhost / btnQuiet) */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;border-radius:3px;padding:8px 14px;transition:background-color .15s,border-color .15s,color .15s;white-space:nowrap}
+.btn-primary{background:var(--accent);color:var(--on-accent);font-weight:600;box-shadow:var(--shadow-btn);background-image:linear-gradient(180deg,rgb(255 255 255/.15),rgb(255 255 255/0) 52%,rgb(0 0 0/.09))}
+.btn-primary:hover{background-color:var(--accent-hot)}
+.btn-ghost{border:1px solid var(--edge);background:var(--surface);color:var(--ink);font-weight:500}
+.btn-ghost:hover{border-color:var(--faint)}
+.btn-quiet{color:var(--muted);font-weight:500;padding:8px 6px}
+.btn-quiet:hover{color:var(--ink)}
+.btn-quiet.destructive:hover{color:var(--fail)}
+.btn[disabled]{opacity:.5;cursor:default}
+
+/* pills / chips */
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:3px;padding:4px 10px;font-size:11px;font-weight:600;line-height:1.45}
+.pill.done{background:var(--merged-dot);color:var(--on-done)}
+:root[data-theme=dark] .pill.done{background:var(--merged)}
+.pill.cancelled,.pill.neutral{background:var(--raised);color:var(--muted)}
+.pill.partial{background:var(--running-tint);color:var(--running)}
+.pill.passed{background:var(--merged-tint);color:var(--merged)}
+.pill.failed{background:var(--fail-tint);color:var(--fail)}
+.chip{border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;text-transform:uppercase;line-height:1.5;letter-spacing:.05em}
+.chip.raised{background:var(--raised);color:var(--muted)}
+.tag{border-radius:4px;background:var(--raised);padding:1px 6px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+
+/* form controls (ui.ts field / Switch) */
+.field{display:block;width:100%;border:1px solid var(--edge);border-radius:3px;background:var(--field);padding:6px 10px;color:var(--ink);line-height:1.5}
+.field::placeholder{color:var(--muted)}
+.field:focus{border-color:var(--accent);outline:none}
+.field.mono{font-size:13px}
+.field[disabled]{background:var(--sunken);color:var(--muted)}
+.switch{display:inline-flex;align-items:center;gap:8px;text-align:left;color:var(--ink)}
+.switch .track{position:relative;width:32px;height:18px;flex:none;border-radius:999px;background:var(--switch-off);transition:background-color .15s}
+.switch .track::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:999px;background:#fff;box-shadow:0 1px 1px rgb(0 0 0/.2);transition:transform .15s}
+.switch[aria-checked=true] .track{background:var(--accent)}
+.switch[aria-checked=true] .track::after{transform:translateX(14px)}
+
+/* mockup-only annotation styling (not part of the app) */
+.mock-note{border:1px dashed var(--mock);background:var(--mock-tint);color:var(--ink);border-radius:4px;padding:8px 12px;font-size:12px;line-height:1.5}
+.mock-note b{color:var(--mock)}
+.mock-tag{display:inline-flex;align-items:center;border-radius:3px;background:var(--mock);color:#fff;padding:0 5px;font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;line-height:16px;vertical-align:middle}
+:root[data-theme=dark] .mock-tag{color:#1a0312}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .mock-tag{color:#1a0312}}
+.mock-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 24px;background:#22242a;color:#e9e9ec;font-size:12px}
+.mock-bar b{font-weight:700}
+.mock-bar .seg{display:inline-flex;border:1px solid #4e4f55;border-radius:3px;overflow:hidden}
+.mock-bar .seg button{padding:3px 10px;color:#c9cacf}
+.mock-bar .seg button[aria-pressed=true]{background:#2ed3c4;color:#04120f;font-weight:700}
+.mock-bar .sp{margin-left:auto}
+
+/* app shell (AppSidebar / NavRail / top bar) */
+.app{display:grid;grid-template-columns:200px minmax(0,1fr);min-height:calc(100vh - 38px)}
+.sidebar{background:var(--shell);display:flex;flex-direction:column;padding-bottom:8px}
+.brand{display:flex;align-items:center;gap:10px;padding:12px 12px 20px}
+.brand svg{width:21px;height:21px;color:var(--accent);fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.brand span{font-size:15px;font-weight:750;letter-spacing:-.01em}
+.switcher{margin:0 12px 12px;display:flex;align-items:center;gap:8px;min-height:40px;border:1px solid var(--edge);border-radius:3px;background:var(--surface);padding:0 12px;font-weight:600;width:calc(100% - 24px)}
+.switcher .sw-dot{width:9px;height:9px;border-radius:3px;background:var(--accent)}
+.switcher .ic{margin-left:auto;color:var(--muted)}
+.nav{display:flex;flex-direction:column;gap:2px;padding:0 8px;flex:1}
+.nav .grp{display:flex;flex-direction:column;gap:2px}
+.nav .grp+.grp{margin-top:6px;border-top:1px solid var(--hairline);padding-top:6px}
+.nav a,.nav button.ni{display:flex;align-items:center;gap:10px;min-height:44px;border-radius:3px;padding:8px 10px;color:var(--muted);font-weight:500;text-decoration:none;text-align:left;width:100%}
+.nav a[aria-current=page]{background:var(--accent-tint);color:var(--accent);font-weight:600}
+.nav-foot{margin:8px 8px 0;border-top:1px solid var(--hairline);padding-top:8px}
+.col{min-width:0;display:flex;flex-direction:column}
+.topbar{height:64px;flex:none;display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:0 24px;background:var(--shell);border-bottom:1px solid var(--hairline)}
+.topbar .ib{display:inline-grid;place-items:center;width:44px;height:44px;color:var(--muted)}
+
+.frame-label{max-width:1280px;margin:0 auto;padding:18px 24px 8px;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+.frame-label h2{font-size:13px;font-weight:700;letter-spacing:.02em;margin:0}
+.frame{position:relative;max-width:1280px;margin:0 auto;box-shadow:0 0 0 1px var(--hairline);background:var(--shell)}
+.frame .app{min-height:0}
+
+/* ---- notifications (new) ---- */
+.topbar .bell{position:relative}
+.topbar .bell[aria-expanded=true],.topbar .bell[aria-current=page]{color:var(--accent);background:var(--accent-tint);border-radius:3px}
+.badge{position:absolute;top:6px;right:5px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--fail-dot);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center;box-shadow:0 0 0 2px var(--shell)}
+:root[data-theme=dark] .badge{color:#1a0308}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .badge{color:#1a0308}}
+.bellwrap{position:relative}
+.dd{position:absolute;top:56px;right:-4px;z-index:40;width:420px;background:var(--surface);border-radius:4px;box-shadow:var(--shadow-float);border:1px solid var(--hairline);overflow:hidden}
+.dd-head{display:flex;align-items:center;gap:8px;padding:12px 14px 12px 16px;border-bottom:1px solid var(--hairline)}
+.dd-head .count{background:var(--fail-tint);color:var(--fail)}
+.dd-list{}
+.dd-foot{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--hairline);padding:2px 8px 2px 16px;background:var(--sunken)}
+.nrow{position:relative;display:flex;align-items:flex-start;gap:12px;padding:11px 14px 11px 16px;color:var(--ink);text-decoration:none;border-bottom:1px solid var(--hairline)}
+.nrow:last-child{border-bottom:0}
+.nrow:hover{background:var(--raised)}
+.nrow.unread{background:color-mix(in srgb,var(--accent-tint) 22%,var(--surface))}
+.nrow.unread:hover{background:color-mix(in srgb,var(--accent-tint) 42%,var(--surface))}
+.nrow.unread::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)}
+.sev{margin-top:1px;width:24px;height:24px;flex:none;display:grid;place-items:center;border-radius:3px}
+.sev.fail{background:var(--fail-tint);color:var(--fail)}
+.sev.esc{background:var(--await-tint);color:var(--await)}
+.sev.ok{background:var(--merged-tint);color:var(--merged)}
+.sev.exp{background:var(--running-tint);color:var(--running)}
+.nmain{min-width:0;flex:1}
+.ntitle{display:block;font-size:13px;line-height:1.4}
+.unread .ntitle{font-weight:650}
+.read .ntitle{font-weight:450;color:var(--muted)}
+.nsub{margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;font-size:11.5px;color:var(--faint)}
+.ndet{color:var(--muted);min-width:0}
+.ntime{flex:none;font-size:11.5px;color:var(--faint);padding-top:2px;white-space:nowrap}
+.unread .ntime{color:var(--accent);font-weight:600}
+.udot{flex:none;width:8px;height:8px;margin-top:7px;border-radius:99px;background:var(--accent)}
+.udot.off{background:transparent}
+.wstag{display:inline-flex;align-items:center;gap:5px;font-weight:600;color:var(--muted)}
+.wsc{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:99px;font-size:9px;font-weight:700;color:#1b1e24}
+html[data-scope=workspace] [data-ws-tag]{display:none}
+html[data-scope=workspace] .nrow[data-ws=about-site]{display:none}
+html[data-scope=workspace] .ws-filter{display:none}
+html[data-scope=global] .only-ws{display:none}
+html[data-scope=workspace] .only-gl{display:none}
+
+.dim{opacity:.55;filter:saturate(.6)}
+.stub{padding:28px 30px}
+.stub .bar{height:12px;border-radius:3px;background:var(--raised);margin-bottom:12px}
+
+/* page */
+.np{flex:1;min-width:0;padding:28px 30px 40px;max-width:980px}
+.np-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 16px}
+.np-head .sub{margin-top:4px;color:var(--muted);font-size:13px}
+.np-head .sp{margin-left:auto;display:flex;gap:8px;align-items:center}
+.filters{margin:22px 0 4px;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px}
+.segs{display:inline-flex;border:1px solid var(--edge);border-radius:3px;overflow:hidden;background:var(--surface)}
+.segs button{min-height:36px;padding:4px 12px;font-size:12.5px;font-weight:500;color:var(--muted);border-right:1px solid var(--hairline);display:inline-flex;gap:6px;align-items:center}
+.segs button:last-child{border-right:0}
+.segs button[aria-pressed=true]{background:var(--accent-tint);color:var(--accent);font-weight:600}
+.segs .n{font-size:11px;opacity:.8}
+.sel{display:inline-flex;align-items:center;gap:8px;min-height:36px;border:1px solid var(--edge);border-radius:3px;background:var(--surface);padding:0 10px;font-size:12.5px;font-weight:500}
+.sel .ic:last-child{color:var(--muted)}
+.dgrp{margin-top:22px}
+.dgrp .caps{margin:0 2px 8px}
+.nlist{overflow:hidden}
+.nlist .nrow{padding:13px 16px}
+.nlist .ntitle{font-size:13.5px}
+.nlist .nrow .go{align-self:center;color:var(--faint);opacity:0}
+.nlist .nrow:hover .go{opacity:1}
+.np-foot{margin-top:22px;display:flex;justify-content:space-between;color:var(--faint);font-size:12px}
+.empty{display:none;margin-top:22px;padding:28px;text-align:center;color:var(--muted)}
+.notes{margin-top:18px;display:flex;flex-direction:column;gap:8px}
+
+/* toasts */
+.toast-layer{position:absolute;top:76px;right:16px;z-index:50;width:384px;max-width:calc(100% - 32px);display:flex;flex-direction:column;gap:8px}
+.toast{position:relative;overflow:hidden;display:flex;align-items:flex-start;gap:10px;border-radius:4px;padding:10px 14px 12px;box-shadow:var(--shadow-bar);font-size:13px}
+.toast.err{background:var(--fail-tint);color:var(--fail)}
+.toast.ok{background:var(--merged-tint);color:var(--merged)}
+.toast .mt{min-width:0;flex:1}
+.toast .mt a{display:inline-block;margin-top:2px;color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.toast .dx{margin:-8px -8px 0 0;width:44px;height:44px;flex:none;display:grid;place-items:center;color:inherit}
+.toast .tbar{position:absolute;left:0;right:0;bottom:0;height:3px;background:color-mix(in srgb,currentColor 14%,transparent)}
+.toast .tbar i{display:block;height:100%;width:100%;background:currentColor;opacity:.55;transform-origin:left;animation:drain var(--dur) linear infinite}
+.toast:hover .tbar i{animation-play-state:paused}
+.toast:hover .tbar i{opacity:.9}
+@keyframes drain{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+@media (prefers-reduced-motion:reduce){.toast .tbar i{animation:none;transform:scaleX(.55)}}
+.toast .dur{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;opacity:.75}
+.tcap{margin:0 0 4px;display:flex;justify-content:space-between}
+.timing{max-width:1280px;margin:0 auto;padding:0 24px 8px}
+.timing table{border-collapse:collapse;font-size:12px}
+.timing td,.timing th{padding:3px 14px 3px 0;text-align:left}
+.frame.c{min-height:360px}
+
+/* below-the-fold frames */
+.side-by-side{max-width:1280px;margin:0 auto;padding:0 24px 32px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+.plain{background:var(--canvas);padding:20px}
+.plain-frame{box-shadow:0 0 0 1px var(--hairline)}
+.state-box{padding:16px 20px 8px;background:var(--surface);border-radius:4px;box-shadow:var(--shadow-card)}
+.wrap{max-width:1280px;margin:0 auto;padding:0 24px 24px}
+@media (max-width:1100px){.side-by-side{grid-template-columns:1fr}.tgrid{grid-template-columns:1fr;gap:12px}.rail{display:none}}
+@media (max-width:900px){.app{grid-template-columns:1fr}.sidebar{display:none}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-board" viewBox="0 0 16 16"> <rect height="7" rx="1" width="3.5" x="1.75" y="2.75" /> <rect height="10.5" rx="1" width="3.5" x="6.25" y="2.75" /> <rect height="5" rx="1" width="3.5" x="10.75" y="2.75" /> </symbol>
+<symbol id="i-conversations" viewBox="0 0 16 16"><path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5v-2.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1Z" /></symbol>
+<symbol id="i-table" viewBox="0 0 16 16"> <rect height="9.5" rx="1" width="12.5" x="1.75" y="3.25" /> <path d="M1.75 6.5h12.5M1.75 9.75h12.5" /> </symbol>
+<symbol id="i-files" viewBox="0 0 16 16"><path d="M2.5 3.25h4l1.2 1.5h5.8v8H2.5zM2.5 6.25h11" /></symbol>
+<symbol id="i-activity" viewBox="0 0 16 16"><path d="M1.5 8h3l1.75-4 2.5 8 1.75-4H14.5" /></symbol>
+<symbol id="i-graph" viewBox="0 0 16 16"> <path d="M5 8 11 4.25M5 8 11 11.75" /> <circle cx="3.25" cy="8" r="1.75" /> <circle cx="12.75" cy="4" r="1.75" /> <circle cx="12.75" cy="12" r="1.75" /> </symbol>
+<symbol id="i-timeline" viewBox="0 0 16 16"><path d="M2.25 4.5h5.5M5 8h7M3.5 11.5h4.5" /></symbol>
+<symbol id="i-stats" viewBox="0 0 16 16"><path d="M4.5 13.5V9M8 13.5V3.5M11.5 13.5V7" /></symbol>
+<symbol id="i-operations" viewBox="0 0 16 16"> <circle cx="4" cy="4" r="1.5" /> <circle cx="12" cy="4" r="1.5" /> <circle cx="8" cy="12" r="1.5" /> <path d="M5.25 5.25 7 10.5M10.75 5.25 9 10.5M5.5 4h5" /> </symbol>
+<symbol id="i-workspace" viewBox="0 0 16 16"> <path d="M12.59 6.77L14.34 7.11L14.34 8.89L12.59 9.23L12.11 10.38L13.11 11.85L11.85 13.11L10.38 12.11L9.23 12.59L8.89 14.34L7.11 14.34L6.77 12.59L5.63 12.11L4.15 13.11L2.89 11.85L3.89 10.38L3.41 9.23L1.66 8.89L1.66 7.11L3.41 6.77L3.89 5.63L2.89 4.15L4.15 2.89L5.62 3.89L6.77 3.41L7.11 1.66L8.89 1.66L9.23 3.41L10.38 3.89L11.85 2.89L13.11 4.15L12.11 5.62Z" /> <circle cx="8" cy="8" r="2" /> </symbol>
+<symbol id="i-settings" viewBox="0 0 16 16"><path d="M9.8 4.2a0.7 0.7 0 0 0 0 0.95l1.05 1.05a0.7 0.7 0 0 0 0.95 0l2.5-2.5a4 4 0 0 1-5.3 5.3l-4.6 4.6a1.4 1.4 0 0 1-2-2l4.6-4.6a4 4 0 0 1 5.3-5.3z" /></symbol>
+<symbol id="i-help" viewBox="0 0 16 16"> <circle cx="8" cy="8" r="6.25" /> <path d="M5.9 6.1a2.1 2.1 0 1 1 3.15 1.82c-.7.42-1.05.86-1.05 1.68" /> <path d="M8 11.75v.01" /> </symbol>
+<symbol id="i-circle-half" viewBox="0 0 16 16"> <circle cx="8" cy="8" r="5.75" /> <path d="M8 2.25v11.5" /> </symbol>
+<symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3.25v9.5M3.25 8h9.5" /></symbol>
+<symbol id="i-check" viewBox="0 0 16 16"><path d="M3.5 8.5 6.5 11.5 12.5 4.5" /></symbol>
+<symbol id="i-close" viewBox="0 0 16 16"><path d="M4.5 4.5 11.5 11.5M11.5 4.5 4.5 11.5" /></symbol>
+<symbol id="i-download" viewBox="0 0 16 16"><path d="M8 2.75v7.5M4.75 7 8 10.25 11.25 7M3.5 13.25h9" /></symbol>
+<symbol id="i-refresh" viewBox="0 0 16 16"> <path d="M12.75 8a4.75 4.75 0 1 1-1.4-3.36" /> <path d="M12.75 2.5V5H10.25" /> </symbol>
+<symbol id="i-alert-triangle" viewBox="0 0 16 16"> <path d="M8 2.25 14.5 13.5H1.5Z" /> <path d="M8 6.25v3.25" /> <path d="M8 11.75v.01" /> </symbol>
+<symbol id="i-chevron-down" viewBox="0 0 16 16"><path d="M4.5 6.25 8 9.75l3.5-3.5" /></symbol>
+<symbol id="i-copy" viewBox="0 0 16 16"> <rect height="8" rx="1.2" width="8" x="5.5" y="5.5" /> <path d="M10.5 2.5H3.2a0.7 0.7 0 0 0-0.7 0.7V10.5" /> </symbol>
+<symbol id="i-arrow-up-right" viewBox="0 0 16 16"><path d="M5 11l6-6M6 5h5v5" /></symbol>
+<symbol id="i-file" viewBox="0 0 16 16"> <path d="M4.25 2.75h4.25l3 3v7a.5.5 0 0 1-.5.5H4.25a.5.5 0 0 1-.5-.5V3.25a.5.5 0 0 1 .5-.5z" /> <path d="M8.25 2.75V6h3.25" /> </symbol>
+<symbol id="i-undo" viewBox="0 0 16 16"> <path d="M6.5 3.5 3 7l3.5 3.5" /> <path d="M3 7h6.25a3.25 3.25 0 0 1 0 6.5H6" /> </symbol>
+<symbol id="i-bell" viewBox="0 0 16 16"><path d="M3.75 11.25V7a4.25 4.25 0 0 1 8.5 0v4.25l1.25 1.25h-11z"/><path d="M6.5 14a1.6 1.6 0 0 0 3 0"/></symbol>
+<symbol id="i-escalate" viewBox="0 0 16 16"><path d="M8 13V3.5M4.5 7 8 3.5 11.5 7"/></symbol>
+<symbol id="i-x-circle" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M5.75 5.75l4.5 4.5M10.25 5.75l-4.5 4.5"/></symbol>
+<symbol id="i-merge" viewBox="0 0 16 16"><circle cx="4.5" cy="3.75" r="1.5"/><circle cx="4.5" cy="12.25" r="1.5"/><circle cx="11.5" cy="8" r="1.5"/><path d="M4.5 5.25v5.5M4.5 5.5c0 2.5 3.5 2.5 5.5 2.5"/></symbol>
+</defs></svg>
+<div class="mock-bar" role="toolbar" aria-label="Mockup controls">
+  <b>Notifications</b><span>Bell, dropdown, page, toast auto-dismiss</span>
+  <span class="sp"></span>
+  <span>Scope</span>
+  <span class="seg" id="scopeSeg"><button type="button" data-scope="global" aria-pressed="true">Global</button><button type="button" data-scope="workspace" aria-pressed="false">Workspace: harmonic</button></span>
+  <span>Theme</span>
+  <span class="seg" id="themeSeg"><button type="button" data-theme="auto" aria-pressed="true">Auto</button><button type="button" data-theme="light" aria-pressed="false">Light</button><button type="button" data-theme="dark" aria-pressed="false">Dark</button></span>
+</div>
+
+<div class="frame-label"><h2>A &middot; Top bar, bell dropdown open (5 unread of 10)</h2>
+ <span class="mock-note" style="flex:1;min-width:300px"><b>Bell.</b> Sits left of <b>New task</b>, after Settings, as a 44px icon button like its neighbours; a fail-coloured count badge (caps at <span class="mono">99+</span>, hidden at 0). Dropdown = latest 10, unread rows carry the accent tint, a 3px accent edge, bold title, accent time and a dot; read rows are muted. <b>Opening does not mark read.</b> Clicking a row marks it read and navigates to its Ticket. <b>Mark all read</b> keeps the menu open. The bell and dropdown follow Scope: flip the Scope toggle above &mdash; in Workspace scope only harmonic rows and the count for harmonic remain; in Global scope every row carries a Workspace tag with its Workspace Colour.</span></div>
+<div class="frame" style="min-height:900px">
+  <div class="app">
+    <aside class="sidebar" aria-label="Sidebar">
+      <div class="brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.586 21.414a2 2 0 0 0 3.378-1.791L11.036 4.377a2 2 0 1 1 3.378 1.037C12.414 7.414 7 8 7 13a5 5 0 0 0 5 5a5 4 0 0 0 5-4a3 3 0 0 0-3-3a3 2 0 0 0-3 2"/></svg><span>Harmonic</span></div>
+      <button type="button" class="switcher"><span class="sw-dot" style="background:#5fd3c4"></span><span class="swname">harmonic</span><svg class="ic " aria-hidden="true"><use href="#i-chevron-down"/></svg></button>
+      <nav class="nav" aria-label="Views"><div class="grp" role="group" aria-label="Overview"><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-board"/></svg><span>Board</span></a><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-conversations"/></svg><span>Conversations</span></a><a href="#"><svg class="ic " aria-hidden="true"><use href="#i-table"/></svg><span>Tasks</span></a><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-files"/></svg><span>Files</span></a></div><div class="grp" role="group" aria-label="Insights"><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-activity"/></svg><span>Activity</span></a><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-graph"/></svg><span>Graph</span></a><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-timeline"/></svg><span>Timeline</span></a><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-stats"/></svg><span>Statistics</span></a></div><div class="grp" role="group" aria-label="Instance"><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-operations"/></svg><span>Operations</span></a><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-workspace"/></svg><span>Workspace</span></a></div></nav>
+      <div class="nav-foot nav"><a href="#"><svg class="ic " aria-hidden="true"><use transform="rotate(90 8 8)" href="#i-chevron-down"/></svg><span>Collapse</span></a></div>
+    </aside>
+    <div class="col">
+      <header class="topbar">
+        <button class="ib" aria-label="Help"><svg class="ic " aria-hidden="true"><use href="#i-help"/></svg></button>
+        <button class="ib" aria-label="Theme"><svg class="ic " aria-hidden="true"><use href="#i-circle-half"/></svg></button>
+        <button class="ib" aria-label="Settings"><svg class="ic " aria-hidden="true"><use href="#i-settings"/></svg></button>
+        <span class="bellwrap"><button class="ib bell" aria-label="Notifications, 5 unread" aria-haspopup="true" aria-expanded="true"><svg class="ic " aria-hidden="true"><use href="#i-bell"/></svg><span class="badge" data-badge>5</span></button>
+        <div class="dd" role="menu" aria-label="Notifications">
+          <div class="dd-head"><b class="title">Notifications</b><span class="count" data-unread-count>5 unread</span><span style="margin-left:auto"></span><button class="btn btn-quiet" style="min-height:32px;padding:4px 6px;font-size:12.5px"><svg class="ic s14" aria-hidden="true"><use href="#i-check"/></svg> Mark all read</button></div>
+          <div class="dd-list"><a href="#" class="nrow unread k-esc" data-ws="harmonic" data-kind="esc" data-unread="1"><span class="sev esc"><svg class="ic s14" aria-hidden="true"><use href="#i-escalate"/></svg></span><span class="nmain"><span class="ntitle">Task #412 escalated — Critic rejected 3 times</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#5fd3c4" aria-hidden="true">H</span>harmonic</span><span class="tk">Ticket #412</span></div></span><span class="ntime">4m ago</span><span class="udot" aria-label="Unread"></span></a><a href="#" class="nrow unread k-exp" data-ws="harmonic" data-kind="exp" data-unread="1"><span class="sev exp"><svg class="ic s14" aria-hidden="true"><use href="#i-download"/></svg></span><span class="nmain"><span class="ntitle">Export failed for Task #412 — S3: AccessDenied</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#5fd3c4" aria-hidden="true">H</span>harmonic</span><span class="tk">Ticket #412</span></div></span><span class="ntime">9m ago</span><span class="udot" aria-label="Unread"></span></a><a href="#" class="nrow unread k-merge" data-ws="about-site" data-kind="merge" data-unread="1"><span class="sev ok"><svg class="ic s14" aria-hidden="true"><use href="#i-merge"/></svg></span><span class="nmain"><span class="ntitle">Task #409 merged into develop</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#f2b264" aria-hidden="true">A</span>about-site</span><span class="tk">Ticket #409</span></div></span><span class="ntime">32m ago</span><span class="udot" aria-label="Unread"></span></a><a href="#" class="nrow unread k-fail" data-ws="harmonic" data-kind="fail" data-unread="1"><span class="sev fail"><svg class="ic s14" aria-hidden="true"><use href="#i-x-circle"/></svg></span><span class="nmain"><span class="ntitle">Task #405 failed — max Attempts reached</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#5fd3c4" aria-hidden="true">H</span>harmonic</span><span class="tk">Ticket #405</span></div></span><span class="ntime">1h ago</span><span class="udot" aria-label="Unread"></span></a><a href="#" class="nrow unread k-esc" data-ws="about-site" data-kind="esc" data-unread="1"><span class="sev esc"><svg class="ic s14" aria-hidden="true"><use href="#i-escalate"/></svg></span><span class="nmain"><span class="ntitle">Task #403 escalated — Verification failed after 2 Attempts</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#f2b264" aria-hidden="true">A</span>about-site</span><span class="tk">Ticket #403</span></div></span><span class="ntime">2h ago</span><span class="udot" aria-label="Unread"></span></a><a href="#" class="nrow read k-merge" data-ws="harmonic" data-kind="merge" data-unread="0"><span class="sev ok"><svg class="ic s14" aria-hidden="true"><use href="#i-merge"/></svg></span><span class="nmain"><span class="ntitle">Task #401 merged into develop</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#5fd3c4" aria-hidden="true">H</span>harmonic</span><span class="tk">Ticket #401</span></div></span><span class="ntime">3h ago</span><span class="udot off"></span></a><a href="#" class="nrow read k-fail" data-ws="about-site" data-kind="fail" data-unread="0"><span class="sev fail"><svg class="ic s14" aria-hidden="true"><use href="#i-x-circle"/></svg></span><span class="nmain"><span class="ntitle">Task #398 failed — Harness exited unexpectedly (137)</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#f2b264" aria-hidden="true">A</span>about-site</span><span class="tk">Ticket #398</span></div></span><span class="ntime">Yesterday 16:40</span><span class="udot off"></span></a><a href="#" class="nrow read k-merge" data-ws="harmonic" data-kind="merge" data-unread="0"><span class="sev ok"><svg class="ic s14" aria-hidden="true"><use href="#i-merge"/></svg></span><span class="nmain"><span class="ntitle">Task #396 merged into develop</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#5fd3c4" aria-hidden="true">H</span>harmonic</span><span class="tk">Ticket #396</span></div></span><span class="ntime">Yesterday 14:12</span><span class="udot off"></span></a><a href="#" class="nrow read k-merge" data-ws="about-site" data-kind="merge" data-unread="0"><span class="sev ok"><svg class="ic s14" aria-hidden="true"><use href="#i-merge"/></svg></span><span class="nmain"><span class="ntitle">Task #392 merged into develop</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#f2b264" aria-hidden="true">A</span>about-site</span><span class="tk">Ticket #392</span></div></span><span class="ntime">Yesterday 11:03</span><span class="udot off"></span></a><a href="#" class="nrow read k-exp" data-ws="harmonic" data-kind="exp" data-unread="0"><span class="sev exp"><svg class="ic s14" aria-hidden="true"><use href="#i-download"/></svg></span><span class="nmain"><span class="ntitle">Export failed for Task #388 — Webhook: 502 Bad Gateway</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#5fd3c4" aria-hidden="true">H</span>harmonic</span><span class="tk">Ticket #388</span></div></span><span class="ntime">Yesterday 09:30</span><span class="udot off"></span></a></div>
+          <div class="dd-foot"><span class="small faint">Latest 10 · <span class="only-gl">all Workspaces</span><span class="only-ws">harmonic</span></span><a class="link btn" href="#" style="min-height:40px">View all <svg class="ic s12" aria-hidden="true"><use href="#i-arrow-up-right"/></svg></a></div>
+        </div></span>
+        <button class="btn btn-primary"><svg class="ic " aria-hidden="true"><use href="#i-plus"/></svg> New task</button>
+      </header>
+      <main class="stub dim" aria-hidden="true"><div class="bar" style="width:38%;height:22px"></div><div class="bar" style="width:70%"></div><div class="bar" style="width:62%"></div><div class="bar" style="width:80%"></div><div class="bar" style="width:55%"></div></main>
+    </div>
+  </div>
+</div>
+
+<div class="frame-label"><h2>B &middot; Notifications page (<span class="mono">/notifications</span>)</h2>
+ <span class="mock-note" style="flex:1;min-width:300px"><b>Navigation.</b> Choice: <b>no sidebar entry</b>. The bell is the one entry point (plus <b>View all</b>), so the sidebar keeps its three groups; the bell shows <span class="mono">aria-current</span> on this page. Rows are grouped by day, use the same row anatomy as the dropdown plus the Ticket title, and the whole row links to the Ticket (marking it read). The severity filter is a segmented control (All / Failures / Escalations / Merges / Exports) and works live below; the Workspace filter exists only in Global scope. Retention note at the foot: 30 days / 1000 rows.</span></div>
+<div class="frame">
+  <div class="app">
+    <aside class="sidebar" aria-label="Sidebar">
+      <div class="brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.586 21.414a2 2 0 0 0 3.378-1.791L11.036 4.377a2 2 0 1 1 3.378 1.037C12.414 7.414 7 8 7 13a5 5 0 0 0 5 5a5 4 0 0 0 5-4a3 3 0 0 0-3-3a3 2 0 0 0-3 2"/></svg><span>Harmonic</span></div>
+      <button type="button" class="switcher"><span class="sw-dot" style="background:#5fd3c4"></span><span class="swname">harmonic</span><svg class="ic " aria-hidden="true"><use href="#i-chevron-down"/></svg></button>
+      <nav class="nav" aria-label="Views"><div class="grp" role="group" aria-label="Overview"><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-board"/></svg><span>Board</span></a><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-conversations"/></svg><span>Conversations</span></a><a href="#"><svg class="ic " aria-hidden="true"><use href="#i-table"/></svg><span>Tasks</span></a><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-files"/></svg><span>Files</span></a></div><div class="grp" role="group" aria-label="Insights"><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-activity"/></svg><span>Activity</span></a><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-graph"/></svg><span>Graph</span></a><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-timeline"/></svg><span>Timeline</span></a><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-stats"/></svg><span>Statistics</span></a></div><div class="grp" role="group" aria-label="Instance"><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-operations"/></svg><span>Operations</span></a><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-workspace"/></svg><span>Workspace</span></a></div></nav>
+      <div class="nav-foot nav"><a href="#"><svg class="ic " aria-hidden="true"><use transform="rotate(90 8 8)" href="#i-chevron-down"/></svg><span>Collapse</span></a></div>
+    </aside>
+    <div class="col">
+      <header class="topbar">
+        <button class="ib" aria-label="Help"><svg class="ic " aria-hidden="true"><use href="#i-help"/></svg></button>
+        <button class="ib" aria-label="Theme"><svg class="ic " aria-hidden="true"><use href="#i-circle-half"/></svg></button>
+        <button class="ib" aria-label="Settings"><svg class="ic " aria-hidden="true"><use href="#i-settings"/></svg></button>
+        <button class="ib bell" aria-label="Notifications, 5 unread" aria-current="page"><svg class="ic " aria-hidden="true"><use href="#i-bell"/></svg><span class="badge" data-badge>5</span></button>
+        <button class="btn btn-primary"><svg class="ic " aria-hidden="true"><use href="#i-plus"/></svg> New task</button>
+      </header>
+      <main class="np" id="np">
+        <div class="np-head">
+          <div><h1 class="display">Notifications</h1><p class="sub"><span class="only-gl">Across all Workspaces</span><span class="only-ws">Workspace harmonic</span> &middot; <span data-unread-count>5 unread</span></p></div>
+          <div class="sp"><button class="btn btn-ghost"><svg class="ic s14" aria-hidden="true"><use href="#i-check"/></svg> Mark all read</button></div>
+        </div>
+        <div class="filters">
+          <div class="segs" role="group" aria-label="Severity" id="kindSeg">
+            <button type="button" data-kind="all" aria-pressed="true">All <span class="n"></span></button>
+            <button type="button" data-kind="fail" aria-pressed="false">Failures <span class="n"></span></button>
+            <button type="button" data-kind="esc" aria-pressed="false">Escalations <span class="n"></span></button>
+            <button type="button" data-kind="merge" aria-pressed="false">Merges <span class="n"></span></button>
+            <button type="button" data-kind="exp" aria-pressed="false">Exports <span class="n"></span></button>
+          </div>
+          <div class="ws-filter"><label class="sel" for="wsf"><span class="label">Workspace</span>
+            <select id="wsf" style="border:0;background:transparent;font-weight:600;padding:0 4px"><option value="all">All Workspaces</option><option value="harmonic">harmonic</option><option value="about-site">about-site</option></select></label></div>
+          <label class="switch" role="switch" aria-checked="false" tabindex="0" id="unrOnly" style="margin-left:auto"><span class="track"></span><span class="small">Unread only</span></label>
+        </div>
+        <div id="groups"><section class="dgrp"><h3 class="caps">Today</h3><div class="card nlist"><a href="#" class="nrow unread k-esc" data-ws="harmonic" data-kind="esc" data-unread="1"><span class="sev esc"><svg class="ic s14" aria-hidden="true"><use href="#i-escalate"/></svg></span><span class="nmain"><span class="ntitle">Task #412 escalated — Critic rejected 3 times</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#5fd3c4" aria-hidden="true">H</span>harmonic</span><span class="tk">Ticket #412</span><span class="dotsep">·</span><span class="ndet">Back off and retry on GitHub tracker rate-limit responses</span></div></span><span class="ntime">4m ago</span><span class="udot" aria-label="Unread"></span></a><a href="#" class="nrow unread k-exp" data-ws="harmonic" data-kind="exp" data-unread="1"><span class="sev exp"><svg class="ic s14" aria-hidden="true"><use href="#i-download"/></svg></span><span class="nmain"><span class="ntitle">Export failed for Task #412 — S3: AccessDenied</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#5fd3c4" aria-hidden="true">H</span>harmonic</span><span class="tk">Ticket #412</span><span class="dotsep">·</span><span class="ndet">Destination s3://harmonic-archive · retries exhausted (3 of 3)</span></div></span><span class="ntime">9m ago</span><span class="udot" aria-label="Unread"></span></a><a href="#" class="nrow unread k-merge" data-ws="about-site" data-kind="merge" data-unread="1"><span class="sev ok"><svg class="ic s14" aria-hidden="true"><use href="#i-merge"/></svg></span><span class="nmain"><span class="ntitle">Task #409 merged into develop</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#f2b264" aria-hidden="true">A</span>about-site</span><span class="tk">Ticket #409</span><span class="dotsep">·</span><span class="ndet">Add sitemap.xml generation to the build</span></div></span><span class="ntime">32m ago</span><span class="udot" aria-label="Unread"></span></a><a href="#" class="nrow unread k-fail" data-ws="harmonic" data-kind="fail" data-unread="1"><span class="sev fail"><svg class="ic s14" aria-hidden="true"><use href="#i-x-circle"/></svg></span><span class="nmain"><span class="ntitle">Task #405 failed — max Attempts reached</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#5fd3c4" aria-hidden="true">H</span>harmonic</span><span class="tk">Ticket #405</span><span class="dotsep">·</span><span class="ndet">Debounce Workspace file watcher restarts</span></div></span><span class="ntime">1h ago</span><span class="udot" aria-label="Unread"></span></a><a href="#" class="nrow unread k-esc" data-ws="about-site" data-kind="esc" data-unread="1"><span class="sev esc"><svg class="ic s14" aria-hidden="true"><use href="#i-escalate"/></svg></span><span class="nmain"><span class="ntitle">Task #403 escalated — Verification failed after 2 Attempts</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#f2b264" aria-hidden="true">A</span>about-site</span><span class="tk">Ticket #403</span><span class="dotsep">·</span><span class="ndet">Fix broken hero image srcset on /pricing</span></div></span><span class="ntime">2h ago</span><span class="udot" aria-label="Unread"></span></a><a href="#" class="nrow read k-merge" data-ws="harmonic" data-kind="merge" data-unread="0"><span class="sev ok"><svg class="ic s14" aria-hidden="true"><use href="#i-merge"/></svg></span><span class="nmain"><span class="ntitle">Task #401 merged into develop</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#5fd3c4" aria-hidden="true">H</span>harmonic</span><span class="tk">Ticket #401</span><span class="dotsep">·</span><span class="ndet">Show Attempt cost in the Timeline row</span></div></span><span class="ntime">3h ago</span><span class="udot off"></span></a></div></section><section class="dgrp"><h3 class="caps">Yesterday</h3><div class="card nlist"><a href="#" class="nrow read k-fail" data-ws="about-site" data-kind="fail" data-unread="0"><span class="sev fail"><svg class="ic s14" aria-hidden="true"><use href="#i-x-circle"/></svg></span><span class="nmain"><span class="ntitle">Task #398 failed — Harness exited unexpectedly (137)</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#f2b264" aria-hidden="true">A</span>about-site</span><span class="tk">Ticket #398</span><span class="dotsep">·</span><span class="ndet">Migrate contact form to server action</span></div></span><span class="ntime">Yesterday 16:40</span><span class="udot off"></span></a><a href="#" class="nrow read k-merge" data-ws="harmonic" data-kind="merge" data-unread="0"><span class="sev ok"><svg class="ic s14" aria-hidden="true"><use href="#i-merge"/></svg></span><span class="nmain"><span class="ntitle">Task #396 merged into develop</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#5fd3c4" aria-hidden="true">H</span>harmonic</span><span class="tk">Ticket #396</span><span class="dotsep">·</span><span class="ndet">Back off and retry on GitHub tracker rate-limit responses</span></div></span><span class="ntime">Yesterday 14:12</span><span class="udot off"></span></a><a href="#" class="nrow read k-merge" data-ws="about-site" data-kind="merge" data-unread="0"><span class="sev ok"><svg class="ic s14" aria-hidden="true"><use href="#i-merge"/></svg></span><span class="nmain"><span class="ntitle">Task #392 merged into develop</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#f2b264" aria-hidden="true">A</span>about-site</span><span class="tk">Ticket #392</span><span class="dotsep">·</span><span class="ndet">Compress team photos to AVIF</span></div></span><span class="ntime">Yesterday 11:03</span><span class="udot off"></span></a><a href="#" class="nrow read k-exp" data-ws="harmonic" data-kind="exp" data-unread="0"><span class="sev exp"><svg class="ic s14" aria-hidden="true"><use href="#i-download"/></svg></span><span class="nmain"><span class="ntitle">Export failed for Task #388 — Webhook: 502 Bad Gateway</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#5fd3c4" aria-hidden="true">H</span>harmonic</span><span class="tk">Ticket #388</span><span class="dotsep">·</span><span class="ndet">Destination https://ingest.example.net/harmonic</span></div></span><span class="ntime">Yesterday 09:30</span><span class="udot off"></span></a></div></section><section class="dgrp"><h3 class="caps">Sun, Sep 28</h3><div class="card nlist"><a href="#" class="nrow read k-fail" data-ws="harmonic" data-kind="fail" data-unread="0"><span class="sev fail"><svg class="ic s14" aria-hidden="true"><use href="#i-x-circle"/></svg></span><span class="nmain"><span class="ntitle">Task #384 failed — Verification command timed out</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#5fd3c4" aria-hidden="true">H</span>harmonic</span><span class="tk">Ticket #384</span><span class="dotsep">·</span><span class="ndet">Cache node_modules between Attempts</span></div></span><span class="ntime">Sep 28 · 22:47</span><span class="udot off"></span></a><a href="#" class="nrow read k-merge" data-ws="about-site" data-kind="merge" data-unread="0"><span class="sev ok"><svg class="ic s14" aria-hidden="true"><use href="#i-merge"/></svg></span><span class="nmain"><span class="ntitle">Task #381 merged into develop</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#f2b264" aria-hidden="true">A</span>about-site</span><span class="tk">Ticket #381</span><span class="dotsep">·</span><span class="ndet">Update footer links</span></div></span><span class="ntime">Sep 28 · 15:20</span><span class="udot off"></span></a><a href="#" class="nrow read k-esc" data-ws="harmonic" data-kind="esc" data-unread="0"><span class="sev esc"><svg class="ic s14" aria-hidden="true"><use href="#i-escalate"/></svg></span><span class="nmain"><span class="ntitle">Task #377 escalated — Critic rejected 3 times</span><div class="nsub"><span class="wstag" data-ws-tag><span class="wsc" style="background:#5fd3c4" aria-hidden="true">H</span>harmonic</span><span class="tk">Ticket #377</span><span class="dotsep">·</span><span class="ndet">Split Statistics page into lazy chunks</span></div></span><span class="ntime">Sep 28 · 10:05</span><span class="udot off"></span></a></div></section></div>
+        <div class="card empty" id="empty">No Notifications match these filters.</div>
+        <div class="np-foot"><span>Kept for 30 days, up to 1000 Notifications.</span><span>End of list</span></div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<div class="frame-label"><h2>C &middot; Toast with auto-dismiss indicator</h2>
+ <span class="mock-note" style="flex:1;min-width:300px"><b>Timing.</b> A toast is how a Notification first appears. Success/info auto-dismiss after <b>6s</b>, errors after <b>12s</b>. A 3px bar along the bottom edge drains left to right in the toast's own colour (looping here so you can watch; in the app it plays once). <b>Hover or keyboard focus pauses</b> the timer and the bar (try it); <b>&#x2715;</b> always stays and dismisses immediately. Reduced-motion users get a static bar. Local request errors use the same toast but are never stored here.</span></div>
+<div class="frame c">
+  <div class="app">
+    <aside class="sidebar" aria-label="Sidebar">
+      <div class="brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.586 21.414a2 2 0 0 0 3.378-1.791L11.036 4.377a2 2 0 1 1 3.378 1.037C12.414 7.414 7 8 7 13a5 5 0 0 0 5 5a5 4 0 0 0 5-4a3 3 0 0 0-3-3a3 2 0 0 0-3 2"/></svg><span>Harmonic</span></div>
+      <button type="button" class="switcher"><span class="sw-dot" style="background:#5fd3c4"></span><span class="swname">harmonic</span><svg class="ic " aria-hidden="true"><use href="#i-chevron-down"/></svg></button>
+      <nav class="nav" aria-label="Views"><div class="grp" role="group" aria-label="Overview"><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-board"/></svg><span>Board</span></a><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-conversations"/></svg><span>Conversations</span></a><a href="#"><svg class="ic " aria-hidden="true"><use href="#i-table"/></svg><span>Tasks</span></a><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-files"/></svg><span>Files</span></a></div><div class="grp" role="group" aria-label="Insights"><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-activity"/></svg><span>Activity</span></a><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-graph"/></svg><span>Graph</span></a><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-timeline"/></svg><span>Timeline</span></a><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-stats"/></svg><span>Statistics</span></a></div><div class="grp" role="group" aria-label="Instance"><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-operations"/></svg><span>Operations</span></a><a href="#" ><svg class="ic " aria-hidden="true"><use href="#i-workspace"/></svg><span>Workspace</span></a></div></nav>
+      <div class="nav-foot nav"><a href="#"><svg class="ic " aria-hidden="true"><use transform="rotate(90 8 8)" href="#i-chevron-down"/></svg><span>Collapse</span></a></div>
+    </aside>
+    <div class="col">
+      <header class="topbar">
+        <button class="ib" aria-label="Help"><svg class="ic " aria-hidden="true"><use href="#i-help"/></svg></button>
+        <button class="ib" aria-label="Theme"><svg class="ic " aria-hidden="true"><use href="#i-circle-half"/></svg></button>
+        <button class="ib" aria-label="Settings"><svg class="ic " aria-hidden="true"><use href="#i-settings"/></svg></button>
+        <button class="ib bell" aria-label="Notifications, 7 unread"><svg class="ic " aria-hidden="true"><use href="#i-bell"/></svg><span class="badge">7</span></button>
+        <button class="btn btn-primary"><svg class="ic " aria-hidden="true"><use href="#i-plus"/></svg> New task</button>
+      </header>
+      <main class="stub dim" aria-hidden="true"><div class="bar" style="width:38%;height:22px"></div><div class="bar" style="width:70%"></div><div class="bar" style="width:62%"></div><div class="bar" style="width:80%"></div><div class="bar" style="width:55%"></div></main>
+    </div>
+  </div>
+  <div class="toast-layer" aria-live="polite">
+    <div class="toast err" role="alert" style="--dur:12s"><svg class="ic s14" aria-hidden="true"><use href="#i-alert-triangle"/></svg><div class="mt"><span class="dur">Error &middot; 12s</span><div><b>Export failed for Task #412</b> &mdash; S3: AccessDenied</div><a href="#">View Ticket</a></div><button class="dx" aria-label="Dismiss"><svg class="ic " aria-hidden="true"><use href="#i-close"/></svg></button><span class="tbar"><i></i></span></div>
+    <div class="toast ok" role="status" style="--dur:6s"><svg class="ic s14" aria-hidden="true"><use href="#i-check"/></svg><div class="mt"><span class="dur">Success &middot; 6s</span><div><b>Task #409 merged into develop</b></div><a href="#">View Ticket</a></div><button class="dx" aria-label="Dismiss"><svg class="ic " aria-hidden="true"><use href="#i-close"/></svg></button><span class="tbar"><i></i></span></div>
+  </div>
+</div>
+<div class="timing" style="padding-top:12px"><span class="mock-note" style="display:block"><b>Also:</b> a toast raised by a server Notification bumps the bell badge immediately and appears in the dropdown as unread; dismissing the toast does not mark it read.</span></div>
+<div style="height:32px"></div>
+
+<script>
+(function(){
+var R=document.documentElement;
+function $$(s,c){return Array.prototype.slice.call((c||document).querySelectorAll(s))}
+function vis(el){return el.offsetParent!==null}
+function refresh(){
+  var scope=R.getAttribute('data-scope');
+  var n=0;$$('#np .nrow').forEach(function(r){});
+  var all=$$('.dd-list .nrow').filter(vis);
+  var unread=all.filter(function(r){return r.dataset.unread==='1'}).length;
+  $$('[data-badge]').forEach(function(b){b.textContent=unread;b.style.display=unread?'':'none'});
+  $$('[data-unread-count]').forEach(function(b){b.textContent=unread+' unread'+(b.closest('.dd-head')?'':'')});
+  var kind=document.querySelector('#kindSeg [aria-pressed=true]').dataset.kind;
+  var ws=document.getElementById('wsf').value;
+  var uo=document.getElementById('unrOnly').getAttribute('aria-checked')==='true';
+  var shown=0;
+  $$('#np .nrow').forEach(function(r){
+    var inScope=scope==='global'||r.dataset.ws==='harmonic';
+    var ok=inScope&&(kind==='all'||r.dataset.kind===kind)&&(scope!=='global'||ws==='all'||r.dataset.ws===ws)&&(!uo||r.dataset.unread==='1');
+    r.style.display=ok?'':'none';if(ok)shown++;
+  });
+  $$('#np .dgrp').forEach(function(g){g.style.display=$$('.nrow',g).some(function(r){return r.style.display!=='none'})?'':'none'});
+  document.getElementById('empty').style.display=shown?'none':'block';
+  $$('#kindSeg button').forEach(function(b){
+    var k=b.dataset.kind;var c=$$('#np .nrow').filter(function(r){return (scope==='global'||r.dataset.ws==='harmonic')&&(k==='all'||r.dataset.kind===k)}).length;
+    b.querySelector('.n').textContent=c;
+  });
+  var sw=document.querySelector('.swname');if(sw)$$('.swname').forEach(function(s){s.textContent=scope==='global'?'Global':'harmonic'});
+  $$('.bell').forEach(function(b){b.setAttribute('aria-label','Notifications, '+unread+' unread')});
+}
+$$('#scopeSeg button').forEach(function(b){b.onclick=function(){$$('#scopeSeg button').forEach(function(x){x.setAttribute('aria-pressed',x===b)});R.setAttribute('data-scope',b.dataset.scope);refresh()}});
+$$('#kindSeg button').forEach(function(b){b.onclick=function(){$$('#kindSeg button').forEach(function(x){x.setAttribute('aria-pressed',x===b)});refresh()}});
+document.getElementById('wsf').onchange=refresh;
+var u=document.getElementById('unrOnly');u.onclick=function(){u.setAttribute('aria-checked',u.getAttribute('aria-checked')!=='true');refresh()};
+$$('#themeSeg button').forEach(function(b){b.onclick=function(){$$('#themeSeg button').forEach(function(x){x.setAttribute('aria-pressed',x===b)});if(b.dataset.theme==='auto')R.removeAttribute('data-theme');else R.setAttribute('data-theme',b.dataset.theme)}});
+$$('.toast .dx').forEach(function(b){b.onclick=function(){b.closest('.toast').style.display='none'}});
+refresh();
+})();
+</script>
+</body>
+</html>

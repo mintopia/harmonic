@@ -1,6 +1,8 @@
 import { createHmac } from 'node:crypto';
 import nodemailer from 'nodemailer';
 import type { TaskRow } from '../db/schema.js';
+import { taskDisplayTitle } from '../domain/task-title.js';
+import type { NotificationInput } from './notification-store.js';
 import type { Channel, ChannelService, NotificationEvent } from './channels.js';
 
 /**
@@ -11,6 +13,10 @@ import type { Channel, ChannelService, NotificationEvent } from './channels.js';
  *   "task": {                                   // absent for queue.idle
  *     "id": 3, "prompt": "…", "state": "…", "harness": "…",
  *     "model": "…", "priority": "…", "isolationMode": "…", "workingDir": "…"
+ *   },
+ *   "export": {                                 // only on export.failed
+ *     "destination": "directory", "disposition": "…", "error": "…",
+ *     "retry": 0, "nextRetryAt": "2026-…Z" | null
  *   }
  * }
  * With a `secret` configured, the raw body is signed:
@@ -23,9 +29,33 @@ export interface NotificationPayload {
     TaskRow,
     'id' | 'prompt' | 'state' | 'harness' | 'model' | 'priority' | 'isolationMode' | 'workingDir'
   >;
+  /** Present on `export.failed` only; `nextRetryAt` is null when no further retry is scheduled. */
+  export?: ExportFailureDetail;
 }
 
-const summarize = (event: NotificationEvent, task?: TaskRow): string => {
+export interface ExportFailureDetail {
+  destination: string;
+  disposition: string;
+  error: string;
+  retry: number;
+  nextRetryAt: string | null;
+}
+
+export interface NotifyContext {
+  reason?: string;
+  destination?: string;
+  export?: ExportFailureDetail;
+}
+
+const summarizeExportFailure = (task: TaskRow | undefined, detail: ExportFailureDetail): string => {
+  const subject = task ? `Task #${task.id}` : 'Task';
+  const outcome =
+    detail.nextRetryAt !== null ? `retrying at ${detail.nextRetryAt}` : detail.retry === 0 ? 'not retried' : 'retries exhausted';
+  return `Harmonic: export of ${subject} to ${detail.destination} failed: ${detail.error} — ${outcome}`;
+};
+
+const summarize = (event: NotificationEvent, task?: TaskRow, context?: NotifyContext): string => {
+  if (event === 'export.failed' && context?.export) return summarizeExportFailure(task, context.export);
   if (!task) return `Harmonic: ${event === 'queue.idle' ? 'queue is idle — nothing left to run' : event}`;
   const excerpt = task.prompt.length > 80 ? `${task.prompt.slice(0, 80)}…` : task.prompt;
   const label: Record<NotificationEvent, string> = {
@@ -33,8 +63,10 @@ const summarize = (event: NotificationEvent, task?: TaskRow): string => {
     'run.started': 'started running',
     'task.escalated': 'ESCALATED — needs you',
     'task.done': 'done',
+    'task.failed': 'FAILED',
     'queue.idle': 'queue idle',
     'update.failed': 'update failed',
+    'export.failed': 'export failed',
   };
   return `Harmonic: task ${task.id} ${label[event]} — "${excerpt}"`;
 };
@@ -43,10 +75,58 @@ export class Notifier {
   constructor(
     private readonly channels: ChannelService,
     private readonly log: (msg: string) => void = () => {},
+    private readonly record?: (input: NotificationInput) => Promise<unknown>,
   ) {}
 
+  private stored(event: NotificationEvent, task: TaskRow | undefined, context: NotifyContext): NotificationInput | null {
+    if (!task) return null;
+    const base = { workspaceId: task.workspaceId, taskId: task.id };
+    const taskTitle = taskDisplayTitle(task) ?? `Task ${task.id}`;
+    switch (event) {
+      case 'task.escalated':
+        return {
+          ...base,
+          severity: 'escalation',
+          title: task.escalationReason ? `Task ${task.id} escalated — ${task.escalationReason}` : `Task ${task.id} escalated`,
+          detail: taskTitle,
+        };
+      case 'task.failed':
+        return { ...base, severity: 'failure', title: `Task ${task.id} failed — ${context.reason ?? 'unknown reason'}`, detail: taskTitle };
+      case 'export.failed':
+        return {
+          ...base,
+          severity: 'export',
+          title: `Export failed for Task ${task.id} — ${context.reason ?? context.export?.error ?? 'unknown reason'}`,
+          detail: context.destination ?? context.export?.destination ?? null,
+        };
+      default:
+        return null;
+    }
+  }
+
+  private async store(label: string, build: () => NotificationInput | null): Promise<void> {
+    if (!this.record) return;
+    try {
+      const input = build();
+      if (input) await this.record(input);
+    } catch (err) {
+      this.log(`recording ${label} notification failed: ${String(err)}`);
+    }
+  }
+
+  async recordMerged(task: TaskRow): Promise<void> {
+    await this.store('task.merged', () => ({
+      workspaceId: task.workspaceId,
+      taskId: task.id,
+      severity: 'merge',
+      title: `Task ${task.id} merged`,
+      detail: taskDisplayTitle(task) ?? `Task ${task.id}`,
+    }));
+  }
+
   /** Fan a notification out to subscribed channels plus the task's overrides; delivery is fire-and-forget per destination. */
-  async notify(event: NotificationEvent, task?: TaskRow): Promise<void> {
+  async notify(event: NotificationEvent, task?: TaskRow, context: NotifyContext = {}): Promise<void> {
+    await this.store(event, () => this.stored(event, task, context));
     const destinations = new Map<number, Channel>();
     for (const channel of await this.channels.subscribed(event)) destinations.set(channel.id, channel);
     if (task) {
@@ -71,8 +151,9 @@ export class Notifier {
             },
           }
         : {}),
+      ...(context.export ? { export: context.export } : {}),
     };
-    const text = summarize(event, task);
+    const text = summarize(event, task, context);
 
     for (const channel of destinations.values()) {
       this.deliver(channel, payload, text).catch((err: unknown) => {

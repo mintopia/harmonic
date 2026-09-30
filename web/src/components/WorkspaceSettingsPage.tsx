@@ -4,6 +4,7 @@ import type { Workspace } from '../types';
 import { btnDestructive, btnGhost, displayTitle, field } from '../ui';
 import { humanizeSaveError, parseFieldErrors } from './SettingsSection';
 import { Modal } from './Modal';
+import { firstPatternError, normalizeWorkspaceExport } from '../archive-export-model';
 import { SettingsForm } from './SettingsForm';
 import type { AppConfig } from '../types';
 import type { WorkspaceRenderCtx } from './settings-schema';
@@ -57,39 +58,59 @@ export function WorkspaceSettingsPage({
     setSaving(true);
     setError(null);
     setFieldErrors({});
+    const patternError = firstPatternError(local.exportRedactPatterns ?? []);
+    if (patternError) {
+      setError(patternError);
+      setSaving(false);
+      return;
+    }
+    const w = normalizeWorkspaceExport(local);
     try {
-      const updated = await api.updateWorkspace(local.id, {
-        name: local.name,
-        color: local.color,
-        trackerEnabled: local.trackerEnabled,
-        trackerPollIntervalSeconds: local.trackerPollIntervalSeconds,
-        harness: local.harness,
-        model: local.model,
-        chatHarness: local.chatHarness,
-        chatModel: local.chatModel,
-        isolationMode: local.isolationMode,
-        priority: local.priority,
-        conflictResolveTurns: local.conflictResolveTurns,
-        maxConcurrentAttempts: local.maxConcurrentAttempts,
-        autoRunnerEnabled: local.autoRunnerEnabled,
-        maxAttempts: local.maxAttempts,
-        contextReuseTokenLimit: local.contextReuseTokenLimit,
-        taskPreMergeCommands: local.taskPreMergeCommands,
-        taskPreMergeCritics: local.taskPreMergeCritics,
-        taskPostMergeCommands: local.taskPostMergeCommands,
-        taskPostMergeCritics: local.taskPostMergeCritics,
-        epicPreMergeCommands: local.epicPreMergeCommands,
-        epicPreMergeCritics: local.epicPreMergeCritics,
-        guardrailBudget: local.guardrailBudget,
-        guardrailProgress: local.guardrailProgress,
-        toolTimeoutMinutes: local.toolTimeoutMinutes,
-        drivePrompt: local.drivePrompt,
-        driveUnattendedReminder: local.driveUnattendedReminder,
-        driveContinuePrompt: local.driveContinuePrompt,
-        driveMergeFate: local.driveMergeFate,
-        driveContinueAttempts: local.driveContinueAttempts,
-        taskPrompt: local.taskPrompt,
-        excludedDirectories: local.excludedDirectories,
+      const updated = await api.updateWorkspace(w.id, {
+        name: w.name,
+        color: w.color,
+        trackerEnabled: w.trackerEnabled,
+        trackerPollIntervalSeconds: w.trackerPollIntervalSeconds,
+        harness: w.harness,
+        model: w.model,
+        chatHarness: w.chatHarness,
+        chatModel: w.chatModel,
+        isolationMode: w.isolationMode,
+        priority: w.priority,
+        conflictResolveTurns: w.conflictResolveTurns,
+        maxConcurrentAttempts: w.maxConcurrentAttempts,
+        autoRunnerEnabled: w.autoRunnerEnabled,
+        maxAttempts: w.maxAttempts,
+        contextReuseTokenLimit: w.contextReuseTokenLimit,
+        taskPreMergeCommands: w.taskPreMergeCommands,
+        taskPreMergeCritics: w.taskPreMergeCritics,
+        taskPostMergeCommands: w.taskPostMergeCommands,
+        taskPostMergeCritics: w.taskPostMergeCritics,
+        epicPreMergeCommands: w.epicPreMergeCommands,
+        epicPreMergeCritics: w.epicPreMergeCritics,
+        guardrailBudget: w.guardrailBudget,
+        guardrailProgress: w.guardrailProgress,
+        exportEnabled: w.exportEnabled,
+        exportDirectoryPath: w.exportDirectoryPath,
+        exportS3Endpoint: w.exportS3Endpoint,
+        exportS3Region: w.exportS3Region,
+        exportS3Bucket: w.exportS3Bucket,
+        exportS3Prefix: w.exportS3Prefix,
+        exportS3ForcePathStyle: w.exportS3ForcePathStyle,
+        exportS3AccessKeyId: w.exportS3AccessKeyId,
+        exportS3SecretAccessKey: w.exportS3SecretAccessKey,
+        exportRedactPatterns: w.exportRedactPatterns,
+        exportIncludeStates: w.exportIncludeStates,
+        archiveRetentionDays: w.archiveRetentionDays,
+        archiveRetentionMaxTotalMB: w.archiveRetentionMaxTotalMB,
+        toolTimeoutMinutes: w.toolTimeoutMinutes,
+        drivePrompt: w.drivePrompt,
+        driveUnattendedReminder: w.driveUnattendedReminder,
+        driveContinuePrompt: w.driveContinuePrompt,
+        driveMergeFate: w.driveMergeFate,
+        driveContinueAttempts: w.driveContinueAttempts,
+        taskPrompt: w.taskPrompt,
+        excludedDirectories: w.excludedDirectories,
       });
       setPristine(updated);
       setLocal(updated);

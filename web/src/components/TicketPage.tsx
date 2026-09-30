@@ -24,6 +24,7 @@ import { StatePill } from './ticket/shared';
 import { Description } from './ticket/Description';
 import { Metrics, Properties } from './ticket/Metrics';
 import { TaskProgressBar } from './ticket/TaskProgressBar';
+import { ExportPanel } from './ticket/ExportPanel';
 import { ChangesPane, NoRunsYet } from './ticket/ChangesPane';
 import { AttemptsNav, PanelNav } from './ticket/AttemptsNav';
 import { AttemptPanel } from './ticket/AttemptPanel';
@@ -71,7 +72,7 @@ export function TicketPage({
   const selectedRun = resolved.kind === 'attempt' ? runForAttempt(runs, { number: resolved.attemptNumber }) : null;
   const selectedRunId = selectedRun?.id ?? null;
 
-  const { events, logUnavailable } = useAttemptLogStream(selectedRunId);
+  const { events, logUnavailable, fromArchive } = useAttemptLogStream(selectedRunId);
   const { verificationAttempts, verifierStatuses } = useAttemptVerification(selectedRunId);
 
   const { allTasks, detail, timelineEvents, maxAttempts, workspaceName, commandConfigured, guardrailEvents } = useTicketPageData(
@@ -196,6 +197,8 @@ export function TicketPage({
 
             <TaskProgressBar task={task} attempts={runs} commandConfigured={commandConfigured} />
 
+            <ExportPanel taskId={task.id} state={task.state} refreshKey={timelineEvents.length} />
+
             {task.skipReason && (
               <div className="mb-4 text-small text-muted">
                 <span className={labelType}>Waiting to run</span> —{' '}
@@ -263,6 +266,7 @@ export function TicketPage({
                     stats={taskStats(statsAttemptsOf([selectedRun], liveUsage))}
                     events={events}
                     logUnavailable={logUnavailable}
+                    fromArchive={fromArchive}
                     following={following}
                     onToggleFollow={() => setFollowing((f) => !f)}
                     verificationAttempts={verificationAttempts}
@@ -284,9 +288,9 @@ export function TicketPage({
 
         <aside
           aria-label="Attempts, timeline and changed files"
-          className="flex w-[326px] shrink-0 flex-col border-l border-hairline bg-surface max-rail:w-auto max-rail:border-l-0 max-rail:border-t"
+          className="flex w-[326px] shrink-0 flex-col border-l border-hairline bg-surface max-rail:contents"
         >
-          <div className="min-h-0 flex-1 overflow-y-auto max-rail:overflow-visible">
+          <div className="min-h-0 flex-1 overflow-y-auto max-rail:overflow-visible max-rail:border-t max-rail:border-hairline max-rail:bg-surface">
             <AttemptsNav
               attempts={attempts}
               maxAttempts={maxAttempts}

@@ -59,6 +59,10 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   guardrailBudget: string | null; guardrailProgress: boolean | null; toolTimeoutMinutes: number | null;
   drivePrompt: string | null; driveUnattendedReminder: string | null; driveContinuePrompt: string | null;
   driveMergeFate: string | null; driveContinueAttempts: number | null; taskPrompt: string | null; pauseMessage: string | null;
+  exportEnabled: boolean | null; exportDirectoryPath: string | null; exportRedactPatterns: string | null;
+  exportS3Endpoint: string | null; exportS3Region: string | null; exportS3Bucket: string | null; exportS3Prefix: string | null;
+  exportS3ForcePathStyle: boolean | null; exportS3AccessKeyId: string | null; exportS3SecretAccessKey: string | null;
+  exportIncludeStates: string | null; archiveRetentionDays: number | null; archiveRetentionMaxTotalMB: number | null;
 };
 
 /** `jobKey` is the job name plus optional Workspace id, so SQLite's NULL-distinct unique semantics can't duplicate global job rows. */
@@ -116,9 +120,11 @@ export const tasks = sqliteTable('tasks', {
   trackerBody: text('tracker_body'),
   trackerUrl: text('tracker_url'),
   trackerCreatedAt: text('tracker_created_at'),
+  archiveId: text('archive_id'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [
+  uniqueIndex('tasks_archive_id_idx').on(t.archiveId),
   // SQLite treats NULLs as distinct, so native Tasks (null trackerRef) are unconstrained.
   uniqueIndex('tasks_tracker_ref_idx').on(t.workspaceId, t.trackerRef),
   index('tasks_workspace_id_idx').on(t.workspaceId),
@@ -375,6 +381,25 @@ export const channels = sqliteTable('channels', {
   events: text('events').notNull(),
   createdAt: integer('created_at').notNull(),
 });
+
+export const NOTIFICATION_SEVERITIES = ['failure', 'escalation', 'merge', 'export'] as const;
+export type NotificationSeverity = (typeof NOTIFICATION_SEVERITIES)[number];
+
+export const notifications = sqliteTable(
+  'notifications',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    severity: text('severity').$type<NotificationSeverity>().notNull(),
+    title: text('title').notNull(),
+    detail: text('detail'),
+    workspaceId: integer('workspace_id').references(() => workspaces.id, { onDelete: 'set null' }),
+    taskId: integer('task_id'),
+    createdAt: integer('created_at').notNull(),
+    readAt: integer('read_at'),
+  },
+  (t) => [index('notifications_created_at_idx').on(t.createdAt), index('notifications_workspace_id_idx').on(t.workspaceId)],
+);
+export type NotificationRow = typeof notifications.$inferSelect;
 
 /** Per-task override: this task announces its events to this channel. */
 export const taskChannels = sqliteTable(

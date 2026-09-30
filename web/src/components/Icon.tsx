@@ -48,7 +48,11 @@ export type IconName =
   | 'book'
   | 'globe'
   | 'arrow-up-right'
-  | 'download';
+  | 'download'
+  | 'bell'
+  | 'escalate'
+  | 'x-circle'
+  | 'merge';
 
 const PATHS: Record<IconName, JSX.Element> = {
   board: (
@@ -154,6 +158,27 @@ const PATHS: Record<IconName, JSX.Element> = {
   ),
   'arrow-up-right': <path d="M5 11l6-6M6 5h5v5" />,
   download: <path d="M8 2.75v7.5M4.75 7 8 10.25 11.25 7M3.5 13.25h9" />,
+  bell: (
+    <>
+      <path d="M3.75 11.25V7a4.25 4.25 0 0 1 8.5 0v4.25l1.25 1.25h-11z" />
+      <path d="M6.5 14a1.6 1.6 0 0 0 3 0" />
+    </>
+  ),
+  escalate: <path d="M8 13V3.5M4.5 7 8 3.5 11.5 7" />,
+  'x-circle': (
+    <>
+      <circle cx="8" cy="8" r="6" />
+      <path d="M5.75 5.75l4.5 4.5M10.25 5.75l-4.5 4.5" />
+    </>
+  ),
+  merge: (
+    <>
+      <circle cx="4.5" cy="3.75" r="1.5" />
+      <circle cx="4.5" cy="12.25" r="1.5" />
+      <circle cx="11.5" cy="8" r="1.5" />
+      <path d="M4.5 5.25v5.5M4.5 5.5c0 2.5 3.5 2.5 5.5 2.5" />
+    </>
+  ),
   'chevrons-left': <path d="M8 4.5 4.5 8 8 11.5M12 4.5 8.5 8l3.5 3.5" />,
   'chevron-down': <path d="M4.5 6.25 8 9.75l3.5-3.5" />,
   sun: (

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 import { z } from 'zod';
@@ -201,6 +201,35 @@ export function verifyChannelsUnconfigured(verify: Pick<AppConfig, 'verify'>['ve
   );
 }
 
+export const EXPORT_STATES = ['done', 'cancelled', 'deleted'] as const;
+export type ExportState = (typeof EXPORT_STATES)[number];
+
+export const exportDirectoryPathSchema = z.string().min(1).refine((p) => isAbsolute(p), { message: 'export directory path must be absolute' });
+
+export const exportS3EndpointSchema = z.url().refine(
+  (u) => {
+    const url = URL.parse(u);
+    return url === null || (url.username === '' && url.password === '');
+  },
+  { message: 'put S3 credentials in accessKeyId/secretAccessKey, not the endpoint URL' },
+);
+
+function compiles(source: string): boolean {
+  try {
+    new RegExp(source, 'g');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const redactPatternSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, { message: 'redaction pattern id must be lowercase letters, digits and dashes' }),
+  regex: z.string().min(1).refine(compiles, { message: 'redaction pattern regex must be a valid regular expression' }),
+});
+export type RedactPattern = z.infer<typeof redactPatternSchema>;
+export const redactPatternsSchema = z.array(redactPatternSchema);
+
 export const appConfigSchema = z.object({
   /** Operator-chosen display name; feeds the sidebar heading and browser title. Empty (the default) falls back to "Harmonic". */
   name: z.string().meta({ example: 'Production' }),
@@ -279,6 +308,35 @@ export const appConfigSchema = z.object({
     progress: z.boolean(),
     toolTimeoutMinutes: z.number().positive(),
     promptInactivityTimeoutMinutes: z.number().positive(),
+  }),
+  /** Optional Archive retention caps; both off (null) by default. */
+  archive: z.object({
+    retain: z.object({
+      days: z.number().int().positive().nullable().meta({ example: 30 }),
+      maxTotalMB: z.number().positive().nullable().meta({ example: 10240 }),
+    }),
+  }),
+  /** Task Archive export on a terminal state; `directory.path` is where per-Task tarballs are written. */
+  export: z.object({
+    enabled: z.boolean().meta({ example: false }),
+    includeStates: z.array(z.enum(EXPORT_STATES)).meta({ example: ['done', 'cancelled', 'deleted'] }),
+    directory: z.object({
+      path: exportDirectoryPathSchema.nullable().meta({ example: '/srv/harmonic-exports' }),
+    }),
+    /** S3-compatible Export Destination; enabled when `bucket` is set. Credentials fall back to the AWS default chain unless both keys are set. */
+    s3: z.object({
+      endpoint: exportS3EndpointSchema.nullable().meta({ example: 'https://s3.eu-west-2.amazonaws.com' }),
+      region: z.string().min(1).nullable().meta({ example: 'eu-west-2' }),
+      bucket: z.string().min(1).nullable().meta({ example: 'harmonic-exports' }),
+      prefix: z.string().meta({ example: 'harmonic/' }),
+      forcePathStyle: z.boolean().meta({ example: false }),
+      accessKeyId: z.string().min(1).nullable().meta({ example: null }),
+      secretAccessKey: z.string().min(1).nullable().meta({ example: null }),
+    }),
+    /** Extra patterns applied on top of the baseline redaction set when building an Export. */
+    redact: z.object({
+      patterns: redactPatternsSchema.meta({ example: [{ id: 'internal-host', regex: 'corp\\.example\\.internal' }] }),
+    }),
   }),
 }).superRefine((config, ctx) => {
   for (const [id, harness] of Object.entries(config.harnesses)) {

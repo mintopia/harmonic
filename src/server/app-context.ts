@@ -23,7 +23,10 @@ import { Scheduler, type ScheduledJobRegistration } from '../scheduler/scheduler
 import { TrackerPollerManager } from '../tracker/manager.js';
 import type { EpicService } from '../tracker/epic-service.js';
 import { ChannelService } from '../notifications/channels.js';
+import { NotificationStore } from '../notifications/notification-store.js';
 import { Notifier } from '../notifications/notifier.js';
+import type { TaskArchive } from '../archive/task-archive.js';
+import type { TaskExporter } from '../archive/task-export.js';
 import { EventBus } from './bus.js';
 import { AuthService } from './auth.js';
 import type { DistributionMode } from '../distribution-mode.js';
@@ -66,6 +69,8 @@ export interface AppOptions {
 }
 
 export interface AppContext {
+  archive: TaskArchive;
+  exporter: TaskExporter;
   distributionMode: DistributionMode;
   runningVersion: string;
   installMode: InstallMode;
@@ -95,6 +100,7 @@ export interface AppContext {
   auth: AuthService;
   channels: ChannelService;
   notifier: Notifier;
+  notifications: NotificationStore;
   bus: EventBus;
   hostLoad: HostLoadSampler;
   workspaceWatcher: WorkspaceWatcher;
@@ -121,6 +127,7 @@ export type PersistenceContext = Pick<
   | 'verificationAttempts'
   | 'auth'
   | 'channels'
+  | 'notifications'
 >;
 
 export type ExecutionContext = Pick<
@@ -156,8 +163,8 @@ export interface AppContexts {
 }
 
 export function createPersistenceContext(ctx: AppContext): PersistenceContext {
-  const { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, taskEvents, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels } = ctx;
-  return { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, taskEvents, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels };
+  const { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, taskEvents, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels, notifications } = ctx;
+  return { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, taskEvents, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels, notifications };
 }
 
 export function createExecutionContext(ctx: AppContext): ExecutionContext {

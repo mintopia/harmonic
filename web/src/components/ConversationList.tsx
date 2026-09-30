@@ -7,16 +7,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { EmptyState } from './EmptyState';
 import { Icon } from './Icon';
 import { providerLabel } from './TaskIdentity';
-
-function relativeTime(ts: number, now: number): string {
-  const seconds = Math.max(0, Math.floor((now - ts) / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
-}
+import { elapsedShort } from '../relative-time';
 
 function statusDot(conversation: Conversation, needsAttention: boolean): string {
   if (needsAttention) return 'bg-await-dot';
@@ -65,7 +56,7 @@ function ConversationRow({
           <span className={`min-w-0 flex-1 truncate text-data font-semibold ${selected ? 'text-ink' : 'text-muted'}`}>
             {title}
           </span>
-          <span className="shrink-0 font-data text-small tabular-nums text-faint">{relativeTime(conversation.updatedAt, now)}</span>
+          <span className="shrink-0 font-data text-small tabular-nums text-faint">{elapsedShort(conversation.updatedAt, now)}</span>
         </div>
         <div className="mt-0.5 truncate pl-3.5 text-small text-faint">
           {needsAttention ? (

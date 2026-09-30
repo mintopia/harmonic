@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -55,6 +55,23 @@ describe('verifyEpicIntegration', () => {
     })).resolves.toEqual({ outcome: 'proceed', reason: 'all 3 verifiers passed' });
 
     expect(critic).toHaveBeenCalledTimes(2);
+  });
+
+  it('persists each command output to the path the caller supplies', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'harmonic-epic-verify-log-'));
+    directories.push(root);
+    const logPath = join(root, 'output.log');
+    await verifyEpicIntegration({
+      worktreePath: root,
+      verifiedHeadOid: 'abc',
+      verifiers: {
+        commands: [{ id: 'cmd-log', command: process.execPath, args: ['-e', 'console.log("epic command output")'], env: {}, timeoutSeconds: 10 }],
+        critics: [],
+      },
+      outputLogPath: async (command) => (command.id === 'cmd-log' ? logPath : null),
+      runCritic: vi.fn(),
+    });
+    expect(readFileSync(logPath, 'utf8')).toContain('epic command output');
   });
 
   it('retains every critic summary and raw output for the resolver', async () => {

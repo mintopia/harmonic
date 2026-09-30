@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { taskRoutes } from './routes/tasks.js';
+import { taskExportRoutes } from './routes/task-export.js';
 import { epicRoutes } from './routes/epics.js';
 import { mapRoutes } from './routes/maps.js';
 import { workspaceRoutes } from './routes/workspaces.js';
@@ -16,10 +17,12 @@ import { statsRoutes } from './routes/stats.js';
 import { activityRoutes } from './routes/activity.js';
 import { timelineRoutes } from './routes/timeline.js';
 import { operationRoutes } from './routes/operations.js';
+import { notificationRoutes } from './routes/notifications.js';
 import { channelRoutes } from './routes/channels.js';
 import { scheduledJobRoutes } from './routes/scheduled-jobs.js';
 import { worktreeRoutes } from './routes/worktrees.js';
 import { harnessRoutes } from './routes/harnesses.js';
+import { exportRoutes } from './routes/export.js';
 import { fsRoutes } from './routes/fs.js';
 import { openapiRoutes } from './routes/openapi.js';
 import { buildMcpServer } from '../mcp/server.js';
@@ -39,8 +42,9 @@ function isStaticAssetPath(path: string): boolean {
 
 export async function registerRoutes(app: App, ctx: AppContext, contexts: AppContexts): Promise<void> {
   await app.register((fastify) => taskRoutes(fastify, ctx), { prefix: '/api' });
+  await app.register((fastify) => taskExportRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => mapRoutes(fastify, contexts.tracking), { prefix: '/api' });
-  await app.register((fastify) => workspaceRoutes(fastify, contexts.tracking), { prefix: '/api' });
+  await app.register((fastify) => workspaceRoutes(fastify, { ...contexts.tracking, auth: ctx.auth, tasks: ctx.tasks, archive: ctx.archive }), { prefix: '/api' });
   await app.register(conversationRoutes, { prefix: '/api' });
   await app.register((fastify) => permissionRuleRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => configRoutes(fastify, contexts.execution), { prefix: '/api' });
@@ -55,7 +59,9 @@ export async function registerRoutes(app: App, ctx: AppContext, contexts: AppCon
   await app.register((fastify) => worktreeRoutes(fastify, contexts.execution), { prefix: '/api' });
   await app.register(harnessRoutes, { prefix: '/api' });
   await app.register((fastify) => channelRoutes(fastify, contexts.persistence), { prefix: '/api' });
+  await app.register((fastify) => notificationRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => fsRoutes(fastify, contexts.tracking), { prefix: '/api' });
+  await app.register((fastify) => exportRoutes(fastify, contexts.execution), { prefix: '/api' });
   await app.register((fastify) => epicRoutes(fastify, ctx), { prefix: '/api' });
   await app.register(openapiRoutes, { prefix: '/api' });
 

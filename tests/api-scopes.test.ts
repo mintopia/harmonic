@@ -59,6 +59,12 @@ describe('readScopeAllowed', () => {
     expect(readScopeAllowed('/api/ws', 'GET')).toBe(true);
   });
 
+  it('allows listing Notifications but not marking them read', () => {
+    expect(readScopeAllowed('/api/notifications', 'GET')).toBe(true);
+    expect(readScopeAllowed('/api/notifications/1/read', 'POST')).toBe(false);
+    expect(scopedKeyAllowed('/api/notifications')).toBe(false);
+  });
+
   it('blocks the Epic surface, listed or by id', () => {
     expect(readScopeAllowed('/api/workspaces/1/epics', 'GET')).toBe(false);
     expect(readScopeAllowed('/api/workspaces/1/epics/2', 'GET')).toBe(false);

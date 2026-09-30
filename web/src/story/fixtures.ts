@@ -78,6 +78,19 @@ const workspace = {
   epicPreMergeCritics: null,
   guardrailBudget: null,
   guardrailProgress: null,
+  exportEnabled: null,
+  exportDirectoryPath: null,
+  exportS3Endpoint: null,
+  exportS3Region: null,
+  exportS3Bucket: null,
+  exportS3Prefix: null,
+  exportS3ForcePathStyle: null,
+  exportS3AccessKeyId: null,
+  exportS3SecretAccessKey: null,
+  exportRedactPatterns: null,
+  exportIncludeStates: null,
+  archiveRetentionDays: null,
+  archiveRetentionMaxTotalMB: null,
   toolTimeoutMinutes: null,
   drivePrompt: null,
   driveUnattendedReminder: null,
@@ -193,6 +206,8 @@ export const timeline = [
   { attemptId: 503, ts: T0 + min(89) + 50_000, kind: 'lifecycle', data: { type: 'lifecycle', payload: { event: 'merge-step', step: { step: 'post-check-passed', mergeOid: '0f758cd2200565e7605902a86c2827c65ad25ce0' } } } },
   { attemptId: 503, ts: T0 + min(90), kind: 'lifecycle', data: { type: 'lifecycle', payload: { event: 'merged', oid: '0f758cd2200565e7605902a86c2827c65ad25ce0', baseBranch: 'develop' } } },
   { attemptId: 503, ts: T0 + min(91), kind: 'lifecycle', data: { type: 'lifecycle', payload: { event: 'ticket-closed', trackerRef: '185' } } },
+  { attemptId: null, ts: T0 + min(91) + 7_000, kind: 'lifecycle', data: { type: 'lifecycle', payload: { event: 'export', destination: 'directory', status: 'succeeded', file: '/srv/harmonic-exports/185-done.tar.gz', builtAt: new Date(T0 + min(91) + 7_000).toISOString(), name: '185-done.tar.gz', bytes: 19_293_798, redactions: { 'github-token': 3, bearer: 4 } } } },
+  { attemptId: null, ts: T0 + min(91) + 9_000, kind: 'lifecycle', data: { type: 'lifecycle', payload: { event: 'export', destination: 's3', status: 'failed', error: 'AccessDenied: s3:PutObject', builtAt: new Date(T0 + min(91) + 7_000).toISOString(), name: '185-done.tar.gz', bytes: 19_293_798, redactions: { 'github-token': 3, bearer: 4 } } } },
 ] satisfies TicketTimelineEvent[];
 
 export const diffFiles = [

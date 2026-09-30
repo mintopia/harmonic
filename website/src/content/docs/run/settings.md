@@ -73,6 +73,64 @@ price per model. It already knows the models the built-in harnesses use.
 If you add a model it doesn't have a price for, add that price too;
 otherwise its work shows as cost-incomplete rather than a misleading zero.
 
+## Archive & Export
+
+When a Task reaches a terminal disposition — *done*, *cancelled*, or deleted
+(after escalation) — Harmonic can export a redacted tarball of the Task's
+Archive to one or more destinations for audit and archival.
+
+### Archive retention
+
+Archives are kept indefinitely by default. Set optional global limits:
+
+- **Keep for (days)**: Automatically prune Archives older than this; blank = forever.
+- **Max total size (MB)**: When Archives exceed this, oldest ones are deleted first; blank = unlimited.
+
+Each Workspace can override both limits for its own Archives with the override switch on the field. A Workspace with its own limits is pruned separately from the rest; the limit you leave inherited keeps the global value.
+
+Archives are never pruned while an Export is pending or failed.
+
+### Enabling Export
+
+Toggle Export on or off per workspace (global default: on). Choose which
+terminal dispositions trigger an Export — all three are enabled by default
+(*done*, *cancelled*, *deleted*). A Workspace can override the list of dispositions.
+
+An Export never blocks or reverts the disposition; failed Exports are
+surfaced on the Ticket page.
+
+### Export Destinations
+
+Configure where Exports go; each destination is independent and receives a
+copy. Choose one or both:
+
+- **Directory**: An absolute path on the Harmonic host, created if missing. No file is ever overwritten.
+- **S3-compatible**: An S3 bucket or MinIO/self-hosted equivalent with endpoint, region, bucket, prefix, and path-style addressing option.
+
+S3 credentials are optional: leave both blank to use the AWS default credential chain. Credentials are always masked in the UI and never shown again after saving.
+
+Both settings are global with a per-workspace override.
+
+### Redaction patterns
+
+Archives are redacted only at Export time; the local copy stays raw. Matches
+are replaced with `[REDACTED:<pattern-id>]`.
+
+Six baseline patterns are always on (AWS keys, GitHub and GitLab tokens,
+bearer tokens, API keys).
+
+Per-Workspace patterns add to baseline; you can't remove baseline patterns.
+Invalid regular expressions are rejected on save.
+
+### Testing and retrying
+
+Click **Test Destination** to write and remove a probe object; the Settings
+page shows success or the error.
+
+Failed Exports retry automatically at 5 min, 30 min, and 2 h. If all retries
+fail, the failure remains on the Ticket page; click **Export again** to
+retry after fixing credentials.
+
 ## See also
 
 - [Feeding it work](/harmonic/work/feeding-it-work/)
