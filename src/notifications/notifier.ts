@@ -27,7 +27,7 @@ export interface NotificationPayload {
     TaskRow,
     'id' | 'prompt' | 'state' | 'harness' | 'model' | 'priority' | 'isolationMode' | 'workingDir'
   >;
-  /** Present on `export.failed` only. `nextRetryAt` is an ISO timestamp, null once retries are exhausted. */
+  /** Present on `export.failed` only; `nextRetryAt` is null when no further retry is scheduled. */
   export?: ExportFailureDetail;
 }
 
@@ -45,7 +45,8 @@ export interface NotifyExtra {
 
 const summarizeExportFailure = (task: TaskRow | undefined, detail: ExportFailureDetail): string => {
   const subject = task ? `Task #${task.id}` : 'Task';
-  const outcome = detail.nextRetryAt === null ? 'retries exhausted' : `retrying at ${detail.nextRetryAt}`;
+  const outcome =
+    detail.nextRetryAt !== null ? `retrying at ${detail.nextRetryAt}` : detail.retry === 0 ? 'not retried' : 'retries exhausted';
   return `Harmonic: export of ${subject} to ${detail.destination} failed: ${detail.error} — ${outcome}`;
 };
 

@@ -57,8 +57,8 @@ export interface UseAppSyncArgs {
   storage?: StorageLike;
 }
 
-function exportRetryText(nextRetryAt: string | null): string {
-  if (nextRetryAt === null) return 'retries exhausted';
+function exportRetryText(retry: number, nextRetryAt: string | null): string {
+  if (nextRetryAt === null) return retry === 0 ? 'not retried' : 'retries exhausted';
   const minutes = Math.max(1, Math.round((Date.parse(nextRetryAt) - Date.now()) / 60_000));
   return minutes >= 120 ? `retrying in ${Math.round(minutes / 60)} h` : `retrying in ${minutes} min`;
 }
@@ -169,7 +169,7 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
     if (!authed) return;
     return subscribe((msg) => {
       if (!live() || msg.type !== 'export_failed') return;
-      toastFail(`Export of ${taskLabel(msg.taskId)} to ${msg.destination} failed — ${exportRetryText(msg.nextRetryAt)}`);
+      toastFail(`Export of ${taskLabel(msg.taskId)} to ${msg.destination} failed — ${exportRetryText(msg.retry, msg.nextRetryAt)}`);
     });
   }, [authed]);
 

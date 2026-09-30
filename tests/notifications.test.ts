@@ -266,7 +266,10 @@ describe('export.failed notifications', () => {
       await server.app.ctx.notifier.notify('export.failed', task, {
         export: { destination: 'directory', disposition: 'done', error: 'EACCES', retry: 3, nextRetryAt: null },
       });
-      await waitFor(async () => sink.requests.length >= 4);
+      await server.app.ctx.notifier.notify('export.failed', task, {
+        export: { destination: 'directory', disposition: 'done', error: 'boom', retry: 0, nextRetryAt: null },
+      });
+      await waitFor(async () => sink.requests.length >= 6);
 
       const hooks = sink.requests.filter((r) => r.path === '/hook').map((r) => JSON.parse(r.body));
       expect(hooks.find((p) => p.export.retry === 0)).toMatchObject({
@@ -277,6 +280,7 @@ describe('export.failed notifications', () => {
       const texts = sink.requests.filter((r) => r.path === '/slack').map((r) => JSON.parse(r.body).text as string);
       expect(texts.some((t) => t.includes(`Task #${task.id} to directory failed: EACCES — retrying at ${nextRetryAt}`))).toBe(true);
       expect(texts.some((t) => t.includes('retries exhausted'))).toBe(true);
+      expect(texts.some((t) => t.includes('boom — not retried'))).toBe(true);
     } finally {
       sink.close();
       await server.close();

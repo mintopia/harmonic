@@ -62,7 +62,7 @@ export type ServerMessage =
   | { type: 'worktrees'; worktrees: WorktreeInventoryEntry[] }
   // Host load-average reading, pushed on a fixed tick and once on connect. Sent to read keys too.
   | { type: 'host_load'; load: HostLoad }
-  // A Task Export Destination failed. Sent to every client regardless of workspace; nextRetryAt is null once retries are exhausted.
+  // Sent to every client regardless of workspace; nextRetryAt is null when no further retry is scheduled.
   | {
       type: 'export_failed';
       taskId: number;

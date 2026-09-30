@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, utimesSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -453,11 +453,52 @@ describe('TaskExporter (#734)', () => {
       writeFileSync(join(stagingDir, '9-orphan.tar.gz'), 'x');
       writeFileSync(join(stagingDir, '9-lonely.pending.json'), '{}');
       writeFileSync(join(stagingDir, '9-x.pending.json.abc.tmp'), '{}');
+      const old = new Date(Date.now() - 60_000);
+      for (const n of ['9-orphan.tar.gz', '9-lonely.pending.json', '9-x.pending.json.abc.tmp']) utimesSync(join(stagingDir, n), old, old);
 
       await sut().sweepStaging();
 
       expect([...staging()].sort()).toEqual(kept);
       expect(kept).toHaveLength(2);
+    });
+
+    it('sweepStaging skips entries created by this process', async () => {
+      const e = sut();
+      await new Promise((r) => setTimeout(r, 20));
+      const stagingDir = join(dir, 'archive', '.staging');
+      mkdirSync(stagingDir, { recursive: true });
+      writeFileSync(join(stagingDir, '5-fresh.tar.gz'), 'in flight');
+      await e.sweepStaging();
+      expect(staging()).toEqual(['5-fresh.tar.gz']);
+    });
+
+    it('discards a malformed sidecar and its tarball', async () => {
+      const e = sut();
+      await e.run(task, 'done');
+      const stagingDir = join(dir, 'archive', '.staging');
+      const [sidecar] = sidecars();
+      const value = JSON.parse(readFileSync(join(stagingDir, sidecar!), 'utf8'));
+      value.destinations[0].nextRetryAt = 'not a date';
+      writeFileSync(join(stagingDir, sidecar!), JSON.stringify(value));
+      clock = T0 + 5 * MIN;
+      await e.retryDue();
+      expect(staging()).toEqual([]);
+      expect(failures).toHaveLength(1);
+    });
+
+    it('a fresh exporter after restart sweeps, then retries and delivers', async () => {
+      await sut().run(task, 'done');
+      const before = [...staging()].sort();
+      await new Promise((r) => setTimeout(r, 20));
+      const restarted = sut();
+      await restarted.sweepStaging();
+      expect([...staging()].sort()).toEqual(before);
+      heal();
+      clock = T0 + 5 * MIN;
+      await restarted.retryDue();
+      expect(staging()).toEqual([]);
+      expect(readdirSync(join(blocked, 'my-workspace'))).toHaveLength(1);
+      expect(facts.at(-1)!.payload).toMatchObject({ status: 'succeeded', retry: 1 });
     });
 
     it('a corrupt sidecar does not break the retry loop', async () => {
@@ -501,6 +542,8 @@ describe('TaskExporter (#734)', () => {
     mkdirSync(join(stagingDir, 'stale-dir'), { recursive: true });
     writeFileSync(join(stagingDir, 'stale-dir', 'x'), 'x');
     writeFileSync(join(stagingDir, '1-abc.tar.gz'), 'partial');
+    const old = new Date(Date.now() - 60_000);
+    for (const p of [join(stagingDir, 'stale-dir'), join(stagingDir, '1-abc.tar.gz')]) utimesSync(p, old, old);
 
     await sut.sweepStaging();
 

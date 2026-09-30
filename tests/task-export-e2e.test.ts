@@ -64,7 +64,10 @@ describe('Export on done (#734)', () => {
     });
     expect(facts[0]).toMatchObject({ status: 'failed', destination: 'directory' });
     expect((await badServer.app.ctx.tasks.get(taskId)).state).toBe('done');
-    expect(existsSync(join(root, 'data-bad', 'archive', '.staging')) ? readdirSync(join(root, 'data-bad', 'archive', '.staging')) : []).toEqual([]);
+    const staged = readdirSync(join(root, 'data-bad', 'archive', '.staging')).sort();
+    expect(staged).toHaveLength(2);
+    expect(staged[0]).toMatch(new RegExp(`^${taskId}-[0-9a-f]+\\.pending\\.json$`));
+    expect(staged[1]).toBe(staged[0]!.replace(/\.pending\.json$/, '.tar.gz'));
     expect(existsSync(join(root, 'data-bad', 'archive'))).toBe(true);
   });
 

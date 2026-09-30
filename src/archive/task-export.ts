@@ -1,7 +1,7 @@
 import { createWriteStream } from 'node:fs';
-import { link, mkdir, readdir, readFile, rm, copyFile, rename, writeFile } from 'node:fs/promises';
+import { link, mkdir, readdir, readFile, rm, copyFile, rename, stat, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { ExportState } from '../config.js';
 import type { TaskRow } from '../db/schema.js';
 import { fireAndForget } from '../error-handling.js';
@@ -104,6 +104,23 @@ function pendingPath(staged: string): string {
   return `${staged.slice(0, -TARBALL_SUFFIX.length)}${PENDING_SUFFIX}`;
 }
 
+function validDestination(d: unknown): boolean {
+  const v = d as Partial<PendingDestination> | null;
+  return (
+    !!v &&
+    v.destination === 'directory' &&
+    typeof v.dir === 'string' &&
+    typeof v.base === 'string' &&
+    typeof v.retries === 'number' &&
+    typeof v.nextRetryAt === 'string' &&
+    Number.isFinite(Date.parse(v.nextRetryAt))
+  );
+}
+
+function stagedPath(sidecar: string): string {
+  return `${sidecar.slice(0, -PENDING_SUFFIX.length)}${TARBALL_SUFFIX}`;
+}
+
 function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
@@ -151,6 +168,8 @@ export class TaskExporter {
   private readonly chains = new Map<number, Promise<unknown>>();
   private retrying = false;
 
+  private readonly startedAtMs = Date.now();
+
   constructor(private readonly deps: TaskExporterDeps) {}
 
   async sweepStaging(): Promise<void> {
@@ -164,13 +183,14 @@ export class TaskExporter {
     }
     const present = new Set(names);
     const keep = (name: string): boolean => {
-      if (name.endsWith(TARBALL_SUFFIX)) return present.has(`${name.slice(0, -TARBALL_SUFFIX.length)}${PENDING_SUFFIX}`);
-      if (name.endsWith(PENDING_SUFFIX)) return present.has(`${name.slice(0, -PENDING_SUFFIX.length)}${TARBALL_SUFFIX}`);
+      if (name.endsWith(TARBALL_SUFFIX)) return present.has(basename(pendingPath(name)));
+      if (name.endsWith(PENDING_SUFFIX)) return present.has(basename(stagedPath(name)));
       return false;
     };
     await forEachYielding(names, async (name) => {
       if (keep(name)) return;
       try {
+        if ((await stat(join(stagingDir, name))).mtimeMs >= this.startedAtMs) return;
         await rm(join(stagingDir, name), { recursive: true, force: true });
       } catch (err) {
         logger.warn('export: staging entry not removed', { entry: name, error: message(err) });
@@ -239,7 +259,7 @@ export class TaskExporter {
     }
     await this.record(task, disposition, outcome, at, 0);
     if (outcome.status === 'succeeded') {
-      if (staged) await rm(staged, { force: true });
+      if (staged) await rm(staged, { force: true }).catch(() => undefined);
       return outcome;
     }
     let nextRetryAt: string | null = null;
@@ -257,10 +277,10 @@ export class TaskExporter {
       } catch (err) {
         logger.warn('export: retry not scheduled', { taskId: task.id, error: message(err) });
         nextRetryAt = null;
-        await rm(staged, { force: true });
+        await rm(staged, { force: true }).catch(() => undefined);
       }
     } else if (staged) {
-      await rm(staged, { force: true });
+      await rm(staged, { force: true }).catch(() => undefined);
     }
     this.notifyFailure({ task, disposition, destination: 'directory', error: outcome.error ?? 'export failed', retry: 0, nextRetryAt });
     return outcome;
@@ -299,7 +319,7 @@ export class TaskExporter {
     return this.serialize(pending.task.id, async () => {
       const current = await this.readPending(sidecar);
       if (!current) return 0;
-      const staged = `${sidecar.slice(0, -PENDING_SUFFIX.length)}${TARBALL_SUFFIX}`;
+      const staged = stagedPath(sidecar);
       const nowMs = this.now().getTime();
       const first = Date.parse(current.firstFailedAt);
       let attempted = 0;
@@ -345,12 +365,21 @@ export class TaskExporter {
   private async readPending(sidecar: string): Promise<PendingExport | null> {
     try {
       const value = JSON.parse(await readFile(sidecar, 'utf8')) as Partial<PendingExport> | null;
-      if (!value || typeof value.task?.id !== 'number' || typeof value.firstFailedAt !== 'string' || !Array.isArray(value.destinations)) {
+      if (
+        !value ||
+        typeof value.task?.id !== 'number' ||
+        !Number.isFinite(Date.parse(value.firstFailedAt as string)) ||
+        !Array.isArray(value.destinations) ||
+        !value.destinations.every(validDestination)
+      ) {
         throw new Error('malformed sidecar');
       }
       return value as PendingExport;
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') logger.warn('export: pending sidecar unreadable', { sidecar, error: message(err) });
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      logger.warn('export: pending sidecar unreadable, discarding', { sidecar, error: message(err) });
+      await rm(sidecar, { force: true }).catch(() => undefined);
+      await rm(stagedPath(sidecar), { force: true }).catch(() => undefined);
       return null;
     }
   }
