@@ -284,9 +284,9 @@ export function TicketPage({
 
         <aside
           aria-label="Attempts, timeline and changed files"
-          className="flex w-[326px] shrink-0 flex-col border-l border-hairline bg-surface max-rail:w-auto max-rail:border-l-0 max-rail:border-t"
+          className="flex w-[326px] shrink-0 flex-col border-l border-hairline bg-surface max-rail:contents"
         >
-          <div className="min-h-0 flex-1 overflow-y-auto max-rail:overflow-visible">
+          <div className="min-h-0 flex-1 overflow-y-auto max-rail:overflow-visible max-rail:border-t max-rail:border-hairline max-rail:bg-surface">
             <AttemptsNav
               attempts={attempts}
               maxAttempts={maxAttempts}
