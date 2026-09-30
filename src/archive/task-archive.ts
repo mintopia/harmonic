@@ -1,5 +1,5 @@
 import { createWriteStream, type WriteStream } from 'node:fs';
-import { access, copyFile, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { access, appendFile, copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { basename, dirname, join } from 'node:path';
 import type { TaskRow } from '../db/schema.js';
@@ -18,6 +18,15 @@ export interface StepArchiveWriter {
   appendUpdate(update: unknown): void;
   copyNative(harness: string, transcriptPath: string | null): Promise<void>;
   close(): Promise<void>;
+}
+
+export type OperatorAction = 'steer' | 'reject' | 'accept' | 'pause' | 'resume' | 'close' | 'cancel';
+export type OperatorActor = 'operator' | 'agent';
+
+export interface OperatorInput {
+  actor: OperatorActor;
+  action: OperatorAction;
+  text: string | null;
 }
 
 const PROMPT_SEPARATOR = '\n\n---\n\n';
@@ -91,6 +100,7 @@ class AppendFile {
 
 export class TaskArchive {
   private readonly ensuring = new Map<string, Promise<string>>();
+  private readonly serial = new Map<number, Promise<void>>();
 
   constructor(private readonly deps: ArchiveDeps) {}
 
@@ -103,10 +113,72 @@ export class TaskArchive {
     return promise;
   }
 
-  private async doEnsure(task: TaskRow): Promise<string> {
-    const archiveId = task.archiveId ?? (await this.deps.ensureArchiveId(task.id));
+  private async archiveDir(task: TaskRow, archiveId: string): Promise<{ dir: string; workspaceName: string | null }> {
     const workspaceName = task.workspaceId === null ? null : await this.deps.workspaceName(task.workspaceId);
     const dir = join(this.deps.dataDir, 'archive', workspaceSlug(workspaceName, task.workspaceId), `${task.id}-${archiveId}`);
+    return { dir, workspaceName };
+  }
+
+  private enqueue(taskId: number, work: () => Promise<void>): Promise<void> {
+    const prev = this.serial.get(taskId) ?? Promise.resolve();
+    const next = prev.then(work, work);
+    this.serial.set(taskId, next);
+    return next.finally(() => {
+      if (this.serial.get(taskId) === next) this.serial.delete(taskId);
+    });
+  }
+
+  recordOperatorInput(task: TaskRow, input: OperatorInput): Promise<void> {
+    return this.enqueue(task.id, async () => {
+      try {
+        const dir = await this.ensure(task);
+        const line = JSON.stringify({ ts: new Date().toISOString(), actor: input.actor, action: input.action, text: input.text });
+        await appendFile(join(dir, 'operator-inputs.jsonl'), `${line}\n`);
+      } catch (err) {
+        warn('archive: operator input record failed', err, { taskId: task.id, action: input.action });
+      }
+    });
+  }
+
+  async existingDir(task: TaskRow): Promise<string | null> {
+    if (!task.archiveId) return null;
+    try {
+      const { dir } = await this.archiveDir(task, task.archiveId);
+      return (await pathExists(join(dir, 'archive.json'))) ? dir : null;
+    } catch (err) {
+      warn('archive: directory lookup failed', err, { taskId: task.id });
+      return null;
+    }
+  }
+
+  markDeleted(dir: string, actor: OperatorActor, taskId: number): Promise<void> {
+    return this.enqueue(taskId, async () => {
+      try {
+        const manifest = join(dir, 'archive.json');
+        const body = JSON.parse(await readFile(manifest, 'utf8')) as Record<string, unknown>;
+        body.deleted = { at: new Date().toISOString(), actor };
+        const tmp = `${manifest}.${randomBytes(6).toString('hex')}.tmp`;
+        try {
+          await writeFile(tmp, `${JSON.stringify(body, null, 2)}\n`);
+          await rename(tmp, manifest);
+        } catch (err) {
+          await rm(tmp, { force: true });
+          throw err;
+        }
+      } catch (err) {
+        warn('archive: deletion mark failed', err, { taskId });
+      }
+    });
+  }
+
+  async recordDeletion(task: TaskRow, actor: OperatorActor): Promise<void> {
+    const dir = await this.existingDir(task);
+    if (dir) await this.markDeleted(dir, actor, task.id);
+  }
+
+  private async doEnsure(task: TaskRow): Promise<string> {
+    const archiveId = task.archiveId ?? (await this.deps.ensureArchiveId(task.id));
+    const { dir, workspaceName } = await this.archiveDir(task, archiveId);
     await mkdir(dir, { recursive: true });
     const manifest = join(dir, 'archive.json');
     if (await pathExists(manifest)) return dir;

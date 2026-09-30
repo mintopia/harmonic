@@ -29,6 +29,7 @@ import type { ApiTaskListRow } from '../dto.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, attemptUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import { diffFilesResponseSchema } from './diff.js';
+import { deleteTaskKeepingArchive, operatorReasonSchema, recordOperatorActionBestEffort, recordOperatorActionsBestEffort, requestActor } from '../operator-inputs.js';
 import { attemptDiffFiles, attemptDiffStat } from '../../execution/worktree-diff.js';
 
 /** A `GitError` whose stderr says the worktree/branch is simply gone — an expected absence, not a failure. */
@@ -43,7 +44,13 @@ const rejectInputSchema = z.object({
   start: z.boolean().optional().meta({ example: false }),
 });
 /** Omitted/false verifies the candidate first; `true` skips verification and merges it as-is. */
-const cancelInputSchema = z.object({ withDependents: z.boolean().optional().meta({ example: true }) }).nullish();
+const cancelInputSchema = z
+  .object({
+    withDependents: z.boolean().optional().meta({ example: true }),
+    reason: operatorReasonSchema.meta({ example: 'superseded' }),
+  })
+  .nullish();
+const closeInputSchema = z.object({ reason: operatorReasonSchema.meta({ example: 'superseded' }) }).nullish();
 /** How to re-attempt a paused Task: `full` reuses the retained Session/conversation; `condensed` starts a fresh Session from a summary. Omitted keeps the recommended default (reuse when eligible). */
 const resumeInputSchema = z
   .object({ continuation: z.enum(['full', 'condensed']).optional().meta({ example: 'full' }) })
@@ -483,14 +490,13 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       const id = req.params.id;
-      if (req.body?.withDependents) {
-        const cancelled = await ctx.tasks.cancelWithDependents(id);
-        cancelled.forEach((taskId) => ctx.runner.cancelForTask(taskId));
-        return await withDeps({ id });
-      }
-      const task = await ctx.tasks.cancel(id);
-      ctx.runner.cancelForTask(task.id);
-      return await withDeps(task);
+      const reason = req.body?.reason ?? null;
+      const actor = await requestActor(req, ctx);
+      const withDependents = req.body?.withDependents === true;
+      const cancelled = withDependents ? await ctx.tasks.cancelWithDependents(id) : [(await ctx.tasks.cancel(id)).id];
+      cancelled.forEach((taskId) => ctx.runner.cancelForTask(taskId));
+      await recordOperatorActionsBestEffort(ctx, cancelled, actor, 'cancel', reason);
+      return await withDeps({ id });
     },
   );
 
@@ -511,6 +517,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       if (!(await ctx.runner.pause(req.params.id))) {
         return reply.code(409).send({ error: { code: 'conflict', message: 'The task is not actively running.' } });
       }
+      await recordOperatorActionBestEffort(ctx, req.params.id, await requestActor(req, ctx), 'pause', null);
       return await withDeps({ id: req.params.id });
     },
   );
@@ -533,15 +540,19 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req, reply) => {
       await ctx.upgrade.assertManualLaunchAllowed();
       const continuation = req.body?.continuation;
+      const actor = await requestActor(req, ctx);
       const tryLiveResume = continuation !== 'condensed';
       if (tryLiveResume && (await ctx.runner.resume(req.params.id))) {
+        await recordOperatorActionBestEffort(ctx, req.params.id, actor, 'resume', continuation ?? null);
         return await withDeps({ id: req.params.id });
       }
       const task = await ctx.tasks.get(req.params.id);
       if (task.state !== 'paused') {
         return reply.code(409).send({ error: { code: 'conflict', message: 'The task has no paused Attempt to resume.' } });
       }
-      return await withDeps(await ctx.runner.resumePaused(req.params.id, continuation));
+      const resumed = await ctx.runner.resumePaused(req.params.id, continuation);
+      await recordOperatorActionBestEffort(ctx, req.params.id, actor, 'resume', continuation ?? null);
+      return await withDeps(resumed);
     },
   );
 
@@ -562,8 +573,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       const id = req.params.id;
-      ctx.runner.cancelForTask(id);
-      await ctx.tasks.delete(id);
+      await deleteTaskKeepingArchive(ctx, id, await requestActor(req, ctx));
       return { id };
     },
   );
@@ -615,6 +625,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       ) {
         throw new DomainError('invalid_state', `task ${req.params.id} is in a state that cannot be steered`);
       }
+      await recordOperatorActionBestEffort(ctx, req.params.id, await requestActor(req, ctx), 'steer', req.body.text);
       return { ok: true } as const;
     },
   );
@@ -713,7 +724,9 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       await ctx.upgrade.assertManualLaunchAllowed();
-      return withDeps(await ctx.escalation.accept(req.params.id));
+      const accepted = await ctx.escalation.accept(req.params.id);
+      await recordOperatorActionBestEffort(ctx, req.params.id, await requestActor(req, ctx), 'accept', null);
+      return withDeps(accepted);
     },
   );
 
@@ -734,7 +747,9 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       if (req.body.start) await ctx.upgrade.assertManualLaunchAllowed();
-      return withDeps(await ctx.escalation.reject(req.params.id, req.body.guidance, req.body.start ?? false));
+      const rejected = await ctx.escalation.reject(req.params.id, req.body.guidance, req.body.start ?? false);
+      await recordOperatorActionBestEffort(ctx, req.params.id, await requestActor(req, ctx), 'reject', req.body.guidance);
+      return withDeps(rejected);
     },
   );
 
@@ -746,13 +761,18 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         description:
           'Close an escalated ticket: cancel it and clean up — remove its branch and worktree, close the tracker issue. Human-only.',
         params: idParamsSchema,
+        body: closeInputSchema,
         response: {
           200: taskSchema.describe('The task, cancelled.'),
           409: errorResponse('The task is not escalated.'),
         },
       },
     },
-    async (req) => await withDeps(await ctx.escalation.close(req.params.id)),
+    async (req) => {
+      const closed = await ctx.escalation.close(req.params.id);
+      await recordOperatorActionBestEffort(ctx, req.params.id, await requestActor(req, ctx), 'close', req.body?.reason ?? null);
+      return await withDeps(closed);
+    },
   );
 
   app.get(

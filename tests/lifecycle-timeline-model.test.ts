@@ -23,6 +23,32 @@ describe('lifecycleTimelineRows', () => {
     ]);
   });
 
+  it('labels operator accept, close and cancel task events by actor, with and without a reason', () => {
+    const rows = lifecycleTimelineRows([
+      lifecycle(10, { event: 'operator-accepted', actor: 'operator', reason: null }),
+      lifecycle(20, { event: 'operator-accepted', actor: 'agent', reason: null }),
+      lifecycle(30, { event: 'operator-closed', actor: 'operator', reason: 'Superseded by #12' }),
+      lifecycle(40, { event: 'operator-closed', actor: 'agent', reason: null }),
+      lifecycle(50, { event: 'operator-cancelled', actor: 'operator', reason: 'Wrong\n  repo' }),
+      lifecycle(60, { event: 'operator-cancelled', actor: 'agent', reason: null }),
+      lifecycle(70, { event: 'operator-accepted' }),
+      lifecycle(80, { event: 'operator-closed', actor: 'system', reason: null }),
+      lifecycle(90, { event: 'operator-cancelled' }),
+    ]);
+
+    expect(rows.map((row) => [row.label, row.detail, row.tone, row.tag])).toEqual([
+      ['Accepted by operator', null, 'passed', null],
+      ['Accepted by agent', null, 'passed', null],
+      ['Closed by operator', 'Superseded by #12', 'neutral', null],
+      ['Closed by agent', null, 'neutral', null],
+      ['Cancelled by operator', 'Wrong repo', 'neutral', null],
+      ['Cancelled by agent', null, 'neutral', null],
+      ['Accepted', null, 'passed', null],
+      ['Closed', null, 'neutral', null],
+      ['Cancelled', null, 'neutral', null],
+    ]);
+  });
+
   it('reads recorded lifecycle events as significant, legible rows instead of a raw token', () => {
     const rows = lifecycleTimelineRows([
       lifecycle(10, { event: 'merged', oid: '0f758cd2200565e7605902a86c2827c65ad25ce0', baseBranch: 'develop' }),

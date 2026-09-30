@@ -188,6 +188,7 @@ export interface Runtime {
   autoDrive: AutoDrive;
   autoRunner: AutoRunner;
   upgrade: UpgradeCoordinator;
+  archive: TaskArchive;
   epicService: EpicService;
   trackerManager: TrackerPollerManager;
   hostLoad: HostLoadSampler;
@@ -471,6 +472,7 @@ export async function createRuntime(deps: {
     autoDrive,
     autoRunner,
     upgrade,
+    archive,
     epicService,
     trackerManager,
     hostLoad,

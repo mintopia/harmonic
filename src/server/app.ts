@@ -101,6 +101,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     guardMissing: opts.guardMissing ?? false,
     updateCheck,
     upgrade: runtime.upgrade,
+    archive: runtime.archive,
     asyncDb,
     statsReader,
     settingsStore: stores.settingsStore,

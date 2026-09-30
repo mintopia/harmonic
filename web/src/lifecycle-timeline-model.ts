@@ -47,6 +47,11 @@ function humanizeEvent(token: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
+function operatorLabel(verb: string, actor: unknown): string {
+  const who = text(actor);
+  return who === 'operator' || who === 'agent' ? `${verb} by ${who}` : verb;
+}
+
 function verificationRow(data: Record<string, unknown> | null): RowCore {
   const critic = text(data?.mechanism) === 'critic';
   const noun = critic ? 'Review' : 'Verify';
@@ -113,6 +118,12 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
       return { label: 'Paused', detail: clip(text(payload?.reason)), tone: 'awaiting', tag: null };
     case 'resumed':
       return { label: 'Resumed', detail: clip(text(payload?.reason)), tone: 'running', tag: null };
+    case 'operator-accepted':
+      return { label: operatorLabel('Accepted', payload?.actor), detail: clip(text(payload?.reason)), tone: 'passed', tag: null };
+    case 'operator-closed':
+      return { label: operatorLabel('Closed', payload?.actor), detail: clip(text(payload?.reason)), tone: 'neutral', tag: null };
+    case 'operator-cancelled':
+      return { label: operatorLabel('Cancelled', payload?.actor), detail: clip(text(payload?.reason)), tone: 'neutral', tag: null };
     case 'continue': {
       const n = num(payload?.attempt);
       return { label: n !== null ? `Continued as Attempt ${n}` : 'Continued', detail: null, tone: 'running', tag: null };
