@@ -2,6 +2,7 @@ import { createWriteStream } from 'node:fs';
 import { link, mkdir, readdir, readFile, rm, copyFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
+import type { ExportState } from '../config.js';
 import type { TaskRow } from '../db/schema.js';
 import { fireAndForget } from '../error-handling.js';
 import { logger } from '../logger.js';
@@ -10,7 +11,7 @@ import type { ResolvedExportSettings } from './export-settings.js';
 import { workspaceSlug, type ExportRecord, type TaskArchive } from './task-archive.js';
 import { TarGzWriter, addDirectory } from './tar-gz.js';
 
-export type ExportDisposition = 'done';
+export type ExportDisposition = ExportState;
 
 export interface ExportSnapshot {
   ticket: unknown;
@@ -135,6 +136,23 @@ export class TaskExporter {
   trigger(task: TaskRow, disposition: ExportDisposition): void {
     const snapshot = this.deps.snapshot(task);
     snapshot.catch(() => undefined);
+    this.enqueue(task, disposition, snapshot);
+  }
+
+  /** Must be awaited before the Task's rows are removed; never throws. */
+  async captureForDelete(task: TaskRow): Promise<void> {
+    try {
+      const settings = await this.deps.settings(task);
+      if (!settings.enabled || !settings.includeStates.includes('deleted') || !settings.directoryPath) return;
+      const snapshot = await this.deps.snapshot(task);
+      if (snapshot.attemptCount === 0) return;
+      this.enqueue(task, 'deleted', Promise.resolve(snapshot));
+    } catch (err) {
+      logger.warn('export: delete snapshot failed', { taskId: task.id, error: message(err) });
+    }
+  }
+
+  private enqueue(task: TaskRow, disposition: ExportDisposition, snapshot: Promise<ExportSnapshot>): void {
     const previous = this.chains.get(task.id) ?? Promise.resolve();
     const next = previous.catch(() => undefined).then(() => this.run(task, disposition, snapshot));
     this.chains.set(task.id, next);
@@ -175,10 +193,12 @@ export class TaskExporter {
   private async record(task: TaskRow, disposition: ExportDisposition, outcome: ExportOutcome, at: Date): Promise<void> {
     const base = { destination: 'directory' as const, disposition, file: outcome.file, status: outcome.status };
     const error = outcome.error === undefined ? {} : { error: outcome.error };
-    try {
-      await this.deps.recordFact(task.id, { event: 'export', ...base, ...error });
-    } catch (err) {
-      logger.warn('export: fact not recorded', { taskId: task.id, error: message(err) });
+    if (disposition !== 'deleted') {
+      try {
+        await this.deps.recordFact(task.id, { event: 'export', ...base, ...error });
+      } catch (err) {
+        logger.warn('export: fact not recorded', { taskId: task.id, error: message(err) });
+      }
     }
     const entry: ExportRecord = { ...base, at: at.toISOString(), ...error };
     try {

@@ -332,4 +332,102 @@ describe('TaskExporter (#734)', () => {
     expect(staging()).toEqual([]);
     expect(existsSync(stagingDir)).toBe(true);
   });
+  describe('terminal dispositions (#735)', () => {
+    const withStates = (includeStates: Array<'done' | 'cancelled' | 'deleted'>) => () => {
+      const config = globalWith(dest);
+      return resolveExportSettings({ ...config, export: { ...config.export, includeStates } }, undefined);
+    };
+
+    it('produces a -cancelled- Export for a cancelled Task', async () => {
+      await exporter().run(task, 'cancelled');
+      expect(tarballs()).toHaveLength(1);
+      expect(tarballs()[0]).toMatch(/^\d+-cancelled-\d{8}T\d{6}\.\d{3}Z\.tar\.gz$/);
+      expect(facts[0]!.payload).toMatchObject({ disposition: 'cancelled', status: 'succeeded' });
+    });
+
+    it('captureForDelete exports the pre-delete snapshot as -deleted- and records history without a Fact', async () => {
+      let rowsGone = false;
+      const sut = exporter({
+        snapshot: async () => {
+          const value = rowsGone ? 'after' : 'before';
+          await new Promise((r) => setTimeout(r, 20));
+          return { ticket: { title: value }, timeline: { events: [value] }, attemptCount: 2 };
+        },
+      });
+      await sut.captureForDelete(task);
+      rowsGone = true;
+
+      for (let i = 0; i < 200 && tarballs().length === 0; i++) await new Promise((r) => setTimeout(r, 25));
+      expect(tarballs()[0]).toMatch(/-deleted-/);
+      const out = extract(join(dest, 'my-workspace', tarballs()[0]!));
+      expect(JSON.parse(readFileSync(join(out, 'ticket.json'), 'utf8'))).toEqual({ title: 'before' });
+      expect(JSON.parse(readFileSync(join(out, 'timeline.json'), 'utf8'))).toEqual({ events: ['before'] });
+      rmSync(out, { recursive: true, force: true });
+      for (let i = 0; i < 200; i++) {
+        const history = JSON.parse(readFileSync(join(await archive.ensure(task), 'archive.json'), 'utf8')).exports;
+        if (history?.length) break;
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      const history = JSON.parse(readFileSync(join(await archive.ensure(task), 'archive.json'), 'utf8')).exports;
+      expect(history).toHaveLength(1);
+      expect(history[0]).toMatchObject({ disposition: 'deleted', status: 'succeeded' });
+      expect(facts).toEqual([]);
+    });
+
+    it('produces no Export when deleting a Task that never ran', async () => {
+      await exporter({ snapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0 }) }).captureForDelete(task);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(tarballs()).toEqual([]);
+    });
+
+    it('does not snapshot on delete when Export is disabled', async () => {
+      let snapshots = 0;
+      settingsFor = () => resolveExportSettings(globalWith(dest, false), undefined);
+      await exporter({
+        snapshot: async () => {
+          snapshots++;
+          return { ticket: {}, timeline: {}, attemptCount: 1 };
+        },
+      }).captureForDelete(task);
+      expect(snapshots).toBe(0);
+    });
+
+    it('captureForDelete never throws when the snapshot or settings fail', async () => {
+      await expect(
+        exporter({
+          snapshot: async () => {
+            throw new Error('snapshot boom');
+          },
+        }).captureForDelete(task),
+      ).resolves.toBeUndefined();
+      await expect(
+        exporter({
+          settings: async () => {
+            throw new Error('settings boom');
+          },
+        }).captureForDelete(task),
+      ).resolves.toBeUndefined();
+      expect(tarballs()).toEqual([]);
+    });
+
+    it('a second disposition yields a second tarball and leaves the first untouched', async () => {
+      await exporter().run(task, 'cancelled');
+      const first = tarballs()[0]!;
+      const before = readFileSync(join(dest, 'my-workspace', first));
+      await exporter().run(task, 'done');
+      expect(tarballs()).toHaveLength(2);
+      expect(readFileSync(join(dest, 'my-workspace', first)).equals(before)).toBe(true);
+    });
+
+    it('includeStates excluding a disposition suppresses its Export', async () => {
+      settingsFor = withStates(['done']);
+      expect(await exporter().run(task, 'cancelled')).toBeNull();
+      await exporter().captureForDelete(task);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(tarballs()).toEqual([]);
+      settingsFor = withStates(['cancelled']);
+      await exporter().run(task, 'cancelled');
+      expect(tarballs()).toHaveLength(1);
+    });
+  });
 });

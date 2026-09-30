@@ -165,6 +165,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       bus.emit('step_changed', { taskId });
     },
   });
+  stores.tasks.setBeforeDelete((task) => exporter.captureForDelete(task));
   bus.on('task_disposition', ({ task, disposition }) => exporter.trigger(task, disposition));
   fireAndForget(() => exporter.sweepStaging(), { op: 'export.sweepStaging', level: 'warn' });
 
