@@ -383,6 +383,12 @@
     }
   }
 
+  @keyframes toast-drain {
+    to {
+      transform: scaleX(0);
+    }
+  }
+
   @keyframes toast-in {
     from {
       opacity: 0;

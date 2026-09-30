@@ -18,8 +18,8 @@ export const DEFAULT_ROUTE: Route = { scope: { kind: 'global' }, view: 'board', 
 export const LAST_ROUTE_KEY = 'harmonic.last-route';
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 
-const GLOBAL_PATHS: Readonly<Record<string, View>> = { '/': 'board', '/tasks': 'table', '/activity': 'activity', '/timeline': 'timeline', '/stats': 'stats', '/operations': 'operations', '/api': 'api', '/settings': 'settings' };
-const WORKSPACE_PATHS: Readonly<Record<string, View>> = { board: 'board', conversations: 'conversations', graph: 'graph', activity: 'activity', tasks: 'table', timeline: 'timeline', stats: 'stats', files: 'files', operations: 'operations', settings: 'workspace' };
+const GLOBAL_PATHS: Readonly<Record<string, View>> = { '/': 'board', '/tasks': 'table', '/activity': 'activity', '/timeline': 'timeline', '/stats': 'stats', '/operations': 'operations', '/api': 'api', '/settings': 'settings', '/notifications': 'notifications' };
+const WORKSPACE_PATHS: Readonly<Record<string, View>> = { board: 'board', conversations: 'conversations', graph: 'graph', activity: 'activity', tasks: 'table', timeline: 'timeline', stats: 'stats', files: 'files', operations: 'operations', settings: 'workspace', notifications: 'notifications' };
 const csvValues = (raw: string, allowed: readonly string[]) => {
   const values: string[] = [];
   for (const part of raw.split(',')) { const value = part.trim(); if (value && allowed.includes(value) && !values.includes(value)) values.push(value); }
@@ -89,7 +89,7 @@ export function loadLastRoute(storage: StorageLike): Route {
   try { const value = storage.getItem(LAST_ROUTE_KEY); if (!value?.startsWith('/')) return DEFAULT_ROUTE; const url = new URL(value, 'http://harmonic.local'); return parseRoute(url.pathname, url.search); } catch (error) { console.warn('loadLastRoute: storage unavailable', error); return DEFAULT_ROUTE; }
 }
 export function scopeSwitchRoute(route: Route, scope: Scope): Route {
-  if (scope.kind === 'global') return { ...route, scope, view: GLOBAL_RAIL_VIEWS.includes(route.view) ? route.view : 'board', task: null, epic: null, conversation: null, panel: NO_SELECTION, file: null };
+  if (scope.kind === 'global') return { ...route, scope, view: GLOBAL_RAIL_VIEWS.includes(route.view) || route.view === 'notifications' ? route.view : 'board', task: null, epic: null, conversation: null, panel: NO_SELECTION, file: null };
   const view = route.view === 'settings' ? 'workspace' : route.view;
-  return { ...route, scope, view: WORKSPACE_RAIL_VIEWS.includes(view) ? view : 'board', task: null, epic: null, conversation: null, panel: NO_SELECTION, file: null };
+  return { ...route, scope, view: WORKSPACE_RAIL_VIEWS.includes(view) || view === 'notifications' ? view : 'board', task: null, epic: null, conversation: null, panel: NO_SELECTION, file: null };
 }

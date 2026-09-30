@@ -182,7 +182,7 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
         setTasks((current) => {
           const prev = (current ?? []).find((t) => t.id === msg.task.id);
           if (prev?.mergeStatus && !msg.task.mergeStatus && msg.task.state === 'done') {
-            outcomes.push(() => toastSuccess(`${taskLabel(msg.task.id)} merged`, { sticky: true }));
+            outcomes.push(() => toastSuccess(`${taskLabel(msg.task.id)} merged`));
           } else if (prev && prev.state !== 'escalated' && msg.task.state === 'escalated') {
             outcomes.push(() => toastFail(`${taskLabel(msg.task.id)} escalated — needs a decision`));
           }
@@ -201,7 +201,7 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
         debouncedRefreshEpics();
       }
       if (msg.type === 'epic_integrated' && msg.workspaceId === activeWorkspaceId) {
-        toastSuccess(`Epic #${msg.epicRef} merged`, { sticky: true });
+        toastSuccess(`Epic #${msg.epicRef} merged`);
         debouncedRefreshEpics();
       }
       if (msg.type === 'task_removed') {

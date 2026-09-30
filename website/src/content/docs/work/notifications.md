@@ -5,8 +5,35 @@ description: Get a ping when a ticket needs you or the queue is done, in Discord
 
 Harmonic runs on its own, so notifications are how it taps you on the
 shoulder: a ticket needs a decision, the work's finished, or the queue has
-drained. You set up where those pings go and which ones you want, then
-stop watching the board.
+drained. Every important server-side outcome is recorded in your in-app
+inbox; you can also set up external channels (Discord, Slack, email, webhook)
+to receive them wherever you prefer.
+
+## In-app Notifications
+
+Every server-side outcome worth attention—a Task failed, escalated, or merged;
+an Export failed—is stored in Harmonic with a read/unread state, whether or not
+a browser was open when it happened. Your own failed clicks show only as a
+transient toast, never as a Notification.
+
+**The bell** sits in the top navigation and shows an unread count (red badge,
+hidden at 0, capped at 99+). Click it to open a dropdown showing your latest
+10 Notifications. Opening the dropdown does not mark them read; click a row to
+mark it read and open the related Ticket. The **Mark all read** button keeps
+the menu open.
+
+**The Notifications page** (`/notifications`) shows every retained Notification
+grouped by day. Click any row to mark it read and navigate to the Ticket. Use
+the severity filter (All, Failures, Escalations, Merges, Exports) and the
+**Unread only** switch to narrow the list. In Global scope, rows tagged with
+each Workspace's Colour so you can tell them apart.
+
+Both the bell dropdown and the page follow your current scope—in Workspace scope
+you see only that Workspace's Notifications; in Global scope you see all of them.
+
+**Retention**: Notifications are kept for 30 days, up to 1000 in total
+(older ones are pruned automatically). Read state is one global state, shared
+across browsers and devices.
 
 ## Where pings go
 
