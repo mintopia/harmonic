@@ -40,6 +40,8 @@ export function computeGitProvenance(input: {
   attempts: readonly ProvenanceAttempt[];
   facts: readonly unknown[];
   remoteUrl: string | null;
+  taskBaseBranch?: string | null;
+  currentBranch?: string | null;
 }): GitProvenance {
   const ordered = [...input.attempts].sort((a, b) => a.number - b.number);
   const perAttempt = ordered.map((a) => ({
@@ -53,7 +55,7 @@ export function computeGitProvenance(input: {
   const lastEnd = [...perAttempt].reverse().find((a) => a.endCommit !== null)?.endCommit ?? null;
   return {
     remoteUrl: stripRemoteCredentials(input.remoteUrl),
-    baseBranch: [...ordered].reverse().find((a) => a.baseBranch)?.baseBranch ?? null,
+    baseBranch: [...ordered].reverse().find((a) => a.baseBranch)?.baseBranch || input.taskBaseBranch || input.currentBranch || null,
     startCommit: first?.startCommit ?? null,
     endCommit: mergeCommit ?? lastEnd,
     mergeCommit,
