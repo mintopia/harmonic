@@ -15,6 +15,7 @@ import {
   GUARDRAIL_CONFIG_SOURCES,
   VERIFICATION_MECHANISMS,
   STEP_TYPES,
+  isEpicAttempt,
   isTaskAttempt,
   type AttemptRow,
 } from '../../db/schema.js';
@@ -366,6 +367,9 @@ function sortListRows(rows: ApiTaskListRow[], sortBy: string | undefined, order:
 }
 
 export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Promise<void> {
+  const archiveOwner = async (run: AttemptRow) =>
+    isTaskAttempt(run) ? await ctx.tasks.get(run.taskId).catch(() => null) : isEpicAttempt(run) ? { workspaceId: run.workspaceId, epicRef: run.epicRef } : null;
+
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   const withDeps = async (task: { id: number }) =>
@@ -954,7 +958,8 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Attempts'],
-        description: "Read an Attempt's native harness transcript. Missing or unreadable transcripts are explicitly unavailable.",
+        description:
+          "Read an Attempt's native harness transcript, falling back to the Archive's copy when the native one is missing or unreadable. Unavailable only when neither can be read.",
         params: idParamsSchema,
         response: { 200: attemptLogResponseSchema.describe('The native transcript events, or an explicit unavailable state.') },
       },
@@ -969,18 +974,20 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         return { status: 'unavailable' as const, liveCursor: ctx.bus.latestAttemptLogSeq({ attemptId: run.id }) };
       }
       const adapter = adapterFor(session.harness);
+      const range = { startedAt: run.startedAt, finishedAt: run.endedAt };
       let log: TranscriptLog;
+      let nativePath: string | null = null;
       if (adapter.exportTranscript) {
         const events = await adapter.exportTranscript({ sessionId: session.harnessSessionId, cwd: session.cwd });
         log = events && events.length > 0 ? { status: 'available', events } : { status: 'unavailable' };
       } else {
-        const path = session.transcriptPath ?? (await ctx.runner.ensureSessionTranscript(run.sessionRowId));
-        log = await readTranscriptLog({
-          harness: session.harness,
-          path,
-          startedAt: run.startedAt,
-          finishedAt: run.endedAt,
-        });
+        nativePath = session.transcriptPath ?? (await ctx.runner.ensureSessionTranscript(run.sessionRowId).catch(() => null));
+        log = await readTranscriptLog({ harness: session.harness, path: nativePath, ...range });
+      }
+      if (log.status !== 'available' && !adapter.exportTranscript) {
+        const owner = await archiveOwner(run);
+        const archived = owner ? await ctx.archive.archivedTranscript(owner, run.number, 'implementation', nativePath) : null;
+        if (archived) log = await readTranscriptLog({ harness: session.harness, path: archived, ...range });
       }
       const liveCursor = ctx.bus.latestAttemptLogSeq({ attemptId: run.id });
       if (log.status !== 'available') return { ...log, liveCursor };
@@ -1099,7 +1106,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Attempts'],
         description:
-          "Read a critic verification attempt's native harness transcript — what the critic itself read, ran, and reasoned. Missing or unreadable transcripts are explicitly unavailable.",
+          "Read a critic verification attempt's native harness transcript — what the critic itself read, ran, and reasoned. Falls back to the Archive's copy when the native transcript is missing or unreadable; unavailable only when neither can be read.",
         params: idParamsSchema,
         response: {
           200: attemptLogResponseSchema.describe('The critic session transcript events, or an explicit unavailable state.'),
@@ -1109,12 +1116,14 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req) => {
       const attempt = await ctx.verificationAttempts.get(req.params.id);
       if (!attempt?.transcriptPath || !attempt.harness) return { status: 'unavailable' as const, liveCursor: 0 };
-      const log = await readTranscriptLog({
-        harness: attempt.harness,
-        path: attempt.transcriptPath,
-        startedAt: 0,
-        finishedAt: null,
-      });
+      const range = { startedAt: 0, finishedAt: null };
+      let log = await readTranscriptLog({ harness: attempt.harness, path: attempt.transcriptPath, ...range });
+      if (log.status !== 'available') {
+        const run = await ctx.attempts.get(attempt.attemptId).catch(() => null);
+        const owner = run ? await archiveOwner(run) : null;
+        const archived = run && owner ? await ctx.archive.archivedTranscript(owner, run.number, 'verification', attempt.transcriptPath) : null;
+        if (archived) log = await readTranscriptLog({ harness: attempt.harness, path: archived, ...range });
+      }
       return log.status === 'available'
         ? { ...log, liveCursor: 0, events: log.events.map((event) => ({ ...event, attemptId: attempt.attemptId })) }
         : { ...log, liveCursor: 0 };

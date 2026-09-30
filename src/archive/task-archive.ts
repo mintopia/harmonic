@@ -351,9 +351,53 @@ export class TaskArchive {
     return promise;
   }
 
+  private epicDir(workspaceId: number, epicRef: number, workspaceName: string | null): string {
+    return join(this.deps.dataDir, 'archive', workspaceSlug(workspaceName, workspaceId), `epic-${epicRef}`);
+  }
+
+  async archivedTranscript(
+    owner: TaskRow | { workspaceId: number; epicRef: number },
+    attemptNumber: number,
+    kind: 'implementation' | 'verification',
+    nativePath: string | null,
+  ): Promise<string | null> {
+    try {
+      let root: string | null;
+      if ('epicRef' in owner) {
+        const dir = this.epicDir(owner.workspaceId, owner.epicRef, await this.deps.workspaceName(owner.workspaceId));
+        root = (await pathExists(join(dir, 'archive.json'))) ? dir : null;
+      } else {
+        root = await this.existingDir(owner);
+      }
+      if (!root) return null;
+      const attemptDir = join(root, 'attempts', String(attemptNumber), kind);
+      const name = nativePath ? basename(nativePath) : null;
+      if (kind === 'implementation') {
+        const native = join(attemptDir, 'native');
+        if (name) return (await pathExists(join(native, name))) ? join(native, name) : null;
+        const files = (await readdir(native, { withFileTypes: true })).filter((e) => e.isFile() && e.name.endsWith('.jsonl'));
+        return files.length === 1 ? join(native, files[0]!.name) : null;
+      }
+      if (!name) return null;
+      const subdirs = async (dir: string) => (await readdir(dir, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name);
+      for (const stage of await subdirs(attemptDir)) {
+        for (const step of await subdirs(join(attemptDir, stage))) {
+          const candidate = join(attemptDir, stage, step, 'native', name);
+          if (await pathExists(candidate)) return candidate;
+        }
+      }
+      return null;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT' && (err as NodeJS.ErrnoException).code !== 'ENOTDIR') {
+        warn('archive: transcript lookup failed', err, { attemptNumber, kind });
+      }
+      return null;
+    }
+  }
+
   private async doEnsureEpic(workspaceId: number, epicRef: number): Promise<string> {
     const workspaceName = await this.deps.workspaceName(workspaceId);
-    const dir = join(this.deps.dataDir, 'archive', workspaceSlug(workspaceName, workspaceId), `epic-${epicRef}`);
+    const dir = this.epicDir(workspaceId, epicRef, workspaceName);
     await mkdir(dir, { recursive: true });
     await this.writeManifestIfAbsent(dir, {
       epicRef,
@@ -420,9 +464,10 @@ export class TaskArchive {
         return;
       }
       if (entries.length === 0) return;
-      await mkdir(join(native, 'subagents'), { recursive: true });
+      const stem = basename(transcriptPath, '.jsonl');
+      await mkdir(join(native, stem, 'subagents'), { recursive: true });
       for (const name of entries) {
-        await copyFile(join(subagents, name), join(native, 'subagents', name));
+        await copyFile(join(subagents, name), join(native, stem, 'subagents', name));
         await yieldToEventLoop();
       }
     } catch (err) {

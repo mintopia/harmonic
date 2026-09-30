@@ -10,7 +10,7 @@
 - [ ] 2.2 Same for Critic Sessions
 - [ ] 2.3 Copy native transcript + Subagent files to `native/` at Step end; re-copy in crash recovery
 - [ ] 2.4 Write resolved `prompt.md` for every prompt sent
-- [ ] 2.5 Log routes fall back to the Archive when the native transcript is missing
+- [x] 2.5 Log routes fall back to the Archive when the native transcript is missing
 
 ## 3. Verify output and operator inputs
 
