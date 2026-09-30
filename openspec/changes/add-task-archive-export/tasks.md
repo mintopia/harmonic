@@ -37,7 +37,7 @@
 
 ## 6. Retention
 
-- [ ] 6.1 Yielding prune Scheduled Job honouring `days` and `maxTotalMB` and eligibility rules
+- [x] 6.1 Yielding prune Scheduled Job honouring `days` and `maxTotalMB` and eligibility rules
 
 ## 7. UI (mockup first)
 

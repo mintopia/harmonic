@@ -309,6 +309,13 @@ export const appConfigSchema = z.object({
     toolTimeoutMinutes: z.number().positive(),
     promptInactivityTimeoutMinutes: z.number().positive(),
   }),
+  /** Optional Archive retention caps; both off (null) by default. */
+  archive: z.object({
+    retain: z.object({
+      days: z.number().int().positive().nullable().meta({ example: 30 }),
+      maxTotalMB: z.number().positive().nullable().meta({ example: 10240 }),
+    }),
+  }),
   /** Task Archive export on a terminal state; `directory.path` is where per-Task tarballs are written. */
   export: z.object({
     enabled: z.boolean().meta({ example: false }),
