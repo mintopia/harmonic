@@ -19,6 +19,7 @@ import type { AppContext } from '../app.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
+import { maskWorkspaceSecrets } from '../../archive/export-secrets.js';
 
 /** The Resolved Tracker flattened for the API; `null` when tracking is off. `ok` discriminates `label` vs (`code`, `reason`). */
 const resolvedTrackerSchema = z
@@ -76,6 +77,14 @@ const workspaceSchema = z
     taskPrompt: z.string().nullable().meta({ example: null }),
     exportEnabled: z.boolean().nullable().meta({ example: null }),
     exportDirectoryPath: z.string().nullable().meta({ example: null }),
+    exportS3Endpoint: z.string().nullable().meta({ example: null }),
+    exportS3Region: z.string().nullable().meta({ example: null }),
+    exportS3Bucket: z.string().nullable().meta({ example: null }),
+    exportS3Prefix: z.string().nullable().meta({ example: null }),
+    exportS3ForcePathStyle: z.boolean().nullable().meta({ example: null }),
+    /** Masked when set: a set key is always returned as the mask, never the value. */
+    exportS3AccessKeyId: z.string().nullable().meta({ example: null }),
+    exportS3SecretAccessKey: z.string().nullable().meta({ example: null }),
     createdAt: z.number().meta({ example: 1784030400000 }),
     updatedAt: z.number().meta({ example: 1784032260000 }),
   })
@@ -95,7 +104,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
 
   /** A Workspace row plus its live Resolved Tracker; JSON-text override columns parsed back to the shape a client PATCHes. */
   const serialize = (ws: WorkspaceRow) => ({
-    ...ws,
+    ...maskWorkspaceSecrets(ws),
     taskPreMergeCommands: ws.taskPreMergeCommands ? JSON.parse(ws.taskPreMergeCommands) : null,
     taskPreMergeCritics: ws.taskPreMergeCritics ? JSON.parse(ws.taskPreMergeCritics) : null,
     taskPostMergeCommands: ws.taskPostMergeCommands ? JSON.parse(ws.taskPostMergeCommands) : null,

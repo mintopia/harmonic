@@ -60,6 +60,8 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   drivePrompt: string | null; driveUnattendedReminder: string | null; driveContinuePrompt: string | null;
   driveMergeFate: string | null; driveContinueAttempts: number | null; taskPrompt: string | null; pauseMessage: string | null;
   exportEnabled: boolean | null; exportDirectoryPath: string | null;
+  exportS3Endpoint: string | null; exportS3Region: string | null; exportS3Bucket: string | null; exportS3Prefix: string | null;
+  exportS3ForcePathStyle: boolean | null; exportS3AccessKeyId: string | null; exportS3SecretAccessKey: string | null;
 };
 
 /** `jobKey` is the job name plus optional Workspace id, so SQLite's NULL-distinct unique semantics can't duplicate global job rows. */

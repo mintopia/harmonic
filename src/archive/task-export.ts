@@ -7,8 +7,9 @@ import type { TaskRow } from '../db/schema.js';
 import { fireAndForget } from '../error-handling.js';
 import { logger } from '../logger.js';
 import { forEachYielding } from '../reliability/yield.js';
-import type { ResolvedExportSettings } from './export-settings.js';
-import { workspaceSlug, type ExportRecord, type TaskArchive } from './task-archive.js';
+import { hasExportDestination, type ResolvedExportSettings } from './export-settings.js';
+import { uploadToS3 } from './s3-destination.js';
+import { workspaceSlug, type ExportDestination, type ExportRecord, type TaskArchive } from './task-archive.js';
 import { TarGzWriter, addDirectory } from './tar-gz.js';
 
 export type ExportDisposition = ExportState;
@@ -28,7 +29,14 @@ export interface EpicExportSnapshot extends ExportSnapshot {
   members: EpicExportMember[];
 }
 
+interface StagedExport {
+  staged: string;
+  slug: string;
+  base: string;
+}
+
 export interface ExportOutcome {
+  destination: ExportDestination;
   status: 'succeeded' | 'failed';
   file: string | null;
   error?: string;
@@ -83,7 +91,7 @@ const epicChainKey = (workspaceId: number, epicRef: number): string => `epic:${w
 
 function exportRecord(disposition: ExportDisposition, outcome: ExportOutcome, at: Date): ExportRecord {
   return {
-    destination: 'directory',
+    destination: outcome.destination,
     disposition,
     file: outcome.file,
     status: outcome.status,
@@ -227,7 +235,7 @@ export class TaskExporter {
   async captureForDelete(task: TaskRow): Promise<void> {
     try {
       const settings = await this.deps.settings(task);
-      if (!settings.enabled || !settings.includeStates.includes('deleted') || !settings.directoryPath) return;
+      if (!settings.enabled || !settings.includeStates.includes('deleted') || !hasExportDestination(settings)) return;
       const snapshot = await this.deps.snapshot(task);
       if (snapshot.attemptCount === 0) return;
       this.enqueue(taskChainKey(task.id), () => this.run(task, 'deleted', Promise.resolve(snapshot)), { taskId: task.id, disposition: 'deleted' });
@@ -258,9 +266,9 @@ export class TaskExporter {
     const at = (this.deps.now ?? (() => new Date()))();
     let outcome: ExportOutcome;
     try {
-      outcome = { status: 'succeeded', file: await this.epicToDirectory(workspaceId, epicRef, disposition, settings.directoryPath, at, snapshot) };
+      outcome = { destination: 'directory', status: 'succeeded', file: await this.epicToDirectory(workspaceId, epicRef, disposition, settings.directoryPath, at, snapshot) };
     } catch (err) {
-      outcome = { status: 'failed', file: null, error: message(err) };
+      outcome = { destination: 'directory', status: 'failed', file: null, error: message(err) };
       logger.warn('export: epic failed', { workspaceId, epicRef, disposition, error: outcome.error });
     }
     const entry = exportRecord(disposition, outcome, at);
@@ -287,7 +295,7 @@ export class TaskExporter {
     return entries;
   }
 
-  async run(task: TaskRow, disposition: ExportDisposition, snapshot?: Promise<ExportSnapshot>): Promise<ExportOutcome | null> {
+  async run(task: TaskRow, disposition: ExportDisposition, snapshot?: Promise<ExportSnapshot>): Promise<ExportOutcome[] | null> {
     let settings: ResolvedExportSettings;
     try {
       settings = await this.deps.settings(task);
@@ -295,18 +303,38 @@ export class TaskExporter {
       logger.warn('export: settings unavailable', { taskId: task.id, error: message(err) });
       return null;
     }
-    if (!settings.enabled || !settings.includeStates.includes(disposition) || !settings.directoryPath) return null;
+    if (!settings.enabled || !settings.includeStates.includes(disposition) || !hasExportDestination(settings)) return null;
 
     const at = (this.deps.now ?? (() => new Date()))();
-    let outcome: ExportOutcome;
+    const { directoryPath, s3 } = settings;
+    const destinations: { destination: ExportDestination; deliver: (built: StagedExport) => Promise<string> }[] = [];
+    if (directoryPath !== null) destinations.push({ destination: 'directory', deliver: (b) => this.deliver(b.staged, join(directoryPath, b.slug), b.base) });
+    if (s3 !== null) destinations.push({ destination: 's3', deliver: (b) => uploadToS3(s3, b.staged, b.slug, b.base) });
+    const outcomes: ExportOutcome[] = [];
+    let staged: string | null = null;
     try {
-      outcome = { status: 'succeeded', file: await this.exportToDirectory(task, disposition, settings.directoryPath, at, snapshot) };
+      const built = await this.stage(task, disposition, at, snapshot);
+      staged = built.staged;
+      for (const { destination, deliver } of destinations) {
+        let outcome: ExportOutcome;
+        try {
+          outcome = { destination, status: 'succeeded', file: await deliver(built) };
+        } catch (err) {
+          outcome = { destination, status: 'failed', file: null, error: message(err) };
+          logger.warn('export: failed', { taskId: task.id, disposition, destination, error: outcome.error });
+        }
+        outcomes.push(outcome);
+      }
     } catch (err) {
-      outcome = { status: 'failed', file: null, error: message(err) };
-      logger.warn('export: failed', { taskId: task.id, disposition, error: outcome.error });
+      for (const { destination } of destinations) {
+        outcomes.push({ destination, status: 'failed', file: null, error: message(err) });
+      }
+      logger.warn('export: failed', { taskId: task.id, disposition, error: message(err) });
+    } finally {
+      if (staged !== null) await rm(staged, { force: true });
     }
-    await this.record(task, disposition, outcome, at);
-    return outcome;
+    for (const outcome of outcomes) await this.record(task, disposition, outcome, at);
+    return outcomes;
   }
 
   private async record(task: TaskRow, disposition: ExportDisposition, outcome: ExportOutcome, at: Date): Promise<void> {
@@ -331,70 +359,69 @@ export class TaskExporter {
     const members = await this.memberEntries(snapshot.members);
     const archiveDir = await this.deps.archive.ensureEpic(workspaceId, epicRef);
     const workspace = await this.deps.workspaceName(workspaceId);
-    return this.stageAndDeliver({
-      stagedName: `epic-${epicRef}`,
-      root: join(root, workspaceSlug(workspace, workspaceId)),
-      base: `epic-${epicRef}-${disposition}-${exportTimestamp(at)}`,
-      build: (staged) =>
-        this.buildTarball(staged, archiveDir, snapshot, at, ({ files, partial }) => ({
-          manifest: {
-            format: 'harmonic-epic-export',
-            formatVersion: 1,
-            harmonicVersion: this.deps.version,
-            epicRef,
-            workspaceId,
-            workspace,
-            disposition,
-            exportedAt: at.toISOString(),
-            counts: { archiveFiles: files, attempts: snapshot.attemptCount, members: members.length },
-            redaction: { applied: false, matches: {} },
-            partial,
-            members,
-          },
-          readme: epicReadme({ epicRef, ticket: snapshot.ticket, workspace, disposition, exportedAt: at.toISOString(), attemptCount: snapshot.attemptCount, members }),
-        })),
-    });
-  }
-
-  private async exportToDirectory(task: TaskRow, disposition: ExportDisposition, root: string, at: Date, pending?: Promise<ExportSnapshot>): Promise<string> {
-    const snapshot = await (pending ?? this.deps.snapshot(task));
-    const archiveDir = await this.deps.archive.ensure(task);
-    const workspace = task.workspaceId === null ? null : await this.deps.workspaceName(task.workspaceId);
-    return this.stageAndDeliver({
-      stagedName: String(task.id),
-      root: join(root, workspaceSlug(workspace, task.workspaceId)),
-      base: this.fileName(task, disposition, at),
-      build: (staged) =>
-        this.buildTarball(staged, archiveDir, snapshot, at, ({ files, partial }) => ({
-          manifest: {
-            format: 'harmonic-task-export',
-            formatVersion: 1,
-            harmonicVersion: this.deps.version,
-            taskId: task.id,
-            archiveId: task.archiveId,
-            trackerRef: task.trackerRef,
-            workspace,
-            disposition,
-            exportedAt: at.toISOString(),
-            counts: { archiveFiles: files, attempts: snapshot.attemptCount },
-            redaction: { applied: false, matches: {} },
-            partial,
-          },
-          readme: readme({ task, ticket: snapshot.ticket, workspace, disposition, exportedAt: at.toISOString(), attemptCount: snapshot.attemptCount }),
-        })),
-    });
-  }
-
-  private async stageAndDeliver(args: { stagedName: string; root: string; base: string; build: (staged: string) => Promise<void> }): Promise<string> {
-    const stagingDir = join(this.deps.dataDir, 'archive', '.staging');
-    await mkdir(stagingDir, { recursive: true });
-    const staged = join(stagingDir, `${args.stagedName}-${randomBytes(6).toString('hex')}.tar.gz`);
+    const staged = await this.stageTarball(`epic-${epicRef}`, (target) =>
+      this.buildTarball(target, archiveDir, snapshot, at, ({ files, partial }) => ({
+        manifest: {
+          format: 'harmonic-epic-export',
+          formatVersion: 1,
+          harmonicVersion: this.deps.version,
+          epicRef,
+          workspaceId,
+          workspace,
+          disposition,
+          exportedAt: at.toISOString(),
+          counts: { archiveFiles: files, attempts: snapshot.attemptCount, members: members.length },
+          redaction: { applied: false, matches: {} },
+          partial,
+          members,
+        },
+        readme: epicReadme({ epicRef, ticket: snapshot.ticket, workspace, disposition, exportedAt: at.toISOString(), attemptCount: snapshot.attemptCount, members }),
+      })),
+    );
     try {
-      await args.build(staged);
-      return await this.deliver(staged, args.root, args.base);
+      return await this.deliver(staged, join(root, workspaceSlug(workspace, workspaceId)), `epic-${epicRef}-${disposition}-${exportTimestamp(at)}`);
     } finally {
       await rm(staged, { force: true });
     }
+  }
+
+  private async stage(task: TaskRow, disposition: ExportDisposition, at: Date, pending?: Promise<ExportSnapshot>): Promise<StagedExport> {
+    const snapshot = await (pending ?? this.deps.snapshot(task));
+    const archiveDir = await this.deps.archive.ensure(task);
+    const workspace = task.workspaceId === null ? null : await this.deps.workspaceName(task.workspaceId);
+    const staged = await this.stageTarball(String(task.id), (target) =>
+      this.buildTarball(target, archiveDir, snapshot, at, ({ files, partial }) => ({
+        manifest: {
+          format: 'harmonic-task-export',
+          formatVersion: 1,
+          harmonicVersion: this.deps.version,
+          taskId: task.id,
+          archiveId: task.archiveId,
+          trackerRef: task.trackerRef,
+          workspace,
+          disposition,
+          exportedAt: at.toISOString(),
+          counts: { archiveFiles: files, attempts: snapshot.attemptCount },
+          redaction: { applied: false, matches: {} },
+          partial,
+        },
+        readme: readme({ task, ticket: snapshot.ticket, workspace, disposition, exportedAt: at.toISOString(), attemptCount: snapshot.attemptCount }),
+      })),
+    );
+    return { staged, slug: workspaceSlug(workspace, task.workspaceId), base: this.fileName(task, disposition, at) };
+  }
+
+  private async stageTarball(name: string, build: (staged: string) => Promise<void>): Promise<string> {
+    const stagingDir = join(this.deps.dataDir, 'archive', '.staging');
+    await mkdir(stagingDir, { recursive: true });
+    const staged = join(stagingDir, `${name}-${randomBytes(6).toString('hex')}.tar.gz`);
+    try {
+      await build(staged);
+    } catch (err) {
+      await rm(staged, { force: true });
+      throw err;
+    }
+    return staged;
   }
 
   private fileName(task: TaskRow, disposition: ExportDisposition, at: Date): string {

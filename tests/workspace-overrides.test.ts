@@ -318,6 +318,13 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       pauseMessage: null,
       exportEnabled: null,
       exportDirectoryPath: null,
+      exportS3Endpoint: null,
+      exportS3Region: null,
+      exportS3Bucket: null,
+      exportS3Prefix: null,
+      exportS3ForcePathStyle: null,
+      exportS3AccessKeyId: null,
+      exportS3SecretAccessKey: null,
     });
   });
 });

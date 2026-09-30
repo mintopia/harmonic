@@ -12,8 +12,10 @@ export interface ArchiveDeps {
   workspaceName: (workspaceId: number) => Promise<string | null>;
 }
 
+export type ExportDestination = 'directory' | 's3';
+
 export interface ExportRecord {
-  destination: 'directory';
+  destination: ExportDestination;
   disposition: string;
   file: string | null;
   status: 'succeeded' | 'failed';

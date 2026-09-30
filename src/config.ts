@@ -206,6 +206,14 @@ export type ExportState = (typeof EXPORT_STATES)[number];
 
 export const exportDirectoryPathSchema = z.string().min(1).refine((p) => isAbsolute(p), { message: 'export directory path must be absolute' });
 
+export const exportS3EndpointSchema = z.url().refine(
+  (u) => {
+    const url = URL.parse(u);
+    return url === null || (url.username === '' && url.password === '');
+  },
+  { message: 'put S3 credentials in accessKeyId/secretAccessKey, not the endpoint URL' },
+);
+
 export const appConfigSchema = z.object({
   /** Operator-chosen display name; feeds the sidebar heading and browser title. Empty (the default) falls back to "Harmonic". */
   name: z.string().meta({ example: 'Production' }),
@@ -291,6 +299,16 @@ export const appConfigSchema = z.object({
     includeStates: z.array(z.enum(EXPORT_STATES)).meta({ example: ['done', 'cancelled', 'deleted'] }),
     directory: z.object({
       path: exportDirectoryPathSchema.nullable().meta({ example: '/srv/harmonic-exports' }),
+    }),
+    /** S3-compatible Export Destination; enabled when `bucket` is set. Credentials fall back to the AWS default chain unless both keys are set. */
+    s3: z.object({
+      endpoint: exportS3EndpointSchema.nullable().meta({ example: 'https://s3.eu-west-2.amazonaws.com' }),
+      region: z.string().min(1).nullable().meta({ example: 'eu-west-2' }),
+      bucket: z.string().min(1).nullable().meta({ example: 'harmonic-exports' }),
+      prefix: z.string().meta({ example: 'harmonic/' }),
+      forcePathStyle: z.boolean().meta({ example: false }),
+      accessKeyId: z.string().min(1).nullable().meta({ example: null }),
+      secretAccessKey: z.string().min(1).nullable().meta({ example: null }),
     }),
   }),
 }).superRefine((config, ctx) => {

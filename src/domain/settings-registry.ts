@@ -219,6 +219,55 @@ export const settingsRegistry = {
     label: 'Export directory',
     help: 'Absolute directory for Task Archive tarballs (<path>/<workspace>/<taskId>-<trackerRef>-done-<timestamp>.tar.gz); inherits the global path when unset.',
   },
+  exportS3Endpoint: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'execution',
+    label: 'S3 endpoint',
+    help: 'Endpoint URL of an S3-compatible service for Task Archive tarballs; leave unset for AWS. Inherits the global endpoint when unset.',
+  },
+  exportS3Region: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'execution',
+    label: 'S3 region',
+    help: 'Region for the S3 export bucket; inherits the global region when unset.',
+  },
+  exportS3Bucket: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'execution',
+    label: 'S3 bucket',
+    help: 'Bucket that receives Task Archive tarballs; setting one enables the S3 destination. Inherits the global bucket when unset.',
+  },
+  exportS3Prefix: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'execution',
+    label: 'S3 key prefix',
+    help: 'Key prefix prepended to <workspace>/<file>.tar.gz in the bucket; inherits the global prefix when unset.',
+  },
+  exportS3ForcePathStyle: {
+    scope: 'overridable',
+    control: 'toggle',
+    tab: 'execution',
+    label: 'S3 path-style addressing',
+    help: 'Use path-style URLs, required by some S3-compatible services; inherits the global setting when unset.',
+  },
+  exportS3AccessKeyId: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'execution',
+    label: 'S3 access key ID',
+    help: 'Shown masked. Used only together with the secret access key; otherwise the AWS default credential chain applies. Inherits the global key when unset.',
+  },
+  exportS3SecretAccessKey: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'execution',
+    label: 'S3 secret access key',
+    help: 'Shown masked. Used only together with the access key ID; otherwise the AWS default credential chain applies. Inherits the global key when unset.',
+  },
 } as const satisfies Record<string, SettingSpec>;
 
 /** A key naming a setting declared in the registry. */

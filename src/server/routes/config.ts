@@ -15,6 +15,7 @@ import {
   type AppConfig,
   type DeepPartial,
 } from '../../config.js';
+import { maskConfigSecrets } from '../../archive/export-secrets.js';
 
 const harnessPermissionModesSchema = z.record(
   z.string(),
@@ -131,7 +132,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
         },
       },
     },
-    async () => ctx.settingsStore.getGlobal(),
+    async () => maskConfigSecrets(ctx.settingsStore.getGlobal()),
   );
 
   app.get(
@@ -144,7 +145,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
         response: { 200: z.object({ baseline: appConfigSchema, global: appConfigSchema, harnessPermissionModes: harnessPermissionModesSchema }).describe('The distributed baseline, effective global config, and adapter-declared Harness permission modes for settings controls.') },
       },
     },
-    async () => ({ baseline: ctx.settingsStore.getBaseline(), global: ctx.settingsStore.getGlobal(), harnessPermissionModes: harnessPermissionModes() }),
+    async () => ({ baseline: ctx.settingsStore.getBaseline(), global: maskConfigSecrets(ctx.settingsStore.getGlobal()), harnessPermissionModes: harnessPermissionModes() }),
   );
 
   app.patch(
@@ -164,7 +165,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
     async (req) => {
       const updated = await ctx.settingsStore.updateGlobal(req.body as DeepPartial<AppConfig>);
       ctx.autoRunner.poke();
-      return updated;
+      return maskConfigSecrets(updated);
     },
   );
 
@@ -187,7 +188,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
     async (req) => {
       const updated = await ctx.settingsStore.replaceGlobal(req.body as AppConfig);
       ctx.autoRunner.poke();
-      return updated;
+      return maskConfigSecrets(updated);
     },
   );
 
@@ -204,7 +205,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
     async () => {
       const updated = await ctx.settingsStore.revertGlobal();
       ctx.autoRunner.poke();
-      return updated;
+      return maskConfigSecrets(updated);
     },
   );
 }

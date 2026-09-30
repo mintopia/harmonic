@@ -100,7 +100,7 @@ describe('TaskExporter (#734)', () => {
   it('writes one tarball with the Archive files and top-level documents', async () => {
     const outcome = await exporter().run(task, 'done');
 
-    expect(outcome?.status).toBe('succeeded');
+    expect(outcome?.[0]?.status).toBe('succeeded');
     const names = tarballs();
     expect(names).toHaveLength(1);
     expect(names[0]).toMatch(TARBALL);
@@ -207,7 +207,7 @@ describe('TaskExporter (#734)', () => {
 
     const outcome = await exporter().run(task, 'done');
 
-    expect(outcome?.status).toBe('failed');
+    expect(outcome?.[0]?.status).toBe('failed');
     expect(facts[0]!.payload).toMatchObject({ event: 'export', status: 'failed', destination: 'directory' });
     expect(typeof facts[0]!.payload.error).toBe('string');
     expect(staging()).toEqual([]);
@@ -223,7 +223,7 @@ describe('TaskExporter (#734)', () => {
 
     const outcome = await exporter().run(task, 'done');
 
-    expect(outcome?.status).toBe('failed');
+    expect(outcome?.[0]?.status).toBe('failed');
     expect(facts[0]!.payload.status).toBe('failed');
     expect(staging()).toEqual([]);
     chmodSync(readOnly, 0o700);

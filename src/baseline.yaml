@@ -117,3 +117,11 @@ export:
   includeStates: [done, cancelled, deleted]
   directory:
     path: null
+  s3:
+    endpoint: null
+    region: null
+    bucket: null
+    prefix: ""
+    forcePathStyle: false
+    accessKeyId: null
+    secretAccessKey: null
