@@ -22,6 +22,11 @@ export interface ExportRecord {
   at: string;
   error?: string;
   retry?: number;
+  builtAt?: string;
+  name?: string;
+  partial?: boolean;
+  bytes?: number;
+  redactions?: Record<string, number>;
 }
 
 export interface StepArchiveWriter {

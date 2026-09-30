@@ -1,4 +1,5 @@
 import type { TicketTimelineEvent } from './types.js';
+import { exportFactRows } from './task-export-model.js';
 import { mergeStepRow, type MergeStepEvent } from './merge-progress-model.js';
 
 export type LifecycleTimelineTone = 'neutral' | 'running' | 'passed' | 'failed' | 'awaiting';
@@ -11,7 +12,7 @@ export interface LifecycleTimelineRow {
   tone: LifecycleTimelineTone;
   /** A short source/mechanism badge shown beside the label — GITHUB (imported or
    * issue closed), RUNNING (a live Attempt), VERIFY / CRITIC (a verification
-   * pass) — or null. */
+   * pass), EXPORT (an Export build or delivery) — or null. */
   tag: string | null;
 }
 
@@ -213,13 +214,6 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
     }
     case 'branch-delete-failed':
       return { label: `Branch ${text(payload?.branch) ?? ''} could not be deleted`, detail: text(payload?.error), tone: 'failed', tag: 'GIT' };
-    case 'export': {
-      const destination = text(payload?.destination) ?? 'destination';
-      if (text(payload?.status) === 'failed') {
-        return { label: `Export to ${destination} failed`, detail: clip(text(payload?.error)), tone: 'failed', tag: null };
-      }
-      return { label: `Exported to ${destination}`, detail: text(payload?.file), tone: 'passed', tag: null };
-    }
     default:
       return { label: event ? humanizeEvent(event) : 'Lifecycle event', detail: null, tone: 'neutral', tag: null };
   }
@@ -236,7 +230,8 @@ function isRedundantMergeStep(event: TicketTimelineEvent): boolean {
 
 /** Convert the bounded server projection into compact, chronological audit rows. */
 export function lifecycleTimelineRows(events: TicketTimelineEvent[]): LifecycleTimelineRow[] {
-  return events.filter((event) => !isRedundantMergeStep(event)).map<LifecycleTimelineRow>((event, index) => {
+  const builtShown = new Set<string>();
+  return events.filter((event) => !isRedundantMergeStep(event)).flatMap<LifecycleTimelineRow>((event, index) => {
     const data = record(event.data);
     const base = { id: `${event.ts}:${event.kind}:${event.attemptId ?? 'task'}:${index}`, at: event.ts };
     switch (event.kind) {
@@ -258,8 +253,16 @@ export function lifecycleTimelineRows(events: TicketTimelineEvent[]): LifecycleT
         const n = num(data?.attempt);
         return { ...base, label: 'Operator rejected with guidance', detail: clip(text(data?.feedback)) ?? (n !== null ? `Attempt ${n}` : null), tone: 'awaiting', tag: null };
       }
-      case 'lifecycle':
-        return { ...base, ...lifecycleRow(record(data?.payload)) };
+      case 'lifecycle': {
+        const payload = record(data?.payload);
+        if (payload !== null && text(payload.event) === 'export') {
+          const built = text(payload.builtAt);
+          const shown = built !== null && builtShown.has(built);
+          if (built !== null) builtShown.add(built);
+          return exportFactRows(payload, shown).map(({ at, ...row }, n) => ({ ...base, id: `${base.id}:${n}`, ...(at === undefined ? {} : { at }), ...row }));
+        }
+        return [{ ...base, ...lifecycleRow(payload) }];
+      }
       case 'fact': {
         if (text(data?.type) === 'task-created') {
           const ref = text(data?.trackerRef);

@@ -141,6 +141,40 @@ export interface VerificationAttempt {
   hasTranscript: boolean;
 }
 
+export type ExportDestinationKind = 'directory' | 's3';
+
+export interface ExportDestinationStatus {
+  destination: ExportDestinationKind;
+  location: string | null;
+  status: 'succeeded' | 'failed';
+  lastAttemptAt: string;
+  file: string | null;
+  error: string | null;
+  retry: { count: number; max: number; nextRetryAt: string | null; exhausted: boolean } | null;
+}
+
+export interface ExportSummary {
+  name: string | null;
+  disposition: string;
+  builtAt: string;
+  bytes: number | null;
+  partial: boolean;
+  redactions: Record<string, number> | null;
+  destinations: ExportDestinationStatus[];
+}
+
+/** `GET /api/tasks/:id/export`. */
+export interface TaskExportStatus {
+  exportable: boolean;
+  latest: ExportSummary | null;
+  earlier: ExportSummary[];
+}
+
+export interface TaskExportAgainResult {
+  outcomes: { destination: ExportDestinationKind; status: 'succeeded' | 'failed'; file: string | null; error: string | null }[];
+  export: TaskExportStatus;
+}
+
 /** One chronological audit record from the ticket-wide lifecycle projection. */
 export type TicketTimelineKind =
   | 'attempt-started'

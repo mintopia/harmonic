@@ -22,6 +22,8 @@ import { LifecycleTimeline } from '../components/ticket/LifecycleTimeline';
 import { MergeProgress } from '../components/MergeProgress';
 import { EpicIntegrationBar } from '../components/EpicIntegrationBar';
 import type { MergeStepEvent } from '../merge-progress-model';
+import { ExportPanel } from '../components/ticket/ExportPanel';
+import type { TaskExportStatus } from '../types';
 import { task, boardEpic, boardTasks, doneEpic, runs, timeline } from './fixtures';
 
 const mergedSteps: MergeStepEvent[] = [
@@ -280,6 +282,33 @@ function DashboardStory() {
   );
 }
 
+const exportStory: TaskExportStatus = {
+  exportable: true,
+  latest: {
+    name: '185-done-2026-09-30T11-42-07Z.tar.gz',
+    disposition: 'done',
+    builtAt: '2026-09-30T11:42:07.000Z',
+    bytes: 19_293_798,
+    partial: params.get('partial') === '1',
+    redactions: { 'github-token': 3, bearer: 4 },
+    destinations: [
+      { destination: 'directory', location: '/srv/harmonic-exports', status: 'succeeded', lastAttemptAt: '2026-09-30T11:42:09.000Z', file: '/srv/harmonic-exports/185.tar.gz', error: null, retry: null },
+      { destination: 's3', location: 's3://acme-audit/harmonic/', status: 'failed', lastAttemptAt: '2026-09-30T11:47:12.000Z', file: null, error: 'AccessDenied: s3:PutObject', retry: { count: 1, max: 3, nextRetryAt: new Date(Date.now() + 27 * 60_000).toISOString(), exhausted: false } },
+    ],
+  },
+  earlier: [
+    { name: '185-cancelled-2026-09-29T09-14-52Z.tar.gz', disposition: 'cancelled', builtAt: '2026-09-29T09:14:52.000Z', bytes: 4_300_000, partial: false, redactions: null, destinations: [{ destination: 'directory', location: null, status: 'succeeded', lastAttemptAt: '2026-09-29T09:14:53.000Z', file: null, error: null, retry: null }] },
+  ],
+};
+
+function ExportStory() {
+  return (
+    <StoryFrame style={{ padding: 30, maxWidth: 820, margin: '0 auto' }}>
+      <ExportPanel taskId={185} state="done" refreshKey={0} deps={{ load: async () => exportStory, exportAgain: async () => ({ outcomes: [], export: exportStory }) }} />
+    </StoryFrame>
+  );
+}
+
 function GuardrailStory() {
   return (
     <StoryFrame>
@@ -328,6 +357,7 @@ const STORIES: Record<string, () => JSX.Element> = {
   dashboard: DashboardStory,
   guardrail: GuardrailStory,
   epic: EpicStory,
+  export: ExportStory,
 };
 
 function Story() {

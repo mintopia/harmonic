@@ -284,7 +284,7 @@ const ticketTimelineEventSchema = z.object({
 });
 const ticketTimelineResponseSchema = listResponse('events', ticketTimelineEventSchema);
 const attemptLogResponseSchema = z.discriminatedUnion('status', [
-  z.object({ status: z.literal('available'), events: z.array(attemptEventSchema), liveCursor: z.number() }),
+  z.object({ status: z.literal('available'), events: z.array(attemptEventSchema), liveCursor: z.number(), fromArchive: z.boolean().optional() }),
   z.object({ status: z.literal('unavailable'), liveCursor: z.number() }),
 ]);
 
@@ -977,6 +977,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       const range = { startedAt: run.startedAt, finishedAt: run.endedAt };
       let log: TranscriptLog;
       let nativePath: string | null = null;
+      let fromArchive = false;
       if (adapter.exportTranscript) {
         const events = await adapter.exportTranscript({ sessionId: session.harnessSessionId, cwd: session.cwd });
         log = events && events.length > 0 ? { status: 'available', events } : { status: 'unavailable' };
@@ -987,7 +988,10 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       if (log.status !== 'available' && !adapter.exportTranscript) {
         const owner = await archiveOwner(run);
         const archived = owner ? await ctx.archive.archivedTranscript(owner, run.number, 'implementation', nativePath) : null;
-        if (archived) log = await readTranscriptLog({ harness: session.harness, path: archived, ...range });
+        if (archived) {
+          log = await readTranscriptLog({ harness: session.harness, path: archived, ...range });
+          fromArchive = log.status === 'available';
+        }
       }
       const liveCursor = ctx.bus.latestAttemptLogSeq({ attemptId: run.id });
       if (log.status !== 'available') return { ...log, liveCursor };
@@ -1000,6 +1004,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       return {
         status: 'available' as const,
         liveCursor,
+        ...(fromArchive ? { fromArchive: true } : {}),
         events: withOperatorMessages(log.events, operator).map((event) => ({ ...event, attemptId: run.id })),
       };
     },

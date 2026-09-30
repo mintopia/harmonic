@@ -51,6 +51,7 @@ export default defineConfig({
             { label: 'Epics', link: '/work/epics/' },
             { label: 'Browsing & editing files', link: '/work/files/' },
             { label: 'Conversations', link: '/work/conversations/' },
+            { label: 'Exporting a task', link: '/work/exporting-a-task/' },
             { label: 'Notifications', link: '/work/notifications/' },
           ],
         },

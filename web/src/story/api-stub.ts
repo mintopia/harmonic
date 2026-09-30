@@ -318,6 +318,9 @@ export const api: typeof RealApi = {
       : ok({ attempts: f.attempts, budgetBase: 0, total: f.attempts.length });
   },
   taskTimeline: (_id: number) => ok({ events: f.timeline, total: f.timeline.length }),
+  taskExport: (_id: number) => ok({ exportable: true, latest: null, earlier: [] }),
+  exportTaskAgain: (_id: number) => ok({ outcomes: [], export: { exportable: true, latest: null, earlier: [] } }),
+  taskExportDownloadUrl: (id: number) => `/api/tasks/${id}/export/download`,
   taskUsage: (id: number) =>
     ok(f.epicChildUsage[id] ?? { models: {}, agents: {}, toolCalls: {}, totals: null, source: null, cost: null, attemptCount: 0 }),
   attempt: (_id: number) => ok(f.runs[2] ?? f.runs[0]!),

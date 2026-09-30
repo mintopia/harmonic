@@ -4,12 +4,14 @@ import { randomBytes } from 'node:crypto';
 import { basename, join } from 'node:path';
 import type { ExportState } from '../config.js';
 import type { TaskRow } from '../db/schema.js';
+import { DomainError } from '../domain/errors.js';
 import { fireAndForget } from '../error-handling.js';
 import { logger } from '../logger.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { hasExportDestination, type ResolvedExportSettings } from './export-settings.js';
 import { uploadToS3 } from './s3-destination.js';
 import { workspaceSlug, type ExportDestination, type ExportRecord, type TaskArchive } from './task-archive.js';
+import { buildExportStatus, type ExportStatus, type PendingRetry } from './export-status.js';
 import { Redactor, type RedactionPattern } from './redact.js';
 import { TarGzWriter, addDirectory, type TransformFactory } from './tar-gz.js';
 
@@ -30,10 +32,29 @@ export interface EpicExportSnapshot extends ExportSnapshot {
   members: EpicExportMember[];
 }
 
+export interface ExportMeta {
+  builtAt: string;
+  name: string;
+  partial: boolean;
+  bytes: number;
+  redactions: Record<string, number>;
+}
+
 interface StagedExport {
   staged: string;
   slug: string;
   base: string;
+  meta: ExportMeta;
+}
+
+export interface ManualExportOptions {
+  forcePartial?: boolean;
+}
+
+export interface ExportDownload {
+  path: string;
+  name: string;
+  bytes: number;
 }
 
 export interface ExportFailure {
@@ -61,6 +82,7 @@ interface PendingExport {
   disposition: ExportDisposition;
   firstFailedAt: string;
   destinations: PendingDestination[];
+  meta?: ExportMeta;
 }
 
 export interface ExportOutcome {
@@ -115,11 +137,17 @@ async function readOperatorInputs(archiveDir: string): Promise<unknown[]> {
   }
 }
 
+function manualDisposition(task: TaskRow): ExportDisposition {
+  if (task.state !== 'done' && task.state !== 'cancelled') throw new DomainError('invalid_state', `Task ${task.id} is ${task.state}; only a finished Task can be exported`);
+  return task.state;
+}
+
 const taskChainKey = (taskId: number): string => `task:${taskId}`;
 const epicChainKey = (workspaceId: number, epicRef: number): string => `epic:${workspaceId}:${epicRef}`;
 
-function exportRecord(disposition: ExportDisposition, outcome: ExportOutcome, at: Date): ExportRecord {
+function exportRecord(disposition: ExportDisposition, outcome: ExportOutcome, at: Date, meta?: ExportMeta): ExportRecord {
   return {
+    ...(meta === undefined ? {} : { builtAt: meta.builtAt, name: meta.name, partial: meta.partial, bytes: meta.bytes, redactions: meta.redactions }),
     destination: outcome.destination,
     disposition,
     file: outcome.file,
@@ -291,6 +319,56 @@ export class TaskExporter {
     this.enqueue(taskChainKey(task.id), () => this.run(task, disposition, snapshot), { taskId: task.id, disposition });
   }
 
+  exportAgain(task: TaskRow, options: ManualExportOptions = {}): Promise<ExportOutcome[] | null> {
+    const disposition = manualDisposition(task);
+    return this.serialize(taskChainKey(task.id), () => this.run(task, disposition, undefined, options));
+  }
+
+  buildDownload(task: TaskRow, options: ManualExportOptions = {}): Promise<ExportDownload> {
+    const disposition = manualDisposition(task);
+    return this.serialize(taskChainKey(task.id), async () => {
+      const settings = await this.deps.settings(task);
+      const built = await this.stage(task, disposition, settings.redactPatterns, this.now(), undefined, options);
+      return { path: built.staged, name: built.meta.name, bytes: built.meta.bytes };
+    });
+  }
+
+  async status(task: TaskRow): Promise<ExportStatus> {
+    await this.chains.get(taskChainKey(task.id))?.catch(() => undefined);
+    const [history, pending, settings] = await Promise.all([
+      this.deps.archive.exportHistory(task),
+      this.pendingRetries(task.id),
+      this.deps.settings(task).catch(() => null),
+    ]);
+    const locations = new Map<ExportDestination, string>();
+    if (settings?.directoryPath) locations.set('directory', settings.directoryPath);
+    if (settings?.s3) locations.set('s3', `s3://${settings.s3.bucket}/${settings.s3.prefix}`);
+    return buildExportStatus(history, locations, pending);
+  }
+
+  private async pendingRetries(taskId: number): Promise<PendingRetry[]> {
+    const stagingDir = join(this.deps.dataDir, 'archive', '.staging');
+    let names: string[];
+    try {
+      names = (await readdir(stagingDir)).filter((n) => n.endsWith(PENDING_SUFFIX));
+    } catch {
+      return [];
+    }
+    const found: PendingRetry[] = [];
+    await forEachYielding(names, async (name) => {
+      try {
+        const value = JSON.parse(await readFile(join(stagingDir, name), 'utf8')) as Partial<PendingExport> | null;
+        if (value?.task?.id !== taskId || !Array.isArray(value.destinations)) return;
+        for (const d of value.destinations) {
+          if (validDestination(d)) found.push({ destination: d.destination, base: d.base, retries: d.retries, nextRetryAt: d.nextRetryAt });
+        }
+      } catch {
+        return;
+      }
+    });
+    return found;
+  }
+
   /** Must be awaited before the Task's rows are removed; never throws. */
   async captureForDelete(task: TaskRow): Promise<void> {
     try {
@@ -355,7 +433,7 @@ export class TaskExporter {
     return entries;
   }
 
-  async run(task: TaskRow, disposition: ExportDisposition, snapshot?: Promise<ExportSnapshot>): Promise<ExportOutcome[] | null> {
+  async run(task: TaskRow, disposition: ExportDisposition, snapshot?: Promise<ExportSnapshot>, manual?: ManualExportOptions): Promise<ExportOutcome[] | null> {
     let settings: ResolvedExportSettings;
     try {
       settings = await this.deps.settings(task);
@@ -363,7 +441,7 @@ export class TaskExporter {
       logger.warn('export: settings unavailable', { taskId: task.id, error: message(err) });
       return null;
     }
-    if (!settings.enabled || !settings.includeStates.includes(disposition) || !hasExportDestination(settings)) return null;
+    if (!settings.enabled || (manual === undefined && !settings.includeStates.includes(disposition)) || !hasExportDestination(settings)) return null;
 
     const at = this.now();
     const { directoryPath, s3 } = settings;
@@ -387,7 +465,7 @@ export class TaskExporter {
     const retryAt = new Date(at.getTime() + EXPORT_RETRY_DELAYS_MS[0]).toISOString();
     let built: StagedExport | null = null;
     try {
-      built = await this.stage(task, disposition, settings.redactPatterns, at, snapshot);
+      built = await this.stage(task, disposition, settings.redactPatterns, at, snapshot, manual);
     } catch (err) {
       for (const { destination } of destinations) {
         outcomes.push({ destination, status: 'failed', file: null, error: message(err) });
@@ -407,12 +485,12 @@ export class TaskExporter {
         outcomes.push(outcome);
       }
     }
-    for (const outcome of outcomes) await this.record(task, disposition, outcome, at, 0);
+    for (const outcome of outcomes) await this.record(task, disposition, outcome, at, 0, built?.meta);
 
     let nextRetryAt: string | null = null;
     if (built !== null && retryable.length > 0) {
       try {
-        await this.writePending(pendingPath(built.staged), { task, disposition, firstFailedAt: at.toISOString(), destinations: retryable });
+        await this.writePending(pendingPath(built.staged), { task, disposition, firstFailedAt: at.toISOString(), destinations: retryable, meta: built.meta });
         nextRetryAt = retryAt;
       } catch (err) {
         logger.warn('export: retry not scheduled', { taskId: task.id, error: message(err) });
@@ -479,7 +557,7 @@ export class TaskExporter {
           outcome = { destination: dest.destination, status: 'failed', file: null, error: message(err) };
           logger.warn('export: retry failed', { taskId: current.task.id, destination: dest.destination, retry, error: outcome.error });
         }
-        await this.record(current.task, current.disposition, outcome, at, retry);
+        await this.record(current.task, current.disposition, outcome, at, retry, current.meta);
         if (outcome.status === 'succeeded') continue;
         const nextRetryAt = retry < EXPORT_RETRY_DELAYS_MS.length ? new Date(first + EXPORT_RETRY_DELAYS_MS[retry]!).toISOString() : null;
         if (nextRetryAt) remaining.push({ ...dest, retries: retry, nextRetryAt });
@@ -554,8 +632,8 @@ export class TaskExporter {
     return (this.deps.now ?? (() => new Date()))();
   }
 
-  private async record(task: TaskRow, disposition: ExportDisposition, outcome: ExportOutcome, at: Date, retry: number): Promise<void> {
-    const entry: ExportRecord = { ...exportRecord(disposition, outcome, at), ...(retry > 0 ? { retry } : {}) };
+  private async record(task: TaskRow, disposition: ExportDisposition, outcome: ExportOutcome, at: Date, retry: number, meta?: ExportMeta): Promise<void> {
+    const entry: ExportRecord = { ...exportRecord(disposition, outcome, at, meta), ...(retry > 0 ? { retry } : {}) };
     if (disposition !== 'deleted') {
       const { at: _at, ...fact } = entry;
       try {
@@ -616,30 +694,50 @@ export class TaskExporter {
     patterns: readonly RedactionPattern[],
     at: Date,
     pending?: Promise<ExportSnapshot>,
+    manual?: ManualExportOptions,
   ): Promise<StagedExport> {
     const snapshot = await (pending ?? this.deps.snapshot(task));
     const archiveDir = await this.deps.archive.ensure(task);
     const workspace = task.workspaceId === null ? null : await this.deps.workspaceName(task.workspaceId);
+    let partial = false;
+    let redactions: Record<string, number> = {};
     const staged = await this.stageTarball(String(task.id), (target) =>
-      this.buildTarball(target, archiveDir, snapshot, patterns, at, ({ files, partial, redaction }) => ({
-        manifest: {
-          format: 'harmonic-task-export',
-          formatVersion: 1,
-          harmonicVersion: this.deps.version,
-          taskId: task.id,
-          archiveId: task.archiveId,
-          trackerRef: task.trackerRef,
-          workspace,
-          disposition,
-          exportedAt: at.toISOString(),
-          counts: { archiveFiles: files, attempts: snapshot.attemptCount },
-          redaction,
-          partial,
-        },
-        readme: readme({ task, ticket: snapshot.ticket, workspace, disposition, exportedAt: at.toISOString(), attemptCount: snapshot.attemptCount }),
-      })),
+      this.buildTarball(target, archiveDir, snapshot, patterns, at, (result) => {
+        partial = result.partial || manual?.forcePartial === true;
+        redactions = { ...result.redaction.matches };
+        return {
+          manifest: {
+            format: 'harmonic-task-export',
+            formatVersion: 1,
+            harmonicVersion: this.deps.version,
+            taskId: task.id,
+            archiveId: task.archiveId,
+            trackerRef: task.trackerRef,
+            workspace,
+            disposition,
+            exportedAt: at.toISOString(),
+            counts: { archiveFiles: result.files, attempts: snapshot.attemptCount },
+            redaction: result.redaction,
+            partial,
+          },
+          readme: readme({ task, ticket: snapshot.ticket, workspace, disposition, exportedAt: at.toISOString(), attemptCount: snapshot.attemptCount }),
+        };
+      }),
     );
-    return { staged, slug: workspaceSlug(workspace, task.workspaceId), base: this.fileName(task, disposition, at) };
+    const base = this.fileName(task, disposition, at);
+    let bytes = 0;
+    try {
+      bytes = (await stat(staged)).size;
+    } catch (err) {
+      await rm(staged, { force: true });
+      throw err;
+    }
+    return {
+      staged,
+      slug: workspaceSlug(workspace, task.workspaceId),
+      base,
+      meta: { builtAt: at.toISOString(), name: `${base}${TARBALL_SUFFIX}`, partial, bytes, redactions },
+    };
   }
 
   private async stageTarball(name: string, build: (staged: string) => Promise<void>): Promise<string> {

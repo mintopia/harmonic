@@ -26,6 +26,7 @@ import { ChannelService } from '../notifications/channels.js';
 import { NotificationStore } from '../notifications/notification-store.js';
 import { Notifier } from '../notifications/notifier.js';
 import type { TaskArchive } from '../archive/task-archive.js';
+import type { TaskExporter } from '../archive/task-export.js';
 import { EventBus } from './bus.js';
 import { AuthService } from './auth.js';
 import type { DistributionMode } from '../distribution-mode.js';
@@ -69,6 +70,7 @@ export interface AppOptions {
 
 export interface AppContext {
   archive: TaskArchive;
+  exporter: TaskExporter;
   distributionMode: DistributionMode;
   runningVersion: string;
   installMode: InstallMode;

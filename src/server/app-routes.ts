@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { taskRoutes } from './routes/tasks.js';
+import { taskExportRoutes } from './routes/task-export.js';
 import { epicRoutes } from './routes/epics.js';
 import { mapRoutes } from './routes/maps.js';
 import { workspaceRoutes } from './routes/workspaces.js';
@@ -40,6 +41,7 @@ function isStaticAssetPath(path: string): boolean {
 
 export async function registerRoutes(app: App, ctx: AppContext, contexts: AppContexts): Promise<void> {
   await app.register((fastify) => taskRoutes(fastify, ctx), { prefix: '/api' });
+  await app.register((fastify) => taskExportRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => mapRoutes(fastify, contexts.tracking), { prefix: '/api' });
   await app.register((fastify) => workspaceRoutes(fastify, { ...contexts.tracking, auth: ctx.auth, tasks: ctx.tasks, archive: ctx.archive }), { prefix: '/api' });
   await app.register(conversationRoutes, { prefix: '/api' });

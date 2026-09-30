@@ -225,12 +225,31 @@ describe('lifecycleTimelineRows', () => {
   it('labels Export attempts by outcome', () => {
     const rows = lifecycleTimelineRows([
       lifecycle(10, { event: 'export', destination: 'directory', status: 'succeeded', file: '/x/1-done.tar.gz' }),
-      lifecycle(20, { event: 'export', destination: 'directory', status: 'failed', error: 'EACCES' }),
+      lifecycle(20, { event: 'export', destination: 's3', status: 'failed', error: 'AccessDenied: s3:PutObject' }),
     ]);
 
-    expect(rows.map((row) => [row.label, row.detail, row.tone])).toEqual([
-      ['Exported to directory', '/x/1-done.tar.gz', 'passed'],
-      ['Export to directory failed', 'EACCES', 'failed'],
+    expect(rows.map((row) => [row.label, row.detail, row.tone, row.tag])).toEqual([
+      ['Export delivered · Directory', '/x/1-done.tar.gz', 'passed', 'EXPORT'],
+      ['Export failed · S3 — AccessDenied', 's3:PutObject. Retry 1 of 3 in 5 min.', 'failed', 'EXPORT'],
     ]);
+  });
+
+  it('precedes the first fact of a build with one Export built row, and writes each retry its own fact', () => {
+    const built = { builtAt: '2026-09-30T11:42:07.000Z', name: '412-done.tar.gz', bytes: 19_293_798, redactions: { bearer: 4, 'github-token': 3 } };
+    const rows = lifecycleTimelineRows([
+      lifecycle(1_000, { event: 'export', destination: 'directory', status: 'succeeded', file: '/srv/x/412-done.tar.gz', ...built }),
+      lifecycle(2_000, { event: 'export', destination: 's3', status: 'failed', error: 'AccessDenied: s3:PutObject', ...built }),
+      lifecycle(3_000, { event: 'export', destination: 's3', status: 'failed', error: 'AccessDenied: s3:PutObject', retry: 1, ...built }),
+    ]);
+
+    expect(rows.map((row) => row.label)).toEqual([
+      'Export built',
+      'Export delivered · Directory',
+      'Export failed · S3 — AccessDenied',
+      'Export failed · S3 — AccessDenied',
+    ]);
+    expect(rows[0]).toMatchObject({ detail: '412-done.tar.gz · 18.4 MB · 7 redactions', tone: 'neutral', tag: 'EXPORT', at: Date.parse(built.builtAt) });
+    expect(rows[3]!.detail).toBe('s3:PutObject. Retry 1 of 3. Next: retry 2 of 3 in 30 min.');
+    expect(new Set(rows.map((row) => row.id)).size).toBe(4);
   });
 });

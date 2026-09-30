@@ -109,6 +109,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     updateCheck,
     upgrade: runtime.upgrade,
     archive: runtime.archive,
+    get exporter() {
+      return exporter;
+    },
     asyncDb,
     statsReader,
     settingsStore: stores.settingsStore,
