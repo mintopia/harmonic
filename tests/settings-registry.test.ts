@@ -60,6 +60,7 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
     'exportS3ForcePathStyle',
     'exportS3AccessKeyId',
     'exportS3SecretAccessKey',
+    'exportRedactPatterns',
   ];
 
   it('declares every Workspace override column as overridable', () => {

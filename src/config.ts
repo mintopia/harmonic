@@ -214,6 +214,22 @@ export const exportS3EndpointSchema = z.url().refine(
   { message: 'put S3 credentials in accessKeyId/secretAccessKey, not the endpoint URL' },
 );
 
+function compiles(source: string): boolean {
+  try {
+    new RegExp(source, 'g');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const redactPatternSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, { message: 'redaction pattern id must be lowercase letters, digits and dashes' }),
+  regex: z.string().min(1).refine(compiles, { message: 'redaction pattern regex must be a valid regular expression' }),
+});
+export type RedactPattern = z.infer<typeof redactPatternSchema>;
+export const redactPatternsSchema = z.array(redactPatternSchema);
+
 export const appConfigSchema = z.object({
   /** Operator-chosen display name; feeds the sidebar heading and browser title. Empty (the default) falls back to "Harmonic". */
   name: z.string().meta({ example: 'Production' }),
@@ -309,6 +325,10 @@ export const appConfigSchema = z.object({
       forcePathStyle: z.boolean().meta({ example: false }),
       accessKeyId: z.string().min(1).nullable().meta({ example: null }),
       secretAccessKey: z.string().min(1).nullable().meta({ example: null }),
+    }),
+    /** Extra patterns applied on top of the baseline redaction set when building an Export. */
+    redact: z.object({
+      patterns: redactPatternsSchema.meta({ example: [{ id: 'internal-host', regex: 'corp\\.example\\.internal' }] }),
     }),
   }),
 }).superRefine((config, ctx) => {

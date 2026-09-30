@@ -16,7 +16,7 @@ import {
   type WorkspaceRow,
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
-import { exportDirectoryPathSchema, exportS3EndpointSchema } from '../config.js';
+import { exportDirectoryPathSchema, exportS3EndpointSchema, redactPatternsSchema } from '../config.js';
 import { DomainError } from './errors.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
 import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
@@ -111,6 +111,7 @@ export const workspaceOverridesSchema = z.object({
   /** Write-only in effect: responses carry the mask, and sending the mask back keeps the stored value. */
   exportS3AccessKeyId: z.string().min(1).nullable().optional(),
   exportS3SecretAccessKey: z.string().min(1).nullable().optional(),
+  exportRedactPatterns: redactPatternsSchema.nullable().optional().meta({ example: [{ id: 'internal-host', regex: 'corp\\.example\\.internal' }] }),
 });
 export type WorkspaceOverrides = z.infer<typeof workspaceOverridesSchema>;
 
@@ -153,6 +154,7 @@ export const OVERRIDE_KEYS = [
   'exportS3ForcePathStyle',
   'exportS3AccessKeyId',
   'exportS3SecretAccessKey',
+  'exportRedactPatterns',
 ] as const;
 
 /** A fully-populated overrides object: every key present, `null` meaning
@@ -234,6 +236,7 @@ export class WorkspaceService {
       exportS3ForcePathStyle: o.exportS3ForcePathStyle,
       exportS3AccessKeyId: o.exportS3AccessKeyId,
       exportS3SecretAccessKey: o.exportS3SecretAccessKey,
+      exportRedactPatterns: o.exportRedactPatterns != null ? JSON.stringify(o.exportRedactPatterns) : null,
     };
   }
 

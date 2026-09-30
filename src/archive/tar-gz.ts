@@ -6,6 +6,29 @@ import type { Writable } from 'node:stream';
 import { createGzip, type Gzip } from 'node:zlib';
 import { yieldToEventLoop } from '../reliability/yield.js';
 
+export interface ByteTransform {
+  push(chunk: Buffer): Buffer;
+  end(): Buffer;
+}
+
+export type TransformFactory = (pass: 'measure' | 'write') => ByteTransform;
+
+async function* readRange(path: string, size: number): AsyncGenerator<Buffer> {
+  if (size === 0) return;
+  const source = createReadStream(path, { start: 0, end: size - 1 });
+  try {
+    for await (const chunk of source) yield chunk as Buffer;
+  } finally {
+    source.destroy();
+  }
+}
+
+async function transformedSize(path: string, size: number, transform: ByteTransform): Promise<number> {
+  let total = 0;
+  for await (const chunk of readRange(path, size)) total += transform.push(chunk).length;
+  return total + transform.end().length;
+}
+
 const BLOCK = 512;
 const ZERO_BLOCK = Buffer.alloc(BLOCK);
 const MAX_OCTAL_11 = 0o77777777777;
@@ -110,25 +133,21 @@ export class TarGzWriter {
     });
   }
 
-  async addFile(name: string, path: string): Promise<void> {
+  async addFile(name: string, path: string, transform?: TransformFactory): Promise<void> {
     await this.exclusive(async () => {
       const info = await stat(path);
       if (!info.isFile()) throw new Error(`not a regular file: ${path}`);
-      const size = info.size;
+      const size = transform ? await transformedSize(path, info.size, transform('measure')) : info.size;
       await this.writeHeaders(name, size, info.mtime);
       let written = 0;
-      if (size > 0) {
-        const source = createReadStream(path, { start: 0, end: size - 1 });
-        try {
-          for await (const chunk of source) {
-            const piece = chunk as Buffer;
-            written += piece.length;
-            await this.write(piece);
-          }
-        } finally {
-          source.destroy();
-        }
-      }
+      const emit = async (piece: Buffer): Promise<void> => {
+        const part = piece.subarray(0, Math.max(0, size - written));
+        written += part.length;
+        if (part.length > 0) await this.write(part);
+      };
+      const t = transform?.('write');
+      for await (const chunk of readRange(path, info.size)) await emit(t ? t.push(chunk) : chunk);
+      if (t) await emit(t.end());
       if (written < size) await this.write(Buffer.alloc(size - written));
       await this.pad(size);
     });
@@ -197,6 +216,7 @@ export async function addDirectory(
   writer: TarGzWriter,
   root: string,
   prefix: string,
+  transform?: TransformFactory,
 ): Promise<number> {
   let count = 0;
   const walk = async (dir: string, rel: string): Promise<void> => {
@@ -207,7 +227,7 @@ export async function addDirectory(
       if (entry.isDirectory()) {
         await walk(join(dir, entry.name), relPath);
       } else if (entry.isFile()) {
-        await writer.addFile(`${prefix}/${relPath}`, join(dir, entry.name));
+        await writer.addFile(`${prefix}/${relPath}`, join(dir, entry.name), transform);
         count++;
         await yieldToEventLoop();
       }

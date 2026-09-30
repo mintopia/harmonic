@@ -268,6 +268,13 @@ export const settingsRegistry = {
     label: 'S3 secret access key',
     help: 'Shown masked. Used only together with the access key ID; otherwise the AWS default credential chain applies. Inherits the global key when unset.',
   },
+  exportRedactPatterns: {
+    scope: 'overridable',
+    control: 'json',
+    tab: 'execution',
+    label: 'Export redaction patterns',
+    help: 'Extra { id, regex } patterns redacted from Exports as [REDACTED:<id>], added to the baseline and global patterns; a Workspace cannot remove those.',
+  },
 } as const satisfies Record<string, SettingSpec>;
 
 /** A key naming a setting declared in the registry. */

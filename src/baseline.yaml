@@ -125,3 +125,5 @@ export:
     forcePathStyle: false
     accessKeyId: null
     secretAccessKey: null
+  redact:
+    patterns: []

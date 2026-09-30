@@ -91,6 +91,7 @@ export function WorkspaceSettingsPage({
         exportS3ForcePathStyle: local.exportS3ForcePathStyle,
         exportS3AccessKeyId: local.exportS3AccessKeyId,
         exportS3SecretAccessKey: local.exportS3SecretAccessKey,
+        exportRedactPatterns: local.exportRedactPatterns,
         toolTimeoutMinutes: local.toolTimeoutMinutes,
         drivePrompt: local.drivePrompt,
         driveUnattendedReminder: local.driveUnattendedReminder,

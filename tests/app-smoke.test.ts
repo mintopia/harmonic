@@ -87,6 +87,7 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     exportS3ForcePathStyle: null,
     exportS3AccessKeyId: null,
     exportS3SecretAccessKey: null,
+    exportRedactPatterns: null,
     toolTimeoutMinutes: null,
     drivePrompt: null,
     driveUnattendedReminder: null,

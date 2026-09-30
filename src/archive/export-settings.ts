@@ -1,5 +1,6 @@
-import type { AppConfig, ExportState } from '../config.js';
+import { redactPatternsSchema, type AppConfig, type ExportState } from '../config.js';
 import type { WorkspaceRow } from '../db/schema.js';
+import { BASELINE_REDACT_PATTERNS, type RedactionPattern } from './redact.js';
 
 export interface ResolvedS3Settings {
   endpoint: string | null;
@@ -15,12 +16,14 @@ export interface ResolvedExportSettings {
   includeStates: readonly ExportState[];
   directoryPath: string | null;
   s3: ResolvedS3Settings | null;
+  redactPatterns: readonly RedactionPattern[];
 }
 
 export type ExportWorkspaceOverrides = Pick<
   WorkspaceRow,
   | 'exportEnabled'
   | 'exportDirectoryPath'
+  | 'exportRedactPatterns'
   | 'exportS3Endpoint'
   | 'exportS3Region'
   | 'exportS3Bucket'
@@ -47,11 +50,13 @@ function resolveS3(global: AppConfig['export']['s3'], workspace: Partial<ExportW
 }
 
 export function resolveExportSettings(global: AppConfig, workspace: Partial<ExportWorkspaceOverrides> | undefined): ResolvedExportSettings {
+  const workspacePatterns = workspace?.exportRedactPatterns ? redactPatternsSchema.parse(JSON.parse(workspace.exportRedactPatterns)) : [];
   return {
     enabled: workspace?.exportEnabled ?? global.export.enabled,
     includeStates: global.export.includeStates,
     directoryPath: workspace?.exportDirectoryPath ?? global.export.directory.path,
     s3: resolveS3(global.export.s3, workspace),
+    redactPatterns: [...BASELINE_REDACT_PATTERNS, ...global.export.redact.patterns, ...workspacePatterns],
   };
 }
 

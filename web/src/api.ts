@@ -201,6 +201,7 @@ export const api = {
       exportS3ForcePathStyle?: boolean | null;
       exportS3AccessKeyId?: string | null;
       exportS3SecretAccessKey?: string | null;
+      exportRedactPatterns?: { id: string; regex: string }[] | null;
       toolTimeoutMinutes?: number | null;
       drivePrompt?: string | null;
       driveUnattendedReminder?: string | null;
