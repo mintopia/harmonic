@@ -20,7 +20,6 @@ import type { TaskService } from '../domain/tasks.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { resolveVerifiers, type ResolvedVerifiers } from '../domain/setting-override.js';
 import { pricesForHarness } from '../domain/pricing.js';
-import type { TaskArchive } from '../archive/task-archive.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { createAcpCriticDrive, runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
@@ -72,7 +71,6 @@ export interface VerificationCoordinatorDeps {
   archive?: TaskArchive | undefined;
   urlFor: (task: TaskRow) => string | null;
   worktreePathForTask: (task: TaskRow) => string;
-  archive?: TaskArchive | undefined;
   latestAttemptFor: (task: Pick<TaskRow, 'id'>) => Promise<AttemptRow>;
   updateStep: (
     taskId: number,
