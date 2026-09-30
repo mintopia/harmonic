@@ -282,6 +282,8 @@ export interface Workspace {
    * object shape it was PATCHed as. */
   guardrailBudget: BudgetGuardrail | null;
   guardrailProgress: boolean | null;
+  exportEnabled: boolean | null;
+  exportDirectoryPath: string | null;
   /** Tool-timeout override; `null` inherits `config.guardrails.toolTimeoutMinutes`. */
   toolTimeoutMinutes: number | null;
   /** Drive overrides, decomposed into independently-inheritable

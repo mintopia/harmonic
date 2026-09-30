@@ -82,6 +82,8 @@ export function WorkspaceSettingsPage({
         epicPreMergeCritics: local.epicPreMergeCritics,
         guardrailBudget: local.guardrailBudget,
         guardrailProgress: local.guardrailProgress,
+        exportEnabled: local.exportEnabled,
+        exportDirectoryPath: local.exportDirectoryPath,
         toolTimeoutMinutes: local.toolTimeoutMinutes,
         drivePrompt: local.drivePrompt,
         driveUnattendedReminder: local.driveUnattendedReminder,

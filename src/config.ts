@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 import { z } from 'zod';
@@ -201,6 +201,11 @@ export function verifyChannelsUnconfigured(verify: Pick<AppConfig, 'verify'>['ve
   );
 }
 
+export const EXPORT_STATES = ['done', 'cancelled', 'deleted'] as const;
+export type ExportState = (typeof EXPORT_STATES)[number];
+
+export const exportDirectoryPathSchema = z.string().min(1).refine((p) => isAbsolute(p), { message: 'export directory path must be absolute' });
+
 export const appConfigSchema = z.object({
   /** Operator-chosen display name; feeds the sidebar heading and browser title. Empty (the default) falls back to "Harmonic". */
   name: z.string().meta({ example: 'Production' }),
@@ -279,6 +284,14 @@ export const appConfigSchema = z.object({
     progress: z.boolean(),
     toolTimeoutMinutes: z.number().positive(),
     promptInactivityTimeoutMinutes: z.number().positive(),
+  }),
+  /** Task Archive export on a terminal state; `directory.path` is where per-Task tarballs are written. */
+  export: z.object({
+    enabled: z.boolean().meta({ example: false }),
+    includeStates: z.array(z.enum(EXPORT_STATES)).meta({ example: ['done', 'cancelled', 'deleted'] }),
+    directory: z.object({
+      path: exportDirectoryPathSchema.nullable().meta({ example: '/srv/harmonic-exports' }),
+    }),
   }),
 }).superRefine((config, ctx) => {
   for (const [id, harness] of Object.entries(config.harnesses)) {

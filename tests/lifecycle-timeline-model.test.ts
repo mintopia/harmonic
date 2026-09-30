@@ -195,4 +195,16 @@ describe('lifecycleTimelineRows', () => {
     expect(rows[0]!.detail).toBe('Imported from issue #185 · queued to harmonic-core');
     expect(rows[1]!.detail).toBe('Continued Attempt 2');
   });
+
+  it('labels Export attempts by outcome', () => {
+    const rows = lifecycleTimelineRows([
+      lifecycle(10, { event: 'export', destination: 'directory', status: 'succeeded', file: '/x/1-done.tar.gz' }),
+      lifecycle(20, { event: 'export', destination: 'directory', status: 'failed', error: 'EACCES' }),
+    ]);
+
+    expect(rows.map((row) => [row.label, row.detail, row.tone])).toEqual([
+      ['Exported to directory', '/x/1-done.tar.gz', 'passed'],
+      ['Export to directory failed', 'EACCES', 'failed'],
+    ]);
+  });
 });

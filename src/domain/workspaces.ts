@@ -16,6 +16,7 @@ import {
   type WorkspaceRow,
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
+import { exportDirectoryPathSchema } from '../config.js';
 import { DomainError } from './errors.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
 import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
@@ -98,6 +99,10 @@ export const workspaceOverridesSchema = z.object({
   /** Task Prompt override; null inherits `config.taskPrompt`. */
   taskPrompt: z.string().min(1).nullable().optional(),
   pauseMessage: z.string().min(1).nullable().optional(),
+  /** Export-on-terminal toggle override; null inherits `config.export.enabled`. */
+  exportEnabled: z.boolean().nullable().optional(),
+  /** Export directory override (absolute); null inherits `config.export.directory.path`. */
+  exportDirectoryPath: exportDirectoryPathSchema.nullable().optional().meta({ example: '/srv/harmonic-exports' }),
 });
 export type WorkspaceOverrides = z.infer<typeof workspaceOverridesSchema>;
 
@@ -131,6 +136,8 @@ export const OVERRIDE_KEYS = [
   'driveContinueAttempts',
   'taskPrompt',
   'pauseMessage',
+  'exportEnabled',
+  'exportDirectoryPath',
 ] as const;
 
 /** A fully-populated overrides object: every key present, `null` meaning
@@ -203,6 +210,8 @@ export class WorkspaceService {
       driveContinueAttempts: o.driveContinueAttempts,
       taskPrompt: o.taskPrompt,
       pauseMessage: o.pauseMessage,
+      exportEnabled: o.exportEnabled,
+      exportDirectoryPath: o.exportDirectoryPath,
     };
   }
 

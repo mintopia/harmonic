@@ -193,6 +193,7 @@ export interface Runtime {
   hostLoad: HostLoadSampler;
   workspaceWatcher: WorkspaceWatcher;
   loopMonitor: EventLoopMonitor | undefined;
+  archive: TaskArchive;
 }
 
 export async function createRuntime(deps: {
@@ -476,5 +477,6 @@ export async function createRuntime(deps: {
     hostLoad,
     workspaceWatcher,
     loopMonitor,
+    archive,
   };
 }

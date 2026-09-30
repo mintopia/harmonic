@@ -71,6 +71,8 @@ const workspaceSchema = z
     driveContinueAttempts: z.number().nullable().meta({ example: null }),
     /** Task Prompt override; null inherits `config.taskPrompt`. */
     taskPrompt: z.string().nullable().meta({ example: null }),
+    exportEnabled: z.boolean().nullable().meta({ example: null }),
+    exportDirectoryPath: z.string().nullable().meta({ example: null }),
     createdAt: z.number().meta({ example: 1784030400000 }),
     updatedAt: z.number().meta({ example: 1784032260000 }),
   })

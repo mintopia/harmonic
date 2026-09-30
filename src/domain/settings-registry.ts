@@ -205,6 +205,20 @@ export const settingsRegistry = {
     label: 'Pause message',
     help: 'Message injected before a running Task pauses; inherits the global message unless overridden.',
   },
+  exportEnabled: {
+    scope: 'overridable',
+    control: 'toggle',
+    tab: 'execution',
+    label: 'Export on done',
+    help: 'Write a Task Archive tarball to the export directory when a Task reaches an included terminal state; inherits the global setting when unset.',
+  },
+  exportDirectoryPath: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'execution',
+    label: 'Export directory',
+    help: 'Absolute directory for Task Archive tarballs (<path>/<workspace>/<taskId>-<trackerRef>-done-<timestamp>.tar.gz); inherits the global path when unset.',
+  },
 } as const satisfies Record<string, SettingSpec>;
 
 /** A key naming a setting declared in the registry. */

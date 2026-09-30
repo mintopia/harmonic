@@ -44,6 +44,8 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   epicPreMergeCritics: null,
   guardrailBudget: null,
   guardrailProgress: null,
+  exportEnabled: null,
+  exportDirectoryPath: null,
   toolTimeoutMinutes: null,
   drivePrompt: null,
   driveUnattendedReminder: null,

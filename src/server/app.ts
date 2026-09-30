@@ -18,6 +18,10 @@ import { registerAuthHook } from './app-auth-hook.js';
 import { registerRouteRecorder, registerErrorHandler } from './app-hooks.js';
 import { registerShutdown, registerStartup } from './app-lifecycle.js';
 import { registerRoutes } from './app-routes.js';
+import { TaskExporter } from '../archive/task-export.js';
+import { resolveExportSettings } from '../archive/export-settings.js';
+import { taskToApi, ticketTimelineToApi } from './serialize.js';
+import { fireAndForget, orFallback } from '../error-handling.js';
 import {
   createAppContexts,
   type App,
@@ -134,6 +138,35 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     worktreesReconciledAt: worktrees.worktreesReconciledAt,
   };
   const contexts = createAppContexts(ctx);
+
+  const exporter = new TaskExporter({
+    dataDir: opts.dataDir,
+    archive: runtime.archive,
+    version: runningVersion,
+    settings: async (task) => {
+      const workspace =
+        task.workspaceId === null
+          ? undefined
+          : await stores.workspaces.get(task.workspaceId);
+      return resolveExportSettings(stores.settingsStore.getGlobal(), workspace);
+    },
+    workspaceName: async (workspaceId) =>
+      (await orFallback(() => stores.workspaces.get(workspaceId), { op: 'export.workspaceName', context: { workspaceId } }, null))?.name ?? null,
+    snapshot: async (task) => {
+      const [ticket, timeline, taskAttempts] = await Promise.all([
+        taskToApi(ctx, await ctx.tasks.withDeps(task)),
+        ticketTimelineToApi(ctx, task.id),
+        stores.attempts.listForTask(task.id),
+      ]);
+      return { ticket, timeline, attemptCount: taskAttempts.length };
+    },
+    recordFact: async (taskId, payload) => {
+      await stores.taskEvents.appendEvent(taskId, payload);
+      bus.emit('step_changed', { taskId });
+    },
+  });
+  bus.on('task_disposition', ({ task, disposition }) => exporter.trigger(task, disposition));
+  fireAndForget(() => exporter.sweepStaging(), { op: 'export.sweepStaging', level: 'warn' });
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);

@@ -51,6 +51,8 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
     'driveMergeFate',
     'driveContinueAttempts',
     'taskPrompt',
+    'exportEnabled',
+    'exportDirectoryPath',
   ];
 
   it('declares every Workspace override column as overridable', () => {

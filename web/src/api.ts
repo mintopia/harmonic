@@ -192,6 +192,8 @@ export const api = {
       epicPreMergeCritics?: EpicCriticOverlayEntry[] | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
+      exportEnabled?: boolean | null;
+      exportDirectoryPath?: string | null;
       toolTimeoutMinutes?: number | null;
       drivePrompt?: string | null;
       driveUnattendedReminder?: string | null;

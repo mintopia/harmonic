@@ -316,6 +316,8 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       driveContinueAttempts: null,
       taskPrompt: null,
       pauseMessage: null,
+      exportEnabled: null,
+      exportDirectoryPath: null,
     });
   });
 });
