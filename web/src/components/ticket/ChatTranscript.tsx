@@ -149,6 +149,7 @@ function Row({ row, model, agent }: { row: ChatRow; model: string; agent: string
 export function ChatTranscript({
   events,
   unavailable,
+  fromArchive = false,
   following,
   onToggleFollow,
   steer,
@@ -159,6 +160,8 @@ export function ChatTranscript({
 }: {
   events: AttemptLogEvent[];
   unavailable: boolean;
+  /** The Harness's native log is gone and this transcript is Harmonic's Archive copy. */
+  fromArchive?: boolean;
   following?: boolean;
   onToggleFollow?: () => void;
   steer?: ReactNode;
@@ -202,7 +205,19 @@ export function ChatTranscript({
       <div className="sticky top-0 z-10 -mx-[30px] mb-3 flex items-center justify-between gap-4 border-b border-hairline bg-canvas px-[30px] py-3">
         <div className="flex items-baseline gap-2.5">
           <h2 className={CAPS}>Transcript{stepLabel && ` · ${stepLabel}`}</h2>
-          <span className={railSectionCount}>{events.length} events</span>
+          {fromArchive ? (
+            <>
+              <span className="inline-flex items-center gap-[5px] rounded-[4px] border border-hairline px-[7px] py-px text-[10.5px] font-semibold tracking-[0.02em] text-muted">
+                <Icon name="files" className="size-3" />
+                from Archive
+              </span>
+              <span className="text-small font-normal normal-case tracking-normal text-faint">
+                Harness log no longer on disk · {events.length.toLocaleString()} events
+              </span>
+            </>
+          ) : (
+            <span className={railSectionCount}>{events.length} events</span>
+          )}
         </div>
         {onToggleFollow && <FollowTail following={following ?? false} onToggle={onToggleFollow} />}
       </div>

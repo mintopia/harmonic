@@ -118,6 +118,7 @@ export function AttemptPanel({
   stats,
   events,
   logUnavailable,
+  fromArchive = false,
   following,
   onToggleFollow,
   verificationAttempts,
@@ -133,6 +134,7 @@ export function AttemptPanel({
   stats: TaskStats;
   events: AttemptLogEvent[];
   logUnavailable: boolean;
+  fromArchive?: boolean;
   following: boolean;
   onToggleFollow: () => void;
   verificationAttempts: VerificationAttempt[];
@@ -154,6 +156,7 @@ export function AttemptPanel({
     <ChatTranscript
       events={events}
       unavailable={logUnavailable}
+      fromArchive={fromArchive}
       pendingSteers={pendingSteers}
       following={following}
       onToggleFollow={onToggleFollow}
