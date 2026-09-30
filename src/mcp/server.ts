@@ -5,6 +5,7 @@ import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES } from '../config.js';
 import { TASK_STATES } from '../db/schema.js';
 import { serializeAttempt } from '../domain/attempts.js';
 import { DomainError } from '../domain/errors.js';
+import { deleteTaskKeepingArchive, operatorReasonSchema, recordOperatorActionBestEffort, recordOperatorActionsBestEffort } from '../server/operator-inputs.js';
 
 const taskId = { taskId: z.number().int().positive().describe('Task id') };
 
@@ -109,16 +110,18 @@ export function buildMcpServer(ctx: AppContext): McpServer {
     'cancel_task',
     {
       description: 'Cancel a Task (any non-terminal state); optionally cancel everything depending on it too.',
-      inputSchema: { ...taskId, withDependents: z.boolean().optional() },
+      inputSchema: { ...taskId, withDependents: z.boolean().optional(), reason: operatorReasonSchema },
     },
-    wrapAsync(async ({ taskId, withDependents }) => {
+    wrapAsync(async ({ taskId, withDependents, reason }) => {
       if (withDependents) {
         const cancelled = await ctx.tasks.cancelWithDependents(taskId);
         cancelled.forEach((id) => ctx.runner.cancelForTask(id));
+        await recordOperatorActionsBestEffort(ctx, cancelled, 'agent', 'cancel', reason ?? null);
         return { cancelled };
       }
       const task = await ctx.tasks.cancel(taskId);
       ctx.runner.cancelForTask(taskId);
+      await recordOperatorActionBestEffort(ctx, taskId, 'agent', 'cancel', reason ?? null);
       return ctx.tasks.withDeps(task);
     }),
   );
@@ -131,8 +134,7 @@ export function buildMcpServer(ctx: AppContext): McpServer {
       inputSchema: { ...taskId },
     },
     wrapAsync(async ({ taskId }) => {
-      ctx.runner.cancelForTask(taskId);
-      await ctx.tasks.delete(taskId);
+      await deleteTaskKeepingArchive(ctx, taskId, 'agent');
       return { deleted: taskId };
     }),
   );

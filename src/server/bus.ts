@@ -28,6 +28,7 @@ export interface BusEvents {
   /** Live-usage snapshot pushed ~1s while an Attempt tails its native log. */
   attempt_usage: (payload: { attemptId: number; snapshot: AttemptUsageSnapshot }) => void;
   task_changed: (task: TaskRow) => void;
+  task_disposition: (payload: { task: TaskRow; disposition: 'done' | 'cancelled' }) => void;
   /** A Task's row was hard-deleted; a live board drops it immediately. */
   task_removed: (payload: { id: number }) => void;
   /** An Epic's integration merge advanced a step; a live board refreshes its
@@ -46,6 +47,16 @@ export interface BusEvents {
   worktrees: (worktrees: readonly WorktreeInventoryEntry[]) => void;
   /** Host load-average reading, sampled on a fixed tick (see HostLoadSampler). */
   host_load: (load: HostLoad) => void;
+  /** `nextRetryAt` is null when no further retry is scheduled. */
+  export_failed: (payload: {
+    taskId: number;
+    trackerRef: number | null;
+    destination: string;
+    disposition: string;
+    error: string;
+    retry: number;
+    nextRetryAt: string | null;
+  }) => void;
   fs_changed: (payload: { workspaceId: number }) => void;
   notification_created: (notification: NotificationRow) => void;
   notifications_read: (payload: { ids: number[] }) => void;

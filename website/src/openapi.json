@@ -1456,6 +1456,290 @@
           "children"
         ]
       },
+      "ExportRetryInput": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "example": 1,
+            "description": "Scheduled retries already made."
+          },
+          "max": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "example": 3
+          },
+          "nextRetryAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "2026-09-30T12:12:07.000Z"
+          },
+          "exhausted": {
+            "type": "boolean",
+            "description": "No further scheduled retry; only Export again can deliver.",
+            "example": false
+          }
+        },
+        "required": [
+          "count",
+          "max",
+          "nextRetryAt",
+          "exhausted"
+        ]
+      },
+      "ExportDestinationStatusInput": {
+        "type": "object",
+        "properties": {
+          "destination": {
+            "type": "string",
+            "enum": [
+              "directory",
+              "s3"
+            ],
+            "example": "s3"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "s3://acme-audit/harmonic/",
+            "description": "Where the Destination is currently configured to deliver; null if no longer configured."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "failed"
+            ]
+          },
+          "lastAttemptAt": {
+            "type": "string",
+            "example": "2026-09-30T11:42:11.000Z"
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Delivered path or key; null while failed."
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "AccessDenied: s3:PutObject"
+          },
+          "retry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportRetryInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only while the Destination is failed."
+          }
+        },
+        "required": [
+          "destination",
+          "location",
+          "status",
+          "lastAttemptAt",
+          "file",
+          "error",
+          "retry"
+        ]
+      },
+      "ExportSummaryInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "412-GH-398-done-2026-09-30T11-42-07Z.tar.gz"
+          },
+          "disposition": {
+            "type": "string",
+            "example": "done"
+          },
+          "builtAt": {
+            "type": "string",
+            "example": "2026-09-30T11:42:07.000Z"
+          },
+          "bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "partial": {
+            "type": "boolean",
+            "description": "Built from surviving records; some transcripts unavailable."
+          },
+          "redactions": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "number"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "github-token": 3
+            }
+          },
+          "destinations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportDestinationStatusInput"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "disposition",
+          "builtAt",
+          "bytes",
+          "partial",
+          "redactions",
+          "destinations"
+        ]
+      },
+      "TaskExportStatusInput": {
+        "type": "object",
+        "properties": {
+          "exportable": {
+            "type": "boolean",
+            "description": "True once the Task is done or cancelled."
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportSummaryInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "earlier": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportSummaryInput"
+            },
+            "description": "Previous Exports, newest first."
+          }
+        },
+        "required": [
+          "exportable",
+          "latest",
+          "earlier"
+        ]
+      },
+      "TaskExportAgainResponseInput": {
+        "type": "object",
+        "properties": {
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "destination": {
+                  "type": "string",
+                  "enum": [
+                    "directory",
+                    "s3"
+                  ],
+                  "example": "s3"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "succeeded",
+                    "failed"
+                  ]
+                },
+                "file": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "error": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "destination",
+                "status",
+                "file",
+                "error"
+              ]
+            }
+          },
+          "export": {
+            "$ref": "#/components/schemas/TaskExportStatusInput"
+          }
+        },
+        "required": [
+          "outcomes",
+          "export"
+        ]
+      },
       "TaskWithDepsInput": {
         "type": "object",
         "properties": {
@@ -5508,6 +5792,174 @@
             ],
             "example": null
           },
+          "exportEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportDirectoryPath": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportS3Endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportS3Region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportS3Bucket": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportS3Prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportS3ForcePathStyle": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportS3AccessKeyId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportS3SecretAccessKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportRedactPatterns": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9-]*$"
+                    },
+                    "regex": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "regex"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportIncludeStates": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "done",
+                    "cancelled",
+                    "deleted"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "archiveRetentionDays": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "archiveRetentionMaxTotalMB": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -5552,6 +6004,19 @@
           "driveMergeFate",
           "driveContinueAttempts",
           "taskPrompt",
+          "exportEnabled",
+          "exportDirectoryPath",
+          "exportS3Endpoint",
+          "exportS3Region",
+          "exportS3Bucket",
+          "exportS3Prefix",
+          "exportS3ForcePathStyle",
+          "exportS3AccessKeyId",
+          "exportS3SecretAccessKey",
+          "exportRedactPatterns",
+          "exportIncludeStates",
+          "archiveRetentionDays",
+          "archiveRetentionMaxTotalMB",
           "createdAt",
           "updatedAt"
         ]
@@ -6460,8 +6925,279 @@
                 }
               }
             }
+          },
+          "archive": {
+            "type": "object",
+            "properties": {
+              "retain": {
+                "type": "object",
+                "properties": {
+                  "days": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": 30
+                  },
+                  "maxTotalMB": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": 10240
+                  }
+                }
+              }
+            }
+          },
+          "export": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "example": false
+              },
+              "includeStates": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "done",
+                    "cancelled",
+                    "deleted"
+                  ]
+                },
+                "example": [
+                  "done",
+                  "cancelled",
+                  "deleted"
+                ]
+              },
+              "directory": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "/srv/harmonic-exports"
+                  }
+                }
+              },
+              "s3": {
+                "type": "object",
+                "properties": {
+                  "endpoint": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "https://s3.eu-west-2.amazonaws.com"
+                  },
+                  "region": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "eu-west-2"
+                  },
+                  "bucket": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "harmonic-exports"
+                  },
+                  "prefix": {
+                    "type": "string",
+                    "example": "harmonic/"
+                  },
+                  "forcePathStyle": {
+                    "type": "boolean",
+                    "example": false
+                  },
+                  "accessKeyId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": null
+                  },
+                  "secretAccessKey": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": null
+                  }
+                }
+              },
+              "redact": {
+                "type": "object",
+                "properties": {
+                  "patterns": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9-]*$"
+                        },
+                        "regex": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "regex"
+                      ]
+                    },
+                    "example": [
+                      {
+                        "id": "internal-host",
+                        "regex": "corp\\.example\\.internal"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "patterns"
+                ]
+              }
+            }
           }
         }
+      },
+      "NotificationInput": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 812
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "failure",
+              "escalation",
+              "merge",
+              "export"
+            ],
+            "example": "escalation"
+          },
+          "title": {
+            "type": "string",
+            "example": "Task 4821 escalated — Verification failed after 2 Attempts"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "Verification failed twice; waiting for a decision."
+          },
+          "workspaceId": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 12
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 4821,
+            "description": "The Ticket link; may name a since-deleted Task."
+          },
+          "createdAt": {
+            "type": "number",
+            "example": 1784030400000
+          },
+          "readAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "read": {
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "id",
+          "severity",
+          "title",
+          "detail",
+          "workspaceId",
+          "taskId",
+          "createdAt",
+          "readAt",
+          "read"
+        ]
       },
       "ChannelInput": {
         "type": "object",
@@ -6503,6 +7239,8 @@
                 "run.started",
                 "task.escalated",
                 "task.done",
+                "task.failed",
+                "export.failed",
                 "queue.idle",
                 "update.failed"
               ]
@@ -8031,6 +8769,296 @@
           "endedAt",
           "status",
           "children"
+        ],
+        "additionalProperties": false
+      },
+      "ExportRetry": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "example": 1,
+            "description": "Scheduled retries already made."
+          },
+          "max": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "example": 3
+          },
+          "nextRetryAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "2026-09-30T12:12:07.000Z"
+          },
+          "exhausted": {
+            "type": "boolean",
+            "description": "No further scheduled retry; only Export again can deliver.",
+            "example": false
+          }
+        },
+        "required": [
+          "count",
+          "max",
+          "nextRetryAt",
+          "exhausted"
+        ],
+        "additionalProperties": false
+      },
+      "ExportDestinationStatus": {
+        "type": "object",
+        "properties": {
+          "destination": {
+            "type": "string",
+            "enum": [
+              "directory",
+              "s3"
+            ],
+            "example": "s3"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "s3://acme-audit/harmonic/",
+            "description": "Where the Destination is currently configured to deliver; null if no longer configured."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "failed"
+            ]
+          },
+          "lastAttemptAt": {
+            "type": "string",
+            "example": "2026-09-30T11:42:11.000Z"
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Delivered path or key; null while failed."
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "AccessDenied: s3:PutObject"
+          },
+          "retry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportRetry"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only while the Destination is failed."
+          }
+        },
+        "required": [
+          "destination",
+          "location",
+          "status",
+          "lastAttemptAt",
+          "file",
+          "error",
+          "retry"
+        ],
+        "additionalProperties": false
+      },
+      "ExportSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "412-GH-398-done-2026-09-30T11-42-07Z.tar.gz"
+          },
+          "disposition": {
+            "type": "string",
+            "example": "done"
+          },
+          "builtAt": {
+            "type": "string",
+            "example": "2026-09-30T11:42:07.000Z"
+          },
+          "bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "partial": {
+            "type": "boolean",
+            "description": "Built from surviving records; some transcripts unavailable."
+          },
+          "redactions": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "number"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "github-token": 3
+            }
+          },
+          "destinations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportDestinationStatus"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "disposition",
+          "builtAt",
+          "bytes",
+          "partial",
+          "redactions",
+          "destinations"
+        ],
+        "additionalProperties": false
+      },
+      "TaskExportStatus": {
+        "type": "object",
+        "properties": {
+          "exportable": {
+            "type": "boolean",
+            "description": "True once the Task is done or cancelled."
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "earlier": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportSummary"
+            },
+            "description": "Previous Exports, newest first."
+          }
+        },
+        "required": [
+          "exportable",
+          "latest",
+          "earlier"
+        ],
+        "additionalProperties": false
+      },
+      "TaskExportAgainResponse": {
+        "type": "object",
+        "properties": {
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "destination": {
+                  "type": "string",
+                  "enum": [
+                    "directory",
+                    "s3"
+                  ],
+                  "example": "s3"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "succeeded",
+                    "failed"
+                  ]
+                },
+                "file": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "error": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "destination",
+                "status",
+                "file",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "export": {
+            "$ref": "#/components/schemas/TaskExportStatus"
+          }
+        },
+        "required": [
+          "outcomes",
+          "export"
         ],
         "additionalProperties": false
       },
@@ -12186,6 +13214,175 @@
             ],
             "example": null
           },
+          "exportEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportDirectoryPath": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportS3Endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportS3Region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportS3Bucket": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportS3Prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportS3ForcePathStyle": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportS3AccessKeyId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportS3SecretAccessKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportRedactPatterns": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9-]*$"
+                    },
+                    "regex": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "regex"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportIncludeStates": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "done",
+                    "cancelled",
+                    "deleted"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "archiveRetentionDays": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "archiveRetentionMaxTotalMB": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -12230,6 +13427,19 @@
           "driveMergeFate",
           "driveContinueAttempts",
           "taskPrompt",
+          "exportEnabled",
+          "exportDirectoryPath",
+          "exportS3Endpoint",
+          "exportS3Region",
+          "exportS3Bucket",
+          "exportS3Prefix",
+          "exportS3ForcePathStyle",
+          "exportS3AccessKeyId",
+          "exportS3SecretAccessKey",
+          "exportRedactPatterns",
+          "exportIncludeStates",
+          "archiveRetentionDays",
+          "archiveRetentionMaxTotalMB",
           "createdAt",
           "updatedAt"
         ],
@@ -13184,8 +14394,287 @@
               }
             },
             "additionalProperties": false
+          },
+          "archive": {
+            "type": "object",
+            "properties": {
+              "retain": {
+                "type": "object",
+                "properties": {
+                  "days": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": 30
+                  },
+                  "maxTotalMB": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": 10240
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "export": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "example": false
+              },
+              "includeStates": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "done",
+                    "cancelled",
+                    "deleted"
+                  ]
+                },
+                "example": [
+                  "done",
+                  "cancelled",
+                  "deleted"
+                ]
+              },
+              "directory": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "/srv/harmonic-exports"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "s3": {
+                "type": "object",
+                "properties": {
+                  "endpoint": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "https://s3.eu-west-2.amazonaws.com"
+                  },
+                  "region": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "eu-west-2"
+                  },
+                  "bucket": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "harmonic-exports"
+                  },
+                  "prefix": {
+                    "type": "string",
+                    "example": "harmonic/"
+                  },
+                  "forcePathStyle": {
+                    "type": "boolean",
+                    "example": false
+                  },
+                  "accessKeyId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": null
+                  },
+                  "secretAccessKey": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": null
+                  }
+                },
+                "additionalProperties": false
+              },
+              "redact": {
+                "type": "object",
+                "properties": {
+                  "patterns": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9-]*$"
+                        },
+                        "regex": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "regex"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "example": [
+                      {
+                        "id": "internal-host",
+                        "regex": "corp\\.example\\.internal"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "patterns"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
           }
         },
+        "additionalProperties": false
+      },
+      "Notification": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 812
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "failure",
+              "escalation",
+              "merge",
+              "export"
+            ],
+            "example": "escalation"
+          },
+          "title": {
+            "type": "string",
+            "example": "Task 4821 escalated — Verification failed after 2 Attempts"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "Verification failed twice; waiting for a decision."
+          },
+          "workspaceId": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 12
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 4821,
+            "description": "The Ticket link; may name a since-deleted Task."
+          },
+          "createdAt": {
+            "type": "number",
+            "example": 1784030400000
+          },
+          "readAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "read": {
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "id",
+          "severity",
+          "title",
+          "detail",
+          "workspaceId",
+          "taskId",
+          "createdAt",
+          "readAt",
+          "read"
+        ],
         "additionalProperties": false
       },
       "Channel": {
@@ -13228,6 +14717,8 @@
                 "run.started",
                 "task.escalated",
                 "task.done",
+                "task.failed",
+                "export.failed",
                 "queue.idle",
                 "update.failed"
               ]
@@ -13916,6 +15407,11 @@
                       "withDependents": {
                         "example": true,
                         "type": "boolean"
+                      },
+                      "reason": {
+                        "example": "superseded",
+                        "type": "string",
+                        "maxLength": 2000
                       }
                     }
                   },
@@ -14513,6 +16009,30 @@
           "Tasks"
         ],
         "description": "Close an escalated ticket: cancel it and clean up — remove its branch and worktree, close the tracker issue. Human-only.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "reason": {
+                        "example": "superseded",
+                        "type": "string",
+                        "maxLength": 2000
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "schema": {
@@ -15156,7 +16676,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "Read an Attempt's native harness transcript. Missing or unreadable transcripts are explicitly unavailable.",
+        "description": "Read an Attempt's native harness transcript, falling back to the Archive's copy when the native one is missing or unreadable. Unavailable only when neither can be read.",
         "parameters": [
           {
             "schema": {
@@ -15231,6 +16751,9 @@
                         },
                         "liveCursor": {
                           "type": "number"
+                        },
+                        "fromArchive": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -15761,7 +17284,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "Read a critic verification attempt's native harness transcript — what the critic itself read, ran, and reasoned. Missing or unreadable transcripts are explicitly unavailable.",
+        "description": "Read a critic verification attempt's native harness transcript — what the critic itself read, ran, and reasoned. Falls back to the Archive's copy when the native transcript is missing or unreadable; unavailable only when neither can be read.",
         "parameters": [
           {
             "schema": {
@@ -15836,6 +17359,9 @@
                         },
                         "liveCursor": {
                           "type": "number"
+                        },
+                        "fromArchive": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -16307,6 +17833,177 @@
                   ],
                   "additionalProperties": false,
                   "description": "The attempt's changed files with parsed +/- hunks; empty outside worktree mode."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/export": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "description": "Export status for a Task: the latest Export (filename, build time, size, redactions, partial flag) with per-Destination delivery status, last attempt, error and pending retry, plus earlier Exports. `latest` is null until an Export has been attempted.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest and earlier Exports with per-Destination status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskExportStatus"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No task has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "description": "Export again: rebuild the Export and deliver it to every configured Destination regardless of the includeStates filter, as a new Export that never overwrites an earlier one. A Task that predates the Archive is built from surviving records and flagged `partial`. Only done or cancelled Tasks; 409 when the Task is not finished or no Destination is enabled.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per-Destination outcomes of the new Export, plus the refreshed status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskExportAgainResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No task has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Task is not finished, or no Export Destination is enabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/export/download": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "description": "Stream a freshly built, redacted Export tarball (tar.gz) to the browser. Needs no configured Destination and is not recorded as an Export.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The tar.gz bytes, as an attachment named after the canonical Export filename.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The tar.gz bytes, as an attachment named after the canonical Export filename."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No task has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Task is not finished.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -17637,6 +19334,186 @@
                       {
                         "type": "string",
                         "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "exportEnabled": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "exportDirectoryPath": {
+                    "example": "/srv/harmonic-exports",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "exportS3Endpoint": {
+                    "example": "https://s3.eu-west-2.amazonaws.com",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "exportS3Region": {
+                    "example": "eu-west-2",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "exportS3Bucket": {
+                    "example": "harmonic-exports",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "exportS3Prefix": {
+                    "example": "harmonic/",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "exportS3ForcePathStyle": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "exportS3AccessKeyId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "exportS3SecretAccessKey": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "exportRedactPatterns": {
+                    "example": [
+                      {
+                        "id": "internal-host",
+                        "regex": "corp\\.example\\.internal"
+                      }
+                    ],
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-z0-9-]*$"
+                            },
+                            "regex": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "regex"
+                          ]
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "exportIncludeStates": {
+                    "example": [
+                      "done"
+                    ],
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "done",
+                            "cancelled",
+                            "deleted"
+                          ]
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "archiveRetentionDays": {
+                    "example": 90,
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "archiveRetentionMaxTotalMB": {
+                    "example": 2048,
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
                       },
                       {
                         "type": "null"
@@ -19795,6 +21672,223 @@
                         "promptInactivityTimeoutMinutes"
                       ],
                       "additionalProperties": false
+                    },
+                    "archive": {
+                      "type": "object",
+                      "properties": {
+                        "retain": {
+                          "type": "object",
+                          "properties": {
+                            "days": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": 30
+                            },
+                            "maxTotalMB": {
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "exclusiveMinimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": 10240
+                            }
+                          },
+                          "required": [
+                            "days",
+                            "maxTotalMB"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "retain"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "export": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "includeStates": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "done",
+                              "cancelled",
+                              "deleted"
+                            ]
+                          },
+                          "example": [
+                            "done",
+                            "cancelled",
+                            "deleted"
+                          ]
+                        },
+                        "directory": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "/srv/harmonic-exports"
+                            }
+                          },
+                          "required": [
+                            "path"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "s3": {
+                          "type": "object",
+                          "properties": {
+                            "endpoint": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "uri"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "https://s3.eu-west-2.amazonaws.com"
+                            },
+                            "region": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "eu-west-2"
+                            },
+                            "bucket": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "harmonic-exports"
+                            },
+                            "prefix": {
+                              "type": "string",
+                              "example": "harmonic/"
+                            },
+                            "forcePathStyle": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "accessKeyId": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            },
+                            "secretAccessKey": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            }
+                          },
+                          "required": [
+                            "endpoint",
+                            "region",
+                            "bucket",
+                            "prefix",
+                            "forcePathStyle",
+                            "accessKeyId",
+                            "secretAccessKey"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "redact": {
+                          "type": "object",
+                          "properties": {
+                            "patterns": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "pattern": "^[a-z0-9][a-z0-9-]*$"
+                                  },
+                                  "regex": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "regex"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "example": [
+                                {
+                                  "id": "internal-host",
+                                  "regex": "corp\\.example\\.internal"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "patterns"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "includeStates",
+                        "directory",
+                        "s3",
+                        "redact"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -19813,7 +21907,9 @@
                     "fileWatcherDebounceMs",
                     "verify",
                     "merge",
-                    "guardrails"
+                    "guardrails",
+                    "archive",
+                    "export"
                   ],
                   "additionalProperties": false,
                   "description": "The stored configuration in full: harnesses and their model catalogs, defaults, auto-runner settings, and flags."
@@ -20690,6 +22786,223 @@
                         "promptInactivityTimeoutMinutes"
                       ],
                       "additionalProperties": false
+                    },
+                    "archive": {
+                      "type": "object",
+                      "properties": {
+                        "retain": {
+                          "type": "object",
+                          "properties": {
+                            "days": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": 30
+                            },
+                            "maxTotalMB": {
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "exclusiveMinimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": 10240
+                            }
+                          },
+                          "required": [
+                            "days",
+                            "maxTotalMB"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "retain"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "export": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "includeStates": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "done",
+                              "cancelled",
+                              "deleted"
+                            ]
+                          },
+                          "example": [
+                            "done",
+                            "cancelled",
+                            "deleted"
+                          ]
+                        },
+                        "directory": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "/srv/harmonic-exports"
+                            }
+                          },
+                          "required": [
+                            "path"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "s3": {
+                          "type": "object",
+                          "properties": {
+                            "endpoint": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "uri"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "https://s3.eu-west-2.amazonaws.com"
+                            },
+                            "region": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "eu-west-2"
+                            },
+                            "bucket": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "harmonic-exports"
+                            },
+                            "prefix": {
+                              "type": "string",
+                              "example": "harmonic/"
+                            },
+                            "forcePathStyle": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "accessKeyId": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            },
+                            "secretAccessKey": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            }
+                          },
+                          "required": [
+                            "endpoint",
+                            "region",
+                            "bucket",
+                            "prefix",
+                            "forcePathStyle",
+                            "accessKeyId",
+                            "secretAccessKey"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "redact": {
+                          "type": "object",
+                          "properties": {
+                            "patterns": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "pattern": "^[a-z0-9][a-z0-9-]*$"
+                                  },
+                                  "regex": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "regex"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "example": [
+                                {
+                                  "id": "internal-host",
+                                  "regex": "corp\\.example\\.internal"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "patterns"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "includeStates",
+                        "directory",
+                        "s3",
+                        "redact"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -20708,7 +23021,9 @@
                     "fileWatcherDebounceMs",
                     "verify",
                     "merge",
-                    "guardrails"
+                    "guardrails",
+                    "archive",
+                    "export"
                   ],
                   "additionalProperties": false,
                   "description": "The whole configuration as stored once the patch was merged onto it."
@@ -21517,6 +23832,216 @@
                       "toolTimeoutMinutes",
                       "promptInactivityTimeoutMinutes"
                     ]
+                  },
+                  "archive": {
+                    "type": "object",
+                    "properties": {
+                      "retain": {
+                        "type": "object",
+                        "properties": {
+                          "days": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "example": 30
+                          },
+                          "maxTotalMB": {
+                            "anyOf": [
+                              {
+                                "type": "number",
+                                "exclusiveMinimum": 0
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "example": 10240
+                          }
+                        },
+                        "required": [
+                          "days",
+                          "maxTotalMB"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "retain"
+                    ]
+                  },
+                  "export": {
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean",
+                        "example": false
+                      },
+                      "includeStates": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "done",
+                            "cancelled",
+                            "deleted"
+                          ]
+                        },
+                        "example": [
+                          "done",
+                          "cancelled",
+                          "deleted"
+                        ]
+                      },
+                      "directory": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "example": "/srv/harmonic-exports"
+                          }
+                        },
+                        "required": [
+                          "path"
+                        ]
+                      },
+                      "s3": {
+                        "type": "object",
+                        "properties": {
+                          "endpoint": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uri"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "example": "https://s3.eu-west-2.amazonaws.com"
+                          },
+                          "region": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "example": "eu-west-2"
+                          },
+                          "bucket": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "example": "harmonic-exports"
+                          },
+                          "prefix": {
+                            "type": "string",
+                            "example": "harmonic/"
+                          },
+                          "forcePathStyle": {
+                            "type": "boolean",
+                            "example": false
+                          },
+                          "accessKeyId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "example": null
+                          },
+                          "secretAccessKey": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "example": null
+                          }
+                        },
+                        "required": [
+                          "endpoint",
+                          "region",
+                          "bucket",
+                          "prefix",
+                          "forcePathStyle",
+                          "accessKeyId",
+                          "secretAccessKey"
+                        ]
+                      },
+                      "redact": {
+                        "type": "object",
+                        "properties": {
+                          "patterns": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z0-9][a-z0-9-]*$"
+                                },
+                                "regex": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "regex"
+                              ]
+                            },
+                            "example": [
+                              {
+                                "id": "internal-host",
+                                "regex": "corp\\.example\\.internal"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "patterns"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "enabled",
+                      "includeStates",
+                      "directory",
+                      "s3",
+                      "redact"
+                    ]
                   }
                 },
                 "required": [
@@ -21535,7 +24060,9 @@
                   "fileWatcherDebounceMs",
                   "verify",
                   "merge",
-                  "guardrails"
+                  "guardrails",
+                  "archive",
+                  "export"
                 ]
               }
             }
@@ -22393,6 +24920,223 @@
                         "promptInactivityTimeoutMinutes"
                       ],
                       "additionalProperties": false
+                    },
+                    "archive": {
+                      "type": "object",
+                      "properties": {
+                        "retain": {
+                          "type": "object",
+                          "properties": {
+                            "days": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": 30
+                            },
+                            "maxTotalMB": {
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "exclusiveMinimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": 10240
+                            }
+                          },
+                          "required": [
+                            "days",
+                            "maxTotalMB"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "retain"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "export": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "includeStates": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "done",
+                              "cancelled",
+                              "deleted"
+                            ]
+                          },
+                          "example": [
+                            "done",
+                            "cancelled",
+                            "deleted"
+                          ]
+                        },
+                        "directory": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "/srv/harmonic-exports"
+                            }
+                          },
+                          "required": [
+                            "path"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "s3": {
+                          "type": "object",
+                          "properties": {
+                            "endpoint": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "uri"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "https://s3.eu-west-2.amazonaws.com"
+                            },
+                            "region": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "eu-west-2"
+                            },
+                            "bucket": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "harmonic-exports"
+                            },
+                            "prefix": {
+                              "type": "string",
+                              "example": "harmonic/"
+                            },
+                            "forcePathStyle": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "accessKeyId": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            },
+                            "secretAccessKey": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            }
+                          },
+                          "required": [
+                            "endpoint",
+                            "region",
+                            "bucket",
+                            "prefix",
+                            "forcePathStyle",
+                            "accessKeyId",
+                            "secretAccessKey"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "redact": {
+                          "type": "object",
+                          "properties": {
+                            "patterns": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "pattern": "^[a-z0-9][a-z0-9-]*$"
+                                  },
+                                  "regex": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "regex"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "example": [
+                                {
+                                  "id": "internal-host",
+                                  "regex": "corp\\.example\\.internal"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "patterns"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "includeStates",
+                        "directory",
+                        "s3",
+                        "redact"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -22411,7 +25155,9 @@
                     "fileWatcherDebounceMs",
                     "verify",
                     "merge",
-                    "guardrails"
+                    "guardrails",
+                    "archive",
+                    "export"
                   ],
                   "additionalProperties": false,
                   "description": "The whole configuration as stored after the replace."
@@ -23283,6 +26029,223 @@
                             "promptInactivityTimeoutMinutes"
                           ],
                           "additionalProperties": false
+                        },
+                        "archive": {
+                          "type": "object",
+                          "properties": {
+                            "retain": {
+                              "type": "object",
+                              "properties": {
+                                "days": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": 30
+                                },
+                                "maxTotalMB": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": 10240
+                                }
+                              },
+                              "required": [
+                                "days",
+                                "maxTotalMB"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "retain"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "export": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "includeStates": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "done",
+                                  "cancelled",
+                                  "deleted"
+                                ]
+                              },
+                              "example": [
+                                "done",
+                                "cancelled",
+                                "deleted"
+                              ]
+                            },
+                            "directory": {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": "/srv/harmonic-exports"
+                                }
+                              },
+                              "required": [
+                                "path"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "s3": {
+                              "type": "object",
+                              "properties": {
+                                "endpoint": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "format": "uri"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": "https://s3.eu-west-2.amazonaws.com"
+                                },
+                                "region": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": "eu-west-2"
+                                },
+                                "bucket": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": "harmonic-exports"
+                                },
+                                "prefix": {
+                                  "type": "string",
+                                  "example": "harmonic/"
+                                },
+                                "forcePathStyle": {
+                                  "type": "boolean",
+                                  "example": false
+                                },
+                                "accessKeyId": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": null
+                                },
+                                "secretAccessKey": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": null
+                                }
+                              },
+                              "required": [
+                                "endpoint",
+                                "region",
+                                "bucket",
+                                "prefix",
+                                "forcePathStyle",
+                                "accessKeyId",
+                                "secretAccessKey"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "redact": {
+                              "type": "object",
+                              "properties": {
+                                "patterns": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z0-9][a-z0-9-]*$"
+                                      },
+                                      "regex": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "regex"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "example": [
+                                    {
+                                      "id": "internal-host",
+                                      "regex": "corp\\.example\\.internal"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "patterns"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "includeStates",
+                            "directory",
+                            "s3",
+                            "redact"
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "required": [
@@ -23301,7 +26264,9 @@
                         "fileWatcherDebounceMs",
                         "verify",
                         "merge",
-                        "guardrails"
+                        "guardrails",
+                        "archive",
+                        "export"
                       ],
                       "additionalProperties": false
                     },
@@ -24144,6 +27109,223 @@
                             "promptInactivityTimeoutMinutes"
                           ],
                           "additionalProperties": false
+                        },
+                        "archive": {
+                          "type": "object",
+                          "properties": {
+                            "retain": {
+                              "type": "object",
+                              "properties": {
+                                "days": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": 30
+                                },
+                                "maxTotalMB": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": 10240
+                                }
+                              },
+                              "required": [
+                                "days",
+                                "maxTotalMB"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "retain"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "export": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "includeStates": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "done",
+                                  "cancelled",
+                                  "deleted"
+                                ]
+                              },
+                              "example": [
+                                "done",
+                                "cancelled",
+                                "deleted"
+                              ]
+                            },
+                            "directory": {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": "/srv/harmonic-exports"
+                                }
+                              },
+                              "required": [
+                                "path"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "s3": {
+                              "type": "object",
+                              "properties": {
+                                "endpoint": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "format": "uri"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": "https://s3.eu-west-2.amazonaws.com"
+                                },
+                                "region": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": "eu-west-2"
+                                },
+                                "bucket": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": "harmonic-exports"
+                                },
+                                "prefix": {
+                                  "type": "string",
+                                  "example": "harmonic/"
+                                },
+                                "forcePathStyle": {
+                                  "type": "boolean",
+                                  "example": false
+                                },
+                                "accessKeyId": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": null
+                                },
+                                "secretAccessKey": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": null
+                                }
+                              },
+                              "required": [
+                                "endpoint",
+                                "region",
+                                "bucket",
+                                "prefix",
+                                "forcePathStyle",
+                                "accessKeyId",
+                                "secretAccessKey"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "redact": {
+                              "type": "object",
+                              "properties": {
+                                "patterns": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z0-9][a-z0-9-]*$"
+                                      },
+                                      "regex": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "regex"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "example": [
+                                    {
+                                      "id": "internal-host",
+                                      "regex": "corp\\.example\\.internal"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "patterns"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "includeStates",
+                            "directory",
+                            "s3",
+                            "redact"
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "required": [
@@ -24162,7 +27344,9 @@
                         "fileWatcherDebounceMs",
                         "verify",
                         "merge",
-                        "guardrails"
+                        "guardrails",
+                        "archive",
+                        "export"
                       ],
                       "additionalProperties": false
                     },
@@ -25067,6 +28251,223 @@
                         "promptInactivityTimeoutMinutes"
                       ],
                       "additionalProperties": false
+                    },
+                    "archive": {
+                      "type": "object",
+                      "properties": {
+                        "retain": {
+                          "type": "object",
+                          "properties": {
+                            "days": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": 30
+                            },
+                            "maxTotalMB": {
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "exclusiveMinimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": 10240
+                            }
+                          },
+                          "required": [
+                            "days",
+                            "maxTotalMB"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "retain"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "export": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "includeStates": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "done",
+                              "cancelled",
+                              "deleted"
+                            ]
+                          },
+                          "example": [
+                            "done",
+                            "cancelled",
+                            "deleted"
+                          ]
+                        },
+                        "directory": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "/srv/harmonic-exports"
+                            }
+                          },
+                          "required": [
+                            "path"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "s3": {
+                          "type": "object",
+                          "properties": {
+                            "endpoint": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "uri"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "https://s3.eu-west-2.amazonaws.com"
+                            },
+                            "region": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "eu-west-2"
+                            },
+                            "bucket": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "harmonic-exports"
+                            },
+                            "prefix": {
+                              "type": "string",
+                              "example": "harmonic/"
+                            },
+                            "forcePathStyle": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "accessKeyId": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            },
+                            "secretAccessKey": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            }
+                          },
+                          "required": [
+                            "endpoint",
+                            "region",
+                            "bucket",
+                            "prefix",
+                            "forcePathStyle",
+                            "accessKeyId",
+                            "secretAccessKey"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "redact": {
+                          "type": "object",
+                          "properties": {
+                            "patterns": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "pattern": "^[a-z0-9][a-z0-9-]*$"
+                                  },
+                                  "regex": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "regex"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "example": [
+                                {
+                                  "id": "internal-host",
+                                  "regex": "corp\\.example\\.internal"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "patterns"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "includeStates",
+                        "directory",
+                        "s3",
+                        "redact"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -25085,7 +28486,9 @@
                     "fileWatcherDebounceMs",
                     "verify",
                     "merge",
-                    "guardrails"
+                    "guardrails",
+                    "archive",
+                    "export"
                   ],
                   "additionalProperties": false,
                   "description": "The whole configuration as stored once every global override was cleared."
@@ -28998,6 +32401,8 @@
                         "run.started",
                         "task.escalated",
                         "task.done",
+                        "task.failed",
+                        "export.failed",
                         "queue.idle",
                         "update.failed"
                       ]
@@ -29204,6 +32609,8 @@
                         "run.started",
                         "task.escalated",
                         "task.done",
+                        "task.failed",
+                        "export.failed",
                         "queue.idle",
                         "update.failed"
                       ]
@@ -29538,6 +32945,238 @@
                   ],
                   "additionalProperties": false,
                   "description": "Every channel id still overridden for the task; removing an override that was not set is a no-op."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "description": "List stored Notifications, newest first. `workspaceId` is the Workspace Scope; omitted means Global. `before` is an id cursor: pass the last id of the previous page. `unreadCount` respects the Workspace Scope only. Reachable with a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "example": "escalation",
+              "type": "string",
+              "enum": [
+                "failure",
+                "escalation",
+                "merge",
+                "export"
+              ]
+            },
+            "in": "query",
+            "name": "severity",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 12,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": "true",
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "unread",
+            "required": false
+          },
+          {
+            "schema": {
+              "default": 50,
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 812,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "before",
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of Notifications plus the unread count for the scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Notification"
+                      }
+                    },
+                    "unreadCount": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 3
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "unreadCount"
+                  ],
+                  "additionalProperties": false,
+                  "description": "One page of Notifications plus the unread count for the scope."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/read-all": {
+      "post": {
+        "tags": [
+          "Notifications"
+        ],
+        "description": "Mark every unread Notification in the scope read (all Workspaces when `workspaceId` is omitted). Operator only.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "example": 12,
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "How many Notifications changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "updated": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 3
+                    }
+                  },
+                  "required": [
+                    "updated"
+                  ],
+                  "additionalProperties": false,
+                  "description": "How many Notifications changed."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/{id}/read": {
+      "post": {
+        "tags": [
+          "Notifications"
+        ],
+        "description": "Mark one Notification read. Idempotent: the first read time is kept. Operator only.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Notification after the update.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "notification": {
+                      "$ref": "#/components/schemas/Notification"
+                    }
+                  },
+                  "required": [
+                    "notification"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The Notification after the update."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Notification has this id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -30805,6 +34444,125 @@
                   ],
                   "additionalProperties": false,
                   "description": "The staged changes are committed."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/export/test-destination": {
+      "post": {
+        "tags": [
+          "Export"
+        ],
+        "description": "Write then remove a probe file or object at an Export Destination. A destination failure is reported as ok:false, never a 5xx.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "example": "1",
+                    "description": "Workspace whose overrides apply; omit or null for the global config only.",
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "number"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "destination": {
+                    "type": "string",
+                    "enum": [
+                      "directory",
+                      "s3"
+                    ],
+                    "example": "s3"
+                  }
+                },
+                "required": [
+                  "destination"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The probe outcome.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "destination": {
+                      "type": "string",
+                      "enum": [
+                        "directory",
+                        "s3"
+                      ],
+                      "example": "s3"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "error": {
+                      "example": "NoSuchBucket: The specified bucket does not exist",
+                      "type": "string"
+                    },
+                    "testedAt": {
+                      "type": "string",
+                      "example": "2026-09-30T12:00:00.000Z"
+                    }
+                  },
+                  "required": [
+                    "destination",
+                    "ok",
+                    "testedAt"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The probe outcome."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The destination is not configured, or the workspaceId is malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Workspace has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

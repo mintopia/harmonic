@@ -10,14 +10,14 @@
 - [ ] 2.2 Same for Critic Sessions
 - [ ] 2.3 Copy native transcript + Subagent files to `native/` at Step end; re-copy in crash recovery
 - [ ] 2.4 Write resolved `prompt.md` for every prompt sent
-- [ ] 2.5 Log routes fall back to the Archive when the native transcript is missing
+- [x] 2.5 Log routes fall back to the Archive when the native transcript is missing
 
 ## 3. Verify output and operator inputs
 
 - [ ] 3.1 Pipe full verify-command stdout/stderr to `output.log` (pre- and post-merge)
 - [ ] 3.2 DB preview becomes head+tail with truncation marker
-- [ ] 3.3 Record Accept, Close/Cancel (actor, reason) as Facts
-- [ ] 3.4 Append every operator input to `operator-inputs.jsonl`
+- [x] 3.3 Record Accept, Close/Cancel (actor, reason) as Facts
+- [x] 3.4 Append every operator input to `operator-inputs.jsonl`
 
 ## 4. Export builder
 
@@ -37,7 +37,7 @@
 
 ## 6. Retention
 
-- [ ] 6.1 Yielding prune Scheduled Job honouring `days` and `maxTotalMB` and eligibility rules
+- [x] 6.1 Yielding prune Scheduled Job honouring `days` and `maxTotalMB` and eligibility rules
 
 ## 7. UI (mockup first)
 

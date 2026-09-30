@@ -141,6 +141,40 @@ export interface VerificationAttempt {
   hasTranscript: boolean;
 }
 
+export type ExportDestinationKind = 'directory' | 's3';
+
+export interface ExportDestinationStatus {
+  destination: ExportDestinationKind;
+  location: string | null;
+  status: 'succeeded' | 'failed';
+  lastAttemptAt: string;
+  file: string | null;
+  error: string | null;
+  retry: { count: number; max: number; nextRetryAt: string | null; exhausted: boolean } | null;
+}
+
+export interface ExportSummary {
+  name: string | null;
+  disposition: string;
+  builtAt: string;
+  bytes: number | null;
+  partial: boolean;
+  redactions: Record<string, number> | null;
+  destinations: ExportDestinationStatus[];
+}
+
+/** `GET /api/tasks/:id/export`. */
+export interface TaskExportStatus {
+  exportable: boolean;
+  latest: ExportSummary | null;
+  earlier: ExportSummary[];
+}
+
+export interface TaskExportAgainResult {
+  outcomes: { destination: ExportDestinationKind; status: 'succeeded' | 'failed'; file: string | null; error: string | null }[];
+  export: TaskExportStatus;
+}
+
 /** One chronological audit record from the ticket-wide lifecycle projection. */
 export type TicketTimelineKind =
   | 'attempt-started'
@@ -296,6 +330,19 @@ export interface Workspace {
    * object shape it was PATCHed as. */
   guardrailBudget: BudgetGuardrail | null;
   guardrailProgress: boolean | null;
+  exportEnabled: boolean | null;
+  exportDirectoryPath: string | null;
+  exportS3Endpoint: string | null;
+  exportS3Region: string | null;
+  exportS3Bucket: string | null;
+  exportS3Prefix: string | null;
+  exportS3ForcePathStyle: boolean | null;
+  exportS3AccessKeyId: string | null;
+  exportS3SecretAccessKey: string | null;
+  exportRedactPatterns: { id: string; regex: string }[] | null;
+  exportIncludeStates: ExportState[] | null;
+  archiveRetentionDays: number | null;
+  archiveRetentionMaxTotalMB: number | null;
   /** Tool-timeout override; `null` inherits `config.guardrails.toolTimeoutMinutes`. */
   toolTimeoutMinutes: number | null;
   /** Drive overrides, decomposed into independently-inheritable
@@ -1013,6 +1060,32 @@ export interface AppConfig {
   };
   /** The Task Prompt template for native Attempts, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
   taskPrompt: string;
+  archive: { retain: { days: number | null; maxTotalMB: number | null } };
+  /** S3 credentials arrive masked (`********`) when set; writing the mask back keeps the stored value. */
+  export: {
+    enabled: boolean;
+    includeStates: ExportState[];
+    directory: { path: string | null };
+    s3: {
+      endpoint: string | null;
+      region: string | null;
+      bucket: string | null;
+      prefix: string;
+      forcePathStyle: boolean;
+      accessKeyId: string | null;
+      secretAccessKey: string | null;
+    };
+    redact: { patterns: { id: string; regex: string }[] };
+  };
+}
+
+export type ExportState = 'done' | 'cancelled' | 'deleted';
+
+export interface ExportDestinationTestResult {
+  destination: 'directory' | 's3';
+  ok: boolean;
+  error?: string;
+  testedAt: string;
 }
 
 export interface ConfigLayers {

@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { access } from 'node:fs/promises';
 import type { Attributes, SpanContext } from '@opentelemetry/api';
 import type { HarnessConfig } from '../config.js';
 import { AcpDriver, type AcpInitializeResult } from '../acp/driver.js';
@@ -10,6 +11,7 @@ import { parseCriticOutput, type Verdict } from './critic-schema.js';
 import type { VerificationAttemptInput } from '../domain/verification-attempts.js';
 import { startOperation } from '../telemetry/operations.js';
 import { logger } from '../logger.js';
+import type { StepArchiveWriter } from '../archive/task-archive.js';
 
 function grantOptionId(request: PermissionRequest): string | null {
   const options = request.options;
@@ -178,6 +180,9 @@ export interface RunCriticArgs {
   /** Each ACP `session/update` from the critic turn, verbatim, for a live
    * transcript that renders exactly like the builder's. */
   onUpdate?: (update: { sessionUpdate: string; [key: string]: unknown }) => void;
+  /** Receives the prompt, the ACP update stream and the native transcript for the Archive. */
+  archive?: StepArchiveWriter;
+  transcriptRetryDelaysMs?: number[];
 }
 
 export interface CriticAttempt {
@@ -219,7 +224,43 @@ export async function runCritic(args: RunCriticArgs): Promise<CriticAttempt> {
   }
 }
 
+const NATIVE_LOG_FLUSH_RETRY_DELAYS_MS = [100, 500, 2_000];
+
+async function resolveTranscriptWithRetry(args: RunCriticArgs, sessionId: string): Promise<string | null> {
+  const resolver = adapterFor(args.harnessId).usage?.resolveTranscriptPath;
+  if (!resolver) return null;
+  const delays = args.transcriptRetryDelaysMs ?? NATIVE_LOG_FLUSH_RETRY_DELAYS_MS;
+  let resolved: string | null = null;
+  for (let i = 0; i <= delays.length; i++) {
+    if (i > 0) await new Promise<void>((resolve) => setTimeout(resolve, delays[i - 1]));
+    try {
+      resolved = (await resolver({ sessionLogDir: args.harness.sessionLogDir, sessionId })) ?? null;
+    } catch (err) {
+      logger.debug('critic: failed to resolve transcript path', { harness: args.harnessId, sessionId, error: err instanceof Error ? err.message : String(err) });
+      resolved = null;
+    }
+    if (resolved && (await access(resolved).then(() => true, () => false))) return resolved;
+  }
+  logger.warn('critic: transcript not found after retries', { harness: args.harnessId, sessionId });
+  return resolved;
+}
+
 async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
+  const archive = args.archive;
+  try {
+    return await runCriticArchived(args, archive);
+  } finally {
+    if (archive) {
+      try {
+        await archive.close();
+      } catch (err) {
+        logger.warn('critic: archive close failed', { harness: args.harnessId, error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  }
+}
+
+async function runCriticArchived(args: RunCriticArgs, archive: StepArchiveWriter | undefined): Promise<CriticAttempt> {
   const drive = args.drive ?? createAcpCriticDrive();
   const timeoutMs = args.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
@@ -236,6 +277,14 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
     ...(args.baseOid ? { baseOid: args.baseOid } : {}),
     ...(args.dirty ? { dirty: args.dirty } : {}),
   });
+  archive?.appendPrompt(prompt);
+  const onUpdate =
+    archive || args.onUpdate
+      ? (update: { sessionUpdate: string; [key: string]: unknown }): void => {
+          archive?.appendUpdate(update);
+          args.onUpdate?.(update);
+        }
+      : undefined;
   try {
     const result = await drive.run({
       harness: args.harness,
@@ -244,7 +293,7 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
       cwd: args.cwd,
       prompt,
       timeoutMs,
-      ...(args.onUpdate ? { onUpdate: args.onUpdate } : {}),
+      ...(onUpdate ? { onUpdate } : {}),
     });
     output = result.output;
     sessionId = result.sessionId ?? null;
@@ -260,17 +309,12 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
     summary = `critic drive failed: ${err instanceof Error ? err.message : String(err)}`;
   }
 
-  let transcriptPath: string | null = null;
-  if (sessionId) {
+  const transcriptPath = sessionId ? await resolveTranscriptWithRetry(args, sessionId) : null;
+  if (archive) {
     try {
-      transcriptPath =
-        (await adapterFor(args.harnessId).usage?.resolveTranscriptPath?.({
-          sessionLogDir: args.harness.sessionLogDir,
-          sessionId,
-        })) ?? null;
+      await archive.copyNative(args.harnessId, transcriptPath);
     } catch (err) {
-      logger.debug('critic: failed to resolve transcript path', { harness: args.harnessId, sessionId, error: err instanceof Error ? err.message : String(err) });
-      transcriptPath = null;
+      logger.warn('critic: archive native copy failed', { harness: args.harnessId, error: err instanceof Error ? err.message : String(err) });
     }
   }
 

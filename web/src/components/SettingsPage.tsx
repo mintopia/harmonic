@@ -4,6 +4,7 @@ import type { AppConfig, Channel, ConfigLayers } from '../types';
 import { btnGhost } from '../ui';
 import { changedChannelEvents, channelsDirty, toggleChannelEvent } from '../channels-save-model';
 import { humanizeSaveError, parseFieldErrors } from './SettingsSection';
+import { firstPatternError, normalizeConfigExport } from '../archive-export-model';
 import { SettingsForm } from './SettingsForm';
 import type { GlobalRenderCtx } from './settings-schema';
 import { SETTING_TABS, type SettingTab } from '../../../src/domain/settings-registry.js';
@@ -58,8 +59,14 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
     setSaving(true);
     setError(null);
     setFieldErrors({});
+    const patternError = firstPatternError(local.export.redact.patterns);
+    if (patternError) {
+      setError(patternError);
+      setSaving(false);
+      return;
+    }
     try {
-      const updated = await api.replaceConfig(local);
+      const updated = await api.replaceConfig(normalizeConfigExport(local));
       setPristine(updated);
       setLocal(updated);
       let savedChannels = pristineChannels;

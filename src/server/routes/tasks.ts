@@ -15,6 +15,7 @@ import {
   GUARDRAIL_CONFIG_SOURCES,
   VERIFICATION_MECHANISMS,
   STEP_TYPES,
+  isEpicAttempt,
   isTaskAttempt,
   type AttemptRow,
 } from '../../db/schema.js';
@@ -29,6 +30,7 @@ import type { ApiTaskListRow } from '../dto.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, attemptUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import { diffFilesResponseSchema } from './diff.js';
+import { deleteTaskKeepingArchive, operatorReasonSchema, recordOperatorActionBestEffort, recordOperatorActionsBestEffort, requestActor } from '../operator-inputs.js';
 import { attemptDiffFiles, attemptDiffStat } from '../../execution/worktree-diff.js';
 
 /** A `GitError` whose stderr says the worktree/branch is simply gone — an expected absence, not a failure. */
@@ -43,7 +45,13 @@ const rejectInputSchema = z.object({
   start: z.boolean().optional().meta({ example: false }),
 });
 /** Omitted/false verifies the candidate first; `true` skips verification and merges it as-is. */
-const cancelInputSchema = z.object({ withDependents: z.boolean().optional().meta({ example: true }) }).nullish();
+const cancelInputSchema = z
+  .object({
+    withDependents: z.boolean().optional().meta({ example: true }),
+    reason: operatorReasonSchema.meta({ example: 'superseded' }),
+  })
+  .nullish();
+const closeInputSchema = z.object({ reason: operatorReasonSchema.meta({ example: 'superseded' }) }).nullish();
 /** How to re-attempt a paused Task: `full` reuses the retained Session/conversation; `condensed` starts a fresh Session from a summary. Omitted keeps the recommended default (reuse when eligible). */
 const resumeInputSchema = z
   .object({ continuation: z.enum(['full', 'condensed']).optional().meta({ example: 'full' }) })
@@ -276,7 +284,7 @@ const ticketTimelineEventSchema = z.object({
 });
 const ticketTimelineResponseSchema = listResponse('events', ticketTimelineEventSchema);
 const attemptLogResponseSchema = z.discriminatedUnion('status', [
-  z.object({ status: z.literal('available'), events: z.array(attemptEventSchema), liveCursor: z.number() }),
+  z.object({ status: z.literal('available'), events: z.array(attemptEventSchema), liveCursor: z.number(), fromArchive: z.boolean().optional() }),
   z.object({ status: z.literal('unavailable'), liveCursor: z.number() }),
 ]);
 
@@ -359,6 +367,9 @@ function sortListRows(rows: ApiTaskListRow[], sortBy: string | undefined, order:
 }
 
 export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Promise<void> {
+  const archiveOwner = async (run: AttemptRow) =>
+    isTaskAttempt(run) ? await ctx.tasks.get(run.taskId).catch(() => null) : isEpicAttempt(run) ? { workspaceId: run.workspaceId, epicRef: run.epicRef } : null;
+
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   const withDeps = async (task: { id: number }) =>
@@ -483,14 +494,13 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       const id = req.params.id;
-      if (req.body?.withDependents) {
-        const cancelled = await ctx.tasks.cancelWithDependents(id);
-        cancelled.forEach((taskId) => ctx.runner.cancelForTask(taskId));
-        return await withDeps({ id });
-      }
-      const task = await ctx.tasks.cancel(id);
-      ctx.runner.cancelForTask(task.id);
-      return await withDeps(task);
+      const reason = req.body?.reason ?? null;
+      const actor = await requestActor(req, ctx);
+      const withDependents = req.body?.withDependents === true;
+      const cancelled = withDependents ? await ctx.tasks.cancelWithDependents(id) : [(await ctx.tasks.cancel(id)).id];
+      cancelled.forEach((taskId) => ctx.runner.cancelForTask(taskId));
+      await recordOperatorActionsBestEffort(ctx, cancelled, actor, 'cancel', reason);
+      return await withDeps({ id });
     },
   );
 
@@ -511,6 +521,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       if (!(await ctx.runner.pause(req.params.id))) {
         return reply.code(409).send({ error: { code: 'conflict', message: 'The task is not actively running.' } });
       }
+      await recordOperatorActionBestEffort(ctx, req.params.id, await requestActor(req, ctx), 'pause', null);
       return await withDeps({ id: req.params.id });
     },
   );
@@ -533,15 +544,19 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req, reply) => {
       await ctx.upgrade.assertManualLaunchAllowed();
       const continuation = req.body?.continuation;
+      const actor = await requestActor(req, ctx);
       const tryLiveResume = continuation !== 'condensed';
       if (tryLiveResume && (await ctx.runner.resume(req.params.id))) {
+        await recordOperatorActionBestEffort(ctx, req.params.id, actor, 'resume', continuation ?? null);
         return await withDeps({ id: req.params.id });
       }
       const task = await ctx.tasks.get(req.params.id);
       if (task.state !== 'paused') {
         return reply.code(409).send({ error: { code: 'conflict', message: 'The task has no paused Attempt to resume.' } });
       }
-      return await withDeps(await ctx.runner.resumePaused(req.params.id, continuation));
+      const resumed = await ctx.runner.resumePaused(req.params.id, continuation);
+      await recordOperatorActionBestEffort(ctx, req.params.id, actor, 'resume', continuation ?? null);
+      return await withDeps(resumed);
     },
   );
 
@@ -562,8 +577,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       const id = req.params.id;
-      ctx.runner.cancelForTask(id);
-      await ctx.tasks.delete(id);
+      await deleteTaskKeepingArchive(ctx, id, await requestActor(req, ctx));
       return { id };
     },
   );
@@ -615,6 +629,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       ) {
         throw new DomainError('invalid_state', `task ${req.params.id} is in a state that cannot be steered`);
       }
+      await recordOperatorActionBestEffort(ctx, req.params.id, await requestActor(req, ctx), 'steer', req.body.text);
       return { ok: true } as const;
     },
   );
@@ -713,7 +728,9 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       await ctx.upgrade.assertManualLaunchAllowed();
-      return withDeps(await ctx.escalation.accept(req.params.id));
+      const accepted = await ctx.escalation.accept(req.params.id);
+      await recordOperatorActionBestEffort(ctx, req.params.id, await requestActor(req, ctx), 'accept', null);
+      return withDeps(accepted);
     },
   );
 
@@ -734,7 +751,9 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       if (req.body.start) await ctx.upgrade.assertManualLaunchAllowed();
-      return withDeps(await ctx.escalation.reject(req.params.id, req.body.guidance, req.body.start ?? false));
+      const rejected = await ctx.escalation.reject(req.params.id, req.body.guidance, req.body.start ?? false);
+      await recordOperatorActionBestEffort(ctx, req.params.id, await requestActor(req, ctx), 'reject', req.body.guidance);
+      return withDeps(rejected);
     },
   );
 
@@ -746,13 +765,18 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         description:
           'Close an escalated ticket: cancel it and clean up — remove its branch and worktree, close the tracker issue. Human-only.',
         params: idParamsSchema,
+        body: closeInputSchema,
         response: {
           200: taskSchema.describe('The task, cancelled.'),
           409: errorResponse('The task is not escalated.'),
         },
       },
     },
-    async (req) => await withDeps(await ctx.escalation.close(req.params.id)),
+    async (req) => {
+      const closed = await ctx.escalation.close(req.params.id);
+      await recordOperatorActionBestEffort(ctx, req.params.id, await requestActor(req, ctx), 'close', req.body?.reason ?? null);
+      return await withDeps(closed);
+    },
   );
 
   app.get(
@@ -934,7 +958,8 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Attempts'],
-        description: "Read an Attempt's native harness transcript. Missing or unreadable transcripts are explicitly unavailable.",
+        description:
+          "Read an Attempt's native harness transcript, falling back to the Archive's copy when the native one is missing or unreadable. Unavailable only when neither can be read.",
         params: idParamsSchema,
         response: { 200: attemptLogResponseSchema.describe('The native transcript events, or an explicit unavailable state.') },
       },
@@ -949,18 +974,24 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         return { status: 'unavailable' as const, liveCursor: ctx.bus.latestAttemptLogSeq({ attemptId: run.id }) };
       }
       const adapter = adapterFor(session.harness);
+      const range = { startedAt: run.startedAt, finishedAt: run.endedAt };
       let log: TranscriptLog;
+      let nativePath: string | null = null;
+      let fromArchive = false;
       if (adapter.exportTranscript) {
         const events = await adapter.exportTranscript({ sessionId: session.harnessSessionId, cwd: session.cwd });
         log = events && events.length > 0 ? { status: 'available', events } : { status: 'unavailable' };
       } else {
-        const path = session.transcriptPath ?? (await ctx.runner.ensureSessionTranscript(run.sessionRowId));
-        log = await readTranscriptLog({
-          harness: session.harness,
-          path,
-          startedAt: run.startedAt,
-          finishedAt: run.endedAt,
-        });
+        nativePath = session.transcriptPath ?? (await ctx.runner.ensureSessionTranscript(run.sessionRowId).catch(() => null));
+        log = await readTranscriptLog({ harness: session.harness, path: nativePath, ...range });
+      }
+      if (log.status !== 'available' && !adapter.exportTranscript) {
+        const owner = await archiveOwner(run);
+        const archived = owner ? await ctx.archive.archivedTranscript(owner, run.number, 'implementation', nativePath) : null;
+        if (archived) {
+          log = await readTranscriptLog({ harness: session.harness, path: archived, ...range });
+          fromArchive = log.status === 'available';
+        }
       }
       const liveCursor = ctx.bus.latestAttemptLogSeq({ attemptId: run.id });
       if (log.status !== 'available') return { ...log, liveCursor };
@@ -973,6 +1004,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       return {
         status: 'available' as const,
         liveCursor,
+        ...(fromArchive ? { fromArchive: true } : {}),
         events: withOperatorMessages(log.events, operator).map((event) => ({ ...event, attemptId: run.id })),
       };
     },
@@ -1079,7 +1111,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Attempts'],
         description:
-          "Read a critic verification attempt's native harness transcript — what the critic itself read, ran, and reasoned. Missing or unreadable transcripts are explicitly unavailable.",
+          "Read a critic verification attempt's native harness transcript — what the critic itself read, ran, and reasoned. Falls back to the Archive's copy when the native transcript is missing or unreadable; unavailable only when neither can be read.",
         params: idParamsSchema,
         response: {
           200: attemptLogResponseSchema.describe('The critic session transcript events, or an explicit unavailable state.'),
@@ -1089,12 +1121,14 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req) => {
       const attempt = await ctx.verificationAttempts.get(req.params.id);
       if (!attempt?.transcriptPath || !attempt.harness) return { status: 'unavailable' as const, liveCursor: 0 };
-      const log = await readTranscriptLog({
-        harness: attempt.harness,
-        path: attempt.transcriptPath,
-        startedAt: 0,
-        finishedAt: null,
-      });
+      const range = { startedAt: 0, finishedAt: null };
+      let log = await readTranscriptLog({ harness: attempt.harness, path: attempt.transcriptPath, ...range });
+      if (log.status !== 'available') {
+        const run = await ctx.attempts.get(attempt.attemptId).catch(() => null);
+        const owner = run ? await archiveOwner(run) : null;
+        const archived = run && owner ? await ctx.archive.archivedTranscript(owner, run.number, 'verification', attempt.transcriptPath) : null;
+        if (archived) log = await readTranscriptLog({ harness: attempt.harness, path: archived, ...range });
+      }
       return log.status === 'available'
         ? { ...log, liveCursor: 0, events: log.events.map((event) => ({ ...event, attemptId: attempt.attemptId })) }
         : { ...log, liveCursor: 0 };

@@ -28,6 +28,7 @@ import { resolveWorkspace } from './workspaces.js';
 import { resolveScoped } from './setting-override.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
+import { logger } from '../logger.js';
 import { decideTaskDeletion, type DeletionDecision } from './task-deletion.js';
 import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import { forEachYielding } from '../reliability/yield.js';
@@ -245,6 +246,7 @@ function trackerFactColumns(facts: TrackerFacts) {
 export class TaskService {
   private readonly blockerGraph: TaskBlockerGraph;
   private readonly mirror: TaskMirror;
+  private beforeDelete: (task: TaskRow) => Promise<void> = async () => {};
 
   constructor(
     private readonly db: AsyncDbHandle,
@@ -254,6 +256,7 @@ export class TaskService {
     private readonly onNotify: (event: TaskNotification, task: TaskRow) => void = () => {},
     /** Fired once a Task's row is actually gone, so a live board can drop it immediately. */
     private readonly onRemoved: (id: number) => void = () => {},
+    private readonly onDisposition: (disposition: 'done' | 'cancelled', task: TaskRow) => void = () => {},
   ) {
     this.blockerGraph = new TaskBlockerGraph(this.db, {
       get: (id) => this.get(id),
@@ -272,6 +275,10 @@ export class TaskService {
       removeTaskCascade: (id, tombstone) => this.removeTaskCascade(id, tombstone),
       blockerGraph: this.blockerGraph,
     });
+  }
+
+  setBeforeDelete(hook: (task: TaskRow) => Promise<void>): void {
+    this.beforeDelete = hook;
   }
 
   private async resolveWorkspace(workspaceId?: number): Promise<WorkspaceRow> {
@@ -884,7 +891,10 @@ export class TaskService {
       this.onChanged(task);
       const notification = STATE_NOTIFICATIONS[state];
       if (notification) this.onNotify(notification, task);
-      if (state === 'done' || state === 'cancelled') await this.blockerGraph.emitDependents(id);
+      if (state === 'done' || state === 'cancelled') {
+        this.onDisposition(state, task);
+        await this.blockerGraph.emitDependents(id);
+      }
       return task;
     });
   }
@@ -961,7 +971,15 @@ export class TaskService {
    */
   async delete(id: number): Promise<void> {
     const task = await this.get(id);
-    const decision = decideTaskDeletion(task);
+    const initial = decideTaskDeletion(task);
+    if (!initial.ok) throw new DomainError('invalid_state', initial.reason!);
+    try {
+      await this.beforeDelete(task);
+    } catch (err) {
+      logger.warn('beforeDelete hook failed', { taskId: id, error: err instanceof Error ? err.message : String(err) });
+    }
+    // The hook awaits I/O, so the Task may have started working meanwhile.
+    const decision = decideTaskDeletion(await this.get(id));
     if (!decision.ok) throw new DomainError('invalid_state', decision.reason!);
     await this.removeTaskCascade(id, decision.tombstone);
   }

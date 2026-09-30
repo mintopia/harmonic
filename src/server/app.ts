@@ -18,6 +18,13 @@ import { registerAuthHook } from './app-auth-hook.js';
 import { registerRouteRecorder, registerErrorHandler } from './app-hooks.js';
 import { registerShutdown, registerStartup } from './app-lifecycle.js';
 import { registerRoutes } from './app-routes.js';
+import { TaskExporter } from '../archive/task-export.js';
+import { pruneArchives, type ArchiveRetention } from '../archive/archive-retention.js';
+import { workspaceSlug } from '../archive/task-archive.js';
+import { resolveExportSettings } from '../archive/export-settings.js';
+import type { TaskRow } from '../db/schema.js';
+import { epicAttemptTimelineToApi, taskToApi, ticketTimelineToApi } from './serialize.js';
+import { fireAndForget, orFallback } from '../error-handling.js';
 import {
   createAppContexts,
   type App,
@@ -102,6 +109,10 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     guardMissing: opts.guardMissing ?? false,
     updateCheck,
     upgrade: runtime.upgrade,
+    archive: runtime.archive,
+    get exporter() {
+      return exporter;
+    },
     asyncDb,
     statsReader,
     settingsStore: stores.settingsStore,
@@ -136,6 +147,85 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     worktreesReconciledAt: worktrees.worktreesReconciledAt,
   };
   const contexts = createAppContexts(ctx);
+
+  const exporter = new TaskExporter({
+    dataDir: opts.dataDir,
+    archive: runtime.archive,
+    version: runningVersion,
+    settings: async (task) => {
+      const workspace =
+        task.workspaceId === null
+          ? undefined
+          : await stores.workspaces.get(task.workspaceId);
+      return resolveExportSettings(stores.settingsStore.getGlobal(), workspace);
+    },
+    epicSettings: async (workspaceId) =>
+      resolveExportSettings(stores.settingsStore.getGlobal(), await stores.workspaces.get(workspaceId)),
+    epicSnapshot: async (workspaceId, epicRef) => {
+      const [detail, stored, timeline, workspaceTasks] = await Promise.all([
+        ctx.trackerManager.epicDetail(workspaceId, epicRef),
+        ctx.tasks.listStoredEpics(workspaceId),
+        epicAttemptTimelineToApi(ctx, { workspaceId, epicRef }),
+        ctx.tasks.list({ workspaceId }),
+      ]);
+      const row = stored.find((r) => r.trackerRef === epicRef);
+      const byRef = new Map<number, TaskRow>();
+      for (const t of workspaceTasks) if (t.trackerRef != null) byRef.set(t.trackerRef, t);
+      const members = (row?.memberRefs ?? []).map((ref) => ({ ref, task: byRef.get(ref) ?? null }));
+      return {
+        ticket: detail ?? { ref: epicRef, state: row?.state ?? null, mergeCommit: row?.mergeCommit ?? null },
+        timeline: { events: detail?.timelineEvents ?? [], ...timeline },
+        attemptCount: timeline.attempts.length,
+        members,
+      };
+    },
+    workspaceName: async (workspaceId) =>
+      (await orFallback(() => stores.workspaces.get(workspaceId), { op: 'export.workspaceName', context: { workspaceId } }, null))?.name ?? null,
+    snapshot: async (task) => {
+      const [ticket, timeline, taskAttempts] = await Promise.all([
+        taskToApi(ctx, await ctx.tasks.withDeps(task)),
+        ticketTimelineToApi(ctx, task.id),
+        stores.attempts.listForTask(task.id),
+      ]);
+      return { ticket, timeline, attemptCount: taskAttempts.length };
+    },
+    recordFact: async (taskId, payload) => {
+      await stores.taskEvents.appendEvent(taskId, payload);
+      bus.emit('step_changed', { taskId });
+    },
+    onFailure: (failure) => {
+      const { task, disposition, destination, error, retry, nextRetryAt } = failure;
+      bus.emit('export_failed', { taskId: task.id, trackerRef: task.trackerRef, destination, disposition, error, retry, nextRetryAt });
+      fireAndForget(
+        () => stores.notifier.notify('export.failed', task, { export: { destination, disposition, error, retry, nextRetryAt } }),
+        { op: 'export.notifyFailure', level: 'warn', context: { taskId: task.id } },
+      );
+    },
+  });
+  scheduler.register({
+    name: 'Archive retention',
+    intervalMs: 60 * 60_000,
+    run: async () => {
+      const overrides = new Map<string, ArchiveRetention>();
+      for (const ws of await stores.workspaces.list()) {
+        overrides.set(workspaceSlug(ws.name, ws.id), { days: ws.archiveRetentionDays, maxTotalMB: ws.archiveRetentionMaxTotalMB });
+      }
+      await pruneArchives({
+        dataDir: opts.dataDir,
+        retention: () => stores.settingsStore.getGlobal().archive.retain,
+        workspaceRetention: (slug) => overrides.get(slug) ?? null,
+        taskTerminalAt: async (taskId) => {
+          const task = await orFallback(() => ctx.tasks.get(taskId), { op: 'archive.retention.task', context: { taskId } }, null);
+          return task && (task.state === 'done' || task.state === 'cancelled') ? task.updatedAt : null;
+        },
+      });
+    },
+  });
+  scheduler.register({ name: 'Export retry', intervalMs: 60_000, run: () => exporter.retryDue() });
+  stores.tasks.setBeforeDelete((task) => exporter.captureForDelete(task));
+  bus.on('task_disposition', ({ task, disposition }) => exporter.trigger(task, disposition));
+  bus.on('epic_integrated', ({ workspaceId, epicRef }) => exporter.triggerEpic(workspaceId, epicRef, 'done'));
+  fireAndForget(() => exporter.sweepStaging(), { op: 'export.sweepStaging', level: 'warn' });
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);

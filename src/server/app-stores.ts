@@ -57,9 +57,17 @@ export async function createStores({ opts, asyncDb, bus }: CreateStoresDeps): Pr
     () => settingsStore.getGlobal(),
     () => workspaces.list(),
     (task) => bus.emit('task_changed', task),
-    (event, task) =>
-      fireAndForget(() => notifier.notify(event, task), { op: 'notifier.notify', level: 'warn', context: { event, taskId: task.id } }),
+    (event, task) => {
+      fireAndForget(() => notifier.notify(event, task), { op: 'notifier.notify', level: 'warn', context: { event, taskId: task.id } });
+    },
     (id) => bus.emit('task_removed', { id }),
+    (disposition, task) => {
+      try {
+        bus.emit('task_disposition', { task, disposition });
+      } catch (err) {
+        logger.warn('task_disposition listener failed', { taskId: task.id, error: err instanceof Error ? err.message : String(err) });
+      }
+    },
   );
   const attempts = new AttemptStore(asyncDb);
   const taskEvents = new TaskEventStore(asyncDb);

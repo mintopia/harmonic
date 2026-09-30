@@ -193,6 +193,7 @@ export interface Runtime {
   hostLoad: HostLoadSampler;
   workspaceWatcher: WorkspaceWatcher;
   loopMonitor: EventLoopMonitor | undefined;
+  archive: TaskArchive;
 }
 
 export async function createRuntime(deps: {
@@ -261,13 +262,6 @@ export async function createRuntime(deps: {
     branchRetirement,
     { onFailedAttemptRequeued, onTaskMerged },
   );
-  const postMergeCheck = createPostMergeCheck({
-    workspaces,
-    settingsStore,
-    verificationAttempts,
-    criticDrive: opts.criticDrive,
-  });
-  touchStartupProgress(opts.dataDir);
   const archive = new TaskArchive({
     dataDir: opts.dataDir,
     ensureArchiveId: (taskId) => tasks.ensureArchiveId(taskId),
@@ -279,6 +273,14 @@ export async function createRuntime(deps: {
       }
     },
   });
+  const postMergeCheck = createPostMergeCheck({
+    workspaces,
+    settingsStore,
+    verificationAttempts,
+    criticDrive: opts.criticDrive,
+    archive,
+  });
+  touchStartupProgress(opts.dataDir);
   const transcripts = new TranscriptCapture(sessionStore, verificationAttempts, () => settingsStore.getGlobal());
   await runStartupRecovery({
     attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus, archive,
@@ -455,6 +457,7 @@ export async function createRuntime(deps: {
       },
       verificationAttemptStore: verificationAttempts,
       criticDrive: opts.criticDrive,
+      archive,
     },
   );
   epicServiceRef = epicService;
@@ -483,5 +486,6 @@ export async function createRuntime(deps: {
     hostLoad,
     workspaceWatcher,
     loopMonitor,
+    archive,
   };
 }

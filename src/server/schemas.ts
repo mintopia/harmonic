@@ -317,3 +317,60 @@ export const operationSchema = z
     },
   })
   .meta({ id: 'Operation' });
+
+const exportDestinationSchema = z.enum(['directory', 's3']).meta({ example: 's3' });
+
+export const exportRetrySchema = z
+  .object({
+    count: z.number().int().nonnegative().meta({ example: 1, description: 'Scheduled retries already made.' }),
+    max: z.number().int().positive().meta({ example: 3 }),
+    nextRetryAt: z.string().nullable().meta({ example: '2026-09-30T12:12:07.000Z' }),
+    exhausted: z.boolean().meta({ description: 'No further scheduled retry; only Export again can deliver.', example: false }),
+  })
+  .meta({ id: 'ExportRetry' });
+
+export const exportDestinationStatusSchema = z
+  .object({
+    destination: exportDestinationSchema,
+    location: z.string().nullable().meta({ example: 's3://acme-audit/harmonic/', description: 'Where the Destination is currently configured to deliver; null if no longer configured.' }),
+    status: z.enum(['succeeded', 'failed']),
+    lastAttemptAt: z.string().meta({ example: '2026-09-30T11:42:11.000Z' }),
+    file: z.string().nullable().meta({ description: 'Delivered path or key; null while failed.' }),
+    error: z.string().nullable().meta({ example: 'AccessDenied: s3:PutObject' }),
+    retry: exportRetrySchema.nullable().meta({ description: 'Present only while the Destination is failed.' }),
+  })
+  .meta({ id: 'ExportDestinationStatus' });
+
+export const exportSummarySchema = z
+  .object({
+    name: z.string().nullable().meta({ example: '412-GH-398-done-2026-09-30T11-42-07Z.tar.gz' }),
+    disposition: z.string().meta({ example: 'done' }),
+    builtAt: z.string().meta({ example: '2026-09-30T11:42:07.000Z' }),
+    bytes: z.number().int().nonnegative().nullable(),
+    partial: z.boolean().meta({ description: 'Built from surviving records; some transcripts unavailable.' }),
+    redactions: z.record(z.string(), z.number()).nullable().meta({ example: { 'github-token': 3 } }),
+    destinations: z.array(exportDestinationStatusSchema),
+  })
+  .meta({ id: 'ExportSummary' });
+
+export const taskExportStatusSchema = z
+  .object({
+    exportable: z.boolean().meta({ description: 'True once the Task is done or cancelled.' }),
+    latest: exportSummarySchema.nullable(),
+    earlier: z.array(exportSummarySchema).meta({ description: 'Previous Exports, newest first.' }),
+  })
+  .meta({ id: 'TaskExportStatus' });
+
+export const taskExportAgainResponseSchema = z
+  .object({
+    outcomes: z.array(
+      z.object({
+        destination: exportDestinationSchema,
+        status: z.enum(['succeeded', 'failed']),
+        file: z.string().nullable(),
+        error: z.string().nullable(),
+      }),
+    ),
+    export: taskExportStatusSchema,
+  })
+  .meta({ id: 'TaskExportAgainResponse' });

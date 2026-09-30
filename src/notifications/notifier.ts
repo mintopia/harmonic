@@ -13,6 +13,10 @@ import type { Channel, ChannelService, NotificationEvent } from './channels.js';
  *   "task": {                                   // absent for queue.idle
  *     "id": 3, "prompt": "…", "state": "…", "harness": "…",
  *     "model": "…", "priority": "…", "isolationMode": "…", "workingDir": "…"
+ *   },
+ *   "export": {                                 // only on export.failed
+ *     "destination": "directory", "disposition": "…", "error": "…",
+ *     "retry": 0, "nextRetryAt": "2026-…Z" | null
  *   }
  * }
  * With a `secret` configured, the raw body is signed:
@@ -25,14 +29,33 @@ export interface NotificationPayload {
     TaskRow,
     'id' | 'prompt' | 'state' | 'harness' | 'model' | 'priority' | 'isolationMode' | 'workingDir'
   >;
+  /** Present on `export.failed` only; `nextRetryAt` is null when no further retry is scheduled. */
+  export?: ExportFailureDetail;
+}
+
+export interface ExportFailureDetail {
+  destination: string;
+  disposition: string;
+  error: string;
+  retry: number;
+  nextRetryAt: string | null;
 }
 
 export interface NotifyContext {
   reason?: string;
   destination?: string;
+  export?: ExportFailureDetail;
 }
 
-const summarize = (event: NotificationEvent, task?: TaskRow): string => {
+const summarizeExportFailure = (task: TaskRow | undefined, detail: ExportFailureDetail): string => {
+  const subject = task ? `Task #${task.id}` : 'Task';
+  const outcome =
+    detail.nextRetryAt !== null ? `retrying at ${detail.nextRetryAt}` : detail.retry === 0 ? 'not retried' : 'retries exhausted';
+  return `Harmonic: export of ${subject} to ${detail.destination} failed: ${detail.error} — ${outcome}`;
+};
+
+const summarize = (event: NotificationEvent, task?: TaskRow, context?: NotifyContext): string => {
+  if (event === 'export.failed' && context?.export) return summarizeExportFailure(task, context.export);
   if (!task) return `Harmonic: ${event === 'queue.idle' ? 'queue is idle — nothing left to run' : event}`;
   const excerpt = task.prompt.length > 80 ? `${task.prompt.slice(0, 80)}…` : task.prompt;
   const label: Record<NotificationEvent, string> = {
@@ -41,9 +64,9 @@ const summarize = (event: NotificationEvent, task?: TaskRow): string => {
     'task.escalated': 'ESCALATED — needs you',
     'task.done': 'done',
     'task.failed': 'FAILED',
-    'export.failed': 'export failed',
     'queue.idle': 'queue idle',
     'update.failed': 'update failed',
+    'export.failed': 'export failed',
   };
   return `Harmonic: task ${task.id} ${label[event]} — "${excerpt}"`;
 };
@@ -73,8 +96,8 @@ export class Notifier {
         return {
           ...base,
           severity: 'export',
-          title: `Export failed for Task ${task.id} — ${context.reason ?? 'unknown reason'}`,
-          detail: context.destination ?? null,
+          title: `Export failed for Task ${task.id} — ${context.reason ?? context.export?.error ?? 'unknown reason'}`,
+          detail: context.destination ?? context.export?.destination ?? null,
         };
       default:
         return null;
@@ -128,8 +151,9 @@ export class Notifier {
             },
           }
         : {}),
+      ...(context.export ? { export: context.export } : {}),
     };
-    const text = summarize(event, task);
+    const text = summarize(event, task, context);
 
     for (const channel of destinations.values()) {
       this.deliver(channel, payload, text).catch((err: unknown) => {

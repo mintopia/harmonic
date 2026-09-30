@@ -20,16 +20,15 @@ describe('attempt-log', () => {
     const sessionId = 'native-log-session';
     const transcriptPath = join(logDir, workDir.replace(/[^a-zA-Z0-9]/g, '-'), `${sessionId}.jsonl`);
 
+    const transcriptBody = [
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Native assistant output' }] } }),
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'tool-1', name: 'Read', input: {} }] } }),
+      '{ partial line while the harness is flushing',
+    ].join('\n');
+
     beforeAll(async () => {
       mkdirSync(join(logDir, workDir.replace(/[^a-zA-Z0-9]/g, '-')), { recursive: true });
-      writeFileSync(
-        transcriptPath,
-        [
-          JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Native assistant output' }] } }),
-          JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'tool-1', name: 'Read', input: {} }] } }),
-          '{ partial line while the harness is flushing',
-        ].join('\n'),
-      );
+      writeFileSync(transcriptPath, transcriptBody);
       server = await startServer({
         defaults: { isolationMode: 'direct' },
         chat: { harness: 'claude', model: 'stub-model' },
@@ -102,6 +101,69 @@ describe('attempt-log', () => {
 
       expect(status).toBe(200);
       expect(body).toEqual({ status: 'unavailable', liveCursor: 0 });
+    });
+
+    async function finishedRun(): Promise<{ attemptId: number; taskId: number }> {
+      const started = await startRun({ updates: [], delayMs: 1 });
+      await waitFor(async () => (await server.app.ctx.attempts.get(started.attemptId)).state !== 'running' ? true : undefined);
+      return started;
+    }
+
+    it('falls back to the Archive copy when the native transcript is gone', async () => {
+      const { attemptId, taskId } = await finishedRun();
+      mkdirSync(join(logDir, workDir.replace(/[^a-zA-Z0-9]/g, '-')), { recursive: true });
+      writeFileSync(transcriptPath, transcriptBody);
+      const { archive, attempts, tasks } = server.app.ctx;
+      const attempt = await attempts.get(attemptId);
+      await archive.copyNative(await tasks.get(taskId), attempt.number, 'claude', transcriptPath);
+      unlinkSync(transcriptPath);
+
+      const { body } = await server.api('GET', `/api/attempts/${attemptId}/log`);
+
+      expect(body.status).toBe('available');
+      expect(body.events).toHaveLength(2);
+      expect(body.events.every((e: { attemptId: number }) => e.attemptId === attemptId)).toBe(true);
+    });
+
+    it('is unavailable when neither the native transcript nor an Archive copy exists', async () => {
+      const { attemptId } = await finishedRun();
+      rmSync(join(server.dataDir, 'archive'), { recursive: true, force: true });
+      rmSync(transcriptPath, { force: true });
+
+      const { body } = await server.api('GET', `/api/attempts/${attemptId}/log`);
+
+      expect(body).toEqual({ status: 'unavailable', liveCursor: 0 });
+    });
+
+    it('reads the Critic log from the Archive copy when the native transcript is gone', async () => {
+      const { attemptId, taskId } = await finishedRun();
+      const { archive, attempts, tasks, verificationAttempts } = server.app.ctx;
+      const attempt = await attempts.get(attemptId);
+      const criticPath = join(logDir, 'critic-proj', 'critic-sess.jsonl');
+      mkdirSync(join(logDir, 'critic-proj'), { recursive: true });
+      writeFileSync(criticPath, transcriptBody);
+      const row = await verificationAttempts.append(attemptId, {
+        mechanism: 'critic',
+        inputOid: 'a'.repeat(40),
+        verdict: 'pass',
+        summary: 's',
+        output: 'o',
+        transcriptPath: criticPath,
+        harness: 'claude',
+      });
+      const writer = archive.criticStep(await tasks.get(taskId), attempt.number, 'pre-merge', 'critic-1');
+      await writer.copyNative('claude', criticPath);
+      await writer.close();
+
+      expect((await server.api('GET', `/api/verification-attempts/${row.id}/log`)).body.status).toBe('available');
+      unlinkSync(criticPath);
+      const { body } = await server.api('GET', `/api/verification-attempts/${row.id}/log`);
+      expect(body.status).toBe('available');
+      expect(body.events).toHaveLength(2);
+      expect(body.events[0].attemptId).toBe(attemptId);
+
+      rmSync(join(server.dataDir, 'archive'), { recursive: true, force: true });
+      expect((await server.api('GET', `/api/verification-attempts/${row.id}/log`)).body).toEqual({ status: 'unavailable', liveCursor: 0 });
     });
   });
 });

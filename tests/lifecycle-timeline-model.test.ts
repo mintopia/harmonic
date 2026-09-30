@@ -23,6 +23,32 @@ describe('lifecycleTimelineRows', () => {
     ]);
   });
 
+  it('labels operator accept, close and cancel task events by actor, with and without a reason', () => {
+    const rows = lifecycleTimelineRows([
+      lifecycle(10, { event: 'operator-accepted', actor: 'operator', reason: null }),
+      lifecycle(20, { event: 'operator-accepted', actor: 'agent', reason: null }),
+      lifecycle(30, { event: 'operator-closed', actor: 'operator', reason: 'Superseded by #12' }),
+      lifecycle(40, { event: 'operator-closed', actor: 'agent', reason: null }),
+      lifecycle(50, { event: 'operator-cancelled', actor: 'operator', reason: 'Wrong\n  repo' }),
+      lifecycle(60, { event: 'operator-cancelled', actor: 'agent', reason: null }),
+      lifecycle(70, { event: 'operator-accepted' }),
+      lifecycle(80, { event: 'operator-closed', actor: 'system', reason: null }),
+      lifecycle(90, { event: 'operator-cancelled' }),
+    ]);
+
+    expect(rows.map((row) => [row.label, row.detail, row.tone, row.tag])).toEqual([
+      ['Accepted by operator', null, 'passed', null],
+      ['Accepted by agent', null, 'passed', null],
+      ['Closed by operator', 'Superseded by #12', 'neutral', null],
+      ['Closed by agent', null, 'neutral', null],
+      ['Cancelled by operator', 'Wrong repo', 'neutral', null],
+      ['Cancelled by agent', null, 'neutral', null],
+      ['Accepted', null, 'passed', null],
+      ['Closed', null, 'neutral', null],
+      ['Cancelled', null, 'neutral', null],
+    ]);
+  });
+
   it('reads recorded lifecycle events as significant, legible rows instead of a raw token', () => {
     const rows = lifecycleTimelineRows([
       lifecycle(10, { event: 'merged', oid: '0f758cd2200565e7605902a86c2827c65ad25ce0', baseBranch: 'develop' }),
@@ -194,5 +220,36 @@ describe('lifecycleTimelineRows', () => {
     ]);
     expect(rows[0]!.detail).toBe('Imported from issue #185 · queued to harmonic-core');
     expect(rows[1]!.detail).toBe('Continued Attempt 2');
+  });
+
+  it('labels Export attempts by outcome', () => {
+    const rows = lifecycleTimelineRows([
+      lifecycle(10, { event: 'export', destination: 'directory', status: 'succeeded', file: '/x/1-done.tar.gz' }),
+      lifecycle(20, { event: 'export', destination: 's3', status: 'failed', error: 'AccessDenied: s3:PutObject' }),
+    ]);
+
+    expect(rows.map((row) => [row.label, row.detail, row.tone, row.tag])).toEqual([
+      ['Export delivered · Directory', '/x/1-done.tar.gz', 'passed', 'EXPORT'],
+      ['Export failed · S3 — AccessDenied', 's3:PutObject. Retry 1 of 3 in 5 min.', 'failed', 'EXPORT'],
+    ]);
+  });
+
+  it('precedes the first fact of a build with one Export built row, and writes each retry its own fact', () => {
+    const built = { builtAt: '2026-09-30T11:42:07.000Z', name: '412-done.tar.gz', bytes: 19_293_798, redactions: { bearer: 4, 'github-token': 3 } };
+    const rows = lifecycleTimelineRows([
+      lifecycle(1_000, { event: 'export', destination: 'directory', status: 'succeeded', file: '/srv/x/412-done.tar.gz', ...built }),
+      lifecycle(2_000, { event: 'export', destination: 's3', status: 'failed', error: 'AccessDenied: s3:PutObject', ...built }),
+      lifecycle(3_000, { event: 'export', destination: 's3', status: 'failed', error: 'AccessDenied: s3:PutObject', retry: 1, ...built }),
+    ]);
+
+    expect(rows.map((row) => row.label)).toEqual([
+      'Export built',
+      'Export delivered · Directory',
+      'Export failed · S3 — AccessDenied',
+      'Export failed · S3 — AccessDenied',
+    ]);
+    expect(rows[0]).toMatchObject({ detail: '412-done.tar.gz · 18.4 MB · 7 redactions', tone: 'neutral', tag: 'EXPORT', at: Date.parse(built.builtAt) });
+    expect(rows[3]!.detail).toBe('s3:PutObject. Retry 1 of 3. Next: retry 2 of 3 in 30 min.');
+    expect(new Set(rows.map((row) => row.id)).size).toBe(4);
   });
 });

@@ -29,6 +29,8 @@ event of a Task that overrides to the Channel).
   `export.failed` when an Export Destination fails.
 - `timestamp` — milliseconds since the Unix epoch, set at send time.
 - `task` — present for every event except `queue.idle`.
+- `export` — present on `export.failed` only: `destination`, `disposition`, `error`,
+  `retry` (0 = first attempt) and `nextRetryAt` (ISO timestamp, `null` when no further retry is scheduled).
 
 ## Headers
 
