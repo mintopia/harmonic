@@ -5508,6 +5508,28 @@
             ],
             "example": null
           },
+          "exportEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportDirectoryPath": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -5552,6 +5574,8 @@
           "driveMergeFate",
           "driveContinueAttempts",
           "taskPrompt",
+          "exportEnabled",
+          "exportDirectoryPath",
           "createdAt",
           "updatedAt"
         ]
@@ -6504,7 +6528,8 @@
                 "task.escalated",
                 "task.done",
                 "queue.idle",
-                "update.failed"
+                "update.failed",
+                "export.failed"
               ]
             },
             "example": [
@@ -12186,6 +12211,28 @@
             ],
             "example": null
           },
+          "exportEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "exportDirectoryPath": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -12230,6 +12277,8 @@
           "driveMergeFate",
           "driveContinueAttempts",
           "taskPrompt",
+          "exportEnabled",
+          "exportDirectoryPath",
           "createdAt",
           "updatedAt"
         ],
@@ -13229,7 +13278,8 @@
                 "task.escalated",
                 "task.done",
                 "queue.idle",
-                "update.failed"
+                "update.failed",
+                "export.failed"
               ]
             },
             "example": [
@@ -13916,6 +13966,11 @@
                       "withDependents": {
                         "example": true,
                         "type": "boolean"
+                      },
+                      "reason": {
+                        "example": "superseded",
+                        "type": "string",
+                        "maxLength": 2000
                       }
                     }
                   },
@@ -14513,6 +14568,30 @@
           "Tasks"
         ],
         "description": "Close an escalated ticket: cancel it and clean up — remove its branch and worktree, close the tracker issue. Human-only.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "reason": {
+                        "example": "superseded",
+                        "type": "string",
+                        "maxLength": 2000
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "schema": {
@@ -17643,6 +17722,28 @@
                       }
                     ]
                   },
+                  "exportEnabled": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "exportDirectoryPath": {
+                    "example": "/srv/harmonic-exports",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "color": {
                     "type": "string",
                     "pattern": "^#[0-9a-fA-F]{6}$"
@@ -19795,6 +19896,58 @@
                         "promptInactivityTimeoutMinutes"
                       ],
                       "additionalProperties": false
+                    },
+                    "export": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "includeStates": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "done",
+                              "cancelled",
+                              "deleted"
+                            ]
+                          },
+                          "example": [
+                            "done",
+                            "cancelled",
+                            "deleted"
+                          ]
+                        },
+                        "directory": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "/srv/harmonic-exports"
+                            }
+                          },
+                          "required": [
+                            "path"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "includeStates",
+                        "directory"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -19813,7 +19966,8 @@
                     "fileWatcherDebounceMs",
                     "verify",
                     "merge",
-                    "guardrails"
+                    "guardrails",
+                    "export"
                   ],
                   "additionalProperties": false,
                   "description": "The stored configuration in full: harnesses and their model catalogs, defaults, auto-runner settings, and flags."
@@ -20690,6 +20844,58 @@
                         "promptInactivityTimeoutMinutes"
                       ],
                       "additionalProperties": false
+                    },
+                    "export": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "includeStates": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "done",
+                              "cancelled",
+                              "deleted"
+                            ]
+                          },
+                          "example": [
+                            "done",
+                            "cancelled",
+                            "deleted"
+                          ]
+                        },
+                        "directory": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "/srv/harmonic-exports"
+                            }
+                          },
+                          "required": [
+                            "path"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "includeStates",
+                        "directory"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -20708,7 +20914,8 @@
                     "fileWatcherDebounceMs",
                     "verify",
                     "merge",
-                    "guardrails"
+                    "guardrails",
+                    "export"
                   ],
                   "additionalProperties": false,
                   "description": "The whole configuration as stored once the patch was merged onto it."
@@ -21517,6 +21724,56 @@
                       "toolTimeoutMinutes",
                       "promptInactivityTimeoutMinutes"
                     ]
+                  },
+                  "export": {
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean",
+                        "example": false
+                      },
+                      "includeStates": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "done",
+                            "cancelled",
+                            "deleted"
+                          ]
+                        },
+                        "example": [
+                          "done",
+                          "cancelled",
+                          "deleted"
+                        ]
+                      },
+                      "directory": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "example": "/srv/harmonic-exports"
+                          }
+                        },
+                        "required": [
+                          "path"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "enabled",
+                      "includeStates",
+                      "directory"
+                    ]
                   }
                 },
                 "required": [
@@ -21535,7 +21792,8 @@
                   "fileWatcherDebounceMs",
                   "verify",
                   "merge",
-                  "guardrails"
+                  "guardrails",
+                  "export"
                 ]
               }
             }
@@ -22393,6 +22651,58 @@
                         "promptInactivityTimeoutMinutes"
                       ],
                       "additionalProperties": false
+                    },
+                    "export": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "includeStates": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "done",
+                              "cancelled",
+                              "deleted"
+                            ]
+                          },
+                          "example": [
+                            "done",
+                            "cancelled",
+                            "deleted"
+                          ]
+                        },
+                        "directory": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "/srv/harmonic-exports"
+                            }
+                          },
+                          "required": [
+                            "path"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "includeStates",
+                        "directory"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -22411,7 +22721,8 @@
                     "fileWatcherDebounceMs",
                     "verify",
                     "merge",
-                    "guardrails"
+                    "guardrails",
+                    "export"
                   ],
                   "additionalProperties": false,
                   "description": "The whole configuration as stored after the replace."
@@ -23283,6 +23594,58 @@
                             "promptInactivityTimeoutMinutes"
                           ],
                           "additionalProperties": false
+                        },
+                        "export": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "includeStates": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "done",
+                                  "cancelled",
+                                  "deleted"
+                                ]
+                              },
+                              "example": [
+                                "done",
+                                "cancelled",
+                                "deleted"
+                              ]
+                            },
+                            "directory": {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": "/srv/harmonic-exports"
+                                }
+                              },
+                              "required": [
+                                "path"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "includeStates",
+                            "directory"
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "required": [
@@ -23301,7 +23664,8 @@
                         "fileWatcherDebounceMs",
                         "verify",
                         "merge",
-                        "guardrails"
+                        "guardrails",
+                        "export"
                       ],
                       "additionalProperties": false
                     },
@@ -24144,6 +24508,58 @@
                             "promptInactivityTimeoutMinutes"
                           ],
                           "additionalProperties": false
+                        },
+                        "export": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "includeStates": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "done",
+                                  "cancelled",
+                                  "deleted"
+                                ]
+                              },
+                              "example": [
+                                "done",
+                                "cancelled",
+                                "deleted"
+                              ]
+                            },
+                            "directory": {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": "/srv/harmonic-exports"
+                                }
+                              },
+                              "required": [
+                                "path"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "includeStates",
+                            "directory"
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "required": [
@@ -24162,7 +24578,8 @@
                         "fileWatcherDebounceMs",
                         "verify",
                         "merge",
-                        "guardrails"
+                        "guardrails",
+                        "export"
                       ],
                       "additionalProperties": false
                     },
@@ -25067,6 +25484,58 @@
                         "promptInactivityTimeoutMinutes"
                       ],
                       "additionalProperties": false
+                    },
+                    "export": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "includeStates": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "done",
+                              "cancelled",
+                              "deleted"
+                            ]
+                          },
+                          "example": [
+                            "done",
+                            "cancelled",
+                            "deleted"
+                          ]
+                        },
+                        "directory": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": "/srv/harmonic-exports"
+                            }
+                          },
+                          "required": [
+                            "path"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "includeStates",
+                        "directory"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -25085,7 +25554,8 @@
                     "fileWatcherDebounceMs",
                     "verify",
                     "merge",
-                    "guardrails"
+                    "guardrails",
+                    "export"
                   ],
                   "additionalProperties": false,
                   "description": "The whole configuration as stored once every global override was cleared."
@@ -28999,7 +29469,8 @@
                         "task.escalated",
                         "task.done",
                         "queue.idle",
-                        "update.failed"
+                        "update.failed",
+                        "export.failed"
                       ]
                     }
                   }
@@ -29205,7 +29676,8 @@
                         "task.escalated",
                         "task.done",
                         "queue.idle",
-                        "update.failed"
+                        "update.failed",
+                        "export.failed"
                       ]
                     }
                   }

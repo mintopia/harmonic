@@ -19,6 +19,7 @@ export interface ExportRecord {
   status: 'succeeded' | 'failed';
   at: string;
   error?: string;
+  retry?: number;
 }
 
 export interface StepArchiveWriter {

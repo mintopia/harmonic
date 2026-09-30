@@ -24,9 +24,11 @@ event of a Task that overrides to the Channel).
 ```
 
 - `event` — one of `task.created`, `run.started`, `task.awaiting-review`,
-  `task.completed`, `task.failed`, `queue.idle`.
+  `task.completed`, `task.failed`, `queue.idle`, `export.failed`.
 - `timestamp` — milliseconds since the Unix epoch, set at send time.
 - `task` — present for every event except `queue.idle`.
+- `export` — present on `export.failed` only: `destination`, `disposition`, `error`,
+  `retry` (0 = first attempt) and `nextRetryAt` (ISO timestamp, `null` once retries are exhausted).
 
 ## Headers
 

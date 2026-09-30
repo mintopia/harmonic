@@ -165,7 +165,16 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       await stores.taskEvents.appendEvent(taskId, payload);
       bus.emit('step_changed', { taskId });
     },
+    onFailure: (failure) => {
+      const { task, disposition, destination, error, retry, nextRetryAt } = failure;
+      bus.emit('export_failed', { taskId: task.id, trackerRef: task.trackerRef, destination, disposition, error, retry, nextRetryAt });
+      fireAndForget(
+        () => stores.notifier.notify('export.failed', task, { export: { destination, disposition, error, retry, nextRetryAt } }),
+        { op: 'export.notifyFailure', level: 'warn', context: { taskId: task.id } },
+      );
+    },
   });
+  scheduler.register({ name: 'Export retry', intervalMs: 60_000, run: () => exporter.retryDue() });
   stores.tasks.setBeforeDelete((task) => exporter.captureForDelete(task));
   bus.on('task_disposition', ({ task, disposition }) => exporter.trigger(task, disposition));
   fireAndForget(() => exporter.sweepStaging(), { op: 'export.sweepStaging', level: 'warn' });

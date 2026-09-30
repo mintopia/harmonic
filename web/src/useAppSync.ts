@@ -57,6 +57,12 @@ export interface UseAppSyncArgs {
   storage?: StorageLike;
 }
 
+function exportRetryText(nextRetryAt: string | null): string {
+  if (nextRetryAt === null) return 'retries exhausted';
+  const minutes = Math.max(1, Math.round((Date.parse(nextRetryAt) - Date.now()) / 60_000));
+  return minutes >= 120 ? `retrying in ${Math.round(minutes / 60)} h` : `retrying in ${minutes} min`;
+}
+
 export function useAppSync({ authed, route, navigate, onEscalationHandled, apiImpl = api, storage = localStorage }: UseAppSyncArgs) {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<number | null>(() => loadActiveWorkspaceId(storage));
   useEffect(() => {
@@ -158,6 +164,14 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
     load();
     return () => timer !== undefined && clearTimeout(timer);
   }, [authed, apiImpl, updatePollKey]);
+
+  useLiveEffect((live) => {
+    if (!authed) return;
+    return subscribe((msg) => {
+      if (!live() || msg.type !== 'export_failed') return;
+      toastFail(`Export of ${taskLabel(msg.taskId)} to ${msg.destination} failed — ${exportRetryText(msg.nextRetryAt)}`);
+    });
+  }, [authed]);
 
   useLiveEffect((live) => {
     if (!authed || activeWorkspaceId === null) return;

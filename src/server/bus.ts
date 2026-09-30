@@ -46,6 +46,16 @@ export interface BusEvents {
   worktrees: (worktrees: readonly WorktreeInventoryEntry[]) => void;
   /** Host load-average reading, sampled on a fixed tick (see HostLoadSampler). */
   host_load: (load: HostLoad) => void;
+  /** A Task Export Destination failed; `nextRetryAt` is null once retries are exhausted. */
+  export_failed: (payload: {
+    taskId: number;
+    trackerRef: number | null;
+    destination: string;
+    disposition: string;
+    error: string;
+    retry: number;
+    nextRetryAt: string | null;
+  }) => void;
   fs_changed: (payload: { workspaceId: number }) => void;
   git_status: (payload: { workspaceId: number; entries: GitStatusEntry[] }) => void;
 }

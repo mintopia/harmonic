@@ -1,5 +1,5 @@
 import { createWriteStream } from 'node:fs';
-import { link, mkdir, readdir, readFile, rm, copyFile } from 'node:fs/promises';
+import { link, mkdir, readdir, readFile, rm, copyFile, rename, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import type { ExportState } from '../config.js';
@@ -19,6 +19,38 @@ export interface ExportSnapshot {
   attemptCount: number;
 }
 
+export type ExportDestination = 'directory';
+
+export interface ExportFailure {
+  task: TaskRow;
+  disposition: ExportDisposition;
+  destination: ExportDestination;
+  error: string;
+  retry: number;
+  nextRetryAt: string | null;
+}
+
+export const EXPORT_RETRY_DELAYS_MS = [5 * 60_000, 30 * 60_000, 2 * 60 * 60_000] as const;
+
+const MAX_RETRIES_PER_SWEEP = 20;
+const PENDING_SUFFIX = '.pending.json';
+const TARBALL_SUFFIX = '.tar.gz';
+
+interface PendingDestination {
+  destination: ExportDestination;
+  dir: string;
+  base: string;
+  retries: number;
+  nextRetryAt: string;
+}
+
+interface PendingExport {
+  task: TaskRow;
+  disposition: ExportDisposition;
+  firstFailedAt: string;
+  destinations: PendingDestination[];
+}
+
 export interface ExportOutcome {
   status: 'succeeded' | 'failed';
   file: string | null;
@@ -34,6 +66,7 @@ export interface TaskExporterDeps {
   snapshot: (task: TaskRow) => Promise<ExportSnapshot>;
   recordFact: (taskId: number, payload: unknown) => Promise<void>;
   now?: () => Date;
+  onFailure?: (failure: ExportFailure) => void;
 }
 
 const OPERATOR_INPUTS_FILE = 'operator-inputs.jsonl';
@@ -65,6 +98,10 @@ async function readOperatorInputs(archiveDir: string): Promise<unknown[]> {
   } catch {
     return [];
   }
+}
+
+function pendingPath(staged: string): string {
+  return `${staged.slice(0, -TARBALL_SUFFIX.length)}${PENDING_SUFFIX}`;
 }
 
 function json(value: unknown): string {
@@ -112,6 +149,7 @@ function readme(args: {
 
 export class TaskExporter {
   private readonly chains = new Map<number, Promise<unknown>>();
+  private retrying = false;
 
   constructor(private readonly deps: TaskExporterDeps) {}
 
@@ -124,7 +162,14 @@ export class TaskExporter {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') logger.warn('export: staging sweep failed', { error: message(err) });
       return;
     }
+    const present = new Set(names);
+    const keep = (name: string): boolean => {
+      if (name.endsWith(TARBALL_SUFFIX)) return present.has(`${name.slice(0, -TARBALL_SUFFIX.length)}${PENDING_SUFFIX}`);
+      if (name.endsWith(PENDING_SUFFIX)) return present.has(`${name.slice(0, -PENDING_SUFFIX.length)}${TARBALL_SUFFIX}`);
+      return false;
+    };
     await forEachYielding(names, async (name) => {
+      if (keep(name)) return;
       try {
         await rm(join(stagingDir, name), { recursive: true, force: true });
       } catch (err) {
@@ -153,19 +198,19 @@ export class TaskExporter {
   }
 
   private enqueue(task: TaskRow, disposition: ExportDisposition, snapshot: Promise<ExportSnapshot>): void {
-    const previous = this.chains.get(task.id) ?? Promise.resolve();
-    const next = previous.catch(() => undefined).then(() => this.run(task, disposition, snapshot));
-    this.chains.set(task.id, next);
-    fireAndForget(
-      async () => {
-        try {
-          await next;
-        } finally {
-          if (this.chains.get(task.id) === next) this.chains.delete(task.id);
-        }
-      },
-      { op: 'export.trigger', level: 'warn', context: { taskId: task.id, disposition } },
-    );
+    const next = this.serialize(task.id, () => this.run(task, disposition, snapshot));
+    fireAndForget(() => next, { op: 'export.trigger', level: 'warn', context: { taskId: task.id, disposition } });
+  }
+
+  private serialize<T>(taskId: number, fn: () => Promise<T>): Promise<T> {
+    const previous = this.chains.get(taskId) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(fn);
+    this.chains.set(taskId, next);
+    const cleanup = (): void => {
+      if (this.chains.get(taskId) === next) this.chains.delete(taskId);
+    };
+    next.then(cleanup, cleanup);
+    return next;
   }
 
   async run(task: TaskRow, disposition: ExportDisposition, snapshot?: Promise<ExportSnapshot>): Promise<ExportOutcome | null> {
@@ -178,29 +223,172 @@ export class TaskExporter {
     }
     if (!settings.enabled || !settings.includeStates.includes(disposition) || !settings.directoryPath) return null;
 
-    const at = (this.deps.now ?? (() => new Date()))();
+    const at = this.now();
+    const stagingDir = join(this.deps.dataDir, 'archive', '.staging');
+    let staged: string | null = null;
     let outcome: ExportOutcome;
+    let target: { dir: string; base: string } | null = null;
     try {
-      outcome = { status: 'succeeded', file: await this.exportToDirectory(task, disposition, settings.directoryPath, at, snapshot) };
+      const built = await this.stage(task, disposition, stagingDir, at, snapshot);
+      staged = built.staged;
+      target = { dir: join(settings.directoryPath, built.slug), base: this.fileName(task, disposition, at) };
+      outcome = { status: 'succeeded', file: await this.deliver(staged, target.dir, target.base) };
     } catch (err) {
       outcome = { status: 'failed', file: null, error: message(err) };
       logger.warn('export: failed', { taskId: task.id, disposition, error: outcome.error });
     }
-    await this.record(task, disposition, outcome, at);
+    await this.record(task, disposition, outcome, at, 0);
+    if (outcome.status === 'succeeded') {
+      if (staged) await rm(staged, { force: true });
+      return outcome;
+    }
+    let nextRetryAt: string | null = null;
+    if (staged && target) {
+      const first = at.toISOString();
+      nextRetryAt = new Date(at.getTime() + EXPORT_RETRY_DELAYS_MS[0]).toISOString();
+      const pending: PendingExport = {
+        task,
+        disposition,
+        firstFailedAt: first,
+        destinations: [{ destination: 'directory', dir: target.dir, base: target.base, retries: 0, nextRetryAt }],
+      };
+      try {
+        await this.writePending(pendingPath(staged), pending);
+      } catch (err) {
+        logger.warn('export: retry not scheduled', { taskId: task.id, error: message(err) });
+        nextRetryAt = null;
+        await rm(staged, { force: true });
+      }
+    } else if (staged) {
+      await rm(staged, { force: true });
+    }
+    this.notifyFailure({ task, disposition, destination: 'directory', error: outcome.error ?? 'export failed', retry: 0, nextRetryAt });
     return outcome;
   }
 
-  private async record(task: TaskRow, disposition: ExportDisposition, outcome: ExportOutcome, at: Date): Promise<void> {
+  async retryDue(): Promise<void> {
+    if (this.retrying) return;
+    this.retrying = true;
+    try {
+      const stagingDir = join(this.deps.dataDir, 'archive', '.staging');
+      let names: string[];
+      try {
+        names = (await readdir(stagingDir)).filter((n) => n.endsWith(PENDING_SUFFIX));
+      } catch {
+        return;
+      }
+      let budget = MAX_RETRIES_PER_SWEEP;
+      await forEachYielding(names, async (name) => {
+        if (budget <= 0) return;
+        try {
+          budget -= await this.retrySidecar(join(stagingDir, name));
+        } catch (err) {
+          logger.warn('export: retry pass failed', { entry: name, error: message(err) });
+        }
+      });
+    } catch (err) {
+      logger.warn('export: retry sweep failed', { error: message(err) });
+    } finally {
+      this.retrying = false;
+    }
+  }
+
+  private async retrySidecar(sidecar: string): Promise<number> {
+    const pending = await this.readPending(sidecar);
+    if (!pending) return 0;
+    return this.serialize(pending.task.id, async () => {
+      const current = await this.readPending(sidecar);
+      if (!current) return 0;
+      const staged = `${sidecar.slice(0, -PENDING_SUFFIX.length)}${TARBALL_SUFFIX}`;
+      const nowMs = this.now().getTime();
+      const first = Date.parse(current.firstFailedAt);
+      let attempted = 0;
+      const remaining: PendingDestination[] = [];
+      for (const dest of current.destinations) {
+        if (attempted >= MAX_RETRIES_PER_SWEEP || Date.parse(dest.nextRetryAt) > nowMs) {
+          remaining.push(dest);
+          continue;
+        }
+        attempted++;
+        const at = this.now();
+        const retry = dest.retries + 1;
+        let outcome: ExportOutcome;
+        try {
+          outcome = { status: 'succeeded', file: await this.deliver(staged, dest.dir, dest.base) };
+        } catch (err) {
+          outcome = { status: 'failed', file: null, error: message(err) };
+          logger.warn('export: retry failed', { taskId: current.task.id, retry, error: outcome.error });
+        }
+        await this.record(current.task, current.disposition, outcome, at, retry);
+        if (outcome.status === 'succeeded') continue;
+        const nextRetryAt = retry < EXPORT_RETRY_DELAYS_MS.length ? new Date(first + EXPORT_RETRY_DELAYS_MS[retry]!).toISOString() : null;
+        if (nextRetryAt) remaining.push({ ...dest, retries: retry, nextRetryAt });
+        this.notifyFailure({
+          task: current.task,
+          disposition: current.disposition,
+          destination: dest.destination,
+          error: outcome.error ?? 'export failed',
+          retry,
+          nextRetryAt,
+        });
+      }
+      if (remaining.length === 0) {
+        await rm(sidecar, { force: true });
+        await rm(staged, { force: true });
+      } else if (attempted > 0) {
+        await this.writePending(sidecar, { ...current, destinations: remaining });
+      }
+      return attempted;
+    });
+  }
+
+  private async readPending(sidecar: string): Promise<PendingExport | null> {
+    try {
+      const value = JSON.parse(await readFile(sidecar, 'utf8')) as Partial<PendingExport> | null;
+      if (!value || typeof value.task?.id !== 'number' || typeof value.firstFailedAt !== 'string' || !Array.isArray(value.destinations)) {
+        throw new Error('malformed sidecar');
+      }
+      return value as PendingExport;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') logger.warn('export: pending sidecar unreadable', { sidecar, error: message(err) });
+      return null;
+    }
+  }
+
+  private async writePending(path: string, pending: PendingExport): Promise<void> {
+    const tmp = `${path}.${randomBytes(6).toString('hex')}.tmp`;
+    try {
+      await writeFile(tmp, JSON.stringify(pending));
+      await rename(tmp, path);
+    } catch (err) {
+      await rm(tmp, { force: true });
+      throw err;
+    }
+  }
+
+  private notifyFailure(failure: ExportFailure): void {
+    try {
+      this.deps.onFailure?.(failure);
+    } catch (err) {
+      logger.warn('export: failure hook threw', { taskId: failure.task.id, error: message(err) });
+    }
+  }
+
+  private now(): Date {
+    return (this.deps.now ?? (() => new Date()))();
+  }
+
+  private async record(task: TaskRow, disposition: ExportDisposition, outcome: ExportOutcome, at: Date, retry: number): Promise<void> {
     const base = { destination: 'directory' as const, disposition, file: outcome.file, status: outcome.status };
-    const error = outcome.error === undefined ? {} : { error: outcome.error };
+    const extra = { ...(outcome.error === undefined ? {} : { error: outcome.error }), ...(retry > 0 ? { retry } : {}) };
     if (disposition !== 'deleted') {
       try {
-        await this.deps.recordFact(task.id, { event: 'export', ...base, ...error });
+        await this.deps.recordFact(task.id, { event: 'export', ...base, ...extra });
       } catch (err) {
         logger.warn('export: fact not recorded', { taskId: task.id, error: message(err) });
       }
     }
-    const entry: ExportRecord = { ...base, at: at.toISOString(), ...error };
+    const entry: ExportRecord = { ...base, at: at.toISOString(), ...extra };
     try {
       await this.deps.archive.recordExport(task, entry);
     } catch (err) {
@@ -208,20 +396,26 @@ export class TaskExporter {
     }
   }
 
-  private async exportToDirectory(task: TaskRow, disposition: ExportDisposition, root: string, at: Date, pending?: Promise<ExportSnapshot>): Promise<string> {
+  private async stage(
+    task: TaskRow,
+    disposition: ExportDisposition,
+    stagingDir: string,
+    at: Date,
+    pending?: Promise<ExportSnapshot>,
+  ): Promise<{ staged: string; slug: string }> {
     const snapshot = await (pending ?? this.deps.snapshot(task));
     const archiveDir = await this.deps.archive.ensure(task);
     const workspace = task.workspaceId === null ? null : await this.deps.workspaceName(task.workspaceId);
     const slug = workspaceSlug(workspace, task.workspaceId);
-    const stagingDir = join(this.deps.dataDir, 'archive', '.staging');
     await mkdir(stagingDir, { recursive: true });
-    const staged = join(stagingDir, `${task.id}-${randomBytes(6).toString('hex')}.tar.gz`);
+    const staged = join(stagingDir, `${task.id}-${randomBytes(6).toString('hex')}${TARBALL_SUFFIX}`);
     try {
       await this.build(staged, archiveDir, task, disposition, workspace, snapshot, at);
-      return await this.deliver(staged, join(root, slug), this.fileName(task, disposition, at));
-    } finally {
+    } catch (err) {
       await rm(staged, { force: true });
+      throw err;
     }
+    return { staged, slug };
   }
 
   private fileName(task: TaskRow, disposition: ExportDisposition, at: Date): string {
