@@ -6,6 +6,7 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { eq } from 'drizzle-orm';
 import { tasks as tasksTable, workspaces } from '../src/db/schema.js';
 import { TaskService } from '../src/domain/tasks.js';
+import { readTranscriptLog } from '../src/execution/transcript-log.js';
 import { TaskArchive } from '../src/archive/task-archive.js';
 import { baselineConfig } from '../src/config.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
@@ -143,12 +144,90 @@ describe('TaskArchive', () => {
     await writer.close();
     const native = join(await writer.dir, 'native');
     expect(readFileSync(join(native, 'sess-1.jsonl'), 'utf8')).toBe('root\n');
-    expect(readFileSync(join(native, 'subagents', 'agent-a.jsonl'), 'utf8')).toBe('sub\n');
-    expect(existsSync(join(native, 'subagents', 'agent-a.meta.json'))).toBe(true);
+    expect(readFileSync(join(native, 'sess-1', 'subagents', 'agent-a.jsonl'), 'utf8')).toBe('sub\n');
+    expect(existsSync(join(native, 'sess-1', 'subagents', 'agent-a.meta.json'))).toBe(true);
 
     writeFileSync(join(src, 'sess-1.jsonl'), 'root grown\n');
     await archive.copyNative(task, 1, 'claude', join(src, 'sess-1.jsonl'));
     expect(readFileSync(join(native, 'sess-1.jsonl'), 'utf8')).toBe('root grown\n');
+  });
+
+  describe('archivedTranscript', () => {
+    it('finds the implementation copy by basename, or the only jsonl when no path is known', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const archive = archiveFor();
+      const src = join(dir, 'src');
+      mkdirSync(src, { recursive: true });
+      writeFileSync(join(src, 'sess-1.jsonl'), 'root\n');
+      await archive.copyNative(task, 2, 'claude', join(src, 'sess-1.jsonl'));
+      const expected = join(await archive.ensure(task), 'attempts', '2', 'implementation', 'native', 'sess-1.jsonl');
+      expect(await archive.archivedTranscript(task, 2, 'implementation', '/gone/elsewhere/sess-1.jsonl')).toBe(expected);
+      expect(await archive.archivedTranscript(task, 2, 'implementation', null)).toBe(expected);
+      expect(await archive.archivedTranscript(task, 2, 'implementation', '/gone/other.jsonl')).toBeNull();
+      expect(await archive.archivedTranscript(task, 3, 'implementation', null)).toBeNull();
+    });
+
+    it('returns null for a null path when the native dir holds several jsonl files', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const archive = archiveFor();
+      const native = join(await archive.ensure(task), 'attempts', '1', 'implementation', 'native');
+      mkdirSync(native, { recursive: true });
+      writeFileSync(join(native, 'a.jsonl'), 'a');
+      writeFileSync(join(native, 'b.jsonl'), 'b');
+      expect(await archive.archivedTranscript(task, 1, 'implementation', null)).toBeNull();
+    });
+
+    it('scans every stage and step for a verification copy', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const archive = archiveFor();
+      const src = join(dir, 'src');
+      mkdirSync(src, { recursive: true });
+      writeFileSync(join(src, 'crit.jsonl'), 'c\n');
+      const writer = archive.criticStep(task, 1, 'post-merge', 'critic-9');
+      await writer.copyNative('claude', join(src, 'crit.jsonl'));
+      await writer.close();
+      const expected = join(await writer.dir, 'native', 'crit.jsonl');
+      expect(await archive.archivedTranscript(task, 1, 'verification', '/x/crit.jsonl')).toBe(expected);
+      expect(await archive.archivedTranscript(task, 1, 'verification', null)).toBeNull();
+      expect(await archive.archivedTranscript(task, 1, 'verification', '/x/../../etc/passwd')).toBeNull();
+    });
+
+    it('resolves under an epic root', async () => {
+      const archive = archiveFor();
+      const owner = { workspaceId: 1, epicRef: 5 };
+      expect(await archive.archivedTranscript(owner, 1, 'verification', '/x/e.jsonl')).toBeNull();
+      const src = join(dir, 'src');
+      mkdirSync(src, { recursive: true });
+      writeFileSync(join(src, 'e.jsonl'), 'e\n');
+      const writer = archive.epicCriticStep(1, 5, 1, 'critic-1');
+      await writer.copyNative('claude', join(src, 'e.jsonl'));
+      await writer.close();
+      expect(await archive.archivedTranscript(owner, 1, 'verification', '/x/e.jsonl')).toBe(join(await writer.dir, 'native', 'e.jsonl'));
+    });
+
+    it('keeps Subagent transcripts readable from the archived copy', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const archive = archiveFor();
+      const line = (ts: string, content: unknown[], extra: Record<string, unknown> = {}) =>
+        JSON.stringify({ type: 'assistant', timestamp: ts, message: { role: 'assistant', content }, ...extra });
+      const src = join(dir, 'src');
+      mkdirSync(join(src, 'sess', 'subagents'), { recursive: true });
+      writeFileSync(join(src, 'sess.jsonl'), line('2026-08-21T10:01:00.000Z', [{ type: 'tool_use', id: 'toolu_1', name: 'Agent', input: { description: 'Map', subagent_type: 'Explore', prompt: 'x' } }]));
+      writeFileSync(join(src, 'sess', 'subagents', 'agent-x.meta.json'), JSON.stringify({ agentType: 'Explore', description: 'Map', toolUseId: 'toolu_1' }));
+      writeFileSync(join(src, 'sess', 'subagents', 'agent-x.jsonl'), line('2026-08-21T10:01:02.000Z', [{ type: 'text', text: 'looking' }], { agentId: 'x', isSidechain: true }));
+      await archive.copyNative(task, 1, 'claude', join(src, 'sess.jsonl'));
+      const path = await archive.archivedTranscript(task, 1, 'implementation', join(src, 'sess.jsonl'));
+      const log = await readTranscriptLog({ harness: 'claude', path, startedAt: Date.parse('2026-08-21T10:00:00.000Z'), finishedAt: null });
+      const texts = log.status === 'available' ? log.events.map((e) => (e.payload as { content?: { text?: string } }).content?.text) : [];
+      expect(texts).toContain('looking');
+    });
+
+    it('does not create an archive for a task that has none', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const archive = archiveFor();
+      expect(await archive.archivedTranscript(task, 1, 'implementation', '/x/a.jsonl')).toBeNull();
+      expect(existsSync(join(dir, 'archive'))).toBe(false);
+    });
   });
 
   it('does nothing for a null or missing transcript', async () => {

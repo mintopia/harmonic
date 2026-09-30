@@ -89,7 +89,7 @@ describe('runCritic archive capture', () => {
     const lines = readFileSync(join(stepDir, 'acp.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     expect(lines.map((l) => l.update.sessionUpdate)).toEqual(['agent_message_chunk', 'tool_call']);
     expect(readFileSync(join(stepDir, 'native', 'sess-1.jsonl'), 'utf8')).toBe('root\n');
-    expect(readFileSync(join(stepDir, 'native', 'subagents', 'a.jsonl'), 'utf8')).toBe('sub\n');
+    expect(readFileSync(join(stepDir, 'native', 'sess-1', 'subagents', 'a.jsonl'), 'utf8')).toBe('sub\n');
   });
 
   it('still archives prompt and updates, without native/, when no transcript ever appears', async () => {
