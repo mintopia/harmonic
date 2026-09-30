@@ -1,3 +1,4 @@
+import type { TaskArchive } from '../archive/task-archive.js';
 import type { AppConfig } from '../config.js';
 import { isEpicAttempt, type AttemptRow, type EpicAttemptRow, type WorkspaceRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
@@ -24,6 +25,7 @@ export interface EpicVerificationRunnerDeps {
   verificationAttemptStore?: VerificationAttemptStore | undefined;
   onEpicAttemptChanged?: ((attempt: EpicAttemptRow) => void) | undefined;
   criticDrive?: CriticHarnessDrive | undefined;
+  archive?: TaskArchive | undefined;
 }
 
 /**
@@ -143,6 +145,12 @@ export class EpicVerificationRunner {
     const baseOid = defaultBranch === null
       ? null
       : await Git.mergeBase(repoDir, defaultBranch, integrationBranchName(epicRef)).catch(() => null);
+    const tracked = attempt && verificationAttemptStore && epicAttempts ? { attempt, verificationAttemptStore, epicAttempts } : undefined;
+    const step = tracked ? await tracked.epicAttempts.createStep(tracked.attempt.id, { type: 'review' }) : undefined;
+    if (tracked && step) await tracked.epicAttempts.updateStep(step.id, { state: 'running', startedAt: Date.now() });
+    const archive = tracked && step
+      ? this.deps.archive?.epicCriticStep(tracked.attempt.workspaceId, epicRef, tracked.attempt.number, String(step.id))
+      : undefined;
     const criticAttempt = await runCritic({
       cwd,
       verifiedHeadOid: criticHeadOid,
@@ -153,6 +161,7 @@ export class EpicVerificationRunner {
       harness,
       harnessId,
       ...(criticDrive ? { drive: criticDrive } : {}),
+      ...(archive ? { archive } : {}),
     });
     const usage = collectUsage({
       harnessId,
@@ -163,19 +172,15 @@ export class EpicVerificationRunner {
       prices: pricesForHarness(harness),
     });
     if (usage) criticUsages.push({ usage, prices: pricesForHarness(harness) });
-    if (attempt && verificationAttemptStore && epicAttempts) {
-      const persisted = await verificationAttemptStore.append(attempt.id, {
+    if (tracked && step) {
+      const persisted = await tracked.verificationAttemptStore.append(tracked.attempt.id, {
         ...criticAttemptToInput(criticAttempt),
         ...(usage ? { usage: JSON.stringify(usage) } : {}),
       });
-      const step = await epicAttempts.createStep(attempt.id, {
-        type: 'review',
-        logLocator: `verification_attempt:${persisted.id}`,
-      });
-      await epicAttempts.updateStep(step.id, {
+      await tracked.epicAttempts.updateStep(step.id, {
         state: criticAttempt.verdict === 'pass' ? 'passed' : 'failed',
         verdict: criticAttempt.verdict,
-        startedAt: persisted.ts,
+        logLocator: `verification_attempt:${persisted.id}`,
         endedAt: Date.now(),
       });
     }

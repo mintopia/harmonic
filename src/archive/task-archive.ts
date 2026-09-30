@@ -20,6 +20,8 @@ export interface StepArchiveWriter {
   close(): Promise<void>;
 }
 
+export type CriticArchiveStage = 'pre-merge' | 'post-merge';
+
 const PROMPT_SEPARATOR = '\n\n---\n\n';
 
 function warn(message: string, err: unknown, fields: Record<string, unknown> = {}): void {
@@ -108,10 +110,7 @@ export class TaskArchive {
     const workspaceName = task.workspaceId === null ? null : await this.deps.workspaceName(task.workspaceId);
     const dir = join(this.deps.dataDir, 'archive', workspaceSlug(workspaceName, task.workspaceId), `${task.id}-${archiveId}`);
     await mkdir(dir, { recursive: true });
-    const manifest = join(dir, 'archive.json');
-    if (await pathExists(manifest)) return dir;
-    const tmp = `${manifest}.${randomBytes(6).toString('hex')}.tmp`;
-    const body = {
+    await this.writeManifestIfAbsent(dir, {
       taskId: task.id,
       archiveId,
       trackerRef: task.trackerRef,
@@ -121,7 +120,14 @@ export class TaskArchive {
       createdAt: new Date(task.createdAt).toISOString(),
       dispositions: [],
       exports: [],
-    };
+    });
+    return dir;
+  }
+
+  private async writeManifestIfAbsent(dir: string, body: Record<string, unknown>): Promise<void> {
+    const manifest = join(dir, 'archive.json');
+    if (await pathExists(manifest)) return;
+    const tmp = `${manifest}.${randomBytes(6).toString('hex')}.tmp`;
     try {
       await writeFile(tmp, `${JSON.stringify(body, null, 2)}\n`);
       await rename(tmp, manifest);
@@ -129,7 +135,6 @@ export class TaskArchive {
       await rm(tmp, { force: true });
       throw err;
     }
-    return dir;
   }
 
   private async implementationDir(task: TaskRow, attemptNumber: number): Promise<string> {
@@ -139,8 +144,53 @@ export class TaskArchive {
   }
 
   implementationStep(task: TaskRow, attemptNumber: number): StepArchiveWriter {
-    const dir = this.implementationDir(task, attemptNumber);
-    dir.catch((err) => warn('archive: step directory failed', err, { taskId: task.id, attemptNumber }));
+    return this.stepWriter(this.implementationDir(task, attemptNumber), { taskId: task.id, attemptNumber });
+  }
+
+  criticStep(task: TaskRow, attemptNumber: number, stage: CriticArchiveStage, stepId: string): StepArchiveWriter {
+    const dir = this.ensure(task).then((root) => this.makeDir(join(root, 'attempts', String(attemptNumber), 'verification', stage, stepId)));
+    return this.stepWriter(dir, { taskId: task.id, attemptNumber, stage, stepId });
+  }
+
+  epicCriticStep(workspaceId: number, epicRef: number, attemptNumber: number, stepId: string): StepArchiveWriter {
+    const dir = this.ensureEpic(workspaceId, epicRef).then((root) =>
+      this.makeDir(join(root, 'attempts', String(attemptNumber), 'verification', 'pre-merge', stepId)),
+    );
+    return this.stepWriter(dir, { workspaceId, epicRef, attemptNumber, stepId });
+  }
+
+  ensureEpic(workspaceId: number, epicRef: number): Promise<string> {
+    const key = `epic:${workspaceId}:${epicRef}`;
+    const inflight = this.ensuring.get(key);
+    if (inflight) return inflight;
+    const promise = this.doEnsureEpic(workspaceId, epicRef).finally(() => this.ensuring.delete(key));
+    this.ensuring.set(key, promise);
+    return promise;
+  }
+
+  private async doEnsureEpic(workspaceId: number, epicRef: number): Promise<string> {
+    const workspaceName = await this.deps.workspaceName(workspaceId);
+    const dir = join(this.deps.dataDir, 'archive', workspaceSlug(workspaceName, workspaceId), `epic-${epicRef}`);
+    await mkdir(dir, { recursive: true });
+    await this.writeManifestIfAbsent(dir, {
+      epicRef,
+      workspace: workspaceName,
+      workspaceId,
+      title: `Epic #${epicRef}`,
+      createdAt: new Date().toISOString(),
+      dispositions: [],
+      exports: [],
+    });
+    return dir;
+  }
+
+  private async makeDir(dir: string): Promise<string> {
+    await mkdir(dir, { recursive: true });
+    return dir;
+  }
+
+  private stepWriter(dir: Promise<string>, fields: Record<string, unknown>): StepArchiveWriter {
+    dir.catch((err) => warn('archive: step directory failed', err, fields));
     const prompts = new AppendFile(dir, 'prompt.md');
     const updates = new AppendFile(dir, 'acp.jsonl');
     let closing: Promise<void> | null = null;
@@ -155,13 +205,13 @@ export class TaskArchive {
         try {
           line = JSON.stringify({ ts: Date.now(), update });
         } catch (err) {
-          warn('archive: update not serialisable', err, { taskId: task.id });
+          warn('archive: update not serialisable', err, fields);
           return;
         }
         updates.write(`${line}\n`);
       },
       copyNative: (harness, transcriptPath) => {
-        natives = natives.then(() => this.copyNativeInto(() => dir, task.id, harness, transcriptPath));
+        natives = natives.then(() => this.copyNativeInto(() => dir, harness, transcriptPath, fields));
         return natives;
       },
       close: () => (closing ??= Promise.all([prompts.close(), updates.close(), natives]).then(() => undefined)),
@@ -170,10 +220,10 @@ export class TaskArchive {
 
   async copyNative(task: TaskRow, attemptNumber: number, harness: string, transcriptPath: string | null): Promise<void> {
     if (!transcriptPath) return;
-    await this.copyNativeInto(() => this.implementationDir(task, attemptNumber), task.id, harness, transcriptPath);
+    await this.copyNativeInto(() => this.implementationDir(task, attemptNumber), harness, transcriptPath, { taskId: task.id });
   }
 
-  private async copyNativeInto(dir: () => Promise<string>, taskId: number, harness: string, transcriptPath: string | null): Promise<void> {
+  private async copyNativeInto(dir: () => Promise<string>, harness: string, transcriptPath: string | null, fields: Record<string, unknown>): Promise<void> {
     if (!transcriptPath || !(await pathExists(transcriptPath))) return;
     try {
       const native = join(await dir(), 'native');
@@ -193,7 +243,7 @@ export class TaskArchive {
         await yieldToEventLoop();
       }
     } catch (err) {
-      warn('archive: native transcript copy failed', err, { taskId, harness });
+      warn('archive: native transcript copy failed', err, { ...fields, harness });
     }
   }
 }

@@ -162,4 +162,56 @@ describe('TaskArchive', () => {
     await writer.close();
     expect(existsSync(join(await writer.dir, 'native'))).toBe(false);
   });
+
+  it('lays out a critic step and keeps concurrent critic writers separate', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const archive = archiveFor();
+    const a = archive.criticStep(task, 2, 'pre-merge', 'critic-a');
+    const b = archive.criticStep(task, 2, 'post-merge', 'critic-b');
+    const a2 = archive.criticStep(task, 2, 'pre-merge', 'critic-c');
+    a.appendPrompt('prompt a');
+    b.appendPrompt('prompt b');
+    for (let n = 0; n < 5; n++) {
+      a.appendUpdate({ from: 'a', n });
+      b.appendUpdate({ from: 'b', n });
+      a2.appendUpdate({ from: 'c', n });
+    }
+    await Promise.all([a.close(), b.close(), a2.close()]);
+    const root = await archive.ensure(task);
+    const aDir = join(root, 'attempts', '2', 'verification', 'pre-merge', 'critic-a');
+    const bDir = join(root, 'attempts', '2', 'verification', 'post-merge', 'critic-b');
+    expect(await a.dir).toBe(aDir);
+    expect(await b.dir).toBe(bDir);
+    expect(readFileSync(join(aDir, 'prompt.md'), 'utf8')).toBe('prompt a');
+    expect(readFileSync(join(bDir, 'prompt.md'), 'utf8')).toBe('prompt b');
+    const froms = (d: string) =>
+      readFileSync(join(d, 'acp.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l).update.from);
+    expect(froms(aDir)).toEqual(['a', 'a', 'a', 'a', 'a']);
+    expect(froms(bDir)).toEqual(['b', 'b', 'b', 'b', 'b']);
+  });
+
+  it('creates an epic archive idempotently and lays out an epic critic step', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const workspaceId = task.workspaceId!;
+    const archive = archiveFor();
+    const [d1, d2] = await Promise.all([archive.ensureEpic(workspaceId, 42), archive.ensureEpic(workspaceId, 42)]);
+    expect(d1).toBe(d2);
+    expect(d1).toBe(join(dir, 'archive', 'default', 'epic-42'));
+    const manifest = JSON.parse(readFileSync(join(d1, 'archive.json'), 'utf8'));
+    expect(manifest).toMatchObject({ epicRef: 42, workspace: 'Default', workspaceId, title: 'Epic #42', dispositions: [], exports: [] });
+    expect(typeof manifest.createdAt).toBe('string');
+    writeFileSync(join(d1, 'archive.json'), '{"custom":true}');
+    await archive.ensureEpic(workspaceId, 42);
+    expect(readFileSync(join(d1, 'archive.json'), 'utf8')).toBe('{"custom":true}');
+    expect(readdirSync(d1).filter((n) => n.endsWith('.tmp'))).toEqual([]);
+
+    const writer = archive.epicCriticStep(workspaceId, 42, 3, 'critic-x');
+    writer.appendPrompt('epic prompt');
+    writer.appendUpdate({ n: 1 });
+    await writer.close();
+    const stepDir = join(d1, 'attempts', '3', 'verification', 'pre-merge', 'critic-x');
+    expect(await writer.dir).toBe(stepDir);
+    expect(readFileSync(join(stepDir, 'prompt.md'), 'utf8')).toBe('epic prompt');
+    expect(JSON.parse(readFileSync(join(stepDir, 'acp.jsonl'), 'utf8')).update).toEqual({ n: 1 });
+  });
 });
