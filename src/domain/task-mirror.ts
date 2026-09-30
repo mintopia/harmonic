@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { taskDependencies, tasks, type RawTaskRow, type TaskRow, type TaskState, type TrackerFacts, type WayfinderType, type Workflow, type WorkspaceRow } from '../db/schema.js';
@@ -90,7 +91,7 @@ export class TaskMirror {
       const inserted = await db.insert(tasks).values({
         prompt: input.prompt, workspaceId: workspace.id, harness: null, model: null, isolationMode: null, priority: null, conflictResolveTurns: null, workingDir: workspace.workingDir,
         state: input.closed ? 'done' : 'ready', origin: 'mirrored', trackerRef: input.trackerRef, workflow: input.workflow, wayfinderType: input.wayfinderType, mapRef: input.mapRef,
-        ...(input.facts ? trackerFactColumns(input.facts) : {}), createdAt: now, updatedAt: now,
+        ...(input.facts ? trackerFactColumns(input.facts) : {}), archiveId: randomUUID(), createdAt: now, updatedAt: now,
       }).returning().get();
       return { row: inserted, dirty: true };
     });

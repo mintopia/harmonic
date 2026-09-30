@@ -16,6 +16,7 @@ import type { UsageSampler } from './usage-sampler.js';
 import type { VerificationCoordinator } from './verification-coordinator.js';
 import type { MergeCoordinator } from './merge-coordinator.js';
 import type { TaskService } from '../domain/tasks.js';
+import type { StepArchiveWriter } from '../archive/task-archive.js';
 import type { AutoDrive } from './auto-drive.js';
 
 export type TurnOutcome =
@@ -71,7 +72,7 @@ export class TurnCompletion {
     active.steerable = true;
     let connectionGone = false;
     if (input.operatorSeed !== undefined) record('lifecycle', { event: 'steer_delivered', text: input.operatorSeed });
-    const first = await promptTurn(driver, promptText, record);
+    const first = await promptTurn(driver, promptText, record, listeners.archive);
     connectionGone ||= first.connectionGone;
     let result: PromptResult = first.result ?? {};
     active.idle = true;
@@ -87,7 +88,7 @@ export class TurnCompletion {
       if (steer !== undefined) {
         record('lifecycle', { event: 'steer_delivered', text: steer });
         active.idle = false;
-        const turn = await promptTurn(driver, steer, record);
+        const turn = await promptTurn(driver, steer, record, listeners.archive);
         connectionGone ||= turn.connectionGone;
         if (turn.result) result = turn.result;
         active.idle = true;
@@ -100,7 +101,7 @@ export class TurnCompletion {
       record('lifecycle', { event: 'continue', attempt });
       promptText = await this.deps.autoDrive!.continuePrompt(task);
       active.idle = false;
-      const turn = await promptTurn(driver, promptText, record);
+      const turn = await promptTurn(driver, promptText, record, listeners.archive);
       connectionGone ||= turn.connectionGone;
       if (turn.result) result = turn.result;
       active.idle = true;
@@ -112,7 +113,7 @@ export class TurnCompletion {
     while (!connectionGone && !active.externallySettled && !escalating && !listeners.stoppedShort && active.steerQueue.length > 0) {
       const steer = active.steerQueue.shift()!;
       record('lifecycle', { event: 'steer_delivered', text: steer });
-      const turn = await promptTurn(driver, steer, record);
+      const turn = await promptTurn(driver, steer, record, listeners.archive);
       connectionGone ||= turn.connectionGone;
       if (turn.result) result = turn.result;
     }
@@ -153,7 +154,7 @@ export class TurnCompletion {
     const afkUnresolved = autoDriven && !escalating && !listeners.stoppedShort && !active.agentFinished;
     if (afkUnresolved) record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal; verifying anyway' });
     const resolvedHead = await this.resolveImplementationHead({
-      task, run, workspace, active, attemptNumber, escalating, stoppedShort: listeners.stoppedShort, connectionGone, result, record,
+      task, run, workspace, active, attemptNumber, escalating, stoppedShort: listeners.stoppedShort, connectionGone, result, record, archive: listeners.archive,
     });
     ({ connectionGone, result } = resolvedHead);
     let { implementationHead, noChangeFinishHead } = resolvedHead;
@@ -269,6 +270,7 @@ export class TurnCompletion {
     connectionGone: boolean;
     result: PromptResult;
     record: RunEventRecorder;
+    archive?: StepArchiveWriter | undefined;
   }): Promise<{ connectionGone: boolean; result: PromptResult; implementationHead: string | null; noChangeFinishHead: string | null }> {
     const { run, workspace, active, escalating, stoppedShort, record } = input;
     let { connectionGone, result } = input;
@@ -279,7 +281,7 @@ export class TurnCompletion {
       const nudge = 'Your implementation left uncommitted changes. Commit the completed work now, then finish.';
       record('lifecycle', { event: 'commit-nudge' });
       active.idle = false;
-      const turn = await promptTurn(active.driver, nudge, record);
+      const turn = await promptTurn(active.driver, nudge, record, input.archive);
       connectionGone ||= turn.connectionGone;
       if (turn.result) result = turn.result;
       active.idle = true;
@@ -388,7 +390,9 @@ export async function promptTurn(
   driver: AcpDriver,
   text: string,
   record: (type: 'permission_request' | 'lifecycle', payload: unknown) => void,
+  archive?: StepArchiveWriter,
 ): Promise<{ result: PromptResult | null; connectionGone: boolean }> {
+  archive?.appendPrompt(text);
   try {
     return { result: await driver.prompt([{ type: 'text', text }]), connectionGone: false };
   } catch (err) {

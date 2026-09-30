@@ -59,6 +59,7 @@ export class Runner {
   private readonly worktreesDir: string;
   private readonly keys: RunnerOptions['keys'];
   private readonly autoDrive: AutoDrive | undefined;
+  private readonly archive: RunnerOptions['archive'];
   private readonly taskEvents: RunnerOptions['taskEvents'];
   private readonly getWorkspace: RunnerOptions['getWorkspace'];
   private readonly postMerge: RunnerOptions['postMerge'];
@@ -97,6 +98,7 @@ export class Runner {
     this.worktreesDir = options.worktreesDir ?? join(tmpdir(), 'harmonic-worktrees');
     this.keys = options.keys;
     this.autoDrive = options.autoDrive;
+    this.archive = options.archive;
     this.taskEvents = options.taskEvents;
     this.getWorkspace = options.getWorkspace;
     this.postMerge = options.postMerge;
@@ -235,6 +237,7 @@ export class Runner {
       mergeCoordinator: this.mergeCoordinator,
       verification: this.verification,
       sessionContinuation: this.sessionContinuation,
+      archive: this.archive,
       events: this.events,
       autoDrive: this.autoDrive,
       keys: this.keys,

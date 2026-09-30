@@ -1,4 +1,5 @@
-import { and, eq, inArray, isNotNull, notInArray, or } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { and, eq, inArray, isNotNull, isNull, notInArray, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AsyncDbHandle } from '../db/async.js';
 import {
@@ -377,6 +378,7 @@ export class TaskService {
           baseBranch: input.baseBranch ?? null,
           workingDir: input.workingDir ?? workspace.workingDir,
           state,
+          archiveId: randomUUID(),
           createdAt: now,
           updatedAt: now,
         })
@@ -700,6 +702,15 @@ export class TaskService {
 
   async get(id: number): Promise<TaskRow> {
     return await this.resolve(await this.getRaw(id));
+  }
+
+  async ensureArchiveId(taskId: number): Promise<string> {
+    return await this.db.write(async (db) => {
+      await db.update(tasks).set({ archiveId: randomUUID() }).where(and(eq(tasks.id, taskId), isNull(tasks.archiveId))).run();
+      const row = await db.select({ archiveId: tasks.archiveId }).from(tasks).where(eq(tasks.id, taskId)).get();
+      if (!row?.archiveId) throw new DomainError('not_found', `task ${taskId} not found`);
+      return row.archiveId;
+    });
   }
 
   async assertExists(id: number): Promise<void> {
