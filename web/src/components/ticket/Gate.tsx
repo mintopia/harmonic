@@ -12,7 +12,7 @@ const DOT_LABEL: Record<AttemptDot, string> = {
   neutral: 'neutral',
 };
 
-const WRAP = 'sticky bottom-0 z-[5] flex flex-col gap-2.5 border-t border-hairline bg-surface px-3.5 pt-3.5 pb-12 shadow-float';
+const WRAP = 'sticky bottom-0 z-[5] flex flex-col gap-2.5 border-t border-hairline bg-surface px-3.5 pt-3.5 pb-12 shadow-float max-rail:pb-3.5';
 
 export function Gate({
   model,

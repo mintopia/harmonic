@@ -249,9 +249,9 @@ export function App() {
     {/* Own flex-col wrapper, always a column (never rail:flex-row), so the banner
         takes its own row above the shell instead of becoming a sidebar-height
         column when the inner shell switches to a row at the desktop breakpoint. */}
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-screen flex-col rail:h-screen rail:overflow-hidden">
     <ConnectionBanner />
-    <div className="flex min-h-0 flex-1 flex-col rail:h-screen rail:overflow-hidden rail:flex-row">
+    <div className="flex min-h-0 flex-1 flex-col rail:flex-row">
       <ReviewLiveRegions polite={politeReviewAnnouncement} assertive={assertiveMergeAnnouncement} />
       <a
         href="#main-content"
