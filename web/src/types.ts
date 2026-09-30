@@ -227,6 +227,20 @@ export interface WorkspaceFile {
   isTooLarge: boolean;
 }
 
+export type NotificationSeverity = 'failure' | 'escalation' | 'merge' | 'export';
+
+export interface Notification {
+  id: number;
+  severity: NotificationSeverity;
+  title: string;
+  detail: string | null;
+  workspaceId: number | null;
+  taskId: number | null;
+  createdAt: number;
+  readAt: number | null;
+  read: boolean;
+}
+
 export type GitStatusCode = '.' | 'M' | 'T' | 'A' | 'D' | 'R' | 'C' | 'U' | '?';
 
 export interface GitStatusEntry {

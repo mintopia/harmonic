@@ -2,6 +2,7 @@ import type { Scheduler, ScheduledJobRegistration } from '../scheduler/scheduler
 import type { UpdateCheck } from '../upgrade/update-check.js';
 import type { DistributionMode } from '../distribution-mode.js';
 import type { TrackerPollerManager } from '../tracker/manager.js';
+import type { NotificationStore } from '../notifications/notification-store.js';
 import type { AppOptions } from './app-context.js';
 
 export function registerAppJobs(scheduler: Scheduler, deps: {
@@ -12,6 +13,7 @@ export function registerAppJobs(scheduler: Scheduler, deps: {
   drainRetirement: () => Promise<number>;
   reconcileWorktrees: (workspaceId?: number) => Promise<unknown>;
   trackerManager: TrackerPollerManager;
+  notifications: NotificationStore;
 }): void {
   scheduler.register({
     name: 'Scheduled Job registry cleanup',
@@ -43,6 +45,11 @@ export function registerAppJobs(scheduler: Scheduler, deps: {
     name: 'Worktree reconciliation',
     intervalMs: 30 * 60 * 1000,
     run: async () => { await deps.reconcileWorktrees(); },
+  });
+  scheduler.register({
+    name: 'Notification retention',
+    intervalMs: 60 * 60_000,
+    run: async () => { await deps.notifications.prune(Date.now()); },
   });
   scheduler.register({
     name: 'Epic reconcile',

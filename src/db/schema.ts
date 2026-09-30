@@ -378,6 +378,25 @@ export const channels = sqliteTable('channels', {
   createdAt: integer('created_at').notNull(),
 });
 
+export const NOTIFICATION_SEVERITIES = ['failure', 'escalation', 'merge', 'export'] as const;
+export type NotificationSeverity = (typeof NOTIFICATION_SEVERITIES)[number];
+
+export const notifications = sqliteTable(
+  'notifications',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    severity: text('severity').$type<NotificationSeverity>().notNull(),
+    title: text('title').notNull(),
+    detail: text('detail'),
+    workspaceId: integer('workspace_id').references(() => workspaces.id, { onDelete: 'set null' }),
+    taskId: integer('task_id'),
+    createdAt: integer('created_at').notNull(),
+    readAt: integer('read_at'),
+  },
+  (t) => [index('notifications_created_at_idx').on(t.createdAt), index('notifications_workspace_id_idx').on(t.workspaceId)],
+);
+export type NotificationRow = typeof notifications.$inferSelect;
+
 /** Per-task override: this task announces its events to this channel. */
 export const taskChannels = sqliteTable(
   'task_channels',

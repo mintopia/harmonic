@@ -47,6 +47,11 @@ export const DISPOSITION_KINDS = [
 ] as const;
 export type DispositionKind = (typeof DISPOSITION_KINDS)[number];
 
+export interface SettleTaskHooks {
+  onFailedAttemptRequeued?: ((task: TaskRow, reason: string) => void) | undefined;
+  onTaskMerged?: ((task: TaskRow) => void) | undefined;
+}
+
 /**
  * The single terminal-disposition coordinator: every way an Attempt reaches a
  * terminal disposition funnels through {@link AttemptSettleCoordinator.settle},
@@ -62,6 +67,7 @@ export class AttemptSettleCoordinator {
     private readonly onAttemptFinished?: (attempt: AttemptRow) => void,
     private readonly sessionRetirement?: SessionRetirementHook,
     private readonly branchRetirement?: AttemptBranchRetirementHook,
+    private readonly hooks: SettleTaskHooks = {},
   ) {}
 
   /**
@@ -104,7 +110,7 @@ export class AttemptSettleCoordinator {
         level: 'error',
         context: { taskId: task.id, attemptId: finished.id, disposition: type },
       });
-      await this.applySettleTaskAction(task.id, projection);
+      await this.applySettleTaskAction(task.id, type, projection);
       this.onAttemptFinished?.(finished);
     });
   }
@@ -115,17 +121,24 @@ export class AttemptSettleCoordinator {
     return 'other';
   }
 
-  private async applySettleTaskAction(taskId: number, projection: SettleProjection): Promise<void> {
+  private async applySettleTaskAction(taskId: number, type: DispositionKind, projection: SettleProjection): Promise<void> {
     if (projection.taskAction === 'none') return;
     const state = (await this.taskService.get(taskId)).state;
     if (state !== 'working' && !(state === 'escalated' && projection.taskAction !== 'ready')) return;
     switch (projection.taskAction) {
       case 'done':
-        await this.taskService.setState(taskId, 'done');
+        {
+          const merged = await this.taskService.setState(taskId, 'done');
+          this.hooks.onTaskMerged?.(merged);
+        }
         break;
-      case 'ready':
-        await this.taskService.setState(taskId, 'ready');
+      case 'ready': {
+        const requeued = await this.taskService.setState(taskId, 'ready');
+        if (projection.runState === 'failed' && type !== 'operator-cancel') {
+          this.hooks.onFailedAttemptRequeued?.(requeued, projection.reason ?? type);
+        }
         break;
+      }
       case 'escalate':
         await this.taskService.escalate(taskId, projection.reason ?? 'escalated');
         break;
