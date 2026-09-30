@@ -86,13 +86,15 @@ Archives are kept indefinitely by default. Set optional global limits:
 - **Keep for (days)**: Automatically prune Archives older than this; blank = forever.
 - **Max total size (MB)**: When Archives exceed this, oldest ones are deleted first; blank = unlimited.
 
+Each Workspace can override both limits for its own Archives with the override switch on the field. A Workspace with its own limits is pruned separately from the rest; the limit you leave inherited keeps the global value.
+
 Archives are never pruned while an Export is pending or failed.
 
 ### Enabling Export
 
 Toggle Export on or off per workspace (global default: on). Choose which
 terminal dispositions trigger an Export — all three are enabled by default
-(*done*, *cancelled*, *deleted*).
+(*done*, *cancelled*, *deleted*). A Workspace can override the list of dispositions.
 
 An Export never blocks or reverts the disposition; failed Exports are
 surfaced on the Ticket page.

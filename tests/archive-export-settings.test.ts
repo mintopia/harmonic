@@ -108,7 +108,24 @@ describe('Archive & Export tab', () => {
     expect(host.textContent).toContain('Forever');
     expect(host.textContent).toContain('Inherited from global default');
     const sw = host.querySelector<HTMLButtonElement>('[aria-label="Override Keep for (days)"]');
-    expect(sw?.disabled).toBe(true);
+    expect(sw?.disabled).toBe(false);
+  });
+
+  it('overrides retention and dispositions per Workspace', async () => {
+    let latest: Workspace | undefined;
+    const host = await mountComponent(createElement(WorkspaceHarness, { config: makeConfig(), initial: makeWorkspace(), onWs: (w) => (latest = w) }));
+    await click(host.querySelector('[aria-label="Override Keep for (days)"]'));
+    expect(latest?.archiveRetentionDays).toBe(90);
+    await type(host.querySelector<HTMLInputElement>('#archive-retain-days'), '14');
+    expect(latest?.archiveRetentionDays).toBe(14);
+    await click(host.querySelector('[aria-label="Override Max total size (MB)"]'));
+    expect(latest?.archiveRetentionMaxTotalMB).toBe(1024);
+    await click(host.querySelector('[aria-label="Override Dispositions to export"]'));
+    expect(latest?.exportIncludeStates).toEqual(['done', 'cancelled', 'deleted']);
+    await click([...host.querySelectorAll('[aria-label="Dispositions to export"] button')].find((b) => b.textContent?.trim() === 'deleted'));
+    expect(latest?.exportIncludeStates).toEqual(['done', 'cancelled']);
+    await click(host.querySelector('[aria-label="Override Dispositions to export"]'));
+    expect(latest?.exportIncludeStates).toBeNull();
   });
 
   it('shows inherited Workspace values as the global value with the Inherited note', async () => {

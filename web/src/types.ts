@@ -340,6 +340,9 @@ export interface Workspace {
   exportS3AccessKeyId: string | null;
   exportS3SecretAccessKey: string | null;
   exportRedactPatterns: { id: string; regex: string }[] | null;
+  exportIncludeStates: ExportState[] | null;
+  archiveRetentionDays: number | null;
+  archiveRetentionMaxTotalMB: number | null;
   /** Tool-timeout override; `null` inherits `config.guardrails.toolTimeoutMinutes`. */
   toolTimeoutMinutes: number | null;
   /** Drive overrides, decomposed into independently-inheritable

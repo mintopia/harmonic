@@ -19,7 +19,8 @@ import { registerRouteRecorder, registerErrorHandler } from './app-hooks.js';
 import { registerShutdown, registerStartup } from './app-lifecycle.js';
 import { registerRoutes } from './app-routes.js';
 import { TaskExporter } from '../archive/task-export.js';
-import { pruneArchives } from '../archive/archive-retention.js';
+import { pruneArchives, type ArchiveRetention } from '../archive/archive-retention.js';
+import { workspaceSlug } from '../archive/task-archive.js';
 import { resolveExportSettings } from '../archive/export-settings.js';
 import type { TaskRow } from '../db/schema.js';
 import { epicAttemptTimelineToApi, taskToApi, ticketTimelineToApi } from './serialize.js';
@@ -205,9 +206,14 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     name: 'Archive retention',
     intervalMs: 60 * 60_000,
     run: async () => {
+      const overrides = new Map<string, ArchiveRetention>();
+      for (const ws of await stores.workspaces.list()) {
+        overrides.set(workspaceSlug(ws.name, ws.id), { days: ws.archiveRetentionDays, maxTotalMB: ws.archiveRetentionMaxTotalMB });
+      }
       await pruneArchives({
         dataDir: opts.dataDir,
         retention: () => stores.settingsStore.getGlobal().archive.retain,
+        workspaceRetention: (slug) => overrides.get(slug) ?? null,
         taskTerminalAt: async (taskId) => {
           const task = await orFallback(() => ctx.tasks.get(taskId), { op: 'archive.retention.task', context: { taskId } }, null);
           return task && (task.state === 'done' || task.state === 'cancelled') ? task.updatedAt : null;

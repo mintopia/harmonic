@@ -221,7 +221,7 @@ function BoundField({
   );
 }
 
-function NullableNumberField({ ctx, label, htmlFor, help, placeholder, get, set, errorKey }: {
+function NullableNumberField({ ctx, label, htmlFor, help, placeholder, get, set, errorKey, wsKey, seed }: {
   ctx: RenderCtx;
   label: string;
   htmlFor: string;
@@ -230,10 +230,38 @@ function NullableNumberField({ ctx, label, htmlFor, help, placeholder, get, set,
   get: (c: AppConfig) => number | null;
   set: (c: AppConfig, v: number | null) => AppConfig;
   errorKey: string;
+  wsKey: 'archiveRetentionDays' | 'archiveRetentionMaxTotalMB';
+  seed: number;
 }) {
   if (ctx.surface !== 'global') {
-    const v = get(ctx.config);
-    return <WsShell label={label} help={help} overridden={false} locked display={v === null ? (placeholder.startsWith('Forever') ? 'Forever' : 'Unlimited') : v} />;
+    const own = ctx.workspace[wsKey];
+    const inherited = get(ctx.config);
+    const setOwn = (v: number | null) => ctx.setWorkspace({ ...ctx.workspace, [wsKey]: v });
+    const shown = own ?? inherited;
+    return (
+      <div>
+        <WsShell
+          label={label}
+          htmlFor={htmlFor}
+          help={help}
+          overridden={own !== null}
+          display={shown === null ? (placeholder.startsWith('Forever') ? 'Forever' : 'Unlimited') : shown}
+          onOverride={(on) => setOwn(on ? (inherited ?? seed) : null)}
+          onReset={() => setOwn(null)}
+        >
+          <input
+            id={htmlFor}
+            type="number"
+            min={1}
+            inputMode="numeric"
+            className={`${field} tabular-nums`}
+            value={own ?? ''}
+            onChange={(e) => e.target.value !== '' && setOwn(Number(e.target.value))}
+          />
+        </WsShell>
+        <FieldError message={ctx.errors[wsKey]} />
+      </div>
+    );
   }
   const value = get(ctx.config);
   const base = get(ctx.baseline);
@@ -282,6 +310,8 @@ export function ArchiveRetentionSection({ ctx }: { ctx: RenderCtx }) {
         get={(c) => c.archive.retain.days}
         set={(c, v) => ({ ...c, archive: { retain: { ...c.archive.retain, days: v } } })}
         errorKey="archive.retain.days"
+        wsKey="archiveRetentionDays"
+        seed={90}
       />
       <NullableNumberField
         ctx={ctx}
@@ -292,6 +322,8 @@ export function ArchiveRetentionSection({ ctx }: { ctx: RenderCtx }) {
         get={(c) => c.archive.retain.maxTotalMB}
         set={(c, v) => ({ ...c, archive: { retain: { ...c.archive.retain, maxTotalMB: v } } })}
         errorKey="archive.retain.maxTotalMB"
+        wsKey="archiveRetentionMaxTotalMB"
+        seed={1024}
       />
     </div>
   );
@@ -299,14 +331,56 @@ export function ArchiveRetentionSection({ ctx }: { ctx: RenderCtx }) {
 
 const STATES: ExportState[] = ['done', 'cancelled', 'deleted'];
 
+function StateChips({ value, onChange }: { value: ExportState[]; onChange: (next: ExportState[]) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Dispositions to export">
+      {STATES.map((s) => {
+        const on = value.includes(s);
+        return (
+          <button
+            key={s}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onChange(on ? value.filter((x) => x !== s) : STATES.filter((x) => x === s || value.includes(x)))}
+            className={`inline-flex min-h-8 items-center gap-1.5 rounded-[3px] border px-2.5 font-data text-[13px] transition-colors duration-150 ${
+              on ? 'border-transparent bg-accent-tint font-semibold text-accent' : 'border-edge bg-surface text-muted hover:border-accent'
+            }`}
+          >
+            {on && <Icon name="check" className="size-3" />}
+            {s}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function DispositionChips({ ctx }: { ctx: RenderCtx }) {
   const help = 'Deleting a Task exports it first when it has at least one Attempt.';
+  const key = (s: ExportState[]) => STATES.filter((x) => s.includes(x)).join(',');
   if (ctx.surface === 'workspace') {
-    return <WsShell label="Dispositions to export" help={help} overridden={false} locked display={<span className="font-data text-[13px]">{ctx.config.export.includeStates.join(', ') || 'none'}</span>} />;
+    const own = ctx.workspace.exportIncludeStates;
+    const inherited = ctx.config.export.includeStates;
+    const setOwn = (v: ExportState[] | null) => ctx.setWorkspace({ ...ctx.workspace, exportIncludeStates: v });
+    const shown = own ?? inherited;
+    return (
+      <div>
+        <WsShell
+          label="Dispositions to export"
+          help={help}
+          overridden={own !== null}
+          display={<span className="font-data text-[13px]">{key(shown) || 'none'}</span>}
+          onOverride={(on) => setOwn(on ? [...inherited] : null)}
+          onReset={() => setOwn(null)}
+        >
+          <StateChips value={shown} onChange={setOwn} />
+        </WsShell>
+        <FieldError message={ctx.errors.exportIncludeStates} />
+      </div>
+    );
   }
   const value = ctx.config.export.includeStates;
   const base = ctx.baseline.export.includeStates;
-  const key = (s: ExportState[]) => STATES.filter((x) => s.includes(x)).join(',');
   const setStates = (next: ExportState[]) => ctx.setConfig({ ...ctx.config, export: { ...ctx.config.export, includeStates: next } });
   return (
     <div>
@@ -322,25 +396,7 @@ function DispositionChips({ ctx }: { ctx: RenderCtx }) {
         {({ value: v, onChange }) => (
           <>
             <p className="mb-1.5 text-small text-muted">{help}</p>
-            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Dispositions to export">
-              {STATES.map((s) => {
-                const on = v.includes(s);
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => onChange(on ? v.filter((x) => x !== s) : STATES.filter((x) => x === s || v.includes(x)))}
-                    className={`inline-flex min-h-8 items-center gap-1.5 rounded-[3px] border px-2.5 font-data text-[13px] transition-colors duration-150 ${
-                      on ? 'border-transparent bg-accent-tint font-semibold text-accent' : 'border-edge bg-surface text-muted hover:border-accent'
-                    }`}
-                  >
-                    {on && <Icon name="check" className="size-3" />}
-                    {s}
-                  </button>
-                );
-              })}
-            </div>
+            <StateChips value={v} onChange={onChange} />
           </>
         )}
       </LayerField>

@@ -1456,6 +1456,290 @@
           "children"
         ]
       },
+      "ExportRetryInput": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "example": 1,
+            "description": "Scheduled retries already made."
+          },
+          "max": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "example": 3
+          },
+          "nextRetryAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "2026-09-30T12:12:07.000Z"
+          },
+          "exhausted": {
+            "type": "boolean",
+            "description": "No further scheduled retry; only Export again can deliver.",
+            "example": false
+          }
+        },
+        "required": [
+          "count",
+          "max",
+          "nextRetryAt",
+          "exhausted"
+        ]
+      },
+      "ExportDestinationStatusInput": {
+        "type": "object",
+        "properties": {
+          "destination": {
+            "type": "string",
+            "enum": [
+              "directory",
+              "s3"
+            ],
+            "example": "s3"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "s3://acme-audit/harmonic/",
+            "description": "Where the Destination is currently configured to deliver; null if no longer configured."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "failed"
+            ]
+          },
+          "lastAttemptAt": {
+            "type": "string",
+            "example": "2026-09-30T11:42:11.000Z"
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Delivered path or key; null while failed."
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "AccessDenied: s3:PutObject"
+          },
+          "retry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportRetryInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only while the Destination is failed."
+          }
+        },
+        "required": [
+          "destination",
+          "location",
+          "status",
+          "lastAttemptAt",
+          "file",
+          "error",
+          "retry"
+        ]
+      },
+      "ExportSummaryInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "412-GH-398-done-2026-09-30T11-42-07Z.tar.gz"
+          },
+          "disposition": {
+            "type": "string",
+            "example": "done"
+          },
+          "builtAt": {
+            "type": "string",
+            "example": "2026-09-30T11:42:07.000Z"
+          },
+          "bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "partial": {
+            "type": "boolean",
+            "description": "Built from surviving records; some transcripts unavailable."
+          },
+          "redactions": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "number"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "github-token": 3
+            }
+          },
+          "destinations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportDestinationStatusInput"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "disposition",
+          "builtAt",
+          "bytes",
+          "partial",
+          "redactions",
+          "destinations"
+        ]
+      },
+      "TaskExportStatusInput": {
+        "type": "object",
+        "properties": {
+          "exportable": {
+            "type": "boolean",
+            "description": "True once the Task is done or cancelled."
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportSummaryInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "earlier": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportSummaryInput"
+            },
+            "description": "Previous Exports, newest first."
+          }
+        },
+        "required": [
+          "exportable",
+          "latest",
+          "earlier"
+        ]
+      },
+      "TaskExportAgainResponseInput": {
+        "type": "object",
+        "properties": {
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "destination": {
+                  "type": "string",
+                  "enum": [
+                    "directory",
+                    "s3"
+                  ],
+                  "example": "s3"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "succeeded",
+                    "failed"
+                  ]
+                },
+                "file": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "error": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "destination",
+                "status",
+                "file",
+                "error"
+              ]
+            }
+          },
+          "export": {
+            "$ref": "#/components/schemas/TaskExportStatusInput"
+          }
+        },
+        "required": [
+          "outcomes",
+          "export"
+        ]
+      },
       "TaskWithDepsInput": {
         "type": "object",
         "properties": {
@@ -5635,6 +5919,47 @@
             ],
             "example": null
           },
+          "exportIncludeStates": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "done",
+                    "cancelled",
+                    "deleted"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "archiveRetentionDays": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "archiveRetentionMaxTotalMB": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -5689,6 +6014,9 @@
           "exportS3AccessKeyId",
           "exportS3SecretAccessKey",
           "exportRedactPatterns",
+          "exportIncludeStates",
+          "archiveRetentionDays",
+          "archiveRetentionMaxTotalMB",
           "createdAt",
           "updatedAt"
         ]
@@ -8441,6 +8769,296 @@
           "endedAt",
           "status",
           "children"
+        ],
+        "additionalProperties": false
+      },
+      "ExportRetry": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "example": 1,
+            "description": "Scheduled retries already made."
+          },
+          "max": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "example": 3
+          },
+          "nextRetryAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "2026-09-30T12:12:07.000Z"
+          },
+          "exhausted": {
+            "type": "boolean",
+            "description": "No further scheduled retry; only Export again can deliver.",
+            "example": false
+          }
+        },
+        "required": [
+          "count",
+          "max",
+          "nextRetryAt",
+          "exhausted"
+        ],
+        "additionalProperties": false
+      },
+      "ExportDestinationStatus": {
+        "type": "object",
+        "properties": {
+          "destination": {
+            "type": "string",
+            "enum": [
+              "directory",
+              "s3"
+            ],
+            "example": "s3"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "s3://acme-audit/harmonic/",
+            "description": "Where the Destination is currently configured to deliver; null if no longer configured."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "failed"
+            ]
+          },
+          "lastAttemptAt": {
+            "type": "string",
+            "example": "2026-09-30T11:42:11.000Z"
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Delivered path or key; null while failed."
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "AccessDenied: s3:PutObject"
+          },
+          "retry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportRetry"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only while the Destination is failed."
+          }
+        },
+        "required": [
+          "destination",
+          "location",
+          "status",
+          "lastAttemptAt",
+          "file",
+          "error",
+          "retry"
+        ],
+        "additionalProperties": false
+      },
+      "ExportSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "412-GH-398-done-2026-09-30T11-42-07Z.tar.gz"
+          },
+          "disposition": {
+            "type": "string",
+            "example": "done"
+          },
+          "builtAt": {
+            "type": "string",
+            "example": "2026-09-30T11:42:07.000Z"
+          },
+          "bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "partial": {
+            "type": "boolean",
+            "description": "Built from surviving records; some transcripts unavailable."
+          },
+          "redactions": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "number"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "github-token": 3
+            }
+          },
+          "destinations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportDestinationStatus"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "disposition",
+          "builtAt",
+          "bytes",
+          "partial",
+          "redactions",
+          "destinations"
+        ],
+        "additionalProperties": false
+      },
+      "TaskExportStatus": {
+        "type": "object",
+        "properties": {
+          "exportable": {
+            "type": "boolean",
+            "description": "True once the Task is done or cancelled."
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "earlier": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportSummary"
+            },
+            "description": "Previous Exports, newest first."
+          }
+        },
+        "required": [
+          "exportable",
+          "latest",
+          "earlier"
+        ],
+        "additionalProperties": false
+      },
+      "TaskExportAgainResponse": {
+        "type": "object",
+        "properties": {
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "destination": {
+                  "type": "string",
+                  "enum": [
+                    "directory",
+                    "s3"
+                  ],
+                  "example": "s3"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "succeeded",
+                    "failed"
+                  ]
+                },
+                "file": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "error": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "destination",
+                "status",
+                "file",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "export": {
+            "$ref": "#/components/schemas/TaskExportStatus"
+          }
+        },
+        "required": [
+          "outcomes",
+          "export"
         ],
         "additionalProperties": false
       },
@@ -12724,6 +13342,47 @@
             ],
             "example": null
           },
+          "exportIncludeStates": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "done",
+                    "cancelled",
+                    "deleted"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "archiveRetentionDays": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "archiveRetentionMaxTotalMB": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -12778,6 +13437,9 @@
           "exportS3AccessKeyId",
           "exportS3SecretAccessKey",
           "exportRedactPatterns",
+          "exportIncludeStates",
+          "archiveRetentionDays",
+          "archiveRetentionMaxTotalMB",
           "createdAt",
           "updatedAt"
         ],
@@ -16089,6 +16751,9 @@
                         },
                         "liveCursor": {
                           "type": "number"
+                        },
+                        "fromArchive": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -16694,6 +17359,9 @@
                         },
                         "liveCursor": {
                           "type": "number"
+                        },
+                        "fromArchive": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -17165,6 +17833,177 @@
                   ],
                   "additionalProperties": false,
                   "description": "The attempt's changed files with parsed +/- hunks; empty outside worktree mode."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/export": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "description": "Export status for a Task: the latest Export (filename, build time, size, redactions, partial flag) with per-Destination delivery status, last attempt, error and pending retry, plus earlier Exports. `latest` is null until an Export has been attempted.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest and earlier Exports with per-Destination status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskExportStatus"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No task has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "description": "Export again: rebuild the Export and deliver it to every configured Destination regardless of the includeStates filter, as a new Export that never overwrites an earlier one. A Task that predates the Archive is built from surviving records and flagged `partial`. Only done or cancelled Tasks; 409 when the Task is not finished or no Destination is enabled.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per-Destination outcomes of the new Export, plus the refreshed status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskExportAgainResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No task has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Task is not finished, or no Export Destination is enabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/export/download": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "description": "Stream a freshly built, redacted Export tarball (tar.gz) to the browser. Needs no configured Destination and is not recorded as an Export.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The tar.gz bytes, as an attachment named after the canonical Export filename.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The tar.gz bytes, as an attachment named after the canonical Export filename."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No task has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Task is not finished.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -18629,6 +19468,52 @@
                             "regex"
                           ]
                         }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "exportIncludeStates": {
+                    "example": [
+                      "done"
+                    ],
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "done",
+                            "cancelled",
+                            "deleted"
+                          ]
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "archiveRetentionDays": {
+                    "example": 90,
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "archiveRetentionMaxTotalMB": {
+                    "example": 2048,
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
                       },
                       {
                         "type": "null"

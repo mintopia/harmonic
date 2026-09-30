@@ -268,6 +268,27 @@ export const settingsRegistry = {
     label: 'S3 secret access key',
     help: 'Shown masked. Used only together with the access key ID; otherwise the AWS default credential chain applies. Inherits the global key when unset.',
   },
+  exportIncludeStates: {
+    scope: 'overridable',
+    control: 'json',
+    tab: 'archive',
+    label: 'Dispositions to export',
+    help: 'Which terminal dispositions (done, cancelled, deleted) trigger an Export; inherits the global list when unset.',
+  },
+  archiveRetentionDays: {
+    scope: 'overridable',
+    control: 'number',
+    tab: 'archive',
+    label: 'Keep Archives for (days)',
+    help: 'Prune this Workspace\'s Archives older than this many days; inherits the global setting when unset.',
+  },
+  archiveRetentionMaxTotalMB: {
+    scope: 'overridable',
+    control: 'number',
+    tab: 'archive',
+    label: 'Archive size cap (MB)',
+    help: 'Prune this Workspace\'s oldest Archives once they exceed this total size; inherits the global setting when unset.',
+  },
   exportRedactPatterns: {
     scope: 'overridable',
     control: 'json',

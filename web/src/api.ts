@@ -40,6 +40,7 @@ import type {
   TimelineResponse,
   TaskExportStatus,
   TaskExportAgainResult,
+  ExportState,
 } from './types.js';
 import type { Epic, EpicIntegrateOutcome } from './epic-model.js';
 import type { Stats } from './stats-model.js';
@@ -219,6 +220,9 @@ export const api = {
       exportS3AccessKeyId?: string | null;
       exportS3SecretAccessKey?: string | null;
       exportRedactPatterns?: { id: string; regex: string }[] | null;
+      exportIncludeStates?: ExportState[] | null;
+      archiveRetentionDays?: number | null;
+      archiveRetentionMaxTotalMB?: number | null;
       toolTimeoutMinutes?: number | null;
       drivePrompt?: string | null;
       driveUnattendedReminder?: string | null;
