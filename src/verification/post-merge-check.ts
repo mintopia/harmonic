@@ -20,7 +20,7 @@ export function createPostMergeCheck(deps: {
   criticDrive?: CriticHarnessDrive | undefined;
   archive?: TaskArchive | undefined;
 }): (input: { task: TaskRow; run: AttemptRow; mergeOid: string; baseDir: string }) => Promise<{ pass: boolean; output: string }> {
-  const { workspaces, settingsStore, verificationAttempts, criticDrive, archive } = deps;
+  const { workspaces, settingsStore, verificationAttempts, criticDrive, archive: taskArchive } = deps;
   return async ({
     task,
     run,
@@ -48,7 +48,7 @@ export function createPostMergeCheck(deps: {
     );
     const { commands, critics } = resolvedTask.postMerge;
     for (const command of commands) {
-      const outputLogPath = (await archive?.verificationOutputLog(task, run.number, 'post-merge', command.id)) ?? null;
+      const outputLogPath = (await taskArchive?.verificationOutputLog(task, run.number, 'post-merge', command.id)) ?? null;
       const cmdAttempt = await runCommandVerifier({
         outputLogPath,
         cwd: baseDir,
@@ -62,7 +62,7 @@ export function createPostMergeCheck(deps: {
     // A merge with no first parent (root commit, or a rewritten history) just means no base-diff context for the critic; the critic falls back to its no-baseOid prompt.
     const baseOid = await Git.revParse(baseDir, `${mergeOid}^1`).catch(() => null);
     if (critics.length > 0) await indexWorktree(baseDir);
-    const criticAttempts = await Promise.all(critics.map(async (configuredCritic) => {
+    const criticAttempts = await Promise.all(critics.map(async (configuredCritic, index) => {
       const critic = {
         prompt: task.trackerRef == null ? configuredCritic.noIssuePrompt : configuredCritic.issuePrompt,
         model: configuredCritic.model,
@@ -71,6 +71,7 @@ export function createPostMergeCheck(deps: {
       const harnessId = critic.harness ?? task.harness;
       const harness = settingsStore.getGlobal().harnesses[harnessId as keyof AppConfig['harnesses']];
       if (!harness) throw new DomainError('validation', `critic harness '${harnessId}' is not configured`);
+      const archive = taskArchive?.criticStep(task, run.number, 'post-merge', `critic-${index + 1}`);
       const attempt = await runCritic({
         cwd: baseDir,
         verifiedHeadOid: mergeOid,
@@ -81,6 +82,7 @@ export function createPostMergeCheck(deps: {
         harnessId,
         attributes: { 'task.id': task.id, 'attempt.id': run.id },
         ...(criticDrive ? { drive: criticDrive } : {}),
+        ...(archive ? { archive } : {}),
       });
       await verificationAttempts.append(run.id, criticAttemptToInput(attempt));
       return attempt;

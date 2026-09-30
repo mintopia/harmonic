@@ -450,6 +450,7 @@ export async function createRuntime(deps: {
       },
       verificationAttemptStore: verificationAttempts,
       criticDrive: opts.criticDrive,
+      archive,
     },
   );
   epicServiceRef = epicService;

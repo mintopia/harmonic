@@ -28,6 +28,7 @@ import type { EpicTimelineStep } from '../domain/epic-merge-events.js';
 import { EpicWorktreePool } from '../execution/epic-worktree-pool.js';
 import { Git } from '../execution/git.js';
 import type { CriticHarnessDrive } from '../verification/critic.js';
+import type { TaskArchive } from '../archive/task-archive.js';
 import type { MergePolicyOutcome, MergeStepEvent, PostMergeCheckResult } from '../execution/merge-policy.js';
 import { logger } from '../logger.js';
 import type { EpicIntegrationSync } from './poller.js';
@@ -100,6 +101,7 @@ export interface TrackerEpicServiceOptions {
   onEpicIntegrated?: ((payload: { workspaceId: number; epicRef: number }) => void) | undefined;
   verificationAttemptStore?: VerificationAttemptStore | undefined;
   criticDrive?: CriticHarnessDrive | undefined;
+  archive?: TaskArchive | undefined;
 }
 
 export class TrackerEpicService implements EpicService {
@@ -125,6 +127,7 @@ export class TrackerEpicService implements EpicService {
   private readonly onEpicIntegrated: TrackerEpicServiceOptions['onEpicIntegrated'];
   private readonly verificationAttemptStore: TrackerEpicServiceOptions['verificationAttemptStore'];
   private readonly criticDrive: TrackerEpicServiceOptions['criticDrive'];
+  private readonly archive: TrackerEpicServiceOptions['archive'];
 
   constructor(
     private readonly tasks: TaskService,
@@ -146,6 +149,7 @@ export class TrackerEpicService implements EpicService {
     this.onEpicIntegrated = options.onEpicIntegrated;
     this.verificationAttemptStore = options.verificationAttemptStore;
     this.criticDrive = options.criticDrive;
+    this.archive = options.archive;
   }
 
   startWorkspace(workspace: WorkspaceRow): EpicIntegrationSync {
@@ -182,6 +186,7 @@ export class TrackerEpicService implements EpicService {
         verificationAttemptStore: this.verificationAttemptStore,
         onEpicAttemptChanged: this.onEpicAttemptChanged,
         criticDrive: this.criticDrive,
+        archive: this.archive,
       });
       const integration = new EpicIntegrationRunner({
         workspace,

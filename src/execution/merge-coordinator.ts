@@ -9,6 +9,7 @@ import { DomainError } from '../domain/errors.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import type { EpicMergeEventStore } from '../domain/epic-merge-events.js';
+import type { TaskArchive } from '../archive/task-archive.js';
 import type { TranscriptCapture } from './transcript-capture.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { createAcpCriticDrive, runCritic, criticAttemptToInput } from '../verification/critic.js';
@@ -76,6 +77,7 @@ export interface MergeCoordinatorDeps {
   transcripts: TranscriptCapture;
   getWorkspace: RunnerOptions['getWorkspace'];
   criticDrive: RunnerOptions['criticDrive'];
+  archive?: TaskArchive | undefined;
   postMerge: RunnerOptions['postMerge'];
   archive?: RunnerOptions['archive'];
   urlFor: (task: TaskRow) => string | null;
@@ -341,7 +343,7 @@ export class MergeCoordinator {
         }
         const baseOid = await Git.revParse(baseDir, `${mergeOid}^1`).catch(() => null);
         if (critics.length > 0) await indexWorktree(baseDir);
-        const criticAttempts = await Promise.all(critics.map(async (configuredCritic) => {
+        const criticAttempts = await Promise.all(critics.map(async (configuredCritic, index) => {
           const critic = {
             prompt: task.trackerRef == null ? configuredCritic.noIssuePrompt : configuredCritic.issuePrompt,
             model: configuredCritic.model,
@@ -352,6 +354,7 @@ export class MergeCoordinator {
           if (!criticHarness) {
             throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
           }
+          const archive = this.deps.archive?.criticStep(task, timelineAttempt.number, 'post-merge', `critic-${index + 1}`);
           const attempt = await runCritic({
             cwd: baseDir,
             verifiedHeadOid: mergeOid,
@@ -363,6 +366,7 @@ export class MergeCoordinator {
             harnessId: criticHarnessId,
             attributes: { 'task.id': task.id, 'attempt.id': run.id },
             ...(this.deps.criticDrive ? { drive: this.deps.criticDrive } : {}),
+            ...(archive ? { archive } : {}),
             onUpdate: this.deps.criticUpdateRelay(run.id),
           });
           const persisted = await this.deps.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
