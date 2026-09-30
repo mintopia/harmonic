@@ -32,6 +32,8 @@ function harnessPermissionModes() {
   );
 }
 
+const exportShape = appConfigSchema.shape.export.shape;
+
 /** A deep-partial patch of `AppConfig`; `appConfigSchema` re-validates the merged result. */
 const configPatchBodySchema = z
   .object({
@@ -108,6 +110,17 @@ const configPatchBodySchema = z
       .object({
         task: z.object({ preMerge: taskVerificationStageSchema, postMerge: taskVerificationStageSchema }).partial(),
         epic: z.object({ preMerge: epicVerificationStageSchema, resolvePrompt: z.string().min(1) }).partial(),
+      })
+      .partial()
+      .optional(),
+    archive: z.object({ retain: appConfigSchema.shape.archive.shape.retain.partial() }).partial().optional(),
+    export: z
+      .object({
+        enabled: exportShape.enabled,
+        includeStates: exportShape.includeStates,
+        directory: exportShape.directory.partial(),
+        s3: exportShape.s3.partial(),
+        redact: exportShape.redact,
       })
       .partial()
       .optional(),

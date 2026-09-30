@@ -5,7 +5,7 @@ export type SettingScope = 'global-only' | 'overridable';
 export type SettingControl = 'select' | 'toggle' | 'number' | 'text' | 'json' | 'verifier';
 
 /** The tab a setting groups under in the Settings UI. */
-export type SettingTab = 'general' | 'execution' | 'verification' | 'prompts' | 'integrations' | 'security';
+export type SettingTab = 'general' | 'execution' | 'verification' | 'prompts' | 'integrations' | 'security' | 'archive';
 
 export interface SettingSpec {
   readonly scope: SettingScope;
@@ -208,70 +208,91 @@ export const settingsRegistry = {
   exportEnabled: {
     scope: 'overridable',
     control: 'toggle',
-    tab: 'execution',
+    tab: 'archive',
     label: 'Export on done',
     help: 'Write a Task Archive tarball to the export directory when a Task reaches an included terminal state; inherits the global setting when unset.',
   },
   exportDirectoryPath: {
     scope: 'overridable',
     control: 'text',
-    tab: 'execution',
+    tab: 'archive',
     label: 'Export directory',
     help: 'Absolute directory for Task Archive tarballs (<path>/<workspace>/<taskId>-<trackerRef>-done-<timestamp>.tar.gz); inherits the global path when unset.',
   },
   exportS3Endpoint: {
     scope: 'overridable',
     control: 'text',
-    tab: 'execution',
+    tab: 'archive',
     label: 'S3 endpoint',
     help: 'Endpoint URL of an S3-compatible service for Task Archive tarballs; leave unset for AWS. Inherits the global endpoint when unset.',
   },
   exportS3Region: {
     scope: 'overridable',
     control: 'text',
-    tab: 'execution',
+    tab: 'archive',
     label: 'S3 region',
     help: 'Region for the S3 export bucket; inherits the global region when unset.',
   },
   exportS3Bucket: {
     scope: 'overridable',
     control: 'text',
-    tab: 'execution',
+    tab: 'archive',
     label: 'S3 bucket',
     help: 'Bucket that receives Task Archive tarballs; setting one enables the S3 destination. Inherits the global bucket when unset.',
   },
   exportS3Prefix: {
     scope: 'overridable',
     control: 'text',
-    tab: 'execution',
+    tab: 'archive',
     label: 'S3 key prefix',
     help: 'Key prefix prepended to <workspace>/<file>.tar.gz in the bucket; inherits the global prefix when unset.',
   },
   exportS3ForcePathStyle: {
     scope: 'overridable',
     control: 'toggle',
-    tab: 'execution',
+    tab: 'archive',
     label: 'S3 path-style addressing',
     help: 'Use path-style URLs, required by some S3-compatible services; inherits the global setting when unset.',
   },
   exportS3AccessKeyId: {
     scope: 'overridable',
     control: 'text',
-    tab: 'execution',
+    tab: 'archive',
     label: 'S3 access key ID',
     help: 'Shown masked. Used only together with the secret access key; otherwise the AWS default credential chain applies. Inherits the global key when unset.',
   },
   exportS3SecretAccessKey: {
     scope: 'overridable',
     control: 'text',
-    tab: 'execution',
+    tab: 'archive',
     label: 'S3 secret access key',
     help: 'Shown masked. Used only together with the access key ID; otherwise the AWS default credential chain applies. Inherits the global key when unset.',
+  },
+  exportIncludeStates: {
+    scope: 'overridable',
+    control: 'json',
+    tab: 'archive',
+    label: 'Dispositions to export',
+    help: 'Which terminal dispositions (done, cancelled, deleted) trigger an Export; inherits the global list when unset.',
+  },
+  archiveRetentionDays: {
+    scope: 'overridable',
+    control: 'number',
+    tab: 'archive',
+    label: 'Keep Archives for (days)',
+    help: 'Prune this Workspace\'s Archives older than this many days; inherits the global setting when unset.',
+  },
+  archiveRetentionMaxTotalMB: {
+    scope: 'overridable',
+    control: 'number',
+    tab: 'archive',
+    label: 'Archive size cap (MB)',
+    help: 'Prune this Workspace\'s oldest Archives once they exceed this total size; inherits the global setting when unset.',
   },
   exportRedactPatterns: {
     scope: 'overridable',
     control: 'json',
-    tab: 'execution',
+    tab: 'archive',
     label: 'Export redaction patterns',
     help: 'Extra { id, regex } patterns redacted from Exports as [REDACTED:<id>], added to the baseline and global patterns; a Workspace cannot remove those.',
   },
@@ -307,6 +328,7 @@ export const SETTING_TABS: readonly { readonly id: SettingTab; readonly label: s
   { id: 'prompts', label: 'Prompts' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'security', label: 'Security' },
+  { id: 'archive', label: 'Archive & Export' },
 ];
 
 /** The registry keys assigned to a tab, in registry declaration order. */

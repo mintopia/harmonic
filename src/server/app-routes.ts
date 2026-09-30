@@ -22,6 +22,7 @@ import { channelRoutes } from './routes/channels.js';
 import { scheduledJobRoutes } from './routes/scheduled-jobs.js';
 import { worktreeRoutes } from './routes/worktrees.js';
 import { harnessRoutes } from './routes/harnesses.js';
+import { exportRoutes } from './routes/export.js';
 import { fsRoutes } from './routes/fs.js';
 import { openapiRoutes } from './routes/openapi.js';
 import { buildMcpServer } from '../mcp/server.js';
@@ -60,6 +61,7 @@ export async function registerRoutes(app: App, ctx: AppContext, contexts: AppCon
   await app.register((fastify) => channelRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => notificationRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => fsRoutes(fastify, contexts.tracking), { prefix: '/api' });
+  await app.register((fastify) => exportRoutes(fastify, contexts.execution), { prefix: '/api' });
   await app.register((fastify) => epicRoutes(fastify, ctx), { prefix: '/api' });
   await app.register(openapiRoutes, { prefix: '/api' });
 

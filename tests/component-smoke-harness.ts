@@ -49,6 +49,14 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     contextReuseTokenLimit: 100_000,
     editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
+    archive: { retain: { days: null, maxTotalMB: null } },
+    export: {
+      enabled: false,
+      includeStates: ['done', 'cancelled', 'deleted'],
+      directory: { path: null },
+      s3: { endpoint: null, region: null, bucket: null, prefix: '', forcePathStyle: false, accessKeyId: null, secretAccessKey: null },
+      redact: { patterns: [] },
+    },
     ...overrides,
   };
 }
@@ -91,6 +99,9 @@ export function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     exportS3AccessKeyId: null,
     exportS3SecretAccessKey: null,
     exportRedactPatterns: null,
+    exportIncludeStates: null,
+    archiveRetentionDays: null,
+    archiveRetentionMaxTotalMB: null,
     toolTimeoutMinutes: null,
     drivePrompt: null,
     driveUnattendedReminder: null,

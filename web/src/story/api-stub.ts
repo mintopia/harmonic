@@ -243,6 +243,7 @@ export const api: typeof RealApi = {
   resumeGlobal: () => ok({ paused: false }),
   configLayers: () => ok(configLayers),
   updateConfig: (_patch: object) => ok(f.config),
+  testExportDestination: (body: { destination: 'directory' | 's3' }) => ok({ destination: body.destination, ok: true, testedAt: new Date().toISOString() }),
   replaceConfig: (_config: AppConfig) => ok(f.config),
   revertConfig: () => ok(f.config),
   tasks: (opts?: { workspaceId?: number; state?: 'open'; parent?: number; limit?: number; offset?: number }) =>

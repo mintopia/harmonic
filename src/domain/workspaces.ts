@@ -16,7 +16,7 @@ import {
   type WorkspaceRow,
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
-import { exportDirectoryPathSchema, exportS3EndpointSchema, redactPatternsSchema } from '../config.js';
+import { EXPORT_STATES, exportDirectoryPathSchema, exportS3EndpointSchema, redactPatternsSchema } from '../config.js';
 import { DomainError } from './errors.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
 import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
@@ -112,6 +112,11 @@ export const workspaceOverridesSchema = z.object({
   exportS3AccessKeyId: z.string().min(1).nullable().optional(),
   exportS3SecretAccessKey: z.string().min(1).nullable().optional(),
   exportRedactPatterns: redactPatternsSchema.nullable().optional().meta({ example: [{ id: 'internal-host', regex: 'corp\\.example\\.internal' }] }),
+  /** Dispositions-to-export override; null inherits `config.export.includeStates`. */
+  exportIncludeStates: z.array(z.enum(EXPORT_STATES)).nullable().optional().meta({ example: ['done'] }),
+  /** Archive retention overrides; a null field inherits `config.archive.retain`. */
+  archiveRetentionDays: z.number().int().positive().nullable().optional().meta({ example: 90 }),
+  archiveRetentionMaxTotalMB: z.number().positive().nullable().optional().meta({ example: 2048 }),
 });
 export type WorkspaceOverrides = z.infer<typeof workspaceOverridesSchema>;
 
@@ -155,6 +160,9 @@ export const OVERRIDE_KEYS = [
   'exportS3AccessKeyId',
   'exportS3SecretAccessKey',
   'exportRedactPatterns',
+  'exportIncludeStates',
+  'archiveRetentionDays',
+  'archiveRetentionMaxTotalMB',
 ] as const;
 
 /** A fully-populated overrides object: every key present, `null` meaning
@@ -237,6 +245,9 @@ export class WorkspaceService {
       exportS3AccessKeyId: o.exportS3AccessKeyId,
       exportS3SecretAccessKey: o.exportS3SecretAccessKey,
       exportRedactPatterns: o.exportRedactPatterns != null ? JSON.stringify(o.exportRedactPatterns) : null,
+      exportIncludeStates: o.exportIncludeStates != null ? JSON.stringify(o.exportIncludeStates) : null,
+      archiveRetentionDays: o.archiveRetentionDays,
+      archiveRetentionMaxTotalMB: o.archiveRetentionMaxTotalMB,
     };
   }
 

@@ -12,6 +12,8 @@ export interface ArchiveRetention {
 export interface ArchivePruneDeps {
   dataDir: string;
   retention: () => ArchiveRetention;
+  /** A Workspace's own caps by archive directory slug; a null field inherits the global cap, null result means no override. */
+  workspaceRetention?: (slug: string) => ArchiveRetention | null;
   /** Epoch ms the Task reached a terminal state; null while it is non-terminal or unknown. Not consulted for Archives marked deleted. */
   taskTerminalAt: (taskId: number) => Promise<number | null>;
   now?: () => number;
@@ -27,6 +29,7 @@ interface Manifest {
 
 interface Candidate {
   dir: string;
+  pool: string;
   bytes: number;
   terminalAt: number | null;
 }
@@ -74,60 +77,86 @@ async function terminalAt(manifest: Manifest, deps: ArchivePruneDeps): Promise<n
   return null;
 }
 
-/** Remove Archives past the configured retention caps; returns the number removed. Caps are off unless configured. */
-export async function pruneArchives(deps: ArchivePruneDeps): Promise<number> {
-  const { days, maxTotalMB } = deps.retention();
-  if (days === null && maxTotalMB === null) return 0;
-  const now = (deps.now ?? Date.now)();
-  const root = join(deps.dataDir, 'archive');
+interface ScanEntry {
+  dir: string;
+  pool: string;
+  retention: ArchiveRetention;
+}
 
-  const dirs: string[] = [];
+function hasCap(r: ArchiveRetention): boolean {
+  return r.days !== null || r.maxTotalMB !== null;
+}
+
+async function scanArchives(deps: ArchivePruneDeps): Promise<ScanEntry[]> {
+  const global = deps.retention();
+  const root = join(deps.dataDir, 'archive');
+  const entries: ScanEntry[] = [];
   try {
     for (const workspace of await readdir(root, { withFileTypes: true })) {
       if (!workspace.isDirectory() || workspace.name.startsWith('.')) continue;
+      const own = deps.workspaceRetention?.(workspace.name) ?? null;
+      const overridden = own !== null && hasCap(own);
+      const retention = { days: own?.days ?? global.days, maxTotalMB: own?.maxTotalMB ?? global.maxTotalMB };
+      if (!hasCap(retention)) continue;
+      const pool = overridden ? `workspace:${workspace.name}` : 'global';
       for (const child of await readdir(join(root, workspace.name), { withFileTypes: true })) {
-        if (child.isDirectory()) dirs.push(join(root, workspace.name, child.name));
+        if (child.isDirectory()) entries.push({ dir: join(root, workspace.name, child.name), pool, retention });
       }
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') logger.warn('archive: retention scan failed', { error: errorMessage(err) });
-    return 0;
+    return [];
   }
+  return entries;
+}
+
+/**
+ * Remove Archives past the configured retention caps; returns the number removed. Caps are off unless configured.
+ * A Workspace with its own caps is pruned as its own pool; every other Workspace shares the global pool.
+ */
+export async function pruneArchives(deps: ArchivePruneDeps): Promise<number> {
+  const now = (deps.now ?? Date.now)();
+  const entries = await scanArchives(deps);
+  if (entries.length === 0) return 0;
 
   const candidates: Candidate[] = [];
-  await forEachYielding(dirs, async (dir) => {
+  await forEachYielding(entries, async ({ dir, pool }) => {
     try {
       const manifest = JSON.parse(await readFile(join(dir, 'archive.json'), 'utf8')) as Manifest;
       const bytes = await directoryBytes(dir);
       const exports = manifest.exports ?? [];
       const at = exportsSettled(exports) ? await terminalAt(manifest, deps) : null;
       const settled = at !== null && now - Math.max(at, latestExportAt(exports) ?? 0) >= EXPORT_GRACE_MS;
-      candidates.push({ dir, bytes, terminalAt: settled ? at : null });
+      candidates.push({ dir, pool, bytes, terminalAt: settled ? at : null });
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') logger.warn('archive: retention skipped unreadable archive', { dir, error: errorMessage(err) });
     }
   }, deps.yieldOptions);
 
-  let total = candidates.reduce((sum, c) => sum + c.bytes, 0);
-  const eligible = candidates
-    .filter((c): c is Candidate & { terminalAt: number } => c.terminalAt !== null)
-    .sort((a, b) => a.terminalAt - b.terminalAt);
-  const ageCutoff = days === null ? null : now - days * DAY_MS;
-  const capBytes = maxTotalMB === null ? null : maxTotalMB * MB;
-
+  const retentionByPool = new Map(entries.map((e) => [e.pool, e.retention]));
   let removed = 0;
-  await forEachYielding(eligible, async (candidate) => {
-    const tooOld = ageCutoff !== null && candidate.terminalAt < ageCutoff;
-    const overCap = capBytes !== null && total > capBytes;
-    if (!tooOld && !overCap) return;
-    try {
-      await rm(candidate.dir, { recursive: true, force: true });
-      total -= candidate.bytes;
-      removed += 1;
-    } catch (err) {
-      logger.warn('archive: retention prune failed', { dir: candidate.dir, error: errorMessage(err) });
-    }
-  }, deps.yieldOptions);
+  for (const [pool, { days, maxTotalMB }] of retentionByPool) {
+    const poolCandidates = candidates.filter((c) => c.pool === pool);
+    let total = poolCandidates.reduce((sum, c) => sum + c.bytes, 0);
+    const eligible = poolCandidates
+      .filter((c): c is Candidate & { terminalAt: number } => c.terminalAt !== null)
+      .sort((a, b) => a.terminalAt - b.terminalAt);
+    const ageCutoff = days === null ? null : now - days * DAY_MS;
+    const capBytes = maxTotalMB === null ? null : maxTotalMB * MB;
+
+    await forEachYielding(eligible, async (candidate) => {
+      const tooOld = ageCutoff !== null && candidate.terminalAt < ageCutoff;
+      const overCap = capBytes !== null && total > capBytes;
+      if (!tooOld && !overCap) return;
+      try {
+        await rm(candidate.dir, { recursive: true, force: true });
+        total -= candidate.bytes;
+        removed += 1;
+      } catch (err) {
+        logger.warn('archive: retention prune failed', { dir: candidate.dir, error: errorMessage(err) });
+      }
+    }, deps.yieldOptions);
+  }
   if (removed > 0) logger.info('archive: retention pruned archives', { removed });
   return removed;
 }

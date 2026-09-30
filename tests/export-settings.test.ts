@@ -29,6 +29,13 @@ describe('resolveExportSettings', () => {
     expect(r.redactPatterns.map((p) => p.id)).toEqual([...BASELINE_REDACT_PATTERNS.map((p) => p.id), 'global-one', 'internal-host']);
   });
 
+  it('a Workspace dispositions override replaces the global list, including an empty one', () => {
+    const cfg = appConfigSchema.parse(baselineConfig());
+    expect(resolveExportSettings(cfg, { exportIncludeStates: JSON.stringify(['done']) }).includeStates).toEqual(['done']);
+    expect(resolveExportSettings(cfg, { exportIncludeStates: JSON.stringify([]) }).includeStates).toEqual([]);
+    expect(resolveExportSettings(cfg, { exportIncludeStates: null }).includeStates).toEqual(['done', 'cancelled', 'deleted']);
+  });
+
   it('inherits global values when the Workspace values are null', () => {
     const r = resolveExportSettings(withExport(true, '/srv/x'), { exportEnabled: null, exportDirectoryPath: null, exportRedactPatterns: null });
     expect(r.enabled).toBe(true);

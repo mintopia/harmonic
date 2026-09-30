@@ -2,6 +2,7 @@ import type {
   Attempt,
   ActivityProcess,
   AppConfig,
+  ExportDestinationTestResult,
   ConfigLayers,
   AttemptUsage,
   BudgetGuardrail,
@@ -39,6 +40,7 @@ import type {
   TimelineResponse,
   TaskExportStatus,
   TaskExportAgainResult,
+  ExportState,
 } from './types.js';
 import type { Epic, EpicIntegrateOutcome } from './epic-model.js';
 import type { Stats } from './stats-model.js';
@@ -93,6 +95,8 @@ export const api = {
   resumeGlobal: () => request<{ paused: boolean }>('DELETE', '/api/global-pause'),
   configLayers: () => request<ConfigLayers>('GET', '/api/config/layers'),
   updateConfig: (patch: object) => request<AppConfig>('PATCH', '/api/config', patch),
+  testExportDestination: (body: { workspaceId: number | null; destination: 'directory' | 's3' }) =>
+    request<ExportDestinationTestResult>('POST', '/api/export/test-destination', body),
   replaceConfig: (config: AppConfig) => request<AppConfig>('PUT', '/api/config', config),
   revertConfig: () => request<AppConfig>('DELETE', '/api/config/overrides'),
   /** `open` is an explicit board optimization. Omit it for full task history.
@@ -216,6 +220,9 @@ export const api = {
       exportS3AccessKeyId?: string | null;
       exportS3SecretAccessKey?: string | null;
       exportRedactPatterns?: { id: string; regex: string }[] | null;
+      exportIncludeStates?: ExportState[] | null;
+      archiveRetentionDays?: number | null;
+      archiveRetentionMaxTotalMB?: number | null;
       toolTimeoutMinutes?: number | null;
       drivePrompt?: string | null;
       driveUnattendedReminder?: string | null;

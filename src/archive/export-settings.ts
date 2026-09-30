@@ -1,4 +1,5 @@
-import { redactPatternsSchema, type AppConfig, type ExportState } from '../config.js';
+import { EXPORT_STATES, redactPatternsSchema, type AppConfig, type ExportState } from '../config.js';
+import { z } from 'zod';
 import type { WorkspaceRow } from '../db/schema.js';
 import { BASELINE_REDACT_PATTERNS, type RedactionPattern } from './redact.js';
 
@@ -24,6 +25,7 @@ export type ExportWorkspaceOverrides = Pick<
   | 'exportEnabled'
   | 'exportDirectoryPath'
   | 'exportRedactPatterns'
+  | 'exportIncludeStates'
   | 'exportS3Endpoint'
   | 'exportS3Region'
   | 'exportS3Bucket'
@@ -53,7 +55,7 @@ export function resolveExportSettings(global: AppConfig, workspace: Partial<Expo
   const workspacePatterns = workspace?.exportRedactPatterns ? redactPatternsSchema.parse(JSON.parse(workspace.exportRedactPatterns)) : [];
   return {
     enabled: workspace?.exportEnabled ?? global.export.enabled,
-    includeStates: global.export.includeStates,
+    includeStates: workspace?.exportIncludeStates ? z.array(z.enum(EXPORT_STATES)).parse(JSON.parse(workspace.exportIncludeStates)) : global.export.includeStates,
     directoryPath: workspace?.exportDirectoryPath ?? global.export.directory.path,
     s3: resolveS3(global.export.s3, workspace),
     redactPatterns: [...BASELINE_REDACT_PATTERNS, ...global.export.redact.patterns, ...workspacePatterns],
