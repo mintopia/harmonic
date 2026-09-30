@@ -79,7 +79,6 @@ export interface MergeCoordinatorDeps {
   criticDrive: RunnerOptions['criticDrive'];
   archive?: TaskArchive | undefined;
   postMerge: RunnerOptions['postMerge'];
-  archive?: RunnerOptions['archive'];
   urlFor: (task: TaskRow) => string | null;
   listWorkingTasks: () => Promise<TaskRow[]>;
   latestAttemptFor: (task: Pick<TaskRow, 'id'>) => Promise<AttemptRow>;
