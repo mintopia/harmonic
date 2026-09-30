@@ -83,6 +83,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     drainRetirement: runtime.drainRetirement,
     reconcileWorktrees: worktrees.reconcileWorktrees,
     trackerManager: runtime.trackerManager,
+    notifications: stores.notifications,
   });
   registerBusListeners(bus, {
     autoRunner: runtime.autoRunner,
@@ -124,6 +125,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     auth: stores.auth,
     channels: stores.channels,
     notifier: stores.notifier,
+    notifications: stores.notifications,
     bus,
     hostLoad: runtime.hostLoad,
     workspaceWatcher: runtime.workspaceWatcher,

@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from './app.js';
 import { requestIsOperator } from './auth.js';
 import { attemptTimelineToApi, conversationToApi, attemptToApi, attemptUsageToApi, taskToApi } from './serialize.js';
-import { operationEventToApi, scheduledJobsToApi, worktreesToApi, type ApiAttemptSummary, type ApiConversation, type ApiTask } from './dto.js';
+import { operationEventToApi, scheduledJobsToApi, notificationToApi, worktreesToApi, type ApiAttemptSummary, type ApiConversation, type ApiTask } from './dto.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { isTaskAttempt, type AttemptRow, type ConversationRow, type TaskRow } from '../db/schema.js';
 import { fireAndForget } from '../error-handling.js';
@@ -76,6 +76,8 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       ctx.bus.on('operations', (event) => send({ type: 'operations', event: operationEventToApi(event) })),
       ctx.bus.on('worktrees', (worktrees) => send({ type: 'worktrees', worktrees: worktreesToApi(worktrees) })),
       ctx.bus.on('host_load', (load) => send({ type: 'host_load', load })),
+      ctx.bus.on('notification_created', (row) => send({ type: 'notification_created', notification: notificationToApi(row) })),
+      ctx.bus.on('notifications_read', ({ ids }) => send({ type: 'notifications_read', ids })),
       ctx.bus.on('fs_changed', (payload) => send({ type: 'fs_changed', ...payload })),
       ctx.bus.on('git_status', (payload) => send({ type: 'git_status', ...payload })),
     ];

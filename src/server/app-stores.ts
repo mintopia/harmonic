@@ -13,6 +13,7 @@ import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { logger } from '../logger.js';
 import { ChannelService } from '../notifications/channels.js';
+import { NotificationStore } from '../notifications/notification-store.js';
 import { Notifier } from '../notifications/notifier.js';
 import { AuthService } from './auth.js';
 import { EventBus } from './bus.js';
@@ -23,6 +24,7 @@ export interface Stores {
   workspaces: WorkspaceService;
   channels: ChannelService;
   notifier: Notifier;
+  notifications: NotificationStore;
   tasks: TaskService;
   attempts: AttemptStore;
   taskEvents: TaskEventStore;
@@ -45,7 +47,11 @@ export async function createStores({ opts, asyncDb, bus }: CreateStoresDeps): Pr
   const settingsStore = await SettingsStore.create(opts.dataDir, opts.configOverrides);
   const workspaces = new WorkspaceService(asyncDb, settingsStore);
   const channels = new ChannelService(asyncDb);
-  const notifier = new Notifier(channels, logger.error);
+  const notifications = new NotificationStore(asyncDb, {
+    created: (row) => bus.emit('notification_created', row),
+    read: (ids) => bus.emit('notifications_read', { ids }),
+  });
+  const notifier = new Notifier(channels, logger.error, (input) => notifications.record(input));
   const tasks = new TaskService(
     asyncDb,
     () => settingsStore.getGlobal(),
@@ -73,6 +79,7 @@ export async function createStores({ opts, asyncDb, bus }: CreateStoresDeps): Pr
     workspaces,
     channels,
     notifier,
+    notifications,
     tasks,
     attempts,
     taskEvents,

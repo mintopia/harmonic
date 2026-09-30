@@ -33,6 +33,7 @@ export function readScopeAllowed(path: string, method: string): boolean {
   if (path === '/api/activity') return true;
   if (path === '/api/operations') return true;
   if (path === '/api/scheduled-jobs') return true;
+  if (path === '/api/notifications') return true;
   return false;
 }
 

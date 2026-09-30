@@ -62,6 +62,8 @@ export type ServerMessage =
   | { type: 'worktrees'; worktrees: WorktreeInventoryEntry[] }
   // Host load-average reading, pushed on a fixed tick and once on connect. Sent to read keys too.
   | { type: 'host_load'; load: HostLoad }
+  | { type: 'notification_created'; notification: import('./types.js').Notification }
+  | { type: 'notifications_read'; ids: number[] }
   | { type: 'fs_changed'; workspaceId: number }
   | { type: 'git_status'; workspaceId: number; entries: import('./types.js').GitStatusEntry[] }
   | { type: 'conversation_event'; event: ConversationEvent }
