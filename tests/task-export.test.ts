@@ -46,6 +46,8 @@ describe('TaskExporter (#734)', () => {
       archive,
       version: '9.9.9',
       settings: async () => settingsFor(),
+      epicSettings: async () => settingsFor(),
+      epicSnapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, members: [] }),
       workspaceName: async () => 'My Workspace',
       snapshot: async () => ({ ticket: { title: 'Ticket title', id: task.id }, timeline: { events: [{ kind: 'fact' }] }, attemptCount: 1 }),
       recordFact: async (taskId, payload) => {
@@ -251,6 +253,8 @@ describe('TaskExporter (#734)', () => {
       settings: async () => {
         throw new Error('settings boom');
       },
+      epicSettings: async () => settingsFor(),
+      epicSnapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, members: [] }),
       workspaceName: async () => null,
       snapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0 }),
       recordFact: async () => undefined,

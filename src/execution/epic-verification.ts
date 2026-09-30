@@ -26,11 +26,15 @@ export async function verifyEpicIntegration(args: {
   onCommand?: (attempt: CommandAttempt, command: EpicVerificationStage['commands'][number]) => Promise<void>;
   /** Cancellation, wired to server shutdown; an abort kills the verifier child. */
   signal?: AbortSignal;
+  /** Where a command's combined output is persisted, or null to skip. */
+  outputLogPath?: (command: EpicVerificationStage['commands'][number]) => Promise<string | null>;
 }): Promise<VerificationDecision> {
   const verdicts: VerifierVerdict[] = [];
 
   for (const command of args.verifiers.commands) {
+    const outputLogPath = (await args.outputLogPath?.(command)) ?? null;
     const attempt = await runCommandVerifier({
+      outputLogPath,
       cwd: args.worktreePath,
       verifiedHeadOid: args.verifiedHeadOid,
       command,
