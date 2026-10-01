@@ -3,6 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { eq } from 'drizzle-orm';
+import { scheduledJobs } from '../src/db/schema.js';
+import { openAsyncDb } from '../src/db/async.js';
 import { seedLocalMarkdownTicket, startServer, waitFor, connectFirehose, type TestServer } from './helpers.js';
 
 describe('Scheduled Job registry', () => {
@@ -11,6 +14,36 @@ describe('Scheduled Job registry', () => {
   afterEach(async () => {
     await server?.close();
     server = undefined;
+  });
+
+  it('app.close() waits out an in-flight Scheduled Job tick, recording it before resolving', async () => {
+    let finished = false;
+    let markStarted: () => void = () => {};
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    server = await startServer(undefined, {
+      scheduledJobRegistrations: [{
+        name: 'slow job',
+        intervalMs: 60_000,
+        runOnStart: true,
+        run: async () => {
+          markStarted();
+          await new Promise((resolve) => setTimeout(resolve, 1_500));
+          finished = true;
+        },
+      }],
+    });
+    await started;
+
+    await server.app.close();
+
+    expect(finished).toBe(true);
+    const reopened = await openAsyncDb(server.dataDir);
+    try {
+      const row = await reopened.read((d) => d.select().from(scheduledJobs).where(eq(scheduledJobs.name, 'slow job')).get());
+      expect(row?.lastStatus).toBe('ok');
+    } finally {
+      await reopened.close();
+    }
   });
 
   it('persists an injected exemplar and serves the same snapshot over REST and the firehose', async () => {

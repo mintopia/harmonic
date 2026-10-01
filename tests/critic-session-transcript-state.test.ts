@@ -26,6 +26,7 @@ const criticAttempt: VerificationAttempt = {
   prompt: null,
   harness: null,
   hasTranscript: true,
+  outputTruncated: false,
 };
 
 afterEach(cleanup);
@@ -48,5 +49,22 @@ describe('CriticSession transcript states (#653 bug 3)', () => {
     expect(host.textContent).toContain('boom');
     expect(host.textContent).not.toContain('No critic session events recorded.');
     expect(host.textContent).not.toContain('could not be loaded');
+  });
+
+  it('labels a Critic transcript read from the Archive', async () => {
+    criticLog.mockResolvedValueOnce({ status: 'available', events: [{ id: 1, seq: 1, ts: 1, type: 'session_update', payload: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ok' } } }], liveCursor: 0, fromArchive: true });
+
+    const host = await mountComponent(createElement(CriticSessions, { attempts: [criticAttempt] }));
+
+    expect(host.textContent).toContain('from Archive');
+    expect(host.textContent).toContain('Harness log no longer on disk');
+  });
+
+  it('shows no Archive label for a native Critic transcript', async () => {
+    criticLog.mockResolvedValueOnce({ status: 'available', events: [{ id: 1, seq: 1, ts: 1, type: 'session_update', payload: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ok' } } }], liveCursor: 0 });
+
+    const host = await mountComponent(createElement(CriticSessions, { attempts: [criticAttempt] }));
+
+    expect(host.textContent).not.toContain('from Archive');
   });
 });

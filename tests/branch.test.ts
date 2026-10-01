@@ -218,17 +218,19 @@ describe('branch-retirement', () => {
     it('records branch-delete-failed when git.deleteBranch throws', async () => {
       const failing = git({ deleteBranch: vi.fn(async () => { throw new Error('ref lock held'); }) });
       const recorded: [number, Record<string, unknown>][] = [];
+      const errors: string[] = [];
       const coordinator = new BranchRetirementCoordinator(
         { listAll: async () => [] },
         { get: async () => task },
         failing,
-        undefined,
+        (message) => errors.push(message),
         (attemptId, payload) => recorded.push([attemptId, payload]),
       );
 
       await coordinator.onAttemptSettled(task, run());
 
       expect(recorded).toEqual([[1, { event: 'branch-delete-failed', branch: 'harmonic/task-2-run-1', error: 'ref lock held' }]]);
+      expect(errors).toEqual(["branch 'harmonic/task-2-run-1' retirement failed: Error: ref lock held"]);
     });
 
     it('is silent (kept) when the branch has unmerged content — nothing to observe', async () => {

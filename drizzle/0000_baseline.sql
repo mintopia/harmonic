@@ -59,9 +59,6 @@ CREATE TABLE `attempts` (
 	`guardrail_config` text,
 	`price_table` text,
 	`detail` text,
-	`pid` integer,
-	`pgid` integer,
-	`proc_start_token` text,
 	FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`workspace_id`, `epic_ref`) REFERENCES `epics`(`workspace_id`, `tracker_ref`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (`session_row_id`) REFERENCES `sessions`(`id`) ON UPDATE no action ON DELETE no action,
@@ -166,6 +163,14 @@ CREATE TABLE `permission_rules` (
 );
 --> statement-breakpoint
 CREATE INDEX `permission_rules_kind_dir_idx` ON `permission_rules` (`kind`,`working_dir`);--> statement-breakpoint
+CREATE TABLE `process_groups` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`pgid` integer NOT NULL,
+	`start_token` text NOT NULL,
+	`owner` text NOT NULL,
+	`started_at` integer NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE `scheduled_jobs` (
 	`job_key` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,

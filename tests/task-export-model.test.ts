@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { exportAgainFeedback, exportPanelModel, formatBytes, redactionSummary, splitExportError } from '../web/src/task-export-model.js';
+import { exportAgainFeedback, exportFactRows, exportFailedMessage, exportPanelModel, formatBytes, redactionSummary, splitExportError } from '../web/src/task-export-model.js';
 import type { ExportDestinationStatus, ExportSummary, TaskExportStatus } from '../web/src/types.js';
 
 const NOW = Date.parse('2026-09-30T11:50:00.000Z');
@@ -104,5 +104,43 @@ describe('export helpers', () => {
 
     expect(ok).toEqual({ kind: 'success', message: 'Export delivered to Directory.' });
     expect(bad).toEqual({ kind: 'error', message: 'Export failed for S3: AccessDenied. Retries are scheduled.' });
+  });
+});
+
+describe('exportFailedMessage', () => {
+  const base = { destination: 's3', retry: 0, nextRetryAt: null };
+
+  it('names a Task by its label and an Epic by its ref, never "#null"', () => {
+    expect(exportFailedMessage({ ...base, taskId: 412, epicRef: null })).toBe('Export of Task 412 to S3 failed — not retried');
+    expect(exportFailedMessage({ ...base, taskId: null, epicRef: 42 })).toBe('Export of Epic #42 to S3 failed — not retried');
+  });
+
+  it('reports the pending retry or exhaustion', () => {
+    const soon = new Date(Date.now() + 5 * 60_000).toISOString();
+    expect(exportFailedMessage({ ...base, taskId: null, epicRef: 42, retry: 0, nextRetryAt: soon })).toContain('retrying in 5 min');
+    expect(exportFailedMessage({ ...base, taskId: null, epicRef: 42, retry: 3 })).toContain('retries exhausted');
+  });
+});
+
+describe('exportFactRows retry wording', () => {
+  const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+
+  it('gives the next retry as a clock time when the Fact records it', () => {
+    const at = '2026-10-01T13:18:41.000Z';
+    const [row] = exportFactRows({ status: 'failed', destination: 's3', error: 'boom', retry: 0, nextRetryAt: at }, true);
+    expect(row!.label).toBe('Export failed · S3');
+    expect(row!.detail).toBe(`boom. Retry 1 of 3 at ${clock(at)}.`);
+    const [later] = exportFactRows({ status: 'failed', destination: 's3', error: 'boom', retry: 1, nextRetryAt: at }, true);
+    expect(later!.detail).toBe(`boom. Retry 1 of 3. Next: retry 2 of 3 at ${clock(at)}.`);
+  });
+
+  it('falls back to the scheduled delay for Facts recorded without nextRetryAt', () => {
+    const [row] = exportFactRows({ status: 'failed', destination: 's3', error: 'boom', retry: 0 }, true);
+    expect(row!.detail).toBe('boom. Retry 1 of 3 in 5 min.');
+  });
+
+  it('says retries are exhausted after the last one', () => {
+    const [row] = exportFactRows({ status: 'failed', destination: 's3', error: 'boom', retry: 3, nextRetryAt: null }, true);
+    expect(row!.detail).toBe('boom. Retry 3 of 3. Retries exhausted.');
   });
 });

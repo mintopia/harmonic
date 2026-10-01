@@ -51,6 +51,7 @@ describe('TaskExporter (#734)', () => {
       epicSnapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, members: [] }),
       workspaceName: async () => 'My Workspace',
       snapshot: async () => ({ ticket: { title: 'Ticket title', id: task.id }, timeline: { events: [{ kind: 'fact' }] }, attemptCount: 1, git: emptyGitProvenance() }),
+      recordEpicStep: async () => undefined,
       recordFact: async (taskId, payload) => {
         facts.push({ taskId, payload: payload as Record<string, unknown> });
       },
@@ -211,6 +212,7 @@ describe('TaskExporter (#734)', () => {
     expect(outcome?.[0]?.status).toBe('failed');
     expect(facts[0]!.payload).toMatchObject({ event: 'export', status: 'failed', destination: 'directory' });
     expect(typeof facts[0]!.payload.error).toBe('string');
+    expect(Number.isNaN(Date.parse(facts[0]!.payload.nextRetryAt as string))).toBe(false);
     expect(staging().filter((n) => n.endsWith('.pending.json'))).toHaveLength(1);
     const archiveJson = JSON.parse(readFileSync(join(await archive.ensure(task), 'archive.json'), 'utf8'));
     expect(archiveJson.exports[0]).toMatchObject({ status: 'failed' });
@@ -223,6 +225,7 @@ describe('TaskExporter (#734)', () => {
     const sidecarsAtRecord: string[][] = [];
 
     await exporter({
+      recordEpicStep: async () => undefined,
       recordFact: async () => {
         sidecarsAtRecord.push(staging().filter((n) => n.endsWith('.pending.json') || n.endsWith('.tar.gz')));
       },
@@ -273,6 +276,7 @@ describe('TaskExporter (#734)', () => {
       epicSnapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, members: [] }),
       workspaceName: async () => null,
       snapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, git: emptyGitProvenance() }),
+      recordEpicStep: async () => undefined,
       recordFact: async () => undefined,
     });
     expect(() => failing.trigger(task, 'done')).not.toThrow();
@@ -379,7 +383,7 @@ describe('TaskExporter (#734)', () => {
       expect(task.state).toBe('ready');
       expect(failures).toHaveLength(1);
       expect(failures[0]).toMatchObject({ destination: 'directory', disposition: 'done', retry: 0, nextRetryAt: new Date(T0 + 5 * MIN).toISOString() });
-      expect(failures[0]!.task.id).toBe(task.id);
+      expect(failures[0]!.owner).toMatchObject({ kind: 'task', task: { id: task.id } });
       expect(stagedTarballs()).toHaveLength(1);
       expect(sidecars()).toHaveLength(1);
       expect(EXPORT_RETRY_DELAYS_MS).toEqual([5 * MIN, 30 * MIN, 120 * MIN]);

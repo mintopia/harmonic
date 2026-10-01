@@ -297,6 +297,9 @@ export const api = {
   taskExport: (id: number) => request<TaskExportStatus>('GET', `/api/tasks/${id}/export`),
   exportTaskAgain: (id: number) => request<TaskExportAgainResult>('POST', `/api/tasks/${id}/export`),
   taskExportDownloadUrl: (id: number) => `/api/tasks/${id}/export/download`,
+  epicExport: (workspaceId: number, epicRef: number) => request<TaskExportStatus>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/export`),
+  exportEpicAgain: (workspaceId: number, epicRef: number) => request<TaskExportAgainResult>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/export`),
+  epicExportDownloadUrl: (workspaceId: number, epicRef: number) => `/api/workspaces/${workspaceId}/epics/${epicRef}/export/download`,
   taskUsage: (id: number) =>
     request<AttemptUsage & { cost: Cost | null; attemptCount: number }>('GET', `/api/tasks/${id}/usage`),
   attempt: (id: number) => request<AttemptSummary>('GET', `/api/attempts/${id}`),
@@ -311,8 +314,14 @@ export const api = {
     request<{ verificationAttempts: VerificationAttempt[]; verifierStatuses: VerifierStatus[]; total: number }>('GET', `/api/attempts/${id}/verification-attempts`),
   verificationAttempt: (id: number) =>
     request<{ output: string; summary: string; hasTranscript: boolean }>('GET', `/api/verification-attempts/${id}`),
+  verificationOutputUrl: (id: number) => `/api/verification-attempts/${id}/output`,
+  verificationFullOutput: async (id: number): Promise<string> => {
+    const res = await fetch(`/api/verification-attempts/${id}/output`);
+    if (!res.ok) throw new ApiError(res.status, `Full output unavailable (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`);
+    return res.text();
+  },
   criticLog: (attemptId: number) =>
-    request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number } | { status: 'unavailable'; liveCursor: number }>(
+    request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number; fromArchive?: boolean } | { status: 'unavailable'; liveCursor: number }>(
       'GET',
       `/api/verification-attempts/${attemptId}/log`,
     ),

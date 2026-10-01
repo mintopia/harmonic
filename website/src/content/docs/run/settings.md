@@ -94,7 +94,7 @@ Both fields are blank by default, which keeps every Archive forever.
 
 The **Archive retention** Scheduled Job applies these limits every hour. It
 skips tasks still in progress, tasks that finished in the last hour, and
-tasks whose Export failed and is still undelivered. A Workspace with its own
+tasks whose Export has failed or is waiting on a retry. A Workspace with its own
 limits is pruned separately from the others.
 
 ### Export

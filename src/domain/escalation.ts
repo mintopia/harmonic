@@ -5,6 +5,8 @@ import type { TaskService } from './tasks.js';
 import type { MergeEffectExec } from './merge.js';
 import type { AttemptSettleCoordinator } from './attempt-settle.js';
 import { withTaskLock } from './task-lock.js';
+import { logger } from '../logger.js';
+import { errorMessage } from '../error-handling.js';
 
 /**
  * The merge side effects Accept must apply for this Task/Attempt — a worktree
@@ -90,7 +92,14 @@ export class EscalationService {
       const merged = await this.attempts.get(run.id);
       await this.taskService.setMergeStatus(task.id, 'merging');
       for (const effect of this.mergeEffects(task, merged)) {
-        const result = await effect.apply();
+        let result: Awaited<ReturnType<typeof effect.apply>>;
+        try {
+          result = await effect.apply();
+        } catch (err) {
+          await this.taskService.setMergeStatus(task.id, null);
+          logger.error(`accept: ${effect.effect} failed on task ${taskId}; it stays escalated`, { taskId, effect: effect.effect, error: errorMessage(err) });
+          throw new DomainError('conflict', `${effect.effect} failed on accept; the ticket stays escalated`);
+        }
         if (!result.ok) {
           // Only a real merge conflict surfaces the resolving-conflicts indicator; a
           // post-merge-red or ticket-close failure leaves the ticket plainly escalated.

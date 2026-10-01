@@ -1,10 +1,11 @@
 import { createReadStream } from 'node:fs';
 import { rm } from 'node:fs/promises';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { AppContext } from '../app.js';
 import type { TaskRow } from '../../db/schema.js';
+import type { ExportDownload } from '../../archive/task-export.js';
 import { DomainError } from '../../domain/errors.js';
 import { errorResponse, idParamsSchema, taskExportAgainResponseSchema, taskExportStatusSchema } from '../schemas.js';
 
@@ -19,6 +20,33 @@ async function finishedTask(ctx: AppContext, id: number): Promise<{ task: TaskRo
   if (!forcePartial) return { task, forcePartial };
   await ctx.archive.ensure(task);
   return { task: await ctx.tasks.get(id), forcePartial };
+}
+
+const epicExportParamsSchema = z.object({
+  workspaceId: z.coerce.number().int().meta({ example: 1 }),
+  epicRef: z.coerce.number().int().meta({ example: 42 }),
+});
+
+async function sendDownload(reply: FastifyReply, built: ExportDownload): Promise<FastifyReply> {
+  if (reply.raw.destroyed) {
+    await rm(built.path, { force: true });
+    return reply;
+  }
+  const stream = createReadStream(built.path);
+  stream.once('close', () => void rm(built.path, { force: true }));
+  reply.raw.once('close', () => stream.destroy());
+  return reply
+    .header('content-type', 'application/gzip')
+    .header('content-length', built.bytes)
+    .header('content-disposition', `attachment; filename="${built.name}"`)
+    .send(stream);
+}
+
+async function integratedEpic(ctx: AppContext, workspaceId: number, epicRef: number): Promise<void> {
+  await ctx.workspaces.assertExists(workspaceId);
+  const stored = (await ctx.tasks.listStoredEpics(workspaceId)).find((e) => e.trackerRef === epicRef);
+  if (!stored) throw new DomainError('not_found', `no Epic ${epicRef} stored for workspace ${workspaceId}`);
+  if (stored.state !== 'integrated') throw new DomainError('invalid_state', `Epic ${epicRef} is ${stored.state}; only an integrated Epic can be exported`);
 }
 
 export async function taskExportRoutes(fastify: FastifyInstance, ctx: AppContext): Promise<void> {
@@ -90,22 +118,79 @@ export async function taskExportRoutes(fastify: FastifyInstance, ctx: AppContext
     },
     async (req, reply) => {
       const { task, forcePartial } = await finishedTask(ctx, req.params.id);
-      const built = await ctx.exporter.buildDownload(task, { forcePartial });
-      if (reply.raw.destroyed) {
-        await rm(built.path, { force: true });
-        return reply;
-      }
-      const stream = createReadStream(built.path);
-      const cleanup = (): void => {
-        void rm(built.path, { force: true });
+      await sendDownload(reply, await ctx.exporter.buildDownload(task, { forcePartial }));
+    },
+  );
+
+  app.get(
+    '/workspaces/:workspaceId/epics/:epicRef/export',
+    {
+      schema: {
+        tags: ['Epics'],
+        description:
+          'Export status for an Epic: the latest Export with per-Destination delivery status, last attempt, error and pending retry, plus earlier Exports. ' +
+          '`exportable` is true once the Epic is integrated; `latest` is null until an Export has been attempted.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: epicExportParamsSchema,
+        response: { 200: taskExportStatusSchema.describe('Latest and earlier Epic Exports with per-Destination status.'), 404: errorResponse('No Workspace has that id.') },
+      },
+    },
+    async (req) => {
+      const { workspaceId, epicRef } = req.params;
+      await ctx.workspaces.assertExists(workspaceId);
+      const stored = (await ctx.tasks.listStoredEpics(workspaceId)).find((e) => e.trackerRef === epicRef);
+      return { exportable: stored?.state === 'integrated', ...(await ctx.exporter.epicStatus(workspaceId, epicRef)) };
+    },
+  );
+
+  app.post(
+    '/workspaces/:workspaceId/epics/:epicRef/export',
+    {
+      schema: {
+        tags: ['Epics'],
+        description:
+          'Export again: rebuild the Epic Export and deliver it to every configured Destination regardless of the includeStates filter, ' +
+          'as a new Export that never overwrites an earlier one. Only integrated Epics; 409 when the Epic is not integrated or no Destination is enabled.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: epicExportParamsSchema,
+        response: {
+          200: taskExportAgainResponseSchema.describe('Per-Destination outcomes of the new Export, plus the refreshed status.'),
+          404: errorResponse('No Workspace or stored Epic has that id.'),
+          409: errorResponse('The Epic is not integrated, or no Export Destination is enabled.'),
+        },
+      },
+    },
+    async (req) => {
+      const { workspaceId, epicRef } = req.params;
+      await integratedEpic(ctx, workspaceId, epicRef);
+      const outcomes = await ctx.exporter.exportEpicAgain(workspaceId, epicRef);
+      if (outcomes === null) throw new DomainError('conflict', 'No Export Destination is enabled for this Epic');
+      return {
+        outcomes: outcomes.map((o) => ({ destination: o.destination, status: o.status, file: o.file, error: o.error ?? null })),
+        export: { exportable: true, ...(await ctx.exporter.epicStatus(workspaceId, epicRef)) },
       };
-      stream.once('close', cleanup);
-      reply.raw.once('close', () => stream.destroy());
-      await reply
-        .header('content-type', 'application/gzip')
-        .header('content-length', built.bytes)
-        .header('content-disposition', `attachment; filename="${built.name}"`)
-        .send(stream);
+    },
+  );
+
+  app.get(
+    '/workspaces/:workspaceId/epics/:epicRef/export/download',
+    {
+      schema: {
+        tags: ['Epics'],
+        description: 'Stream a freshly built, redacted Epic Export tarball (tar.gz). Needs no configured Destination and is not recorded as an Export.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: epicExportParamsSchema,
+        response: {
+          200: z.any().describe('The tar.gz bytes, as an attachment named after the canonical Epic Export filename.'),
+          404: errorResponse('No Workspace or stored Epic has that id.'),
+          409: errorResponse('The Epic is not integrated.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const { workspaceId, epicRef } = req.params;
+      await integratedEpic(ctx, workspaceId, epicRef);
+      await sendDownload(reply, await ctx.exporter.buildEpicDownload(workspaceId, epicRef));
     },
   );
 }

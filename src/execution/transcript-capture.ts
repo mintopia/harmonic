@@ -6,6 +6,7 @@ import type { SessionStore } from '../domain/sessions.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { bestEffort, orFallback } from '../error-handling.js';
 import { logger } from '../logger.js';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 /**
  * Resolves and persists the harnesses' native transcript (`${sessionId}.jsonl`)
@@ -15,6 +16,8 @@ import { logger } from '../logger.js';
  * strictly best-effort: a missing transcript never fails an Attempt.
  */
 export class TranscriptCapture {
+  private readonly closing = new AbortController();
+
   constructor(
     private readonly sessionStore: SessionStore,
     private readonly verificationAttempts: VerificationAttemptStore,
@@ -30,7 +33,7 @@ export class TranscriptCapture {
     transcriptResolver: (input: { sessionLogDir?: string | undefined; sessionId: string }) => Promise<string | null>;
   }): Promise<void> {
     for (const delayMs of [100, 500, 2_000]) {
-      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+      if (!(await this.pause(delayMs))) return;
       const transcriptPath = await orFallback(
         () => input.transcriptResolver({ sessionLogDir: input.sessionLogDir, sessionId: input.sessionId }),
         { op: 'transcriptCapture.captureSessionTranscript.resolve', level: 'debug', context: { sessionRowId: input.sessionRowId } },
@@ -88,7 +91,7 @@ export class TranscriptCapture {
     const resolver = adapterFor(input.harnessId).usage?.resolveTranscriptPath;
     if (!resolver) return;
     for (const delayMs of [100, 500, 2_000]) {
-      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+      if (!(await this.pause(delayMs))) return;
       const transcriptPath = await orFallback(
         () => resolver({ sessionLogDir: input.sessionLogDir, sessionId: input.sessionId }),
         { op: 'transcriptCapture.captureCriticTranscript.resolve', level: 'debug', context: { attemptId: input.attemptId } },
@@ -120,7 +123,7 @@ export class TranscriptCapture {
     const harness = this.getConfig().harnesses[input.harnessId as keyof AppConfig['harnesses']];
     if (!harness) return;
     for (const delayMs of [100, 500, 2_000]) {
-      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+      if (!(await this.pause(delayMs))) return;
       const usage = collectUsage({
         harnessId: input.harnessId,
         harness,
@@ -147,5 +150,19 @@ export class TranscriptCapture {
       harness: input.harnessId,
       sessionId: input.sessionId,
     });
+  }
+
+  /** Shutdown: abandon pending retries (a later read re-resolves lazily) so nothing writes after the DB closes. */
+  close(): void {
+    this.closing.abort();
+  }
+
+  private async pause(ms: number): Promise<boolean> {
+    try {
+      await sleep(ms, undefined, { signal: this.closing.signal });
+      return true;
+    } catch {
+      return false;
+    }
   }
 }

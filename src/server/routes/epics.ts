@@ -97,6 +97,9 @@ const epicTimelineStepSchema = z
     ...mergeStepSchema.options,
     z.object({ step: z.literal('branch-created'), branch: z.string(), fromBranch: z.string(), oid: z.string() }),
     z.object({ step: z.literal('branch-create-failed'), branch: z.string(), fromBranch: z.string(), error: z.string() }),
+    z.object({ step: z.literal('export-built'), disposition: z.string(), name: z.string(), bytes: z.number().int(), partial: z.boolean() }),
+    z.object({ step: z.literal('export-delivered'), destination: z.enum(['directory', 's3']), file: z.string(), retry: z.number().int() }),
+    z.object({ step: z.literal('export-failed'), destination: z.enum(['directory', 's3']), error: z.string(), retry: z.number().int(), nextRetryAt: z.string().nullable() }),
   ])
   .meta({ id: 'EpicTimelineStep' });
 
@@ -143,6 +146,7 @@ const verificationAttemptSchema = z.object({
   prompt: z.string().nullable(),
   harness: z.string().nullable(),
   hasTranscript: z.boolean(),
+  outputTruncated: z.boolean(),
 });
 
 const epicAttemptSchema = z

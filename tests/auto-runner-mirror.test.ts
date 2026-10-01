@@ -126,7 +126,7 @@ describe('AutoRunner — self-scheduling from DB (issue #236)', () => {
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
   });
   afterEach(async () => {
-    autoRunner?.stop();
+    await autoRunner?.close();
     await asyncDb.close();
     rmSync(dir, { recursive: true, force: true });
   });
@@ -150,6 +150,39 @@ describe('AutoRunner — self-scheduling from DB (issue #236)', () => {
     await vi.waitFor(() => expect(started).toEqual([high.id]));
 
     expect(started).not.toContain(low.id);
+  });
+
+  it('close() waits out an in-flight fill and later pokes start nothing', async () => {
+    await tasks.create({ prompt: 'close race', isolationMode: 'worktree' });
+    let releaseWorkspaces: () => void = () => {};
+    const workspacesGate = new Promise<void>((resolve) => { releaseWorkspaces = resolve; });
+    let markFilling: () => void = () => {};
+    const filling = new Promise<void>((resolve) => { markFilling = resolve; });
+    let workspaceReads = 0;
+    const listWorkspaces = allWorkspaces(asyncDb, settingsStore);
+    const started: number[] = [];
+    const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
+    autoRunner = new AutoRunner(
+      tasks,
+      { countRunning: async () => started.length, countRunningByWorkspace: async () => new Map<number, number>() },
+      { escalateUnspawned: async () => {}, launchClaimed: async (id: number) => { started.push(id); } },
+      () => config,
+      async () => { workspaceReads += 1; markFilling(); await workspacesGate; return listWorkspaces(); },
+    );
+
+    autoRunner.poke();
+    await filling;
+    let closed = false;
+    const closing = autoRunner.close().then(() => { closed = true; });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(closed).toBe(false);
+    releaseWorkspaces();
+    await closing;
+    expect(started).toHaveLength(1);
+
+    autoRunner.poke();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(workspaceReads).toBe(1);
   });
 
   it('allows only one independent DB handle to claim a ready task', async () => {

@@ -5,9 +5,9 @@ import { trace } from '@opentelemetry/api';
 import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 describe('git-branch', () => {
   const raw = (dir: string, ...args: string[]) =>
@@ -66,6 +66,71 @@ describe('git-branch', () => {
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
+    });
+
+    describe('ref writes wait out a ref lock held briefly by another git process', () => {
+      const holdLock = (dir: string, ref: string, ms: number): Promise<void> => {
+        const lock = join(dir, '.git', `${ref}.lock`);
+        mkdirSync(dirname(lock), { recursive: true });
+        writeFileSync(lock, '');
+        return new Promise((resolve) => setTimeout(() => {
+          rmSync(lock, { force: true });
+          resolve();
+        }, ms));
+      };
+
+      it('deleteBranch retires the branch once the lock is released', async () => {
+        const dir = makeRepo();
+        try {
+          raw(dir, 'branch', 'harmonic/task-2-run-1');
+          const released = holdLock(dir, 'refs/heads/harmonic/task-2-run-1', 400);
+          await Git.deleteBranch(dir, 'harmonic/task-2-run-1');
+          await released;
+          expect(await Git.branchExists(dir, 'harmonic/task-2-run-1')).toBe(false);
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      });
+
+      it('createBranch cuts the branch once the lock is released', async () => {
+        const dir = makeRepo();
+        try {
+          const released = holdLock(dir, 'refs/heads/epic/10', 400);
+          await Git.createBranch(dir, 'epic/10', 'main');
+          await released;
+          expect(raw(dir, 'rev-parse', 'epic/10')).toBe(raw(dir, 'rev-parse', 'main'));
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      });
+
+      it('casUpdateRef publishes once the lock is released', async () => {
+        const dir = makeRepo();
+        try {
+          const old = raw(dir, 'rev-parse', 'main');
+          raw(dir, 'commit', '--allow-empty', '-m', 'next');
+          const next = raw(dir, 'rev-parse', 'HEAD');
+          raw(dir, 'update-ref', 'refs/heads/main', old);
+          const released = holdLock(dir, 'refs/heads/main', 400);
+          expect(await Git.casUpdateRef(dir, 'main', next, old)).toEqual({ ok: true });
+          await released;
+          expect(raw(dir, 'rev-parse', 'main')).toBe(next);
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      });
+
+      it('deleteBranch still fails, leaving the branch, when the lock is never released', async () => {
+        const dir = makeRepo();
+        try {
+          raw(dir, 'branch', 'harmonic/task-2-run-1');
+          writeFileSync(join(dir, '.git', 'refs', 'heads', 'harmonic', 'task-2-run-1.lock'), '');
+          await expect(Git.deleteBranch(dir, 'harmonic/task-2-run-1')).rejects.toThrow(/lock/);
+          expect(await Git.branchExists(dir, 'harmonic/task-2-run-1')).toBe(true);
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      }, 15_000);
     });
   });
 
@@ -463,6 +528,22 @@ describe('git-operations', () => {
       writeFileSync(join(repo, 'base.txt'), 'changed\n');
 
       await expect(Git.dirtyFiles(repo)).resolves.toEqual(['base.txt']);
+    });
+  });
+
+  describe('Git.changeCount', () => {
+    it('counts changes without rewriting the index, so it never contends for index.lock with a merge in that worktree', async () => {
+      const repo = makeRepo();
+      writeFileSync(join(repo, 'untracked.txt'), 'new\n');
+      const future = new Date(Date.now() + 60_000);
+      utimesSync(join(repo, 'base.txt'), future, future);
+      const index = join(repo, '.git', 'index');
+      const before = statSync(index);
+
+      await expect(Git.changeCount(repo)).resolves.toBe(1);
+
+      const after = statSync(index);
+      expect({ ino: after.ino, mtimeMs: after.mtimeMs }).toEqual({ ino: before.ino, mtimeMs: before.mtimeMs });
     });
   });
 

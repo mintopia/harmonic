@@ -1,6 +1,5 @@
 import { Git } from './git.js';
 import { adapterFor, adapterVersion } from './harness/registry.js';
-import { readProcStartToken } from './process-reaper.js';
 import { collectUsage, toolCallName } from './usage.js';
 import { driveFields } from './prompt-template.js';
 import { indexWorktree } from './code-index.js';
@@ -24,6 +23,7 @@ import { runCommandVerifier, commandAttemptToInput } from '../verification/comma
 import { createAcpCriticDrive, runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
 import type { SpanContext } from '@opentelemetry/api';
+import { fireAndForget } from '../error-handling.js';
 
 export const EPIC_REFRESH_RESOLVE_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -126,19 +126,19 @@ export class VerificationCoordinator {
     const { persisted, sessionId, transcriptPath, criticHarnessId, criticHarness, cwd } = input;
     if (!sessionId) return;
     if (transcriptPath === null) {
-      void this.deps.transcripts.captureCriticTranscript({
+      fireAndForget(() => this.deps.transcripts.captureCriticTranscript({
         attemptId: persisted.id,
         sessionId,
         harnessId: criticHarnessId,
         sessionLogDir: criticHarness.sessionLogDir,
-      });
+      }), { op: 'verification.captureCriticTranscript', level: 'warn', context: { attemptId: persisted.id } });
     }
-    void this.deps.transcripts.captureCriticUsage({
+    fireAndForget(() => this.deps.transcripts.captureCriticUsage({
       attemptId: persisted.id,
       sessionId,
       harnessId: criticHarnessId,
       cwd,
-    });
+    }), { op: 'verification.captureCriticUsage', level: 'warn', context: { attemptId: persisted.id } });
   }
 
   private verificationOutputRelay(attemptId: number, mechanism: 'command' | 'critic', command: string | null): { push: (chunk: string) => void; flush: () => void } {
@@ -508,9 +508,6 @@ export class VerificationCoordinator {
         timeoutMs: EPIC_REFRESH_RESOLVE_TIMEOUT_MS,
         onUpdate,
         ...(input.continuationSessionId ? { continueSessionId: input.continuationSessionId } : {}),
-        onProcessStart: async (pid) => {
-          await this.deps.attempts.update(input.attempt.id, { pid, pgid: pid, procStartToken: readProcStartToken(pid) });
-        },
         onSessionCreated: async (sessionId, initialize) => {
           const session = await this.deps.sessionStore.recordDispatch({
             harness: harnessId,
@@ -545,12 +542,10 @@ export class VerificationCoordinator {
         ...(result.usage ? { promptResult: { usage: result.usage } } : {}),
         prices: pricesForHarness(harness),
       });
-      if (usage) await this.deps.attempts.updateWithFrozenCost(input.attempt.id, { usage: JSON.stringify(usage), pid: null, pgid: null, procStartToken: null });
-      else await this.deps.attempts.update(input.attempt.id, { pid: null, pgid: null, procStartToken: null });
+      if (usage) await this.deps.attempts.updateWithFrozenCost(input.attempt.id, { usage: JSON.stringify(usage) });
       await this.deps.attempts.updateStep(step.id, { state: 'passed', endedAt: Date.now() });
     } catch (error) {
       await this.deps.attempts.replaceToolCalls(input.attempt.id, toolCalls);
-      await this.deps.attempts.update(input.attempt.id, { pid: null, pgid: null, procStartToken: null });
       await this.deps.attempts.updateStep(step.id, { state: 'failed', endedAt: Date.now() });
       throw error;
     } finally {

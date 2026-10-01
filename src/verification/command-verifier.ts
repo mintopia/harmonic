@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { killProcessGroup, spawnProcessGroup } from '../execution/process-groups.js';
 import { createWriteStream, type WriteStream } from 'node:fs';
 import { join } from 'node:path';
 import type { Attributes, SpanContext } from '@opentelemetry/api';
@@ -27,6 +27,15 @@ export function truncationMarker(elided: number, fullOutputPath?: string): strin
   return fullOutputPath
     ? `\n…[truncated ${elided} chars; full output: ${fullOutputPath}]…\n`
     : `\n…[truncated ${elided} chars]…\n`;
+}
+
+const FULL_OUTPUT_MARKER = /(…\[truncated \d+ chars); full output: ([^\n]+?[\\/]output\.log)(\]…)/;
+
+/** Strips the server-side archive path from a truncation marker so it never reaches a client; returns it separately. */
+export function splitFullOutputPath(output: string): { output: string; fullOutputPath: string | null } {
+  const match = FULL_OUTPUT_MARKER.exec(output);
+  if (!match) return { output, fullOutputPath: null };
+  return { output: output.replace(FULL_OUTPUT_MARKER, '$1$3'), fullOutputPath: match[2]! };
 }
 
 function isHighSurrogate(code: number): boolean {
@@ -162,18 +171,13 @@ export function createChildProcessSpawn(): CommandSpawn {
         let aborted = false;
         let settled = false;
 
-        const child = spawn(req.command.command, req.command.args, {
+        const child = spawnProcessGroup(req.command.command, req.command.args, {
           cwd: req.cwd,
           env,
           stdio: ['ignore', 'pipe', 'pipe'],
-        });
+        }, `verify command ${req.command.command}`);
 
-        const kill = (): void => {
-          try {
-            if (child.exitCode === null && !child.killed) child.kill('SIGKILL');
-          } catch {
-          }
-        };
+        const kill = (): void => killProcessGroup(child);
 
         const timer = setTimeout(() => {
           timedOut = true;

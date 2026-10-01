@@ -196,16 +196,26 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       ]);
       return { ticket, timeline, attemptCount: taskAttempts.length, git: computeGitProvenance({ attempts: taskAttempts, facts, remoteUrl, taskBaseBranch: task.baseBranch, currentBranch }) };
     },
+    recordEpicStep: async (workspaceId, epicRef, step) => {
+      await stores.epicMergeEvents.append(workspaceId, epicRef, step);
+      bus.emit('epic_changed', { workspaceId, epicRef });
+    },
     recordFact: async (taskId, payload) => {
       await stores.taskEvents.appendEvent(taskId, payload);
       bus.emit('step_changed', { taskId });
     },
-    onFailure: (failure) => {
-      const { task, disposition, destination, error, retry, nextRetryAt } = failure;
-      bus.emit('export_failed', { taskId: task.id, trackerRef: task.trackerRef, destination, disposition, error, retry, nextRetryAt });
+    onFailure: ({ owner, disposition, destination, error, retry, nextRetryAt }) => {
+      const task = owner.kind === 'task' ? owner.task : undefined;
+      const epicRef = owner.kind === 'epic' ? owner.epicRef : undefined;
+      const workspaceId = task ? task.workspaceId : owner.kind === 'epic' ? owner.workspaceId : null;
+      bus.emit('export_failed', { taskId: task?.id ?? null, epicRef: epicRef ?? null, workspaceId, trackerRef: task?.trackerRef ?? null, destination, disposition, error, retry, nextRetryAt });
       fireAndForget(
-        () => stores.notifier.notify('export.failed', task, { export: { destination, disposition, error, retry, nextRetryAt } }),
-        { op: 'export.notifyFailure', level: 'warn', context: { taskId: task.id } },
+        () =>
+          stores.notifier.notify('export.failed', task, {
+            workspaceId,
+            export: { ...(epicRef === undefined ? {} : { epicRef }), destination, disposition, error, retry, nextRetryAt },
+          }),
+        { op: 'export.notifyFailure', level: 'warn', context: task ? { taskId: task.id } : { epicRef: epicRef! } },
       );
     },
   });
@@ -221,6 +231,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         dataDir: opts.dataDir,
         retention: () => stores.settingsStore.getGlobal().archive.retain,
         workspaceRetention: (slug) => overrides.get(slug) ?? null,
+        pendingExports: () => exporter.pendingOwnerKeys(),
         taskTerminalAt: async (taskId) => {
           const task = await orFallback(() => ctx.tasks.get(taskId), { op: 'archive.retention.task', context: { taskId } }, null);
           return task && (task.state === 'done' || task.state === 'cancelled') ? task.updatedAt : null;
@@ -231,7 +242,10 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   scheduler.register({ name: 'Export retry', intervalMs: 60_000, run: () => exporter.retryDue() });
   stores.tasks.setBeforeDelete((task) => exporter.captureForDelete(task));
   bus.on('task_disposition', ({ task, disposition }) => exporter.trigger(task, disposition));
-  bus.on('epic_integrated', ({ workspaceId, epicRef }) => exporter.triggerEpic(workspaceId, epicRef, 'done'));
+  bus.on('epic_integrated', ({ workspaceId, epicRef }) => {
+    fireAndForget(() => runtime.archive.recordEpicDisposition(workspaceId, epicRef, 'done'), { op: 'archive.epicDisposition', level: 'warn', context: { workspaceId, epicRef } });
+    exporter.triggerEpic(workspaceId, epicRef, 'done');
+  });
   fireAndForget(() => exporter.sweepStaging(), { op: 'export.sweepStaging', level: 'warn' });
 
   const app = Fastify({ logger: false }) as unknown as App;
@@ -243,12 +257,16 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     trackerManager: runtime.trackerManager,
     scheduler,
     autoRunner: runtime.autoRunner,
+    upgrade: runtime.upgrade,
     runner: runtime.runner,
     conversationDriver: runtime.conversationDriver,
     loopMonitor: runtime.loopMonitor,
     hostLoad: runtime.hostLoad,
     workspaceWatcher: runtime.workspaceWatcher,
     statsReader,
+    processGroups: runtime.processGroups,
+    transcripts: runtime.transcripts,
+    asyncDb,
   });
   await registerPlugins(app);
   registerAuthHook(app, stores.auth);

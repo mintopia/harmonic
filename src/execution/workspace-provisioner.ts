@@ -1,4 +1,5 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
+import { spawnProcessGroup } from './process-groups.js';
 import { existsSync, mkdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { Git } from './git.js';
@@ -143,12 +144,11 @@ export class WorkspaceProvisioner {
       ...adapterFor(task.harness).spawnEnv({ model: task.model, cwd, sessionLogDir: harness.sessionLogDir, unattended }),
       ...extraEnv,
     };
-    return spawn(harness.command, harness.args, {
+    return spawnProcessGroup(harness.command, harness.args, {
       cwd,
       env: env as NodeJS.ProcessEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
-      detached: true,
-    });
+    }, `attempt harness for task ${task.id}`);
   }
 
   async prepareWorkspace(task: TaskRow, run: AttemptRow, resume = false): Promise<Workspace> {

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AppConfig, DeepPartial } from '../src/config.js';
 import { eq } from 'drizzle-orm';
-import { tasks } from '../src/db/schema.js';
+import { epics, tasks, workspaces } from '../src/db/schema.js';
 import { startServer, type TestServer } from './helpers.js';
 
 const TOKEN = `ghp_${'a1B2c3D4e5F6'.repeat(3)}`;
@@ -109,6 +109,48 @@ describe('Manual Export actions', () => {
     expect((await server.api('GET', '/api/tasks/999999/export')).status).toBe(404);
     expect((await server.api('POST', '/api/tasks/999999/export')).status).toBe(404);
     expect((await server.anonApi('POST', `/api/tasks/${task.body.id}/export`)).status).toBe(401);
+  });
+
+  describe('Epic Export routes', () => {
+    const seedEpic = async (srv: TestServer, ref: number, state: 'open' | 'integrated'): Promise<number> => {
+      const { ctx } = srv.app;
+      const workspaceId = (await ctx.asyncDb.read((d) => d.select().from(workspaces).get()))!.id;
+      await ctx.asyncDb.write((d) => d.insert(epics).values({ workspaceId, trackerRef: ref, kind: 'epic', state: 'open' } as typeof epics.$inferInsert).run());
+      if (state === 'integrated') await ctx.tasks.markEpicIntegrated(workspaceId, ref, { mergeCommit: 'abc', memberRefs: [] });
+      return workspaceId;
+    };
+    const base = (workspaceId: number, ref: number): string => `/api/workspaces/${workspaceId}/epics/${ref}/export`;
+
+    it('reports status, exports again to every Destination and streams a download for an integrated Epic', async () => {
+      const ws = await seedEpic(server, 61, 'integrated');
+      expect((await server.api('GET', base(ws, 61))).body).toEqual({ exportable: true, latest: null, earlier: [] });
+
+      const again = await server.api('POST', base(ws, 61));
+      expect(again.status).toBe(200);
+      expect(again.body.outcomes).toEqual([{ destination: 'directory', status: 'succeeded', file: expect.stringContaining('epic-61-done-'), error: null }]);
+      expect(again.body.export.latest).toMatchObject({ disposition: 'done', destinations: [{ destination: 'directory', status: 'succeeded' }] });
+
+      const res = await fetch(`${server.baseUrl}${base(ws, 61)}/download`, { headers: { cookie: `harmonic_session=${server.sessionToken}` } });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-disposition')).toMatch(/^attachment; filename="epic-61-done-.*\.tar\.gz"$/);
+      const file = join(root, 'epic-download.tar.gz');
+      writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+      const dest = mkdtempSync(join(root, 'edl-'));
+      extract(file, dest);
+      expect(JSON.parse(readFileSync(join(dest, 'manifest.json'), 'utf8'))).toMatchObject({ format: 'harmonic-epic-export', epicRef: 61 });
+      expect((await server.api('GET', base(ws, 61))).body.earlier).toEqual([]);
+    });
+
+    it('rejects an Epic that is not integrated, an unknown Epic and a missing Destination', async () => {
+      const ws = await seedEpic(bare, 62, 'open');
+      expect((await bare.api('GET', base(ws, 62))).body.exportable).toBe(false);
+      expect((await bare.api('POST', base(ws, 62))).status).toBe(409);
+      expect((await bare.api('GET', `${base(ws, 62)}/download`)).status).toBe(409);
+      expect((await bare.api('POST', base(ws, 999))).status).toBe(404);
+      await bare.app.ctx.tasks.markEpicIntegrated(ws, 62, { mergeCommit: 'abc', memberRefs: [] });
+      expect((await bare.api('POST', base(ws, 62))).status).toBe(409);
+      expect((await bare.anonApi('POST', base(ws, 62))).status).toBe(401);
+    });
   });
 
   it('answers 409 to Export again when no Destination is configured', async () => {

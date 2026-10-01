@@ -4162,6 +4162,107 @@
               "fromBranch",
               "error"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "export-built"
+              },
+              "disposition": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "partial": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "step",
+              "disposition",
+              "name",
+              "bytes",
+              "partial"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "export-delivered"
+              },
+              "destination": {
+                "type": "string",
+                "enum": [
+                  "directory",
+                  "s3"
+                ]
+              },
+              "file": {
+                "type": "string"
+              },
+              "retry": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "step",
+              "destination",
+              "file",
+              "retry"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "export-failed"
+              },
+              "destination": {
+                "type": "string",
+                "enum": [
+                  "directory",
+                  "s3"
+                ]
+              },
+              "error": {
+                "type": "string"
+              },
+              "retry": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "nextRetryAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "step",
+              "destination",
+              "error",
+              "retry",
+              "nextRetryAt"
+            ]
           }
         ]
       },
@@ -4604,6 +4705,9 @@
                 },
                 "hasTranscript": {
                   "type": "boolean"
+                },
+                "outputTruncated": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -4618,7 +4722,8 @@
                 "output",
                 "prompt",
                 "harness",
-                "hasTranscript"
+                "hasTranscript",
+                "outputTruncated"
               ]
             }
           }
@@ -11525,6 +11630,110 @@
               "error"
             ],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "export-built"
+              },
+              "disposition": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "partial": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "step",
+              "disposition",
+              "name",
+              "bytes",
+              "partial"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "export-delivered"
+              },
+              "destination": {
+                "type": "string",
+                "enum": [
+                  "directory",
+                  "s3"
+                ]
+              },
+              "file": {
+                "type": "string"
+              },
+              "retry": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "step",
+              "destination",
+              "file",
+              "retry"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "export-failed"
+              },
+              "destination": {
+                "type": "string",
+                "enum": [
+                  "directory",
+                  "s3"
+                ]
+              },
+              "error": {
+                "type": "string"
+              },
+              "retry": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "nextRetryAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "step",
+              "destination",
+              "error",
+              "retry",
+              "nextRetryAt"
+            ],
+            "additionalProperties": false
           }
         ]
       },
@@ -11970,6 +12179,9 @@
                 },
                 "hasTranscript": {
                   "type": "boolean"
+                },
+                "outputTruncated": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -11984,7 +12196,8 @@
                 "output",
                 "prompt",
                 "harness",
-                "hasTranscript"
+                "hasTranscript",
+                "outputTruncated"
               ],
               "additionalProperties": false
             }
@@ -17172,6 +17385,10 @@
                           "hasTranscript": {
                             "type": "boolean",
                             "example": false
+                          },
+                          "outputTruncated": {
+                            "type": "boolean",
+                            "example": false
                           }
                         },
                         "required": [
@@ -17186,7 +17403,8 @@
                           "output",
                           "prompt",
                           "harness",
-                          "hasTranscript"
+                          "hasTranscript",
+                          "outputTruncated"
                         ],
                         "additionalProperties": false
                       }
@@ -17272,6 +17490,49 @@
                   ],
                   "additionalProperties": false,
                   "description": "The verification task's captured command output and summary, and whether a critic transcript exists."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/verification-attempts/{id}/output": {
+      "get": {
+        "tags": [
+          "Attempts"
+        ],
+        "description": "Stream a command verification attempt's full, uncapped output from the Archive (text/plain). 404 when the attempt's output was not truncated or the Archive no longer holds it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The full combined stdout+stderr of the verify command.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The full combined stdout+stderr of the verify command."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such verification attempt, or no archived full output.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -18000,6 +18261,210 @@
           },
           "409": {
             "description": "The Task is not finished.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspaceId}/epics/{epicRef}/export": {
+      "get": {
+        "tags": [
+          "Epics"
+        ],
+        "description": "Export status for an Epic: the latest Export with per-Destination delivery status, last attempt, error and pending retry, plus earlier Exports. `exportable` is true once the Epic is integrated; `latest` is null until an Export has been attempted.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 1
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 42
+            },
+            "in": "path",
+            "name": "epicRef",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest and earlier Epic Exports with per-Destination status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskExportStatus"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Workspace has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Epics"
+        ],
+        "description": "Export again: rebuild the Epic Export and deliver it to every configured Destination regardless of the includeStates filter, as a new Export that never overwrites an earlier one. Only integrated Epics; 409 when the Epic is not integrated or no Destination is enabled.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 1
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 42
+            },
+            "in": "path",
+            "name": "epicRef",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per-Destination outcomes of the new Export, plus the refreshed status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskExportAgainResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Workspace or stored Epic has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Epic is not integrated, or no Export Destination is enabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspaceId}/epics/{epicRef}/export/download": {
+      "get": {
+        "tags": [
+          "Epics"
+        ],
+        "description": "Stream a freshly built, redacted Epic Export tarball (tar.gz). Needs no configured Destination and is not recorded as an Export.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 1
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 42
+            },
+            "in": "path",
+            "name": "epicRef",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The tar.gz bytes, as an attachment named after the canonical Epic Export filename.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The tar.gz bytes, as an attachment named after the canonical Epic Export filename."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Workspace or stored Epic has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Epic is not integrated.",
             "content": {
               "application/json": {
                 "schema": {

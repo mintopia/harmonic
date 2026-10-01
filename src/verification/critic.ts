@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { killProcessGroup, spawnProcessGroup } from '../execution/process-groups.js';
 import { access } from 'node:fs/promises';
 import type { Attributes, SpanContext } from '@opentelemetry/api';
 import type { HarnessConfig } from '../config.js';
@@ -43,8 +43,6 @@ export interface CriticDriveRequest {
   /** Each ACP `session/update` from the critic turn, verbatim, for a live
    * transcript that renders exactly like the builder's. */
   onUpdate?: (update: { sessionUpdate: string; [key: string]: unknown }) => void;
-  /** Called as soon as the harness child exists, so a running Attempt is recoverable. */
-  onProcessStart?: (pid: number) => Promise<void> | void;
   /** Called after ACP initialization and session creation. */
   onSessionCreated?: (sessionId: string, initialize: AcpInitializeResult) => Promise<void> | void;
   /** Reload this prior ACP session instead of starting a fresh one. */
@@ -78,12 +76,11 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
   return {
     async run(req: CriticDriveRequest): Promise<CriticDriveResult> {
       const env = criticSpawnEnv(req.harness, req.harnessId, req.model, req.cwd);
-      const child = spawn(req.harness.command, req.harness.args, {
+      const child = spawnProcessGroup(req.harness.command, req.harness.args, {
         cwd: req.cwd,
         env: env as NodeJS.ProcessEnv,
         stdio: ['pipe', 'pipe', 'pipe'],
-      });
-      if (child.pid !== undefined) await req.onProcessStart?.(child.pid);
+      }, `critic harness ${req.harnessId}`);
 
       let output = '';
       const permissionRequests: PermissionRequest[] = [];
@@ -111,13 +108,7 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
         },
       });
 
-      const kill = (): void => {
-        try {
-          if (child.exitCode === null && !child.killed) child.kill('SIGKILL');
-        } catch (err) {
-          logger.debug('critic: failed to kill drive child process', { harness: req.harnessId, error: err instanceof Error ? err.message : String(err) });
-        }
-      };
+      const kill = (): void => killProcessGroup(child);
 
       let timer: NodeJS.Timeout | undefined;
       const timeout = new Promise<never>((_, reject) => {

@@ -4,6 +4,7 @@ import { transcriptLanes } from '../../transcript-timeline-model';
 import { chatRows, type ChatRow, type ChatToolStatus } from '../../attempt-chat-model';
 import type { AttemptLogEvent } from '../../types';
 import { railSectionCount } from '../../ui';
+import { CopyButton, revealOnHover } from '../CopyButton';
 import { Icon } from '../Icon';
 import { Markdown } from '../Markdown';
 import { DiffViewer } from '../DiffViewer';
@@ -46,7 +47,7 @@ function Avatar({ operator, initial }: { operator: boolean; initial: string }) {
 function MessageRow({ row, model, agent }: { row: Extract<ChatRow, { kind: 'message' }>; model: string; agent: string }) {
   const operator = row.author === 'operator';
   return (
-    <div className="flex gap-3">
+    <div className="group flex gap-3">
       <Avatar operator={operator} initial={agent.charAt(0).toUpperCase()} />
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-baseline gap-2">
@@ -55,6 +56,7 @@ function MessageRow({ row, model, agent }: { row: Extract<ChatRow, { kind: 'mess
             {operator ? 'steered' : model} · {clockTime(row.at)}
           </span>
           {row.pending && <span className="rounded-[4px] bg-running-tint px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.05em] text-running">Pending delivery</span>}
+          {!row.pending && <CopyButton text={row.text} label="Copy message" className={`ml-auto self-center ${revealOnHover}`} />}
         </div>
         {operator ? (
           <p className="whitespace-pre-wrap break-words text-[13.5px] leading-relaxed text-ink">{row.text}</p>

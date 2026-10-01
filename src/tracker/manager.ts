@@ -3,6 +3,7 @@ import type { TaskService } from '../domain/tasks.js';
 import { logger } from '../logger.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { singleFlight } from '../reliability/single-flight.js';
+import { InFlight } from '../reliability/in-flight.js';
 import type { Scheduler } from '../scheduler/scheduler.js';
 import type { ResolvedTracker, TrackerAdapter } from './adapter.js';
 import { resolveTracker, resolveTrackerAdapter } from './adapter.js';
@@ -15,7 +16,7 @@ import { MirrorCoordinator } from './coordinator.js';
 import { TrackerPoller } from './poller.js';
 import { persistedTickets } from './persisted.js';
 
-interface Entry { poller: TrackerPoller; mirror: MirrorCoordinator; sig: string; unregister: () => void }
+interface Entry { poller: TrackerPoller; mirror: MirrorCoordinator; sig: string; unregister?: () => void }
 const sigOf = (workspace: WorkspaceRow): string => `${workspace.workingDir}|${workspace.trackerPollIntervalSeconds * 1000}`;
 
 export interface TrackerPollerManagerOptions {
@@ -31,6 +32,8 @@ export interface TrackerPollerManagerOptions {
 /** Owns tracker polling, mirroring, and tracker resolution for each enabled Workspace. */
 export class TrackerPollerManager {
   private readonly entries = new Map<number, Entry>();
+  private readonly stopping = new InFlight();
+  private closed = false;
   private readonly resolved = new Map<number, ResolvedTracker>();
   private readonly epicService: EpicService;
   private readonly resolveAdapter: (repoRoot: string, featureIndex?: FeatureIndex) => Promise<TrackerAdapter>;
@@ -59,7 +62,7 @@ export class TrackerPollerManager {
 
   private async syncOnce(): Promise<void> {
     const workspaces = new Map((await this.getWorkspaces()).map((workspace) => [workspace.id, workspace]));
-    await forEachYielding(this.entries, async ([id, entry]) => { const workspace = workspaces.get(id); if (!workspace || !workspace.trackerEnabled || entry.sig !== sigOf(workspace)) this.stopEntry(id, entry); }, this.yieldOptions);
+    await forEachYielding(this.entries, async ([id, entry]) => { const workspace = workspaces.get(id); if (!workspace || !workspace.trackerEnabled || entry.sig !== sigOf(workspace)) this.stopping.add(this.stopEntry(id, entry), 'trackerManager.stopEntry'); }, this.yieldOptions);
     await forEachYielding(this.resolved.keys(), async (id) => { const workspace = workspaces.get(id); if (!workspace || !workspace.trackerEnabled) this.resolved.delete(id); }, this.yieldOptions);
     await forEachYielding(workspaces.values(), async (workspace) => {
       if (!workspace.trackerEnabled || this.entries.has(workspace.id)) return;
@@ -70,15 +73,21 @@ export class TrackerPollerManager {
   }
 
   private startLoop(workspace: WorkspaceRow): void {
+    if (this.closed) return;
     const mirror = new MirrorCoordinator(this.tasks, workspace.id);
     const poller = new TrackerPoller(this.tasks, workspace.id, workspace.workingDir, workspace.trackerPollIntervalSeconds * 1000, (dir) => this.resolveAdapter(dir, (slug) => this.tasks.mdFeatureIndex(workspace.id, slug)), this.onError, mirror, (resolved) => this.resolved.set(workspace.id, resolved), this.epicService.startWorkspace(workspace), { reconcileOnPoll: this.scheduler === undefined, ...(this.workStartAllowed ? { workStartAllowed: this.workStartAllowed } : {}) });
-    const unregister = this.scheduler
-      ? this.scheduler.register({ name: 'Tracker poll', workspaceId: workspace.id, intervalMs: workspace.trackerPollIntervalSeconds * 1000, run: async () => { await poller.poll(); await this.scheduler!.runNow('Epic reconcile'); }, enabled: () => this.resolved.get(workspace.id)?.ok === true })
-      : (poller.start(), () => poller.stop());
-    this.entries.set(workspace.id, { poller, mirror, sig: sigOf(workspace), unregister });
+    const scheduler = this.scheduler;
+    if (!scheduler) poller.start();
+    const unregister = scheduler?.register({ name: 'Tracker poll', workspaceId: workspace.id, intervalMs: workspace.trackerPollIntervalSeconds * 1000, run: async () => { await poller.poll(); await scheduler.runNow('Epic reconcile'); }, enabled: () => this.resolved.get(workspace.id)?.ok === true });
+    this.entries.set(workspace.id, { poller, mirror, sig: sigOf(workspace), ...(unregister ? { unregister } : {}) });
   }
 
-  private stopEntry(workspaceId: number, entry: Entry): void { entry.poller.stop(); entry.unregister(); this.entries.delete(workspaceId); this.epicService.stopWorkspace(workspaceId); }
+  private async stopEntry(workspaceId: number, entry: Entry): Promise<void> {
+    entry.unregister?.();
+    this.entries.delete(workspaceId);
+    this.epicService.stopWorkspace(workspaceId);
+    await entry.poller.stop();
+  }
   resolvedTracker(workspaceId: number): ResolvedTracker | null { return this.resolved.get(workspaceId) ?? null; }
   async rejectEpic(workspaceId: number, epicRef: number, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null> { return this.epicService.rejectEpic(workspaceId, epicRef, guidance, continuation); }
   async epicBaseNotReady(task: TaskRow): Promise<boolean> { return this.epicService.epicBaseNotReady(task); }
@@ -106,9 +115,14 @@ export class TrackerPollerManager {
   async pollNow(workspaceId: number): Promise<void> {
     const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); if (!workspace || !workspace.trackerEnabled) return;
     const resolved = await resolveTracker(workspace.workingDir, this.resolveAdapter); this.resolved.set(workspace.id, resolved); const entry = this.entries.get(workspace.id);
-    if (!resolved.ok) { if (!this.scheduler && entry) this.stopEntry(workspace.id, entry); return; }
+    if (!resolved.ok) { if (!this.scheduler && entry) this.stopping.add(this.stopEntry(workspace.id, entry), 'trackerManager.stopEntry'); return; }
     if (entry) await entry.poller.poll(); else this.startLoop(workspace);
   }
-  stopAll(): void { for (const [id, entry] of this.entries) this.stopEntry(id, entry); }
+  /** Stop every Workspace loop and wait out polls already in flight. */
+  async stopAll(): Promise<void> {
+    this.closed = true;
+    for (const [id, entry] of this.entries) this.stopping.add(this.stopEntry(id, entry), 'trackerManager.stopEntry');
+    await this.stopping.drain();
+  }
   async reconcileEpics(): Promise<void> { await forEachYielding(this.entries, async ([id, entry]) => { if (this.resolved.get(id)?.ok) await entry.poller.reconcileEpics(); }, this.yieldOptions); }
 }

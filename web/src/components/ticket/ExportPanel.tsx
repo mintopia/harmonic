@@ -1,9 +1,8 @@
-import { api } from '../../api';
 import { exportPanelModel, type DestinationRow, type ExportSummaryView } from '../../task-export-model';
 import { btnGhost, btnPrimary, card, statePill, statePillShape } from '../../ui';
-import { toastError } from '../../toast';
+import { CopyButton } from '../CopyButton';
 import { Icon } from '../Icon';
-import { useTaskExport, type TaskExportDeps } from '../useTaskExport';
+import { useTaskExport, type ExportTarget } from '../useTaskExport';
 import { humanState, sectionCaps, StatePill } from './shared';
 
 function stamp(iso: string): string {
@@ -59,24 +58,13 @@ function Destination({ row }: { row: DestinationRow }) {
   );
 }
 
-function copyName(name: string) {
-  navigator.clipboard.writeText(name).catch(toastError);
-}
-
-function Latest({ latest }: { latest: ExportSummaryView }) {
+function Latest({ latest, noun }: { latest: ExportSummaryView; noun: string }) {
   return (
     <>
       {latest.name && (
         <div className="mt-3 flex items-center gap-1.5 break-all text-[13px]">
           <span className="font-data">{latest.name}</span>
-          <button
-            type="button"
-            aria-label="Copy tarball name"
-            onClick={() => copyName(latest.name!)}
-            className="inline-grid size-7 shrink-0 place-items-center rounded-sm text-muted hover:bg-raised hover:text-ink"
-          >
-            <Icon name="copy" className="size-3.5" />
-          </button>
+          <CopyButton text={latest.name} label="Copy tarball name" className="size-7 text-muted hover:bg-raised" />
         </div>
       )}
       <p className="mt-0.5 flex flex-wrap gap-x-2 text-small text-muted">
@@ -108,7 +96,7 @@ function Latest({ latest }: { latest: ExportSummaryView }) {
         <div className="mt-3 flex items-start gap-2 rounded-sm bg-running-tint px-3 py-2 text-small text-ink">
           <Icon name="alert-triangle" className="mt-0.5 size-3.5 shrink-0 text-running" />
           <span>
-            Built from surviving records; some transcripts unavailable. This Task predates the Archive, so its Harness logs were read from disk where
+            Built from surviving records; some transcripts unavailable. This {noun} predates the Archive, so its Harness logs were read from disk where
             they still existed.
           </span>
         </div>
@@ -128,24 +116,22 @@ function Latest({ latest }: { latest: ExportSummaryView }) {
 }
 
 /**
- * The Ticket page's Export panel: the latest Export of a finished Task with
+ * The Export panel of a finished Task or Epic: the latest Export with
  * per-Destination delivery status, Export again and Download. Rendered only
- * for a done or cancelled Task.
+ * once the Task is done or cancelled, or the Epic is done.
  */
 export function ExportPanel({
-  taskId,
+  target,
   state,
   refreshKey,
-  deps,
 }: {
-  taskId: number;
+  target: ExportTarget;
   state: string;
-  /** Changes whenever the Ticket's timeline gains a fact, so the panel re-reads. */
+  /** Changes whenever the page's timeline gains a fact, so the panel re-reads. */
   refreshKey: number;
-  deps?: TaskExportDeps;
 }) {
   const finished = state === 'done' || state === 'cancelled';
-  const { status, busy, feedback, exportAgain, now } = useTaskExport(taskId, finished, refreshKey, deps);
+  const { status, busy, feedback, exportAgain, now } = useTaskExport(target, finished, refreshKey);
   const model = exportPanelModel(status, now);
   if (!finished || model === null) return null;
   const { latest, earlier } = model;
@@ -165,7 +151,7 @@ export function ExportPanel({
             <Icon name="refresh" className={`size-4 ${busy ? 'motion-safe:animate-spin' : ''}`} />
             {busy ? 'Exporting…' : 'Export again'}
           </button>
-          <a href={api.taskExportDownloadUrl(taskId)} download className={`${btnPrimary} gap-1.5 no-underline`}>
+          <a href={target.downloadUrl} download className={`${btnPrimary} gap-1.5 no-underline`}>
             <Icon name="download" className="size-4" />
             Download
           </a>
@@ -181,9 +167,9 @@ export function ExportPanel({
           )}
         </div>
         {latest ? (
-          <Latest latest={latest} />
+          <Latest latest={latest} noun={target.noun} />
         ) : (
-          <p className="mt-3 pb-3.5 text-small text-muted">Nothing has been exported for this Task yet. Export again builds one, or Download saves a copy.</p>
+          <p className="mt-3 pb-3.5 text-small text-muted">Nothing has been exported for this {target.noun} yet. Export again builds one, or Download saves a copy.</p>
         )}
         {earlier.length > 0 && (
           <details className="group border-t border-hairline">

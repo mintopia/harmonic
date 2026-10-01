@@ -6,6 +6,7 @@ import type { ConversationDriver } from '../execution/conversation-driver.js';
 import { reportFailure } from '../error-handling.js';
 import { logger } from '../logger.js';
 import { singleFlight } from '../reliability/single-flight.js';
+import { InFlight } from '../reliability/in-flight.js';
 import type { UpdateArmingStore, UpdateAvailabilityState, UpdatePhase } from './update-check.js';
 
 export interface UpgradeIdleState {
@@ -87,6 +88,8 @@ export class UpgradeCancellation {
 /** Durable arming state for an offered in-place upgrade. */
 export class UpgradeCoordinator {
   private transitions: Promise<void> = Promise.resolve();
+  private readonly background = new InFlight();
+  private closed = false;
   private readonly reconcileIdle = singleFlight(() => this.reconcileOnce());
   /** The in-flight swap's cancellation token, set for the duration of `upgrading`. */
   private activeCancellation: UpgradeCancellation | null = null;
@@ -135,7 +138,7 @@ export class UpgradeCoordinator {
         phase: { kind: 'armed', targetVersion, autoRunnerWasEnabled },
       };
       await this.options.store.setState(armed);
-      setImmediate(() => this.reconcileAfterArming(targetVersion));
+      this.background.add(new Promise<void>((resolve) => setImmediate(resolve)).then(() => this.reconcileAfterArming(targetVersion)), 'upgradeCoordinator.reconcileAfterArming');
       return armed;
     } catch (error) {
       await this.options.settings.updateGlobal({ autoRunner: { enabled: autoRunnerWasEnabled } });
@@ -320,6 +323,7 @@ export class UpgradeCoordinator {
   }
 
   reconcile(): Promise<boolean> {
+    if (this.closed) return Promise.resolve(false);
     return this.exclusively(() => this.reconcileIdle());
   }
 
@@ -396,20 +400,29 @@ export class UpgradeCoordinator {
     }
   }
 
-  private reconcileAfterArming(targetVersion: string): void {
-    void this.reconcile().catch((error: unknown) => {
+  private async reconcileAfterArming(targetVersion: string): Promise<void> {
+    try {
+      await this.reconcile();
+    } catch (error) {
       reportFailure(error, {
         op: 'upgradeCoordinator.reconcile',
         level: 'error',
         context: { armedVersion: targetVersion },
       });
-      void this.cancel().catch((cancelError: unknown) => {
+      await this.cancel().catch((cancelError: unknown) => {
         reportFailure(cancelError, {
           op: 'upgradeCoordinator.cancelAfterReconcileFailure',
           level: 'error',
           context: { armedVersion: targetVersion },
         });
       });
-    });
+    }
+  }
+
+  /** Process shutdown: stop reconciling, then wait out the deferred post-arm reconcile and any queued transition. Never waits on the swap itself, which closes the app. */
+  async close(): Promise<void> {
+    this.closed = true;
+    await this.background.drain();
+    await this.transitions;
   }
 }

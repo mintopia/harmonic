@@ -62,6 +62,7 @@ describe('ticket panel components (issue #465)', () => {
       prompt: null,
       harness: null,
       hasTranscript: false,
+      outputTruncated: false,
     }];
     const host = await mountComponent(createElement(Verification, { attempts, statuses, run }));
 

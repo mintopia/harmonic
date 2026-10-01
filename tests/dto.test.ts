@@ -50,9 +50,6 @@ const attemptRow = (over: Partial<TaskAttemptRow> = {}): TaskAttemptRow => ({
   guardrailConfig: null,
   priceTable: null,
   detail: null,
-  pid: null,
-  pgid: null,
-  procStartToken: null,
   ...over,
 });
 

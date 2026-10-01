@@ -322,6 +322,11 @@ export const api: typeof RealApi = {
   taskExport: (_id: number) => ok({ exportable: true, latest: null, earlier: [] }),
   exportTaskAgain: (_id: number) => ok({ outcomes: [], export: { exportable: true, latest: null, earlier: [] } }),
   taskExportDownloadUrl: (id: number) => `/api/tasks/${id}/export/download`,
+  epicExport: (_workspaceId: number, _epicRef: number) => ok({ exportable: true, latest: null, earlier: [] }),
+  exportEpicAgain: (_workspaceId: number, _epicRef: number) => ok({ outcomes: [], export: { exportable: true, latest: null, earlier: [] } }),
+  epicExportDownloadUrl: (workspaceId: number, epicRef: number) => `/api/workspaces/${workspaceId}/epics/${epicRef}/export/download`,
+  verificationOutputUrl: (id: number) => `/api/verification-attempts/${id}/output`,
+  verificationFullOutput: (id: number) => ok(`full output of verification ${id}`),
   taskUsage: (id: number) =>
     ok(f.epicChildUsage[id] ?? { models: {}, agents: {}, toolCalls: {}, totals: null, source: null, cost: null, attemptCount: 0 }),
   attempt: (_id: number) => ok(f.runs[2] ?? f.runs[0]!),

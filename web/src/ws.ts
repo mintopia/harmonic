@@ -65,7 +65,9 @@ export type ServerMessage =
   // Sent to every client regardless of workspace; nextRetryAt is null when no further retry is scheduled.
   | {
       type: 'export_failed';
-      taskId: number;
+      taskId: number | null;
+      epicRef: number | null;
+      workspaceId: number | null;
       trackerRef: number | null;
       destination: string;
       disposition: string;

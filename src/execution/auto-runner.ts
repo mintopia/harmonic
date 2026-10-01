@@ -9,6 +9,7 @@ import { repoKey } from './repo-lock.js';
 import type { GitCircuitBreaker } from './git-failure.js';
 import type { Runner } from './runner.js';
 import { forEachYielding } from '../reliability/yield.js';
+import { InFlight } from '../reliability/in-flight.js';
 import { DomainError } from '../domain/errors.js';
 import { startOperation, type Operation } from '../telemetry/operations.js';
 
@@ -90,6 +91,8 @@ export class AutoRunner {
   private scheduled = false;
   private filling = false;
   private refill = false;
+  private closed = false;
+  private readonly inFlight = new InFlight();
   private readonly mirror: MirrorClaim | undefined;
   private readonly epicBaseNotReady: ((task: TaskRow) => boolean | Promise<boolean>) | undefined;
   private readonly gitBreaker: GitCircuitBreaker | undefined;
@@ -133,6 +136,13 @@ export class AutoRunner {
     this.timer = undefined;
   }
 
+  /** Shut down for good: no further pokes fill, and any fill in flight is awaited. */
+  async close(): Promise<void> {
+    this.closed = true;
+    this.stop();
+    await this.inFlight.drain();
+  }
+
   /** The latest scheduler reason for `taskId`, if it was not picked. */
   skipReasonFor(taskId: number): string | undefined {
     return this.schedulerSkipReasons.get(taskId);
@@ -146,15 +156,16 @@ export class AutoRunner {
   }
 
   poke(): void {
-    if (this.scheduled) return;
+    if (this.scheduled || this.closed) return;
     this.scheduled = true;
-    setImmediate(() => {
+    this.inFlight.add(new Promise<void>((resolve) => setImmediate(resolve)).then(() => {
       this.scheduled = false;
-      void this.fill();
-    });
+      return this.fill();
+    }), 'autoRunner.fill');
   }
 
   private async fill(): Promise<void> {
+    if (this.closed) return;
     if (this.filling) {
       this.refill = true;
       return;
@@ -172,7 +183,7 @@ export class AutoRunner {
         if (!master) break;
         await this.fillSlots(workspacesById, ceiling, tickParent);
         await this.refreshSkipReasons({ master, ceiling, workspacesById });
-      } while (this.refill);
+      } while (this.refill && !this.closed);
       tick?.end();
     } catch (error) {
       tick?.fail(failureReason(error));

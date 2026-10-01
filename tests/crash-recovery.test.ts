@@ -12,6 +12,7 @@ import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
 import { CrashRecoveryCoordinator } from '../src/execution/crash-recovery.js';
 import { Git } from '../src/execution/git.js';
 import { readProcStartToken } from '../src/execution/process-reaper.js';
+import { ProcessGroupJournal } from '../src/execution/process-groups.js';
 import type { TaskRow, AttemptRow } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
@@ -193,16 +194,17 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     expect((await tasks.get(created.id)).state).toBe('paused');
   });
 
-  it('reaps a persisted orphan harness process group and marks its Run interrupted', async () => {
+  it('reaps a journaled orphan process group and marks its Run interrupted', async () => {
     const created = await tasks.create({ prompt: 'direct mode', state: 'ready', workingDir: repo, isolationMode: 'direct' });
     await tasks.setState(created.id, 'working');
     const run = await attempts.create(created.id);
     const child: ChildProcess = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1e9)'], { detached: true });
     const pid = child.pid!;
     try {
-      await attempts.update(run.id, { pid, pgid: pid, procStartToken: readProcStartToken(pid) });
+      const processGroups = new ProcessGroupJournal(asyncDb);
+      await processGroups.record(pid, 'orphan harness');
       const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
-      const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck });
+      const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck, processGroups });
 
       await coord.reconcile();
 

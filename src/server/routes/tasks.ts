@@ -1,3 +1,4 @@
+import { createReadStream } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -25,9 +26,10 @@ import { mergeUsage, type AttemptUsage } from '../../execution/usage.js';
 import { readTranscriptLog, withOperatorMessages, type OperatorMessage, type TranscriptLog } from '../../execution/transcript-log.js';
 import { adapterFor } from '../../execution/harness/registry.js';
 import { attemptTimelineToApi, attemptToApi, taskToApi, tasksToApi, ticketTimelineToApi, verifierStatusesToApi } from '../serialize.js';
-import { atRestWorkspaceId, costOfAttempts, epicToListRow } from '../dto.js';
+import { atRestWorkspaceId, costOfAttempts, epicToListRow, verificationAttemptToApi } from '../dto.js';
 import type { ApiTaskListRow } from '../dto.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, attemptUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
+import { splitFullOutputPath } from '../../verification/command-verifier.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import { diffFilesResponseSchema } from './diff.js';
 import { deleteTaskKeepingArchive, operatorReasonSchema, recordOperatorActionBestEffort, recordOperatorActionsBestEffort, requestActor } from '../operator-inputs.js';
@@ -332,6 +334,8 @@ const verificationAttemptSchema = z.object({
   harness: z.string().nullable().meta({ example: 'claude' }),
   /** Whether a critic transcript is available; fetch the parsed log from `GET /api/verification-attempts/:id/log`. */
   hasTranscript: z.boolean().meta({ example: false }),
+  /** Whether the output above was capped; the full text is at `GET /api/verification-attempts/:id/output`. */
+  outputTruncated: z.boolean().meta({ example: false }),
 });
 
 const verificationAttemptsListResponseSchema = listResponse('verificationAttempts', verificationAttemptSchema).extend({
@@ -1077,7 +1081,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       const attempts = await ctx.verificationAttempts.list(run.id);
       const verifierStatuses = await verifierStatusesToApi(ctx, run, attempts);
       const { items, total } = paginate(
-        attempts.map((a) => ({ ...a, hasTranscript: a.transcriptPath != null })),
+        attempts.map(verificationAttemptToApi),
         { limit, offset },
       );
       return { verificationAttempts: items, total, verifierStatuses };
@@ -1106,6 +1110,34 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
   );
 
   app.get(
+    '/verification-attempts/:id/output',
+    {
+      schema: {
+        tags: ['Attempts'],
+        description:
+          "Stream a command verification attempt's full, uncapped output from the Archive (text/plain). 404 when the attempt's output was not truncated or the Archive no longer holds it.",
+        params: idParamsSchema,
+        response: {
+          200: z.any().describe('The full combined stdout+stderr of the verify command.'),
+          404: errorResponse('No such verification attempt, or no archived full output.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const attempt = await ctx.verificationAttempts.get(req.params.id);
+      if (!attempt) throw new DomainError('not_found', `verification attempt ${req.params.id} not found`);
+      const location = /verification[\\/](pre-merge|post-merge)[\\/]([^\\/]+)[\\/]output\.log$/.exec(splitFullOutputPath(attempt.output).fullOutputPath ?? '');
+      const run = await ctx.attempts.get(attempt.attemptId).catch(() => null);
+      const owner = run ? await archiveOwner(run) : null;
+      const file = location && run && owner ? await ctx.archive.archivedVerificationOutput(owner, run.number, location[1] as 'pre-merge' | 'post-merge', location[2]!) : null;
+      if (!file) throw new DomainError('not_found', `no archived full output for verification attempt ${attempt.id}`);
+      const stream = createReadStream(file);
+      reply.raw.once('close', () => stream.destroy());
+      return reply.header('content-type', 'text/plain; charset=utf-8').send(stream);
+    },
+  );
+
+  app.get(
     '/verification-attempts/:id/log',
     {
       schema: {
@@ -1123,14 +1155,18 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       if (!attempt?.transcriptPath || !attempt.harness) return { status: 'unavailable' as const, liveCursor: 0 };
       const range = { startedAt: 0, finishedAt: null };
       let log = await readTranscriptLog({ harness: attempt.harness, path: attempt.transcriptPath, ...range });
+      let fromArchive = false;
       if (log.status !== 'available') {
         const run = await ctx.attempts.get(attempt.attemptId).catch(() => null);
         const owner = run ? await archiveOwner(run) : null;
         const archived = run && owner ? await ctx.archive.archivedTranscript(owner, run.number, 'verification', attempt.transcriptPath) : null;
-        if (archived) log = await readTranscriptLog({ harness: attempt.harness, path: archived, ...range });
+        if (archived) {
+          log = await readTranscriptLog({ harness: attempt.harness, path: archived, ...range });
+          fromArchive = log.status === 'available';
+        }
       }
       return log.status === 'available'
-        ? { ...log, liveCursor: 0, events: log.events.map((event) => ({ ...event, attemptId: attempt.attemptId })) }
+        ? { ...log, liveCursor: 0, ...(fromArchive ? { fromArchive: true } : {}), events: log.events.map((event) => ({ ...event, attemptId: attempt.attemptId })) }
         : { ...log, liveCursor: 0 };
     },
   );

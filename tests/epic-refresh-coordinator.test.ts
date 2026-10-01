@@ -381,7 +381,6 @@ describe('epic refresh corrective turn (issue #315)', () => {
       criticDrive: {
         run: async (req) => {
           cwd.push(req.cwd);
-          await req.onProcessStart?.(process.pid);
           await req.onSessionCreated?.('epic-resolve-session', { agentCapabilities: {} });
           req.onUpdate?.({ sessionUpdate: 'tool_call', kind: 'read' });
           writeFileSync(join(req.cwd, 'resolved.txt'), 'fixed\n');
@@ -413,7 +412,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
 
     const stored = await attempts.get(attempt.id);
     expect(cwd).toEqual([liveWorktree]);
-    expect(stored).toMatchObject({ sessionId: 'epic-resolve-session', pid: null, pgid: null, procStartToken: null });
+    expect(stored).toMatchObject({ sessionId: 'epic-resolve-session' });
     expect(stored.prompt).toContain('Fix Epic 5: Resolver epic\nPreserve the public API.\nhttps://example.test/issues/5');
     expect(JSON.parse(stored.usage ?? '{}')).toMatchObject({ totals: { totalTokens: 15 } });
     expect(await attempts.listToolCalls(attempt.id)).toEqual(new Map([['Read', 1]]));

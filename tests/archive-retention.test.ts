@@ -12,11 +12,13 @@ describe('pruneArchives (#740)', () => {
   let dataDir: string;
   let terminal: Map<number, number | null>;
   let retention: ArchiveRetention;
+  let pendingKeys: Set<string>;
 
   beforeEach(() => {
     dataDir = mkdtempSync(join(tmpdir(), 'harmonic-retention-'));
     terminal = new Map();
     retention = { days: null, maxTotalMB: null };
+    pendingKeys = new Set();
   });
   afterEach(() => rmSync(dataDir, { recursive: true, force: true }));
 
@@ -31,7 +33,8 @@ describe('pruneArchives (#740)', () => {
     return dir;
   }
 
-  const run = () => pruneArchives({ dataDir, retention: () => retention, taskTerminalAt: async (id) => terminal.get(id) ?? null, now: () => NOW });
+  const run = () => pruneArchives({ dataDir, retention: () => retention, taskTerminalAt: async (id) => terminal.get(id) ?? null,
+      pendingExports: async () => pendingKeys, now: () => NOW });
   const record = (status: ExportRecord['status'], destination: ExportRecord['destination'] = 'directory'): ExportRecord => ({
     destination,
     disposition: 'done',
@@ -83,6 +86,54 @@ describe('pruneArchives (#740)', () => {
     expect(existsSync(active)).toBe(true);
   });
 
+  it('keeps an Archive whose Export has a retry pending even when its history shows only success', async () => {
+    const waiting = seed(1, { ageDays: 90, exports: [record('succeeded')] });
+    const done = seed(2, { ageDays: 90, exports: [record('succeeded')] });
+    pendingKeys = new Set(['task:1']);
+    retention = { days: 30, maxTotalMB: null };
+    await run();
+    expect(existsSync(waiting)).toBe(true);
+    expect(existsSync(done)).toBe(false);
+  });
+
+  it('keeps a Deleted Task Archive while its Export is pending or failed', async () => {
+    const pending = seed(1, { deletedDaysAgo: 45 });
+    const failed = seed(2, { deletedDaysAgo: 45, exports: [record('failed')] });
+    const clear = seed(3, { deletedDaysAgo: 45, exports: [record('succeeded')] });
+    pendingKeys = new Set(['task:1']);
+    retention = { days: 30, maxTotalMB: null };
+    await run();
+    expect([pending, failed, clear].map((d) => existsSync(d))).toEqual([true, true, false]);
+  });
+
+  describe('Epic Archives', () => {
+    const seedEpic = (ref: number, opts: { integratedDaysAgo?: number; exports?: ExportRecord[] }): string => {
+      const dir = join(dataDir, 'archive', 'ws', `epic-${ref}`);
+      mkdirSync(dir, { recursive: true });
+      const dispositions = opts.integratedDaysAgo === undefined ? [] : [{ disposition: 'done', at: new Date(NOW - opts.integratedDaysAgo * DAY).toISOString() }];
+      writeFileSync(join(dir, 'archive.json'), JSON.stringify({ epicRef: ref, workspaceId: 7, dispositions, exports: opts.exports ?? [] }));
+      return dir;
+    };
+
+    it('prunes an integrated Epic Archive past the cap even when no Export ever ran', async () => {
+      const old = seedEpic(1, { integratedDaysAgo: 45 });
+      const fresh = seedEpic(2, { integratedDaysAgo: 5 });
+      retention = { days: 30, maxTotalMB: null };
+      await run();
+      expect([old, fresh].map((d) => existsSync(d))).toEqual([false, true]);
+    });
+
+    it('keeps a non-integrated Epic Archive, a failed one, and one with a pending retry', async () => {
+      const open = seedEpic(1, {});
+      const failed = seedEpic(2, { integratedDaysAgo: 90, exports: [record('failed')] });
+      const waiting = seedEpic(3, { integratedDaysAgo: 90 });
+      pendingKeys = new Set(['epic:7:3']);
+      retention = { days: 30, maxTotalMB: null };
+      await run();
+      expect([open, failed, waiting].map((d) => existsSync(d))).toEqual([true, true, true]);
+    });
+  });
+
   it('prunes the Archive of a Deleted Task from archive.json alone', async () => {
     const gone = seed(1, { deletedDaysAgo: 45 });
     retention = { days: 30, maxTotalMB: null };
@@ -117,6 +168,7 @@ describe('pruneArchives (#740)', () => {
       retention: () => retention,
       workspaceRetention: (slug) => (slug === 'strict' ? { days: 10, maxTotalMB: null } : null),
       taskTerminalAt: async (id) => terminal.get(id) ?? null,
+      pendingExports: async () => pendingKeys,
       now: () => NOW,
     });
     expect(removed).toBe(2);
@@ -136,6 +188,7 @@ describe('pruneArchives (#740)', () => {
       retention: () => retention,
       workspaceRetention: () => ({ days: 10, maxTotalMB: null }),
       taskTerminalAt: async (id) => terminal.get(id) ?? null,
+      pendingExports: async () => pendingKeys,
       now: () => NOW,
     });
     expect(removed).toBe(1);
@@ -150,6 +203,7 @@ describe('pruneArchives (#740)', () => {
       dataDir,
       retention: () => retention,
       taskTerminalAt: async (id) => terminal.get(id) ?? null,
+      pendingExports: async () => pendingKeys,
       now: () => NOW,
       yieldOptions: { budgetMs: 0, yieldNow: async () => { yields += 1; } },
     });

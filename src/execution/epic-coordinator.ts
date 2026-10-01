@@ -4,7 +4,7 @@ import type { MergePolicyOutcome } from './merge-policy.js';
 import { decideEpicIntegrate, reduceMemberState, type MemberMergeState } from '../domain/epic-integrate-decision.js';
 import type { VerificationDecision } from '../verification/combine.js';
 import { logger } from '../logger.js';
-import { errorMessage } from '../error-handling.js';
+import { errorMessage, fireAndForget } from '../error-handling.js';
 import { EpicOperations } from './epic-operations.js';
 import type { TaskRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
@@ -797,7 +797,7 @@ export class EpicLifecycle {
     );
     const branch = integrationBranchName(epic.ref);
     const leftBranch = inPlace && (await this.git.branchExists(this.workingDir, branch)) ? branch : undefined;
-    void trigger
+    fireAndForget(() => trigger
       .submit({
         ref: epic.ref,
         title: epic.title,
@@ -808,7 +808,7 @@ export class EpicLifecycle {
         inPlace,
         ...(leftBranch !== undefined ? { leftBranch } : {}),
       })
-      .catch((err) => this.onError(`epic ${epic.ref} whole-Epic integrate attempt failed: ${String(err)}`));
+      .catch((err) => this.onError(`epic ${epic.ref} whole-Epic integrate attempt failed: ${String(err)}`)), { op: 'epic.integrateTrigger', level: 'error', context: { epicRef: epic.ref } });
   }
 
   membersOf(epicRef: number): number[] {
@@ -886,7 +886,7 @@ export class EpicLifecycle {
         if (!(await this.git.branchExists(worktreeDir, branch))) return;
         if ((await this.git.branchCheckedOutAt(worktreeDir, branch)) !== null) return;
         if (!(await this.git.isAncestor(worktreeDir, defaultBranch, branch))) return;
-        await this.git.deleteBranch(worktreeDir, branch);
+        await withRepoLock(this.workingDir, () => this.git.deleteBranch(worktreeDir, branch));
         retired = true;
       },
     );

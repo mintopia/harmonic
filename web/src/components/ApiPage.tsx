@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { btnPrimary, btnQuiet, btnQuietDestructive, card, chip, field, labelType, selectField, tableHead } from '../ui';
+import { btnPrimary, btnQuietDestructive, card, chip, field, labelType, selectField, tableHead } from '../ui';
+import { CopyButton } from './CopyButton';
 import { PageHeader } from './PageHeader';
 import { ApiReference } from './ApiReference';
 
@@ -26,26 +27,6 @@ async function json<T>(method: string, path: string, body?: unknown): Promise<T>
   return res.json() as Promise<T>;
 }
 
-function CopyButton({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    navigator.clipboard
-      .writeText(value)
-      .then(() => setCopied(true))
-      .catch(() => {});
-  };
-  useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(t);
-  }, [copied]);
-  return (
-    <button onClick={copy} className={`${btnQuiet} shrink-0`}>
-      {copied ? 'Copied' : 'Copy'}
-    </button>
-  );
-}
-
 const SCOPE_STYLES: Record<string, string> = {
   full: 'bg-raised text-ink',
   read: 'bg-raised text-muted',
@@ -60,7 +41,7 @@ function ConnectionRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-center gap-2">
       <span className={`${labelType} w-28 shrink-0 text-muted`}>{label}</span>
       <code className="flex-1 truncate font-data text-data text-ink">{value}</code>
-      <CopyButton value={value} />
+      <CopyButton text={value} variant="text" label={`Copy ${label}`} />
     </div>
   );
 }
@@ -111,7 +92,7 @@ export function ApiPage() {
             >
               {curlExample}
             </code>
-            <CopyButton value={curlExample} />
+            <CopyButton text={curlExample} variant="text" label="Copy example request" />
           </div>
           <div className="flex items-center gap-2">
             <span className={`${labelType} w-28 shrink-0 text-muted`}>OpenAPI spec</span>

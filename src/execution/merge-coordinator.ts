@@ -1,5 +1,5 @@
 import { Git } from './git.js';
-import { reportFailure } from '../error-handling.js';
+import { fireAndForget, reportFailure } from '../error-handling.js';
 import { driveFields } from './prompt-template.js';
 import { indexWorktree } from './code-index.js';
 import type { AppConfig } from '../config.js';
@@ -369,21 +369,22 @@ export class MergeCoordinator {
             onUpdate: this.deps.criticUpdateRelay(run.id),
           });
           const persisted = await this.deps.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
-          if (attempt.sessionId) {
+          const criticSessionId = attempt.sessionId;
+          if (criticSessionId) {
             if (attempt.transcriptPath === null) {
-              void this.deps.transcripts.captureCriticTranscript({
+              fireAndForget(() => this.deps.transcripts.captureCriticTranscript({
                 attemptId: persisted.id,
-                sessionId: attempt.sessionId,
+                sessionId: criticSessionId,
                 harnessId: criticHarnessId,
                 sessionLogDir: criticHarness.sessionLogDir,
-              });
+              }), { op: 'merge.captureCriticTranscript', level: 'warn', context: { attemptId: persisted.id } });
             }
-            void this.deps.transcripts.captureCriticUsage({
+            fireAndForget(() => this.deps.transcripts.captureCriticUsage({
               attemptId: persisted.id,
-              sessionId: attempt.sessionId,
+              sessionId: criticSessionId,
               harnessId: criticHarnessId,
               cwd: baseDir,
-            });
+            }), { op: 'merge.captureCriticUsage', level: 'warn', context: { attemptId: persisted.id } });
           }
           record('lifecycle', { event: 'verification', mechanism: 'critic', verdict: attempt.verdict, summary: attempt.summary });
           return attempt;

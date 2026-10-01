@@ -1,9 +1,9 @@
 import { createClient } from '@libsql/client';
 import { execFile } from 'node:child_process';
-import { chmodSync, existsSync, readFileSync, readlinkSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, readFileSync, readlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { installManagedUpgrade, readManagedInstalledVersion } from '../src/cli-serve.js';
 import { flipCurrent, readPending, snapshotDatabase, writePending } from '../src/upgrade/boot-state.js';
 import { UpgradeSwap, type UpgradeSwapDependencies } from '../src/upgrade/upgrade-swap.js';
@@ -12,16 +12,33 @@ import { verifyInstall } from '../src/upgrade/version-install.js';
 import { createTempDirTracker, packFixtureTarball } from './helpers/upgrade-fixture.js';
 
 const execFileAsync = promisify(execFile);
-const run = (command: string, args: readonly string[]) => execFileAsync(command, [...args]);
+const npmEnv = { ...process.env, npm_config_audit: 'false', npm_config_fund: 'false', npm_config_update_notifier: 'false', npm_config_offline: 'true' };
+// Durability syncs are not under test and can flush the whole filesystem on a loaded CI runner.
+const run = async (command: string, args: readonly string[]) => {
+  if (command === 'sync') return { stdout: '', stderr: '' };
+  return execFileAsync(command, [...args], { env: npmEnv });
+};
 const readFileUtf8 = (path: string): string => readFileSync(path, 'utf8');
 
 const { tempDir, cleanupAll } = createTempDirTracker();
 afterEach(cleanupAll);
 
+const shared = createTempDirTracker();
+let v1BaseDir: string;
+let v2Spec: string;
+let v2BrokenSpec: string;
+beforeAll(async () => {
+  v1BaseDir = shared.tempDir('upgrade-swap-v1-base-');
+  const v1Spec = packFixtureTarball(shared.tempDir, { version: '1.0.0' });
+  await installManagedUpgrade({ dataDir: v1BaseDir, target: '1.0.0', run, packageSpec: v1Spec });
+  flipCurrent({ appDir: join(v1BaseDir, 'app'), version: '1.0.0' });
+  v2Spec = packFixtureTarball(shared.tempDir, { version: '2.0.0' });
+  v2BrokenSpec = packFixtureTarball(shared.tempDir, { version: '2.0.0', cliServeJs: "throw new Error('v2 is broken');\n" });
+}, 60_000);
+afterAll(shared.cleanupAll);
+
 async function setupRunningV1(dataDir: string): Promise<void> {
-  const v1Spec = packFixtureTarball(tempDir, { version: '1.0.0' });
-  await installManagedUpgrade({ dataDir, target: '1.0.0', run, packageSpec: v1Spec });
-  flipCurrent({ appDir: join(dataDir, 'app'), version: '1.0.0' });
+  cpSync(join(v1BaseDir, 'app'), join(dataDir, 'app'), { recursive: true, verbatimSymlinks: true });
 }
 
 function seedDatabase(dataDir: string): Promise<void> {
@@ -83,7 +100,6 @@ describe('UpgradeSwap commit order (real fixtures, real SQLite)', () => {
     await seedDatabase(dataDir);
     const dbBefore = readFileSync(join(dataDir, 'harmonic.db'));
 
-    const v2BrokenSpec = packFixtureTarball(tempDir, { version: '2.0.0', cliServeJs: "throw new Error('v2 is broken');\n" });
     const { swap, calls } = buildSwap(dataDir, v2BrokenSpec);
 
     const result = await swap.execute({ version: '2.0.0' });
@@ -101,7 +117,6 @@ describe('UpgradeSwap commit order (real fixtures, real SQLite)', () => {
     await setupRunningV1(dataDir);
     await seedDatabase(dataDir);
 
-    const v2Spec = packFixtureTarball(tempDir, { version: '2.0.0' });
     const { swap, calls } = buildSwap(dataDir, v2Spec);
 
     const result = await swap.execute({ version: '2.0.0' });
@@ -123,7 +138,6 @@ describe('UpgradeSwap commit order (real fixtures, real SQLite)', () => {
   it('aborts without flipping current when the DB snapshot fails, e.g. an unwritable app directory', async () => {
     const dataDir = tempDir('upgrade-swap-snapshot-fail-');
     await setupRunningV1(dataDir);
-    const v2Spec = packFixtureTarball(tempDir, { version: '2.0.0' });
     // Pre-install while writable so the install step is a no-op retry under the read-only app/ below.
     await installManagedUpgrade({ dataDir, target: '2.0.0', run, packageSpec: v2Spec });
     const { swap, calls } = buildSwap(dataDir, v2Spec);
@@ -148,7 +162,6 @@ describe('UpgradeSwap commit order (real fixtures, real SQLite)', () => {
     await seedDatabase(dataDir);
     const dbBefore = readFileSync(join(dataDir, 'harmonic.db'));
 
-    const v2Spec = packFixtureTarball(tempDir, { version: '2.0.0' });
     const cancellation = new UpgradeCancellation();
     const { swap, calls } = buildSwap(dataDir, v2Spec, {
       cancellation,

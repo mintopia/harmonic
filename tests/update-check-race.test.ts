@@ -61,5 +61,6 @@ describe('UpdateCheck.run interleaved with an arm', () => {
     expect(finalState.phase.kind).toBe('armed');
     expect(finalState.version).toBe('2.7.0');
     expect(config.autoRunner.enabled).toBe(false);
+    await coordinator.close();
   });
 });

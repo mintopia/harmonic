@@ -8,6 +8,12 @@ import { errorMessage } from '../error-handling.js';
 
 const MERGE_WORKTREE_PREFIX = 'harmonic-merge-';
 
+/** Whether `path` is an `admin` worktree under a `harmonic-merge-` temp dir, made by {@link withEphemeralMergeWorktree}. */
+export function isEphemeralMergeWorktree(path: string): boolean {
+  const resolved = resolve(path);
+  return basename(resolved) === 'admin' && basename(dirname(resolved)).startsWith(MERGE_WORKTREE_PREFIX);
+}
+
 export interface EphemeralMergeWorktreeArgs {
   repoDir: string;
   baseTipOid: string;
@@ -63,9 +69,9 @@ export async function sweepStaleMergeWorktrees(
   const worktrees = await deps.listWorktrees(repoDir);
   const removed: string[] = [];
   await forEachYielding(worktrees, async (worktree) => {
+    if (!isEphemeralMergeWorktree(worktree.path)) return;
     const path = resolve(worktree.path);
     const tempDir = dirname(path);
-    if (basename(path) !== 'admin' || !basename(tempDir).startsWith(MERGE_WORKTREE_PREFIX)) return;
     // tempDir's mtime, not admin's, is stable (set once at mkdtempSync; admin's own mtime moves on some writes).
     const stat = statSync(tempDir, { throwIfNoEntry: false });
     if (stat !== undefined && now() - stat.mtimeMs < olderThanMs) return;

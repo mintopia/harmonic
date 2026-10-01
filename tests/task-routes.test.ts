@@ -446,6 +446,8 @@ describe('task-list-branch', () => {
       await waitFor(
         async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done',
       );
+      await waitFor(async () => (git(repo, 'worktree', 'list').split('\n').length === 1 ? true : undefined));
+      await server.app.ctx.reconcileWorktrees();
 
       const gitSpies = Object.keys(Git).map((method) => vi.spyOn(Git as any, method));
       const list = await server.api('GET', '/api/tasks');

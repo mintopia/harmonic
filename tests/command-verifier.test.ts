@@ -17,6 +17,7 @@ import {
   createChildProcessSpawn,
   OUTPUT_CHAR_CAP,
   truncationMarker,
+  splitFullOutputPath,
   createOutputPreview,
   type CommandSpawn,
   type CommandSpawnResult,
@@ -421,5 +422,16 @@ describe('command verifier (issue #135)', () => {
         expect(t.length - truncationMarker(elided).length + elided).toBe(400);
       }
     });
+  });
+});
+
+describe('splitFullOutputPath', () => {
+  it('removes the archive path from the truncation marker and returns it separately', () => {
+    const path = '/data/archive/1-a/attempts/1/verification/pre-merge/test/output.log';
+    expect(splitFullOutputPath(`head${truncationMarker(42, path)}tail`)).toEqual({ output: 'head\n…[truncated 42 chars]…\ntail', fullOutputPath: path });
+  });
+
+  it('leaves output without a path unchanged', () => {
+    expect(splitFullOutputPath(`head${truncationMarker(42)}tail`)).toEqual({ output: `head${truncationMarker(42)}tail`, fullOutputPath: null });
   });
 });
