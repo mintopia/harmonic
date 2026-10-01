@@ -9,6 +9,7 @@
 //   "requestPermission": { "title": "Write file" },  // ask mid-stream
 //   "echoEnv":  ["HARMONIC_MCP_URL"],  // emit env values as a chunk
 //   "echoSessionNew": true,             // emit the session/new params received
+//   "grandchildPidFile": "/tmp/x.pid",  // fork a long-lived grandchild, write its pid here
 //   "stopReason": "end_turn",
 //   "usage":    { "inputTokens": 1, "outputTokens": 2 },
 //   "exit":     "clean" | "crash-before-response" | "hang" | "close-stdout"
@@ -24,7 +25,7 @@
 // "method not found" error), exercising Harmonic's boundary-queue fallback.
 import { createInterface } from 'node:readline';
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 
 // Startup-crash mode: emulate a harness (codex-acp, issue 22) that dies
@@ -163,6 +164,11 @@ async function handlePrompt(msg) {
   promptInFlight = true;
   steerInjectedThisTurn = false;
   const delayMs = scenario.delayMs ?? 5;
+  if (scenario.grandchildPidFile) {
+    const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1e9)'], { stdio: 'ignore' });
+    mkdirSync(dirname(scenario.grandchildPidFile), { recursive: true });
+    writeFileSync(scenario.grandchildPidFile, String(grandchild.pid));
+  }
   cancelRequested = false;
 
   // Simulate an agent editing files in its working directory.

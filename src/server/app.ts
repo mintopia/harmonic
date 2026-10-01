@@ -264,6 +264,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     hostLoad: runtime.hostLoad,
     workspaceWatcher: runtime.workspaceWatcher,
     statsReader,
+    processGroups: runtime.processGroups,
+    asyncDb,
   });
   await registerPlugins(app);
   registerAuthHook(app, stores.auth);

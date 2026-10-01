@@ -53,7 +53,7 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    runner.shutdown();
+    await runner.shutdown();
     await asyncDb.close();
     rmSync(dir, { recursive: true, force: true });
   });

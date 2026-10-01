@@ -384,7 +384,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     await asyncDb.write((d) => d.update(workspaces).set({ workingDir: workDir }).run());
   });
   afterEach(async () => {
-    runner.shutdown();
+    await runner.shutdown();
     await asyncDb.close();
     rmSync(dir, { recursive: true, force: true });
     rmSync(workDir, { recursive: true, force: true });

@@ -89,6 +89,7 @@ export class UpgradeCancellation {
 export class UpgradeCoordinator {
   private transitions: Promise<void> = Promise.resolve();
   private readonly background = new InFlight();
+  private closed = false;
   private readonly reconcileIdle = singleFlight(() => this.reconcileOnce());
   /** The in-flight swap's cancellation token, set for the duration of `upgrading`. */
   private activeCancellation: UpgradeCancellation | null = null;
@@ -322,6 +323,7 @@ export class UpgradeCoordinator {
   }
 
   reconcile(): Promise<boolean> {
+    if (this.closed) return Promise.resolve(false);
     return this.exclusively(() => this.reconcileIdle());
   }
 
@@ -417,8 +419,9 @@ export class UpgradeCoordinator {
     }
   }
 
-  /** Wait out the deferred post-arm reconcile and any queued transition; never waits on the swap itself, which closes the app. */
-  async drain(): Promise<void> {
+  /** Process shutdown: stop reconciling, then wait out the deferred post-arm reconcile and any queued transition. Never waits on the swap itself, which closes the app. */
+  async close(): Promise<void> {
+    this.closed = true;
     await this.background.drain();
     await this.transitions;
   }

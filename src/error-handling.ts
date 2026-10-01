@@ -1,5 +1,6 @@
 import { logger } from './logger.js';
 import { DomainError } from './domain/errors.js';
+import { InFlight } from './reliability/in-flight.js';
 
 /**
  * Why an operation produced no value: the thing genuinely is not there
@@ -94,13 +95,20 @@ export async function bestEffort(op: () => unknown | Promise<unknown>, report: F
   return (await attempted(op, report)).ok;
 }
 
+const forgotten = new InFlight();
+
 /** Start `op` and return immediately, logging any rejection — the logged replacement for firing a promise and silently discarding its rejection. */
 export function fireAndForget(op: () => unknown | Promise<unknown>, report: FailureReport): void {
-  void (async () => {
+  void forgotten.track((async () => {
     try {
       await op();
     } catch (err) {
       reportFailure(err, report);
     }
-  })();
+  })());
+}
+
+/** Settles once every {@link fireAndForget} op started so far (and any they start) has finished; shutdown awaits this before closing the DB. */
+export function drainFireAndForget(): Promise<void> {
+  return forgotten.drain();
 }

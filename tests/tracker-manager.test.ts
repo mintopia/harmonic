@@ -592,7 +592,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await coordinator.cancel();
     await manager.reconcileEpics();
     expect(reconciled).toEqual([1]);
-    await coordinator.drain();
+    await coordinator.close();
   });
 
   it('stopAll waits out an in-flight poll, so closing the DB afterwards leaves nothing querying it', async () => {

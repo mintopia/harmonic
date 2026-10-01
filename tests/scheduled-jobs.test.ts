@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { scheduledJobs } from '../src/db/schema.js';
+import { openAsyncDb } from '../src/db/async.js';
 import { seedLocalMarkdownTicket, startServer, waitFor, connectFirehose, type TestServer } from './helpers.js';
 
 describe('Scheduled Job registry', () => {
@@ -36,8 +37,13 @@ describe('Scheduled Job registry', () => {
     await server.app.close();
 
     expect(finished).toBe(true);
-    const row = await server.app.ctx.asyncDb.read((d) => d.select().from(scheduledJobs).where(eq(scheduledJobs.name, 'slow job')).get());
-    expect(row?.lastStatus).toBe('ok');
+    const reopened = await openAsyncDb(server.dataDir);
+    try {
+      const row = await reopened.read((d) => d.select().from(scheduledJobs).where(eq(scheduledJobs.name, 'slow job')).get());
+      expect(row?.lastStatus).toBe('ok');
+    } finally {
+      await reopened.close();
+    }
   });
 
   it('persists an injected exemplar and serves the same snapshot over REST and the firehose', async () => {

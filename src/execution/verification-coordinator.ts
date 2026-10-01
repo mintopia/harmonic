@@ -1,6 +1,5 @@
 import { Git } from './git.js';
 import { adapterFor, adapterVersion } from './harness/registry.js';
-import { readProcStartToken } from './process-reaper.js';
 import { collectUsage, toolCallName } from './usage.js';
 import { driveFields } from './prompt-template.js';
 import { indexWorktree } from './code-index.js';
@@ -508,9 +507,6 @@ export class VerificationCoordinator {
         timeoutMs: EPIC_REFRESH_RESOLVE_TIMEOUT_MS,
         onUpdate,
         ...(input.continuationSessionId ? { continueSessionId: input.continuationSessionId } : {}),
-        onProcessStart: async (pid) => {
-          await this.deps.attempts.update(input.attempt.id, { pid, pgid: pid, procStartToken: readProcStartToken(pid) });
-        },
         onSessionCreated: async (sessionId, initialize) => {
           const session = await this.deps.sessionStore.recordDispatch({
             harness: harnessId,
@@ -545,12 +541,10 @@ export class VerificationCoordinator {
         ...(result.usage ? { promptResult: { usage: result.usage } } : {}),
         prices: pricesForHarness(harness),
       });
-      if (usage) await this.deps.attempts.updateWithFrozenCost(input.attempt.id, { usage: JSON.stringify(usage), pid: null, pgid: null, procStartToken: null });
-      else await this.deps.attempts.update(input.attempt.id, { pid: null, pgid: null, procStartToken: null });
+      if (usage) await this.deps.attempts.updateWithFrozenCost(input.attempt.id, { usage: JSON.stringify(usage) });
       await this.deps.attempts.updateStep(step.id, { state: 'passed', endedAt: Date.now() });
     } catch (error) {
       await this.deps.attempts.replaceToolCalls(input.attempt.id, toolCalls);
-      await this.deps.attempts.update(input.attempt.id, { pid: null, pgid: null, procStartToken: null });
       await this.deps.attempts.updateStep(step.id, { state: 'failed', endedAt: Date.now() });
       throw error;
     } finally {

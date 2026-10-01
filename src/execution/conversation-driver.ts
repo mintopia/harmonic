@@ -1,4 +1,5 @@
-import { spawn as spawnProcess, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
+import { killProcessGroup, spawnProcessGroup } from './process-groups.js';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { AcpDriver } from '../acp/driver.js';
@@ -20,6 +21,8 @@ import type { ConversationRow } from '../db/schema.js';
 import { startOperation } from '../telemetry/operations.js';
 import { logger } from '../logger.js';
 import { reportFailure, fireAndForget } from '../error-handling.js';
+import { InFlight } from '../reliability/in-flight.js';
+import { childExited } from './child-exit.js';
 
 export interface HarnessSpawnRequest {
   command: string;
@@ -35,11 +38,11 @@ export interface HarnessSpawn {
 export function createHarnessProcessSpawn(): HarnessSpawn {
   return {
     spawn(req: HarnessSpawnRequest): ChildProcess {
-      return spawnProcess(req.command, req.args, {
+      return spawnProcessGroup(req.command, req.args, {
         cwd: req.cwd,
         env: req.env,
         stdio: ['pipe', 'pipe', 'pipe'],
-      });
+      }, 'conversation harness');
     },
   };
 }
@@ -213,6 +216,8 @@ export class ConversationDriver {
   private readonly pendingElicitations = new Map<string, PendingElicitation>();
   private nextPermissionId = 0;
   private nextElicitationId = 0;
+  private shuttingDown = false;
+  private readonly turns = new InFlight();
   private readonly events: ConversationDriverEvents;
   private readonly rules: PermissionRuleStore | undefined;
   private readonly keys: ConversationDriverOptions['keys'];
@@ -329,7 +334,7 @@ export class ConversationDriver {
     this.clearIdle(entry);
     entry.turning = true;
     await this.record(entry.conversationId, 'user_turn', { text });
-    void this.runTurn(entry, text);
+    void this.turns.track(this.runTurn(entry, text));
   }
 
   private async drainQueue(entry: ActiveConversation): Promise<void> {
@@ -424,13 +429,17 @@ export class ConversationDriver {
     return this.store.end(conversationId);
   }
 
-  /** Process shutdown: kill every warm harness (the DB rows stay for the restart sweep). */
-  shutdown(): void {
-    for (const entry of this.active.values()) {
+  /** Process shutdown: kill every warm harness, then wait for each to exit and its in-flight Turn to record how it ended. The Conversation stays active; the next Turn after restart respawns its harness. */
+  async shutdown(): Promise<void> {
+    this.shuttingDown = true;
+    const entries = [...this.active.values()];
+    this.active.clear();
+    for (const entry of entries) {
       this.clearIdle(entry);
       this.kill(entry);
     }
-    this.active.clear();
+    await Promise.all(entries.map((entry) => childExited(entry.child)));
+    await this.turns.drain();
   }
 
   private async resolveHarnessConfig(convo: ConversationRow): Promise<HarnessConfig> {
@@ -584,8 +593,10 @@ export class ConversationDriver {
           const message = err instanceof Error ? err.message : String(err);
           operation.fail(message);
           await this.record(entry.conversationId, 'lifecycle', { event: 'error', message });
-          this.teardown(entry);
-          await this.store.end(entry.conversationId);
+          if (!this.shuttingDown) {
+            this.teardown(entry);
+            await this.store.end(entry.conversationId);
+          }
         }
       });
     } finally {
@@ -742,15 +753,6 @@ export class ConversationDriver {
   }
 
   private kill(entry: ActiveConversation): void {
-    try {
-      if (entry.child.exitCode === null && !entry.child.killed) entry.child.kill('SIGKILL');
-    } catch (err) {
-      reportFailure(err, {
-        op: 'conversationDriver.kill',
-        level: 'warn',
-        notFoundIf: (e) => (e as NodeJS.ErrnoException | null)?.code === 'ESRCH',
-        context: { conversationId: entry.conversationId },
-      });
-    }
+    killProcessGroup(entry.child);
   }
 }

@@ -18,6 +18,7 @@ import { EventLoopMonitor } from '../reliability/event-loop-monitor.js';
 import { HostLoadSampler } from '../host-load.js';
 import { WorkspaceWatcher } from '../domain/workspace-watcher.js';
 import { logger } from '../logger.js';
+import { attachProcessGroupJournal, ProcessGroupJournal } from '../execution/process-groups.js';
 import { errorMessage, fireAndForget } from '../error-handling.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import type { Scheduler } from '../scheduler/scheduler.js';
@@ -96,14 +97,16 @@ async function runStartupRecovery(deps: {
   bus: EventBus;
   archive: TaskArchive;
   sessionTranscriptPath: (sessionRowId: number) => Promise<string | null>;
+  processGroups: ProcessGroupJournal;
 }): Promise<void> {
-  const { attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus, archive, sessionTranscriptPath } = deps;
+  const { attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus, archive, sessionTranscriptPath, processGroups } = deps;
   const crashRecovery = new CrashRecoveryCoordinator(attempts, tasks, operatorSettle, {
     runPostMergeCheck: postMergeCheck,
     postMerge,
     onEpicAttemptInterrupted: (attempt) => { bus.emit('attempt_changed', attempt); },
     archive,
     sessionTranscriptPath,
+    processGroups,
   });
   await crashRecovery.reconcile();
   for (const orphan of await tasks.list({ state: 'working' })) {
@@ -194,6 +197,7 @@ export interface Runtime {
   workspaceWatcher: WorkspaceWatcher;
   loopMonitor: EventLoopMonitor | undefined;
   archive: TaskArchive;
+  processGroups: ProcessGroupJournal;
 }
 
 export async function createRuntime(deps: {
@@ -225,7 +229,7 @@ export async function createRuntime(deps: {
         (await auth.createKey(`conversation-${conversationId}`, { scope: 'conversation', conversationId })).token,
       revoke: (conversationId) => auth.deleteKeysForConversation(conversationId),
     },
-    onTurnSettled: () => { void upgradeRef?.reconcile().catch((error: unknown) => logger.error(`upgrade reconciliation failed: ${String(error)}`)); },
+    onTurnSettled: () => fireAndForget(() => upgradeRef?.reconcile(), { op: 'upgrade.reconcile', level: 'error' }),
     allowedRoots: async () => [...(await workspaces.list()).map((w) => w.workingDir), managedWorktreesRoot],
   });
   const { recordAttemptLifecycleBestEffort, recordTaskEventBestEffort, sessionRetirement, drainRetirement, branchRetirement } = createLifecycleTracking(bus, attempts, taskEvents, tasks, sessionStore);
@@ -255,7 +259,7 @@ export async function createRuntime(deps: {
     tasks,
     attempts,
     (run) => {
-      void runnerRef?.finishRunOperation(run.id);
+      fireAndForget(() => runnerRef?.finishRunOperation(run.id), { op: 'runner.finishRunOperation', level: 'warn', context: { attemptId: run.id } });
       bus.emit('attempt_changed', run);
     },
     sessionRetirement,
@@ -282,10 +286,13 @@ export async function createRuntime(deps: {
   });
   touchStartupProgress(opts.dataDir);
   const transcripts = new TranscriptCapture(sessionStore, verificationAttempts, () => settingsStore.getGlobal());
+  const processGroups = new ProcessGroupJournal(asyncDb);
   await runStartupRecovery({
     attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus, archive,
     sessionTranscriptPath: (id) => transcripts.ensureSessionTranscript(id),
+    processGroups,
   });
+  attachProcessGroupJournal(processGroups);
   touchStartupProgress(opts.dataDir);
   const getWorkspaceRow = async (id: number | null) => {
     if (id == null) return undefined;
@@ -302,7 +309,7 @@ export async function createRuntime(deps: {
     getWorkspaceRow,
     (workspaceId, ref) => tasks.epicKind(workspaceId, ref),
     (task, commit) => {
-      void (async () => {
+      fireAndForget(async () => {
         const payload = {
           event: 'ticket-closed',
           trackerRef: task.trackerRef != null ? String(task.trackerRef) : null,
@@ -311,10 +318,10 @@ export async function createRuntime(deps: {
         const run = (await attempts.listForTask(task.id)).at(-1);
         if (run) recordAttemptLifecycleBestEffort(run, payload);
         else recordTaskEventBestEffort(task, payload);
-      })();
+      }, { op: 'autoDrive.recordTicketClosed', level: 'warn', context: { taskId: task.id } });
     },
     (task, error) => {
-      void (async () => {
+      fireAndForget(async () => {
         const payload = {
           event: 'ticket-close-failed',
           trackerRef: task.trackerRef != null ? String(task.trackerRef) : null,
@@ -323,7 +330,7 @@ export async function createRuntime(deps: {
         const run = (await attempts.listForTask(task.id)).at(-1);
         if (run) recordAttemptLifecycleBestEffort(run, payload);
         else recordTaskEventBestEffort(task, payload);
-      })();
+      }, { op: 'autoDrive.recordTicketCloseFailed', level: 'warn', context: { taskId: task.id } });
     },
   );
   const mergeEffectsFor = (task: TaskRow, run: AttemptRow): MergeEffectExec[] => {
@@ -487,5 +494,6 @@ export async function createRuntime(deps: {
     workspaceWatcher,
     loopMonitor,
     archive,
+    processGroups,
   };
 }

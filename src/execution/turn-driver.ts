@@ -3,7 +3,6 @@ import { GitError } from '../domain/errors.js';
 import { bestEffort, fireAndForget } from '../error-handling.js';
 import { classifyGitFailure, type GitCircuitBreaker } from './git-failure.js';
 import { adapterFor } from './harness/registry.js';
-import { readProcStartToken } from './process-reaper.js';
 import type { LiveUsageTailer } from './live-usage-tailer.js';
 import type { UsageSampler } from './usage-sampler.js';
 import { GuardrailSupervisor } from './guardrail-supervisor.js';
@@ -415,9 +414,6 @@ export class TurnDriver {
       }
       if (this.deps.isShuttingDown()) return { ok: false, outcome: { kind: 'terminal' } };
       const child = this.deps.spawnHarness(task, harness, workspace.cwd, workspace.env, autoDriven);
-      if (child.pid !== undefined) {
-        await this.deps.attempts.update(run.id, { pid: child.pid, pgid: child.pid, procStartToken: readProcStartToken(child.pid) });
-      }
       const childStderr = child.stderr;
       if (childStderr) {
         childStderr.setEncoding('utf8');
