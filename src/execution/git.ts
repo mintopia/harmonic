@@ -1014,12 +1014,13 @@ export const Git = {
     }
   },
 
-  /** Remove `paths` from the index AND working tree (`git rm -q`), batched to
-   * keep argv bounded. */
+  /** Remove `paths` from the index AND working tree (`git rm -q -f`), batched
+   * to keep argv bounded. `-f` because HEAD may already lack the path while the
+   * index still holds the old blob, which plain `git rm` refuses as staged. */
   async removePaths(dir: string, paths: string[]): Promise<void> {
     const CHUNK = 200;
     for (let i = 0; i < paths.length; i += CHUNK) {
-      await git(dir, 'rm', '-q', '--', ...literalPaths(paths.slice(i, i + CHUNK)));
+      await git(dir, 'rm', '-q', '-f', '--ignore-unmatch', '--', ...literalPaths(paths.slice(i, i + CHUNK)));
     }
   },
 

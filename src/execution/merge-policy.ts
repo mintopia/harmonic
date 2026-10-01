@@ -251,7 +251,13 @@ async function publish(input: MergePolicyInput, deps: MergePolicyDeps, mergeOid:
     if (checkoutDir !== null) {
       try {
         const sync = await syncBaseCheckout(checkoutDir, dirtyPaths!, tip, toPublish);
-        emitStep(deps, { step: 'checkout-synced', mergeOid: toPublish, mergedPaths: sync.mergedPaths, keptPaths: sync.keptPaths });
+        emitStep(deps, {
+          step: 'checkout-synced',
+          mergeOid: toPublish,
+          mergedPaths: sync.mergedPaths,
+          keptPaths: sync.keptPaths,
+          ...(sync.error !== undefined ? { error: sync.error } : {}),
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         logger.warn('merge: syncing the base checkout after a successful merge failed', {
