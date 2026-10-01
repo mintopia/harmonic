@@ -334,7 +334,7 @@ export class ConversationDriver {
     this.clearIdle(entry);
     entry.turning = true;
     await this.record(entry.conversationId, 'user_turn', { text });
-    void this.turns.track(this.runTurn(entry, text));
+    this.turns.add(this.runTurn(entry, text), 'conversationDriver.runTurn');
   }
 
   private async drainQueue(entry: ActiveConversation): Promise<void> {

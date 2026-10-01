@@ -55,7 +55,7 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       ctx.bus.on('attempt_event', (event) => send({ type: 'attempt_event', event })),
       ctx.bus.on('attempt_changed', (run) => {
         if (isTaskAttempt(run)) {
-          void attemptChanged.send(run.id, run, (api) => send({ type: 'attempt_changed', run: api }));
+          fireAndForget(() => attemptChanged.send(run.id, run, (api) => send({ type: 'attempt_changed', run: api })), { op: 'ws.attemptChanged', level: 'debug', context: { attemptId: run.id } });
           sendAttemptTimeline(run.taskId);
         } else if (run.workspaceId !== null && run.epicRef !== null) {
           send({ type: 'epic_changed', workspaceId: run.workspaceId, epicRef: run.epicRef });
@@ -63,9 +63,9 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       }),
       ctx.bus.on('step_changed', ({ taskId }) => sendAttemptTimeline(taskId)),
       ctx.bus.on('attempt_usage', ({ attemptId, snapshot }) => {
-        void attemptUsageToApi(ctx, attemptId, snapshot).then((usage) => send({ type: 'attempt_usage', attemptId, ...usage }));
+        fireAndForget(async () => send({ type: 'attempt_usage', attemptId, ...(await attemptUsageToApi(ctx, attemptId, snapshot)) }), { op: 'ws.attemptUsage', level: 'debug', context: { attemptId } });
       }),
-      ctx.bus.on('task_changed', (task) => void taskChanged.send(task.id, task, (api) => send({ type: 'task_changed', task: api }))),
+      ctx.bus.on('task_changed', (task) => fireAndForget(() => taskChanged.send(task.id, task, (api) => send({ type: 'task_changed', task: api })), { op: 'ws.taskChanged', level: 'debug', context: { taskId: task.id } })),
       ctx.bus.on('task_removed', ({ id }) => {
         taskChanged.markRemoved(id);
         send({ type: 'task_removed', id });

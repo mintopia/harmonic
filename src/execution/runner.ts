@@ -523,7 +523,7 @@ export class Runner {
         },
       });
       this.activeRuns.setOperation(bound.id, operation);
-      void this.drives.track(operation.run(async () => {
+      this.drives.add(operation.run(async () => {
         try {
           await this.turnDriver.drive(task, bound, harness, operation.spanContext);
           await this.finishRunOperation(bound.id);
@@ -537,7 +537,7 @@ export class Runner {
             await this.redeliverOrphanedSteer(task.id, leftoverSeed);
           }
         }
-      }));
+      }), 'runner.drive');
       return bound;
     } catch (err) {
       this.activeRuns.clearDriving(task.id);

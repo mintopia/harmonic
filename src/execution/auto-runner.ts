@@ -158,10 +158,10 @@ export class AutoRunner {
   poke(): void {
     if (this.scheduled || this.closed) return;
     this.scheduled = true;
-    void this.inFlight.track(new Promise<void>((resolve) => setImmediate(resolve)).then(() => {
+    this.inFlight.add(new Promise<void>((resolve) => setImmediate(resolve)).then(() => {
       this.scheduled = false;
       return this.fill();
-    }));
+    }), 'autoRunner.fill');
   }
 
   private async fill(): Promise<void> {

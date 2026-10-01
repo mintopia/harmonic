@@ -23,6 +23,7 @@ import { runCommandVerifier, commandAttemptToInput } from '../verification/comma
 import { createAcpCriticDrive, runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
 import type { SpanContext } from '@opentelemetry/api';
+import { fireAndForget } from '../error-handling.js';
 
 export const EPIC_REFRESH_RESOLVE_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -125,19 +126,19 @@ export class VerificationCoordinator {
     const { persisted, sessionId, transcriptPath, criticHarnessId, criticHarness, cwd } = input;
     if (!sessionId) return;
     if (transcriptPath === null) {
-      void this.deps.transcripts.captureCriticTranscript({
+      fireAndForget(() => this.deps.transcripts.captureCriticTranscript({
         attemptId: persisted.id,
         sessionId,
         harnessId: criticHarnessId,
         sessionLogDir: criticHarness.sessionLogDir,
-      });
+      }), { op: 'verification.captureCriticTranscript', level: 'warn', context: { attemptId: persisted.id } });
     }
-    void this.deps.transcripts.captureCriticUsage({
+    fireAndForget(() => this.deps.transcripts.captureCriticUsage({
       attemptId: persisted.id,
       sessionId,
       harnessId: criticHarnessId,
       cwd,
-    });
+    }), { op: 'verification.captureCriticUsage', level: 'warn', context: { attemptId: persisted.id } });
   }
 
   private verificationOutputRelay(attemptId: number, mechanism: 'command' | 'critic', command: string | null): { push: (chunk: string) => void; flush: () => void } {

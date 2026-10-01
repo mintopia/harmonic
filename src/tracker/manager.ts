@@ -62,7 +62,7 @@ export class TrackerPollerManager {
 
   private async syncOnce(): Promise<void> {
     const workspaces = new Map((await this.getWorkspaces()).map((workspace) => [workspace.id, workspace]));
-    await forEachYielding(this.entries, async ([id, entry]) => { const workspace = workspaces.get(id); if (!workspace || !workspace.trackerEnabled || entry.sig !== sigOf(workspace)) void this.stopping.track(this.stopEntry(id, entry)); }, this.yieldOptions);
+    await forEachYielding(this.entries, async ([id, entry]) => { const workspace = workspaces.get(id); if (!workspace || !workspace.trackerEnabled || entry.sig !== sigOf(workspace)) this.stopping.add(this.stopEntry(id, entry), 'trackerManager.stopEntry'); }, this.yieldOptions);
     await forEachYielding(this.resolved.keys(), async (id) => { const workspace = workspaces.get(id); if (!workspace || !workspace.trackerEnabled) this.resolved.delete(id); }, this.yieldOptions);
     await forEachYielding(workspaces.values(), async (workspace) => {
       if (!workspace.trackerEnabled || this.entries.has(workspace.id)) return;
@@ -115,13 +115,13 @@ export class TrackerPollerManager {
   async pollNow(workspaceId: number): Promise<void> {
     const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); if (!workspace || !workspace.trackerEnabled) return;
     const resolved = await resolveTracker(workspace.workingDir, this.resolveAdapter); this.resolved.set(workspace.id, resolved); const entry = this.entries.get(workspace.id);
-    if (!resolved.ok) { if (!this.scheduler && entry) void this.stopping.track(this.stopEntry(workspace.id, entry)); return; }
+    if (!resolved.ok) { if (!this.scheduler && entry) this.stopping.add(this.stopEntry(workspace.id, entry), 'trackerManager.stopEntry'); return; }
     if (entry) await entry.poller.poll(); else this.startLoop(workspace);
   }
   /** Stop every Workspace loop and wait out polls already in flight. */
   async stopAll(): Promise<void> {
     this.closed = true;
-    for (const [id, entry] of this.entries) void this.stopping.track(this.stopEntry(id, entry));
+    for (const [id, entry] of this.entries) this.stopping.add(this.stopEntry(id, entry), 'trackerManager.stopEntry');
     await this.stopping.drain();
   }
   async reconcileEpics(): Promise<void> { await forEachYielding(this.entries, async ([id, entry]) => { if (this.resolved.get(id)?.ok) await entry.poller.reconcileEpics(); }, this.yieldOptions); }

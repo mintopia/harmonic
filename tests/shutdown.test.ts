@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
@@ -8,7 +8,7 @@ import Fastify from 'fastify';
 import { openAsyncDb } from '../src/db/async.js';
 import { conversationEvents, conversations, processGroups, sessions } from '../src/db/schema.js';
 import { logger } from '../src/logger.js';
-import { baselineConfig, type AppConfig } from '../src/config.js';
+import { baselineConfig, type AppConfig, type DeepPartial } from '../src/config.js';
 import { ConversationStore } from '../src/domain/conversations.js';
 import { ConversationDriver } from '../src/execution/conversation-driver.js';
 import { registerShutdown } from '../src/server/app-lifecycle.js';
@@ -100,6 +100,31 @@ describe('app.close() — ordered shutdown', () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(logs.filter((line) => /CLIENT_CLOSED|Failed query|closed/i.test(line))).toEqual([]);
     expect(rejections).toEqual([]);
+  });
+
+  it('closing right after a Session is recorded cancels its pending transcript capture instead of writing to the closed DB', async () => {
+    const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-shutdown-logs-'));
+    const workDir = mkdtempSync(join(tmpdir(), 'harmonic-shutdown-work-'));
+    const overrides = stubHarness() as DeepPartial<AppConfig> & { harnesses: { claude: Record<string, unknown> } };
+    overrides.harnesses.claude.sessionLogDir = logRoot;
+    overrides.harnesses.claude.env = { STUB_SESSION_ID: 'fixed-session' };
+    server = await startServer(overrides);
+    const logs = captureLogs();
+    try {
+      const task = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ exit: 'hang' }), workingDir: workDir });
+      await server.api('POST', `/api/tasks/${task.body.id}/run`);
+      await waitFor(async () => ((await server!.app.ctx.asyncDb.read((d) => d.select().from(sessions).all())).length > 0 ? true : undefined), { intervalMs: 5 });
+
+      await server.app.close();
+      mkdirSync(join(logRoot, 'project'), { recursive: true });
+      writeFileSync(join(logRoot, 'project', 'fixed-session.jsonl'), '');
+      await new Promise((resolve) => setTimeout(resolve, 2_800));
+
+      expect(logs.filter((line) => /transcriptCapture|Failed query/.test(line))).toEqual([]);
+    } finally {
+      rmSync(logRoot, { recursive: true, force: true });
+      rmSync(workDir, { recursive: true, force: true });
+    }
   });
 
   it('closes the DB after the drain bound when a Conversation harness child never exits, and warns', async () => {

@@ -99,13 +99,13 @@ const forgotten = new InFlight();
 
 /** Start `op` and return immediately, logging any rejection — the logged replacement for firing a promise and silently discarding its rejection. */
 export function fireAndForget(op: () => unknown | Promise<unknown>, report: FailureReport): void {
-  void forgotten.track((async () => {
+  forgotten.add((async () => {
     try {
       await op();
     } catch (err) {
       reportFailure(err, report);
     }
-  })());
+  })(), report.op);
 }
 
 /** Settles once every {@link fireAndForget} op started so far (and any they start) has finished; shutdown awaits this before closing the DB. */

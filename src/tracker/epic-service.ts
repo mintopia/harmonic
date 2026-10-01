@@ -8,7 +8,7 @@ import { composeEpicView, type Epic, type EpicFacts, type EpicMeta, type EpicTim
 import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { GitError } from '../domain/errors.js';
-import { orFallback } from '../error-handling.js';
+import { fireAndForget, orFallback } from '../error-handling.js';
 import { resolveRepositoryDefaultBranch } from '../execution/branch-merge.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import {
@@ -214,11 +214,11 @@ export class TrackerEpicService implements EpicService {
         epicState: (epicRef) => this.tasks.epicState(workspace.id, epicRef),
         onCompletedInPlace: ({ epicRef, baseBranch, leftBranch }) => {
           if (!this.epicMergeEvents) return;
-          void this.epicMergeEvents
-            .append(workspace.id, epicRef, { step: 'completed-in-place', baseBranch, ...(leftBranch !== undefined ? { leftBranch } : {}) })
-            .then(() => {
-              this.onEpicMergeStep?.({ workspaceId: workspace.id, epicRef });
-            });
+          const events = this.epicMergeEvents;
+          fireAndForget(async () => {
+            await events.append(workspace.id, epicRef, { step: 'completed-in-place', baseBranch, ...(leftBranch !== undefined ? { leftBranch } : {}) });
+            this.onEpicMergeStep?.({ workspaceId: workspace.id, epicRef });
+          }, { op: 'epicService.recordCompletedInPlace', level: 'error', context: { workspaceId: workspace.id, epicRef } });
         },
       });
       entry.epicIntegrate = epicIntegrate;

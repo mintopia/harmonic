@@ -206,7 +206,11 @@ export class SessionContinuation {
         },
       );
       if (transcriptPath === null && transcriptResolver) {
-        void this.transcripts.captureSessionTranscript({ sessionId: harnessSessionId, sessionRowId: session.id, sessionLogDir: harness.sessionLogDir, transcriptResolver });
+        fireAndForget(() => this.transcripts.captureSessionTranscript({ sessionId: harnessSessionId, sessionRowId: session.id, sessionLogDir: harness.sessionLogDir, transcriptResolver }), {
+          op: 'runner.persistSession.captureTranscript',
+          level: 'warn',
+          context: { sessionRowId: session.id },
+        });
       }
     } catch (err) {
       reportFailure(err, {
