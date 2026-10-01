@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.23.0](https://github.com/mintopia/harmonic/compare/v2.22.0...v2.23.0) (2026-10-01)
+
+
+### Features
+
+* **archive:** Critic Archive label, full verify output, and the Epic Export panel ([b676763](https://github.com/mintopia/harmonic/commit/b6767632cafda3fa83777ea2fa09e06e62673580))
+* **archive:** Epic export timeline rows and an export_failed toast that names Epics ([1a19058](https://github.com/mintopia/harmonic/commit/1a1905814c543f1386deef43b8ddd0171b9737c5))
+* **web:** copy Critic summaries, verify results and agent messages ([2908d99](https://github.com/mintopia/harmonic/commit/2908d9967ca49cb17880b5ecd88cc070d37f896f))
+
+
+### Bug Fixes
+
+* **export:** deliver Epic Exports to every Destination and record them on the Epic timeline ([556d32b](https://github.com/mintopia/harmonic/commit/556d32b5b5d59a118adfdd9e83e9b0767aa3bf32))
+* **export:** show retry times as clock times and label S3 consistently ([5222009](https://github.com/mintopia/harmonic/commit/5222009030160f58457eedc8aae49efbc04d7394))
+* **lifecycle:** await Attempt and Conversation teardown, then close the DB ([2eab19a](https://github.com/mintopia/harmonic/commit/2eab19a3bba7101d8b0cd3289cce1bf9e5e0219b))
+* **lifecycle:** drain in-flight background work on shutdown ([ce7d074](https://github.com/mintopia/harmonic/commit/ce7d074d9ffcee912db5a92de7e47235cb699852))
+* **lifecycle:** track background writes so shutdown waits for them ([c999894](https://github.com/mintopia/harmonic/commit/c99989439995afa121d7f2d4ac86b39d7f8254b2))
+* **merge:** escalate thrown merge failures and tolerate brief ref locks ([0dcdac8](https://github.com/mintopia/harmonic/commit/0dcdac899d146376edf5d279dbdf003c9149d33c))
+* **process:** run every harness and verify child in its own process group ([6b1a421](https://github.com/mintopia/harmonic/commit/6b1a421cc1a3d9b993572583feeccecae48dbeb5))
+
 ## [2.22.0](https://github.com/mintopia/harmonic/compare/v2.21.0...v2.22.0) (2026-10-01)
 
 
