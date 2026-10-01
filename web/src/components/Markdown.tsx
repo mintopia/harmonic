@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { copyText } from '../clipboard';
 import { renderMarkdown } from '../markdown';
 import { useLiveEffect } from '../useLiveEffect';
 
@@ -22,18 +23,14 @@ function decorateCodeBlocks(root: HTMLElement): void {
 async function copyFrom(button: HTMLElement): Promise<void> {
   const pre = button.closest('pre');
   const code = pre?.querySelector('code')?.textContent ?? pre?.textContent ?? '';
-  try {
-    await navigator.clipboard.writeText(code.replace(/\n$/, ''));
-    const prev = button.textContent;
-    button.textContent = 'Copied';
-    button.classList.add('is-copied');
-    setTimeout(() => {
-      button.textContent = prev;
-      button.classList.remove('is-copied');
-    }, 1200);
-  } catch {
-    // Clipboard blocked (insecure context / denied) — leave the button as-is.
-  }
+  if (!(await copyText(code.replace(/\n$/, '')))) return;
+  const prev = button.textContent;
+  button.textContent = 'Copied';
+  button.classList.add('is-copied');
+  setTimeout(() => {
+    button.textContent = prev;
+    button.classList.remove('is-copied');
+  }, 1200);
 }
 
 /**

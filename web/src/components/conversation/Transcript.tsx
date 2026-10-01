@@ -12,6 +12,7 @@ import {
   type AnnounceCursor,
 } from '../../stream-announce-model';
 import { touchOverlay } from '../../ui';
+import { CopyButton, revealOnHover } from '../CopyButton';
 import { Icon } from '../Icon';
 import { providerLabel } from '../TaskIdentity';
 import { EventStream } from './EventStream';
@@ -39,34 +40,6 @@ function isPendingTurn(payload: unknown): boolean {
     payload !== null &&
     'pending' in payload &&
     (payload as { pending?: unknown }).pending === true
-  );
-}
-
-function CopyButton({ text, label, className = '' }: { text: string; label: string; className?: string }) {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-  }, []);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopied(false), 1200);
-    } catch (e) {
-      console.warn('clipboard copy failed', e);
-    }
-  };
-  return (
-    <button
-      type="button"
-      aria-label={copied ? 'Copied' : label}
-      onClick={copy}
-      className={`inline-flex size-6 items-center justify-center rounded text-faint transition-colors duration-150 hover:text-ink ${copied ? 'text-merged' : ''} ${className}`}
-    >
-      <Icon name={copied ? 'check' : 'copy'} className="size-3.5" />
-    </button>
   );
 }
 
@@ -177,7 +150,7 @@ export function Transcript({ events, conversation }: { events: ConversationEvent
                     <CopyButton
                       text={userText}
                       label="Copy message"
-                      className="ml-auto opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                      className={`ml-auto ${revealOnHover}`}
                     />
                   </div>
                   <p
@@ -209,7 +182,7 @@ export function Transcript({ events, conversation }: { events: ConversationEvent
                       <CopyButton
                         text={agentText}
                         label="Copy message"
-                        className="ml-auto opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                        className={`ml-auto ${revealOnHover}`}
                       />
                     )}
                   </div>

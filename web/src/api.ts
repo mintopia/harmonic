@@ -315,6 +315,11 @@ export const api = {
   verificationAttempt: (id: number) =>
     request<{ output: string; summary: string; hasTranscript: boolean }>('GET', `/api/verification-attempts/${id}`),
   verificationOutputUrl: (id: number) => `/api/verification-attempts/${id}/output`,
+  verificationFullOutput: async (id: number): Promise<string> => {
+    const res = await fetch(`/api/verification-attempts/${id}/output`);
+    if (!res.ok) throw new ApiError(res.status, `Full output unavailable (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`);
+    return res.text();
+  },
   criticLog: (attemptId: number) =>
     request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number; fromArchive?: boolean } | { status: 'unavailable'; liveCursor: number }>(
       'GET',

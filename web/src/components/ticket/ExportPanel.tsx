@@ -1,6 +1,6 @@
 import { exportPanelModel, type DestinationRow, type ExportSummaryView } from '../../task-export-model';
 import { btnGhost, btnPrimary, card, statePill, statePillShape } from '../../ui';
-import { toastError } from '../../toast';
+import { CopyButton } from '../CopyButton';
 import { Icon } from '../Icon';
 import { useTaskExport, type ExportTarget } from '../useTaskExport';
 import { humanState, sectionCaps, StatePill } from './shared';
@@ -58,24 +58,13 @@ function Destination({ row }: { row: DestinationRow }) {
   );
 }
 
-function copyName(name: string) {
-  navigator.clipboard.writeText(name).catch(toastError);
-}
-
 function Latest({ latest, noun }: { latest: ExportSummaryView; noun: string }) {
   return (
     <>
       {latest.name && (
         <div className="mt-3 flex items-center gap-1.5 break-all text-[13px]">
           <span className="font-data">{latest.name}</span>
-          <button
-            type="button"
-            aria-label="Copy tarball name"
-            onClick={() => copyName(latest.name!)}
-            className="inline-grid size-7 shrink-0 place-items-center rounded-sm text-muted hover:bg-raised hover:text-ink"
-          >
-            <Icon name="copy" className="size-3.5" />
-          </button>
+          <CopyButton text={latest.name} label="Copy tarball name" className="size-7 text-muted hover:bg-raised" />
         </div>
       )}
       <p className="mt-0.5 flex flex-wrap gap-x-2 text-small text-muted">

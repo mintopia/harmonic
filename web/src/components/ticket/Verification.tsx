@@ -7,6 +7,7 @@ import type { AttemptLogEvent, AttemptSummary, Step, VerificationAttempt, Verifi
 import { btnGhost } from '../../ui';
 import { useLiveEffect } from '../../useLiveEffect';
 import { useCriticLiveStream } from '../useCriticLiveStream';
+import { CopyButton, revealOnHover } from '../CopyButton';
 import { Icon } from '../Icon';
 import { Markdown } from '../Markdown';
 import { ChatTranscript } from './ChatTranscript';
@@ -147,14 +148,26 @@ export function Verification({ attempts, statuses, run, only, verifier, steps = 
       <div className="mt-3 flex flex-col gap-3">
         {rows.map(({ status, attempt }) => {
           const criticReason = status.mechanism === 'critic' && criticSessions.length === 0 ? criticUnavailableReason(status.state, !!attempt, false) : null;
-          return <div key={status.verifier ?? status.mechanism} className="flex items-start gap-3">
+          const summaryText = attempt ? attempt.summary : status.reason;
+          const resultLabel = status.mechanism === 'critic' ? 'Copy critic summary' : 'Copy verification result';
+          return <div key={status.verifier ?? status.mechanism} className="group flex items-start gap-3">
             <span className={`mt-px grid size-[18px] shrink-0 place-items-center rounded-md ${status.state === 'failed' || status.state === 'unrunnable' ? 'bg-fail-tint text-fail' : status.state === 'passed' ? 'bg-merged-tint text-merged' : status.state === 'running' ? 'bg-running-tint text-running' : 'bg-raised text-muted'}`}>
               {status.state === 'running' ? <span className="size-2 animate-pulse rounded-full bg-current motion-reduce:animate-none" /> : status.state === 'failed' ? <span className="text-[11px] leading-none">✕</span> : status.state === 'unrunnable' ? <span className="text-[11px] leading-none font-bold">!</span> : status.state === 'passed' ? <Icon name="check" className="size-3" /> : status.state === 'planned' ? <span className="size-2 rounded-full border border-current" /> : <span className="text-[11px] leading-none">–</span>}
             </span>
             <div className="min-w-0 flex-1">
-              <div className={`text-[13px] font-semibold ${status.state === 'disabled' ? 'text-muted' : 'text-ink'}`}>{mechanismName(status.mechanism, run)}</div>
+              <div className="flex items-center gap-1">
+                <span className={`text-[13px] font-semibold ${status.state === 'disabled' ? 'text-muted' : 'text-ink'}`}>{mechanismName(status.mechanism, run)}</span>
+                {summaryText && <CopyButton text={summaryText} label={resultLabel} className={revealOnHover} />}
+              </div>
               <div className="mt-1 text-[13px] leading-[1.55] text-muted [&_code]:rounded-[5px] [&_code]:bg-raised [&_code]:px-[5px] [&_code]:py-px [&_code]:font-data [&_code]:text-[12px]">{attempt ? attempt.mechanism === 'critic' ? <Markdown source={attempt.summary} className="text-muted" /> : attempt.summary : status.reason}</div>
-              {attempt?.mechanism === 'command' && attempt.output && <pre className="mt-2 max-h-72 overflow-auto rounded-md border border-hairline bg-sunken px-3 py-2 font-data text-[11.5px] leading-[1.55] text-muted">{attempt.output}</pre>}
+              {attempt?.mechanism === 'command' && attempt.output && (
+                <div className="relative mt-2">
+                  <pre className="max-h-72 overflow-auto rounded-md border border-hairline bg-sunken px-3 py-2 font-data text-[11.5px] leading-[1.55] text-muted">{attempt.output}</pre>
+                  <span className="absolute right-3 top-1.5">
+                    <CopyButton text={attempt.outputTruncated ? () => api.verificationFullOutput(attempt.id) : attempt.output} label={attempt.outputTruncated ? 'Copy full output' : 'Copy output'} className={`bg-sunken ${revealOnHover}`} />
+                  </span>
+                </div>
+              )}
               {attempt?.mechanism === 'command' && attempt.outputTruncated && (
                 <a href={api.verificationOutputUrl(attempt.id)} target="_blank" rel="noreferrer" className={`${btnGhost} mt-2 gap-1.5 no-underline`}>
                   <Icon name="files" className="size-4" />
