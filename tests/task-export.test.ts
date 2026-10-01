@@ -212,6 +212,7 @@ describe('TaskExporter (#734)', () => {
     expect(outcome?.[0]?.status).toBe('failed');
     expect(facts[0]!.payload).toMatchObject({ event: 'export', status: 'failed', destination: 'directory' });
     expect(typeof facts[0]!.payload.error).toBe('string');
+    expect(Number.isNaN(Date.parse(facts[0]!.payload.nextRetryAt as string))).toBe(false);
     expect(staging().filter((n) => n.endsWith('.pending.json'))).toHaveLength(1);
     const archiveJson = JSON.parse(readFileSync(join(await archive.ensure(task), 'archive.json'), 'utf8'));
     expect(archiveJson.exports[0]).toMatchObject({ status: 'failed' });

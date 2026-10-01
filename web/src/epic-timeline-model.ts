@@ -34,7 +34,7 @@ function exportStepRow(step: EpicExportStep): { label: string; detail: string | 
   }
   const [row] = exportFactRows(
     step.step === 'export-failed'
-      ? { status: 'failed', destination: step.destination, error: step.error, retry: step.retry }
+      ? { status: 'failed', destination: step.destination, error: step.error, retry: step.retry, nextRetryAt: step.nextRetryAt }
       : { status: 'succeeded', destination: step.destination, file: step.file },
     true,
   );

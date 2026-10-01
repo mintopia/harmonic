@@ -177,11 +177,18 @@ function str(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-function failedRetrySentence(retry: number): string {
-  const next = RETRY_DELAY_MIN[retry];
-  if (retry === 0) return `Retry 1 of ${RETRY_MAX} in ${formatMinutes(RETRY_DELAY_MIN[0])}.`;
+function failedRetrySentence(retry: number, nextRetryAt: string | null): string {
+  const delay = RETRY_DELAY_MIN[retry];
+  const parsed = nextRetryAt === null ? Number.NaN : Date.parse(nextRetryAt);
+  // Facts recorded before nextRetryAt existed only know the scheduled delay.
+  const when = Number.isNaN(parsed) ? (delay === undefined ? null : `in ${formatMinutes(delay)}`) : `at ${formatClock(parsed)}`;
+  if (retry === 0) return when === null ? `Retry 1 of ${RETRY_MAX}.` : `Retry 1 of ${RETRY_MAX} ${when}.`;
   const done = `Retry ${Math.min(retry, RETRY_MAX)} of ${RETRY_MAX}.`;
-  return next === undefined ? `${done} Retries exhausted.` : `${done} Next: retry ${retry + 1} of ${RETRY_MAX} in ${formatMinutes(next)}.`;
+  return delay === undefined || when === null ? `${done} Retries exhausted.` : `${done} Next: retry ${retry + 1} of ${RETRY_MAX} ${when}.`;
+}
+
+function formatClock(ms: number): string {
+  return new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 /** Timeline rows for one recorded `export` lifecycle fact; the first fact of a build is preceded by an "Export built" row. */
@@ -201,7 +208,7 @@ export function exportFactRows(payload: Record<string, unknown>, builtAlreadySho
   if (payload.status === 'failed') {
     const { code, rest } = splitExportError(str(payload.error));
     const retry = typeof payload.retry === 'number' ? payload.retry : 0;
-    const sentence = failedRetrySentence(retry);
+    const sentence = failedRetrySentence(retry, str(payload.nextRetryAt));
     const cause = clipText(rest);
     rows.push({
       label: `Export failed · ${destination}${code ? ` — ${code}` : ''}`,
@@ -224,5 +231,5 @@ function exportRetryText(retry: number, nextRetryAt: string | null): string {
 /** Toast text for a pushed `export_failed`: names the Task or Epic that was being exported. */
 export function exportFailedMessage(msg: { taskId: number | null; epicRef: number | null; destination: string; retry: number; nextRetryAt: string | null }): string {
   const subject = msg.taskId !== null ? taskLabel(msg.taskId) : `Epic #${msg.epicRef}`;
-  return `Export of ${subject} to ${msg.destination} failed — ${exportRetryText(msg.retry, msg.nextRetryAt)}`;
+  return `Export of ${subject} to ${destinationLabel(msg.destination)} failed — ${exportRetryText(msg.retry, msg.nextRetryAt)}`;
 }

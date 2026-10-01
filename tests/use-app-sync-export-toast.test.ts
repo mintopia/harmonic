@@ -37,18 +37,18 @@ describe('useAppSync export_failed toast', () => {
   it('names a Task by label with the pending retry time', async () => {
     await pushExportFailed({ taskId: 412, nextRetryAt: new Date(Date.now() + 5 * 60_000).toISOString() });
 
-    expect(toastFail).toHaveBeenCalledWith('Export of Task 412 to s3 failed — retrying in 5 min');
+    expect(toastFail).toHaveBeenCalledWith('Export of Task 412 to S3 failed — retrying in 5 min');
   });
 
   it('names an Epic by its ref when taskId is null, never "#null"', async () => {
     await pushExportFailed({ epicRef: 42, retry: 0 });
 
-    expect(toastFail).toHaveBeenCalledWith('Export of Epic #42 to s3 failed — not retried');
+    expect(toastFail).toHaveBeenCalledWith('Export of Epic #42 to S3 failed — not retried');
   });
 
   it('says retries are exhausted after the last retry', async () => {
     await pushExportFailed({ epicRef: 42, retry: 3 });
 
-    expect(toastFail).toHaveBeenCalledWith('Export of Epic #42 to s3 failed — retries exhausted');
+    expect(toastFail).toHaveBeenCalledWith('Export of Epic #42 to S3 failed — retries exhausted');
   });
 });

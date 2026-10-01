@@ -706,7 +706,7 @@ export class TaskExporter {
     if (disposition !== 'deleted') {
       const { at: _at, ...fact } = entry;
       try {
-        await this.deps.recordFact(task.id, { event: 'export', ...fact });
+        await this.deps.recordFact(task.id, { event: 'export', ...fact, ...(outcome.status === 'failed' ? { nextRetryAt } : {}) });
       } catch (err) {
         logger.warn('export: fact not recorded', { ...where, error: message(err) });
       }
