@@ -146,21 +146,20 @@ export const Git = {
   /** Whether the working tree at `dir` has uncommitted changes (tracked,
    * staged, or untracked). Empty `git status --porcelain` output → clean. */
   async isDirty(dir: string): Promise<boolean> {
-    return (await git(dir, '--no-optional-locks', 'status', '--porcelain')).length > 0;
+    return (await git(dir, 'status', '--porcelain')).length > 0;
   },
 
   /** How many working-tree entries `git status --porcelain` reports — the
    * count a "N uncommitted" label reads from. One line per changed path
    * (a rename is a single line), so line count is the entry count. */
   async changeCount(dir: string): Promise<number> {
-    // Background reads must not take index.lock: a concurrent merge or agent commit in that worktree would fail.
-    const output = await git(dir, '--no-optional-locks', 'status', '--porcelain');
+    const output = await git(dir, 'status', '--porcelain');
     return output.length === 0 ? 0 : output.split('\n').filter((line) => line.length > 0).length;
   },
 
   /** Paths whose working-tree changes a forced cleanup would discard. */
   async dirtyFiles(dir: string): Promise<string[]> {
-    const records = (await gitUntrimmed(dir, ['--no-optional-locks', 'status', '--porcelain', '-z'])).split('\0');
+    const records = (await gitUntrimmed(dir, ['status', '--porcelain', '-z'])).split('\0');
     const files: string[] = [];
     for (let index = 0; index < records.length - 1; index += 1) {
       const record = records[index]!;
@@ -205,7 +204,7 @@ export const Git = {
    * or untracked change moves it.
    */
   async statusFingerprint(dir: string): Promise<string> {
-    const status = await git(dir, '--no-optional-locks', 'status', '--porcelain');
+    const status = await git(dir, 'status', '--porcelain');
     return createHash('sha256').update(status).digest('hex');
   },
 
@@ -954,7 +953,7 @@ export const Git = {
    * `git status --porcelain=v1 -z --untracked-files=all` reports at `dir`. A
    * rename/copy record contributes both its old and new path. */
   async dirtyPathsSnapshot(dir: string): Promise<Set<string>> {
-    const out = await gitUntrimmed(dir, ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all']);
+    const out = await gitUntrimmed(dir, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
     const records = out.split('\0');
     const paths = new Set<string>();
     for (let i = 0; i < records.length; i++) {
