@@ -45,6 +45,12 @@ only commits leftover changes after verification passes, right before the
 merge. See [Branches & worktrees](/harmonic/work/branches-and-worktrees/)
 for what that merge looks like.
 
+To reuse a result elsewhere, such as in a tracker comment or a steer, hover
+over it on the ticket page and click the copy icon. It's on a Critic's summary,
+a verify command's result and its output, and each of the agent's messages.
+Summaries and messages copy as Markdown, and verify output copies in full, even
+when the page shows only part of it.
+
 ## Tickets you queue by hand
 
 A one-off task you create yourself works differently: it stops for **you**.

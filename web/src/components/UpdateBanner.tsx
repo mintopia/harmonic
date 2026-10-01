@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
 import type { UpdateState } from '../types.js';
-import { btnPrimary, btnQuiet, touchTarget } from '../ui.js';
+import { btnPrimary, btnQuiet } from '../ui.js';
+import { CopyButton } from './CopyButton.js';
 import { Icon } from './Icon.js';
 
 type UpdateBannerProps = {
@@ -13,34 +13,6 @@ type UpdateBannerProps = {
 
 function isIdle(update: UpdateState): boolean {
   return update.idle.runningAttempts === 0 && !update.idle.mergingOrIntegrating && !update.idle.conversationMidTurn;
-}
-
-function CopyCommandButton({ command }: { command: string }) {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-  }, []);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopied(true);
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopied(false), 1200);
-    } catch (e) {
-      console.warn('clipboard copy failed', e);
-    }
-  };
-  return (
-    <button
-      type="button"
-      aria-label={copied ? 'Copied' : 'Copy command'}
-      onClick={copy}
-      className={`${touchTarget} shrink-0 rounded text-faint transition-colors duration-150 hover:text-ink ${copied ? 'text-merged' : ''}`}
-    >
-      <Icon name={copied ? 'check' : 'copy'} className="size-3.5" />
-    </button>
-  );
 }
 
 function GuardMissingNotice() {
@@ -95,7 +67,7 @@ function primaryBanner({ update, pending, onArm, onCancel, onDismiss }: UpdateBa
           Version {update.availableVersion} is available. This install can't upgrade itself.{' '}
           {instruction.kind === 'command' ? <>To upgrade, run <code>{instruction.command}</code></> : instruction.instructions}
         </p>
-        {instruction.kind === 'command' && <CopyCommandButton command={instruction.command} />}
+        {instruction.kind === 'command' && <CopyButton text={instruction.command} label="Copy command" className="size-11" />}
         <button type="button" className={`${btnQuiet} shrink-0`} disabled={pending} onClick={onDismiss}>
           Dismiss
         </button>
