@@ -9,6 +9,7 @@ import { logger } from '../logger.js';
 export interface BaseCheckoutSyncResult {
   mergedPaths: string[];
   keptPaths: string[];
+  error?: string;
 }
 
 const REGULAR_FILE_MODES = new Set(['100644', '100755']);
@@ -115,8 +116,22 @@ export async function syncBaseCheckout(
     else safeUpsert.push(entry.path);
   });
 
-  await Git.checkoutPathsFromRev(checkoutDir, newTip, safeUpsert);
-  await Git.removePaths(checkoutDir, safeDelete);
+  const errors: string[] = [];
+  const safeStep = async (step: string, run: () => Promise<void>): Promise<void> => {
+    try {
+      await run();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn('merge: a safe base checkout sync step failed; continuing with overlap paths', {
+        'merge.repo': checkoutDir,
+        'merge.step': step,
+        error: message,
+      });
+      errors.push(message);
+    }
+  };
+  await safeStep('upsert', () => Git.checkoutPathsFromRev(checkoutDir, newTip, safeUpsert));
+  await safeStep('delete', () => Git.removePaths(checkoutDir, safeDelete));
 
   const mergedPaths: string[] = [];
   const keptPaths: string[] = [];
@@ -143,5 +158,5 @@ export async function syncBaseCheckout(
     if (tmp) await rm(tmp, { recursive: true, force: true });
   }
 
-  return { mergedPaths, keptPaths };
+  return errors.length > 0 ? { mergedPaths, keptPaths, error: errors.join('; ') } : { mergedPaths, keptPaths };
 }

@@ -83,6 +83,52 @@ describe('Export on done (#734)', () => {
     }
   });
 
+  it('records git provenance from a real repository in the exported manifest', async () => {
+    const repo = join(root, 'provenance-repo');
+    const git = (...args: string[]) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim();
+    execFileSync('git', ['init', '-b', 'trunk', repo]);
+    git('config', 'user.name', 'Test');
+    git('config', 'user.email', 'test@example.com');
+    writeFileSync(join(repo, 'a.txt'), 'a\n');
+    git('add', '-A');
+    git('commit', '-m', 'first');
+    git('remote', 'add', 'origin', 'https://someone:s3cret-token@example.com/owner/repo.git');
+    const startCommit = git('rev-parse', 'HEAD');
+    writeFileSync(join(repo, 'b.txt'), 'b\n');
+    git('add', '-A');
+    git('commit', '-m', 'second');
+    const endCommit = git('rev-parse', 'HEAD');
+
+    const { ctx } = okServer.app;
+    const created = await okServer.api('POST', '/api/tasks', { prompt: 'provenance', workingDir: repo, isolationMode: 'direct' });
+    const taskId: number = created.body.id;
+    const attempt = await ctx.attempts.create(taskId);
+    await ctx.attempts.update(attempt.id, { startOid: startCommit, verifiedHeadOid: endCommit });
+    await ctx.tasks.setState(taskId, 'working');
+    expect((await okServer.api('POST', `/api/tasks/${taskId}/complete`)).status).toBe(200);
+
+    const slugDir = join(good, readdirSync(good)[0]!);
+    const tarball = await waitFor(async () => readdirSync(slugDir).find((n) => n.startsWith(`${taskId}-done-`)));
+    const out = mkdtempSync(join(tmpdir(), 'harmonic-provenance-extract-'));
+    try {
+      execFileSync('tar', ['-xzf', join(slugDir, tarball), '-C', out]);
+      const raw = readFileSync(join(out, 'manifest.json'), 'utf8');
+      expect(raw).not.toContain('s3cret-token');
+      const manifest = JSON.parse(raw);
+      expect(manifest.formatVersion).toBe(2);
+      expect(manifest.git).toEqual({
+        remoteUrl: 'https://example.com/owner/repo.git',
+        baseBranch: 'trunk',
+        startCommit,
+        endCommit,
+        mergeCommit: null,
+        attempts: [{ id: attempt.id, startCommit, endCommit }],
+      });
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+
   it('leaves the transition intact when the destination is unwritable', async () => {
     const taskId = await driveToDone(badServer, root);
     const facts = await waitFor(async () => {
@@ -91,10 +137,8 @@ describe('Export on done (#734)', () => {
     });
     expect(facts[0]).toMatchObject({ status: 'failed', destination: 'directory' });
     expect((await badServer.app.ctx.tasks.get(taskId)).state).toBe('done');
-    const staged = await waitFor(async () => {
-      const names = readdirSync(join(root, 'data-bad', 'archive', '.staging')).sort();
-      return names.length === 2 ? names : undefined;
-    });
+    const staged = readdirSync(join(root, 'data-bad', 'archive', '.staging')).sort();
+    expect(staged).toHaveLength(2);
     expect(staged[0]).toMatch(new RegExp(`^${taskId}-[0-9a-f]+\\.pending\\.json$`));
     expect(staged[1]).toBe(staged[0]!.replace(/\.pending\.json$/, '.tar.gz'));
     expect(existsSync(join(root, 'data-bad', 'archive'))).toBe(true);

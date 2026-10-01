@@ -13,6 +13,7 @@ import { uploadToS3 } from './s3-destination.js';
 import { workspaceSlug, type ExportDestination, type ExportRecord, type TaskArchive } from './task-archive.js';
 import { buildExportStatus, type ExportStatus, type PendingRetry } from './export-status.js';
 import { Redactor, type RedactionPattern } from './redact.js';
+import type { GitProvenance } from './git-provenance.js';
 import { TarGzWriter, addDirectory, type TransformFactory } from './tar-gz.js';
 
 export type ExportDisposition = ExportState;
@@ -21,6 +22,7 @@ export interface ExportSnapshot {
   ticket: unknown;
   timeline: unknown;
   attemptCount: number;
+  git: GitProvenance;
 }
 
 export interface EpicExportMember {
@@ -28,7 +30,7 @@ export interface EpicExportMember {
   task: TaskRow | null;
 }
 
-export interface EpicExportSnapshot extends ExportSnapshot {
+export interface EpicExportSnapshot extends Omit<ExportSnapshot, 'git'> {
   members: EpicExportMember[];
 }
 
@@ -485,8 +487,6 @@ export class TaskExporter {
         outcomes.push(outcome);
       }
     }
-    for (const outcome of outcomes) await this.record(task, disposition, outcome, at, 0, built?.meta);
-
     let nextRetryAt: string | null = null;
     if (built !== null && retryable.length > 0) {
       try {
@@ -497,6 +497,7 @@ export class TaskExporter {
       }
     }
     if (built !== null && nextRetryAt === null) await rm(built.staged, { force: true }).catch(() => undefined);
+    for (const outcome of outcomes) await this.record(task, disposition, outcome, at, 0, built?.meta);
     for (const outcome of outcomes) {
       if (outcome.status !== 'failed') continue;
       this.notifyFailure({ task, disposition, destination: outcome.destination, error: outcome.error ?? 'export failed', retry: 0, nextRetryAt });
@@ -708,7 +709,7 @@ export class TaskExporter {
         return {
           manifest: {
             format: 'harmonic-task-export',
-            formatVersion: 1,
+            formatVersion: 2,
             harmonicVersion: this.deps.version,
             taskId: task.id,
             archiveId: task.archiveId,
@@ -717,6 +718,7 @@ export class TaskExporter {
             disposition,
             exportedAt: at.toISOString(),
             counts: { archiveFiles: result.files, attempts: snapshot.attemptCount },
+            git: result.git,
             redaction: result.redaction,
             partial,
           },
@@ -761,10 +763,10 @@ export class TaskExporter {
   private async buildTarball(
     staged: string,
     archiveDir: string,
-    snapshot: ExportSnapshot,
+    snapshot: Omit<ExportSnapshot, 'git'> & { git?: GitProvenance },
     patterns: readonly RedactionPattern[],
     at: Date,
-    describe: (result: { files: number; partial: boolean; redaction: { applied: true; matches: Record<string, number> } }) => { manifest: unknown; readme: string },
+    describe: (result: { files: number; partial: boolean; git: GitProvenance | null; redaction: { applied: true; matches: Record<string, number> } }) => { manifest: unknown; readme: string },
   ): Promise<void> {
     const redactor = new Redactor(patterns);
     const redacted: TransformFactory = (pass) => redactor.stream({ count: pass === 'write' });
@@ -784,7 +786,8 @@ export class TaskExporter {
           files += await addDirectory(writer, join(archiveDir, entry.name), entry.name, redacted);
         }
       }
-      const described = describe({ files, partial: snapshot.attemptCount > 0 && !hasAttempts, redaction: { applied: true, matches: redactor.counts } });
+      const git = snapshot.git ? (JSON.parse(redactor.redactText(json(snapshot.git))) as GitProvenance) : null;
+      const described = describe({ files, git, partial: snapshot.attemptCount > 0 && !hasAttempts, redaction: { applied: true, matches: redactor.counts } });
       const readmeText = redactor.redactText(described.readme);
       await writer.addBuffer('manifest.json', json(described.manifest), at);
       await writer.addBuffer('README.md', readmeText, at);

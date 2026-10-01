@@ -313,6 +313,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "start_oid": {
+          "name": "start_oid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "diff_base_oid": {
           "name": "diff_base_oid",
           "type": "text",

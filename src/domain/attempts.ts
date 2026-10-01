@@ -531,6 +531,26 @@ export class AttemptStore {
     return rows.map(deserializeAttemptEvent);
   }
 
+  /** The `merged` lifecycle Fact payloads of the given Attempts, oldest first. */
+  async listMergedFacts(attemptIds: readonly number[]): Promise<unknown[]> {
+    if (attemptIds.length === 0) return [];
+    const rows = await this.db.read((db) =>
+      db
+        .select()
+        .from(attemptEvents)
+        .where(
+          and(
+            inArray(attemptEvents.attemptId, [...attemptIds]),
+            eq(attemptEvents.type, 'lifecycle'),
+            sql`json_extract(${attemptEvents.payload}, '$.event') = 'merged'`,
+          ),
+        )
+        .orderBy(asc(attemptEvents.ts), asc(attemptEvents.id))
+        .all(),
+    );
+    return rows.map((row) => deserializeAttemptEvent(row).payload);
+  }
+
   /** Per-Attempt tool-call snapshot, overwritten by the Runner's in-memory rollup. */
   async replaceToolCalls(attemptId: number, totals: ReadonlyMap<string, number>): Promise<void> {
     await this.db.write(async (db) => {

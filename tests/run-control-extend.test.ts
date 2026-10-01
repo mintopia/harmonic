@@ -30,6 +30,7 @@ function runningAttempt(over: Partial<TaskAttemptRow> = {}): TaskAttemptRow {
     stat: null,
     verifiedHeadOid: null,
     verifiedRef: null,
+    startOid: null,
     usage: null,
     cost: null,
     liveUsage: null,

@@ -47,6 +47,7 @@ CREATE TABLE `attempts` (
 	`prompt` text,
 	`branch` text,
 	`base_branch` text,
+	`start_oid` text,
 	`diff_base_oid` text,
 	`diff_head_oid` text,
 	`stat` text,

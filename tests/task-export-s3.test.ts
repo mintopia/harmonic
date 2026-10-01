@@ -13,6 +13,7 @@ import { resolveExportSettings } from '../src/archive/export-settings.js';
 import { TaskArchive } from '../src/archive/task-archive.js';
 import { TaskExporter } from '../src/archive/task-export.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { emptyGitProvenance } from '../src/archive/git-provenance.js';
 
 const ACCESS = 'harmonicaccess';
 const SECRET = 'harmonicsecretkey123';
@@ -143,7 +144,7 @@ describe.skipIf(!dockerAvailable())('TaskExporter S3 destination (#737)', () => 
       epicSettings: async () => resolveExportSettings(cfg, workspace),
       epicSnapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, members: [] }),
       workspaceName: async () => 'My Workspace',
-      snapshot: async () => ({ ticket: { title: 'T' }, timeline: {}, attemptCount: 1 }),
+      snapshot: async () => ({ ticket: { title: 'T' }, timeline: {}, attemptCount: 1, git: emptyGitProvenance() }),
       recordFact: async (_id, payload) => {
         facts.push(payload as Record<string, unknown>);
       },

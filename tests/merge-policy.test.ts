@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { context, propagation, trace } from '@opentelemetry/api';
@@ -621,6 +621,87 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     const sync = steps.find((s) => s.step === 'checkout-synced');
     if (!sync || sync.step !== 'checkout-synced') throw new Error('no checkout-synced step emitted');
     expect(sync.error).toBeUndefined();
+  });
+
+  it("syncs merge-deleted files out of the base checkout, keeping the operator's dirty file", async () => {
+    const repo = makeRepo();
+    mkdirSync(join(repo, 'sub'));
+    for (const f of ['gone-1.txt', 'gone-2.txt', 'sub/gone-3.txt']) writeFileSync(join(repo, f), `${f}\n`);
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-m', 'add files to delete');
+    await makeTaskBranch(repo, 'task-sync-deletes', (wt) => {
+      for (const f of ['gone-1.txt', 'gone-2.txt', 'sub/gone-3.txt']) rmSync(join(wt, f));
+    });
+    writeFileSync(join(repo, 'base.txt'), 'operator edit\n');
+
+    const steps: MergeStepEvent[] = [];
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-sync-deletes', conflictResolveTurns: 0, postMergeCheck: false },
+      { resolveConflictTurn: neverCalled('resolveConflictTurn'), runPostMergeCheck: vi.fn(), escalate: vi.fn(async () => {}), onStep: (e) => steps.push(e) },
+    );
+
+    expect(outcome.kind).toBe('merged');
+    for (const f of ['gone-1.txt', 'gone-2.txt', 'sub/gone-3.txt']) expect(existsSync(join(repo, f))).toBe(false);
+    expect(git(repo, 'status', '--porcelain')).toBe('M base.txt');
+    expect(readFileSync(join(repo, 'base.txt'), 'utf8')).toBe('operator edit\n');
+    expect(git(repo, 'rev-parse', 'HEAD')).toBe(git(repo, 'rev-parse', 'main'));
+    const sync = steps.find((s) => s.step === 'checkout-synced');
+    if (!sync || sync.step !== 'checkout-synced') throw new Error('no checkout-synced step emitted');
+    expect(sync.error).toBeUndefined();
+  });
+
+  it('still merges an operator-dirty overlap path when the same merge deletes another file', async () => {
+    const repo = makeRepo();
+    writeFileSync(join(repo, 'shared.txt'), 'one\ntwo\nthree\nfour\nfive\n');
+    writeFileSync(join(repo, 'gone.txt'), 'gone\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-m', 'add shared and gone');
+    await makeTaskBranch(repo, 'task-sync-delete-overlap', (wt) => {
+      rmSync(join(wt, 'gone.txt'));
+      writeFileSync(join(wt, 'shared.txt'), 'ONE\ntwo\nthree\nfour\nfive\n');
+    });
+    writeFileSync(join(repo, 'shared.txt'), 'one\ntwo\nthree\nfour\nFIVE\n');
+
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-sync-delete-overlap', conflictResolveTurns: 0, postMergeCheck: false },
+      { resolveConflictTurn: neverCalled('resolveConflictTurn'), runPostMergeCheck: vi.fn(), escalate: vi.fn(async () => {}) },
+    );
+
+    expect(outcome.kind).toBe('merged');
+    expect(existsSync(join(repo, 'gone.txt'))).toBe(false);
+    expect(readFileSync(join(repo, 'shared.txt'), 'utf8')).toBe('ONE\ntwo\nthree\nfour\nFIVE\n');
+    expect(git(repo, 'status', '--porcelain')).toBe('M shared.txt');
+    expect(git(repo, 'rev-parse', 'HEAD')).toBe(git(repo, 'rev-parse', 'main'));
+  });
+
+  it('still processes overlap paths when the safe delete step fails', async () => {
+    const repo = makeRepo();
+    writeFileSync(join(repo, 'shared.txt'), 'one\ntwo\nthree\nfour\nfive\n');
+    writeFileSync(join(repo, 'gone.txt'), 'gone\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-m', 'add shared and gone');
+    await makeTaskBranch(repo, 'task-sync-delete-fails', (wt) => {
+      rmSync(join(wt, 'gone.txt'));
+      writeFileSync(join(wt, 'shared.txt'), 'ONE\ntwo\nthree\nfour\nfive\n');
+    });
+    writeFileSync(join(repo, 'shared.txt'), 'one\ntwo\nthree\nfour\nFIVE\n');
+    const removeSpy = vi.spyOn(Git, 'removePaths').mockRejectedValueOnce(new Error('injected rm failure'));
+    const steps: MergeStepEvent[] = [];
+
+    try {
+      const outcome = await runMergePolicy(
+        { baseDir: repo, baseBranch: 'main', taskBranch: 'task-sync-delete-fails', conflictResolveTurns: 0, postMergeCheck: false },
+        { resolveConflictTurn: neverCalled('resolveConflictTurn'), runPostMergeCheck: vi.fn(), escalate: vi.fn(async () => {}), onStep: (e) => steps.push(e) },
+      );
+      expect(outcome.kind).toBe('merged');
+      expect(readFileSync(join(repo, 'shared.txt'), 'utf8')).toBe('ONE\ntwo\nthree\nfour\nFIVE\n');
+      const sync = steps.find((s) => s.step === 'checkout-synced');
+      if (!sync || sync.step !== 'checkout-synced') throw new Error('no checkout-synced step emitted');
+      expect(sync.mergedPaths).toEqual(['shared.txt']);
+      expect(sync.error).toContain('injected rm failure');
+    } finally {
+      removeSpy.mockRestore();
+    }
   });
 
   it('does not hold the base-checkout lock while a conflict resolve turn runs', async () => {

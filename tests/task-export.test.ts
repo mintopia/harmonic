@@ -11,6 +11,7 @@ import { resolveExportSettings } from '../src/archive/export-settings.js';
 import { TaskArchive } from '../src/archive/task-archive.js';
 import { EXPORT_RETRY_DELAYS_MS, TaskExporter, type ExportFailure, type TaskExporterDeps } from '../src/archive/task-export.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { emptyGitProvenance } from '../src/archive/git-provenance.js';
 
 const TARBALL = /^(\d+)-(\d+-)?done-\d{8}T\d{6}\.\d{3}Z(-\d+)?\.tar\.gz$/;
 
@@ -49,7 +50,7 @@ describe('TaskExporter (#734)', () => {
       epicSettings: async () => settingsFor(),
       epicSnapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, members: [] }),
       workspaceName: async () => 'My Workspace',
-      snapshot: async () => ({ ticket: { title: 'Ticket title', id: task.id }, timeline: { events: [{ kind: 'fact' }] }, attemptCount: 1 }),
+      snapshot: async () => ({ ticket: { title: 'Ticket title', id: task.id }, timeline: { events: [{ kind: 'fact' }] }, attemptCount: 1, git: emptyGitProvenance() }),
       recordFact: async (taskId, payload) => {
         facts.push({ taskId, payload: payload as Record<string, unknown> });
       },
@@ -128,7 +129,7 @@ describe('TaskExporter (#734)', () => {
       expect(JSON.parse(readFileSync(join(out, 'timeline.json'), 'utf8'))).toEqual({ events: [{ kind: 'fact' }] });
       const manifest = JSON.parse(readFileSync(join(out, 'manifest.json'), 'utf8'));
       expect(manifest).toMatchObject({
-        formatVersion: 1,
+        formatVersion: 2,
         harmonicVersion: '9.9.9',
         taskId: task.id,
         workspace: 'My Workspace',
@@ -215,6 +216,22 @@ describe('TaskExporter (#734)', () => {
     expect(archiveJson.exports[0]).toMatchObject({ status: 'failed' });
   });
 
+  it('writes the retry sidecar before recording the failed Fact', async () => {
+    const blocked = join(dest, 'blocked');
+    writeFileSync(blocked, 'not a directory');
+    settingsFor = () => resolveExportSettings(globalWith(blocked), undefined);
+    const sidecarsAtRecord: string[][] = [];
+
+    await exporter({
+      recordFact: async () => {
+        sidecarsAtRecord.push(staging().filter((n) => n.endsWith('.pending.json') || n.endsWith('.tar.gz')));
+      },
+    }).run(task, 'done');
+
+    expect(sidecarsAtRecord).toHaveLength(1);
+    expect(sidecarsAtRecord[0]).toHaveLength(2);
+  });
+
   it.skipIf(process.getuid?.() === 0)('records a failed Fact when the destination directory is read-only', async () => {
     const readOnly = join(dest, 'ro');
     mkdirSync(readOnly);
@@ -255,7 +272,7 @@ describe('TaskExporter (#734)', () => {
       epicSettings: async () => settingsFor(),
       epicSnapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, members: [] }),
       workspaceName: async () => null,
-      snapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0 }),
+      snapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, git: emptyGitProvenance() }),
       recordFact: async () => undefined,
     });
     expect(() => failing.trigger(task, 'done')).not.toThrow();
@@ -283,7 +300,7 @@ describe('TaskExporter (#734)', () => {
     const sut = exporter({
       snapshot: async () => {
         seen.push(++counter);
-        return { ticket: { value: counter }, timeline: {}, attemptCount: 1 };
+        return { ticket: { value: counter }, timeline: {}, attemptCount: 1, git: emptyGitProvenance() };
       },
     });
 
@@ -573,7 +590,7 @@ describe('TaskExporter (#734)', () => {
         snapshot: async () => {
           const value = rowsGone ? 'after' : 'before';
           await new Promise((r) => setTimeout(r, 20));
-          return { ticket: { title: value }, timeline: { events: [value] }, attemptCount: 2 };
+          return { ticket: { title: value }, timeline: { events: [value] }, attemptCount: 2, git: emptyGitProvenance() };
         },
       });
       await sut.captureForDelete(task);
@@ -597,7 +614,7 @@ describe('TaskExporter (#734)', () => {
     });
 
     it('produces no Export when deleting a Task that never ran', async () => {
-      await exporter({ snapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0 }) }).captureForDelete(task);
+      await exporter({ snapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, git: emptyGitProvenance() }) }).captureForDelete(task);
       await new Promise((r) => setTimeout(r, 100));
       expect(tarballs()).toEqual([]);
     });
@@ -608,7 +625,7 @@ describe('TaskExporter (#734)', () => {
       await exporter({
         snapshot: async () => {
           snapshots++;
-          return { ticket: {}, timeline: {}, attemptCount: 1 };
+          return { ticket: {}, timeline: {}, attemptCount: 1, git: emptyGitProvenance() };
         },
       }).captureForDelete(task);
       expect(snapshots).toBe(0);
@@ -708,7 +725,7 @@ describe('TaskExporter (#734)', () => {
 
     it('redacts the ticket and timeline documents too', async () => {
       await exporter({
-        snapshot: async () => ({ ticket: { title: `leak ${token}` }, timeline: { note: 'Bearer abcdefgh1jklmnopqr' }, attemptCount: 1 }),
+        snapshot: async () => ({ ticket: { title: `leak ${token}` }, timeline: { note: 'Bearer abcdefgh1jklmnopqr' }, attemptCount: 1, git: emptyGitProvenance() }),
       }).run(task, 'done');
       expect(exportedFile('ticket.json').text).toContain('leak [REDACTED:github-token]');
       const { text, manifest } = exportedFile('timeline.json');
