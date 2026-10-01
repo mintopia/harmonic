@@ -75,63 +75,75 @@ otherwise its work shows as cost-incomplete rather than a misleading zero.
 
 ## Archive & Export
 
-When a Task reaches a terminal disposition — *done*, *cancelled*, or deleted
-(after escalation) — Harmonic can export a redacted tarball of the Task's
-Archive to one or more destinations for audit and archival.
+The **Archive & Export** tab controls how long Harmonic keeps each task's
+Archive and where finished tasks are exported. For what the Archive holds
+and what an Export contains, see [Archive & export](/harmonic/work/archive-and-export/).
+
+Every field on this tab can be overridden per Workspace. In a Workspace's
+settings, each field shows the global value marked *Inherited from global
+default*. Turn on its **Override** switch to set a value for that Workspace;
+**Reset to default** puts it back.
 
 ### Archive retention
 
-Archives are kept indefinitely by default. Set optional global limits:
+Both fields are blank by default, which keeps every Archive forever.
 
-- **Keep for (days)**: Automatically prune Archives older than this; blank = forever.
-- **Max total size (MB)**: When Archives exceed this, oldest ones are deleted first; blank = unlimited.
+- **Keep for (days)**: delete Archives older than this.
+- **Max total size (MB)**: once Archives pass this size, delete the oldest
+  until they fit.
 
-Each Workspace can override both limits for its own Archives with the override switch on the field. A Workspace with its own limits is pruned separately from the rest; the limit you leave inherited keeps the global value.
+The **Archive retention** Scheduled Job applies these limits every hour. It
+skips tasks still in progress, tasks that finished in the last hour, and
+tasks whose Export failed and is still undelivered. A Workspace with its own
+limits is pruned separately from the others.
 
-Archives are never pruned while an Export is pending or failed.
+### Export
 
-### Enabling Export
+- **Export on terminal disposition**: off by default. Turn it on to export
+  each task when it finishes.
+- **Dispositions to export**: *done*, *cancelled* and *deleted*, all on by
+  default. A deleted task is only exported if an agent worked on it.
 
-Toggle Export on or off per workspace (global default: on). Choose which
-terminal dispositions trigger an Export — all three are enabled by default
-(*done*, *cancelled*, *deleted*). A Workspace can override the list of dispositions.
-
-An Export never blocks or reverts the disposition; failed Exports are
-surfaced on the Ticket page.
+Exporting never holds up or reverses the task.
 
 ### Export Destinations
 
-Configure where Exports go; each destination is independent and receives a
-copy. Choose one or both:
+Each Destination has its own on/off switch and gets its own copy of every
+Export.
 
-- **Directory**: An absolute path on the Harmonic host, created if missing. No file is ever overwritten.
-- **S3-compatible**: An S3 bucket or MinIO/self-hosted equivalent with endpoint, region, bucket, prefix, and path-style addressing option.
+- **Directory**: a **Path** on the Harmonic host. Harmonic creates it if it
+  is missing and never overwrites a file in it.
+- **S3-compatible**: AWS S3, MinIO or another S3-compatible store. Fill in
+  **Endpoint**, **Region**, **Bucket** and **Prefix**, and turn on **Force
+  path-style** if your store needs it.
 
-S3 credentials are optional: leave both blank to use the AWS default credential chain. Credentials are always masked in the UI and never shown again after saving.
+**Access key ID** and **Secret access key** are optional. Leave both blank
+to use the AWS default credential chain on the host. Once saved, the keys
+are masked and never shown again; use the replace control to change them.
 
-Both settings are global with a per-workspace override.
+**Test Destination** writes a probe file and removes it, then shows
+*Wrote and removed probe object* or the error. Save your changes first; the
+button is disabled while there are unsaved edits.
+
+Failed deliveries retry after 5 minutes, 30 minutes and 2 hours. After that,
+use **Export again** on the ticket page.
 
 ### Redaction patterns
 
-Archives are redacted only at Export time; the local copy stays raw. Matches
-are replaced with `[REDACTED:<pattern-id>]`.
+The **Baseline** list shows the six patterns that always run: AWS access
+keys, AWS secret keys, GitHub tokens, GitLab tokens, bearer tokens and `sk-`
+API keys. You can't remove them.
 
-Six baseline patterns are always on (AWS keys, GitHub and GitLab tokens,
-bearer tokens, API keys).
+Under **Added patterns**, click **+ Add pattern** and give an id (lowercase
+letters, digits and dashes, unique) and a regular expression. Harmonic
+rejects an invalid expression when you save. A match is replaced with
+`[REDACTED:<id>]`. Patterns added in a Workspace run alongside the global
+ones.
 
-Per-Workspace patterns add to baseline; you can't remove baseline patterns.
-Invalid regular expressions are rejected on save.
-
-### Testing and retrying
-
-Click **Test Destination** to write and remove a probe object; the Settings
-page shows success or the error.
-
-Failed Exports retry automatically at 5 min, 30 min, and 2 h. If all retries
-fail, the failure remains on the Ticket page; click **Export again** to
-retry after fixing credentials.
+Redaction only applies to Exports. The Archive on disk stays raw.
 
 ## See also
 
 - [Feeding it work](/harmonic/work/feeding-it-work/)
 - [Notifications](/harmonic/work/notifications/)
+- [Archive & export](/harmonic/work/archive-and-export/)
