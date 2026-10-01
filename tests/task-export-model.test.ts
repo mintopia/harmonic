@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { exportAgainFeedback, exportPanelModel, formatBytes, redactionSummary, splitExportError } from '../web/src/task-export-model.js';
+import { exportAgainFeedback, exportFailedMessage, exportPanelModel, formatBytes, redactionSummary, splitExportError } from '../web/src/task-export-model.js';
 import type { ExportDestinationStatus, ExportSummary, TaskExportStatus } from '../web/src/types.js';
 
 const NOW = Date.parse('2026-09-30T11:50:00.000Z');
@@ -104,5 +104,20 @@ describe('export helpers', () => {
 
     expect(ok).toEqual({ kind: 'success', message: 'Export delivered to Directory.' });
     expect(bad).toEqual({ kind: 'error', message: 'Export failed for S3: AccessDenied. Retries are scheduled.' });
+  });
+});
+
+describe('exportFailedMessage', () => {
+  const base = { destination: 's3', retry: 0, nextRetryAt: null };
+
+  it('names a Task by its label and an Epic by its ref, never "#null"', () => {
+    expect(exportFailedMessage({ ...base, taskId: 412, epicRef: null })).toBe('Export of Task 412 to s3 failed — not retried');
+    expect(exportFailedMessage({ ...base, taskId: null, epicRef: 42 })).toBe('Export of Epic #42 to s3 failed — not retried');
+  });
+
+  it('reports the pending retry or exhaustion', () => {
+    const soon = new Date(Date.now() + 5 * 60_000).toISOString();
+    expect(exportFailedMessage({ ...base, taskId: null, epicRef: 42, retry: 0, nextRetryAt: soon })).toContain('retrying in 5 min');
+    expect(exportFailedMessage({ ...base, taskId: null, epicRef: 42, retry: 3 })).toContain('retries exhausted');
   });
 });
