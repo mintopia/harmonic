@@ -3,6 +3,7 @@ import type { AsyncDbHandle } from '../db/async.js';
 import { scheduledJobs, type ScheduledJobRow } from '../db/schema.js';
 import { forEachYielding, yieldToEventLoop } from '../reliability/yield.js';
 import { singleFlight } from '../reliability/single-flight.js';
+import { InFlight } from '../reliability/in-flight.js';
 import { startOperation } from '../telemetry/operations.js';
 import { logger } from '../logger.js';
 
@@ -52,6 +53,7 @@ export class Scheduler {
   private readonly jobs = new Map<string, RegisteredJob>();
   private readonly lastSpanId = new Map<string, string>();
   private started = false;
+  private readonly inFlight = new InFlight();
 
   constructor(
     private readonly db: AsyncDbHandle,
@@ -70,15 +72,16 @@ export class Scheduler {
       running: false,
       tick: () => Promise.resolve(),
     };
-    job.tick = singleFlight(() => this.tickOnce(job));
+    const gate = singleFlight(() => this.tickOnce(job));
+    job.tick = () => this.inFlight.track(gate());
     this.jobs.set(key, job);
     if (this.started) this.startJob(job);
-    void this.emitChanged().catch((error) => logger.warn('scheduler: emitChanged failed after register', { job: key, error: errorMessage(error) }));
+    void this.inFlight.track(this.emitChanged()).catch((error) => logger.warn('scheduler: emitChanged failed after register', { job: key, error: errorMessage(error) }));
     return () => {
       if (this.jobs.get(key) !== job) return;
       if (job.timer) clearInterval(job.timer);
       this.jobs.delete(key);
-      void this.emitChanged().catch((error) => logger.warn('scheduler: emitChanged failed after unregister', { job: key, error: errorMessage(error) }));
+      void this.inFlight.track(this.emitChanged()).catch((error) => logger.warn('scheduler: emitChanged failed after unregister', { job: key, error: errorMessage(error) }));
     };
   }
 
@@ -86,15 +89,17 @@ export class Scheduler {
     if (this.started) return;
     this.started = true;
     for (const job of this.jobs.values()) this.startJob(job);
-    void this.emitChanged().catch((error) => logger.warn('scheduler: emitChanged failed after start', { error: errorMessage(error) }));
+    void this.inFlight.track(this.emitChanged()).catch((error) => logger.warn('scheduler: emitChanged failed after start', { error: errorMessage(error) }));
   }
 
-  stop(): void {
+  /** Stop firing timers, then wait out every in-flight tick and snapshot read. */
+  async stop(): Promise<void> {
     this.started = false;
     for (const job of this.jobs.values()) {
       if (job.timer) clearInterval(job.timer);
       job.timer = undefined;
     }
+    await this.inFlight.drain();
   }
 
   /** Request an immediate Job pass through the same single-flight/recording path as its timer. */
@@ -125,7 +130,7 @@ export class Scheduler {
     if (job.timer) return;
     job.timer = setInterval(() => this.fire(job), job.intervalMs);
     job.timer.unref?.();
-    void this.runIfDueOnStart(job).catch((error) => logger.warn('scheduler: runIfDueOnStart failed', { job: job.jobKey, error: errorMessage(error) }));
+    void this.inFlight.track(this.runIfDueOnStart(job)).catch((error) => logger.warn('scheduler: runIfDueOnStart failed', { job: job.jobKey, error: errorMessage(error) }));
   }
 
   private async tickOnce(job: RegisteredJob): Promise<void> {

@@ -78,7 +78,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     manager = new TrackerPollerManager(tasks, () => workspaces.list(), { resolveAdapter });
   });
   afterEach(async () => {
-    manager.stopAll();
+    await manager.stopAll();
     await asyncDb.close();
     for (const d of [dataDir, repoA, repoB]) rmSync(d, { recursive: true, force: true });
   });
@@ -160,7 +160,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     ]);
     expect(await manager.maps(workspace.id)).toEqual(legacyMaps);
 
-    manager.stopAll();
+    await manager.stopAll();
     await asyncDb.close();
     asyncDb = await openAsyncDb(dataDir);
     await seedWorkspace(asyncDb);
@@ -201,7 +201,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     if (!limbo) throw new Error('closed-but-unintegrated Epic must remain visible');
     expect(integrationSteps(limbo).map((step) => step.key)).toEqual(['verify', 'merge', 'check', 'retire']);
 
-    manager.stopAll();
+    await manager.stopAll();
     await asyncDb.close();
     asyncDb = await openAsyncDb(dataDir);
     await seedWorkspace(asyncDb);
@@ -245,7 +245,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     expect((await manager.listEpics(workspace.id)).map((e) => e.ref)).not.toContain(19);
     expect((await manager.listEpicTickets(workspace.id)).map((t) => t.number)).toContain(19);
 
-    manager.stopAll();
+    await manager.stopAll();
     await asyncDb.close();
     asyncDb = await openAsyncDb(dataDir);
     await seedWorkspace(asyncDb);
@@ -433,7 +433,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   });
 
   it('yields while syncing a large workspace backlog', async () => {
-    manager.stopAll();
+    await manager.stopAll();
     let tick = 0;
     let yields = 0;
     const order: string[] = [];
@@ -483,7 +483,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   });
 
   it('threads yieldOptions through maps() and reconcileEpics() (#663)', async () => {
-    manager.stopAll();
+    await manager.stopAll();
     let tick = 0;
     let yields = 0;
     manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
@@ -525,7 +525,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   });
 
   it('gates the epic reconcile tick on a real upgrade coordinator: armed starts no work, unarmed runs it', async () => {
-    manager.stopAll();
+    await manager.stopAll();
     const reconciled: number[] = [];
     const fakeEpicService: EpicService = {
       startWorkspace: () => ({ reconcile: async () => { reconciled.push(1); } }),
@@ -592,10 +592,57 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await coordinator.cancel();
     await manager.reconcileEpics();
     expect(reconciled).toEqual([1]);
+    await coordinator.drain();
+  });
+
+  it('stopAll waits out an in-flight poll, so closing the DB afterwards leaves nothing querying it', async () => {
+    await manager.stopAll();
+    let releaseScan: () => void = () => {};
+    const scanGate = new Promise<void>((resolve) => { releaseScan = resolve; });
+    let markScanStarted: () => void = () => {};
+    const scanStarted = new Promise<void>((resolve) => { markScanStarted = resolve; });
+    const errors: string[] = [];
+    manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+      onError: (message) => errors.push(message),
+      resolveAdapter: async () => ({
+        name: 'stub',
+        scan: async () => { markScanStarted(); await scanGate; return [ticket(7)]; },
+        readTicket: async (r) => ticket(r.number),
+        claim: async () => {},
+        release: async () => {},
+        close: async () => {},
+        reopen: async () => {},
+      }),
+    });
+    const workspace = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    await manager.sync();
+    await scanStarted;
+
+    let stopped = false;
+    const stopping = manager.stopAll().then(() => { stopped = true; });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(stopped).toBe(false);
+    releaseScan();
+    await stopping;
+
+    expect((await tasks.list({ workspaceId: workspace.id })).map((task) => task.trackerRef)).toEqual([7]);
+    await asyncDb.close();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(errors).toEqual([]);
+    asyncDb = await openAsyncDb(dataDir);
+  });
+
+  it('a sync that finishes after stopAll starts no loop', async () => {
+    await manager.stopAll();
+    await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    polled.length = 0;
+    await manager.sync();
+    expect(polled).toEqual([repoA]);
+    expect(manager.coordinatorFor((await workspaces.list()).find((w) => w.workingDir === repoA)!.id)).toBeUndefined();
   });
 
   it('two overlapping sync() calls for the same newly tracker-enabled Workspace register its Scheduler job only once', async () => {
-    manager.stopAll();
+    await manager.stopAll();
     let releaseGate: () => void = () => {};
     const gate = new Promise<void>((resolve) => { releaseGate = resolve; });
     manager = new TrackerPollerManager(tasks, () => workspaces.list(), {

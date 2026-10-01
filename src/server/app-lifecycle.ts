@@ -16,10 +16,13 @@ import { logger } from '../logger.js';
 import { errorMessage } from '../error-handling.js';
 import { startOperation } from '../telemetry/operations.js';
 
+const SHUTDOWN_DRAIN_MS = 5_000;
+
 export function registerShutdown(app: App, deps: {
   trackerManager: TrackerPollerManager;
   scheduler: Scheduler;
   autoRunner: AutoRunner;
+  upgrade: UpgradeCoordinator;
   runner: Runner;
   conversationDriver: ConversationDriver;
   loopMonitor: EventLoopMonitor | undefined;
@@ -28,15 +31,25 @@ export function registerShutdown(app: App, deps: {
   statsReader: StatsWorkerClient;
 }): void {
   app.addHook('onClose', async () => {
-    deps.trackerManager.stopAll();
-    deps.scheduler.stop();
-    deps.autoRunner.stop();
+    const drained = Promise.all([
+      deps.autoRunner.close(),
+      deps.scheduler.stop(),
+      deps.trackerManager.stopAll(),
+      deps.upgrade.drain(),
+    ]);
     deps.runner.shutdown();
     deps.conversationDriver.shutdown();
     deps.loopMonitor?.stop();
     deps.hostLoad.stop();
     await deps.workspaceWatcher.stopAll();
-    // asyncDb stays open: libsql rejects in-flight background reads with an unhandled CLIENT_CLOSED once closed.
+    let timer: NodeJS.Timeout | undefined;
+    const outcome = await Promise.race([
+      drained.then(() => 'drained' as const),
+      new Promise<'timed-out'>((resolve) => { timer = setTimeout(() => resolve('timed-out'), SHUTDOWN_DRAIN_MS); timer.unref?.(); }),
+    ]);
+    clearTimeout(timer);
+    if (outcome === 'timed-out') logger.warn('shutdown: background loops still running after the drain bound', { timeoutMs: SHUTDOWN_DRAIN_MS });
+    // asyncDb stays open: Attempt and Conversation teardown above is fire-and-forget and still writes as harness children exit.
     await deps.statsReader.close();
   });
 }

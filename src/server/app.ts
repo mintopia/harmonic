@@ -243,6 +243,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     trackerManager: runtime.trackerManager,
     scheduler,
     autoRunner: runtime.autoRunner,
+    upgrade: runtime.upgrade,
     runner: runtime.runner,
     conversationDriver: runtime.conversationDriver,
     loopMonitor: runtime.loopMonitor,
