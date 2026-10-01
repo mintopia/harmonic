@@ -13,6 +13,18 @@ import {
 import { isUniqueViolation } from '../src/db/errors.js';
 import { attempts, guardrailEvents, tasks, workspaces } from '../src/db/schema.js';
 
+interface Latch {
+  promise: Promise<void>;
+  release: () => void;
+}
+const latch = (): Latch => {
+  let release!: () => void;
+  const promise = new Promise<void>((r) => {
+    release = r;
+  });
+  return { promise, release };
+};
+
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 async function seedRunAsync(h: AsyncDbHandle): Promise<number> {
@@ -136,9 +148,10 @@ describe('read/write queue facade', () => {
 
   it('read() is not queued behind a pending write (facade keeps reads off the write queue)', async () => {
     let writeSettled = false;
+    const gate = latch();
     const slowWrite = h
       .write(async () => {
-        await delay(40);
+        await gate.promise;
       })
       .then(() => {
         writeSettled = true;
@@ -146,6 +159,7 @@ describe('read/write queue facade', () => {
     const rows = await h.read((db) => db.select().from(workspaces).all());
     expect(writeSettled).toBe(false);
     expect(rows).toHaveLength(0);
+    gate.release();
     await slowWrite;
   });
 
@@ -210,11 +224,15 @@ describe('per-query wall-clock timeouts (#212)', () => {
   let dir: string;
   let h: AsyncDbHandle;
 
+  let gate: Latch;
+
   beforeEach(async () => {
+    gate = latch();
     dir = mkdtempSync(join(tmpdir(), 'harmonic-async-timeout-'));
     h = await openAsyncDb(dir);
   });
   afterEach(async () => {
+    gate.release();
     await h.close();
     rmSync(dir, { recursive: true, force: true });
   });
@@ -223,7 +241,7 @@ describe('per-query wall-clock timeouts (#212)', () => {
     let caught: unknown;
     try {
       await h.read(async () => {
-        await delay(60);
+        await gate.promise;
         return 'never';
       }, { timeoutMs: 10 });
     } catch (err) {
@@ -241,7 +259,7 @@ describe('per-query wall-clock timeouts (#212)', () => {
   it('write() rejects with a QueryTimeoutError once the deadline passes', async () => {
     await expect(
       h.write(async () => {
-        await delay(60);
+        await gate.promise;
       }, { timeoutMs: 10 }),
     ).rejects.toBeInstanceOf(QueryTimeoutError);
   });
@@ -250,7 +268,7 @@ describe('per-query wall-clock timeouts (#212)', () => {
     let caught: unknown;
     try {
       await h.transaction(async () => {
-        await delay(60);
+        await gate.promise;
       }, { timeoutMs: 10 });
     } catch (err) {
       caught = err;
@@ -262,7 +280,7 @@ describe('per-query wall-clock timeouts (#212)', () => {
   it('a per-call timeoutMs overrides the handle default', async () => {
     await expect(
       h.read(async () => {
-        await delay(60);
+        await gate.promise;
       }, { timeoutMs: 10 }),
     ).rejects.toBeInstanceOf(QueryTimeoutError);
     await expect(
@@ -288,7 +306,7 @@ describe('per-query wall-clock timeouts (#212)', () => {
     try {
       await expect(
         tight.read(async () => {
-          await delay(60);
+          await gate.promise;
         }),
       ).rejects.toBeInstanceOf(QueryTimeoutError);
     } finally {
@@ -299,12 +317,13 @@ describe('per-query wall-clock timeouts (#212)', () => {
 
   it('bounds a caller queued behind an in-flight write (queue-wait is charged)', async () => {
     const a = h.write(async () => {
-      await delay(60);
+      await gate.promise;
     });
     await expect(
       h.write(async () => {
       }, { timeoutMs: 20 }),
     ).rejects.toBeInstanceOf(QueryTimeoutError);
+    gate.release();
     await a;
   });
 
@@ -312,10 +331,11 @@ describe('per-query wall-clock timeouts (#212)', () => {
     const events: string[] = [];
     const a = h.write(async () => {
       events.push('a-start');
-      await delay(40);
+      await gate.promise;
       events.push('a-end');
     }, { timeoutMs: 10 });
     await expect(a).rejects.toBeInstanceOf(QueryTimeoutError);
+    gate.release();
     await h.write(async () => {
       events.push('b');
     });
