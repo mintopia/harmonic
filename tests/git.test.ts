@@ -5,7 +5,7 @@ import { trace } from '@opentelemetry/api';
 import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -463,6 +463,22 @@ describe('git-operations', () => {
       writeFileSync(join(repo, 'base.txt'), 'changed\n');
 
       await expect(Git.dirtyFiles(repo)).resolves.toEqual(['base.txt']);
+    });
+  });
+
+  describe('Git.changeCount', () => {
+    it('counts changes without rewriting the index, so it never contends for index.lock with a merge in that worktree', async () => {
+      const repo = makeRepo();
+      writeFileSync(join(repo, 'untracked.txt'), 'new\n');
+      const future = new Date(Date.now() + 60_000);
+      utimesSync(join(repo, 'base.txt'), future, future);
+      const index = join(repo, '.git', 'index');
+      const before = statSync(index);
+
+      await expect(Git.changeCount(repo)).resolves.toBe(1);
+
+      const after = statSync(index);
+      expect({ ino: after.ino, mtimeMs: after.mtimeMs }).toEqual({ ino: before.ino, mtimeMs: before.mtimeMs });
     });
   });
 

@@ -2,6 +2,7 @@ import { hasZodFastifySchemaValidationErrors } from 'fastify-type-provider-zod';
 import { ZodError } from 'zod';
 import { logger } from '../logger.js';
 import { DomainError } from '../domain/errors.js';
+import { errorMessage } from '../error-handling.js';
 import type { App, RegisteredRoute } from './app-context.js';
 
 export function registerRouteRecorder(app: App, registeredRoutes: RegisteredRoute[]): void {
@@ -38,6 +39,7 @@ export function registerErrorHandler(app: App): void {
       url: req.url,
       error: cause?.message ?? String(err),
       ...(cause?.stack ? { stack: cause.stack } : {}),
+      ...(cause?.cause !== undefined ? { cause: errorMessage(cause.cause) } : {}),
     });
     return reply.status(500).send({ error: { code: 'internal', message: 'internal server error' } });
   });
