@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.22.0](https://github.com/mintopia/harmonic/compare/v2.21.0...v2.22.0) (2026-10-01)
+
+
+### Features
+
+* **export:** record git provenance in the Task export manifest ([dda2722](https://github.com/mintopia/harmonic/commit/dda2722fa09b73d1580620d475ab027bb5fee7a3))
+
+
+### Bug Fixes
+
+* **export:** record baseBranch for direct-mode Tasks in export provenance ([4ef8467](https://github.com/mintopia/harmonic/commit/4ef8467eecd98397c8d7640306aca1d1e1964b11))
+* **export:** write the retry sidecar before recording the failed export Fact ([33223fa](https://github.com/mintopia/harmonic/commit/33223fa113d5c4d82c6379bb0f320e378da86ccf))
+* **merge:** remove merge-deleted files from the base checkout ([c73e72e](https://github.com/mintopia/harmonic/commit/c73e72ef66e43f5e8d681dfdb83f7b49381ca80c))
+
 ## [2.21.0](https://github.com/mintopia/harmonic/compare/v2.20.0...v2.21.0) (2026-09-30)
 
 
