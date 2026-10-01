@@ -49,7 +49,10 @@ export interface BusEvents {
   host_load: (load: HostLoad) => void;
   /** `nextRetryAt` is null when no further retry is scheduled. */
   export_failed: (payload: {
-    taskId: number;
+    /** Null for an Epic Export. */
+    taskId: number | null;
+    epicRef: number | null;
+    workspaceId: number | null;
     trackerRef: number | null;
     destination: string;
     disposition: string;

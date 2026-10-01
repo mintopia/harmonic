@@ -34,6 +34,8 @@ export interface NotificationPayload {
 }
 
 export interface ExportFailureDetail {
+  /** Set when the Export is an Epic's rather than a Task's. */
+  epicRef?: number;
   destination: string;
   disposition: string;
   error: string;
@@ -42,13 +44,14 @@ export interface ExportFailureDetail {
 }
 
 export interface NotifyContext {
+  workspaceId?: number | null;
   reason?: string;
   destination?: string;
   export?: ExportFailureDetail;
 }
 
 const summarizeExportFailure = (task: TaskRow | undefined, detail: ExportFailureDetail): string => {
-  const subject = task ? `Task #${task.id}` : 'Task';
+  const subject = detail.epicRef !== undefined ? `Epic #${detail.epicRef}` : task ? `Task #${task.id}` : 'Task';
   const outcome =
     detail.nextRetryAt !== null ? `retrying at ${detail.nextRetryAt}` : detail.retry === 0 ? 'not retried' : 'retries exhausted';
   return `Harmonic: export of ${subject} to ${detail.destination} failed: ${detail.error} — ${outcome}`;
@@ -79,7 +82,17 @@ export class Notifier {
   ) {}
 
   private stored(event: NotificationEvent, task: TaskRow | undefined, context: NotifyContext): NotificationInput | null {
-    if (!task) return null;
+    if (!task) {
+      const epicRef = event === 'export.failed' ? context.export?.epicRef : undefined;
+      if (epicRef === undefined) return null;
+      return {
+        workspaceId: context.workspaceId ?? null,
+        taskId: null,
+        severity: 'export',
+        title: `Export failed for Epic #${epicRef} — ${context.reason ?? context.export?.error ?? 'unknown reason'}`,
+        detail: context.destination ?? context.export?.destination ?? null,
+      };
+    }
     const base = { workspaceId: task.workspaceId, taskId: task.id };
     const taskTitle = taskDisplayTitle(task) ?? `Task ${task.id}`;
     switch (event) {

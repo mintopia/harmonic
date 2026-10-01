@@ -2,6 +2,7 @@ import { readdir, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { logger } from '../logger.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
+import { exportOwnerKey } from './export-owner.js';
 import type { ExportRecord } from './task-archive.js';
 
 export interface ArchiveRetention {
@@ -16,6 +17,8 @@ export interface ArchivePruneDeps {
   workspaceRetention?: (slug: string) => ArchiveRetention | null;
   /** Epoch ms the Task reached a terminal state; null while it is non-terminal or unknown. Not consulted for Archives marked deleted. */
   taskTerminalAt: (taskId: number) => Promise<number | null>;
+  /** Owner keys (see `exportOwnerKey`) of Exports with a retry still scheduled. */
+  pendingExports: () => Promise<ReadonlySet<string>>;
   now?: () => number;
   yieldOptions?: YieldOptions;
 }
@@ -23,6 +26,8 @@ export interface ArchivePruneDeps {
 interface Manifest {
   taskId?: number;
   epicRef?: number;
+  workspaceId?: number | null;
+  dispositions?: { at?: string }[];
   deleted?: { at?: string };
   exports?: ExportRecord[];
 }
@@ -69,11 +74,21 @@ function latestExportAt(exports: ExportRecord[]): number | null {
   return times.length > 0 ? Math.max(...times) : null;
 }
 
+function ownerKey(manifest: Manifest): string {
+  if (typeof manifest.epicRef === 'number' && typeof manifest.workspaceId === 'number') {
+    return exportOwnerKey({ kind: 'epic', workspaceId: manifest.workspaceId, epicRef: manifest.epicRef });
+  }
+  return exportOwnerKey({ kind: 'task', taskId: manifest.taskId ?? -1 });
+}
+
 async function terminalAt(manifest: Manifest, deps: ArchivePruneDeps): Promise<number | null> {
   const deletedAt = manifest.deleted ? Date.parse(manifest.deleted.at ?? '') : NaN;
   if (Number.isFinite(deletedAt)) return deletedAt;
   if (typeof manifest.taskId === 'number') return await deps.taskTerminalAt(manifest.taskId);
-  if (typeof manifest.epicRef === 'number') return latestExportAt(manifest.exports ?? []);
+  if (typeof manifest.epicRef === 'number') {
+    const stamped = Date.parse(manifest.dispositions?.[0]?.at ?? '');
+    return Number.isFinite(stamped) ? stamped : null;
+  }
   return null;
 }
 
@@ -119,13 +134,15 @@ export async function pruneArchives(deps: ArchivePruneDeps): Promise<number> {
   const entries = await scanArchives(deps);
   if (entries.length === 0) return 0;
 
+  const pending = await deps.pendingExports();
   const candidates: Candidate[] = [];
   await forEachYielding(entries, async ({ dir, pool }) => {
     try {
       const manifest = JSON.parse(await readFile(join(dir, 'archive.json'), 'utf8')) as Manifest;
       const bytes = await directoryBytes(dir);
       const exports = manifest.exports ?? [];
-      const at = exportsSettled(exports) ? await terminalAt(manifest, deps) : null;
+      const awaitingExport = pending.has(ownerKey(manifest));
+      const at = exportsSettled(exports) && !awaitingExport ? await terminalAt(manifest, deps) : null;
       const settled = at !== null && now - Math.max(at, latestExportAt(exports) ?? 0) >= EXPORT_GRACE_MS;
       candidates.push({ dir, pool, bytes, terminalAt: settled ? at : null });
     } catch (err) {
