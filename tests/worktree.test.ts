@@ -739,6 +739,33 @@ describe('worktree-inventory', () => {
         { workspaceId: 1, path: '/trees/task-7', branch: 'harmonic/task-7', subject: null, sizeBytes: 42, dirty: false, changeCount: 0, state: 'Orphan' },
       ]);
     });
+
+    it('skips a live ephemeral merge worktree: never listed, and no git read runs inside it', async () => {
+      const probed: string[] = [];
+      const inventory = new WorktreeInventory(
+        async () => [{ id: 1, workingDir: '/repo' }],
+        async () => [],
+        repository({
+          listWorktrees: async () => [
+            { path: '/repo', branch: 'develop' },
+            { path: '/tmp/harmonic-merge-AbC123/admin', branch: null },
+            { path: '/trees/task-7', branch: 'harmonic/task-7' },
+          ],
+          isValidWorktree: async () => true,
+          changeCount: async (dir: string) => {
+            probed.push(dir);
+            return 0;
+          },
+          worktreeSize: async () => 42,
+        }),
+        '/trees',
+      );
+
+      await expect(inventory.snapshot()).resolves.toEqual([
+        { workspaceId: 1, path: '/trees/task-7', branch: 'harmonic/task-7', subject: null, sizeBytes: 42, dirty: false, changeCount: 0, state: 'Orphan' },
+      ]);
+      expect(probed).toEqual(['/trees/task-7']);
+    });
   });
 });
 

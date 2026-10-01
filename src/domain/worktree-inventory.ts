@@ -2,6 +2,7 @@ import { basename, join, resolve } from 'node:path';
 import { forEachYielding } from '../reliability/yield.js';
 import type { TaskOrigin, TaskState } from '../db/schema.js';
 import { GitError } from './errors.js';
+import { isEphemeralMergeWorktree } from '../execution/ephemeral-merge-worktree.js';
 import type { WorktreeRecord } from './worktree-reconciler.js';
 
 export type WorktreeState = 'Active' | 'Stale' | 'Dirty' | 'Unreadable' | 'Orphan' | 'Missing';
@@ -109,7 +110,7 @@ export class WorktreeInventory {
       const baseCheckout = resolve(workspace.workingDir);
       const listedTaskIds = new Set<number>();
       await forEachYielding(listed, async (worktree) => {
-        if (resolve(worktree.path) === baseCheckout) return;
+        if (resolve(worktree.path) === baseCheckout || isEphemeralMergeWorktree(worktree.path)) return;
         const taskId = taskIdFor(worktree.path);
         if (taskId !== null) listedTaskIds.add(taskId);
         const task = taskId === null ? undefined : byId.get(taskId);

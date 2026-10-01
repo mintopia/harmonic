@@ -191,5 +191,41 @@ describe('Task lifecycle state machine (ADR-0020)', () => {
       expect((requeueResult as DomainError).code).toBe('invalid_state');
       expect(await attempts.get(run.id)).toMatchObject({ state: 'passed', reason: 'operator-accept' });
     });
+
+    it('Accept-merge that throws (a git failure, not a conflict) refuses with 409, leaving the Task escalated with no stale merging indicator', async () => {
+      const attempts = new AttemptStore(asyncDb);
+      const settle = new AttemptSettleCoordinator(tasks, attempts);
+      const created = await tasks.create({ prompt: 'p', state: 'ready' });
+      await tasks.setState(created.id, 'working');
+      const run = await attempts.update((await attempts.create(created.id)).id, { verifiedHeadOid: 'b'.repeat(40) });
+      await settle.settle(await tasks.get(created.id), run, 'escalate', {
+        runState: 'failed',
+        taskAction: 'escalate',
+        reason: 'escalated to human',
+      });
+      const effects: MergeEffectExec[] = [
+        {
+          effect: 'target-ref',
+          idempotencyKey: 'main<-branch',
+          expected: {},
+          apply: async () => {
+            throw new Error("git merge --no-ff failed: fatal: Unable to create '/repo/.git/worktrees/admin/index.lock': File exists.");
+          },
+        },
+      ];
+      const service = new EscalationService(attempts, tasks, settle, () => effects, {
+        resume: async () => {},
+        cleanup: async () => {},
+        candidateHead: async () => 'cand-oid',
+        advance: async () => {},
+      });
+
+      const err = await service.accept(created.id).catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(DomainError);
+      expect((err as DomainError).httpStatus).toBe(409);
+      expect(await tasks.get(created.id)).toMatchObject({ state: 'escalated', mergeStatus: null });
+      expect(await attempts.get(run.id)).toMatchObject({ state: 'escalated' });
+    });
   });
 });
