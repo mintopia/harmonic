@@ -4,6 +4,7 @@ import type { ResolvedTracker, Ticket, TrackerAdapter } from './adapter.js';
 import { resolutionFailure, resolutionSuccess, resolveTrackerAdapter } from './adapter.js';
 import { mirrorScan } from './mirror.js';
 import { singleFlight } from '../reliability/single-flight.js';
+import { InFlight } from '../reliability/in-flight.js';
 import { persistedTickets } from './persisted.js';
 import { logger } from '../logger.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
@@ -43,9 +44,10 @@ export class TrackerPoller {
   ) {}
 
   private readonly pollGate = singleFlight(() => this.pollOnce());
+  private readonly inFlight = new InFlight();
 
   poll(): Promise<void> {
-    return this.pollGate();
+    return this.inFlight.track(this.pollGate());
   }
 
   private async pollOnce(): Promise<void> {
@@ -137,10 +139,12 @@ export class TrackerPoller {
     void this.poll().catch((err) => this.onError(String(err)));
   }
 
-  stop(): void {
+  /** Stop the interval, then wait out any poll already in flight. */
+  async stop(): Promise<void> {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = undefined;
     }
+    await this.inFlight.drain();
   }
 }

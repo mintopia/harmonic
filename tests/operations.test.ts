@@ -224,7 +224,7 @@ describe('Auto-Runner operations (issue #289)', () => {
       expect(pick.status).toEqual({ code: 2, message: 'launch failed' });
       await vi.waitFor(() => expect(registry.list()).toEqual([]));
     } finally {
-      autoRunner.stop();
+      await autoRunner.close();
       await db.close();
       rmSync(directory, { recursive: true, force: true });
     }
@@ -262,7 +262,7 @@ describe('Auto-Runner operations (issue #289)', () => {
       expect(exporter.getFinishedSpans().some((span) => span.name === 'harmonic.auto-runner.tick')).toBe(false);
       expect(registry.list()).toEqual([]);
     } finally {
-      autoRunner.stop();
+      await autoRunner.close();
       await db.close();
       rmSync(directory, { recursive: true, force: true });
     }
