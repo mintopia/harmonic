@@ -8,7 +8,7 @@ import type { PostMergeCheckResult } from './merge-policy.js';
 import type { PostMergeHook } from './branch-merge.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
-import { ProcGroupReaper, type ProcessReaper } from './process-reaper.js';
+import type { ProcessGroupJournal } from './process-groups.js';
 import { logger } from '../logger.js';
 import type { TaskArchive } from '../archive/task-archive.js';
 
@@ -36,15 +36,12 @@ export class CrashRecoveryCoordinator {
        * poll owns retrying its verification; this hook restores its live read model. */
       onEpicAttemptInterrupted?: (attempt: EpicAttemptRow) => Promise<void> | void;
       yieldOptions?: YieldOptions;
-      reaper?: ProcessReaper;
+      /** Absent ⇒ no orphan process groups are reaped. */
+      processGroups?: Pick<ProcessGroupJournal, 'reapOrphans'>;
       archive?: TaskArchive;
       sessionTranscriptPath?: (sessionRowId: number) => Promise<string | null>;
     },
-  ) {
-    this.reaper = deps.reaper ?? new ProcGroupReaper();
-  }
-
-  private readonly reaper: ProcessReaper;
+  ) {}
 
   async reconcile(): Promise<void> {
     const operation = startOperation({ type: 'startup.crash-reconcile', attributes: {} });
@@ -60,7 +57,7 @@ export class CrashRecoveryCoordinator {
   private async reconcileInterrupted(): Promise<void> {
     await this.reconcileMergeOrphans();
     await this.reconcileMergedButUnsettled();
-    await this.reapOrphanProcesses();
+    await this.deps.processGroups?.reapOrphans(this.deps.yieldOptions);
     const interrupted = await this.attempts.markInterrupted();
     await forEachYielding(
       interrupted.filter(isEpicAttempt),
@@ -86,14 +83,6 @@ export class CrashRecoveryCoordinator {
       },
       this.deps.yieldOptions,
     );
-  }
-
-  private async reapOrphanProcesses(): Promise<void> {
-    for (const attempt of await this.attempts.listAllRunning()) {
-      if (attempt.pid === null || attempt.pgid === null || attempt.procStartToken === null) continue;
-      const outcome = await this.reaper.reap({ pid: attempt.pid, pgid: attempt.pgid, startToken: attempt.procStartToken });
-      logger.info('crash-recovery: reaping orphan harness group', { attemptId: attempt.id, pid: attempt.pid, pgid: attempt.pgid, outcome });
-    }
   }
 
   private async reconcileMergeOrphans(): Promise<void> {

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import Fastify from 'fastify';
 import { openAsyncDb } from '../src/db/async.js';
-import { conversationEvents, conversations, sessions } from '../src/db/schema.js';
+import { conversationEvents, conversations, processGroups, sessions } from '../src/db/schema.js';
 import { logger } from '../src/logger.js';
 import { baselineConfig, type AppConfig } from '../src/config.js';
 import { ConversationStore } from '../src/domain/conversations.js';
@@ -60,8 +60,9 @@ describe('app.close() — ordered shutdown', () => {
     const logs = captureLogs();
 
     const task = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ exit: 'hang' }) });
-    const run = await server.api('POST', `/api/tasks/${task.body.id}/run`);
-    const attemptPid = await waitFor(async () => (await server!.app.ctx.attempts.get(run.body.id)).pid ?? undefined);
+    await server.api('POST', `/api/tasks/${task.body.id}/run`);
+    const attemptPid = await waitFor(async () =>
+      (await server!.app.ctx.asyncDb.read((d) => d.select().from(processGroups).all())).find((row) => row.owner === `attempt harness for task ${task.body.id}`)?.pgid);
 
     const { body: convo } = await server.api('POST', '/api/conversations', {});
     await server.api('POST', `/api/conversations/${convo.id}/turns`, { text: JSON.stringify({ waitForSteer: true }) });

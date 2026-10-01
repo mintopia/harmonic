@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from './git.js';
-import { fireAndForget, reportFailure } from '../error-handling.js';
+import { fireAndForget } from '../error-handling.js';
 import type { GitCircuitBreaker } from './git-failure.js';
 import type { AttemptUsageSnapshot } from './usage.js';
 import { LiveUsageTailer } from './live-usage-tailer.js';
@@ -42,6 +42,7 @@ import type { SpanContext } from '@opentelemetry/api';
 import { startOperation } from '../telemetry/operations.js';
 import { InFlight } from '../reliability/in-flight.js';
 import { childExited } from './child-exit.js';
+import { killProcessGroup } from './process-groups.js';
 
 export type { LiveAttemptEvent } from './live-events.js';
 export type { EpicVerificationResolutionInput } from './verification-coordinator.js';
@@ -872,27 +873,6 @@ export class Runner {
   }
 
   private kill(active: ActiveRun): void {
-    try {
-      if (active.child.exitCode === null && !active.child.killed) {
-        const pid = active.child.pid;
-        // Detached children may have spawned grandchildren; signal the whole group, not just the leader.
-        if (pid !== undefined) {
-          try {
-            process.kill(-pid, 'SIGKILL');
-          } catch {
-            active.child.kill('SIGKILL');
-          }
-        } else {
-          active.child.kill('SIGKILL');
-        }
-      }
-    } catch (err) {
-      reportFailure(err, {
-        op: 'runner.kill',
-        level: 'warn',
-        notFoundIf: (e) => (e as NodeJS.ErrnoException | null)?.code === 'ESRCH',
-        context: { attemptId: active.attemptId },
-      });
-    }
+    killProcessGroup(active.child);
   }
 }

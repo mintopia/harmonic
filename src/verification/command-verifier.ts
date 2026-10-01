@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { killProcessGroup, spawnProcessGroup } from '../execution/process-groups.js';
 import { createWriteStream, type WriteStream } from 'node:fs';
 import { join } from 'node:path';
 import type { Attributes, SpanContext } from '@opentelemetry/api';
@@ -162,18 +162,13 @@ export function createChildProcessSpawn(): CommandSpawn {
         let aborted = false;
         let settled = false;
 
-        const child = spawn(req.command.command, req.command.args, {
+        const child = spawnProcessGroup(req.command.command, req.command.args, {
           cwd: req.cwd,
           env,
           stdio: ['ignore', 'pipe', 'pipe'],
-        });
+        }, `verify command ${req.command.command}`);
 
-        const kill = (): void => {
-          try {
-            if (child.exitCode === null && !child.killed) child.kill('SIGKILL');
-          } catch {
-          }
-        };
+        const kill = (): void => killProcessGroup(child);
 
         const timer = setTimeout(() => {
           timedOut = true;

@@ -10,6 +10,7 @@ import type { TrackerPollerManager } from '../tracker/manager.js';
 import type { UpgradeCoordinator } from '../upgrade/upgrade-coordinator.js';
 import type { StatsWorkerClient } from '../db/stats-reader.js';
 import type { AsyncDbHandle } from '../db/async.js';
+import { detachProcessGroupJournal, type ProcessGroupJournal } from '../execution/process-groups.js';
 import type { App } from './app-context.js';
 import { sweepStaleMergeWorktrees } from '../execution/ephemeral-merge-worktree.js';
 import { forEachYielding } from '../reliability/yield.js';
@@ -31,6 +32,7 @@ export function registerShutdown(app: App, deps: {
   hostLoad: Pick<HostLoadSampler, 'stop'>;
   workspaceWatcher: Pick<WorkspaceWatcher, 'stopAll'>;
   statsReader: Pick<StatsWorkerClient, 'close'>;
+  processGroups?: ProcessGroupJournal;
   asyncDb: Pick<AsyncDbHandle, 'close'>;
   drainTimeoutMs?: number;
 }): void {
@@ -55,6 +57,7 @@ export function registerShutdown(app: App, deps: {
     clearTimeout(timer);
     if (outcome === 'timed-out') logger.warn('shutdown: in-flight work still running after the drain bound; closing the database anyway', { timeoutMs });
     await deps.statsReader.close();
+    if (deps.processGroups) detachProcessGroupJournal(deps.processGroups);
     await deps.asyncDb.close();
   });
 }

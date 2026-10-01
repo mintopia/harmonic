@@ -1,4 +1,5 @@
-import { spawn as spawnProcess, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
+import { killProcessGroup, spawnProcessGroup } from './process-groups.js';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { AcpDriver } from '../acp/driver.js';
@@ -37,11 +38,11 @@ export interface HarnessSpawn {
 export function createHarnessProcessSpawn(): HarnessSpawn {
   return {
     spawn(req: HarnessSpawnRequest): ChildProcess {
-      return spawnProcess(req.command, req.args, {
+      return spawnProcessGroup(req.command, req.args, {
         cwd: req.cwd,
         env: req.env,
         stdio: ['pipe', 'pipe', 'pipe'],
-      });
+      }, 'conversation harness');
     },
   };
 }
@@ -752,15 +753,6 @@ export class ConversationDriver {
   }
 
   private kill(entry: ActiveConversation): void {
-    try {
-      if (entry.child.exitCode === null && !entry.child.killed) entry.child.kill('SIGKILL');
-    } catch (err) {
-      reportFailure(err, {
-        op: 'conversationDriver.kill',
-        level: 'warn',
-        notFoundIf: (e) => (e as NodeJS.ErrnoException | null)?.code === 'ESRCH',
-        context: { conversationId: entry.conversationId },
-      });
-    }
+    killProcessGroup(entry.child);
   }
 }

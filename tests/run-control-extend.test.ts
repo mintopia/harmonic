@@ -37,9 +37,6 @@ function runningAttempt(over: Partial<TaskAttemptRow> = {}): TaskAttemptRow {
     guardrailConfig: guardrailConfig(60),
     priceTable: null,
     detail: null,
-    pid: null,
-    pgid: null,
-    procStartToken: null,
     ...over,
   };
 }

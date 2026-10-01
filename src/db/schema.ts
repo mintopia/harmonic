@@ -78,6 +78,17 @@ export const scheduledJobs = sqliteTable('scheduled_jobs', {
 
 export type ScheduledJobRow = typeof scheduledJobs.$inferSelect;
 
+/** Detached process groups (harnesses, Critics, verify commands) this instance spawned; boot reaps any a crash left behind. */
+export const processGroups = sqliteTable('process_groups', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  /** The group leader's pid; spawned detached, so pid === pgid. */
+  pgid: integer('pgid').notNull(),
+  /** The leader's start-time token, pinning its identity against pid reuse. */
+  startToken: text('start_token').notNull(),
+  owner: text('owner').notNull(),
+  startedAt: integer('started_at').notNull(),
+});
+
 export const tasks = sqliteTable('tasks', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   prompt: text('prompt').notNull(),
@@ -222,11 +233,6 @@ export const attempts = sqliteTable('attempts', {
   priceTable: text('price_table'),
   /** Free-text detail behind {@link reason}; null while running or when the kind needs none. */
   detail: text('detail'),
-  /** OS pid of the harness child; null until spawned. Session/group leader (spawned detached), so pgid === pid. */
-  pid: integer('pid'),
-  pgid: integer('pgid'),
-  /** /proc/<pid>/stat field 22 (starttime); pins pid identity against reuse for crash-recovery reap. */
-  procStartToken: text('proc_start_token'),
 }, (t) => [
   uniqueIndex('attempts_task_number_unique').on(t.taskId, t.number),
   uniqueIndex('attempts_epic_number_unique').on(t.workspaceId, t.epicRef, t.number),
