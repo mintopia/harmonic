@@ -185,7 +185,7 @@ export async function openAsyncDb(
     );
   }
   touchStartupProgress(dataDir);
-  // `@libsql/client` on a local `file:` URL uses a single connection, so these connection-level pragmas apply to every drizzle query.
+  // An open transaction takes over the client's connection and libsql lazily opens a fresh one, which defaults to `foreign_keys = ON`; no other per-connection pragma is relied on.
   const client = createClient({ url: `file:${dbPath}` });
   await client.execute('PRAGMA journal_mode = WAL');
   await client.execute('PRAGMA foreign_keys = OFF');

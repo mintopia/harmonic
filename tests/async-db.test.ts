@@ -458,4 +458,40 @@ describe('openAsyncDb guards against an incomplete live database', () => {
       await handle.close();
     }
   });
+  describe('foreign keys on every connection', () => {
+    const orphanInsert = sql`INSERT INTO attempt_events (attempt_id, seq, ts, type, payload) VALUES (999999, 1, 0, 'x', '{}')`;
+    const isForeignKeyFailure = (err: unknown): boolean => /FOREIGN KEY/.test(String((err as { cause?: unknown }).cause));
+    let handle: AsyncDbHandle;
+    beforeEach(async () => {
+      handle = await openAsyncDb(dir);
+    });
+    afterEach(async () => {
+      await handle.close();
+    });
+
+    it('enforces foreign keys on the connection serving queries while a transaction is open', async () => {
+      const held = latch();
+      const entered = latch();
+      const tx = handle.transaction(async (t) => {
+        await t.run(sql`SELECT 1`);
+        entered.release();
+        await held.promise;
+      });
+      await entered.promise;
+      try {
+        const rows = await handle.read((db) => db.all<{ foreign_keys: number }>(sql`PRAGMA foreign_keys`));
+        expect(rows).toEqual([{ foreign_keys: 1 }]);
+      } finally {
+        held.release();
+        await tx;
+      }
+    });
+
+    it('rejects an FK violation after a transaction has completed', async () => {
+      await handle.transaction(async (t) => {
+        await t.run(sql`SELECT 1`);
+      });
+      await expect(handle.write((db) => db.run(orphanInsert))).rejects.toSatisfy(isForeignKeyFailure);
+    });
+  });
 });
