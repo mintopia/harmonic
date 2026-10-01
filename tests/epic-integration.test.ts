@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -22,6 +23,7 @@ import {
   type EpicRefreshTrigger,
 } from '../src/execution/epic-coordinator.js';
 import { Git } from '../src/execution/git.js';
+import { withRepoLock } from '../src/execution/repo-lock.js';
 import type { MemberMergeState } from '../src/domain/epic-integrate-decision.js';
 import type { EpicRefreshOutcome } from '../src/execution/epic-coordinator.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -541,7 +543,8 @@ describe('EpicLifecycle integration-branch cut visibility (git-visibility)', () 
     rawGit(repo, 'branch', 'epic');
     const epicMergeEvents = new EpicMergeEventStore(asyncDb);
     const workspace = (await allWorkspaces(asyncDb, settingsStore)()).find((w) => w.id === wsId)!;
-    const service = new TrackerEpicService(tasks, async () => [workspace], { epicMergeEvents });
+    const errors: string[] = [];
+    const service = new TrackerEpicService(tasks, async () => [workspace], { epicMergeEvents, onError: (message) => errors.push(message) });
     const epics = service.startWorkspace(workspace);
     const tickets = epicTickets();
     const mirrored = await mscan(tickets);
@@ -552,6 +555,8 @@ describe('EpicLifecycle integration-branch cut visibility (git-visibility)', () 
 
     const rows = await epicMergeEvents.list(wsId, 10);
     expect(rows.map((row) => row.step.step)).toEqual(['branch-create-failed']);
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors.every((message) => message.includes("cannot lock ref 'refs/heads/epic/10': 'refs/heads/epic' exists"))).toBe(true);
   });
 });
 
@@ -769,6 +774,35 @@ describe('EpicLifecycle.retireIntegrationBranch (issue #159)', () => {
     expect(git('status', '--porcelain')).toBe(baseStatus);
     expect(git('branch', '--list', 'epic/10')).toBe('');
     expect(git('worktree', 'list', '--porcelain')).not.toContain('harmonic-merge-');
+  });
+
+  it('deletes the branch under the base repo lock, not a lock keyed on the ephemeral worktree path', async () => {
+    const repo = join(dir, 'repo');
+    const git = (...args: string[]) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim();
+    execFileSync('git', ['init', '-b', 'develop', repo], { encoding: 'utf8' });
+    git('config', 'user.name', 'Test');
+    git('config', 'user.email', 'test@example.com');
+    git('commit', '--allow-empty', '-m', 'init');
+    git('branch', 'epic/10');
+    const unlocked = AsyncLocalStorage.snapshot();
+    const order: string[] = [];
+    let competitor: Promise<void> = Promise.resolve();
+    const realDelete = Git.deleteBranch;
+    const deleteBranch = vi.spyOn(Git, 'deleteBranch').mockImplementation(async (worktreeDir, branch) => {
+      competitor = unlocked(() => withRepoLock(repo, async () => { order.push('competing repo-lock holder'); }));
+      const deleted = await realDelete(worktreeDir, branch);
+      order.push('delete');
+      return deleted;
+    });
+    try {
+      await new EpicLifecycle(tasks, repo).retireIntegrationBranch(10);
+      await competitor;
+    } finally {
+      deleteBranch.mockRestore();
+    }
+
+    expect(order).toEqual(['delete', 'competing repo-lock holder']);
+    expect(git('branch', '--list', 'epic/10')).toBe('');
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -74,8 +74,25 @@ function conflictingSiblingVerifier(repo: string, flag: string) {
   });
 }
 
+function lockWorktreeAdminVerifier(repo: string) {
+  return verificationCommandSchema.parse({
+    id: 'cmd-lock-worktree-admin',
+    command: process.execPath,
+    args: ['-e', `require('fs').chmodSync(${JSON.stringify(join(repo, '.git', 'worktrees'))}, 0o555)`],
+    timeoutSeconds: 30,
+  });
+}
+
 afterAll(() => {
-  for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
+  for (const d of tmpDirs) {
+    const worktrees = join(d, '.git', 'worktrees');
+    try {
+      chmodSync(worktrees, 0o755);
+    } catch {
+      // Only repos the lock-admin verifier touched have a read-only worktrees dir.
+    }
+    rmSync(d, { recursive: true, force: true });
+  }
 });
 
 describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
@@ -267,6 +284,34 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     const escalation = events.find((e) => e.event === 'escalated');
     expect(escalation?.reason).toMatch(/hit conflicts and automated resolution is disabled \(0 resolve turns\)/);
     expect(escalation?.reason).not.toMatch(/<<<<<<<|CONFLICT/);
+  });
+  it('escalates with a visible reason when the merge throws a non-conflict git failure, rather than retrying the agent', async () => {
+    const repo = makeRepo();
+    await server.app.ctx.workspaces.update(wsId, {
+      workingDir: repo,
+      taskPreMergeCommands: local(lockWorktreeAdminVerifier(repo)),
+    });
+    await server.app.ctx.settingsStore.updateGlobal({
+      merge: { postMergeCheck: false },
+      drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
+    });
+
+    try {
+      const { taskId, attemptId, trackerRef } = await launchAfk();
+      const baseTip = git(repo, 'rev-parse', 'main');
+      const task = await waitEscalated(taskId);
+
+      expect(task.escalationReason).toMatch(/Merging harmonic\/\S+ into main failed: git worktree add/);
+      expect(task.mergeStatus).toBeNull();
+      expect(await timelineFor(taskId)).toHaveLength(1);
+      const events = await lifecycle(attemptId);
+      expect(events).toContainEqual(expect.objectContaining({ event: 'escalated', reason: expect.stringMatching(/^Merging harmonic\/\S+ into main failed: git worktree add/) }));
+      expect(git(repo, 'rev-parse', 'main')).toBe(baseTip);
+      expect(() => git(repo, 'show', `main:impl-${trackerRef}.txt`)).toThrow();
+    } finally {
+      chmodSync(join(repo, '.git', 'worktrees'), 0o755);
+      await server.app.ctx.workspaces.update(wsId, { taskPreMergeCommands: null });
+    }
   });
 });
 

@@ -22,6 +22,9 @@ const DU_TIMEOUT_MS = 30_000;
 // Background reads (`status` in every worktree) must never take index.lock: it fails a concurrent `git merge` in that worktree.
 const NO_OPTIONAL_LOCKS = { GIT_OPTIONAL_LOCKS: '0' };
 
+// Agents commit (and auto-gc pack refs) in sibling worktrees outside our locks; git's 100ms default fails a ref write on any overlap.
+const WAIT_FOR_REF_LOCK = ['-c', 'core.filesRefLockTimeout=3000'];
+
 async function git(cwd: string, ...args: string[]): Promise<string> {
   return gitEnv(cwd, {}, ...args);
 }
@@ -332,12 +335,12 @@ export const Git = {
    */
   createBranch: (dir: string, name: string, startPoint: string) =>
     withGitOperation('git.branch-cut', { 'git.branch': name, 'git.ref': startPoint }, () =>
-      withRepoLock(dir, () => git(dir, 'branch', name, startPoint)),
+      withRepoLock(dir, () => git(dir, ...WAIT_FOR_REF_LOCK, 'branch', name, startPoint)),
     ),
 
   /** Delete local branch `name` (`-D`, force). Under the base-repo lock. */
   deleteBranch: (dir: string, name: string) =>
-    withRepoLock(dir, () => git(dir, 'branch', '-D', name)),
+    withRepoLock(dir, () => git(dir, ...WAIT_FOR_REF_LOCK, 'branch', '-D', name)),
 
   /**
    * Add a worktree on new branch `newBranch`, under the base-repo lock (scoped
@@ -583,18 +586,17 @@ export const Git = {
    * committed, `base...branch` in the canonical checkout shows nothing; this
    * shows what the agent has actually done so far. `--numstat` gives exact line
    * counts (the `--stat` graph is a width-capped histogram, not a count).
-   * `--no-optional-locks` so a read never contends with the agent's index writes;
-   * read-only — never touches the worktree's index or HEAD. Untracked (never-added)
+   * Read-only — never touches the worktree's index or HEAD. Untracked (never-added)
    * files are not included, exactly as `git diff <commit>` omits them.
    */
   worktreeDiffStat: (worktreeDir: string, baseOid: string) =>
-    git(worktreeDir, '--no-optional-locks', 'diff', '--numstat', baseOid),
+    git(worktreeDir, 'diff', '--numstat', baseOid),
 
   /** Full unified diff of a live worktree's current state (committed + uncommitted
    * tracked changes) against `baseOid`. The hunk-level companion to
    * {@link worktreeDiffStat}; same read-only, lock-free contract. */
   worktreeDiffUnified: (worktreeDir: string, baseOid: string) =>
-    git(worktreeDir, '--no-optional-locks', 'diff', baseOid),
+    git(worktreeDir, 'diff', baseOid),
 
   /**
    * Whether `branch` is already merged into `baseBranch` — i.e. `git
@@ -672,7 +674,7 @@ export const Git = {
    */
   async casUpdateRef(dir: string, branch: string, newOid: string, expectedOld: string): Promise<{ ok: boolean; detail?: string }> {
     try {
-      await git(dir, 'update-ref', `refs/heads/${branch}`, newOid, expectedOld);
+      await git(dir, ...WAIT_FOR_REF_LOCK, 'update-ref', `refs/heads/${branch}`, newOid, expectedOld);
       return { ok: true };
     } catch (err) {
       return { ok: false, detail: err instanceof GitError ? err.message : String(err) };
