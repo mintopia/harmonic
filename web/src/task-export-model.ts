@@ -1,3 +1,4 @@
+import { taskLabel } from './id-format.js';
 import type { ExportDestinationKind, ExportDestinationStatus, ExportSummary, TaskExportAgainResult, TaskExportStatus } from './types.js';
 
 export const DESTINATION_LABEL: Record<ExportDestinationKind, string> = { directory: 'Directory', s3: 'S3' };
@@ -212,4 +213,16 @@ export function exportFactRows(payload: Record<string, unknown>, builtAlreadySho
     rows.push({ label: `Export delivered · ${destination}`, detail: str(payload.file), tone: 'passed', tag: 'EXPORT' });
   }
   return rows;
+}
+
+function exportRetryText(retry: number, nextRetryAt: string | null): string {
+  if (nextRetryAt === null) return retry === 0 ? 'not retried' : 'retries exhausted';
+  const minutes = Math.max(1, Math.round((Date.parse(nextRetryAt) - Date.now()) / 60_000));
+  return minutes >= 120 ? `retrying in ${Math.round(minutes / 60)} h` : `retrying in ${minutes} min`;
+}
+
+/** Toast text for a pushed `export_failed`: names the Task or Epic that was being exported. */
+export function exportFailedMessage(msg: { taskId: number | null; epicRef: number | null; destination: string; retry: number; nextRetryAt: string | null }): string {
+  const subject = msg.taskId !== null ? taskLabel(msg.taskId) : `Epic #${msg.epicRef}`;
+  return `Export of ${subject} to ${msg.destination} failed — ${exportRetryText(msg.retry, msg.nextRetryAt)}`;
 }
