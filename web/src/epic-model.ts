@@ -9,7 +9,13 @@ export type EpicBranchStep =
   | { step: 'branch-created'; branch: string; fromBranch: string; oid: string }
   | { step: 'branch-create-failed'; branch: string; fromBranch: string; error: string };
 
-export type EpicTimelineStep = MergeStepEvent | EpicBranchStep;
+/** Mirrors `EpicExportStep` in `src/domain/epic-merge-events.ts`; one Export build or per-Destination delivery outcome. */
+export type EpicExportStep =
+  | { step: 'export-built'; disposition: string; name: string; bytes: number; partial: boolean }
+  | { step: 'export-delivered'; destination: 'directory' | 's3'; file: string; retry: number }
+  | { step: 'export-failed'; destination: 'directory' | 's3'; error: string; retry: number; nextRetryAt: string | null };
+
+export type EpicTimelineStep = MergeStepEvent | EpicBranchStep | EpicExportStep;
 
 /** Mirrors `reduceMemberState` server-side. */
 export type MemberMergeStatus = 'completed' | 'blocked' | 'pending';

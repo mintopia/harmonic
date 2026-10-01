@@ -21,6 +21,7 @@ import { sumCosts, type Cost } from '../domain/pricing.js';
 import type { AttemptUsage, AttemptUsageSnapshot, ProcessTree } from '../execution/usage.js';
 import type { OperationEvent, OperationSnapshot } from '../telemetry/operations.js';
 import { z } from 'zod';
+import { splitFullOutputPath } from '../verification/command-verifier.js';
 import type { AdvertisedCommand } from '../execution/conversation-driver.js';
 import type { ResolvedGuardrails } from '../domain/setting-override.js';
 import { wallClockBudgetMs } from '../domain/guardrail-budget.js';
@@ -278,11 +279,14 @@ export type ApiEpicAttempt = {
 
 export type ApiVerificationAttempt = Omit<VerificationAttemptRow, 'transcriptPath' | 'usage'> & {
   hasTranscript: boolean;
+  /** The command output was capped; the full text is at `GET /api/verification-attempts/:id/output`. */
+  outputTruncated: boolean;
 };
 
 export function verificationAttemptToApi(row: VerificationAttemptRow): ApiVerificationAttempt {
   const { transcriptPath: _transcriptPath, usage: _usage, ...attempt } = row;
-  return { ...attempt, hasTranscript: row.transcriptPath !== null };
+  const { output, fullOutputPath } = splitFullOutputPath(row.output);
+  return { ...attempt, output, outputTruncated: fullOutputPath !== null, hasTranscript: row.transcriptPath !== null };
 }
 
 function apiAttemptState(state: AttemptState): ApiAttemptSummary['state'] {

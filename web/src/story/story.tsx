@@ -304,7 +304,7 @@ const exportStory: TaskExportStatus = {
 function ExportStory() {
   return (
     <StoryFrame style={{ padding: 30, maxWidth: 820, margin: '0 auto' }}>
-      <ExportPanel taskId={185} state="done" refreshKey={0} deps={{ load: async () => exportStory, exportAgain: async () => ({ outcomes: [], export: exportStory }) }} />
+      <ExportPanel target={{ key: 'task:185', noun: 'Task', load: async () => exportStory, exportAgain: async () => ({ outcomes: [], export: exportStory }), downloadUrl: '/api/tasks/185/export/download' }} state="done" refreshKey={0} />
     </StoryFrame>
   );
 }

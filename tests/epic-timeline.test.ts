@@ -92,4 +92,23 @@ describe('EpicTimeline', () => {
       ['Integration branch epic/701 could not be created', 'ref exists', 'failed', 'INTEGRATION'],
     ]);
   });
+
+  it('renders Export built, delivered and failed rows tagged EXPORT', () => {
+    const rows = epicTimelineRows({
+      ...epic(),
+      timelineEvents: [
+        { seq: 1, at: 1_500, step: { step: 'export-built', disposition: 'done', name: 'epic-701-done.tar.gz', bytes: 2048, partial: true } },
+        { seq: 2, at: 1_600, step: { step: 'export-delivered', destination: 'directory', file: '/out/epic-701-done.tar.gz', retry: 0 } },
+        { seq: 3, at: 1_700, step: { step: 'export-delivered', destination: 's3', file: 's3://b/epic.tar.gz', retry: 2 } },
+        { seq: 4, at: 1_800, step: { step: 'export-failed', destination: 's3', error: 'AccessDenied', retry: 3, nextRetryAt: null } },
+      ],
+    });
+
+    expect(rows.slice(1).map((row) => [row.label, row.detail, row.tone, row.tag])).toEqual([
+      ['Export built', 'epic-701-done.tar.gz · 2.0 KB · partial', 'neutral', 'EXPORT'],
+      ['Export delivered · Directory', '/out/epic-701-done.tar.gz', 'passed', 'EXPORT'],
+      ['Export delivered · S3', 's3://b/epic.tar.gz', 'passed', 'EXPORT'],
+      ['Export failed · S3', 'AccessDenied. Retry 3 of 3. Retries exhausted.', 'failed', 'EXPORT'],
+    ]);
+  });
 });

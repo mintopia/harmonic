@@ -86,6 +86,18 @@ describe('notification recording', () => {
       ]);
     });
 
+    it('records an Epic export failure with no Task', async () => {
+      const recorded: NotificationInput[] = [];
+      const notifier = new Notifier(channels, () => {}, async (input) => {
+        recorded.push(input);
+      });
+      await notifier.notify('export.failed', undefined, {
+        workspaceId: 3,
+        export: { epicRef: 42, destination: 's3', disposition: 'done', error: 'AccessDenied', retry: 0, nextRetryAt: null },
+      });
+      expect(recorded).toEqual([{ workspaceId: 3, taskId: null, severity: 'export', title: 'Export failed for Epic #42 — AccessDenied', detail: 's3' }]);
+    });
+
     it('omits the reason suffix when an escalation has none', async () => {
       const recorded: NotificationInput[] = [];
       const notifier = new Notifier(channels, () => {}, async (input) => {

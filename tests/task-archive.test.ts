@@ -366,6 +366,21 @@ describe('TaskArchive', () => {
       expect(readdirSync(archiveDir).filter((n) => n.endsWith('.tmp'))).toEqual([]);
     });
 
+    it('keeps both the deletion mark and every Export record when they race', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const archive = archiveFor();
+      const archiveDir = await archive.ensure(task);
+      const entry = (n: number) => ({ destination: 'directory' as const, disposition: 'deleted', file: null, status: 'failed' as const, at: `t${n}` });
+      await Promise.all([
+        ...Array.from({ length: 10 }, (_, n) => archive.recordExport(task, entry(n))),
+        archive.recordDeletion(task, 'operator'),
+        ...Array.from({ length: 10 }, (_, n) => archive.recordExport(task, entry(n + 10))),
+      ]);
+      const body = JSON.parse(readFileSync(join(archiveDir, 'archive.json'), 'utf8'));
+      expect(body.deleted).toMatchObject({ actor: 'operator' });
+      expect(body.exports).toHaveLength(20);
+    });
+
     it('does not create an Archive just to mark it deleted', async () => {
       const task = await tasks.create({ prompt: 'p' });
       await archiveFor().recordDeletion(task, 'agent');

@@ -35,12 +35,12 @@ Archive forever. To cap that, see [Retention](#retention).
 Agent harnesses clean up their own logs (Claude, for example, deletes them
 after about 30 days). When a task's log has been removed, Harmonic shows its
 Archive copy instead, and the transcript is marked **from Archive** with the
-note *Harness log no longer on disk*. Critic logs fall back the same way, but
-without the label.
+note *Harness log no longer on disk*. Critic logs fall back and are marked
+the same way.
 
 Verify output in the UI is a preview, capped at 200,000 characters. When it
-is cut, the end of the preview says so and gives the path of the full output
-file in the Archive.
+is cut, a **View full output** button below it opens the complete output from
+the Archive.
 
 ## The Export panel
 
@@ -135,8 +135,12 @@ Redaction only applies to Exports. The Archive on disk stays raw.
 When an Epic merges, Harmonic writes an Epic Export too, named
 `epic-<ref>-done-<timestamp>.tar.gz`. It holds the Epic's own verification
 and Critic runs and its Timeline, and lists its Members rather than copying
-their Exports. Epic Exports go to the Directory Destination only, and the
-Epic page has no Export panel.
+their Exports.
+
+Epic Exports go to the same Destinations as task Exports, with the same
+retries and failure notifications. Once an Epic has merged, its page shows the
+same Export panel as a ticket, with **Export again** and **Download**. Each
+build, delivery and failure appears on the Epic's Timeline, tagged **EXPORT**.
 
 ## Turn Export on
 
@@ -166,7 +170,9 @@ It never deletes the Archive of:
 
 - a task that is still in progress;
 - a task that finished less than an hour ago;
-- a task whose Export has failed and hasn't been delivered yet.
+- a task whose Export has failed or is waiting on a retry.
+
+Epic Archives follow the same rules, counting from when the Epic merged.
 
 A Workspace can set its own limits. Its Archives are then counted and pruned
 on their own, separately from the rest.

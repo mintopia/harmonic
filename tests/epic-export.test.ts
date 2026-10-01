@@ -10,7 +10,8 @@ import { tasks as tasksTable, type TaskRow } from '../src/db/schema.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { resolveExportSettings } from '../src/archive/export-settings.js';
 import { TaskArchive } from '../src/archive/task-archive.js';
-import { TaskExporter, type EpicExportSnapshot, type TaskExporterDeps } from '../src/archive/task-export.js';
+import type { EpicExportStep } from '../src/domain/epic-merge-events.js';
+import { TaskExporter, type EpicExportSnapshot, type ExportFailure, type TaskExporterDeps } from '../src/archive/task-export.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import { emptyGitProvenance } from '../src/archive/git-provenance.js';
 
@@ -59,6 +60,7 @@ describe('Epic Export (#739)', () => {
       epicSnapshot: async () => snapshot(),
       workspaceName: async () => 'My Workspace',
       snapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, git: emptyGitProvenance() }),
+      recordEpicStep: async () => undefined,
       recordFact: async () => undefined,
       ...overrides,
     });
@@ -107,7 +109,7 @@ describe('Epic Export (#739)', () => {
     await archive.recordExport(members[0]!, { destination: 'directory', disposition: 'done', file: '/x/y/11-done-A.tar.gz', status: 'succeeded', at: 't' });
     const outcome = await exporter().runEpic(workspaceId, EPIC, 'done');
 
-    expect(outcome?.status).toBe('succeeded');
+    expect(outcome?.map((o) => o.status)).toEqual(['succeeded']);
     const names = tarballs();
     expect(names).toHaveLength(1);
     expect(names[0]).toMatch(new RegExp(`^epic-${EPIC}-done-\\d{8}T\\d{6}\\.\\d{3}Z\\.tar\\.gz$`));
@@ -149,7 +151,7 @@ describe('Epic Export (#739)', () => {
 
   it('skips a repeated done Export for an Epic that already has a succeeded one', async () => {
     const ex = exporter();
-    expect((await ex.runEpic(workspaceId, EPIC, 'done'))?.status).toBe('succeeded');
+    expect((await ex.runEpic(workspaceId, EPIC, 'done'))?.[0]?.status).toBe('succeeded');
     expect(await ex.runEpic(workspaceId, EPIC, 'done')).toBeNull();
     ex.triggerEpic(workspaceId, EPIC, 'done');
     await new Promise((r) => setTimeout(r, 100));
@@ -179,7 +181,7 @@ describe('Epic Export (#739)', () => {
   it('records a failed Export and does not throw when the snapshot fails', async () => {
     const failing = exporter({ epicSnapshot: async () => { throw new Error('snapshot boom'); } });
     const outcome = await failing.runEpic(workspaceId, EPIC, 'done');
-    expect(outcome).toMatchObject({ status: 'failed', error: 'snapshot boom' });
+    expect(outcome).toMatchObject([{ status: 'failed', error: 'snapshot boom' }]);
     const history = JSON.parse(readFileSync(join(dir, 'archive', 'my-workspace', `epic-${EPIC}`, 'archive.json'), 'utf8')).exports;
     expect(history.at(-1)).toMatchObject({ status: 'failed' });
   });
@@ -219,5 +221,66 @@ describe('Epic Export (#739)', () => {
     const fresh = await tasks.create({ prompt: 'no archive', state: 'ready', workingDir: dir, isolationMode: 'direct' });
     expect(await archive.exportHistory(fresh)).toEqual([]);
     expect(readdirSync(join(dir, 'archive', 'my-workspace')).some((n) => n.startsWith(`${fresh.id}-`))).toBe(false);
+  });
+
+  describe('failure handling and retries', () => {
+    const MIN = 60_000;
+    let clock: number;
+    let failures: ExportFailure[];
+    let blocked: string;
+    const staging = (): string[] => readdirSync(join(dir, 'archive', '.staging'));
+    const history = (): Array<Record<string, unknown>> => JSON.parse(readFileSync(join(dir, 'archive', 'my-workspace', `epic-${EPIC}`, 'archive.json'), 'utf8')).exports;
+
+    beforeEach(() => {
+      clock = Date.parse('2026-01-01T00:00:00.000Z');
+      failures = [];
+      steps = [];
+      blocked = join(dest, 'my-workspace');
+      writeFileSync(blocked, 'not a directory');
+    });
+
+    let steps: EpicExportStep[];
+    const sut = (): TaskExporter => exporter({ now: () => new Date(clock), onFailure: (f) => void failures.push(f), recordEpicStep: async (_w, _e, step) => void steps.push(step) });
+
+    it('records the failure, reports it for the Epic and retries to success once the Destination heals', async () => {
+      const ex = sut();
+      const outcomes = await ex.runEpic(workspaceId, EPIC, 'done');
+      expect(outcomes?.map((o) => o.status)).toEqual(['failed']);
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toMatchObject({ owner: { kind: 'epic', workspaceId, epicRef: EPIC }, destination: 'directory', retry: 0, nextRetryAt: new Date(clock + 5 * MIN).toISOString() });
+      expect(staging().filter((n) => n.endsWith('.pending.json'))).toHaveLength(1);
+      expect([...(await ex.pendingOwnerKeys())]).toEqual([`epic:${workspaceId}:${EPIC}`]);
+      expect((await ex.epicStatus(workspaceId, EPIC)).latest?.destinations[0]).toMatchObject({ status: 'failed', retry: { count: 0, nextRetryAt: new Date(clock + 5 * MIN).toISOString(), exhausted: false } });
+
+      rmSync(blocked, { force: true });
+      mkdirSync(blocked);
+      clock += 6 * MIN;
+      await ex.retryDue();
+
+      expect(tarballs()).toHaveLength(1);
+      expect(staging().filter((n) => n.endsWith('.pending.json') || n.endsWith('.tar.gz'))).toEqual([]);
+      expect(history().map((h) => [h.status, h.retry])).toEqual([['failed', undefined], ['succeeded', 1]]);
+      expect((await ex.pendingOwnerKeys()).size).toBe(0);
+      expect(steps).toEqual([
+        { step: 'export-built', disposition: 'done', name: expect.stringMatching(/^epic-77-done-/), bytes: expect.any(Number), partial: false },
+        { step: 'export-failed', destination: 'directory', error: expect.stringContaining('EEXIST'), retry: 0, nextRetryAt: new Date(Date.parse('2026-01-01T00:00:00.000Z') + 5 * MIN).toISOString() },
+        { step: 'export-delivered', destination: 'directory', file: expect.stringContaining('epic-77-done-'), retry: 1 },
+      ]);
+    });
+
+    it('exports again regardless of an earlier succeeded Export and downloads without recording', async () => {
+      rmSync(blocked, { force: true });
+      const ex = sut();
+      expect((await ex.runEpic(workspaceId, EPIC, 'done'))?.[0]?.status).toBe('succeeded');
+      clock += MIN;
+      expect((await ex.exportEpicAgain(workspaceId, EPIC))?.[0]?.status).toBe('succeeded');
+      expect(tarballs()).toHaveLength(2);
+      const download = await ex.buildEpicDownload(workspaceId, EPIC);
+      expect(download.name).toMatch(new RegExp(`^epic-${EPIC}-done-`));
+      expect(existsSync(download.path)).toBe(true);
+      rmSync(download.path, { force: true });
+      expect(history()).toHaveLength(2);
+      expect((await ex.epicStatus(workspaceId, EPIC)).earlier).toHaveLength(1);
+    });
   });
 });

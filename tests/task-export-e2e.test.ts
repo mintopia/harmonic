@@ -78,6 +78,8 @@ describe('Export on done (#734)', () => {
       expect(manifest.members).toHaveLength(1);
       expect(manifest.members[0]).toMatchObject({ ref: 31, taskId: memberId, status: 'done' });
       expect(manifest.members[0].export).toMatch(new RegExp(`^${memberId}-done-`));
+      const stamped = JSON.parse(readFileSync(join(okServer.dataDir, 'archive', readdirSync(join(okServer.dataDir, 'archive')).find((n) => !n.startsWith('.'))!, 'epic-30', 'archive.json'), 'utf8'));
+      expect(stamped.dispositions).toEqual([{ disposition: 'done', at: expect.stringMatching(/^\d{4}-/) }]);
     } finally {
       rmSync(out, { recursive: true, force: true });
     }

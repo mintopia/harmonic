@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ExportPanel } from '../web/src/components/ticket/ExportPanel.js';
-import type { TaskExportDeps } from '../web/src/components/useTaskExport.js';
+import { epicExportTarget, taskExportTarget, type ExportTarget } from '../web/src/components/useTaskExport.js';
 import type { ExportSummary, TaskExportStatus } from '../web/src/types.js';
 import { cleanup, flush, mountComponent } from './component-smoke-harness.js';
 
@@ -32,12 +32,17 @@ const latest: ExportSummary = {
 
 const status = (over: Partial<TaskExportStatus> = {}): TaskExportStatus => ({ exportable: true, latest, earlier: [], ...over });
 
-function deps(over: Partial<TaskExportDeps> = {}): TaskExportDeps {
-  return { load: async () => status(), exportAgain: async () => ({ outcomes: [], export: status() }), ...over };
+function deps(over: Partial<ExportTarget> = {}): ExportTarget {
+  return {
+    ...taskExportTarget(7),
+    load: async () => status(),
+    exportAgain: async () => ({ outcomes: [], export: status() }),
+    ...over,
+  };
 }
 
-async function mount(d: TaskExportDeps, state = 'done') {
-  return mountComponent(createElement(ExportPanel, { taskId: 7, state, refreshKey: 0, deps: d }));
+async function mount(target: ExportTarget, state = 'done') {
+  return mountComponent(createElement(ExportPanel, { target, state, refreshKey: 0 }));
 }
 
 describe('ExportPanel', () => {
@@ -68,8 +73,8 @@ describe('ExportPanel', () => {
   });
 
   it('runs Export again: disables the button while busy, then shows success and the refreshed status', async () => {
-    let resolve!: (v: Awaited<ReturnType<TaskExportDeps['exportAgain']>>) => void;
-    const exportAgain = vi.fn(() => new Promise<Awaited<ReturnType<TaskExportDeps['exportAgain']>>>((r) => (resolve = r)));
+    let resolve!: (v: Awaited<ReturnType<ExportTarget['exportAgain']>>) => void;
+    const exportAgain = vi.fn(() => new Promise<Awaited<ReturnType<ExportTarget['exportAgain']>>>((r) => (resolve = r)));
     const host = await mount(deps({ exportAgain }));
     const button = [...host.querySelectorAll('button')].find((b) => b.textContent?.includes('Export again'))!;
 
@@ -99,6 +104,33 @@ describe('ExportPanel', () => {
 
     expect(host.querySelector('[role=alert]')?.textContent).toContain('No Export Destination is enabled');
     expect(button.disabled).toBe(false);
+  });
+});
+
+describe('ExportPanel for an Epic', () => {
+  it('reads the Epic endpoints, names the Epic, and downloads from the Epic route', async () => {
+    const epic = epicExportTarget(3, 42);
+    const host = await mount({ ...epic, load: async () => status({ latest: { ...latest, partial: true } }) });
+
+    expect(host.querySelector('a[download]')?.getAttribute('href')).toBe('/api/workspaces/3/epics/42/export/download');
+    expect(host.textContent).toContain('This Epic predates the Archive');
+  });
+
+  it('points the Epic target at the Epic API routes', async () => {
+    const calls: string[] = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? 'GET'} ${url}`);
+      return new Response(JSON.stringify({ exportable: true, latest: null, earlier: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+    try {
+      const epic = epicExportTarget(3, 42);
+      await epic.load();
+      await epic.exportAgain();
+    } finally {
+      globalThis.fetch = real;
+    }
+    expect(calls).toEqual(['GET /api/workspaces/3/epics/42/export', 'POST /api/workspaces/3/epics/42/export']);
   });
 });
 

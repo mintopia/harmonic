@@ -9,7 +9,17 @@ export type EpicBranchStep =
   | { step: 'branch-created'; branch: string; fromBranch: string; oid: string }
   | { step: 'branch-create-failed'; branch: string; fromBranch: string; error: string };
 
-export type EpicTimelineStep = MergeStepEvent | EpicBranchStep;
+/** An Epic Export attempt, recorded like a Task's `export` Fact. */
+export type EpicExportStep =
+  | { step: 'export-built'; disposition: string; name: string; bytes: number; partial: boolean }
+  | { step: 'export-delivered'; destination: 'directory' | 's3'; file: string; retry: number }
+  | { step: 'export-failed'; destination: 'directory' | 's3'; error: string; retry: number; nextRetryAt: string | null };
+
+export type EpicTimelineStep = MergeStepEvent | EpicBranchStep | EpicExportStep;
+
+export function isMergeStep(step: EpicTimelineStep): step is MergeStepEvent {
+  return !step.step.startsWith('branch-') && !step.step.startsWith('export-');
+}
 
 export interface PersistedEpicMergeEvent {
   seq: number;

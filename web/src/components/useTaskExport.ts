@@ -4,12 +4,31 @@ import { exportAgainFeedback, type ExportFeedback } from '../task-export-model';
 import { useAsyncResource } from '../useAsyncResource';
 import type { TaskExportAgainResult, TaskExportStatus } from '../types';
 
-export type TaskExportDeps = {
-  load: (id: number) => Promise<TaskExportStatus>;
-  exportAgain: (id: number) => Promise<TaskExportAgainResult>;
+/** What an Export panel reads and acts on: a Task or an Epic, with its own endpoints. */
+export type ExportTarget = {
+  /** Stable identity; a change resets the panel's per-target state. */
+  key: string;
+  noun: 'Task' | 'Epic';
+  load: () => Promise<TaskExportStatus>;
+  exportAgain: () => Promise<TaskExportAgainResult>;
+  downloadUrl: string;
 };
 
-const defaultDeps: TaskExportDeps = { load: api.taskExport, exportAgain: api.exportTaskAgain };
+export const taskExportTarget = (taskId: number): ExportTarget => ({
+  key: `task:${taskId}`,
+  noun: 'Task',
+  load: () => api.taskExport(taskId),
+  exportAgain: () => api.exportTaskAgain(taskId),
+  downloadUrl: api.taskExportDownloadUrl(taskId),
+});
+
+export const epicExportTarget = (workspaceId: number, epicRef: number): ExportTarget => ({
+  key: `epic:${workspaceId}:${epicRef}`,
+  noun: 'Epic',
+  load: () => api.epicExport(workspaceId, epicRef),
+  exportAgain: () => api.exportEpicAgain(workspaceId, epicRef),
+  downloadUrl: api.epicExportDownloadUrl(workspaceId, epicRef),
+});
 
 export type TaskExportState = {
   status: TaskExportStatus | null;
@@ -21,14 +40,15 @@ export type TaskExportState = {
   now: number;
 };
 
-/** Export status for a finished Task, refreshed when `refreshKey` changes (a new timeline fact) and polled so retry countdowns stay honest. */
-export function useTaskExport(taskId: number, enabled: boolean, refreshKey: number, deps: TaskExportDeps = defaultDeps): TaskExportState {
-  const depsRef = useRef(deps);
+/** Export status for a finished Task or Epic, refreshed when `refreshKey` changes (a new timeline fact) and polled so retry countdowns stay honest. */
+export function useTaskExport(target: ExportTarget, enabled: boolean, refreshKey: number): TaskExportState {
+  const targetRef = useRef(target);
   useEffect(() => {
-    depsRef.current = deps;
+    targetRef.current = target;
   });
-  const resource = useAsyncResource(enabled ? () => depsRef.current.load(taskId) : null, [taskId, enabled], { pollMs: 60_000 });
-  const [fresh, setFresh] = useState<{ taskId: number; status: TaskExportStatus } | null>(null);
+  const targetKey = target.key;
+  const resource = useAsyncResource(enabled ? () => targetRef.current.load() : null, [targetKey, enabled], { pollMs: 60_000 });
+  const [fresh, setFresh] = useState<{ key: string; status: TaskExportStatus } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<ExportFeedback | null>(null);
@@ -55,14 +75,14 @@ export function useTaskExport(taskId: number, enabled: boolean, refreshKey: numb
   useEffect(() => {
     setFeedback(null);
     setFresh(null);
-  }, [taskId]);
+  }, [targetKey]);
 
   const exportAgain = useCallback(() => {
     setBusy(true);
     setFeedback(null);
-    depsRef.current.exportAgain(taskId).then(
+    targetRef.current.exportAgain().then(
       (result) => {
-        setFresh({ taskId, status: result.export });
+        setFresh({ key: targetKey, status: result.export });
         setFeedback(exportAgainFeedback(result));
         setBusy(false);
       },
@@ -71,8 +91,8 @@ export function useTaskExport(taskId: number, enabled: boolean, refreshKey: numb
         setBusy(false);
       },
     );
-  }, [taskId]);
+  }, [targetKey]);
 
-  const status = fresh?.taskId === taskId ? fresh.status : resource.data;
+  const status = fresh?.key === targetKey ? fresh.status : resource.data;
   return { status, loadError: status === null ? resource.error : null, busy, feedback, exportAgain, now };
 }
