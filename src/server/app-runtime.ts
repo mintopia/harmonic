@@ -198,6 +198,7 @@ export interface Runtime {
   loopMonitor: EventLoopMonitor | undefined;
   archive: TaskArchive;
   processGroups: ProcessGroupJournal;
+  transcripts: TranscriptCapture;
 }
 
 export async function createRuntime(deps: {
@@ -495,5 +496,6 @@ export async function createRuntime(deps: {
     loopMonitor,
     archive,
     processGroups,
+    transcripts,
   };
 }

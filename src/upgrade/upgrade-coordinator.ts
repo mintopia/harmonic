@@ -138,7 +138,7 @@ export class UpgradeCoordinator {
         phase: { kind: 'armed', targetVersion, autoRunnerWasEnabled },
       };
       await this.options.store.setState(armed);
-      void this.background.track(new Promise<void>((resolve) => setImmediate(resolve)).then(() => this.reconcileAfterArming(targetVersion)));
+      this.background.add(new Promise<void>((resolve) => setImmediate(resolve)).then(() => this.reconcileAfterArming(targetVersion)), 'upgradeCoordinator.reconcileAfterArming');
       return armed;
     } catch (error) {
       await this.options.settings.updateGlobal({ autoRunner: { enabled: autoRunnerWasEnabled } });

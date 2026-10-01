@@ -265,6 +265,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     workspaceWatcher: runtime.workspaceWatcher,
     statsReader,
     processGroups: runtime.processGroups,
+    transcripts: runtime.transcripts,
     asyncDb,
   });
   await registerPlugins(app);

@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Git } from './git.js';
-import { bestEffort, reportFailure } from '../error-handling.js';
+import { bestEffort, fireAndForget, reportFailure } from '../error-handling.js';
 import { integrationBranchName, type EpicRefreshResolveDispatchOutcome, type EpicRefreshTarget } from './epic-coordinator.js';
 import { RESOLVE_TURN_TIMEOUT_MS } from './merge-coordinator.js';
 import { createAcpCriticDrive } from '../verification/critic.js';
@@ -83,11 +83,11 @@ export class EpicRefreshResolver {
         harnessId,
         model,
       });
-    void turn()
+    fireAndForget(() => turn()
       .then(() => retry())
       .catch(async (err) => {
         await escalate(target.ref, `refresh re-attempt after the corrective turn failed for ${branch}: ${err instanceof Error ? err.message : String(err)}`);
-      });
+      }), { op: 'epicRefresh.resolveTurn', level: 'error', context: { epicRef: target.ref } });
     return { status: 'dispatched' };
   }
 

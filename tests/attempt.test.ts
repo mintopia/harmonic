@@ -94,13 +94,15 @@ describe('attempt-log', () => {
     });
 
     it('reports an unavailable log when the captured transcript disappears', async () => {
-      const { attemptId } = await startRun({ updates: [], delayMs: 1 });
+      const { attemptId, taskId } = await startRun({ updates: [], exit: 'hang' });
       unlinkSync(transcriptPath);
 
       const { status, body } = await server.api('GET', `/api/attempts/${attemptId}/log`);
 
       expect(status).toBe(200);
       expect(body).toEqual({ status: 'unavailable', liveCursor: 0 });
+      await server.api('POST', `/api/tasks/${taskId}/cancel`);
+      await waitFor(async () => (await server.app.ctx.attempts.get(attemptId)).endedAt ? true : undefined);
     });
 
     async function finishedRun(): Promise<{ attemptId: number; taskId: number }> {

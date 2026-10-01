@@ -76,12 +76,12 @@ export class Scheduler {
     job.tick = () => this.inFlight.track(gate());
     this.jobs.set(key, job);
     if (this.started) this.startJob(job);
-    void this.inFlight.track(this.emitChanged()).catch((error) => logger.warn('scheduler: emitChanged failed after register', { job: key, error: errorMessage(error) }));
+    this.inFlight.add(this.emitChanged().catch((error) => logger.warn('scheduler: emitChanged failed after register', { job: key, error: errorMessage(error) })), 'scheduler.emitChanged');
     return () => {
       if (this.jobs.get(key) !== job) return;
       if (job.timer) clearInterval(job.timer);
       this.jobs.delete(key);
-      void this.inFlight.track(this.emitChanged()).catch((error) => logger.warn('scheduler: emitChanged failed after unregister', { job: key, error: errorMessage(error) }));
+      this.inFlight.add(this.emitChanged().catch((error) => logger.warn('scheduler: emitChanged failed after unregister', { job: key, error: errorMessage(error) })), 'scheduler.emitChanged');
     };
   }
 
@@ -89,7 +89,7 @@ export class Scheduler {
     if (this.started) return;
     this.started = true;
     for (const job of this.jobs.values()) this.startJob(job);
-    void this.inFlight.track(this.emitChanged()).catch((error) => logger.warn('scheduler: emitChanged failed after start', { error: errorMessage(error) }));
+    this.inFlight.add(this.emitChanged().catch((error) => logger.warn('scheduler: emitChanged failed after start', { error: errorMessage(error) })), 'scheduler.emitChanged');
   }
 
   /** Stop firing timers, then wait out every in-flight tick and snapshot read. */
@@ -130,7 +130,7 @@ export class Scheduler {
     if (job.timer) return;
     job.timer = setInterval(() => this.fire(job), job.intervalMs);
     job.timer.unref?.();
-    void this.inFlight.track(this.runIfDueOnStart(job)).catch((error) => logger.warn('scheduler: runIfDueOnStart failed', { job: job.jobKey, error: errorMessage(error) }));
+    this.inFlight.add(this.runIfDueOnStart(job).catch((error) => logger.warn('scheduler: runIfDueOnStart failed', { job: job.jobKey, error: errorMessage(error) })), 'scheduler.runIfDueOnStart');
   }
 
   private async tickOnce(job: RegisteredJob): Promise<void> {

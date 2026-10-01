@@ -11,6 +11,7 @@ import type { UpgradeCoordinator } from '../upgrade/upgrade-coordinator.js';
 import type { StatsWorkerClient } from '../db/stats-reader.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import { detachProcessGroupJournal, type ProcessGroupJournal } from '../execution/process-groups.js';
+import type { TranscriptCapture } from '../execution/transcript-capture.js';
 import type { App } from './app-context.js';
 import { sweepStaleMergeWorktrees } from '../execution/ephemeral-merge-worktree.js';
 import { forEachYielding } from '../reliability/yield.js';
@@ -33,10 +34,12 @@ export function registerShutdown(app: App, deps: {
   workspaceWatcher: Pick<WorkspaceWatcher, 'stopAll'>;
   statsReader: Pick<StatsWorkerClient, 'close'>;
   processGroups?: ProcessGroupJournal;
+  transcripts?: Pick<TranscriptCapture, 'close'>;
   asyncDb: Pick<AsyncDbHandle, 'close'>;
   drainTimeoutMs?: number;
 }): void {
   app.addHook('onClose', async () => {
+    deps.transcripts?.close();
     const drained = Promise.all([
       deps.autoRunner.close(),
       deps.scheduler.stop(),
