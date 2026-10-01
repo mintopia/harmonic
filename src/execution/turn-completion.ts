@@ -1,5 +1,5 @@
 import { Git } from './git.js';
-import { attempted } from '../error-handling.js';
+import { attempted, errorMessage } from '../error-handling.js';
 import { runMergePolicy } from './merge-policy.js';
 import { observedModelMismatch, type AttemptUsage } from './usage.js';
 import { AcpDriver, AcpPromptTimeoutError, type PromptResult } from '../acp/driver.js';
@@ -339,16 +339,25 @@ export class TurnCompletion {
     const deps = this.deps.mergeCoordinator.mergePolicyDeps(task, run, record, signal, patch);
     const mergeWorktreeBranch = async (): Promise<boolean> => {
       await this.deps.taskService.setMergeStatus(task.id, 'merging');
-      const outcome = await runMergePolicy(
-        {
-          baseDir: task.workingDir,
-          baseBranch: current.baseBranch!,
-          taskBranch: current.branch!,
-          conflictResolveTurns: task.conflictResolveTurns,
-          postMergeCheck: this.deps.getConfig().merge.postMergeCheck,
-        },
-        deps,
-      );
+      let outcome: Awaited<ReturnType<typeof runMergePolicy>>;
+      try {
+        outcome = await runMergePolicy(
+          {
+            baseDir: task.workingDir,
+            baseBranch: current.baseBranch!,
+            taskBranch: current.branch!,
+            conflictResolveTurns: task.conflictResolveTurns,
+            postMergeCheck: this.deps.getConfig().merge.postMergeCheck,
+          },
+          deps,
+        );
+      } catch (err) {
+        if (this.deps.isShuttingDown()) throw err;
+        const reason = `Merging ${current.branch} into ${current.baseBranch} failed: ${errorMessage(err)}`;
+        record('lifecycle', { event: 'escalated', reason });
+        await this.deps.settleEscalated(task, run, reason, patch);
+        return false;
+      }
       if (outcome.kind === 'escalated') {
         record('lifecycle', { event: 'escalated', reason: outcome.message, gate: outcome.reason });
         if (outcome.reason === 'conflict') await this.deps.taskService.setMergeStatus(task.id, 'resolving-conflicts');

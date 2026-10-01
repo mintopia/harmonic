@@ -886,7 +886,7 @@ export class EpicLifecycle {
         if (!(await this.git.branchExists(worktreeDir, branch))) return;
         if ((await this.git.branchCheckedOutAt(worktreeDir, branch)) !== null) return;
         if (!(await this.git.isAncestor(worktreeDir, defaultBranch, branch))) return;
-        await this.git.deleteBranch(worktreeDir, branch);
+        await withRepoLock(this.workingDir, () => this.git.deleteBranch(worktreeDir, branch));
         retired = true;
       },
     );
