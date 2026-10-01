@@ -36,6 +36,7 @@ const commandAttempt: VerificationAttempt = {
   prompt: null,
   harness: null,
   hasTranscript: false,
+  outputTruncated: false,
 };
 
 const statuses: VerifierStatus[] = [{ mechanism: 'command', state: 'passed', reason: null }];
@@ -47,6 +48,22 @@ describe('verification and steering UI (#537)', () => {
     const host = await mountComponent(createElement(Verification, { attempts: [commandAttempt], statuses, run }));
 
     expect(host.textContent).toContain('stdout survives verification completion');
+  });
+
+  it('offers the full output only when the command output was truncated, never showing a filesystem path', async () => {
+    const truncated = { ...commandAttempt, id: 9, output: 'head\n…[truncated 300000 chars]…\ntail', outputTruncated: true };
+    const host = await mountComponent(createElement(Verification, { attempts: [truncated], statuses, run }));
+
+    const link = [...host.querySelectorAll('a')].find((a) => a.textContent?.includes('View full output'));
+    expect(link?.getAttribute('href')).toBe('/api/verification-attempts/9/output');
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(host.textContent).not.toContain('/output.log');
+  });
+
+  it('offers no full-output control for untruncated output', async () => {
+    const host = await mountComponent(createElement(Verification, { attempts: [commandAttempt], statuses, run }));
+
+    expect(host.textContent).not.toContain('View full output');
   });
 
   it('shows a sent steer immediately with a pending-delivery marker', async () => {

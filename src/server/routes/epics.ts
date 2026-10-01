@@ -143,6 +143,7 @@ const verificationAttemptSchema = z.object({
   prompt: z.string().nullable(),
   harness: z.string().nullable(),
   hasTranscript: z.boolean(),
+  outputTruncated: z.boolean(),
 });
 
 const epicAttemptSchema = z

@@ -4604,6 +4604,9 @@
                 },
                 "hasTranscript": {
                   "type": "boolean"
+                },
+                "outputTruncated": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -4618,7 +4621,8 @@
                 "output",
                 "prompt",
                 "harness",
-                "hasTranscript"
+                "hasTranscript",
+                "outputTruncated"
               ]
             }
           }
@@ -11970,6 +11974,9 @@
                 },
                 "hasTranscript": {
                   "type": "boolean"
+                },
+                "outputTruncated": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -11984,7 +11991,8 @@
                 "output",
                 "prompt",
                 "harness",
-                "hasTranscript"
+                "hasTranscript",
+                "outputTruncated"
               ],
               "additionalProperties": false
             }
@@ -17172,6 +17180,10 @@
                           "hasTranscript": {
                             "type": "boolean",
                             "example": false
+                          },
+                          "outputTruncated": {
+                            "type": "boolean",
+                            "example": false
                           }
                         },
                         "required": [
@@ -17186,7 +17198,8 @@
                           "output",
                           "prompt",
                           "harness",
-                          "hasTranscript"
+                          "hasTranscript",
+                          "outputTruncated"
                         ],
                         "additionalProperties": false
                       }
@@ -17272,6 +17285,49 @@
                   ],
                   "additionalProperties": false,
                   "description": "The verification task's captured command output and summary, and whether a critic transcript exists."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/verification-attempts/{id}/output": {
+      "get": {
+        "tags": [
+          "Attempts"
+        ],
+        "description": "Stream a command verification attempt's full, uncapped output from the Archive (text/plain). 404 when the attempt's output was not truncated or the Archive no longer holds it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The full combined stdout+stderr of the verify command.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The full combined stdout+stderr of the verify command."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such verification attempt, or no archived full output.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

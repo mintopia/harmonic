@@ -363,6 +363,29 @@ export class TaskArchive {
     return join(this.deps.dataDir, 'archive', workspaceSlug(workspaceName, workspaceId), `epic-${epicRef}`);
   }
 
+  private async existingOwnerDir(owner: TaskRow | { workspaceId: number; epicRef: number }): Promise<string | null> {
+    if (!('epicRef' in owner)) return this.existingDir(owner);
+    const dir = this.epicDir(owner.workspaceId, owner.epicRef, await this.deps.workspaceName(owner.workspaceId));
+    return (await pathExists(join(dir, 'archive.json'))) ? dir : null;
+  }
+
+  async archivedVerificationOutput(
+    owner: TaskRow | { workspaceId: number; epicRef: number },
+    attemptNumber: number,
+    stage: 'pre-merge' | 'post-merge',
+    stepSegment: string,
+  ): Promise<string | null> {
+    try {
+      const root = await this.existingOwnerDir(owner);
+      if (!root || safeSegment(stepSegment) !== stepSegment) return null;
+      const file = join(root, 'attempts', String(attemptNumber), 'verification', stage, stepSegment, 'output.log');
+      return (await pathExists(file)) ? file : null;
+    } catch (err) {
+      warn('archive: verification output lookup failed', err, { attemptNumber, stage });
+      return null;
+    }
+  }
+
   async archivedTranscript(
     owner: TaskRow | { workspaceId: number; epicRef: number },
     attemptNumber: number,
@@ -370,13 +393,7 @@ export class TaskArchive {
     nativePath: string | null,
   ): Promise<string | null> {
     try {
-      let root: string | null;
-      if ('epicRef' in owner) {
-        const dir = this.epicDir(owner.workspaceId, owner.epicRef, await this.deps.workspaceName(owner.workspaceId));
-        root = (await pathExists(join(dir, 'archive.json'))) ? dir : null;
-      } else {
-        root = await this.existingDir(owner);
-      }
+      const root = await this.existingOwnerDir(owner);
       if (!root) return null;
       const attemptDir = join(root, 'attempts', String(attemptNumber), kind);
       const name = nativePath ? basename(nativePath) : null;

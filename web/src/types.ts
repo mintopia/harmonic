@@ -139,6 +139,8 @@ export interface VerificationAttempt {
   /** Whether a critic-session transcript can be read for this attempt
    * — fetch it with `api.criticLog(id)`. */
   hasTranscript: boolean;
+  /** The command output was capped; the full text is served by `api.verificationOutputUrl(id)`. */
+  outputTruncated: boolean;
 }
 
 export type ExportDestinationKind = 'directory' | 's3';
