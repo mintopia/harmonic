@@ -39,6 +39,8 @@ import { ModelLabel, ProviderChip } from './TaskIdentity';
 import { ChangedFilesNav, changedFileKind } from './ticket/ChangedFilesNav';
 import { Fact } from './Fact';
 import { CriticSessions } from './ticket/Verification';
+import { ExportPanel } from './ticket/ExportPanel';
+import { epicExportTarget } from './useTaskExport';
 import { EpicTimeline } from './EpicTimeline';
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
@@ -772,6 +774,8 @@ export function EpicPage({
                   </section>
 
                   {epic && <div className="mb-6"><EpicTimeline epic={epic} /></div>}
+
+                  {epic && <ExportPanel target={epicExportTarget(workspaceId, epicRef)} state={epic.state === 'integrated' ? 'done' : epic.state} refreshKey={refreshKey} />}
 
                   <div className="mb-6">
                     <div className={`${sectionCaps} mb-3`}>Usage &amp; statistics</div>

@@ -29,6 +29,15 @@ export function truncationMarker(elided: number, fullOutputPath?: string): strin
     : `\n…[truncated ${elided} chars]…\n`;
 }
 
+const FULL_OUTPUT_MARKER = /(…\[truncated \d+ chars); full output: ([^\n]+?[\\/]output\.log)(\]…)/;
+
+/** Strips the server-side archive path from a truncation marker so it never reaches a client; returns it separately. */
+export function splitFullOutputPath(output: string): { output: string; fullOutputPath: string | null } {
+  const match = FULL_OUTPUT_MARKER.exec(output);
+  if (!match) return { output, fullOutputPath: null };
+  return { output: output.replace(FULL_OUTPUT_MARKER, '$1$3'), fullOutputPath: match[2]! };
+}
+
 function isHighSurrogate(code: number): boolean {
   return code >= 0xd800 && code <= 0xdbff;
 }

@@ -169,7 +169,7 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
     if (!authed) return;
     return subscribe((msg) => {
       if (!live() || msg.type !== 'export_failed') return;
-      toastFail(`Export of ${taskLabel(msg.taskId)} to ${msg.destination} failed — ${exportRetryText(msg.retry, msg.nextRetryAt)}`);
+      toastFail(`Export of ${msg.taskId !== null ? taskLabel(msg.taskId) : `Epic #${msg.epicRef}`} to ${msg.destination} failed — ${exportRetryText(msg.retry, msg.nextRetryAt)}`);
     });
   }, [authed]);
 
