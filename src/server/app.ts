@@ -250,6 +250,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     hostLoad: runtime.hostLoad,
     workspaceWatcher: runtime.workspaceWatcher,
     statsReader,
+    asyncDb,
   });
   await registerPlugins(app);
   registerAuthHook(app, stores.auth);

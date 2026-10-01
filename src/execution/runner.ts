@@ -40,6 +40,8 @@ import type { EpicRefreshResolveDispatchOutcome, EpicRefreshTarget } from './epi
 import type { AsyncDbHandle } from '../db/async.js';
 import type { SpanContext } from '@opentelemetry/api';
 import { startOperation } from '../telemetry/operations.js';
+import { InFlight } from '../reliability/in-flight.js';
+import { childExited } from './child-exit.js';
 
 export type { LiveAttemptEvent } from './live-events.js';
 export type { EpicVerificationResolutionInput } from './verification-coordinator.js';
@@ -52,6 +54,7 @@ export class Runner {
   private readonly activeRuns = new ActiveRuns();
   private readonly mergeCoordinator: MergeCoordinator;
   private shuttingDown = false;
+  private readonly drives = new InFlight();
 
   private readonly gitBreaker: GitCircuitBreaker | undefined;
   private readonly epicBaseNotReady: RunnerOptions['epicBaseNotReady'];
@@ -519,7 +522,7 @@ export class Runner {
         },
       });
       this.activeRuns.setOperation(bound.id, operation);
-      void operation.run(async () => {
+      void this.drives.track(operation.run(async () => {
         try {
           await this.turnDriver.drive(task, bound, harness, operation.spanContext);
           await this.finishRunOperation(bound.id);
@@ -533,7 +536,7 @@ export class Runner {
             await this.redeliverOrphanedSteer(task.id, leftoverSeed);
           }
         }
-      });
+      }));
       return bound;
     } catch (err) {
       this.activeRuns.clearDriving(task.id);
@@ -705,14 +708,17 @@ export class Runner {
     return true;
   }
 
-  /** Kill every active harness (process shutdown). */
-  shutdown(): void {
+  /** Process shutdown: kill every active harness, then wait for each to exit and its Attempt drive to finish its final writes. */
+  async shutdown(): Promise<void> {
     this.shuttingDown = true;
+    const teardown: Array<Promise<void>> = [];
     for (const active of this.activeRuns.values()) {
-      void this.tailer.stop(active.attemptId);
       active.verifyAbort.abort();
       this.kill(active);
+      teardown.push(childExited(active.child), this.tailer.stop(active.attemptId));
     }
+    await Promise.allSettled(teardown);
+    await this.drives.drain();
     this.activeRuns.clear();
     this.usage.clearReaders();
   }

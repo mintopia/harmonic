@@ -35,7 +35,7 @@ describe('Runner.recordRunEvent — task deleted mid-append (issue #371)', () =>
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    runner.shutdown();
+    await runner.shutdown();
     await asyncDb.close();
     rmSync(dir, { recursive: true, force: true });
   });

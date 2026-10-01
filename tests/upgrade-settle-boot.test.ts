@@ -107,7 +107,7 @@ describe('UpgradeCoordinator.settleOnBoot (real SettingsUpdateAvailabilityStore)
     const armed = await upgrade.arm();
 
     expect(armed.phase).toMatchObject({ kind: 'armed', targetVersion: '2.0.0' });
-    await upgrade.drain();
+    await upgrade.close();
   });
 
   it('settles cleanly and clears rollback when the boot landed on the armed target', async () => {

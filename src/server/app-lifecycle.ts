@@ -9,48 +9,53 @@ import type { WorkspaceService } from '../domain/workspaces.js';
 import type { TrackerPollerManager } from '../tracker/manager.js';
 import type { UpgradeCoordinator } from '../upgrade/upgrade-coordinator.js';
 import type { StatsWorkerClient } from '../db/stats-reader.js';
+import type { AsyncDbHandle } from '../db/async.js';
 import type { App } from './app-context.js';
 import { sweepStaleMergeWorktrees } from '../execution/ephemeral-merge-worktree.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { logger } from '../logger.js';
-import { errorMessage } from '../error-handling.js';
+import { drainFireAndForget, errorMessage } from '../error-handling.js';
 import { startOperation } from '../telemetry/operations.js';
 
 const SHUTDOWN_DRAIN_MS = 5_000;
 
+/** Stop every source of work, wait (bounded) for in-flight work and its final writes, then close the DB last. */
 export function registerShutdown(app: App, deps: {
-  trackerManager: TrackerPollerManager;
-  scheduler: Scheduler;
-  autoRunner: AutoRunner;
-  upgrade: UpgradeCoordinator;
-  runner: Runner;
-  conversationDriver: ConversationDriver;
-  loopMonitor: EventLoopMonitor | undefined;
-  hostLoad: HostLoadSampler;
-  workspaceWatcher: WorkspaceWatcher;
-  statsReader: StatsWorkerClient;
+  trackerManager: Pick<TrackerPollerManager, 'stopAll'>;
+  scheduler: Pick<Scheduler, 'stop'>;
+  autoRunner: Pick<AutoRunner, 'close'>;
+  upgrade: Pick<UpgradeCoordinator, 'close'>;
+  runner: Pick<Runner, 'shutdown'>;
+  conversationDriver: Pick<ConversationDriver, 'shutdown'>;
+  loopMonitor: Pick<EventLoopMonitor, 'stop'> | undefined;
+  hostLoad: Pick<HostLoadSampler, 'stop'>;
+  workspaceWatcher: Pick<WorkspaceWatcher, 'stopAll'>;
+  statsReader: Pick<StatsWorkerClient, 'close'>;
+  asyncDb: Pick<AsyncDbHandle, 'close'>;
+  drainTimeoutMs?: number;
 }): void {
   app.addHook('onClose', async () => {
     const drained = Promise.all([
       deps.autoRunner.close(),
       deps.scheduler.stop(),
       deps.trackerManager.stopAll(),
-      deps.upgrade.drain(),
-    ]);
-    deps.runner.shutdown();
-    deps.conversationDriver.shutdown();
+      deps.upgrade.close(),
+      deps.runner.shutdown(),
+      deps.conversationDriver.shutdown(),
+    ]).then(() => drainFireAndForget());
     deps.loopMonitor?.stop();
     deps.hostLoad.stop();
     await deps.workspaceWatcher.stopAll();
+    const timeoutMs = deps.drainTimeoutMs ?? SHUTDOWN_DRAIN_MS;
     let timer: NodeJS.Timeout | undefined;
     const outcome = await Promise.race([
       drained.then(() => 'drained' as const),
-      new Promise<'timed-out'>((resolve) => { timer = setTimeout(() => resolve('timed-out'), SHUTDOWN_DRAIN_MS); timer.unref?.(); }),
+      new Promise<'timed-out'>((resolve) => { timer = setTimeout(() => resolve('timed-out'), timeoutMs); timer.unref?.(); }),
     ]);
     clearTimeout(timer);
-    if (outcome === 'timed-out') logger.warn('shutdown: background loops still running after the drain bound', { timeoutMs: SHUTDOWN_DRAIN_MS });
-    // asyncDb stays open: Attempt and Conversation teardown above is fire-and-forget and still writes as harness children exit.
+    if (outcome === 'timed-out') logger.warn('shutdown: in-flight work still running after the drain bound; closing the database anyway', { timeoutMs });
     await deps.statsReader.close();
+    await deps.asyncDb.close();
   });
 }
 

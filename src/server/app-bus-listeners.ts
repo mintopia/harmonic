@@ -1,4 +1,3 @@
-import { logger } from '../logger.js';
 import { fireAndForget } from '../error-handling.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { TaskService } from '../domain/tasks.js';
@@ -17,14 +16,12 @@ export function registerBusListeners(bus: EventBus, deps: {
   notifier: Notifier;
 }): void {
   bus.on('attempt_changed', () => deps.autoRunner.poke());
-  bus.on('attempt_changed', () => { void deps.upgrade.reconcile().catch((error: unknown) => logger.error(`upgrade reconciliation failed: ${String(error)}`)); });
-  bus.on('operations', () => { void deps.upgrade.reconcile().catch((error: unknown) => logger.error(`upgrade reconciliation failed: ${String(error)}`)); });
-  bus.on('task_changed', () => {
-    void deps.publishWorktrees().catch((error: unknown) => logger.debug(`worktree inventory refresh failed: ${String(error)}`));
-  });
-  bus.on('task_removed', () => {
-    void deps.publishWorktrees().catch((error: unknown) => logger.debug(`worktree inventory refresh failed: ${String(error)}`));
-  });
+  const reconcileUpgrade = (): void => fireAndForget(() => deps.upgrade.reconcile(), { op: 'upgrade.reconcile', level: 'error' });
+  const publishWorktrees = (): void => fireAndForget(() => deps.publishWorktrees(), { op: 'worktrees.publish', level: 'debug' });
+  bus.on('attempt_changed', reconcileUpgrade);
+  bus.on('operations', reconcileUpgrade);
+  bus.on('task_changed', publishWorktrees);
+  bus.on('task_removed', publishWorktrees);
   bus.on('attempt_changed', () => {
     fireAndForget(() => deps.drainRetirement(), { op: 'sessionRetirement.drain', level: 'warn' });
   });

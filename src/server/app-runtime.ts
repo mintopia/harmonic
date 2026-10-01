@@ -225,7 +225,7 @@ export async function createRuntime(deps: {
         (await auth.createKey(`conversation-${conversationId}`, { scope: 'conversation', conversationId })).token,
       revoke: (conversationId) => auth.deleteKeysForConversation(conversationId),
     },
-    onTurnSettled: () => { void upgradeRef?.reconcile().catch((error: unknown) => logger.error(`upgrade reconciliation failed: ${String(error)}`)); },
+    onTurnSettled: () => fireAndForget(() => upgradeRef?.reconcile(), { op: 'upgrade.reconcile', level: 'error' }),
     allowedRoots: async () => [...(await workspaces.list()).map((w) => w.workingDir), managedWorktreesRoot],
   });
   const { recordAttemptLifecycleBestEffort, recordTaskEventBestEffort, sessionRetirement, drainRetirement, branchRetirement } = createLifecycleTracking(bus, attempts, taskEvents, tasks, sessionStore);
@@ -255,7 +255,7 @@ export async function createRuntime(deps: {
     tasks,
     attempts,
     (run) => {
-      void runnerRef?.finishRunOperation(run.id);
+      fireAndForget(() => runnerRef?.finishRunOperation(run.id), { op: 'runner.finishRunOperation', level: 'warn', context: { attemptId: run.id } });
       bus.emit('attempt_changed', run);
     },
     sessionRetirement,
@@ -302,7 +302,7 @@ export async function createRuntime(deps: {
     getWorkspaceRow,
     (workspaceId, ref) => tasks.epicKind(workspaceId, ref),
     (task, commit) => {
-      void (async () => {
+      fireAndForget(async () => {
         const payload = {
           event: 'ticket-closed',
           trackerRef: task.trackerRef != null ? String(task.trackerRef) : null,
@@ -311,10 +311,10 @@ export async function createRuntime(deps: {
         const run = (await attempts.listForTask(task.id)).at(-1);
         if (run) recordAttemptLifecycleBestEffort(run, payload);
         else recordTaskEventBestEffort(task, payload);
-      })();
+      }, { op: 'autoDrive.recordTicketClosed', level: 'warn', context: { taskId: task.id } });
     },
     (task, error) => {
-      void (async () => {
+      fireAndForget(async () => {
         const payload = {
           event: 'ticket-close-failed',
           trackerRef: task.trackerRef != null ? String(task.trackerRef) : null,
@@ -323,7 +323,7 @@ export async function createRuntime(deps: {
         const run = (await attempts.listForTask(task.id)).at(-1);
         if (run) recordAttemptLifecycleBestEffort(run, payload);
         else recordTaskEventBestEffort(task, payload);
-      })();
+      }, { op: 'autoDrive.recordTicketCloseFailed', level: 'warn', context: { taskId: task.id } });
     },
   );
   const mergeEffectsFor = (task: TaskRow, run: AttemptRow): MergeEffectExec[] => {
