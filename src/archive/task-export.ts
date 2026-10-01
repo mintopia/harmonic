@@ -8,6 +8,8 @@ import { DomainError } from '../domain/errors.js';
 import { fireAndForget } from '../error-handling.js';
 import { logger } from '../logger.js';
 import { forEachYielding } from '../reliability/yield.js';
+import type { EpicExportStep } from '../domain/epic-merge-events.js';
+import { exportOwnerKey, type ExportOwnerRef } from './export-owner.js';
 import { hasExportDestination, type ResolvedExportSettings } from './export-settings.js';
 import { uploadToS3 } from './s3-destination.js';
 import { workspaceSlug, type ExportDestination, type ExportRecord, type TaskArchive } from './task-archive.js';
@@ -59,8 +61,10 @@ export interface ExportDownload {
   bytes: number;
 }
 
+export type ExportOwner = { kind: 'task'; task: TaskRow } | { kind: 'epic'; workspaceId: number; epicRef: number };
+
 export interface ExportFailure {
-  task: TaskRow;
+  owner: ExportOwner;
   disposition: ExportDisposition;
   destination: ExportDestination;
   error: string;
@@ -80,7 +84,7 @@ type PendingDestination = { base: string; retries: number; nextRetryAt: string }
 );
 
 interface PendingExport {
-  task: TaskRow;
+  owner: ExportOwner;
   disposition: ExportDisposition;
   firstFailedAt: string;
   destinations: PendingDestination[];
@@ -104,6 +108,7 @@ export interface TaskExporterDeps {
   workspaceName: (workspaceId: number) => Promise<string | null>;
   snapshot: (task: TaskRow) => Promise<ExportSnapshot>;
   recordFact: (taskId: number, payload: unknown) => Promise<void>;
+  recordEpicStep: (workspaceId: number, epicRef: number, step: EpicExportStep) => Promise<void>;
   now?: () => Date;
   onFailure?: (failure: ExportFailure) => void;
 }
@@ -144,8 +149,10 @@ function manualDisposition(task: TaskRow): ExportDisposition {
   return task.state;
 }
 
-const taskChainKey = (taskId: number): string => `task:${taskId}`;
-const epicChainKey = (workspaceId: number, epicRef: number): string => `epic:${workspaceId}:${epicRef}`;
+const ownerRef = (owner: ExportOwner): ExportOwnerRef =>
+  owner.kind === 'task' ? { kind: 'task', taskId: owner.task.id } : owner;
+const chainKey = (owner: ExportOwner): string => exportOwnerKey(ownerRef(owner));
+const taskChainKey = (taskId: number): string => exportOwnerKey({ kind: 'task', taskId });
 
 function exportRecord(disposition: ExportDisposition, outcome: ExportOutcome, at: Date, meta?: ExportMeta): ExportRecord {
   return {
@@ -157,6 +164,23 @@ function exportRecord(disposition: ExportDisposition, outcome: ExportOutcome, at
     at: at.toISOString(),
     ...(outcome.error === undefined ? {} : { error: outcome.error }),
   };
+}
+
+function ownerContext(owner: ExportOwner): Record<string, number> {
+  return owner.kind === 'task' ? { taskId: owner.task.id } : { workspaceId: owner.workspaceId, epicRef: owner.epicRef };
+}
+
+function isValidOwner(owner: unknown): owner is ExportOwner {
+  const v = owner as { kind?: string; task?: { id?: unknown }; workspaceId?: unknown; epicRef?: unknown } | null | undefined;
+  if (v?.kind === 'task') return typeof v.task?.id === 'number';
+  return v?.kind === 'epic' && typeof v.workspaceId === 'number' && typeof v.epicRef === 'number';
+}
+
+function destinationLocations(settings: ResolvedExportSettings | null): Map<ExportDestination, string> {
+  const locations = new Map<ExportDestination, string>();
+  if (settings?.directoryPath) locations.set('directory', settings.directoryPath);
+  if (settings?.s3) locations.set('s3', `s3://${settings.s3.bucket}/${settings.s3.prefix}`);
+  return locations;
 }
 
 function pendingPath(staged: string): string {
@@ -339,16 +363,38 @@ export class TaskExporter {
     await this.chains.get(taskChainKey(task.id))?.catch(() => undefined);
     const [history, pending, settings] = await Promise.all([
       this.deps.archive.exportHistory(task),
-      this.pendingRetries(task.id),
+      this.pendingRetries({ kind: 'task', taskId: task.id }),
       this.deps.settings(task).catch(() => null),
     ]);
-    const locations = new Map<ExportDestination, string>();
-    if (settings?.directoryPath) locations.set('directory', settings.directoryPath);
-    if (settings?.s3) locations.set('s3', `s3://${settings.s3.bucket}/${settings.s3.prefix}`);
-    return buildExportStatus(history, locations, pending);
+    return buildExportStatus(history, destinationLocations(settings), pending);
   }
 
-  private async pendingRetries(taskId: number): Promise<PendingRetry[]> {
+  async epicStatus(workspaceId: number, epicRef: number): Promise<ExportStatus> {
+    const owner: ExportOwnerRef = { kind: 'epic', workspaceId, epicRef };
+    await this.chains.get(exportOwnerKey(owner))?.catch(() => undefined);
+    const [history, pending, settings] = await Promise.all([
+      this.deps.archive.epicExportHistory(workspaceId, epicRef),
+      this.pendingRetries(owner),
+      this.deps.epicSettings(workspaceId).catch(() => null),
+    ]);
+    return buildExportStatus(history, destinationLocations(settings), pending);
+  }
+
+  private async pendingRetries(owner: ExportOwnerRef): Promise<PendingRetry[]> {
+    const key = exportOwnerKey(owner);
+    const found: PendingRetry[] = [];
+    for (const { owner: pendingOwner, destinations } of await this.readAllPending()) {
+      if (chainKey(pendingOwner) !== key) continue;
+      for (const d of destinations) found.push({ destination: d.destination, base: d.base, retries: d.retries, nextRetryAt: d.nextRetryAt });
+    }
+    return found;
+  }
+
+  async pendingOwnerKeys(): Promise<Set<string>> {
+    return new Set((await this.readAllPending()).map(({ owner }) => chainKey(owner)));
+  }
+
+  private async readAllPending(): Promise<PendingExport[]> {
     const stagingDir = join(this.deps.dataDir, 'archive', '.staging');
     let names: string[];
     try {
@@ -356,13 +402,12 @@ export class TaskExporter {
     } catch {
       return [];
     }
-    const found: PendingRetry[] = [];
+    const found: PendingExport[] = [];
     await forEachYielding(names, async (name) => {
       try {
         const value = JSON.parse(await readFile(join(stagingDir, name), 'utf8')) as Partial<PendingExport> | null;
-        if (value?.task?.id !== taskId || !Array.isArray(value.destinations)) return;
-        for (const d of value.destinations) {
-          if (validDestination(d)) found.push({ destination: d.destination, base: d.base, retries: d.retries, nextRetryAt: d.nextRetryAt });
+        if (isValidOwner(value?.owner) && Array.isArray(value.destinations)) {
+          found.push({ ...(value as PendingExport), destinations: value.destinations.filter(validDestination) });
         }
       } catch {
         return;
@@ -385,12 +430,25 @@ export class TaskExporter {
   }
 
   triggerEpic(workspaceId: number, epicRef: number, disposition: ExportDisposition): void {
+    const owner: ExportOwner = { kind: 'epic', workspaceId, epicRef };
     const snapshot = this.deps.epicSnapshot(workspaceId, epicRef);
     snapshot.catch(() => undefined);
-    this.enqueue(epicChainKey(workspaceId, epicRef), () => this.runEpic(workspaceId, epicRef, disposition, snapshot), { workspaceId, epicRef, disposition });
+    this.enqueue(chainKey(owner), () => this.runEpic(workspaceId, epicRef, disposition, snapshot), { workspaceId, epicRef, disposition });
   }
 
-  async runEpic(workspaceId: number, epicRef: number, disposition: ExportDisposition, snapshot?: Promise<EpicExportSnapshot>): Promise<ExportOutcome | null> {
+  exportEpicAgain(workspaceId: number, epicRef: number): Promise<ExportOutcome[] | null> {
+    return this.serialize(chainKey({ kind: 'epic', workspaceId, epicRef }), () => this.runEpic(workspaceId, epicRef, 'done', undefined, {}));
+  }
+
+  buildEpicDownload(workspaceId: number, epicRef: number): Promise<ExportDownload> {
+    return this.serialize(chainKey({ kind: 'epic', workspaceId, epicRef }), async () => {
+      const settings = await this.deps.epicSettings(workspaceId);
+      const built = await this.stageEpic(workspaceId, epicRef, 'done', settings.redactPatterns, this.now());
+      return { path: built.staged, name: built.meta.name, bytes: built.meta.bytes };
+    });
+  }
+
+  async runEpic(workspaceId: number, epicRef: number, disposition: ExportDisposition, snapshot?: Promise<EpicExportSnapshot>, manual?: ManualExportOptions): Promise<ExportOutcome[] | null> {
     let settings: ResolvedExportSettings;
     try {
       settings = await this.deps.epicSettings(workspaceId);
@@ -398,26 +456,14 @@ export class TaskExporter {
       logger.warn('export: epic settings unavailable', { workspaceId, epicRef, error: message(err) });
       return null;
     }
-    if (!settings.enabled || !settings.includeStates.includes(disposition) || !settings.directoryPath) return null;
-
-    const prior = await this.deps.archive.epicExportHistory(workspaceId, epicRef);
-    if (prior.some((e) => e.status === 'succeeded' && e.disposition === disposition)) return null;
-
-    const at = this.now();
-    let outcome: ExportOutcome;
-    try {
-      outcome = { destination: 'directory', status: 'succeeded', file: await this.epicToDirectory(workspaceId, epicRef, disposition, settings.directoryPath, settings.redactPatterns, at, snapshot) };
-    } catch (err) {
-      outcome = { destination: 'directory', status: 'failed', file: null, error: message(err) };
-      logger.warn('export: epic failed', { workspaceId, epicRef, disposition, error: outcome.error });
+    if (!settings.enabled || (manual === undefined && !settings.includeStates.includes(disposition)) || !hasExportDestination(settings)) return null;
+    if (manual === undefined) {
+      const prior = await this.deps.archive.epicExportHistory(workspaceId, epicRef);
+      if (prior.some((e) => e.status === 'succeeded' && e.disposition === disposition)) return null;
     }
-    const entry = exportRecord(disposition, outcome, at);
-    try {
-      await this.deps.archive.recordEpicExport(workspaceId, epicRef, entry);
-    } catch (err) {
-      logger.warn('export: epic archive history not updated', { workspaceId, epicRef, error: message(err) });
-    }
-    return outcome;
+    return this.execute({ kind: 'epic', workspaceId, epicRef }, disposition, settings, (at) =>
+      this.stageEpic(workspaceId, epicRef, disposition, settings.redactPatterns, at, snapshot, manual),
+    );
   }
 
   private async memberEntries(members: EpicExportMember[]): Promise<EpicMemberEntry[]> {
@@ -444,9 +490,13 @@ export class TaskExporter {
       return null;
     }
     if (!settings.enabled || (manual === undefined && !settings.includeStates.includes(disposition)) || !hasExportDestination(settings)) return null;
+    return this.execute({ kind: 'task', task }, disposition, settings, (at) => this.stage(task, disposition, settings.redactPatterns, at, snapshot, manual));
+  }
 
+  private async execute(owner: ExportOwner, disposition: ExportDisposition, settings: ResolvedExportSettings, build: (at: Date) => Promise<StagedExport>): Promise<ExportOutcome[]> {
     const at = this.now();
     const { directoryPath, s3 } = settings;
+    const where = ownerContext(owner);
     const destinations: { destination: ExportDestination; deliver: (built: StagedExport) => Promise<string>; pending: (built: StagedExport, nextRetryAt: string) => PendingDestination }[] = [];
     if (directoryPath !== null) {
       destinations.push({
@@ -467,21 +517,23 @@ export class TaskExporter {
     const retryAt = new Date(at.getTime() + EXPORT_RETRY_DELAYS_MS[0]).toISOString();
     let built: StagedExport | null = null;
     try {
-      built = await this.stage(task, disposition, settings.redactPatterns, at, snapshot, manual);
+      built = await build(at);
     } catch (err) {
       for (const { destination } of destinations) {
         outcomes.push({ destination, status: 'failed', file: null, error: message(err) });
       }
-      logger.warn('export: failed', { taskId: task.id, disposition, error: message(err) });
+      logger.warn('export: failed', { ...where, disposition, error: message(err) });
     }
     if (built !== null) {
+      const { name, bytes, partial } = built.meta;
+      await this.recordEpicStep(owner, { step: 'export-built', disposition, name, bytes, partial });
       for (const { destination, deliver, pending } of destinations) {
         let outcome: ExportOutcome;
         try {
           outcome = { destination, status: 'succeeded', file: await deliver(built) };
         } catch (err) {
           outcome = { destination, status: 'failed', file: null, error: message(err) };
-          logger.warn('export: failed', { taskId: task.id, disposition, destination, error: outcome.error });
+          logger.warn('export: failed', { ...where, disposition, destination, error: outcome.error });
           retryable.push(pending(built, retryAt));
         }
         outcomes.push(outcome);
@@ -490,17 +542,17 @@ export class TaskExporter {
     let nextRetryAt: string | null = null;
     if (built !== null && retryable.length > 0) {
       try {
-        await this.writePending(pendingPath(built.staged), { task, disposition, firstFailedAt: at.toISOString(), destinations: retryable, meta: built.meta });
+        await this.writePending(pendingPath(built.staged), { owner, disposition, firstFailedAt: at.toISOString(), destinations: retryable, meta: built.meta });
         nextRetryAt = retryAt;
       } catch (err) {
-        logger.warn('export: retry not scheduled', { taskId: task.id, error: message(err) });
+        logger.warn('export: retry not scheduled', { ...where, error: message(err) });
       }
     }
     if (built !== null && nextRetryAt === null) await rm(built.staged, { force: true }).catch(() => undefined);
-    for (const outcome of outcomes) await this.record(task, disposition, outcome, at, 0, built?.meta);
+    for (const outcome of outcomes) await this.record(owner, disposition, outcome, at, 0, built?.meta, nextRetryAt);
     for (const outcome of outcomes) {
       if (outcome.status !== 'failed') continue;
-      this.notifyFailure({ task, disposition, destination: outcome.destination, error: outcome.error ?? 'export failed', retry: 0, nextRetryAt });
+      this.notifyFailure({ owner, disposition, destination: outcome.destination, error: outcome.error ?? 'export failed', retry: 0, nextRetryAt });
     }
     return outcomes;
   }
@@ -535,7 +587,7 @@ export class TaskExporter {
   private async retrySidecar(sidecar: string): Promise<number> {
     const pending = await this.readPending(sidecar);
     if (!pending) return 0;
-    return this.serialize(taskChainKey(pending.task.id), async () => {
+    return this.serialize(chainKey(pending.owner), async () => {
       const current = await this.readPending(sidecar);
       if (!current) return 0;
       const staged = stagedPath(sidecar);
@@ -553,17 +605,17 @@ export class TaskExporter {
         const retry = dest.retries + 1;
         let outcome: ExportOutcome;
         try {
-          outcome = { destination: dest.destination, status: 'succeeded', file: await this.redeliver(current.task, staged, dest) };
+          outcome = { destination: dest.destination, status: 'succeeded', file: await this.redeliver(current.owner, staged, dest) };
         } catch (err) {
           outcome = { destination: dest.destination, status: 'failed', file: null, error: message(err) };
-          logger.warn('export: retry failed', { taskId: current.task.id, destination: dest.destination, retry, error: outcome.error });
+          logger.warn('export: retry failed', { ...ownerContext(current.owner), destination: dest.destination, retry, error: outcome.error });
         }
-        await this.record(current.task, current.disposition, outcome, at, retry, current.meta);
+        const nextRetryAt = outcome.status === 'failed' && retry < EXPORT_RETRY_DELAYS_MS.length ? new Date(first + EXPORT_RETRY_DELAYS_MS[retry]!).toISOString() : null;
+        await this.record(current.owner, current.disposition, outcome, at, retry, current.meta, nextRetryAt);
         if (outcome.status === 'succeeded') continue;
-        const nextRetryAt = retry < EXPORT_RETRY_DELAYS_MS.length ? new Date(first + EXPORT_RETRY_DELAYS_MS[retry]!).toISOString() : null;
         if (nextRetryAt) remaining.push({ ...dest, retries: retry, nextRetryAt });
         this.notifyFailure({
-          task: current.task,
+          owner: current.owner,
           disposition: current.disposition,
           destination: dest.destination,
           error: outcome.error ?? 'export failed',
@@ -581,9 +633,9 @@ export class TaskExporter {
     });
   }
 
-  private async redeliver(task: TaskRow, staged: string, dest: PendingDestination): Promise<string> {
+  private async redeliver(owner: ExportOwner, staged: string, dest: PendingDestination): Promise<string> {
     if (dest.destination === 'directory') return this.deliver(staged, dest.dir, dest.base);
-    const { s3 } = await this.deps.settings(task);
+    const { s3 } = owner.kind === 'task' ? await this.deps.settings(owner.task) : await this.deps.epicSettings(owner.workspaceId);
     if (s3 === null) throw new Error('S3 destination is no longer configured');
     return uploadToS3(s3, staged, dest.slug, dest.base);
   }
@@ -593,7 +645,7 @@ export class TaskExporter {
       const value = JSON.parse(await readFile(sidecar, 'utf8')) as Partial<PendingExport> | null;
       if (
         !value ||
-        typeof value.task?.id !== 'number' ||
+        !isValidOwner(value.owner) ||
         !Number.isFinite(Date.parse(value.firstFailedAt as string)) ||
         !Array.isArray(value.destinations) ||
         !value.destinations.every(validDestination)
@@ -625,7 +677,7 @@ export class TaskExporter {
     try {
       this.deps.onFailure?.(failure);
     } catch (err) {
-      logger.warn('export: failure hook threw', { taskId: failure.task.id, error: message(err) });
+      logger.warn('export: failure hook threw', { ...ownerContext(failure.owner), error: message(err) });
     }
   }
 
@@ -633,60 +685,87 @@ export class TaskExporter {
     return (this.deps.now ?? (() => new Date()))();
   }
 
-  private async record(task: TaskRow, disposition: ExportDisposition, outcome: ExportOutcome, at: Date, retry: number, meta?: ExportMeta): Promise<void> {
+  private async record(owner: ExportOwner, disposition: ExportDisposition, outcome: ExportOutcome, at: Date, retry: number, meta: ExportMeta | undefined, nextRetryAt: string | null): Promise<void> {
     const entry: ExportRecord = { ...exportRecord(disposition, outcome, at, meta), ...(retry > 0 ? { retry } : {}) };
+    const where = ownerContext(owner);
+    if (owner.kind === 'epic') {
+      await this.recordEpicStep(
+        owner,
+        outcome.status === 'succeeded'
+          ? { step: 'export-delivered', destination: outcome.destination, file: outcome.file ?? '', retry }
+          : { step: 'export-failed', destination: outcome.destination, error: outcome.error ?? 'export failed', retry, nextRetryAt },
+      );
+      try {
+        await this.deps.archive.recordEpicExport(owner.workspaceId, owner.epicRef, entry);
+      } catch (err) {
+        logger.warn('export: epic archive history not updated', { ...where, error: message(err) });
+      }
+      return;
+    }
+    const { task } = owner;
     if (disposition !== 'deleted') {
       const { at: _at, ...fact } = entry;
       try {
         await this.deps.recordFact(task.id, { event: 'export', ...fact });
       } catch (err) {
-        logger.warn('export: fact not recorded', { taskId: task.id, error: message(err) });
+        logger.warn('export: fact not recorded', { ...where, error: message(err) });
       }
     }
     try {
       await this.deps.archive.recordExport(task, entry);
     } catch (err) {
-      logger.warn('export: archive history not updated', { taskId: task.id, error: message(err) });
+      logger.warn('export: archive history not updated', { ...where, error: message(err) });
     }
   }
 
-  private async epicToDirectory(
+  private async recordEpicStep(owner: ExportOwner, step: EpicExportStep): Promise<void> {
+    if (owner.kind !== 'epic') return;
+    try {
+      await this.deps.recordEpicStep(owner.workspaceId, owner.epicRef, step);
+    } catch (err) {
+      logger.warn('export: epic timeline step not recorded', { ...ownerContext(owner), error: message(err) });
+    }
+  }
+
+  private async stageEpic(
     workspaceId: number,
     epicRef: number,
     disposition: ExportDisposition,
-    root: string,
     patterns: readonly RedactionPattern[],
     at: Date,
     pending?: Promise<EpicExportSnapshot>,
-  ): Promise<string> {
+    manual?: ManualExportOptions,
+  ): Promise<StagedExport> {
     const snapshot = await (pending ?? this.deps.epicSnapshot(workspaceId, epicRef));
     const members = await this.memberEntries(snapshot.members);
     const archiveDir = await this.deps.archive.ensureEpic(workspaceId, epicRef);
     const workspace = await this.deps.workspaceName(workspaceId);
+    let partial = false;
+    let redactions: Record<string, number> = {};
     const staged = await this.stageTarball(`epic-${epicRef}`, (target) =>
-      this.buildTarball(target, archiveDir, snapshot, patterns, at, ({ files, partial, redaction }) => ({
-        manifest: {
-          format: 'harmonic-epic-export',
-          formatVersion: 1,
-          harmonicVersion: this.deps.version,
-          epicRef,
-          workspaceId,
-          workspace,
-          disposition,
-          exportedAt: at.toISOString(),
-          counts: { archiveFiles: files, attempts: snapshot.attemptCount, members: members.length },
-          redaction,
-          partial,
-          members,
-        },
-        readme: epicReadme({ epicRef, ticket: snapshot.ticket, workspace, disposition, exportedAt: at.toISOString(), attemptCount: snapshot.attemptCount, members }),
-      })),
+      this.buildTarball(target, archiveDir, snapshot, patterns, at, (result) => {
+        partial = result.partial || manual?.forcePartial === true;
+        redactions = { ...result.redaction.matches };
+        return {
+          manifest: {
+            format: 'harmonic-epic-export',
+            formatVersion: 1,
+            harmonicVersion: this.deps.version,
+            epicRef,
+            workspaceId,
+            workspace,
+            disposition,
+            exportedAt: at.toISOString(),
+            counts: { archiveFiles: result.files, attempts: snapshot.attemptCount, members: members.length },
+            redaction: result.redaction,
+            partial,
+            members,
+          },
+          readme: epicReadme({ epicRef, ticket: snapshot.ticket, workspace, disposition, exportedAt: at.toISOString(), attemptCount: snapshot.attemptCount, members }),
+        };
+      }),
     );
-    try {
-      return await this.deliver(staged, join(root, workspaceSlug(workspace, workspaceId)), `epic-${epicRef}-${disposition}-${exportTimestamp(at)}`);
-    } finally {
-      await rm(staged, { force: true });
-    }
+    return this.measure(staged, workspaceSlug(workspace, workspaceId), `epic-${epicRef}-${disposition}-${exportTimestamp(at)}`, at, partial, redactions);
   }
 
   private async stage(
@@ -726,7 +805,10 @@ export class TaskExporter {
         };
       }),
     );
-    const base = this.fileName(task, disposition, at);
+    return this.measure(staged, workspaceSlug(workspace, task.workspaceId), this.fileName(task, disposition, at), at, partial, redactions);
+  }
+
+  private async measure(staged: string, slug: string, base: string, at: Date, partial: boolean, redactions: Record<string, number>): Promise<StagedExport> {
     let bytes = 0;
     try {
       bytes = (await stat(staged)).size;
@@ -734,12 +816,7 @@ export class TaskExporter {
       await rm(staged, { force: true });
       throw err;
     }
-    return {
-      staged,
-      slug: workspaceSlug(workspace, task.workspaceId),
-      base,
-      meta: { builtAt: at.toISOString(), name: `${base}${TARBALL_SUFFIX}`, partial, bytes, redactions },
-    };
+    return { staged, slug, base, meta: { builtAt: at.toISOString(), name: `${base}${TARBALL_SUFFIX}`, partial, bytes, redactions } };
   }
 
   private async stageTarball(name: string, build: (staged: string) => Promise<void>): Promise<string> {

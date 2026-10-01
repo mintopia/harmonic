@@ -29,6 +29,13 @@ export interface ExportRecord {
   redactions?: Record<string, number>;
 }
 
+interface ArchiveManifest {
+  exports?: ExportRecord[];
+  dispositions?: { disposition: string; at: string }[];
+  deleted?: { at: string; actor: OperatorActor };
+  [key: string]: unknown;
+}
+
 export interface StepArchiveWriter {
   readonly dir: Promise<string>;
   appendPrompt(text: string): void;
@@ -177,24 +184,14 @@ export class TaskArchive {
     }
   }
 
-  markDeleted(dir: string, actor: OperatorActor, taskId: number): Promise<void> {
-    return this.enqueue(taskId, async () => {
-      try {
-        const manifest = join(dir, 'archive.json');
-        const body = JSON.parse(await readFile(manifest, 'utf8')) as Record<string, unknown>;
+  async markDeleted(dir: string, actor: OperatorActor, taskId: number): Promise<void> {
+    try {
+      await this.updateManifest(dir, (body) => {
         body.deleted = { at: new Date().toISOString(), actor };
-        const tmp = `${manifest}.${randomBytes(6).toString('hex')}.tmp`;
-        try {
-          await writeFile(tmp, `${JSON.stringify(body, null, 2)}\n`);
-          await rename(tmp, manifest);
-        } catch (err) {
-          await rm(tmp, { force: true });
-          throw err;
-        }
-      } catch (err) {
-        warn('archive: deletion mark failed', err, { taskId });
-      }
-    });
+      });
+    } catch (err) {
+      warn('archive: deletion mark failed', err, { taskId });
+    }
   }
 
   async recordDeletion(task: TaskRow, actor: OperatorActor): Promise<void> {
@@ -269,16 +266,26 @@ export class TaskArchive {
   }
 
   async recordExport(task: TaskRow, entry: ExportRecord): Promise<void> {
-    await this.appendExportSerialised(await this.ensure(task), entry);
+    await this.updateManifest(await this.ensure(task), (body) => {
+      body.exports = [...(body.exports ?? []), entry];
+    });
   }
 
   async recordEpicExport(workspaceId: number, epicRef: number, entry: ExportRecord): Promise<void> {
-    await this.appendExportSerialised(await this.ensureEpic(workspaceId, epicRef), entry);
+    await this.updateManifest(await this.ensureEpic(workspaceId, epicRef), (body) => {
+      body.exports = [...(body.exports ?? []), entry];
+    });
   }
 
-  private async appendExportSerialised(dir: string, entry: ExportRecord): Promise<void> {
+  async recordEpicDisposition(workspaceId: number, epicRef: number, disposition: string): Promise<void> {
+    await this.updateManifest(await this.ensureEpic(workspaceId, epicRef), (body) => {
+      body.dispositions = [...(body.dispositions ?? []), { disposition, at: new Date().toISOString() }];
+    });
+  }
+
+  private async updateManifest(dir: string, mutate: (body: ArchiveManifest) => void): Promise<void> {
     const previous = this.manifestWrites.get(dir) ?? Promise.resolve();
-    const next = previous.catch(() => undefined).then(() => this.appendExport(dir, entry));
+    const next = previous.catch(() => undefined).then(() => this.rewriteManifest(dir, mutate));
     this.manifestWrites.set(dir, next);
     try {
       await next;
@@ -287,10 +294,10 @@ export class TaskArchive {
     }
   }
 
-  private async appendExport(dir: string, entry: ExportRecord): Promise<void> {
+  private async rewriteManifest(dir: string, mutate: (body: ArchiveManifest) => void): Promise<void> {
     const manifest = join(dir, 'archive.json');
-    const body = JSON.parse(await readFile(manifest, 'utf8')) as { exports?: ExportRecord[] };
-    body.exports = [...(body.exports ?? []), entry];
+    const body = JSON.parse(await readFile(manifest, 'utf8')) as ArchiveManifest;
+    mutate(body);
     const tmp = `${manifest}.${randomBytes(6).toString('hex')}.tmp`;
     try {
       await writeFile(tmp, `${JSON.stringify(body, null, 2)}\n`);
