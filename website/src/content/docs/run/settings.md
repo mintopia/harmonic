@@ -125,8 +125,8 @@ are masked and never shown again; use the replace control to change them.
 *Wrote and removed probe object* or the error. Save your changes first; the
 button is disabled while there are unsaved edits.
 
-Failed deliveries retry after 5 minutes, 30 minutes and 2 hours. After that,
-use **Export again** on the ticket page.
+Failed deliveries and failed Export builds retry after 5 minutes, 30 minutes
+and 2 hours. After that, use **Export again** on the ticket page.
 
 ### Redaction patterns
 

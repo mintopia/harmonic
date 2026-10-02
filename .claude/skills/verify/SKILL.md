@@ -8,8 +8,7 @@ description: Build, launch, and drive Harmonic to verify changes end-to-end at t
 ## Build + launch
 
 ```bash
-npx tsc -p tsconfig.json                      # server → dist/
-npx vite build --config web/vite.config.ts    # SPA → dist/web (served by the server)
+npm run build                                 # server + runtime assets → dist/, SPA → dist/web
 node dist/cli.js serve --data-dir <tmp-dir> --port 47421 --password verify-pass
 ```
 

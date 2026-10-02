@@ -48,8 +48,8 @@ for what that merge looks like.
 To reuse a result elsewhere, such as in a tracker comment or a steer, hover
 over it on the ticket page and click the copy icon. It's on a Critic's summary,
 a verify command's result and its output, and each of the agent's messages.
-Summaries and messages copy as Markdown, and verify output copies in full, even
-when the page shows only part of it.
+Code blocks in Markdown have one too. Summaries and messages copy as Markdown,
+and verify output copies in full, even when the page shows only part of it.
 
 ## Tickets you queue by hand
 
@@ -65,3 +65,15 @@ until you make it:
 This hand-review step is the one place a human signs off inside the flow,
 and it's there because you asked for the work directly. Tickets from your
 tracker skip it, closing the ticket is their sign-off.
+
+## When a merge is handed back
+
+If a merge can't finish, Harmonic escalates the ticket and the merge progress
+says why:
+
+- **Merge conflict.** The work clashed with the base branch and the agent
+  couldn't resolve it in its allowed turns.
+- **Post-merge check failed.** A post-merge command went red after the merge.
+  Harmonic reverts the merge and records the revert on the Timeline.
+- **Base update failed.** Harmonic couldn't write the base branch, for example
+  because another git process held its lock. Nothing in the work conflicted.

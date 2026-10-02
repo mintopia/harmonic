@@ -78,7 +78,7 @@ a copy for you, so it doesn't show up under Destinations or Earlier Exports.
 ### When a delivery fails
 
 A failed Destination shows its error and the next retry, for example
-*Retry 2 of 3 in 27 min*. Harmonic retries on its own after 5 minutes, 30
+*Retry 2 of 3 at 15:30*. Harmonic retries on its own after 5 minutes, 30
 minutes and 2 hours. After the third failure the row reads **Retries
 exhausted**. Fix the problem, then use **Export again**.
 
@@ -86,7 +86,8 @@ A failure also raises a toast and sends an `export.failed` event to your
 [notification channels](/harmonic/work/notifications/).
 
 The ticket's Timeline records each step as its own event tagged **EXPORT**:
-the Export being built, each delivery, and each failure.
+the Export being built, each delivery, and each failure. If building the
+Export fails, Harmonic rebuilds it on the same schedule.
 
 ### Partial exports
 
