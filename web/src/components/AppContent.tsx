@@ -348,7 +348,7 @@ export function AppContent({
               <span aria-hidden="true" className="mt-1 size-2 shrink-0 rounded-full bg-await-dot" />
               <p className="flex-1 text-ink">
                 A ticket is escalated. Open it to read why and the changes so far, then{' '}
-                <span className="font-semibold text-ink">Accept</span> to merge as-is,{' '}
+                <span className="font-semibold text-ink">Accept</span> to override the failed step and continue the pipeline (merge after the final review),{' '}
                 <span className="font-semibold text-ink">Reject</span> with guidance for the next attempt, or{' '}
                 <span className="font-semibold text-ink">Close</span> it — the one decision agents don't take for you.
               </p>

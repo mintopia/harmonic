@@ -11,8 +11,12 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    host: '127.0.0.1',
+    port: 5173,
+    strictPort: true,
     proxy: {
-      '/api': { target: 'http://127.0.0.1:4700', ws: true },
+      '/api': { target: 'http://127.0.0.1:4701', ws: true },
+      '/mcp': { target: 'http://127.0.0.1:4701' },
     },
   },
 });

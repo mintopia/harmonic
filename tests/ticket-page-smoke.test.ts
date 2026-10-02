@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createElement } from 'react';
+import { act, createElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TicketPage } from '../web/src/components/TicketPage.js';
 import type { Task, Workspace } from '../web/src/types.js';
@@ -70,5 +70,24 @@ describe('TicketPage smoke (issue #469)', () => {
     expect(host!.textContent).toContain('repeated verification failures');
     expect(host!.textContent).toContain('Accept');
     expect(host!.textContent).toContain('Reject');
+  });
+});
+
+describe('Ticket Escape navigation', () => {
+  it('leaves an open child dialog in charge of Escape', async () => {
+    const task = makeTask({ state: 'escalated' });
+    stubTicketFetch(task, makeWorkspace());
+    const onClose = vi.fn();
+    const host = await mountComponent(createElement(TicketPage, {
+      task, onEdit: () => {}, onChanged: () => {}, onClose,
+      onOpenTask: () => {}, selection: { kind: 'none' }, onSelect: () => {},
+    }));
+    await act(async () => [...host.querySelectorAll('button')].find((button) => button.textContent === 'Reject…')!.click());
+    expect(host.querySelector('dialog[open]')).not.toBeNull();
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click());
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });

@@ -1,6 +1,6 @@
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
-import type { Task, TaskState } from './types.js';
+import type { Task, TaskState, StepType } from './types.js';
 
 /**
  * The operator actions the TaskDetail footer and TaskCard offer in a given
@@ -52,4 +52,27 @@ export interface EscalationActions {
 export function escalationActions(task: Pick<Task, 'hasCandidate' | 'state'>): EscalationActions | null {
   if (task.state !== 'escalated') return null;
   return { accept: task.hasCandidate, reject: true, close: true };
+}
+
+export function acceptPresentation(failedStep: StepType | null) {
+  switch (failedStep) {
+    case 'rebase':
+      return { label: 'Accept & implement', description: 'Override the failed rebase step and continue with implementation.' };
+    case 'implementation':
+      return { label: 'Accept & verify', description: 'Override the failed implementation step and continue with verification.' };
+    case 'verification':
+      return { label: 'Accept & review', description: 'Override the failed verification step and continue with review.' };
+    case 'review':
+      return { label: 'Accept & merge', description: 'Override the failed review step and merge the candidate.' };
+    case null:
+      return { label: 'Accept', description: 'Override the failed step and continue the pipeline; accepting the final review merges the candidate.' };
+  }
+}
+
+export function acceptedOutcome(task: Pick<Task, 'state' | 'mergeStatus' | 'currentStep'>): string {
+  if (task.state === 'done') return 'completed';
+  if (task.mergeStatus === 'merging') return 'merging';
+  if (task.state === 'escalated') return 'needs your attention';
+  if (task.currentStep) return `continuing with ${task.currentStep}`;
+  return task.state === 'working' ? 'continuing the pipeline' : task.state;
 }

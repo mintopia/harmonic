@@ -114,7 +114,7 @@ export function TicketPage({
 
   useEffect(() => {
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('dialog[open]')) onClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -318,6 +318,7 @@ export function TicketPage({
           <Gate
             model={gateModel}
             task={task}
+            failedStep={latestAttempt?.steps.slice().reverse().find((step) => step.state === 'failed')?.type ?? null}
             onEdit={(t) => {
               onClose();
               onEdit(t);

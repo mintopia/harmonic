@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { escalationActions, taskActions } from '../web/src/task-actions-model.js';
+import { acceptPresentation, acceptedOutcome, escalationActions, taskActions } from '../web/src/task-actions-model.js';
 import { TASK_STATES } from '../web/src/types.js';
 
 describe('taskActions', () => {
@@ -77,5 +77,24 @@ describe('escalationActions', () => {
 
   it('withholds only Accept when the branch has no candidate', () => {
     expect(escalationActions({ state: 'escalated', hasCandidate: false })).toEqual({ accept: false, reject: true, close: true });
+  });
+});
+
+describe('Accept disposition', () => {
+  it.each([
+    ['rebase', 'Accept & implement'],
+    ['implementation', 'Accept & verify'],
+    ['verification', 'Accept & review'],
+    ['review', 'Accept & merge'],
+    [null, 'Accept'],
+  ] as const)('explains the next action after %s', (step, label) => {
+    expect(acceptPresentation(step).label).toBe(label);
+  });
+
+  it('reports the response outcome rather than claiming every acceptance merges', () => {
+    expect(acceptedOutcome({ state: 'working', mergeStatus: null, currentStep: 'verification' })).toBe('continuing with verification');
+    expect(acceptedOutcome({ state: 'working', mergeStatus: null, currentStep: null })).toBe('continuing the pipeline');
+    expect(acceptedOutcome({ state: 'done', mergeStatus: null, currentStep: null })).toBe('completed');
+    expect(acceptedOutcome({ state: 'escalated', mergeStatus: null, currentStep: null })).toBe('needs your attention');
   });
 });

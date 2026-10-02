@@ -3,6 +3,7 @@ import { api } from '../api';
 import { toastSuccess } from '../toast';
 import { useLiveEffect } from '../useLiveEffect';
 import { Modal } from './Modal';
+import { ConfirmDialog } from './ConfirmDialog';
 import { btnGhost, btnPrimary, btnQuietDestructive, field, panelTitle, labelType } from '../ui';
 import { taskLabel } from '../id-format.js';
 
@@ -23,6 +24,12 @@ export function RejectDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warm, setWarm] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const requestClose = () => {
+    if (busy) return;
+    if (guidance.length > 0) setConfirmClose(true);
+    else onClose();
+  };
 
   useLiveEffect((live) => {
     loadPreview()
@@ -55,7 +62,8 @@ export function RejectDialog({
   };
 
   return (
-    <Modal label={`Reject ${taskLabel(taskId)}`} onClose={onClose} className="max-w-md">
+    <>
+    <Modal label={`Reject ${taskLabel(taskId)}`} onClose={onClose} onRequestClose={requestClose} className="max-w-md">
       <div className="p-5">
         <h2 className={`${panelTitle} mb-1`}>Reject {taskLabel(taskId)}</h2>
         <p className="mb-4 text-muted">
@@ -70,6 +78,7 @@ export function RejectDialog({
           id="reject-guidance"
           autoFocus
           rows={4}
+          disabled={busy}
           className={`${field} mb-4 resize-y`}
           placeholder="What was wrong, and what the next attempt should do differently…"
           value={guidance}
@@ -77,7 +86,7 @@ export function RejectDialog({
         />
         {error && <p role="alert" className="mb-3 text-fail">{error}</p>}
         <div className="flex justify-end gap-2">
-          <button type="button" className={`${btnGhost} px-3 py-1.5`} onClick={onClose} disabled={busy}>
+          <button type="button" className={`${btnGhost} px-3 py-1.5`} onClick={requestClose} disabled={busy}>
             Cancel
           </button>
           <button
@@ -101,5 +110,18 @@ export function RejectDialog({
         </div>
       </div>
     </Modal>
+    {confirmClose && (
+      <ConfirmDialog
+        label="Discard rejection guidance"
+        title="Discard unsent guidance?"
+        confirmLabel="Discard"
+        tone="danger"
+        onConfirm={onClose}
+        onCancel={() => setConfirmClose(false)}
+      >
+        Your rejection guidance will be lost.
+      </ConfirmDialog>
+    )}
+    </>
   );
 }
