@@ -495,7 +495,7 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
       </>}
     </aside>
 
-    <div role="separator" aria-orientation="vertical" aria-label="Resize explorer" tabIndex={0} onPointerDown={startResize} onKeyDown={(event) => {
+    <div role="separator" aria-orientation="vertical" aria-label="Resize explorer" aria-valuemin={SIDEBAR_MIN} aria-valuemax={SIDEBAR_MAX} aria-valuenow={sidebarWidth} tabIndex={0} onPointerDown={startResize} onKeyDown={(event) => {
       if (event.key === 'ArrowLeft') { event.preventDefault(); nudgeResize(-16); }
       if (event.key === 'ArrowRight') { event.preventDefault(); nudgeResize(16); }
     }} className="group relative w-px shrink-0 cursor-col-resize bg-hairline focus:outline-none">

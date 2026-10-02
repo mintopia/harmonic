@@ -1,5 +1,5 @@
 import { Icon } from '../Icon';
-import type { AttemptSummary, Task } from '../../types';
+import type { Attempt, AttemptSummary, Task } from '../../types';
 import { card, PHASE_NODE_STYLES } from '../../ui';
 import { splitPathTail } from '../../path';
 import { taskLifecycle, type LifecycleStepKey, type LifecycleStepStatus } from '../../task-detail-model';
@@ -17,6 +17,7 @@ const STEP_LABEL_TONE: Record<LifecycleStepStatus, string> = {
   awaiting: 'text-await',
   pending: 'text-faint',
   failed: 'text-fail',
+  skipped: 'text-faint',
 };
 
 const STEP_STATUS_LABEL: Record<LifecycleStepStatus, string> = {
@@ -25,27 +26,28 @@ const STEP_STATUS_LABEL: Record<LifecycleStepStatus, string> = {
   awaiting: 'awaiting review',
   pending: 'pending',
   failed: 'failed',
+  skipped: 'skipped',
 };
 
 function stepCaption(key: LifecycleStepKey, status: LifecycleStepStatus, task: Task, attemptCount: number, disabled: boolean): string | null {
   switch (key) {
     case 'worktree':
-      return task.branch ? splitPathTail(task.branch).tail : null;
+      return task.isolationMode === 'direct' ? 'direct mode' : task.branch ? splitPathTail(task.branch).tail : null;
     case 'implementation':
       return attemptCount > 0 ? `${attemptCount} attempt${attemptCount === 1 ? '' : 's'}` : null;
     case 'merge':
-      return status === 'awaiting' ? 'awaiting review' : null;
+      return status === 'awaiting' ? 'awaiting review' : task.isolationMode === 'direct' ? 'direct mode' : null;
     case 'postMergeCheck':
-      return disabled ? 'not configured' : 'revert on red';
+      return task.isolationMode === 'direct' ? 'direct mode' : disabled ? 'not configured' : 'revert on red';
     case 'closeIssue':
-      return task.trackerRef != null ? `#${task.trackerRef}` : null;
+      return task.isolationMode === 'direct' ? 'direct mode' : task.trackerRef != null ? `#${task.trackerRef}` : 'no linked issue';
     case 'retire':
-      return 'cleanup';
+      return task.isolationMode === 'direct' ? 'direct mode' : 'cleanup';
   }
 }
 
-function TaskProgressBar({ task, attempts, commandConfigured }: { task: Task; attempts: AttemptSummary[]; commandConfigured: boolean }) {
-  const { steps } = taskLifecycle(task.state, attempts, commandConfigured, task.mergeStatus);
+function TaskProgressBar({ task, attempts, attemptDetails, commandConfigured }: { task: Task; attempts: AttemptSummary[]; attemptDetails: Attempt[]; commandConfigured: boolean }) {
+  const { steps } = taskLifecycle(task, attempts, attemptDetails, commandConfigured);
   return (
     <div className="mb-6 mt-1">
       <div className={`mb-3 ${sectionCaps}`}>Task progress</div>
@@ -54,9 +56,6 @@ function TaskProgressBar({ task, attempts, commandConfigured }: { task: Task; at
         aria-label="Task progress"
       >
         {steps.map((step, i) => {
-          // `disabled` steps (e.g. an unconfigured post-merge check) are still
-          // reachable, not skipped, so their `status` alone — not `disabled` —
-          // decides whether a connector is solid.
           const leftConnectorSolid = i > 0 && steps[i - 1]?.status === 'done';
           const rightConnectorSolid = step.status === 'done';
           const caption = stepCaption(step.key, step.status, task, attempts.length, !!step.disabled);
@@ -69,7 +68,7 @@ function TaskProgressBar({ task, attempts, commandConfigured }: { task: Task; at
               <div className="flex w-full items-center max-md:w-auto max-md:flex-none">
                 <span className={`-mx-px h-0.5 flex-1 rounded max-md:hidden ${i === 0 ? 'invisible' : leftConnectorSolid ? 'bg-merged' : 'bg-edge'}`} />
                 <span
-                  className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.status]} ${step.disabled ? 'opacity-60' : ''}`}
+                  className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.status === 'skipped' ? 'pending' : step.status]} ${step.disabled ? 'opacity-60' : ''}`}
                 >
                   {stepGlyph(step.status, i)}
                 </span>

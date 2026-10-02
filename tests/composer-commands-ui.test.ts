@@ -3,7 +3,7 @@ import { act, createElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Composer } from '../web/src/components/conversation/Composer.js';
 import type { Conversation } from '../web/src/types.js';
-import { cleanup, makeConfig, mountComponent } from './component-smoke-harness.js';
+import { cleanup, makeConfig, makeWorkspace, mountComponent } from './component-smoke-harness.js';
 
 const conversation: Conversation = {
   id: 1,
@@ -37,7 +37,7 @@ const config = makeConfig({
   chat: { harness: 'codex', model: 'gpt-5.6' },
 });
 
-afterEach(cleanup);
+afterEach(async () => { await cleanup(); sessionStorage.clear(); });
 
 async function type(textarea: HTMLTextAreaElement, value: string, caret = value.length) {
   const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
@@ -101,5 +101,32 @@ describe('Composer command picker (#613)', () => {
       { harness: 'codex', model: 'gpt-5.6', permissionMode: 'ask' },
       '$status',
     );
+  });
+});
+
+describe('new conversation draft', () => {
+  it('restores a workspace draft after unmount and clears it only after a successful send', async () => {
+    const onSend = vi.fn()
+      .mockRejectedValueOnce(new Error('send failed'))
+      .mockResolvedValue({ queued: false });
+    const props = { config, workspace: makeWorkspace(), draftWorkspaceId: 1, conversation: null, events: [], expanded: true, onSend };
+    let host = await mountComponent(createElement(Composer, props));
+    await type(host.querySelector('textarea')!, 'Review this patch');
+    await cleanup();
+
+    host = await mountComponent(createElement(Composer, { ...props, draftWorkspaceId: 2 }));
+    expect(host.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('');
+    await cleanup();
+
+    host = await mountComponent(createElement(Composer, props));
+    expect(host.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('Review this patch');
+    await act(async () => { host.querySelector<HTMLButtonElement>('button[aria-label="Send"]')?.click(); });
+    expect(host.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('Review this patch');
+    await act(async () => { host.querySelector<HTMLButtonElement>('button[aria-label="Send"]')?.click(); });
+    expect(host.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('');
+    await cleanup();
+
+    host = await mountComponent(createElement(Composer, props));
+    expect(host.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('');
   });
 });

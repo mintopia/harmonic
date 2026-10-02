@@ -87,6 +87,9 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
   const updateRequest = useRef(0);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
+  const [workspacesError, setWorkspacesError] = useState<string | null>(null);
+  const [workspaceRetryKey, setWorkspaceRetryKey] = useState(0);
+  const retryWorkspaces = useCallback(() => setWorkspaceRetryKey((key) => key + 1), []);
   const [epics, setEpics] = useState<Epic[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [refreshingTracker, setRefreshingTracker] = useState(false);
@@ -148,7 +151,6 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
     if (!authed) return;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let retryDelay = 2_000;
-    let reported = false;
     apiImpl.config().then((next) => live() && setConfig(next), (error) => live() && toastError(error));
     apiImpl
       .globalPause()
@@ -158,17 +160,17 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
       if (!live()) return;
       setWorkspaces(workspaces);
       setWorkspacesLoaded(true);
+      setWorkspacesError(null);
       if (route.scope.kind === 'workspace') setActiveWorkspaceId(route.scope.workspaceId);
     }, (error) => {
       if (!live()) return;
-      if (!reported) toastError(error);
-      reported = true;
+      setWorkspacesError(error instanceof Error ? error.message : String(error));
       retryTimer = setTimeout(loadWorkspaces, retryDelay);
       retryDelay = Math.min(retryDelay * 2, 30_000);
     });
     loadWorkspaces();
     return () => { if (retryTimer !== undefined) clearTimeout(retryTimer); };
-  }, [authed, route.scope, apiImpl]);
+  }, [authed, route.scope, apiImpl, workspaceRetryKey]);
 
   useLiveEffect((live) => {
     if (!authed) return;
@@ -181,8 +183,9 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
           setUpdate(next);
           timer = setTimeout(load, next.armedVersion === null ? 15_000 : 1_000);
         },
-        () => {
+        (error) => {
           if (!live() || request !== updateRequest.current) return;
+          if (error instanceof ApiError && error.status === 409 && error.message === 'in-place upgrades are only available for packaged instances') return;
           timer = setTimeout(load, 1_000);
         },
       );
@@ -380,6 +383,8 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
     workspaces,
     setWorkspaces,
     workspacesLoaded,
+    workspacesError,
+    retryWorkspaces,
     update,
     updatePending,
     changeUpdate,

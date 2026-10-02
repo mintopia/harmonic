@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { WORKSPACE_BADGE_INK, WORKSPACE_COLORS } from '../src/domain/workspaces.js';
+import { AttemptsNav } from '../web/src/components/ticket/AttemptsNav.js';
+import type { Attempt } from '../web/src/types.js';
 
 const CSS = readFileSync(fileURLToPath(new URL('../web/src/index.css', import.meta.url)), 'utf8');
 
@@ -57,6 +61,7 @@ function hex(tokens: Record<string, string>, name: string): string {
 
 const TEXT_ON_TINT: ReadonlyArray<readonly [string, string, string]> = [
   ['ready', 'ready', 'ready-tint'],
+  ['paused', 'paused', 'paused-tint'],
   ['await', 'await', 'await-tint'],
   ['merged', 'merged', 'merged-tint'],
   ['failed', 'fail', 'fail-tint'],
@@ -67,6 +72,8 @@ const TEXT_ON_TINT: ReadonlyArray<readonly [string, string, string]> = [
   ['harness chip mark', 'tool', 'tool-tint'],
   ['accent', 'accent', 'accent-tint'],
   ['selection', 'ink', 'accent-tint'],
+  ['selected failed attempt', 'ink', 'await-tint'],
+  ['onboarding dismiss on ready', 'ink', 'ready-tint'],
   ['permission-band headline', 'ink', 'running-tint'],
   ['permission-band meta', 'muted', 'running-tint'],
 ];
@@ -181,6 +188,18 @@ describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
       }
     });
   }
+});
+
+it('uses contrast-safe ink for a selected failed Attempt label', () => {
+  const failed: Attempt = {
+    id: 1, taskId: 1, number: 1, state: 'failed', startedAt: 0, endedAt: 1,
+    feedback: null, verifiedSha: null, escalationReason: null,
+    verifierStatuses: [], continuation: null, steps: [],
+  };
+  const html = renderToStaticMarkup(createElement(AttemptsNav, {
+    attempts: [failed], maxAttempts: 3, selectedNumber: 1, onSelect: () => {},
+  }));
+  expect(html).toMatch(/class="[^"]*text-ink[^"]*"[^>]*>failed<\/span>/);
 });
 
 describe('Workspace colours keep their badge initials at WCAG AA (issue #596)', () => {

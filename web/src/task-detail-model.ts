@@ -3,7 +3,7 @@
 import { splitPathTail } from './path.js';
 import type { RailSelection } from './router-model.js';
 import { ROOT_AGENT, totalTokens } from './stats-model.js';
-import type { AttemptLogEvent, AttemptSummary, MergeStatus, Step, StepState, StepType, TaskState, ToolTokenAttribution, VerificationAttempt, VerificationMechanism, VerifierStatus } from './types.js';
+import type { Attempt, AttemptLogEvent, AttemptSummary, Step, StepState, StepType, Task, TaskState, ToolTokenAttribution, VerificationAttempt, VerificationMechanism, VerifierStatus } from './types.js';
 
 /**
  * What the operator has selected in the navigation sidebar, normalised for the
@@ -81,12 +81,8 @@ export type LifecycleStepKey =
   | 'closeIssue'
   | 'retire';
 
-/** A lifecycle node's status: settled (`done`), the highlighted active phase
- * (`current`), the phase paused on the operator's review (`awaiting` — the merge
- * gate of an escalated Task, the one node in the indigo "needs you" voice), not
- * yet reached (`pending`), or halted here without completing (`failed` — a
- * cancellation). */
-export type LifecycleStepStatus = 'done' | 'current' | 'awaiting' | 'pending' | 'failed';
+/** A lifecycle node is completed, active, waiting, unreached, failed, or inapplicable. */
+export type LifecycleStepStatus = 'done' | 'current' | 'awaiting' | 'pending' | 'failed' | 'skipped';
 
 export interface LifecycleStep {
   key: LifecycleStepKey;
@@ -96,8 +92,7 @@ export interface LifecycleStep {
   disabled?: boolean;
 }
 
-/** The Task-progress bar's view-model: the six nodes in lifecycle order plus the
- * key of the highlighted phase (the `current`- or `failed`-status node). */
+/** The Task-progress bar's six nodes and the phase containing the Task. */
 export interface TaskLifecycle {
   steps: LifecycleStep[];
   current: LifecycleStepKey;
@@ -105,87 +100,61 @@ export interface TaskLifecycle {
 
 const LIFECYCLE_STEPS: readonly { key: LifecycleStepKey; label: string }[] = [
   { key: 'worktree', label: 'Worktree' },
-  { key: 'implementation', label: 'Implementation' },
+  { key: 'implementation', label: 'Implement & verify' },
   { key: 'merge', label: 'Merge' },
   { key: 'postMergeCheck', label: 'Post-merge check' },
   { key: 'closeIssue', label: 'Close issue' },
   { key: 'retire', label: 'Retire' },
 ];
 
-interface LifecyclePosition {
-  current: LifecycleStepKey;
-  halted: boolean;
-  allDone: boolean;
-  awaiting: boolean;
-}
-
-function lifecyclePosition(
-  state: TaskState,
-  attempts: readonly Pick<AttemptSummary, 'state'>[],
-  mergeStatus: MergeStatus | null,
-): LifecyclePosition {
-  const settled = { halted: false, allDone: false, awaiting: false };
-  switch (state) {
-    case 'draft':
-    case 'ready':
-      return { current: 'worktree', ...settled };
-    case 'working':
-      // A live merge keeps the Task `working` while its Attempt still runs, so
-      // the node advances on `mergeStatus` as well as a settled Attempt.
-      return mergeStatus !== null || attempts.some((a) => a.state === 'completed')
-        ? { current: 'merge', ...settled }
-        : { current: 'implementation', ...settled };
-    case 'paused':
-      return { current: 'implementation', halted: true, allDone: false, awaiting: false };
-    case 'escalated':
-      return { current: 'merge', halted: false, allDone: false, awaiting: true };
-    case 'done':
-      return { current: 'retire', halted: false, allDone: true, awaiting: false };
-    case 'cancelled':
-      return attempts.length > 0
-        ? { current: 'implementation', halted: true, allDone: false, awaiting: false }
-        : { current: 'worktree', halted: true, allDone: false, awaiting: false };
-  }
-}
-
-/**
- * Derive the Task-progress bar from a Task's state and its Attempts. Pure: the
- * six ordered lifecycle nodes, each tagged done / current / pending / failed,
- * with exactly one highlighted `current` phase. Nodes before the active one are
- * `done`, nodes after are `pending`; the active node is `current`, or `failed`
- * when the Task halted there (escalated or cancelled). A `done` Task settles
- * every node — except `implementation`, which stays `pending` without an
- * Attempt to back it: a `done` Task can reach that state with zero Attempts,
- * and `done` must never claim implementation happened when none ran.
- * `commandConfigured` flags the post-merge check `disabled` when no command
- * verifier is configured (global or workspace), since the check is vacuous
- * without one. A non-null `mergeStatus` means the Task is actively merging,
- * which lights the `merge` node while the Task is still `working`.
- */
+/** Whole-Task progress uses the persisted worktree, Attempt and Step facts. */
 export function taskLifecycle(
-  state: TaskState,
-  attempts: readonly Pick<AttemptSummary, 'state'>[],
-  commandConfigured = true,
-  mergeStatus: MergeStatus | null = null,
+  task: Pick<Task, 'state' | 'isolationMode' | 'branch' | 'trackerRef' | 'mergeStatus'>,
+  attempts: readonly Pick<AttemptSummary, 'number' | 'state'>[],
+  attemptDetails: readonly Pick<Attempt, 'number' | 'steps'>[],
+  commandConfigured: boolean,
 ): TaskLifecycle {
-  const { current, halted, allDone, awaiting } = lifecyclePosition(state, attempts, mergeStatus);
-  const currentIndex = LIFECYCLE_STEPS.findIndex((s) => s.key === current);
-  const steps = LIFECYCLE_STEPS.map(({ key, label }, i): LifecycleStep => {
-    let status: LifecycleStepStatus = allDone
-      ? 'done'
-      : i < currentIndex
-        ? 'done'
-        : i > currentIndex
-          ? 'pending'
-          : halted
-            ? 'failed'
-            : awaiting
-              ? 'awaiting'
-              : 'current';
-    if (key === 'implementation' && status === 'done' && attempts.length === 0) status = 'pending';
-    const disabled = key === 'postMergeCheck' && !commandConfigured ? true : undefined;
-    return { key, label, status, ...(disabled ? { disabled } : {}) };
-  });
+  const direct = task.isolationMode === 'direct';
+  const latest = attempts.at(-1);
+  const latestSteps = attemptDetails.find((attempt) => attempt.number === latest?.number)?.steps;
+  const attemptGateFailed = latestSteps?.some((step) => step.state === 'failed' || step.state === 'cancelled');
+  const implementationStep = latestSteps?.find((step) => step.type === 'implementation');
+  const allStepsSettled = latestSteps?.every((step) => step.state === 'passed' || step.state === 'skipped');
+  const implementationPassed = !attemptGateFailed && (
+    (latest?.state === 'completed' && (!implementationStep || implementationStep.state === 'passed'))
+    || (latest !== undefined && task.mergeStatus !== null)
+    || (latest?.state === 'failed' && implementationStep?.state === 'passed' && allStepsSettled)
+  );
+  const implementationFailed = attemptGateFailed || (latest?.state === 'failed' && !implementationPassed);
+  const finished = task.state === 'done';
+  const stopped = task.state === 'escalated' || task.state === 'cancelled';
+  const started = task.state === 'working';
+  const worktreeDone = !direct && task.branch !== null;
+  const merging = !direct && (task.mergeStatus !== null || implementationPassed);
+  const current: LifecycleStepKey = !direct && !worktreeDone
+    ? 'worktree'
+    : !implementationPassed || direct
+      ? 'implementation'
+      : finished ? 'retire' : 'merge';
+
+  const statuses: Record<LifecycleStepKey, LifecycleStepStatus> = {
+    worktree: direct ? 'skipped' : worktreeDone ? 'done' : started ? 'current' : 'pending',
+    implementation: implementationPassed ? 'done' : finished && !latest ? 'skipped'
+      : stopped && (implementationFailed || latest?.state === 'cancelled') ? 'failed'
+        : started && (direct || worktreeDone) ? 'current' : 'pending',
+    merge: direct ? 'skipped' : finished && implementationPassed ? 'done'
+      : merging && task.state === 'escalated' ? 'awaiting'
+        : merging && started ? 'current' : 'pending',
+    postMergeCheck: direct || !commandConfigured ? 'skipped' : finished && implementationPassed ? 'done' : 'pending',
+    closeIssue: direct || task.trackerRef === null ? 'skipped' : finished && implementationPassed ? 'done' : 'pending',
+    retire: direct ? 'skipped' : finished && implementationPassed && worktreeDone ? 'done' : 'pending',
+  };
+  if (stopped && !direct && !worktreeDone && !latest) statuses.worktree = 'failed';
+  if (task.state === 'cancelled' && implementationPassed && !direct) statuses.merge = 'failed';
+  const steps = LIFECYCLE_STEPS.map(({ key, label }): LifecycleStep => ({
+    key, label, status: statuses[key],
+    ...(key === 'postMergeCheck' && !commandConfigured ? { disabled: true } : {}),
+  }));
   return { steps, current };
 }
 

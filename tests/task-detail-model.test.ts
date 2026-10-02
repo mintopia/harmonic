@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { attemptIdentityModel, attemptStepTabs, contentPanel, defaultSelection, defaultStepTab, taskLifecycle, taskStats, verificationOutputTail, type LifecycleStepKey, type LifecycleStepStatus, type StatsAttempt } from '../web/src/task-detail-model.js';
-import type { AttemptSummary, Cost, ModelUsage, Step, StepState, StepType, TaskState } from '../web/src/types.js';
+import type { Attempt, AttemptSummary, Cost, ModelUsage, Step, StepState, StepType, Task } from '../web/src/types.js';
 
 const STEP_ORDER: LifecycleStepKey[] = [
   'worktree',
@@ -11,11 +11,13 @@ const STEP_ORDER: LifecycleStepKey[] = [
   'retire',
 ];
 
-const stateAttempt = (state: AttemptSummary['state']): Pick<AttemptSummary, 'state'> => ({ state });
-
-function statuses(state: TaskState, attempts: Pick<AttemptSummary, 'state'>[] = []): Record<LifecycleStepKey, LifecycleStepStatus> {
-  const { steps } = taskLifecycle(state, attempts);
-  return Object.fromEntries(steps.map((s) => [s.key, s.status])) as Record<LifecycleStepKey, LifecycleStepStatus>;
+type ProgressTask = Pick<Task, 'state' | 'isolationMode' | 'branch' | 'trackerRef' | 'mergeStatus'>;
+const progressTask = (overrides: Partial<ProgressTask> = {}): ProgressTask => ({
+  state: 'ready', isolationMode: 'worktree', branch: null, trackerRef: null, mergeStatus: null, ...overrides,
+});
+const stateAttempt = (number: number, state: AttemptSummary['state']): Pick<AttemptSummary, 'number' | 'state'> => ({ number, state });
+function statuses(task: ProgressTask, attempts: Pick<AttemptSummary, 'number' | 'state'>[] = [], details: Pick<Attempt, 'number' | 'steps'>[] = [], configured = true): Record<LifecycleStepKey, LifecycleStepStatus> {
+  return Object.fromEntries(taskLifecycle(task, attempts, details, configured).steps.map((s) => [s.key, s.status])) as Record<LifecycleStepKey, LifecycleStepStatus>;
 }
 
 const tok = (input: number, output: number, cacheReadTokens = 0, cacheWriteTokens = 0): ModelUsage => ({
@@ -69,156 +71,102 @@ describe('contentPanel', () => {
 });
 
 describe('taskLifecycle', () => {
-  it('always returns the six lifecycle steps in order', () => {
-    for (const state of ['draft', 'ready', 'working', 'escalated', 'done', 'cancelled'] as TaskState[]) {
-      expect(taskLifecycle(state, []).steps.map((s) => s.key)).toEqual(STEP_ORDER);
-    }
+  it('keeps a ready Task with zero Attempts entirely pending', () => {
+    expect(statuses(progressTask())).toEqual({
+      worktree: 'pending', implementation: 'pending', merge: 'pending',
+      postMergeCheck: 'pending', closeIssue: 'skipped', retire: 'pending',
+    });
+    expect(taskLifecycle(progressTask(), [], [], true).steps.map((s) => s.key)).toEqual(STEP_ORDER);
   });
 
-  it('labels each step for the progress bar', () => {
-    expect(taskLifecycle('working', []).steps.map((s) => s.label)).toEqual([
-      'Worktree',
-      'Implementation',
-      'Merge',
-      'Post-merge check',
-      'Close issue',
-      'Retire',
-    ]);
+  it('shows worktree creation until the branch exists, then the running Attempt', () => {
+    const run = [stateAttempt(1, 'running')];
+    expect(statuses(progressTask({ state: 'working' }), run).worktree).toBe('current');
+    expect(statuses(progressTask({ state: 'working' }), run).implementation).toBe('pending');
+    const live = statuses(progressTask({ state: 'working', branch: 'agent/1' }), run);
+    expect(live.worktree).toBe('done');
+    expect(live.implementation).toBe('current');
+    expect(live.merge).toBe('pending');
   });
 
-  it('has exactly one highlighted node matching `current`, in every state', () => {
-    for (const state of ['draft', 'ready', 'working', 'escalated', 'done', 'cancelled'] as TaskState[]) {
-      const { steps, current } = taskLifecycle(state, [stateAttempt('running')]);
-      const highlighted = steps.filter((s) => s.status === 'current' || s.status === 'failed' || s.status === 'awaiting');
-      if (state === 'done') {
-        expect(steps.every((s) => s.status === 'done')).toBe(true);
-      } else {
-        expect(highlighted).toHaveLength(1);
-        expect(highlighted[0]?.key).toBe(current);
-      }
-    }
+  it('marks an escalated failed implementation as failed without suggesting merge review', () => {
+    const failed = [stateAttempt(1, 'failed')];
+    const details = [{ number: 1, steps: [step('implementation', 'failed')] }];
+    const result = statuses(progressTask({ state: 'escalated', branch: 'agent/1' }), failed, details);
+    expect(result.implementation).toBe('failed');
+    expect(result.merge).toBe('pending');
+    expect(result.worktree).toBe('done');
   });
 
-  it('points a draft Task at the imminent Worktree node', () => {
-    expect(taskLifecycle('draft', []).current).toBe('worktree');
-    expect(statuses('draft')).toEqual({
-      worktree: 'current',
-      implementation: 'pending',
-      merge: 'pending',
-      postMergeCheck: 'pending',
-      closeIssue: 'pending',
-      retire: 'pending',
+  it('does not call a verification failure completed implementation', () => {
+    const details = [{ number: 1, steps: [step('implementation', 'passed'), step('verification', 'failed')] }];
+    expect(statuses(progressTask({ state: 'escalated', branch: 'agent/1' }), [stateAttempt(1, 'failed')], details).implementation).toBe('failed');
+  });
+
+  it('moves to merge only after a completed Attempt, including a live merge', () => {
+    const task = progressTask({ state: 'working', branch: 'agent/1', mergeStatus: 'merging' });
+    const result = statuses(task, [stateAttempt(1, 'completed')]);
+    expect(result.implementation).toBe('done');
+    expect(result.merge).toBe('current');
+  });
+
+  it('holds merge for review when a failed Attempt has passed every persisted Step', () => {
+    const details = [{ number: 1, steps: [step('implementation', 'passed'), step('verification', 'passed')] }];
+    const result = statuses(progressTask({ state: 'escalated', branch: 'agent/1' }), [stateAttempt(1, 'failed')], details);
+    expect(result.implementation).toBe('done');
+    expect(result.merge).toBe('awaiting');
+  });
+
+  it('does not count an older completed Attempt when a newer one fails verification', () => {
+    const details = [{ number: 2, steps: [step('implementation', 'passed'), step('verification', 'failed')] }];
+    const result = statuses(progressTask({ state: 'escalated', branch: 'agent/2' }), [stateAttempt(1, 'completed'), stateAttempt(2, 'failed')], details);
+    expect(result.implementation).toBe('failed');
+    expect(result.merge).toBe('pending');
+  });
+
+  it('does not treat a completed Attempt with a skipped Implementation Step as implemented', () => {
+    const details = [{ number: 1, steps: [step('implementation', 'skipped')] }];
+    expect(statuses(progressTask({ state: 'escalated', branch: 'agent/1' }), [stateAttempt(1, 'completed')], details).implementation).toBe('pending');
+  });
+
+  it('marks only applicable stages done on worktree completion', () => {
+    const task = progressTask({ state: 'done', branch: 'agent/1', trackerRef: 17 });
+    expect(statuses(task, [stateAttempt(1, 'completed')])).toEqual({
+      worktree: 'done', implementation: 'done', merge: 'done',
+      postMergeCheck: 'done', closeIssue: 'done', retire: 'done',
+    });
+    const unconfigured = taskLifecycle(task, [stateAttempt(1, 'completed')], [], false);
+    expect(unconfigured.steps.find((s) => s.key === 'postMergeCheck')).toMatchObject({ status: 'skipped', disabled: true });
+  });
+
+  it('skips merge, issue closure and worktree operations in direct mode', () => {
+    const direct = progressTask({ state: 'done', isolationMode: 'direct' });
+    expect(statuses(direct, [stateAttempt(1, 'completed')])).toEqual({
+      worktree: 'skipped', implementation: 'done', merge: 'skipped',
+      postMergeCheck: 'skipped', closeIssue: 'skipped', retire: 'skipped',
     });
   });
 
-  it('points a ready Task at the imminent Worktree node', () => {
-    expect(statuses('ready')).toEqual({
-      worktree: 'current',
-      implementation: 'pending',
-      merge: 'pending',
-      postMergeCheck: 'pending',
-      closeIssue: 'pending',
-      retire: 'pending',
-    });
+  it('keeps a failed direct-mode Attempt at the build and verification gate', () => {
+    const direct = progressTask({ state: 'escalated', isolationMode: 'direct' });
+    const details = [{ number: 1, steps: [step('implementation', 'failed')] }];
+    const result = statuses(direct, [stateAttempt(1, 'failed')], details);
+    expect(result.implementation).toBe('failed');
+    expect(result.worktree).toBe('skipped');
+    expect(result.merge).toBe('skipped');
   });
 
-  it('sits a working Task on Implementation while an Attempt runs', () => {
-    expect(taskLifecycle('working', [stateAttempt('running')]).current).toBe('implementation');
-    expect(statuses('working', [stateAttempt('running')])).toEqual({
-      worktree: 'done',
-      implementation: 'current',
-      merge: 'pending',
-      postMergeCheck: 'pending',
-      closeIssue: 'pending',
-      retire: 'pending',
-    });
+  it('leaves implementation unclaimed when a Task is closed without an Attempt', () => {
+    const result = statuses(progressTask({ state: 'done' }));
+    expect(result.worktree).toBe('pending');
+    expect(result.implementation).toBe('skipped');
+    expect(result.merge).toBe('pending');
   });
 
-  it('treats a working Task with only failed Attempts as still on Implementation', () => {
-    expect(statuses('working', [stateAttempt('failed'), stateAttempt('running')]).implementation).toBe('current');
-  });
-
-  it('advances a working Task to Merge once an Attempt has passed', () => {
-    expect(taskLifecycle('working', [stateAttempt('failed'), stateAttempt('completed')]).current).toBe('merge');
-    expect(statuses('working', [stateAttempt('completed')])).toEqual({
-      worktree: 'done',
-      implementation: 'done',
-      merge: 'current',
-      postMergeCheck: 'pending',
-      closeIssue: 'pending',
-      retire: 'pending',
-    });
-  });
-
-  it('advances a working Task to Merge while it is actively merging', () => {
-    expect(taskLifecycle('working', [stateAttempt('running')], true, 'merging').current).toBe('merge');
-    expect(taskLifecycle('working', [stateAttempt('running')], true, 'resolving-conflicts').current).toBe('merge');
-  });
-
-  it('sits an escalated Task at the Merge gate, awaiting review', () => {
-    expect(taskLifecycle('escalated', [stateAttempt('completed')]).current).toBe('merge');
-    expect(statuses('escalated', [stateAttempt('completed')])).toEqual({
-      worktree: 'done',
-      implementation: 'done',
-      merge: 'awaiting',
-      postMergeCheck: 'pending',
-      closeIssue: 'pending',
-      retire: 'pending',
-    });
-  });
-
-  it('settles every node when the Task is done', () => {
-    expect(taskLifecycle('done', [stateAttempt('completed')]).current).toBe('retire');
-    expect(statuses('done', [stateAttempt('completed')])).toEqual({
-      worktree: 'done',
-      implementation: 'done',
-      merge: 'done',
-      postMergeCheck: 'done',
-      closeIssue: 'done',
-      retire: 'done',
-    });
-  });
-
-  it('keeps Implementation pending on a done Task with no Attempts to back it', () => {
-    expect(taskLifecycle('done', []).current).toBe('retire');
-    expect(statuses('done', [])).toEqual({
-      worktree: 'done',
-      implementation: 'pending',
-      merge: 'done',
-      postMergeCheck: 'done',
-      closeIssue: 'done',
-      retire: 'done',
-    });
-  });
-
-  it('flags the post-merge check disabled when no command verifier is configured', () => {
-    const step = (configured: boolean) => taskLifecycle('done', [stateAttempt('completed')], configured).steps.find((s) => s.key === 'postMergeCheck');
-    expect(step(false)?.disabled).toBe(true);
-    expect(step(true)?.disabled).toBeUndefined();
-    expect(taskLifecycle('done', [stateAttempt('completed')]).steps.find((s) => s.key === 'postMergeCheck')?.disabled).toBeUndefined();
-  });
-
-  it('halts a cancelled Task at Implementation once it has run an Attempt', () => {
-    expect(statuses('cancelled', [stateAttempt('cancelled')])).toEqual({
-      worktree: 'done',
-      implementation: 'failed',
-      merge: 'pending',
-      postMergeCheck: 'pending',
-      closeIssue: 'pending',
-      retire: 'pending',
-    });
-  });
-
-  it('halts a cancelled Task at Worktree when it never ran an Attempt', () => {
-    expect(taskLifecycle('cancelled', []).current).toBe('worktree');
-    expect(statuses('cancelled', [])).toEqual({
-      worktree: 'failed',
-      implementation: 'pending',
-      merge: 'pending',
-      postMergeCheck: 'pending',
-      closeIssue: 'pending',
-      retire: 'pending',
-    });
+  it('marks a cancelled Attempt failed at implementation', () => {
+    const result = statuses(progressTask({ state: 'cancelled', branch: 'agent/1' }), [stateAttempt(1, 'cancelled')]);
+    expect(result.implementation).toBe('failed');
+    expect(result.merge).toBe('pending');
   });
 });
 

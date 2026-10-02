@@ -20,7 +20,7 @@ import type { Epic } from '../epic-model';
 import type { HostLoad } from '../ws';
 import type { View } from '../rail-model';
 import { NO_SELECTION, type Route, type TableFilters } from '../router-model';
-import { btnGhost, btnPrimary, btnQuiet } from '../ui';
+import { btnGhost, btnPrimary } from '../ui';
 import type { PendingPermissionAlert } from '../usePendingPermissionAlerts';
 import type { NavigateFn } from '../useRoute';
 import type { NotificationsApi } from '../useNotifications';
@@ -117,6 +117,7 @@ function MainViewContent({
         <ConversationsPage
           config={config}
           workspace={activeWorkspace}
+          draftWorkspaceId={activeWorkspaceId}
           conversationId={route.conversation ?? null}
           onConversationChange={pickConversation}
         />
@@ -187,6 +188,8 @@ interface AppContentProps {
   taskNotFound: boolean;
   epics: Epic[];
   error: string | null;
+  workspacesError: string | null;
+  onRetryWorkspaces: () => void;
   showRunHint: boolean;
   dismissRunHint: () => void;
   showEscalationHint: boolean;
@@ -232,6 +235,8 @@ export function AppContent({
   taskNotFound,
   epics,
   error,
+  workspacesError,
+  onRetryWorkspaces,
   showRunHint,
   dismissRunHint,
   showEscalationHint,
@@ -268,7 +273,14 @@ export function AppContent({
   onOpenNotification,
 }: AppContentProps) {
   return (
-    <div className="relative min-h-0 flex-1">
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      {workspacesError && (
+        <div role="alert" className="flex items-center gap-3 border-b border-fail bg-fail-tint px-6 py-2 text-small text-ink">
+          <span className="min-w-0 flex-1">Workspace list unavailable. Names and workspace settings may be missing.</span>
+          <button type="button" onClick={onRetryWorkspaces} className={btnGhost}>Retry</button>
+        </div>
+      )}
+      <div className="min-h-0 flex-1">
       {route.epic !== null && activeWorkspaceId !== null ? (
         <EpicPage
           epicRef={route.epic}
@@ -326,7 +338,7 @@ export function AppContent({
                 <span className="font-semibold text-ink">Run now</span> on the card, or turn the{' '}
                 <span className="font-semibold text-ink">Auto-runner</span> on above.
               </p>
-              <button className={`${btnQuiet} shrink-0`} onClick={dismissRunHint}>
+              <button className="inline-flex min-h-11 shrink-0 items-center font-medium text-ink transition-colors duration-150 hover:text-ink" onClick={dismissRunHint}>
                 Dismiss
               </button>
             </div>
@@ -340,7 +352,7 @@ export function AppContent({
                 <span className="font-semibold text-ink">Reject</span> with guidance for the next attempt, or{' '}
                 <span className="font-semibold text-ink">Close</span> it — the one decision agents don't take for you.
               </p>
-              <button className={`${btnQuiet} shrink-0`} onClick={dismissEscalationHint}>
+              <button className="inline-flex min-h-11 shrink-0 items-center font-medium text-ink transition-colors duration-150 hover:text-ink" onClick={dismissEscalationHint}>
                 Dismiss
               </button>
             </div>
@@ -400,11 +412,13 @@ export function AppContent({
           </main>
         </div>
       )}
+      </div>
 
       {!noWorkspaces && view !== 'conversations' && (
         <ConversationLauncher
           config={config}
           workspace={workspaces.find((w) => w.id === activeWorkspaceId) ?? null}
+          draftWorkspaceId={activeWorkspaceId}
           conversationId={route.conversation}
           openConversationId={conversationToOpen}
           pendingPermission={

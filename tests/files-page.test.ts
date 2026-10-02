@@ -37,7 +37,7 @@ describe('FilesPage previews (issue #588)', () => {
     vi.clearAllMocks();
   });
 
-  async function render(path: string) {
+  async function render(path: string | null) {
     host ??= document.body.appendChild(document.createElement('div'));
     root ??= createRoot(host);
     await act(async () => {
@@ -120,5 +120,15 @@ describe('FilesPage previews (issue #588)', () => {
 
     expect(host.querySelector('[role="alert"]')?.textContent).toContain('workspace unreachable');
     expect(host.textContent).not.toContain('The working tree is clean.');
+  });
+
+  it('announces the current explorer width after keyboard resizing', async () => {
+    await render(null);
+    const separator = host!.querySelector<HTMLElement>('[role="separator"]')!;
+    expect(separator.getAttribute('aria-valuemin')).toBe('200');
+    expect(separator.getAttribute('aria-valuemax')).toBe('560');
+    expect(separator.getAttribute('aria-valuenow')).toBe('288');
+    await act(async () => { separator.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); });
+    expect(separator.getAttribute('aria-valuenow')).toBe('304');
   });
 });

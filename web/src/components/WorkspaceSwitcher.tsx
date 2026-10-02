@@ -97,8 +97,8 @@ export function WorkspaceSwitcher({
 
   useDismissable(open, wrap, () => setOpen(false));
 
-  const active = workspaces.find((w) => w.id === activeId) ?? workspaces[0];
-  const label = activeId === null ? 'Global' : active?.name ?? 'Global';
+  const active = workspaces.find((w) => w.id === activeId);
+  const label = activeId === null ? 'Global' : active?.name ?? `Workspace #${activeId}`;
 
   return (
     <div className="relative" ref={wrap}>

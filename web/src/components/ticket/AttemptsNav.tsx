@@ -38,7 +38,7 @@ export function AttemptsNav({
                 >
                   <span role="img" aria-label={attempt.state} className={`size-2 shrink-0 rounded-full ${NAV_DOT[tone]}`} />
                   <span className="text-data font-semibold text-ink">Attempt {attempt.number}</span>
-                  <span className={`ml-auto text-label font-bold uppercase tracking-[0.03em] ${NAV_WORD[tone]}`}>{attempt.state}</span>
+                  <span className={`ml-auto text-label font-bold uppercase tracking-[0.03em] ${selected && tone === 'failed' ? 'text-ink' : NAV_WORD[tone]}`}>{attempt.state}</span>
                 </button>
               </li>
             );

@@ -60,6 +60,15 @@ export function useConversationDetail(
   const [optimisticTurns, setOptimisticTurns] = useState<ConversationEvent[]>([]);
   const optimisticSeq = useRef(-1);
   const creatingConversation = useRef<{ workspaceId: number | null; promise: Promise<Conversation> } | null>(null);
+  const activeWorkspaceId = useRef(workspaceId);
+  useLayoutEffect(() => { activeWorkspaceId.current = workspaceId; }, [workspaceId]);
+  const activeFocusedId = useRef(focusedId);
+  useLayoutEffect(() => { activeFocusedId.current = focusedId; }, [focusedId]);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const detail = useAsyncResource(
     focusedId === null
@@ -176,12 +185,10 @@ export function useConversationDetail(
   const send = async (fields: { harness: string; model: string; permissionMode: Conversation['permissionMode'] }, text: string) => {
     const steering = focusedId !== null;
     let id = focusedId;
+    let createdConversation: Conversation | null = null;
     if (id === null) {
-      const created = await createConversation(fields);
-      id = created.id;
-      setConversation(created);
-      upsertConversationInList(created);
-      openConversation(id);
+      createdConversation = await createConversation(fields);
+      id = createdConversation.id;
     }
     // Show the message in the transcript right away when steering the open
     // conversation. A brand-new conversation switches focus and reloads events,
@@ -205,6 +212,11 @@ export function useConversationDetail(
     }
     try {
       const { queued } = await api.sendTurn(id, text);
+      if (createdConversation && mounted.current && activeWorkspaceId.current === workspaceId && activeFocusedId.current === focusedId) {
+        setConversation(createdConversation);
+        upsertConversationInList(createdConversation);
+        openConversation(id);
+      }
       return { queued };
     } catch (e) {
       if (optimisticId !== null) {

@@ -1,17 +1,17 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { createElement } from 'react';
+import { act, createElement, useEffect } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('dompurify', () => ({ default: { addHook: () => {}, sanitize: (html: string) => html } }));
 
-const { conversations } = vi.hoisted(() => ({ conversations: vi.fn() }));
-vi.mock('../web/src/api.js', () => ({ api: { conversations } }));
+const { conversations, createConversation, sendTurn } = vi.hoisted(() => ({ conversations: vi.fn(), createConversation: vi.fn(), sendTurn: vi.fn() }));
+vi.mock('../web/src/api.js', () => ({ api: { conversations, createConversation, sendTurn } }));
 
 import { ConversationContextDrawer, ConversationsPage } from '../web/src/components/ConversationLauncher.js';
-import { isConversationInWorkspace } from '../web/src/components/useConversationDetail.js';
+import { isConversationInWorkspace, useConversationDetail } from '../web/src/components/useConversationDetail.js';
 import type { Conversation } from '../web/src/types.js';
 import { cleanup, makeWorkspace, mountComponent } from './component-smoke-harness.js';
 
@@ -46,7 +46,7 @@ const conversation: Conversation = {
 };
 
 describe('ConversationsPage (#547)', () => {
-  afterEach(cleanup);
+  afterEach(async () => { await cleanup(); createConversation.mockReset(); sendTurn.mockReset(); });
 
   it('shows a distinct error state instead of an empty list when conversations fail to load (#654)', async () => {
     conversations.mockRejectedValue(new Error('workspace offline'));
@@ -108,5 +108,34 @@ describe('ConversationsPage (#547)', () => {
     expect(html).toContain('Permissions');
     expect(html).toContain('Automatic');
     expect(html).not.toContain('99,999');
+  });
+
+  it('keeps a failed first turn in the new composer and reuses its created conversation on retry', async () => {
+    createConversation.mockResolvedValue(conversation);
+    sendTurn.mockRejectedValueOnce(new Error('send failed')).mockResolvedValue({ queued: false });
+    const openConversation = vi.fn();
+    const noop = () => {};
+    let current: ReturnType<typeof useConversationDetail> | undefined;
+    function Probe() {
+      const detail = useConversationDetail(null, {
+        workspaceId: 1,
+        upsertConversationInList: noop,
+        removeConversationFromList: noop,
+        openConversation,
+        openList: noop,
+        pendingPermission: null,
+        clearPendingPermission: noop,
+      });
+      useEffect(() => { current = detail; }, [detail]);
+      return null;
+    }
+    await mountComponent(createElement(Probe));
+    const fields = { harness: 'opencode', model: 'opencode-large', permissionMode: 'ask' as const };
+    await act(async () => { await expect(current?.actions.send(fields, 'Review this patch')).rejects.toThrow('send failed'); });
+    expect(openConversation).not.toHaveBeenCalled();
+    await act(async () => { await current?.actions.send(fields, 'Review this patch'); });
+    expect(createConversation).toHaveBeenCalledTimes(1);
+    expect(sendTurn).toHaveBeenCalledTimes(2);
+    expect(openConversation).toHaveBeenCalledWith(1);
   });
 });

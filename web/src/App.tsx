@@ -76,6 +76,8 @@ export function App() {
     workspaces,
     setWorkspaces,
     workspacesLoaded,
+    workspacesError,
+    retryWorkspaces,
     update,
     updatePending,
     changeUpdate,
@@ -210,6 +212,11 @@ export function App() {
     setMenuOpen(false);
   };
 
+  const openGlobalSettings = () => {
+    navigate({ ...scopeSwitchRoute(route, { kind: 'global' }), view: 'settings' });
+    setMenuOpen(false);
+  };
+
   const setTableFilters = (table: TableFilters) => navigate({ ...route, table }, { replace: true });
 
   const toggleRail = () => {
@@ -300,7 +307,7 @@ export function App() {
         onClose={() => setMenuOpen(false)}
         instanceName={instanceName}
         workspaces={workspaces}
-        activeWorkspaceId={activeWorkspaceId}
+        activeWorkspaceId={scopeWorkspaceId}
         onSwitch={switchWorkspace}
         onGlobal={switchGlobal}
         onCreated={handleWorkspaceCreated}
@@ -325,7 +332,7 @@ export function App() {
           onGlobalPauseChange: setFleetPaused,
           onRefreshTracker: refreshTracker,
           onThemeCycle: cycleTheme,
-          onSettingsClick: () => pickView('settings'),
+          onSettingsClick: openGlobalSettings,
           onLogout: logout,
           onOpenAbout: () => setAboutOpen(true),
           onOpenActivity: openGlobalActivity,
@@ -353,7 +360,7 @@ export function App() {
           onGlobalPauseChange={setFleetPaused}
           onRefreshTracker={refreshTracker}
           onThemeCycle={cycleTheme}
-          onSettingsClick={() => pickView('settings')}
+          onSettingsClick={openGlobalSettings}
           onLogout={logout}
           onNewTask={() => setEditing('new')}
           onOpenAbout={() => setAboutOpen(true)}
@@ -425,6 +432,8 @@ export function App() {
           taskNotFound={taskNotFound}
           epics={epics}
           error={error}
+          workspacesError={workspacesError}
+          onRetryWorkspaces={retryWorkspaces}
           showRunHint={showRunHint}
           dismissRunHint={dismissRunHint}
           showEscalationHint={showEscalationHint}

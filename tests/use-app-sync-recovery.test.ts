@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, createElement, useEffect, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api } from '../web/src/api.js';
+import { api, ApiError } from '../web/src/api.js';
 import { DEFAULT_ROUTE } from '../web/src/router-model.js';
 import { useAppSync } from '../web/src/useAppSync.js';
 import type { Epic } from '../web/src/epic-model.js';
@@ -102,7 +102,7 @@ describe('useAppSync recovery', () => {
     expect(current?.epics.map((item) => item.ref)).toEqual([2]);
   });
 
-  it('retries a failed first workspace load and reports the failure once', async () => {
+  it('retries a failed first workspace load and keeps the error visible', async () => {
     const first = deferred<{ workspaces: ReturnType<typeof makeWorkspace>[]; total: number }>();
     const workspaces = vi.fn()
       .mockImplementationOnce(() => first.promise)
@@ -118,11 +118,61 @@ describe('useAppSync recovery', () => {
     vi.useFakeTimers();
     await act(async () => { first.reject(new Error('temporary outage')); });
     expect(current?.workspacesLoaded).toBe(false);
-    expect(toastError).toHaveBeenCalledTimes(1);
+    expect(current?.workspacesError).toBe('temporary outage');
+    expect(toastError).not.toHaveBeenCalled();
     await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
     expect(current?.workspacesLoaded).toBe(true);
     expect(current?.workspaces.map((workspace) => workspace.id)).toEqual([1]);
+    expect(current?.workspacesError).toBe(null);
     expect(workspaces).toHaveBeenCalledTimes(2);
-    expect(toastError).toHaveBeenCalledTimes(1);
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it('lets the operator retry workspace metadata immediately', async () => {
+    const workspaces = vi.fn()
+      .mockRejectedValueOnce(new Error('temporary outage'))
+      .mockResolvedValue({ workspaces: [makeWorkspace()], total: 1 });
+    const apiImpl: typeof api = { ...api, config: pending, updateState: pending, globalPause: pending, workspaces };
+    let current: ReturnType<typeof useAppSync> | undefined;
+    function Probe() {
+      const sync = useAppSync({ authed: true, route: DEFAULT_ROUTE, navigate, apiImpl, storage });
+      useEffect(() => { current = sync; }, [sync]);
+      return null;
+    }
+    await mountComponent(createElement(Probe));
+    expect(current?.workspacesError).toBe('temporary outage');
+    await act(async () => { current?.retryWorkspaces(); await flush(); });
+    expect(workspaces).toHaveBeenCalledTimes(2);
+    expect(current?.workspacesError).toBe(null);
+  });
+
+  it('stops polling updates when the source distribution rejects them', async () => {
+    const first = deferred<Awaited<ReturnType<typeof api.updateState>>>();
+    const updateState = vi.fn().mockReturnValue(first.promise);
+    const apiImpl: typeof api = { ...api, config: pending, updateState, globalPause: pending, workspaces: pending };
+    function Probe() {
+      useAppSync({ authed: true, route: DEFAULT_ROUTE, navigate, apiImpl, storage });
+      return null;
+    }
+    await mountComponent(createElement(Probe));
+    vi.useFakeTimers();
+    await act(async () => { first.reject(new ApiError(409, 'in-place upgrades are only available for packaged instances')); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(updateState).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries transient update failures', async () => {
+    const first = deferred<Awaited<ReturnType<typeof api.updateState>>>();
+    const updateState = vi.fn().mockReturnValueOnce(first.promise).mockReturnValue(pending());
+    const apiImpl: typeof api = { ...api, config: pending, updateState, globalPause: pending, workspaces: pending };
+    function Probe() {
+      useAppSync({ authed: true, route: DEFAULT_ROUTE, navigate, apiImpl, storage });
+      return null;
+    }
+    await mountComponent(createElement(Probe));
+    vi.useFakeTimers();
+    await act(async () => { first.reject(new ApiError(503, 'temporary outage')); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(updateState).toHaveBeenCalledTimes(2);
   });
 });

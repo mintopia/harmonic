@@ -172,11 +172,11 @@ export function TicketPage({
                 <span className="font-data text-[12.5px]">epic/{parentEpicRef ?? task.mapRef}</span>
               </button>
             )}
-            <div className="flex items-start gap-4 pb-1">
-              <h1 className="max-w-[680px] text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em]">
+            <div className="flex flex-wrap items-start gap-4 pb-1">
+              <h1 className="min-w-0 max-w-[680px] flex-1 text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em] [overflow-wrap:anywhere] max-sm:basis-full">
                 {cardTitle(task.summary)}
               </h1>
-              <span className="mt-2.5 flex items-center gap-1.5">
+              <span className="mt-2.5 flex shrink-0 items-center gap-1.5 max-sm:mt-0">
                 <StatePill state={task.state} />
                 {task.mergeStatus && (
                   <span className={mergeStatusPill(task.mergeStatus)}>{task.mergeStatus.replace(/-/g, ' ')}</span>
@@ -196,7 +196,7 @@ export function TicketPage({
               </div>
             </div>
 
-            <TaskProgressBar task={task} attempts={runs} commandConfigured={commandConfigured} />
+            <TaskProgressBar task={task} attempts={runs} attemptDetails={attempts} commandConfigured={commandConfigured} />
 
             <ExportPanel target={taskExportTarget(task.id)} state={task.state} refreshKey={timelineEvents.length} />
 

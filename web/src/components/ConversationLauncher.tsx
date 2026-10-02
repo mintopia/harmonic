@@ -474,6 +474,7 @@ const persistFocusedConversation = (id: number | null) =>
 export function ConversationLauncher({
   config,
   workspace,
+  draftWorkspaceId = workspace?.id ?? null,
   conversationId,
   openConversationId,
   pendingPermission,
@@ -482,6 +483,7 @@ export function ConversationLauncher({
 }: {
   config: AppConfig | null;
   workspace: Workspace | null;
+  draftWorkspaceId?: number | null;
   conversationId?: number | null;
   openConversationId: number | null;
   pendingPermission: PendingPermission | null;
@@ -634,8 +636,10 @@ export function ConversationLauncher({
               <>
                 <ColdResumeWarning conversation={conversation} />
                 <Composer
+                  key={`${draftWorkspaceId ?? 'global'}:${conversation?.id ?? 'new'}`}
                   config={config}
                   workspace={workspace}
+                  draftWorkspaceId={draftWorkspaceId}
                   conversation={conversation}
                   events={events}
                   expanded={false}
@@ -653,11 +657,13 @@ export function ConversationLauncher({
 export function ConversationsPage({
   config,
   workspace,
+  draftWorkspaceId = workspace?.id ?? null,
   conversationId,
   onConversationChange,
 }: {
   config: AppConfig | null;
   workspace: Workspace | null;
+  draftWorkspaceId?: number | null;
   conversationId: number | null;
   onConversationChange: (conversationId: number | null) => void;
 }) {
@@ -768,8 +774,10 @@ export function ConversationsPage({
                 <>
                   <ColdResumeWarning conversation={conversation} />
                   <Composer
+                    key={`${draftWorkspaceId ?? 'global'}:${conversation?.id ?? 'new'}`}
                     config={config}
                     workspace={workspace}
+                    draftWorkspaceId={draftWorkspaceId}
                     conversation={conversation}
                     events={events}
                     expanded={true}
