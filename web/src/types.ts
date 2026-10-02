@@ -318,6 +318,10 @@ export interface Workspace {
   conflictResolveTurns: number | null;
   maxConcurrentAttempts: number | null;
   autoRunnerEnabled: boolean | null;
+  agentMessagesEnabled: boolean | null;
+  agentMessagesSendCap: number | null;
+  /** Agent Messages on for this Workspace after Baseline → Global → Workspace resolution. */
+  effectiveAgentMessagesEnabled: boolean;
   /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: number | null;
   contextReuseTokenLimit: number | null;
@@ -1032,6 +1036,7 @@ export interface AppConfig {
     model: string;
   };
   autoRunner: { enabled: boolean; maxConcurrentAttempts: number };
+  agentMessages: { enabled: boolean; sendCap: number };
   /** Per-stage command and critic verifier lists. */
   verify: {
     task: { preMerge: TaskVerificationStage; postMerge: TaskVerificationStage };

@@ -28,6 +28,7 @@ whole instance:
 - its name and folder,
 - whether its tracker is on and how often it polls,
 - whether the Auto-Runner is on for it,
+- whether agents may send each other messages, and how many each may send,
 - and its defaults for new tickets (harness, model,
   [isolation](/harmonic/work/branches-and-worktrees/), priority) and how
   many agents it may run at once.

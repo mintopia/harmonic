@@ -506,6 +506,47 @@ const contextReuseTokenLimit = scalar(
   },
 );
 
+const agentMessagesEnabled = scalar(
+  registryField('agentMessagesEnabled', {
+    id: 'settings-agent-messages-enabled',
+    switchLabel: 'Let Attempts message each other',
+    errorKey: 'agentMessages.enabled',
+    get: (c) => c.agentMessages.enabled,
+    set: (c, raw) => ({ ...c, agentMessages: { ...c.agentMessages, enabled: Boolean(raw) } }),
+  }),
+  {
+    key: 'agentMessagesEnabled',
+    id: 'workspace-agent-messages-enabled',
+    errorKey: 'agentMessagesEnabled',
+    label: 'Enabled',
+    switchLabel: 'Let Attempts message each other',
+    get: (w) => w.agentMessagesEnabled,
+    set: (w, v) => ({ ...w, agentMessagesEnabled: v as boolean | null }),
+    inherited: (c) => c.agentMessages.enabled,
+    format: (v) => (v ? 'On' : 'Off'),
+  },
+);
+
+const agentMessagesSendCap = scalar(
+  registryField('agentMessagesSendCap', {
+    id: 'settings-agent-messages-send-cap',
+    errorKey: 'agentMessages.sendCap',
+    min: 1,
+    widthClass: 'w-28',
+    get: (c) => c.agentMessages.sendCap,
+    set: (c, raw) => ({ ...c, agentMessages: { ...c.agentMessages, sendCap: Number(raw) } }),
+  }),
+  {
+    key: 'agentMessagesSendCap',
+    id: 'workspace-agent-messages-send-cap',
+    errorKey: 'agentMessagesSendCap',
+    get: (w) => w.agentMessagesSendCap,
+    set: (w, v) => ({ ...w, agentMessagesSendCap: v as number | null }),
+    inherited: (c) => c.agentMessages.sendCap,
+    min: 1,
+  },
+);
+
 const driveMergeFate = scalar(
   registryField('driveMergeFate', {
     id: 'settings-merge-fate',
@@ -1134,6 +1175,21 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
       grid(
         ctx.surface === 'global' ? 'flex flex-wrap items-start gap-x-8 gap-y-4' : 'flex flex-col gap-4 sm:max-w-md',
         [autoRunnerEnabled, hostCeiling, concurrencyCap],
+        ctx,
+      ),
+  },
+  {
+    tab: 'execution',
+    surfaces: BOTH,
+    title: 'Agent Messages',
+    description: {
+      global: 'Lets Attempts send each other Agent Messages, up to the send cap per Attempt. Workspaces can override both.',
+      workspace: 'Whether Attempts here can send Agent Messages, and how many each may send. Both inherit the global defaults until overridden.',
+    },
+    body: (ctx) =>
+      grid(
+        ctx.surface === 'global' ? 'flex flex-wrap items-start gap-x-8 gap-y-4' : 'flex flex-col gap-4 sm:max-w-md',
+        [agentMessagesEnabled, agentMessagesSendCap],
         ctx,
       ),
   },

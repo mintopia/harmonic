@@ -360,4 +360,25 @@ describe('Task/Conversation binding + scoping (issue #41)', () => {
     const fetched = await server.api('GET', `/api/workspaces/${workspaceA}`);
     expect(fetched.body.contextReuseTokenLimit).toBe(150_000);
   });
+
+  it('reports effective Agent Messages per Workspace and whether any Workspace has them on', async () => {
+    const baseline = await server.api('GET', `/api/workspaces/${workspaceA}`);
+    expect(baseline.body.effectiveAgentMessagesEnabled).toBe(false);
+    expect((await server.api('GET', '/api/activity')).body.agentMessagesEnabledInAnyWorkspace).toBe(false);
+
+    const on = await server.api('PATCH', `/api/workspaces/${workspaceA}`, { agentMessagesEnabled: true, agentMessagesSendCap: 4 });
+    expect(on.status).toBe(200);
+    expect(on.body.effectiveAgentMessagesEnabled).toBe(true);
+    expect(on.body.agentMessagesSendCap).toBe(4);
+    expect((await server.api('GET', '/api/activity')).body.agentMessagesEnabledInAnyWorkspace).toBe(true);
+
+    await server.api('PATCH', `/api/workspaces/${workspaceA}`, { agentMessagesEnabled: null });
+    await server.api('PATCH', '/api/config', { agentMessages: { enabled: true } });
+    const inherited = await server.api('GET', `/api/workspaces/${workspaceA}`);
+    expect(inherited.body.effectiveAgentMessagesEnabled).toBe(true);
+    const off = await server.api('PATCH', `/api/workspaces/${workspaceA}`, { agentMessagesEnabled: false });
+    expect(off.body.effectiveAgentMessagesEnabled).toBe(false);
+
+    expect((await server.api('PATCH', `/api/workspaces/${workspaceA}`, { agentMessagesSendCap: 0 })).status).toBe(400);
+  });
 });

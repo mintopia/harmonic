@@ -81,6 +81,9 @@ chat:
 autoRunner:
   enabled: false
   maxConcurrentAttempts: 1
+agentMessages:
+  enabled: false
+  sendCap: 10
 maxAttempts: 2
 contextReuseTokenLimit: 200000
 editor:

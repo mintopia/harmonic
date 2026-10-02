@@ -262,6 +262,11 @@ export const appConfigSchema = z.object({
     enabled: z.boolean().meta({ example: true }),
     maxConcurrentAttempts: z.number().int().min(1).meta({ example: 3 }),
   }),
+  /** `enabled` turns Agent Messages on (off by default); `sendCap` bounds how many one Attempt may send. A Workspace stores `null` to inherit either. */
+  agentMessages: z.object({
+    enabled: z.boolean().meta({ example: false }),
+    sendCap: z.number().int().min(1).meta({ example: 10 }),
+  }),
   /** Maximum failed implementation attempts before the ticket is escalated. */
   maxAttempts: z.number().int().min(1).meta({ example: 2 }),
   /** Reuse a warm Session into Attempt N+1 while its context occupancy stays

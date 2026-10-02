@@ -72,6 +72,20 @@ export const settingsRegistry = {
     label: 'Auto-Runner enabled',
     help: 'Whether the Auto-Runner picks up ready Tasks in this Workspace.',
   },
+  agentMessagesEnabled: {
+    scope: 'overridable',
+    control: 'toggle',
+    tab: 'execution',
+    label: 'Agent Messages enabled',
+    help: 'Whether Attempts in this Workspace can send Agent Messages to each other.',
+  },
+  agentMessagesSendCap: {
+    scope: 'overridable',
+    control: 'number',
+    tab: 'execution',
+    label: 'Agent Messages send cap',
+    help: 'How many Agent Messages one Attempt may send.',
+  },
   maxAttempts: {
     scope: 'overridable',
     control: 'number',
