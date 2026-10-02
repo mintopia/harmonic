@@ -5113,6 +5113,32 @@
             ],
             "example": null
           },
+          "agentMessagesEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "agentMessagesSendCap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "effectiveAgentMessagesEnabled": {
+            "type": "boolean",
+            "example": false
+          },
           "maxAttempts": {
             "anyOf": [
               {
@@ -6094,6 +6120,9 @@
           "conflictResolveTurns",
           "maxConcurrentAttempts",
           "autoRunnerEnabled",
+          "agentMessagesEnabled",
+          "agentMessagesSendCap",
+          "effectiveAgentMessagesEnabled",
           "maxAttempts",
           "contextReuseTokenLimit",
           "taskPreMergeCommands",
@@ -6610,6 +6639,21 @@
                 "minimum": 1,
                 "maximum": 9007199254740991,
                 "example": 2
+              }
+            }
+          },
+          "agentMessages": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "example": false
+              },
+              "sendCap": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991,
+                "example": 10
               }
             }
           },
@@ -12600,6 +12644,32 @@
             ],
             "example": null
           },
+          "agentMessagesEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "agentMessagesSendCap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "effectiveAgentMessagesEnabled": {
+            "type": "boolean",
+            "example": false
+          },
           "maxAttempts": {
             "anyOf": [
               {
@@ -13627,6 +13697,9 @@
           "conflictResolveTurns",
           "maxConcurrentAttempts",
           "autoRunnerEnabled",
+          "agentMessagesEnabled",
+          "agentMessagesSendCap",
+          "effectiveAgentMessagesEnabled",
           "maxAttempts",
           "contextReuseTokenLimit",
           "taskPreMergeCommands",
@@ -14154,6 +14227,22 @@
                 "minimum": 1,
                 "maximum": 9007199254740991,
                 "example": 2
+              }
+            },
+            "additionalProperties": false
+          },
+          "agentMessages": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "example": false
+              },
+              "sendCap": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991,
+                "example": 10
               }
             },
             "additionalProperties": false
@@ -18984,6 +19073,30 @@
                       }
                     ]
                   },
+                  "agentMessagesEnabled": {
+                    "example": true,
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "agentMessagesSendCap": {
+                    "example": 10,
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "maxAttempts": {
                     "example": 2,
                     "anyOf": [
@@ -21555,6 +21668,26 @@
                       ],
                       "additionalProperties": false
                     },
+                    "agentMessages": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "sendCap": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 10
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "sendCap"
+                      ],
+                      "additionalProperties": false
+                    },
                     "maxAttempts": {
                       "type": "integer",
                       "minimum": 1,
@@ -22366,6 +22499,7 @@
                     "defaults",
                     "chat",
                     "autoRunner",
+                    "agentMessages",
                     "maxAttempts",
                     "contextReuseTokenLimit",
                     "editor",
@@ -22669,6 +22803,26 @@
                       ],
                       "additionalProperties": false
                     },
+                    "agentMessages": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "sendCap": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 10
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "sendCap"
+                      ],
+                      "additionalProperties": false
+                    },
                     "maxAttempts": {
                       "type": "integer",
                       "minimum": 1,
@@ -23480,6 +23634,7 @@
                     "defaults",
                     "chat",
                     "autoRunner",
+                    "agentMessages",
                     "maxAttempts",
                     "contextReuseTokenLimit",
                     "editor",
@@ -23756,6 +23911,25 @@
                     "required": [
                       "enabled",
                       "maxConcurrentAttempts"
+                    ]
+                  },
+                  "agentMessages": {
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean",
+                        "example": false
+                      },
+                      "sendCap": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991,
+                        "example": 10
+                      }
+                    },
+                    "required": [
+                      "enabled",
+                      "sendCap"
                     ]
                   },
                   "maxAttempts": {
@@ -24519,6 +24693,7 @@
                   "defaults",
                   "chat",
                   "autoRunner",
+                  "agentMessages",
                   "maxAttempts",
                   "contextReuseTokenLimit",
                   "editor",
@@ -24800,6 +24975,26 @@
                       "required": [
                         "enabled",
                         "maxConcurrentAttempts"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "agentMessages": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "sendCap": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 10
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "sendCap"
                       ],
                       "additionalProperties": false
                     },
@@ -25614,6 +25809,7 @@
                     "defaults",
                     "chat",
                     "autoRunner",
+                    "agentMessages",
                     "maxAttempts",
                     "contextReuseTokenLimit",
                     "editor",
@@ -25912,6 +26108,26 @@
                           ],
                           "additionalProperties": false
                         },
+                        "agentMessages": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "sendCap": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991,
+                              "example": 10
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "sendCap"
+                          ],
+                          "additionalProperties": false
+                        },
                         "maxAttempts": {
                           "type": "integer",
                           "minimum": 1,
@@ -26723,6 +26939,7 @@
                         "defaults",
                         "chat",
                         "autoRunner",
+                        "agentMessages",
                         "maxAttempts",
                         "contextReuseTokenLimit",
                         "editor",
@@ -26992,6 +27209,26 @@
                           ],
                           "additionalProperties": false
                         },
+                        "agentMessages": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "sendCap": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991,
+                              "example": 10
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "sendCap"
+                          ],
+                          "additionalProperties": false
+                        },
                         "maxAttempts": {
                           "type": "integer",
                           "minimum": 1,
@@ -27803,6 +28040,7 @@
                         "defaults",
                         "chat",
                         "autoRunner",
+                        "agentMessages",
                         "maxAttempts",
                         "contextReuseTokenLimit",
                         "editor",
@@ -28134,6 +28372,26 @@
                       ],
                       "additionalProperties": false
                     },
+                    "agentMessages": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "sendCap": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 10
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "sendCap"
+                      ],
+                      "additionalProperties": false
+                    },
                     "maxAttempts": {
                       "type": "integer",
                       "minimum": 1,
@@ -28945,6 +29203,7 @@
                     "defaults",
                     "chat",
                     "autoRunner",
+                    "agentMessages",
                     "maxAttempts",
                     "contextReuseTokenLimit",
                     "editor",
@@ -32094,11 +32353,16 @@
                       "minimum": 0,
                       "maximum": 9007199254740991,
                       "example": 340
+                    },
+                    "agentMessagesEnabledInAnyWorkspace": {
+                      "type": "boolean",
+                      "example": false
                     }
                   },
                   "required": [
                     "processes",
-                    "total"
+                    "total",
+                    "agentMessagesEnabledInAnyWorkspace"
                   ],
                   "additionalProperties": false,
                   "description": "Every live process across Workspaces (Attempts then Conversations); an empty array when nothing is running. Unordered beyond that — the Activity view applies its own attention ranking."
