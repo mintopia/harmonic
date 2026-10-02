@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { callerToolRegistrars } from '../src/mcp/server.js';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 
 async function mcpClient(
@@ -165,6 +166,35 @@ describe('mcp server & scoped keys', () => {
     const bad = await client.callTool({ name: 'finish_task', arguments: { taskId: 999999 } });
     expect(bad.isError).toBe(true);
     await client.close();
+  });
+
+  it('resolves the bearer Attempt Key to its caller and registers tools per caller', async () => {
+    const created = await server.api('POST', '/api/tasks', { prompt: 'caller seam' });
+    const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
+    const attemptKey = await server.app.ctx.auth.createKey('caller-seam', { scope: 'attempt', attemptId: started.body.id });
+
+    const registrar = (mcp: any, _ctx: any, caller: any) => {
+      if (caller.scope !== 'attempt') return;
+      mcp.registerTool('probe_caller', { description: 'test probe' }, async () => ({
+        content: [{ type: 'text' as const, text: JSON.stringify({ attemptId: caller.attempt.id, taskId: caller.task.id, workspaceId: caller.workspace?.id ?? null }) }],
+      }));
+    };
+    callerToolRegistrars.push(registrar);
+    try {
+      const attemptClient = await mcpClient(server, attemptKey.token);
+      expect((await attemptClient.listTools()).tools.map((t) => t.name)).toContain('probe_caller');
+      const seen = parse(await attemptClient.callTool({ name: 'probe_caller', arguments: {} }));
+      expect(seen.attemptId).toBe(started.body.id);
+      expect(seen.taskId).toBe(created.body.id);
+      await attemptClient.close();
+
+      const fullClient = await mcpClient(server, token);
+      expect((await fullClient.listTools()).tools.map((t) => t.name)).not.toContain('probe_caller');
+      await fullClient.close();
+    } finally {
+      callerToolRegistrars.splice(callerToolRegistrars.indexOf(registrar), 1);
+    }
   });
 
   it('end-to-end: a run schedules a dependent follow-up task through its injected key', async () => {
