@@ -394,7 +394,7 @@ It is **active** while it can accept Turns; its warm harness process is spawned
 on the first Turn and kept across widget/socket close. A server restart makes
 an active Conversation cold, but it can resume its prior session; only an
 explicit end or idle timeout makes it **ended** and read-only.
-_Avoid_: chat (as the noun), session (ACP-overloaded), thread
+_Avoid_: chat (as the noun), session (ACP-overloaded), thread (a Thread groups Agent Messages)
 
 **Turn**:
 One operator message and the Harness's response to it within a Conversation
@@ -425,6 +425,37 @@ opens a picker above the field, filtered as the operator types; selecting one
 inserts `{prefix}{name} ` ready for arguments and never sends on its own. The raw
 text is forwarded to the Harness unchanged; Harmonic parses nothing.
 _Avoid_: command (bare — collides with Verification Command), skill, macro
+
+### Agent Messages
+
+**Agent Message**:
+A note one Agent sends to another Task in the same Workspace — the unit of
+agent-to-agent communication, motivated by Epic Members coordinating while they
+run in parallel, possibly on different Harnesses. Addressed to a **Task**, never
+to a Session or Agent: Harmonic delivers it to whichever Agent is live for that
+Task, or holds it until one is (a recipient between Attempts, *ready*,
+*paused*, or *escalated* receives it at the start of its next Attempt). Sending
+to a *draft*, *done*, or *cancelled* Task is refused. A sender may instead
+address **its Epic**, reaching every open sibling Member as one Agent Message.
+Always **one-way and asynchronous** — the sender never waits for a reply; a
+reply is simply another Agent Message that names the one it answers. Each
+Attempt may send only a bounded number (a Setting Override), so two agents
+cannot answer each other without end. Delivered to a live Agent over the
+steer channel, framed as coming from the peer Task so it never reads as an
+operator instruction. Every Agent Message is visible to the operator on both the
+sender's and the recipient's Task. **Optional and off by default** — a Setting
+Override (Baseline → Global → Workspace); where off, agents are not offered
+the ability at all. Shaped after A2A's Message so the Workspace can later be
+reachable by external A2A agents without remodelling.
+_Avoid_: message (bare — collides with Activity Event, Turn, Notification),
+peer message, steer (operator-only), mail, chat
+
+**Thread**:
+A root Agent Message plus every reply to it, transitively — the unit the
+operator reads agent-to-agent communication by. Read-only to the operator:
+steering a participant is still done by steering its Task. Survives a
+participant Task's deletion, showing that side as deleted.
+_Avoid_: exchange, conversation (an operator↔agent chat), channel
 
 ### Lifecycle
 
@@ -587,7 +618,7 @@ A Session moves `active → idle → retiring → retired`. Builder-worktree rem
 is owned by the **Task**, not the Session (ADR-0001):
 the per-Task worktree is retained across Attempts and removed only at the
 Task's terminal disposition (merged, or operator close/cancel).
-_Avoid_: thread, chat (the interactive sibling is a Conversation)
+_Avoid_: chat (the interactive sibling is a Conversation), thread (a Thread groups Agent Messages)
 
 **Working Directory**:
 The directory where a Task's Attempts execute — its Workspace's directory,

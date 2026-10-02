@@ -1,6 +1,6 @@
 # Harmonic architecture decisions
 
-The current set contains **44 ADRs**, reconciled on **2026-10-02**. They record
+The current set contains **45 ADRs**, reconciled on **2026-10-02**. They record
 accepted decisions, their rationale, and explicit amendments. A Context section
 may describe a historical defect; it does not by itself identify an open issue.
 Current-status notes and the operative Decision sections describe the current
@@ -91,6 +91,7 @@ is historical and retains the terminology used at the reset.
 | 0042 | [Upgrade install modes, boot guard, and rollback](0042-upgrade-install-modes-boot-guard-and-rollback.md) |
 | 0043 | [Supported Node and npm versions](0043-supported-node-and-npm-versions.md) |
 | 0044 | [Every Task keeps a file Archive, exported on terminal disposition](0044-task-archive-and-export.md) |
+| 0045 | [Agent Messages travel over Harmonic's MCP server with A2A-shaped payloads](0045-agent-messages-over-mcp-with-a2a-shaped-payloads.md) (proposed) |
 
 ## Where every pre-reset ADR went
 
