@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { verifyEpicIntegration } from '../src/execution/epic-verification.js';
+import { executionPlumbing } from './helpers.js';
 
 describe('verifyEpicIntegration', () => {
   const directories: string[] = [];
@@ -36,6 +37,7 @@ describe('verifyEpicIntegration', () => {
     });
 
     await expect(verifyEpicIntegration({
+      commandSpawn: executionPlumbing().commandSpawn,
       worktreePath,
       verifiedHeadOid,
       verifiers: {
@@ -62,13 +64,14 @@ describe('verifyEpicIntegration', () => {
     directories.push(root);
     const logPath = join(root, 'output.log');
     await verifyEpicIntegration({
+      commandSpawn: executionPlumbing().commandSpawn,
       worktreePath: root,
       verifiedHeadOid: 'abc',
       verifiers: {
         commands: [{ id: 'cmd-log', command: process.execPath, args: ['-e', 'console.log("epic command output")'], env: {}, timeoutSeconds: 10 }],
         critics: [],
       },
-      outputLogPath: async (command) => (command.id === 'cmd-log' ? logPath : null),
+      outputLog: async (command) => (command.id === 'cmd-log' ? { path: logPath, key: 'verification/pre-merge/cmd-log/output.log' } : null),
       runCritic: vi.fn(),
     });
     expect(readFileSync(logPath, 'utf8')).toContain('epic command output');
@@ -76,6 +79,7 @@ describe('verifyEpicIntegration', () => {
 
   it('retains every critic summary and raw output for the resolver', async () => {
     await expect(verifyEpicIntegration({
+      commandSpawn: executionPlumbing().commandSpawn,
       worktreePath: '/epic-worktree',
       verifiedHeadOid: 'epic-head',
       verifiers: {
@@ -111,6 +115,7 @@ describe('verifyEpicIntegration', () => {
   it('retains failed command output for the resolver', async () => {
     const recorded = vi.fn();
     await expect(verifyEpicIntegration({
+      commandSpawn: executionPlumbing().commandSpawn,
       worktreePath: process.cwd(),
       verifiedHeadOid: 'epic-head',
       verifiers: {

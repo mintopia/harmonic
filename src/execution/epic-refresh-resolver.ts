@@ -1,10 +1,9 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Git } from './git.js';
-import { bestEffort, fireAndForget, reportFailure } from '../error-handling.js';
+import { bestEffort, reportFailure, type FireAndForget } from '../error-handling.js';
 import { integrationBranchName, type EpicRefreshResolveDispatchOutcome, type EpicRefreshTarget } from './epic-coordinator.js';
 import { RESOLVE_TURN_TIMEOUT_MS } from './merge-coordinator.js';
-import { createAcpCriticDrive } from '../verification/critic.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { TaskService } from '../domain/tasks.js';
 import type { RunnerOptions } from './runner.js';
@@ -14,6 +13,7 @@ export interface EpicRefreshResolverDeps {
   getConfig: () => AppConfig;
   worktreesDir: string;
   criticDrive: RunnerOptions['criticDrive'];
+  fireAndForget: FireAndForget;
 }
 
 export class EpicRefreshResolver {
@@ -83,7 +83,7 @@ export class EpicRefreshResolver {
         harnessId,
         model,
       });
-    fireAndForget(() => turn()
+    this.deps.fireAndForget(() => turn()
       .then(() => retry())
       .catch(async (err) => {
         await escalate(target.ref, `refresh re-attempt after the corrective turn failed for ${branch}: ${err instanceof Error ? err.message : String(err)}`);
@@ -103,7 +103,7 @@ export class EpicRefreshResolver {
   }): Promise<void> {
     try {
       if (args.conflicted) {
-        const drive = this.deps.criticDrive ?? createAcpCriticDrive();
+        const drive = this.deps.criticDrive;
         const prompt =
           `## Epic integration refresh — merge conflict resolution\n` +
           `Merging \`${args.target.defaultBranch}\` into the Epic integration branch \`${args.branch}\` conflicted:\n${args.conflictDetail}\n\n` +

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GuardrailSupervisor } from '../src/execution/guardrail-supervisor.js';
+import { BackgroundWork } from '../src/error-handling.js';
 
 const MINUTE = 60_000;
 
@@ -23,6 +24,7 @@ function makeSupervisor(state: { startedAt: number }, onTrip: () => void) {
     sampleSnapshot: vi.fn(async () => null),
     spendPollMs: 1_000,
     spendGraceMs: 1_000,
+    fireAndForget: new BackgroundWork().fireAndForget,
   };
   const turn = {
     taskId: 1,

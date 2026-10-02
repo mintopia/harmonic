@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AppConfig, DeepPartial } from '../src/config.js';
-import { truncationMarker } from '../src/verification/command-verifier.js';
 import { startServer, type TestServer } from './helpers.js';
 
 describe('GET /api/verification-attempts/:id/output', () => {
@@ -12,9 +11,10 @@ describe('GET /api/verification-attempts/:id/output', () => {
   let taskId: number;
   let attemptId: number;
   let outputPath: string;
+  let outputKey: string;
 
-  const addAttempt = async (output: string): Promise<number> =>
-    (await server.app.ctx.verificationAttempts.append(attemptId, { mechanism: 'command', inputOid: 'a'.repeat(40), verdict: 'fail', summary: 'command exited 1', output })).id;
+  const addAttempt = async (output: string, fullOutputKey: string | null = null): Promise<number> =>
+    (await server.app.ctx.verificationAttempts.append(attemptId, { mechanism: 'command', inputOid: 'a'.repeat(40), verdict: 'fail', summary: 'command exited 1', output, fullOutputKey })).id;
 
   const fetchOutput = (id: number) => fetch(`${server.baseUrl}/api/verification-attempts/${id}/output`, { headers: { cookie: `harmonic_session=${server.sessionToken}` } });
 
@@ -25,7 +25,9 @@ describe('GET /api/verification-attempts/:id/output', () => {
     const run = await server.app.ctx.attempts.create(taskId);
     attemptId = run.id;
     const taskRow = await server.app.ctx.tasks.get(taskId);
-    outputPath = (await server.app.ctx.archive.verificationOutputLog(taskRow, run.number, 'pre-merge', 'cmd-1'))!;
+    const log = (await server.app.ctx.archive.verificationOutputLog(taskRow, run.number, 'pre-merge', 'cmd-1'))!;
+    outputPath = log.path;
+    outputKey = log.key;
     writeFileSync(outputPath, 'FULL OUTPUT '.repeat(10));
   });
 
@@ -35,7 +37,7 @@ describe('GET /api/verification-attempts/:id/output', () => {
   });
 
   it('streams the archived full output and hides the filesystem path from the attempts list', async () => {
-    const id = await addAttempt(`head${truncationMarker(300_000, outputPath)}tail`);
+    const id = await addAttempt('head\n…[truncated 300000 chars]…\ntail', outputKey);
 
     const res = await fetchOutput(id);
     expect(res.status).toBe(200);
@@ -57,13 +59,13 @@ describe('GET /api/verification-attempts/:id/output', () => {
   });
 
   it('404s on a traversal segment instead of reading outside the Archive', async () => {
-    const id = await addAttempt(`x${truncationMarker(10, join(root, 'data', 'archive', 'verification', 'pre-merge', '..', 'output.log'))}y`);
+    const id = await addAttempt('x', 'verification/pre-merge/../../../../../output.log');
     expect((await fetchOutput(id)).status).toBe(404);
   });
 
   it('404s for an unknown attempt and when the archived file is gone', async () => {
     expect((await fetchOutput(999_999)).status).toBe(404);
-    const id = await addAttempt(`x${truncationMarker(10, join(root, 'verification', 'post-merge', 'missing', 'output.log'))}y`);
+    const id = await addAttempt('x', 'verification/post-merge/missing/output.log');
     expect((await fetchOutput(id)).status).toBe(404);
   });
 

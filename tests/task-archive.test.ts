@@ -245,9 +245,9 @@ describe('TaskArchive', () => {
   it('creates a verification output.log directory per stage and step', async () => {
     const task = await tasks.create({ prompt: 'p' });
     const archive = archiveFor();
-    const path = await archive.verificationOutputLog(task, 2, 'post-merge', 'cmd-lint');
+    const log = await archive.verificationOutputLog(task, 2, 'post-merge', 'cmd-lint');
     const root = await archive.ensure(task);
-    expect(path).toBe(join(root, 'attempts', '2', 'verification', 'post-merge', 'cmd-lint', 'output.log'));
+    expect(log).toEqual({ path: join(root, 'attempts', '2', 'verification', 'post-merge', 'cmd-lint', 'output.log'), key: 'verification/post-merge/cmd-lint/output.log' });
     expect(existsSync(join(root, 'attempts', '2', 'verification', 'post-merge', 'cmd-lint'))).toBe(true);
   });
 
@@ -257,9 +257,10 @@ describe('TaskArchive', () => {
     const root = await archive.ensure(task);
     const stageDir = join(root, 'attempts', '1', 'verification', 'pre-merge');
     const ids = ['../../x', '', '.', '..', 'a/b', 'a-b'];
-    const paths = await Promise.all(ids.map((id) => archive.verificationOutputLog(task, 1, 'pre-merge', id)));
+    const logs = await Promise.all(ids.map((id) => archive.verificationOutputLog(task, 1, 'pre-merge', id)));
+    const paths = logs.map((log) => log?.path);
     for (const path of paths) {
-      expect(path).not.toBeNull();
+      expect(path).toBeDefined();
       expect(dirname(dirname(path!))).toBe(stageDir);
       expect(existsSync(dirname(path!))).toBe(true);
     }

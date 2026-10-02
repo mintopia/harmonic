@@ -1,10 +1,11 @@
 import { createWriteStream, type WriteStream } from 'node:fs';
 import { access, appendFile, copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { createHash, randomBytes } from 'node:crypto';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import type { TaskRow } from '../db/schema.js';
 import { logger } from '../logger.js';
 import { yieldToEventLoop } from '../reliability/yield.js';
+import type { VerificationOutputLog } from '../verification/command-verifier.js';
 
 export interface ArchiveDeps {
   dataDir: string;
@@ -314,27 +315,30 @@ export class TaskArchive {
     return dir;
   }
 
+  private async createOutputLog(root: string, attemptNumber: number, stage: 'pre-merge' | 'post-merge', stepId: string): Promise<VerificationOutputLog> {
+    const key = `verification/${stage}/${safeSegment(stepId)}/output.log`;
+    const path = join(root, 'attempts', String(attemptNumber), key);
+    await mkdir(dirname(path), { recursive: true });
+    return { path, key };
+  }
+
   async verificationOutputLog(
     task: TaskRow,
     attemptNumber: number,
     stage: 'pre-merge' | 'post-merge',
     stepId: string,
-  ): Promise<string | null> {
+  ): Promise<VerificationOutputLog | null> {
     try {
-      const dir = join(await this.ensure(task), 'attempts', String(attemptNumber), 'verification', stage, safeSegment(stepId));
-      await mkdir(dir, { recursive: true });
-      return join(dir, 'output.log');
+      return await this.createOutputLog(await this.ensure(task), attemptNumber, stage, stepId);
     } catch (err) {
       warn('archive: verification output directory failed', err, { taskId: task.id, attemptNumber, stage });
       return null;
     }
   }
 
-  async epicVerificationOutputLog(workspaceId: number, epicRef: number, attemptNumber: number, commandId: string, stage: 'pre-merge' | 'post-merge' = 'pre-merge'): Promise<string | null> {
+  async epicVerificationOutputLog(workspaceId: number, epicRef: number, attemptNumber: number, commandId: string, stage: 'pre-merge' | 'post-merge' = 'pre-merge'): Promise<VerificationOutputLog | null> {
     try {
-      const dir = join(await this.ensureEpic(workspaceId, epicRef), 'attempts', String(attemptNumber), 'verification', stage, safeSegment(commandId));
-      await mkdir(dir, { recursive: true });
-      return join(dir, 'output.log');
+      return await this.createOutputLog(await this.ensureEpic(workspaceId, epicRef), attemptNumber, stage, commandId);
     } catch (err) {
       warn('archive: epic verification output directory failed', err, { workspaceId, epicRef, attemptNumber });
       return null;
@@ -379,16 +383,17 @@ export class TaskArchive {
   async archivedVerificationOutput(
     owner: TaskRow | { workspaceId: number; epicRef: number },
     attemptNumber: number,
-    stage: 'pre-merge' | 'post-merge',
-    stepSegment: string,
+    fullOutputKey: string,
   ): Promise<string | null> {
     try {
       const root = await this.existingOwnerDir(owner);
-      if (!root || safeSegment(stepSegment) !== stepSegment) return null;
-      const file = join(root, 'attempts', String(attemptNumber), 'verification', stage, stepSegment, 'output.log');
+      if (!root) return null;
+      const attemptDir = join(root, 'attempts', String(attemptNumber));
+      const file = resolve(attemptDir, fullOutputKey);
+      if (!file.startsWith(attemptDir + sep)) return null;
       return (await pathExists(file)) ? file : null;
     } catch (err) {
-      warn('archive: verification output lookup failed', err, { attemptNumber, stage });
+      warn('archive: verification output lookup failed', err, { attemptNumber, fullOutputKey });
       return null;
     }
   }

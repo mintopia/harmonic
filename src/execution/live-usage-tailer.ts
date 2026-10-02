@@ -1,5 +1,5 @@
 import type { AttemptUsageSnapshot } from './usage.js';
-import { fireAndForget } from '../error-handling.js';
+import type { FireAndForget } from '../error-handling.js';
 
 /** Push cadence (~1s) and persist cadence (~10s) are decoupled: a smooth UI
  * stream, a lazy DB write. */
@@ -37,12 +37,13 @@ export class LiveUsageTailer {
 
   constructor(
     private readonly hooks: TailerHooks,
+    private readonly fireAndForget: FireAndForget,
     private readonly cadence: TailerCadence = { pushMs: 1000, persistMs: 10_000 },
   ) {}
 
   start(runId: number): void {
     if (this.tails.has(runId)) return;
-    const timer = setInterval(() => fireAndForget(() => this.tick(runId), { op: 'liveUsage.tick', level: 'warn', context: { attemptId: runId } }), this.cadence.pushMs);
+    const timer = setInterval(() => this.fireAndForget(() => this.tick(runId), { op: 'liveUsage.tick', level: 'warn', context: { attemptId: runId } }), this.cadence.pushMs);
     timer.unref?.();
     this.tails.set(runId, { timer, lastPushed: null, lastPersistAt: Date.now(), sampling: false });
   }

@@ -29,7 +29,6 @@ import { attemptTimelineToApi, attemptToApi, taskToApi, tasksToApi, ticketTimeli
 import { atRestWorkspaceId, costOfAttempts, epicToListRow, verificationAttemptToApi } from '../dto.js';
 import type { ApiTaskListRow } from '../dto.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, attemptUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
-import { splitFullOutputPath } from '../../verification/command-verifier.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import { diffFilesResponseSchema } from './diff.js';
 import { deleteTaskKeepingArchive, operatorReasonSchema, recordOperatorActionBestEffort, recordOperatorActionsBestEffort, requestActor } from '../operator-inputs.js';
@@ -326,7 +325,7 @@ const verificationAttemptSchema = z.object({
   verdict: z.enum(['pass', 'fail', 'inconclusive']).meta({ example: 'pass' }),
   /** Short human summary of the outcome. */
   summary: z.string().meta({ example: 'all checks passed' }),
-  /** Raw verifier output, caller-capped. */
+  /** Raw verifier output, capped to a head and tail with the elided middle marked. The full text, when kept, is reported by `outputTruncated`. */
   output: z.string().meta({ example: '' }),
   /** The exact prompt sent to the critic; null for a command verifier. */
   prompt: z.string().nullable().meta({ example: null }),
@@ -1126,10 +1125,9 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req, reply) => {
       const attempt = await ctx.verificationAttempts.get(req.params.id);
       if (!attempt) throw new DomainError('not_found', `verification attempt ${req.params.id} not found`);
-      const location = /verification[\\/](pre-merge|post-merge)[\\/]([^\\/]+)[\\/]output\.log$/.exec(splitFullOutputPath(attempt.output).fullOutputPath ?? '');
       const run = await ctx.attempts.get(attempt.attemptId).catch(() => null);
       const owner = run ? await archiveOwner(run) : null;
-      const file = location && run && owner ? await ctx.archive.archivedVerificationOutput(owner, run.number, location[1] as 'pre-merge' | 'post-merge', location[2]!) : null;
+      const file = attempt.fullOutputKey && run && owner ? await ctx.archive.archivedVerificationOutput(owner, run.number, attempt.fullOutputKey) : null;
       if (!file) throw new DomainError('not_found', `no archived full output for verification attempt ${attempt.id}`);
       const stream = createReadStream(file);
       reply.raw.once('close', () => stream.destroy());

@@ -9,6 +9,9 @@ import type { PersistedAttemptEvent } from '../domain/attempts.js';
 import type { LiveAttemptEvent } from './live-events.js';
 import type { AttemptUsageSnapshot } from './usage.js';
 import { type CriticHarnessDrive } from '../verification/critic.js';
+import type { CommandSpawn } from '../verification/command-verifier.js';
+import type { SpawnProcessGroup } from './process-groups.js';
+import type { FireAndForget } from '../error-handling.js';
 
 export interface RunnerEvents {
   /** Fired after every run event is persisted (live streaming hook). */
@@ -85,9 +88,11 @@ export interface RunnerOptions {
         Partial<Pick<WorkspaceRow, 'workingDir'>>)
     | undefined
   >;
-  /** Injectable agent-critic drive; absent → the real drive spawns the
-   * builder's configured harness as a contained read-only reviewer. */
-  criticDrive?: CriticHarnessDrive | undefined;
+  /** The agent-critic drive; the real one spawns the builder's configured harness as a contained read-only reviewer. */
+  criticDrive: CriticHarnessDrive;
+  commandSpawn: CommandSpawn;
+  spawnProcessGroup: SpawnProcessGroup;
+  fireAndForget: FireAndForget;
   /** Session retirement hook; absent → Sessions are never retired. */
   sessionRetirement?: SessionRetirementHook;
   onFailedAttemptRequeued?: (task: TaskRow, reason: string) => void;

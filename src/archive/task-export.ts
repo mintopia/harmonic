@@ -6,7 +6,7 @@ import { basename, join } from 'node:path';
 import { EXPORT_STATES, type ExportState } from '../config.js';
 import type { TaskRow } from '../db/schema.js';
 import { DomainError } from '../domain/errors.js';
-import { fireAndForget } from '../error-handling.js';
+import type { FireAndForget } from '../error-handling.js';
 import { logger } from '../logger.js';
 import { forEachYielding } from '../reliability/yield.js';
 import type { EpicExportStep } from '../domain/epic-merge-events.js';
@@ -146,6 +146,7 @@ function retryScheduleAt(firstFailedMs: number, retry: number): string | null {
 }
 
 export interface TaskExporterDeps {
+  fireAndForget: FireAndForget;
   dataDir: string;
   archive: Pick<TaskArchive, 'ensure' | 'recordExport' | 'ensureEpic' | 'recordEpicExport' | 'exportHistory' | 'epicExportHistory'>;
   version: string;
@@ -350,7 +351,7 @@ export class TaskExporter {
 
   private enqueue(key: string, work: () => Promise<unknown>, context: Record<string, string | number>): void {
     const next = this.serialize(key, work);
-    fireAndForget(() => next, { op: 'export.trigger', level: 'warn', context });
+    this.deps.fireAndForget(() => next, { op: 'export.trigger', level: 'warn', context });
   }
 
   private serialize<T>(key: string, fn: () => Promise<T>): Promise<T> {

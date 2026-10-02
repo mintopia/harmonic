@@ -5,13 +5,13 @@ import type { AttemptStore } from '../domain/attempts.js';
 import { DomainError } from '../domain/errors.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
-import { fireAndForget } from '../error-handling.js';
+import type { FireAndForget } from '../error-handling.js';
 import { indexWorktree } from '../execution/code-index.js';
 import { Git } from '../execution/git.js';
 import { driveFields } from '../execution/prompt-template.js';
 import type { TranscriptCapture } from '../execution/transcript-capture.js';
 import type { PostMergeCheckResult } from '../execution/merge-policy.js';
-import { commandAttemptToInput } from './command-verifier.js';
+import { commandAttemptToInput, type CommandSpawn } from './command-verifier.js';
 import { runPostMergeCommands } from './post-merge-commands.js';
 import { criticAttemptToInput, runCritic, type CriticHarnessDrive } from './critic.js';
 
@@ -35,11 +35,13 @@ export function createPostMergeCheck(deps: {
   getConfig: () => AppConfig;
   verificationAttempts: VerificationAttemptStore;
   attempts: AttemptStore;
-  criticDrive?: CriticHarnessDrive | undefined;
+  criticDrive: CriticHarnessDrive;
+  commandSpawn: CommandSpawn;
+  fireAndForget: FireAndForget;
   archive?: TaskArchive | undefined;
   transcripts: TranscriptCapture;
 }): (input: PostMergeInput) => Promise<PostMergeCheckResult> {
-  const { getWorkspace, getConfig, verificationAttempts, attempts, criticDrive, archive: taskArchive, transcripts } = deps;
+  const { getWorkspace, getConfig, verificationAttempts, attempts, criticDrive, commandSpawn, fireAndForget, archive: taskArchive, transcripts } = deps;
   return async ({
     task,
     run,
@@ -62,9 +64,10 @@ export function createPostMergeCheck(deps: {
       commands,
       cwd: baseDir,
       mergeOid,
+      commandSpawn,
       signal,
       attributes: { 'task.id': task.id, 'attempt.id': run.id },
-      outputLogPath: async (command) => (await taskArchive?.verificationOutputLog(task, run.number, 'post-merge', command.id)) ?? null,
+      outputLog: async (command) => (await taskArchive?.verificationOutputLog(task, run.number, 'post-merge', command.id)) ?? null,
       onAttempt: async (cmdAttempt) => {
         await verificationAttempts.append(verificationAttempt.id, commandAttemptToInput(cmdAttempt));
         record?.('lifecycle', { event: 'verification', mechanism: 'command', verdict: cmdAttempt.verdict, summary: cmdAttempt.summary });
@@ -94,7 +97,7 @@ export function createPostMergeCheck(deps: {
         harness,
         harnessId,
         attributes: { 'task.id': task.id, 'attempt.id': run.id },
-        ...(criticDrive ? { drive: criticDrive } : {}),
+        drive: criticDrive,
         ...(archive ? { archive } : {}),
         ...(onUpdate ? { onUpdate } : {}),
         onAgentDurationMs: (ms: number) => attempts.addAgentDuration(run.id, ms),

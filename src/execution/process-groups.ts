@@ -2,7 +2,7 @@ import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import { eq } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { processGroups } from '../db/schema.js';
-import { fireAndForget, reportFailure } from '../error-handling.js';
+import { reportFailure, type FireAndForget } from '../error-handling.js';
 import { logger } from '../logger.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { ProcGroupReaper, readProcStartToken, readProcessTable, type ProcessReaper } from './process-reaper.js';
@@ -11,6 +11,7 @@ import { ProcGroupReaper, readProcStartToken, readProcessTable, type ProcessReap
 export class ProcessGroupJournal {
   constructor(
     private readonly db: AsyncDbHandle,
+    private readonly fireAndForget: FireAndForget,
     private readonly reaper: ProcessReaper = new ProcGroupReaper(),
   ) {}
 
@@ -25,28 +26,38 @@ export class ProcessGroupJournal {
     await this.db.write((d) => d.delete(processGroups).where(eq(processGroups.id, id)).run());
   }
 
-  /** Boot only, before this instance spawns anything: every journaled group belongs to a dead predecessor. */
-  async reapOrphans(yieldOptions?: YieldOptions): Promise<void> {
+  /** Boot only, before anything spawns: the returned spawner is the sole journaling spawn, so nothing is journaled before the reap. */
+  async reapOrphans(yieldOptions?: YieldOptions): Promise<SpawnProcessGroup> {
     const rows = await this.db.read((d) => d.select().from(processGroups).all());
-    if (rows.length === 0) return;
-    const processTable = readProcessTable();
-    await forEachYielding(rows, async (row) => {
-      const outcome = await this.reaper.reap({ pgid: row.pgid, startToken: row.startToken }, { processTable });
-      logger.info('crash-recovery: reaping orphan process group', { owner: row.owner, pgid: row.pgid, outcome });
-      await this.forget(row.id);
-    }, yieldOptions);
+    if (rows.length > 0) {
+      const processTable = readProcessTable();
+      await forEachYielding(rows, async (row) => {
+        const outcome = await this.reaper.reap({ pgid: row.pgid, startToken: row.startToken }, { processTable });
+        logger.info('crash-recovery: reaping orphan process group', { owner: row.owner, pgid: row.pgid, outcome });
+        await this.forget(row.id);
+      }, yieldOptions);
+    }
+    return (command, args, options, owner) => {
+      const child = spawn(command, args, { ...options, detached: true });
+      const pgid = child.pid;
+      if (pgid === undefined) return child;
+      const recorded = this.record(pgid, owner).catch((error: unknown) => {
+        reportFailure(error, { op: 'processGroups.record', level: 'warn', context: { owner, pgid } });
+        return undefined;
+      });
+      child.once('exit', () => {
+        signalProcessGroup(pgid, 'SIGKILL');
+        this.fireAndForget(async () => {
+          const id = await recorded;
+          if (id !== undefined) await this.forget(id);
+        }, { op: 'processGroups.forget', level: 'warn', context: { owner, pgid } });
+      });
+      return child;
+    };
   }
 }
 
-let journal: ProcessGroupJournal | undefined;
-
-export function attachJournalAfterBootReap(next: ProcessGroupJournal): void {
-  journal = next;
-}
-
-export function detachProcessGroupJournal(owner: ProcessGroupJournal): void {
-  if (journal === owner) journal = undefined;
-}
+export type SpawnProcessGroup = (command: string, args: readonly string[], options: SpawnOptions, owner: string) => ChildProcess;
 
 export function signalProcessGroup(pgid: number, signal: NodeJS.Signals): void {
   try {
@@ -60,25 +71,4 @@ export function signalProcessGroup(pgid: number, signal: NodeJS.Signals): void {
 export function killProcessGroup(child: ChildProcess): void {
   if (child.pid !== undefined) signalProcessGroup(child.pid, 'SIGKILL');
   else if (child.exitCode === null && !child.killed) child.kill('SIGKILL');
-}
-
-/** Spawn `command` as its own process-group leader; the group is journaled until the leader exits, then killed whole. */
-export function spawnProcessGroup(command: string, args: readonly string[], options: SpawnOptions, owner: string): ChildProcess {
-  const child = spawn(command, args, { ...options, detached: true });
-  const pgid = child.pid;
-  if (pgid === undefined) return child;
-  const recorder = journal;
-  const recorded = recorder?.record(pgid, owner).catch((error: unknown) => {
-    reportFailure(error, { op: 'processGroups.record', level: 'warn', context: { owner, pgid } });
-    return undefined;
-  });
-  child.once('exit', () => {
-    signalProcessGroup(pgid, 'SIGKILL');
-    if (!recorder || !recorded) return;
-    fireAndForget(async () => {
-      const id = await recorded;
-      if (id !== undefined) await recorder.forget(id);
-    }, { op: 'processGroups.forget', level: 'warn', context: { owner, pgid } });
-  });
-  return child;
 }

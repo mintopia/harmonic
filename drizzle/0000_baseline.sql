@@ -329,6 +329,7 @@ CREATE TABLE `verification_attempts` (
 	`verdict` text NOT NULL,
 	`summary` text NOT NULL,
 	`output` text NOT NULL,
+	`full_output_key` text,
 	`prompt` text,
 	`transcript_path` text,
 	`harness` text,

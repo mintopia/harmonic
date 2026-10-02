@@ -5,7 +5,6 @@ import { attemptTimelineToApi, conversationToApi, attemptToApi, attemptUsageToAp
 import { operationEventToApi, scheduledJobsToApi, notificationToApi, worktreesToApi, type ApiAttemptSummary, type ApiConversation, type ApiTask } from './dto.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { isTaskAttempt, type AttemptRow, type ConversationRow, type TaskRow } from '../db/schema.js';
-import { fireAndForget } from '../error-handling.js';
 
 /** Only the newest send per id is delivered; a removal invalidates any send still in flight for that id. */
 function latestChangeSender<TRow, TApi>(toApi: (row: TRow) => Promise<TApi>): {
@@ -36,7 +35,7 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(msg));
     };
     const sendAttemptTimeline = (taskId: number) => {
-      fireAndForget(
+      ctx.fireAndForget(
         async () => {
           const { attempts, budgetBase } = await attemptTimelineToApi(ctx, taskId);
           send({ type: 'attempt_timeline_changed', taskId, attempts, budgetBase });
@@ -55,7 +54,7 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       ctx.bus.on('attempt_event', (event) => send({ type: 'attempt_event', event })),
       ctx.bus.on('attempt_changed', (run) => {
         if (isTaskAttempt(run)) {
-          fireAndForget(() => attemptChanged.send(run.id, run, (api) => send({ type: 'attempt_changed', run: api })), { op: 'ws.attemptChanged', level: 'debug', context: { attemptId: run.id } });
+          ctx.fireAndForget(() => attemptChanged.send(run.id, run, (api) => send({ type: 'attempt_changed', run: api })), { op: 'ws.attemptChanged', level: 'debug', context: { attemptId: run.id } });
           sendAttemptTimeline(run.taskId);
         } else if (run.workspaceId !== null && run.epicRef !== null) {
           send({ type: 'epic_changed', workspaceId: run.workspaceId, epicRef: run.epicRef });
@@ -63,9 +62,9 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       }),
       ctx.bus.on('step_changed', ({ taskId }) => sendAttemptTimeline(taskId)),
       ctx.bus.on('attempt_usage', ({ attemptId, snapshot }) => {
-        fireAndForget(async () => send({ type: 'attempt_usage', attemptId, ...(await attemptUsageToApi(ctx, attemptId, snapshot)) }), { op: 'ws.attemptUsage', level: 'debug', context: { attemptId } });
+        ctx.fireAndForget(async () => send({ type: 'attempt_usage', attemptId, ...(await attemptUsageToApi(ctx, attemptId, snapshot)) }), { op: 'ws.attemptUsage', level: 'debug', context: { attemptId } });
       }),
-      ctx.bus.on('task_changed', (task) => fireAndForget(() => taskChanged.send(task.id, task, (api) => send({ type: 'task_changed', task: api })), { op: 'ws.taskChanged', level: 'debug', context: { taskId: task.id } })),
+      ctx.bus.on('task_changed', (task) => ctx.fireAndForget(() => taskChanged.send(task.id, task, (api) => send({ type: 'task_changed', task: api })), { op: 'ws.taskChanged', level: 'debug', context: { taskId: task.id } })),
       ctx.bus.on('task_removed', ({ id }) => {
         taskChanged.markRemoved(id);
         send({ type: 'task_removed', id });
@@ -87,7 +86,7 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       unsubscribes.push(
         ctx.bus.on('conversation_event', (event) => send({ type: 'conversation_event', event })),
         ctx.bus.on('conversation_changed', (conversation) => {
-          fireAndForget(
+          ctx.fireAndForget(
             () => conversationChanged.send(conversation.id, conversation, (api) => send({ type: 'conversation_changed', conversation: api })),
             { op: 'ws.sendConversationChanged', level: 'warn', context: { conversationId: conversation.id } },
           );

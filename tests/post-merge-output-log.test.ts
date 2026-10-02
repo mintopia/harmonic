@@ -12,7 +12,7 @@ import { TranscriptCapture } from '../src/execution/transcript-capture.js';
 import { baselineConfig } from '../src/config.js';
 import { createPostMergeCheck } from '../src/verification/post-merge-check.js';
 import { EpicIntegrationRunner } from '../src/tracker/epic-integration-runner.js';
-import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { executionPlumbing, allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 describe('createPostMergeCheck archive output', () => {
   let dir: string;
@@ -50,6 +50,7 @@ describe('createPostMergeCheck archive output', () => {
       workspaceName: async () => null,
     });
     const check = createPostMergeCheck({
+      ...executionPlumbing(),
       getWorkspace: async () => undefined,
       getConfig: () => settings.getGlobal(),
       verificationAttempts,
@@ -84,6 +85,7 @@ describe('createPostMergeCheck archive output', () => {
     const verificationAttempts = new VerificationAttemptStore(db);
     const archive = new TaskArchive({ dataDir: dir, ensureArchiveId: (id) => tasks.ensureArchiveId(id), workspaceName: async () => null });
     const check = createPostMergeCheck({
+      ...executionPlumbing(),
       getWorkspace: async () => undefined,
       getConfig: () => settings.getGlobal(),
       verificationAttempts,
@@ -111,6 +113,7 @@ describe('createPostMergeCheck archive output', () => {
     const archive = new TaskArchive({ dataDir: dir, ensureArchiveId: (id) => tasks.ensureArchiveId(id), workspaceName: async () => null });
     const command = { id: 'epic-echo', command: process.execPath, args: ['-e', "console.log('epic-post-merge-out')"], env: {}, timeoutSeconds: 30 };
     const runner = new EpicIntegrationRunner({
+      commandSpawn: executionPlumbing().commandSpawn,
       workspace: { id: 1, workingDir: dir },
       worktrees: { release: async () => {} },
       epics: { retireIntegrationBranch: async () => true },
@@ -128,7 +131,7 @@ describe('createPostMergeCheck archive output', () => {
     await runner.integrate({ repoDir: dir, epicRef: 7, defaultBranch: 'main', integrationBranch: 'epic/7' });
 
     const log = await archive.epicVerificationOutputLog(1, 7, epicAttempt.number, 'epic-echo', 'post-merge');
-    expect(readFileSync(log!, 'utf8')).toContain('epic-post-merge-out');
+    expect(readFileSync(log!.path, 'utf8')).toContain('epic-post-merge-out');
     const recorded = await verificationAttempts.list(epicAttempt.id);
     expect(recorded).toHaveLength(1);
     expect(recorded[0]).toMatchObject({ mechanism: 'command', verdict: 'pass' });

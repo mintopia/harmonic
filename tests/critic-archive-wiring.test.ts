@@ -16,7 +16,7 @@ import { TranscriptCapture } from '../src/execution/transcript-capture.js';
 import { EpicVerificationRunner } from '../src/tracker/epic-verification-runner.js';
 import type { CriticDriveRequest, CriticHarnessDrive } from '../src/verification/critic.js';
 import { createPostMergeCheck } from '../src/verification/post-merge-check.js';
-import { allWorkspaces, makeSettingsStore, seedWorkspace, startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
+import { executionPlumbing, allWorkspaces, makeSettingsStore, seedWorkspace, startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -173,6 +173,7 @@ describe('Critic Step archive wiring (#730)', () => {
       const captureUsage = vi.spyOn(transcripts, 'captureCriticUsage');
       const timeouts: number[] = [];
       const check = createPostMergeCheck({
+        ...executionPlumbing(),
         getWorkspace: async () => ws,
         getConfig: () => criticConfig(logDir),
         verificationAttempts,
@@ -203,6 +204,7 @@ describe('Critic Step archive wiring (#730)', () => {
       await tasks.syncEpics(wsRow.id, [{ ref: 77, kind: 'epic' }]);
       const workspace = { ...wsRow, epicPreMergeCommands: null, epicPreMergeCritics: JSON.stringify(twoCritics) };
       const runner = new EpicVerificationRunner({
+        commandSpawn: executionPlumbing().commandSpawn,
         workspace: workspace as never,
         getWorkspaces: async () => [workspace as never],
         getConfig: () => criticConfig(logDir),
@@ -239,6 +241,7 @@ describe('Critic Step archive wiring (#730)', () => {
       const store = new VerificationAttemptStore(asyncDb);
       store.append = async () => { throw new Error('db down'); };
       const runner = new EpicVerificationRunner({
+        commandSpawn: executionPlumbing().commandSpawn,
         workspace: workspace as never,
         getWorkspaces: async () => [workspace as never],
         getConfig: () => criticConfig(logDir),

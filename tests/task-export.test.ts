@@ -12,6 +12,7 @@ import { TaskArchive } from '../src/archive/task-archive.js';
 import { EXPORT_RETRY_DELAYS_MS, TaskExporter, type ExportFailure, type TaskExporterDeps } from '../src/archive/task-export.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import { emptyGitProvenance } from '../src/archive/git-provenance.js';
+import { BackgroundWork } from '../src/error-handling.js';
 
 const TARBALL = /^(\d+)-(\d+-)?done-\d{8}T\d{6}\.\d{3}Z(-\d+)?\.tar\.gz$/;
 
@@ -43,6 +44,7 @@ describe('TaskExporter (#734)', () => {
 
   const exporter = (overrides: Partial<TaskExporterDeps> = {}): TaskExporter =>
     new TaskExporter({
+      fireAndForget: new BackgroundWork().fireAndForget,
       dataDir: dir,
       archive,
       version: '9.9.9',
@@ -266,6 +268,7 @@ describe('TaskExporter (#734)', () => {
 
   it('trigger never throws and still exports in the background', async () => {
     const failing = new TaskExporter({
+      fireAndForget: new BackgroundWork().fireAndForget,
       dataDir: dir,
       archive,
       version: '1',
@@ -788,7 +791,7 @@ describe('TaskExporter (#734)', () => {
 
     beforeEach(async () => {
       const log = await archive.verificationOutputLog(task, 1, 'pre-merge', 'test');
-      outputLog = log!;
+      outputLog = log!.path;
     });
 
     const exportedFile = (rel: string): { text: string; manifest: { redaction: { applied: boolean; matches: Record<string, number> } } } => {

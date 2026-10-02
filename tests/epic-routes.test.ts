@@ -15,8 +15,9 @@ import { type SettingsStore } from '../src/server/settings-store.js';
 import { type Ticket, type TicketRef, type TrackerAdapter } from '../src/tracker/adapter.js';
 import { closeIntegratedEpic, recordAndCloseIntegratedEpic } from '../src/tracker/epic-close.js';
 import { TrackerPollerManager } from '../src/tracker/manager.js';
+import { TrackerEpicService } from '../src/tracker/epic-service.js';
 import { type VerificationDecision } from '../src/verification/combine.js';
-import { allWorkspaces, captureRunEnv, makeSettingsStore, startServer, stubHarness, type TestServer, seedWorkspace } from './helpers.js';
+import { executionPlumbing, allWorkspaces, captureRunEnv, makeSettingsStore, startServer, stubHarness, type TestServer, seedWorkspace } from './helpers.js';
 import { eq } from 'drizzle-orm';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -175,6 +176,7 @@ describe('epic-routes', () => {
 
       const makeRunner = (postMerge?: PostMergeHook): Runner =>
         new Runner(tasks, asyncDb, () => baselineConfig(), {
+          ...executionPlumbing(),
           worktreesDir: join(dir, 'worktrees'),
           criticDrive: { run: async () => ({ output: '', permissionRequests: [] }) },
           ...(postMerge ? { postMerge } : {}),
@@ -545,7 +547,9 @@ describe('epic-routes', () => {
         tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
         workspaces = new WorkspaceService(asyncDb, settingsStore);
         wsId = (await workspaces.create({ name: 'WS', workingDir: repo, trackerEnabled: true })).id;
-        manager = new TrackerPollerManager(tasks, () => workspaces.list());
+        manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+          epicService: new TrackerEpicService(tasks, () => workspaces.list(), { fireAndForget: executionPlumbing().fireAndForget, integration: 'lifecycle-only' }),
+        });
       });
 
       afterEach(async () => {

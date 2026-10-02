@@ -2,7 +2,7 @@ import type { WorkspaceRow } from '../db/schema.js';
 import type { EpicLifecycle } from '../execution/epic-coordinator.js';
 import type { EpicWorktreePool } from '../execution/epic-worktree-pool.js';
 import type { PostMergeCheckResult, MergePolicyOutcome } from '../execution/merge-policy.js';
-import { commandAttemptToInput } from '../verification/command-verifier.js';
+import { commandAttemptToInput, type CommandSpawn } from '../verification/command-verifier.js';
 import { runPostMergeCommands } from '../verification/post-merge-commands.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
@@ -18,6 +18,7 @@ export interface EpicIntegrationRunnerDeps {
   epicAttempts?: Pick<AttemptStore, 'listForEpic'> | undefined;
   verificationAttemptStore?: Pick<VerificationAttemptStore, 'append'> | undefined;
   archive?: Pick<TaskArchive, 'epicVerificationOutputLog'> | undefined;
+  commandSpawn: CommandSpawn;
   resolvePostMergeCommands: () => Promise<ResolvedVerifiers['epic']['preMerge']['commands']>;
 }
 
@@ -57,7 +58,8 @@ export class EpicIntegrationRunner {
       commands: await this.deps.resolvePostMergeCommands(),
       cwd: baseDir,
       mergeOid,
-      outputLogPath: async (command) =>
+      commandSpawn: this.deps.commandSpawn,
+      outputLog: async (command) =>
         (attempt ? await archive?.epicVerificationOutputLog(workspace.id, epicRef, attempt.number, command.id, 'post-merge') : null) ?? null,
       onAttempt: async (commandAttempt) => {
         if (attempt) await verificationAttemptStore?.append(attempt.id, commandAttemptToInput(commandAttempt));

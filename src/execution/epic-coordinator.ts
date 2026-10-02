@@ -4,7 +4,7 @@ import type { MergePolicyOutcome } from './merge-policy.js';
 import { decideEpicIntegrate, reduceMemberState, type MemberMergeState } from '../domain/epic-integrate-decision.js';
 import type { VerificationDecision } from '../verification/combine.js';
 import { logger } from '../logger.js';
-import { errorMessage, fireAndForget } from '../error-handling.js';
+import { errorMessage, type FireAndForget } from '../error-handling.js';
 import { EpicOperations } from './epic-operations.js';
 import type { TaskRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
@@ -629,6 +629,7 @@ export class EpicLifecycle {
   constructor(
     private readonly tasks: TaskService,
     private readonly workingDir: string,
+    private readonly fireAndForget: FireAndForget,
     private readonly git: Pick<EpicGit, 'symbolicBranch' | 'branchExists' | 'revParse' | 'createBranch' | 'deleteBranch' | 'branchCheckedOutAt' | 'isAncestor'> = Git,
     private readonly onError: (msg: string) => void = logger.error,
     private epicIntegrate?: EpicIntegrateTrigger,
@@ -797,7 +798,7 @@ export class EpicLifecycle {
     );
     const branch = integrationBranchName(epic.ref);
     const leftBranch = inPlace && (await this.git.branchExists(this.workingDir, branch)) ? branch : undefined;
-    fireAndForget(() => trigger
+    this.fireAndForget(() => trigger
       .submit({
         ref: epic.ref,
         title: epic.title,

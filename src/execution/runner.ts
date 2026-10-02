@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from './git.js';
-import { bestEffort, errorMessage, fireAndForget } from '../error-handling.js';
+import { bestEffort, errorMessage, type FireAndForget } from '../error-handling.js';
 import type { GitCircuitBreaker } from './git-failure.js';
 import type { AttemptUsageSnapshot } from './usage.js';
 import { LiveUsageTailer } from './live-usage-tailer.js';
@@ -69,6 +69,9 @@ export class Runner {
   private readonly getWorkspace: RunnerOptions['getWorkspace'];
   private readonly postMerge: RunnerOptions['postMerge'];
   private readonly criticDrive: RunnerOptions['criticDrive'];
+  private readonly commandSpawn: RunnerOptions['commandSpawn'];
+  private readonly spawnProcessGroup: RunnerOptions['spawnProcessGroup'];
+  private readonly fireAndForget: FireAndForget;
   private readonly urlFor: (task: TaskRow) => string | null;
   private readonly verificationAttempts: VerificationAttemptStore;
   private readonly guardrailEvents: GuardrailEventStore;
@@ -97,7 +100,7 @@ export class Runner {
     private readonly taskService: TaskService,
     private readonly asyncDb: AsyncDbHandle,
     private readonly getConfig: () => AppConfig,
-    options: RunnerOptions = {},
+    options: RunnerOptions,
   ) {
     this.events = options.events ?? {};
     this.worktreesDir = options.worktreesDir ?? join(tmpdir(), 'harmonic-worktrees');
@@ -110,6 +113,9 @@ export class Runner {
     this.gitBreaker = options.gitBreaker;
     this.epicBaseNotReady = options.epicBaseNotReady;
     this.criticDrive = options.criticDrive;
+    this.commandSpawn = options.commandSpawn;
+    this.spawnProcessGroup = options.spawnProcessGroup;
+    this.fireAndForget = options.fireAndForget;
     this.urlFor = options.urlFor ?? (() => null);
     this.spendPollMs = options.spendGuardrail?.pollMs ?? 1000;
     this.spendGraceMs = options.spendGuardrail?.graceMs ?? 60_000;
@@ -126,6 +132,7 @@ export class Runner {
       { latestSnapshot: (attemptId) => this.usage.latestSnapshot(attemptId) },
       (attemptId) => this.activeRuns.getLastTurnContextTokens(attemptId),
       (task) => this.workspaceProvisioner.dispatchCwd(task),
+      this.fireAndForget,
     );
     this.usage = new UsageSampler(
       this.attempts,
@@ -151,13 +158,14 @@ export class Runner {
         sample: (attemptId) => this.usage.sampleSnapshot(attemptId),
         emit: (attemptId, snapshot) => this.events.onAttemptUsage?.({ attemptId, snapshot }),
         persist: (attemptId, snapshot) => {
-          fireAndForget(() => this.attempts.update(attemptId, { liveUsage: JSON.stringify(snapshot) }), {
+          this.fireAndForget(() => this.attempts.update(attemptId, { liveUsage: JSON.stringify(snapshot) }), {
             op: 'runner.persistLiveUsage',
             level: 'warn',
             context: { attemptId },
           });
         },
       },
+      this.fireAndForget,
       options.tailerCadence,
     );
     this.mergeCoordinator = new MergeCoordinator(this.mergeCoordinatorDeps());
@@ -176,6 +184,8 @@ export class Runner {
       epicMergeEvents: new EpicMergeEventStore(this.asyncDb),
       criticDrive: this.criticDrive,
       postMergeCheck: createPostMergeCheck({
+        commandSpawn: this.commandSpawn,
+        fireAndForget: this.fireAndForget,
         getConfig: this.getConfig,
         getWorkspace: async (workspaceId) => this.getWorkspace?.(workspaceId),
         verificationAttempts: this.verificationAttempts,
@@ -202,6 +212,7 @@ export class Runner {
       getConfig: this.getConfig,
       worktreesDir: this.worktreesDir,
       criticDrive: this.criticDrive,
+      fireAndForget: this.fireAndForget,
     };
   }
 
@@ -215,6 +226,7 @@ export class Runner {
       events: this.events,
       worktreesDir: this.worktreesDir,
       taskEvents: this.taskEvents,
+      spawnProcessGroup: this.spawnProcessGroup,
     };
   }
 
@@ -231,6 +243,8 @@ export class Runner {
       getConfig: this.getConfig,
       getWorkspace: this.getWorkspace,
       criticDrive: this.criticDrive,
+      commandSpawn: this.commandSpawn,
+      fireAndForget: this.fireAndForget,
       urlFor: this.urlFor,
       worktreePathForTask: (task) => this.workspaceProvisioner.worktreePathForTask(task),
       latestAttemptFor: (task) => this.latestAttemptFor(task),
@@ -255,6 +269,7 @@ export class Runner {
       events: this.events,
       autoDrive: this.autoDrive,
       keys: this.keys,
+      fireAndForget: this.fireAndForget,
       getWorkspace: this.getWorkspace,
       postMerge: this.postMerge,
       gitBreaker: this.gitBreaker,

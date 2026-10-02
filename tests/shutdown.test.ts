@@ -14,6 +14,7 @@ import { ConversationDriver } from '../src/execution/conversation-driver.js';
 import { registerShutdown } from '../src/server/app-lifecycle.js';
 import type { App } from '../src/server/app-context.js';
 import { seedWorkspace, startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { BackgroundWork } from '../src/error-handling.js';
 
 const alive = (pid: number): boolean => {
   try {
@@ -136,6 +137,7 @@ describe('app.close() — ordered shutdown', () => {
     let stubborn: ChildProcess | undefined;
     const config = { ...baselineConfig(), ...stubHarness() } as AppConfig;
     const driver = new ConversationDriver(store, () => config, {
+      fireAndForget: new BackgroundWork().fireAndForget,
       processSpawn: {
         spawn: (req) => {
           stubborn = spawn(req.command, req.args, { cwd: req.cwd, env: req.env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -148,6 +150,7 @@ describe('app.close() — ordered shutdown', () => {
     const logs = captureLogs();
     const app = Fastify() as unknown as App;
     registerShutdown(app, {
+      background: new BackgroundWork(),
       trackerManager: { stopAll: async () => {} },
       scheduler: { stop: async () => {} },
       autoRunner: { close: async () => {} },
@@ -181,6 +184,7 @@ describe('app.close() — ordered shutdown', () => {
     const closed: string[] = [];
     const app = Fastify() as unknown as App;
     registerShutdown(app, {
+      background: new BackgroundWork(),
       trackerManager: { stopAll: async () => {} },
       scheduler: { stop: async () => { throw new Error('scheduler stop exploded'); } },
       autoRunner: { close: async () => {} },

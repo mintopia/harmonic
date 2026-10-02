@@ -10,13 +10,12 @@ import type { TrackerPollerManager } from '../tracker/manager.js';
 import type { UpgradeCoordinator } from '../upgrade/upgrade-coordinator.js';
 import type { StatsWorkerClient } from '../db/stats-reader.js';
 import type { AsyncDbHandle } from '../db/async.js';
-import { detachProcessGroupJournal, type ProcessGroupJournal } from '../execution/process-groups.js';
 import type { TranscriptCapture } from '../execution/transcript-capture.js';
 import type { App } from './app-context.js';
 import { sweepStaleMergeWorktrees } from '../execution/ephemeral-merge-worktree.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { logger } from '../logger.js';
-import { drainFireAndForget, errorMessage } from '../error-handling.js';
+import { errorMessage, type BackgroundWork } from '../error-handling.js';
 import { startOperation } from '../telemetry/operations.js';
 
 const SHUTDOWN_DRAIN_MS = 5_000;
@@ -33,7 +32,7 @@ export function registerShutdown(app: App, deps: {
   hostLoad: Pick<HostLoadSampler, 'stop'>;
   workspaceWatcher: Pick<WorkspaceWatcher, 'stopAll'>;
   statsReader: Pick<StatsWorkerClient, 'close'>;
-  processGroups?: ProcessGroupJournal;
+  background: Pick<BackgroundWork, 'drain'>;
   transcripts?: Pick<TranscriptCapture, 'close'>;
   asyncDb: Pick<AsyncDbHandle, 'close'>;
   drainTimeoutMs?: number;
@@ -51,7 +50,7 @@ export function registerShutdown(app: App, deps: {
       for (const result of results) {
         if (result.status === 'rejected') logger.warn('shutdown: a component failed to stop', { error: errorMessage(result.reason) });
       }
-      await drainFireAndForget();
+      await deps.background.drain();
     });
     deps.loopMonitor?.stop();
     deps.hostLoad.stop();
@@ -65,7 +64,6 @@ export function registerShutdown(app: App, deps: {
     clearTimeout(timer);
     if (outcome === 'timed-out') logger.warn('shutdown: in-flight work still running after the drain bound; closing the database anyway', { timeoutMs });
     await deps.statsReader.close();
-    if (deps.processGroups) detachProcessGroupJournal(deps.processGroups);
     await deps.asyncDb.close();
   });
 }

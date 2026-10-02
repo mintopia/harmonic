@@ -16,7 +16,7 @@ import type { TaskRow, AttemptRow } from '../src/db/schema.js';
 import { workspaces } from '../src/db/schema.js';
 import type { Ticket, TrackerAdapter, OpenPRInput } from '../src/tracker/adapter.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { executionPlumbing, allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 const STUB = join(import.meta.dirname, 'stub-harness.mjs');
 
@@ -394,7 +394,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     tasks = new TaskService(asyncDb, () => cfg, allWorkspaces(asyncDb, settingsStore));
     attempts = new AttemptStore(asyncDb);
     const drive = new AutoDrive(() => cfg, () => 'https://x/7', async () => fakeAdapter(ticketState).adapter);
-    runner = new Runner(tasks, asyncDb, () => cfg, { autoDrive: drive });
+    runner = new Runner(tasks, asyncDb, () => cfg, { ...executionPlumbing(), autoDrive: drive });
   }
 
   const eventsForRun = async (run: AttemptRow) => attempts.listEvents(run.id);

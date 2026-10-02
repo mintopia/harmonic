@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
@@ -12,8 +12,6 @@ import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
 import { CrashRecoveryCoordinator } from '../src/execution/crash-recovery.js';
 import { Git } from '../src/execution/git.js';
 import { isEphemeralMergeWorktree } from '../src/execution/ephemeral-merge-worktree.js';
-import { readProcStartToken } from '../src/execution/process-reaper.js';
-import { ProcessGroupJournal } from '../src/execution/process-groups.js';
 import type { TaskRow, AttemptRow } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
@@ -254,31 +252,6 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     expect(runPostMergeCheck).not.toHaveBeenCalled();
     expect(await attempts.get(run.id)).toMatchObject({ state: 'failed', reason: 'process-death' });
     expect((await tasks.get(created.id)).state).toBe('paused');
-  });
-
-  it('reaps a journaled orphan process group and marks its Run interrupted', async () => {
-    const created = await tasks.create({ prompt: 'direct mode', state: 'ready', workingDir: repo, isolationMode: 'direct' });
-    await tasks.setState(created.id, 'working');
-    const run = await attempts.create(created.id);
-    const child: ChildProcess = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1e9)'], { detached: true });
-    const pid = child.pid!;
-    try {
-      const processGroups = new ProcessGroupJournal(asyncDb);
-      await processGroups.record(pid, 'orphan harness');
-      const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
-      const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck, processGroups });
-
-      await coord.reconcile();
-
-      expect(readProcStartToken(pid)).toBeNull();
-      expect(await attempts.get(run.id)).toMatchObject({ state: 'failed', reason: 'process-death' });
-    } finally {
-      try {
-        process.kill(-pid, 'SIGKILL');
-      } catch {
-        /* already reaped */
-      }
-    }
   });
 
   it('uses the injected isMerged seam to reject recovery when supplied', async () => {

@@ -9,7 +9,8 @@ import { openAsyncDb } from '../src/db/async.js';
 import { processGroups } from '../src/db/schema.js';
 import { ProcessGroupJournal } from '../src/execution/process-groups.js';
 import { createChildProcessSpawn } from '../src/verification/command-verifier.js';
-import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { BackgroundWork } from '../src/error-handling.js';
+import { testSpawnProcessGroup, startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 
 const alive = (pid: number): boolean => {
   try {
@@ -107,7 +108,7 @@ describe('harness process groups', () => {
     const pidFile = join(scratch(), 'grandchild.pid');
     const script = `const c = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(FOREVER)}], { stdio: 'inherit' }); c.unref(); require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(c.pid));`;
 
-    const result = await createChildProcessSpawn().run({
+    const result = await createChildProcessSpawn(testSpawnProcessGroup).run({
       command: { id: 'leaky', command: process.execPath, args: ['-e', script], env: {}, timeoutSeconds: 30 },
       cwd: scratch(),
       timeoutMs: 30_000,
@@ -135,7 +136,7 @@ describe('harness process groups', () => {
     const grandchild = await pidFrom(pidFile);
     strays.push(grandchild);
     const db = await openAsyncDb(dataDir);
-    await new ProcessGroupJournal(db).record(leader.pid!, 'crashed attempt harness');
+    await new ProcessGroupJournal(db, new BackgroundWork().fireAndForget).record(leader.pid!, 'crashed attempt harness');
     await db.close();
 
     server = await startServer(stubHarness(), { dataDir });
@@ -155,7 +156,7 @@ describe('harness process groups', () => {
     const script = `const c = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(FOREVER)}], { stdio: 'ignore' }); c.unref(); require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(c.pid)); setTimeout(() => process.exit(0), 300);`;
     const leader = spawn(process.execPath, ['-e', script], { detached: true, stdio: 'ignore' });
     const db = await openAsyncDb(dataDir);
-    await new ProcessGroupJournal(db).record(leader.pid!, 'crashed conversation harness');
+    await new ProcessGroupJournal(db, new BackgroundWork().fireAndForget).record(leader.pid!, 'crashed conversation harness');
     await db.close();
     const grandchild = await pidFrom(pidFile);
     strays.push(grandchild);
@@ -170,6 +171,51 @@ describe('harness process groups', () => {
       expect(await reopened.read((d) => d.select().from(processGroups).all())).toEqual([]);
     } finally {
       await reopened.close();
+    }
+  });
+
+  it('the spawner a boot reap returns journals each group until its leader exits; the unjournaled spawner leaves no row', async () => {
+    const dir = scratch();
+    const db = await openAsyncDb(dir);
+    try {
+      const background = new BackgroundWork();
+      const spawnJournaled = await new ProcessGroupJournal(db, background.fireAndForget).reapOrphans();
+      const rows = () => db.read((d) => d.select().from(processGroups).all());
+
+      const journaled = spawnJournaled(process.execPath, ['-e', FOREVER], { stdio: 'ignore' }, 'journaled test child');
+      strays.push(journaled.pid!);
+      await waitFor(async () => ((await rows()).some((row) => row.pgid === journaled.pid && row.owner === 'journaled test child') ? true : undefined));
+
+      const bare = testSpawnProcessGroup(process.execPath, ['-e', FOREVER], { stdio: 'ignore' }, 'bare test child');
+      strays.push(bare.pid!);
+      expect((await rows()).map((row) => row.pgid)).toEqual([journaled.pid]);
+
+      process.kill(journaled.pid!, 'SIGKILL');
+      process.kill(bare.pid!, 'SIGKILL');
+      await once(journaled, 'exit');
+      await background.drain();
+      expect(await rows()).toEqual([]);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it('a boot reap kills a crashed predecessor\'s group before handing out a spawner', async () => {
+    const dir = scratch();
+    const leader = spawn(process.execPath, ['-e', FOREVER], { detached: true, stdio: 'ignore' });
+    leader.unref();
+    strays.push(leader.pid!);
+    const db = await openAsyncDb(dir);
+    try {
+      const journal = new ProcessGroupJournal(db, new BackgroundWork().fireAndForget);
+      await journal.record(leader.pid!, 'crashed harness');
+
+      await journal.reapOrphans();
+
+      await gone(leader.pid!);
+      expect(await db.read((d) => d.select().from(processGroups).all())).toEqual([]);
+    } finally {
+      await db.close();
     }
   });
 });

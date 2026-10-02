@@ -9,6 +9,7 @@ import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-tr
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import type { VerificationCommand } from '../src/config.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
+import { testSpawnProcessGroup } from './helpers.js';
 import {
   runCommandVerifier,
   runCommandVerifierDetached,
@@ -17,7 +18,6 @@ import {
   createChildProcessSpawn,
   OUTPUT_CHAR_CAP,
   truncationMarker,
-  splitFullOutputPath,
   createOutputPreview,
   type CommandSpawn,
   type CommandSpawnResult,
@@ -200,7 +200,7 @@ describe('command verifier (issue #135)', () => {
         env: {},
         timeoutSeconds: 30,
       },
-      spawn: createChildProcessSpawn(),
+      spawn: createChildProcessSpawn(testSpawnProcessGroup),
     });
     expect(attempt.verdict).toBe('inconclusive');
     expect(attempt.summary).toMatch(/could not be spawned/);
@@ -212,7 +212,7 @@ describe('command verifier (issue #135)', () => {
       cwd: repo,
       verifiedHeadOid: oid,
       command: nodeCommand('setTimeout(() => {}, 60000)'),
-      spawn: createChildProcessSpawn(),
+      spawn: createChildProcessSpawn(testSpawnProcessGroup),
       timeoutMs: 150,
     });
     expect(attempt.verdict).toBe('inconclusive');
@@ -223,6 +223,7 @@ describe('command verifier (issue #135)', () => {
     const repo = makeRepo();
     repos.push(repo);
     const attempt = await runCommandVerifierDetached({
+      spawn: createChildProcessSpawn(testSpawnProcessGroup),
       repoDir: repo,
       verifiedHeadOid: '0000000000000000000000000000000000000000',
       worktreePath: freshWorktreePath(),
@@ -240,7 +241,7 @@ describe('command verifier (issue #135)', () => {
       cwd: repo,
       verifiedHeadOid: oid,
       command: nodeCommand('setTimeout(() => {}, 60000)'),
-      spawn: createChildProcessSpawn(),
+      spawn: createChildProcessSpawn(testSpawnProcessGroup),
       signal: ac.signal,
       timeoutMs: 60000,
     });
@@ -255,7 +256,7 @@ describe('command verifier (issue #135)', () => {
       worktreePath: freshWorktreePath(),
       verifiedHeadOid: oid,
       command: nodeCommand('require("node:fs").readFileSync("work.txt"); process.exit(0)'),
-      spawn: createChildProcessSpawn(),
+      spawn: createChildProcessSpawn(testSpawnProcessGroup),
     });
     expect(attempt.verdict).toBe('pass');
   });
@@ -266,7 +267,7 @@ describe('command verifier (issue #135)', () => {
       cwd: repo,
       verifiedHeadOid: oid,
       command: nodeCommand('require("node:fs").readFileSync("work.txt"); process.exit(0)'),
-      spawn: createChildProcessSpawn(),
+      spawn: createChildProcessSpawn(testSpawnProcessGroup),
     });
     expect(attempt.verdict).toBe('pass');
   });
@@ -277,7 +278,7 @@ describe('command verifier (issue #135)', () => {
       cwd: repo,
       verifiedHeadOid: oid,
       command: nodeCommand('require("node:fs").writeFileSync("artifact.txt", "built"); process.exit(0)'),
-      spawn: createChildProcessSpawn(),
+      spawn: createChildProcessSpawn(testSpawnProcessGroup),
     });
     expect(attempt.verdict).toBe('pass');
   });
@@ -291,7 +292,7 @@ describe('command verifier (issue #135)', () => {
       // stdout fully drains to the parent before close (a `process.exit` would
       // truncate the pipe mid-flush and under-fill the buffer).
       command: nodeCommand(`const s="x".repeat(10000); for(let i=0;i<25;i++) process.stdout.write(s);`),
-      spawn: createChildProcessSpawn(),
+      spawn: createChildProcessSpawn(testSpawnProcessGroup),
     });
     expect(attempt.output.length).toBeLessThanOrEqual(OUTPUT_CHAR_CAP);
     expect(attempt.output).toContain('truncated');
@@ -307,7 +308,7 @@ describe('command verifier (issue #135)', () => {
       return d;
     };
     const run = (outputLogPath: string, s = script) =>
-      createChildProcessSpawn().run({
+      createChildProcessSpawn(testSpawnProcessGroup).run({
         command: nodeCommand(s),
         cwd: tmpdir(),
         timeoutMs: 30_000,
@@ -328,18 +329,20 @@ describe('command verifier (issue #135)', () => {
       expect(r.output.length).toBeLessThanOrEqual(OUTPUT_CHAR_CAP);
       expect(r.output.startsWith('aaaa')).toBe(true);
       expect(r.output.endsWith('TAIL-MARK')).toBe(true);
-      const m = /\n…\[truncated (\d+) chars; full output: (.+)\]…\n/.exec(r.output);
+      const m = /\n…\[truncated (\d+) chars\]…\n/.exec(r.output);
       expect(m).not.toBeNull();
       const elided = Number(m![1]);
-      expect(m![2]).toBe(logPath);
-      expect(r.output).toContain(truncationMarker(elided, logPath));
-      expect(r.output.length - truncationMarker(elided, logPath).length + elided).toBe(total);
+      expect(r.output).toContain(truncationMarker(elided));
+      expect(r.output.length - truncationMarker(elided).length + elided).toBe(total);
+      expect(r.output).not.toContain(logPath);
+      expect(r.fullOutputSaved).toBe(true);
     });
 
     it('small output equals the file and has no marker', async () => {
       const path = join(logDir(), 'output.log');
       const r = await run(path, `process.stdout.write('hello '); process.stderr.write('world')`);
       expect(r.output).toBe('hello world');
+      expect(r.fullOutputSaved).toBe(false);
       expect(await readFile(path, 'utf8')).toBe('hello world');
     });
 
@@ -354,34 +357,37 @@ describe('command verifier (issue #135)', () => {
       const bad = join(logDir(), 'missing', 'output.log');
       const { repo, oid } = await repoWithCandidate();
       const attempt = await runCommandVerifier({
+        spawn: createChildProcessSpawn(testSpawnProcessGroup),
         cwd: repo,
         verifiedHeadOid: oid,
         command: nodeCommand(script),
-        outputLogPath: bad,
+        outputLog: { path: bad, key: 'verification/pre-merge/x/output.log' },
       });
       expect(attempt.verdict).toBe('pass');
       expect(attempt.output.endsWith('TAIL-MARK')).toBe(true);
+      expect(attempt.fullOutputKey).toBeNull();
     });
 
-    it('an unwritable path leaves no file link in the truncation marker', async () => {
+    it('an unwritable path reports no saved full output', async () => {
       const bad = join(logDir(), 'missing', 'output.log');
       const r = await run(bad);
       expect(r.output).toContain('truncated');
-      expect(r.output).not.toContain('full output');
-      expect(r.output).not.toContain(bad);
+      expect(r.fullOutputSaved).toBe(false);
       expect(r.output.length).toBeLessThanOrEqual(OUTPUT_CHAR_CAP);
     });
 
-    it('runCommandVerifier forwards outputLogPath', async () => {
+    it('runCommandVerifier forwards the log path and reports its archive key', async () => {
       const path = join(logDir(), 'output.log');
       const { repo, oid } = await repoWithCandidate();
       const attempt = await runCommandVerifier({
+        spawn: createChildProcessSpawn(testSpawnProcessGroup),
         cwd: repo,
         verifiedHeadOid: oid,
         command: nodeCommand(script),
-        outputLogPath: path,
+        outputLog: { path, key: 'verification/pre-merge/x/output.log' },
       });
       expect(attempt.verdict).toBe('pass');
+      expect(attempt.fullOutputKey).toBe('verification/pre-merge/x/output.log');
       expect((await stat(path)).size).toBe(total);
     });
   });
@@ -422,16 +428,5 @@ describe('command verifier (issue #135)', () => {
         expect(t.length - truncationMarker(elided).length + elided).toBe(400);
       }
     });
-  });
-});
-
-describe('splitFullOutputPath', () => {
-  it('removes the archive path from the truncation marker and returns it separately', () => {
-    const path = '/data/archive/1-a/attempts/1/verification/pre-merge/test/output.log';
-    expect(splitFullOutputPath(`head${truncationMarker(42, path)}tail`)).toEqual({ output: 'head\n…[truncated 42 chars]…\ntail', fullOutputPath: path });
-  });
-
-  it('leaves output without a path unchanged', () => {
-    expect(splitFullOutputPath(`head${truncationMarker(42)}tail`)).toEqual({ output: `head${truncationMarker(42)}tail`, fullOutputPath: null });
   });
 });

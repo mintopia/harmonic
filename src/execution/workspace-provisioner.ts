@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
-import { spawnProcessGroup } from './process-groups.js';
+import type { SpawnProcessGroup } from './process-groups.js';
 import { existsSync, mkdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { Git } from './git.js';
@@ -26,6 +26,7 @@ export interface WorkspaceProvisionerDeps {
   sessionRetirement: SessionRetirementHook | undefined;
   events: RunnerEvents;
   worktreesDir: string;
+  spawnProcessGroup: SpawnProcessGroup;
   /** Absent → a Close with no Attempt drops its cleanup row. */
   taskEvents?: TaskEventAppender | undefined;
 }
@@ -144,7 +145,7 @@ export class WorkspaceProvisioner {
       ...adapterFor(task.harness).spawnEnv({ model: task.model, cwd, sessionLogDir: harness.sessionLogDir, unattended }),
       ...extraEnv,
     };
-    return spawnProcessGroup(harness.command, harness.args, {
+    return this.deps.spawnProcessGroup(harness.command, harness.args, {
       cwd,
       env: env as NodeJS.ProcessEnv,
       stdio: ['pipe', 'pipe', 'pipe'],

@@ -11,7 +11,7 @@ import type { EpicWorktreePool } from '../execution/epic-worktree-pool.js';
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
 import { Git } from '../execution/git.js';
 import { collectUsage } from '../execution/usage.js';
-import { commandAttemptToInput, type CommandAttempt } from '../verification/command-verifier.js';
+import { commandAttemptToInput, type CommandAttempt, type CommandSpawn } from '../verification/command-verifier.js';
 import { criticAttemptToInput, runCritic, type CriticHarnessDrive } from '../verification/critic.js';
 import type { EpicVerificationStage } from '../config.js';
 import type { VerificationDecision, VerifierVerdict } from '../verification/combine.js';
@@ -24,7 +24,8 @@ export interface EpicVerificationRunnerDeps {
   epicAttempts?: AttemptStore | undefined;
   verificationAttemptStore?: VerificationAttemptStore | undefined;
   onEpicAttemptChanged?: ((attempt: EpicAttemptRow) => void) | undefined;
-  criticDrive?: CriticHarnessDrive | undefined;
+  criticDrive: CriticHarnessDrive;
+  commandSpawn: CommandSpawn;
   archive?: TaskArchive | undefined;
 }
 
@@ -70,8 +71,9 @@ export class EpicVerificationRunner {
         worktreePath,
         verifiedHeadOid,
         verifiers: (await this.resolveWorkspaceVerifiers()).epic.preMerge,
+        commandSpawn: this.deps.commandSpawn,
         ...(attempt && archive
-          ? { outputLogPath: (command: EpicVerificationStage['commands'][number]) => archive.epicVerificationOutputLog(attempt.workspaceId, epicRef, attempt.number, command.id) }
+          ? { outputLog: (command: EpicVerificationStage['commands'][number]) => archive.epicVerificationOutputLog(attempt.workspaceId, epicRef, attempt.number, command.id) }
           : {}),
         onCommand: (commandAttempt, command) => this.recordCommandStep(attempt, commandAttempt, command),
         runCritic: (args) => this.runEpicCritic({ repoDir, epicRef, attempt, criticUsages, ...args }),
@@ -166,7 +168,7 @@ export class EpicVerificationRunner {
         fields: { taskId: '', skill: '/implement', ref: String(epicRef), url: '', title: `Epic #${epicRef}`, description: '' },
         harness,
         harnessId,
-        ...(criticDrive ? { drive: criticDrive } : {}),
+        drive: criticDrive,
         ...(archive ? { archive } : {}),
         ...(tracked ? { onAgentDurationMs: (ms: number) => tracked.epicAttempts.addAgentDuration(tracked.attempt.id, ms) } : {}),
       });

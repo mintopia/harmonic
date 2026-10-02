@@ -1,4 +1,4 @@
-import { killProcessGroup, spawnProcessGroup } from '../execution/process-groups.js';
+import { killProcessGroup, type SpawnProcessGroup } from '../execution/process-groups.js';
 import { access } from 'node:fs/promises';
 import type { Attributes, SpanContext } from '@opentelemetry/api';
 import type { HarnessConfig } from '../config.js';
@@ -102,7 +102,7 @@ function criticSpawnEnv(
 }
 
 /** The real critic drive: one ACP review turn with no MCP servers and the builder's unattended session mode; any permission request is granted. */
-export function createAcpCriticDrive(): CriticHarnessDrive {
+export function createAcpCriticDrive(spawnProcessGroup: SpawnProcessGroup): CriticHarnessDrive {
   return {
     async run(req: CriticDriveRequest): Promise<CriticDriveResult> {
       const env = criticSpawnEnv(req.harness, req.harnessId, req.model, req.cwd);
@@ -201,8 +201,7 @@ export interface RunCriticArgs {
   fields: DriveFields;
   harness: HarnessConfig;
   harnessId: string;
-  /** Injectable drive seam; defaults to {@link createAcpCriticDrive}. */
-  drive?: CriticHarnessDrive;
+  drive: CriticHarnessDrive;
   /** Hard bound on the single prompt turn; generous default for a review. */
   timeoutMs?: number;
   parent?: SpanContext;
@@ -292,7 +291,7 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
 }
 
 async function runCriticArchived(args: RunCriticArgs, archive: StepArchiveWriter | undefined): Promise<CriticAttempt> {
-  const drive = args.drive ?? createAcpCriticDrive();
+  const drive = args.drive;
   const timeoutMs = args.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   let verdict: Verdict = 'inconclusive';

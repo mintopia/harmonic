@@ -17,7 +17,7 @@ import { NotificationStore } from '../notifications/notification-store.js';
 import { Notifier } from '../notifications/notifier.js';
 import { AuthService } from './auth.js';
 import { EventBus } from './bus.js';
-import { fireAndForget } from '../error-handling.js';
+import type { FireAndForget } from '../error-handling.js';
 
 export interface Stores {
   settingsStore: SettingsStore;
@@ -41,9 +41,10 @@ export interface CreateStoresDeps {
   opts: Pick<AppOptions, 'dataDir' | 'configOverrides' | 'password'>;
   asyncDb: AsyncDbHandle;
   bus: EventBus;
+  fireAndForget: FireAndForget;
 }
 
-export async function createStores({ opts, asyncDb, bus }: CreateStoresDeps): Promise<Stores> {
+export async function createStores({ opts, asyncDb, bus, fireAndForget }: CreateStoresDeps): Promise<Stores> {
   const settingsStore = await SettingsStore.create(opts.dataDir, opts.configOverrides);
   const workspaces = new WorkspaceService(asyncDb, settingsStore);
   const channels = new ChannelService(asyncDb);
@@ -74,6 +75,7 @@ export async function createStores({ opts, asyncDb, bus }: CreateStoresDeps): Pr
   const epicMergeEvents = new EpicMergeEventStore(asyncDb);
   const guardrailEvents = new GuardrailEventStore(asyncDb);
   const verificationAttempts = new VerificationAttemptStore(asyncDb);
+  await verificationAttempts.backfillFullOutputKeys();
   const conversations = new ConversationStore(asyncDb, (conversation) => bus.emit('conversation_changed', conversation));
   const permissionRules = new PermissionRuleStore(asyncDb);
   const auth = new AuthService(asyncDb);

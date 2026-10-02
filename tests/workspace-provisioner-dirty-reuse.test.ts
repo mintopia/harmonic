@@ -12,7 +12,7 @@ import { TaskEventStore } from '../src/domain/task-events.js';
 import { WorkspaceProvisioner } from '../src/execution/workspace-provisioner.js';
 import { Git } from '../src/execution/git.js';
 import type { MergeCoordinator } from '../src/execution/merge-coordinator.js';
-import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { executionPlumbing, allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -70,6 +70,7 @@ describe('WorkspaceProvisioner.prepareWorkspace reusing a worktree left dirty by
       attempts,
       sessionStore: new SessionStore(asyncDb),
       mergeCoordinator: { resolveBaseBranch: async () => 'main' } as unknown as MergeCoordinator,
+      spawnProcessGroup: executionPlumbing().spawnProcessGroup,
       autoDrive: undefined,
       sessionRetirement: undefined,
       events: {},
@@ -120,6 +121,7 @@ describe('WorkspaceProvisioner git-visibility events', () => {
       attempts,
       sessionStore: new SessionStore(asyncDb),
       mergeCoordinator: { resolveBaseBranch: async () => 'main' } as unknown as MergeCoordinator,
+      spawnProcessGroup: executionPlumbing().spawnProcessGroup,
       autoDrive: undefined,
       sessionRetirement: undefined,
       events: {},
@@ -167,6 +169,7 @@ describe('WorkspaceProvisioner git-visibility events', () => {
       attempts,
       sessionStore: new SessionStore(asyncDb),
       mergeCoordinator: { resolveBaseBranch: async () => 'does-not-exist' } as unknown as MergeCoordinator,
+      spawnProcessGroup: executionPlumbing().spawnProcessGroup,
       autoDrive: undefined,
       sessionRetirement: undefined,
       events: {},
@@ -225,6 +228,7 @@ describe('WorkspaceProvisioner git-visibility events', () => {
       attempts,
       sessionStore,
       mergeCoordinator: { resolveBaseBranch: async () => 'main' } as unknown as MergeCoordinator,
+      spawnProcessGroup: executionPlumbing().spawnProcessGroup,
       autoDrive: undefined,
       sessionRetirement: undefined,
       events: {},
@@ -266,6 +270,7 @@ describe('WorkspaceProvisioner git-visibility events', () => {
       attempts,
       sessionStore: new SessionStore(asyncDb),
       mergeCoordinator: { resolveBaseBranch: async () => 'main' } as unknown as MergeCoordinator,
+      spawnProcessGroup: executionPlumbing().spawnProcessGroup,
       autoDrive: undefined,
       sessionRetirement: undefined,
       events: {},

@@ -23,7 +23,7 @@ import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
-import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { testSpawnProcessGroup, allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 const providers: NodeTracerProvider[] = [];
 
@@ -418,7 +418,7 @@ describe('createAcpCriticDrive (issue #136): the real ACP drive has builder-equi
   };
 
   it('registers no MCP servers, strips tracker credentials from the spawned env, and grants tool permission requests', async () => {
-    const drive = createAcpCriticDrive();
+    const drive = createAcpCriticDrive(testSpawnProcessGroup);
     const scenario = {
       echoSessionNew: true,
       echoEnv: ['HARMONIC_API_KEY', 'HARMONIC_MCP_URL'],
@@ -442,7 +442,7 @@ describe('createAcpCriticDrive (issue #136): the real ACP drive has builder-equi
   }, 20_000);
 
   it('rejects when the harness hangs past the timeout, without leaving the child alive', async () => {
-    const drive = createAcpCriticDrive();
+    const drive = createAcpCriticDrive(testSpawnProcessGroup);
     await expect(
       drive.run({
         harness,

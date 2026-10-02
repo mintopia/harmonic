@@ -8,7 +8,7 @@ import type { TaskRow } from '../db/schema.js';
 import type { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { epicAttemptTimelineToApi, taskToApi, ticketTimelineToApi } from './serialize.js';
-import { fireAndForget, orFallback } from '../error-handling.js';
+import { orFallback } from '../error-handling.js';
 import type { AppContext } from './app-context.js';
 
 export function registerAppExports({
@@ -21,6 +21,7 @@ export function registerAppExports({
   epicMergeEvents: Pick<EpicMergeEventStore, 'append'>;
 }): TaskExporter {
   const exporter = new TaskExporter({
+    fireAndForget: ctx.fireAndForget,
     dataDir,
     archive: ctx.archive,
     version: ctx.runningVersion,
@@ -92,7 +93,7 @@ export function registerAppExports({
       const epicRef = owner.kind === 'epic' ? owner.epicRef : undefined;
       const workspaceId = task ? task.workspaceId : owner.kind === 'epic' ? owner.workspaceId : null;
       ctx.bus.emit('export_failed', { taskId: task?.id ?? null, epicRef: epicRef ?? null, workspaceId, trackerRef: task?.trackerRef ?? null, destination, disposition, error, retry, nextRetryAt });
-      fireAndForget(
+      ctx.fireAndForget(
         () =>
           ctx.notifier.notify('export.failed', task, {
             workspaceId,
@@ -126,9 +127,9 @@ export function registerAppExports({
   ctx.tasks.setBeforeDelete((task) => exporter.captureForDelete(task));
   ctx.bus.on('task_disposition', ({ task, disposition }) => exporter.trigger(task, disposition));
   ctx.bus.on('epic_integrated', ({ workspaceId, epicRef }) => {
-    fireAndForget(() => ctx.archive.recordEpicDisposition(workspaceId, epicRef, 'done'), { op: 'archive.epicDisposition', level: 'warn', context: { workspaceId, epicRef } });
+    ctx.fireAndForget(() => ctx.archive.recordEpicDisposition(workspaceId, epicRef, 'done'), { op: 'archive.epicDisposition', level: 'warn', context: { workspaceId, epicRef } });
     exporter.triggerEpic(workspaceId, epicRef, 'done');
   });
-  fireAndForget(() => exporter.sweepStaging(), { op: 'export.sweepStaging', level: 'warn' });
+  ctx.fireAndForget(() => exporter.sweepStaging(), { op: 'export.sweepStaging', level: 'warn' });
   return exporter;
 }

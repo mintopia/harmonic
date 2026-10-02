@@ -2058,6 +2058,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "full_output_key": {
+          "name": "full_output_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "transcript_path": {
           "name": "transcript_path",
           "type": "text",

@@ -16,7 +16,7 @@ import { mirrorScan } from '../src/tracker/mirror.js';
 import type { Ticket } from '../src/tracker/adapter.js';
 import type { CriticDriveRequest } from '../src/verification/critic.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore, waitFor, seedWorkspace } from './helpers.js';
+import { executionPlumbing, allWorkspaces, makeSettingsStore, waitFor, seedWorkspace } from './helpers.js';
 
 const fakeGit = { revParse: async () => 'develop-tip' };
 
@@ -211,6 +211,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
 
   function makeRunner(drive: (req: CriticDriveRequest) => Promise<void>): Runner {
     return new Runner(tasks, asyncDb, () => baselineConfig(), {
+      ...executionPlumbing(),
       worktreesDir: join(dir, 'worktrees'),
       criticDrive: {
         run: async (req) => {
@@ -374,6 +375,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     const cwd: string[] = [];
     const updates: { attemptId: number; payload: { sessionUpdate: string } }[] = [];
     const runner = new Runner(tasks, asyncDb, () => baselineConfig(), {
+      ...executionPlumbing(),
       worktreesDir: join(dir, 'worktrees'),
       events: {
         onAttemptLogEvent: (event) => updates.push(event),
@@ -442,8 +444,13 @@ describe('epic refresh corrective turn (issue #315)', () => {
       tasks,
       async () => [workspace],
       {
-        getConfig: () => config,
-        mergeEpicIntegration: async () => ({ kind: 'merged', mergeOid: 'unused' }),
+        fireAndForget: executionPlumbing().fireAndForget,
+        integration: {
+          getConfig: () => config,
+          mergeEpicIntegration: async () => ({ kind: 'merged', mergeOid: 'unused' }),
+          criticDrive: executionPlumbing().criticDrive,
+          commandSpawn: executionPlumbing().commandSpawn,
+        },
         epicAttempts: new AttemptStore(asyncDb),
         dispatchEpicResolution: async (input) => {
           paths.push(input.worktreePath);
@@ -481,8 +488,13 @@ describe('epic refresh corrective turn (issue #315)', () => {
       tasks,
       async () => [workspace],
       {
-        getConfig: () => config,
-        mergeEpicIntegration: async () => ({ kind: 'merged', mergeOid: 'unused' }),
+        fireAndForget: executionPlumbing().fireAndForget,
+        integration: {
+          getConfig: () => config,
+          mergeEpicIntegration: async () => ({ kind: 'merged', mergeOid: 'unused' }),
+          criticDrive: executionPlumbing().criticDrive,
+          commandSpawn: executionPlumbing().commandSpawn,
+        },
         epicAttempts: attempts,
         dispatchEpicResolution: async (input) => { guidance.push(input.verificationReason); },
         worktreesDir: join(dir, 'worktrees'),
@@ -517,8 +529,13 @@ describe('epic refresh corrective turn (issue #315)', () => {
       tasks,
       async () => [workspace],
       {
-        getConfig: () => config,
-        mergeEpicIntegration: async () => ({ kind: 'merged', mergeOid: 'unused' }),
+        fireAndForget: executionPlumbing().fireAndForget,
+        integration: {
+          getConfig: () => config,
+          mergeEpicIntegration: async () => ({ kind: 'merged', mergeOid: 'unused' }),
+          criticDrive: executionPlumbing().criticDrive,
+          commandSpawn: executionPlumbing().commandSpawn,
+        },
         epicAttempts: new AttemptStore(asyncDb),
         dispatchEpicResolution: async () => {},
         worktreesDir,

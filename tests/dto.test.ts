@@ -116,6 +116,7 @@ const verificationAttemptRow = (over: Partial<VerificationAttemptRow> = {}): Ver
   verdict: 'pass',
   summary: '',
   output: '',
+  fullOutputKey: null,
   transcriptPath: null,
   harness: null,
   prompt: null,

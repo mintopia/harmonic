@@ -10,7 +10,7 @@ import { Runner } from '../execution/runner.js';
 import { TaskArchive } from '../archive/task-archive.js';
 import { TranscriptCapture } from '../execution/transcript-capture.js';
 import { EpicOperations } from '../execution/epic-operations.js';
-import { ConversationDriver } from '../execution/conversation-driver.js';
+import { ConversationDriver, createHarnessProcessSpawn } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
 import { GlobalPause } from '../execution/global-pause.js';
 import { GitCircuitBreaker } from '../execution/git-failure.js';
@@ -18,8 +18,10 @@ import { EventLoopMonitor } from '../reliability/event-loop-monitor.js';
 import { HostLoadSampler } from '../host-load.js';
 import { WorkspaceWatcher } from '../domain/workspace-watcher.js';
 import { logger } from '../logger.js';
-import { attachJournalAfterBootReap, ProcessGroupJournal } from '../execution/process-groups.js';
-import { attempted, errorMessage, fireAndForget } from '../error-handling.js';
+import { ProcessGroupJournal } from '../execution/process-groups.js';
+import { attempted, errorMessage, type FireAndForget } from '../error-handling.js';
+import { createAcpCriticDrive } from '../verification/critic.js';
+import { createChildProcessSpawn } from '../verification/command-verifier.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import type { Scheduler } from '../scheduler/scheduler.js';
 import { AutoDrive } from '../execution/auto-drive.js';
@@ -46,6 +48,7 @@ function createLifecycleTracking(
   taskEvents: Stores['taskEvents'],
   tasks: Stores['tasks'],
   sessionStore: Stores['sessions'],
+  fireAndForget: FireAndForget,
 ): {
   recordAttemptLifecycleBestEffort: (run: Pick<AttemptRow, 'id'>, payload: Record<string, unknown>) => void;
   recordTaskEventBestEffort: (task: Pick<TaskRow, 'id'>, payload: Record<string, unknown>) => void;
@@ -97,16 +100,14 @@ async function runStartupRecovery(deps: {
   bus: EventBus;
   archive: TaskArchive;
   sessionTranscriptPath: (sessionRowId: number) => Promise<string | null>;
-  processGroups: ProcessGroupJournal;
 }): Promise<void> {
-  const { attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus, archive, sessionTranscriptPath, processGroups } = deps;
+  const { attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus, archive, sessionTranscriptPath } = deps;
   const crashRecovery = new CrashRecoveryCoordinator(attempts, tasks, operatorSettle, {
     runPostMergeCheck: postMergeCheck,
     postMerge,
     onEpicAttemptInterrupted: (attempt) => { bus.emit('attempt_changed', attempt); },
     archive,
     sessionTranscriptPath,
-    processGroups,
   });
   await crashRecovery.reconcile();
   for (const orphan of await tasks.list({ state: 'working' })) {
@@ -197,7 +198,6 @@ export interface Runtime {
   workspaceWatcher: WorkspaceWatcher;
   loopMonitor: EventLoopMonitor | undefined;
   archive: TaskArchive;
-  processGroups: ProcessGroupJournal;
   transcripts: TranscriptCapture;
 }
 
@@ -212,9 +212,15 @@ export async function createRuntime(deps: {
   managedWorktreesRoot: string;
   distributionMode: DistributionMode;
   runningVersion: string;
+  fireAndForget: FireAndForget;
 }): Promise<Runtime> {
-  const { opts, bus, scheduler, asyncDb, worktreesDir, managedWorktreesRoot, distributionMode, runningVersion } = deps;
+  const { opts, bus, scheduler, asyncDb, worktreesDir, managedWorktreesRoot, distributionMode, runningVersion, fireAndForget } = deps;
   const { tasks, attempts, taskEvents, settingsStore, workspaces, conversations, permissionRules, auth, notifier, epicMergeEvents, verificationAttempts, sessions: sessionStore } = deps.stores;
+
+  const spawnProcessGroup = await new ProcessGroupJournal(asyncDb, fireAndForget).reapOrphans();
+  const criticDrive = opts.criticDrive ?? createAcpCriticDrive(spawnProcessGroup);
+  const commandSpawn = createChildProcessSpawn(spawnProcessGroup);
+  touchStartupProgress(opts.dataDir);
 
   let upgradeRef: UpgradeCoordinator | undefined;
   const conversationDriver = new ConversationDriver(conversations, () => settingsStore.getGlobal(), {
@@ -225,6 +231,8 @@ export async function createRuntime(deps: {
       onCommandsUpdate: (payload) => bus.emit('conversation_commands', payload),
     },
     rules: permissionRules,
+    processSpawn: createHarnessProcessSpawn(spawnProcessGroup),
+    fireAndForget,
     keys: {
       mint: async (conversationId) =>
         (await auth.createKey(`conversation-${conversationId}`, { scope: 'conversation', conversationId })).token,
@@ -233,7 +241,7 @@ export async function createRuntime(deps: {
     onTurnSettled: () => fireAndForget(() => upgradeRef?.reconcile(), { op: 'upgrade.reconcile', level: 'error' }),
     allowedRoots: async () => [...(await workspaces.list()).map((w) => w.workingDir), managedWorktreesRoot],
   });
-  const { recordAttemptLifecycleBestEffort, recordTaskEventBestEffort, sessionRetirement, drainRetirement, branchRetirement } = createLifecycleTracking(bus, attempts, taskEvents, tasks, sessionStore);
+  const { recordAttemptLifecycleBestEffort, recordTaskEventBestEffort, sessionRetirement, drainRetirement, branchRetirement } = createLifecycleTracking(bus, attempts, taskEvents, tasks, sessionStore, fireAndForget);
   let runnerRef: Runner | undefined;
   let globalPauseRef: GlobalPause | undefined;
   let trackerManagerRef: TrackerPollerManager | undefined;
@@ -290,18 +298,17 @@ export async function createRuntime(deps: {
     getConfig: () => settingsStore.getGlobal(),
     verificationAttempts,
     attempts,
-    criticDrive: opts.criticDrive,
+    criticDrive,
+    commandSpawn,
+    fireAndForget,
     archive,
     transcripts,
   });
   touchStartupProgress(opts.dataDir);
-  const processGroups = new ProcessGroupJournal(asyncDb);
   await runStartupRecovery({
     attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus, archive,
     sessionTranscriptPath: (id) => transcripts.ensureSessionTranscript(id),
-    processGroups,
   });
-  attachJournalAfterBootReap(processGroups);
   touchStartupProgress(opts.dataDir);
   const getWorkspaceRow = async (id: number | null) => {
     if (id == null) return undefined;
@@ -393,7 +400,10 @@ export async function createRuntime(deps: {
     postMerge,
     worktreesDir,
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
-    criticDrive: opts.criticDrive,
+    criticDrive,
+    commandSpawn,
+    spawnProcessGroup,
+    fireAndForget,
     sessionRetirement,
     onFailedAttemptRequeued,
     onTaskMerged,
@@ -453,9 +463,13 @@ export async function createRuntime(deps: {
     tasks,
     () => workspaces.list(),
     {
-      getConfig: () => settingsStore.getGlobal(),
+      integration: {
+        getConfig: () => settingsStore.getGlobal(),
+        mergeEpicIntegration: (input) => runnerRef!.mergeEpicIntegration(input),
+        criticDrive,
+        commandSpawn,
+      },
       operations: epicOperations,
-      mergeEpicIntegration: (input) => runnerRef!.mergeEpicIntegration(input),
       dispatchRefreshResolution: (target, detail, escalate, retry) => runnerRef!.enqueueEpicRefreshResolution(target, detail, escalate, retry),
       epicMergeEvents,
       epicAttempts: attempts,
@@ -472,7 +486,7 @@ export async function createRuntime(deps: {
         });
       },
       verificationAttemptStore: verificationAttempts,
-      criticDrive: opts.criticDrive,
+      fireAndForget,
       archive,
     },
   );
@@ -503,7 +517,6 @@ export async function createRuntime(deps: {
     workspaceWatcher,
     loopMonitor,
     archive,
-    processGroups,
     transcripts,
   };
 }

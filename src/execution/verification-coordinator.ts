@@ -18,11 +18,11 @@ import type { TaskService } from '../domain/tasks.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { resolveVerifiers, type ResolvedVerifiers } from '../domain/setting-override.js';
 import { pricesForHarness } from '../domain/pricing.js';
-import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
-import { createAcpCriticDrive, runCritic, runTimedCriticDrive, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
+import { runCommandVerifier, commandAttemptToInput, type CommandSpawn } from '../verification/command-verifier.js';
+import { runCritic, runTimedCriticDrive, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
 import type { SpanContext } from '@opentelemetry/api';
-import { fireAndForget } from '../error-handling.js';
+import type { FireAndForget } from '../error-handling.js';
 
 export const EPIC_REFRESH_RESOLVE_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -66,7 +66,9 @@ export interface VerificationCoordinatorDeps {
   events: VerificationEvents;
   getConfig: () => AppConfig;
   getWorkspace: ((workspaceId: number | null) => Promise<VerifierWorkspace | undefined>) | undefined;
-  criticDrive: CriticHarnessDrive | undefined;
+  criticDrive: CriticHarnessDrive;
+  commandSpawn: CommandSpawn;
+  fireAndForget: FireAndForget;
   archive?: TaskArchive | undefined;
   urlFor: (task: TaskRow) => string | null;
   worktreePathForTask: (task: TaskRow) => string;
@@ -125,14 +127,14 @@ export class VerificationCoordinator {
     const { persisted, sessionId, transcriptPath, criticHarnessId, criticHarness, cwd } = input;
     if (!sessionId) return;
     if (transcriptPath === null) {
-      fireAndForget(() => this.deps.transcripts.captureCriticTranscript({
+      this.deps.fireAndForget(() => this.deps.transcripts.captureCriticTranscript({
         attemptId: persisted.id,
         sessionId,
         harnessId: criticHarnessId,
         sessionLogDir: criticHarness.sessionLogDir,
       }), { op: 'verification.captureCriticTranscript', level: 'warn', context: { attemptId: persisted.id } });
     }
-    fireAndForget(() => this.deps.transcripts.captureCriticUsage({
+    this.deps.fireAndForget(() => this.deps.transcripts.captureCriticUsage({
       attemptId: persisted.id,
       sessionId,
       harnessId: criticHarnessId,
@@ -250,9 +252,9 @@ export class VerificationCoordinator {
       } else {
         const { timelineAttempt, timelineStep, label } = await this.openLiveVerificationStep(task, command, record);
         const relay = this.verificationOutputRelay(run.id, 'command', label);
-        const outputLogPath = (await this.deps.archive?.verificationOutputLog(task, run.number, 'pre-merge', command.id)) ?? null;
+        const outputLog = (await this.deps.archive?.verificationOutputLog(task, run.number, 'pre-merge', command.id)) ?? null;
         const attempt = await runCommandVerifier({
-          outputLogPath,
+          outputLog,
           cwd: run.branch ? this.deps.worktreePathForTask(task) : task.workingDir,
           verifiedHeadOid: oid,
           command,
@@ -260,6 +262,7 @@ export class VerificationCoordinator {
           parent,
           attributes: { 'task.id': task.id, 'attempt.id': run.id },
           onOutput: relay.push,
+          spawn: this.deps.commandSpawn,
         });
         relay.flush();
         const persisted = await this.deps.verificationAttempts.append(timelineAttempt.id, commandAttemptToInput(attempt));
@@ -313,8 +316,7 @@ export class VerificationCoordinator {
           harnessId: criticHarnessId,
           parent,
           attributes: { 'task.id': task.id, 'attempt.id': run.id },
-          // `exactOptionalPropertyTypes` forbids an explicit `undefined`.
-          ...(this.deps.criticDrive ? { drive: this.deps.criticDrive } : {}),
+          drive: this.deps.criticDrive,
           ...(archive ? { archive } : {}),
           onUpdate: this.relayCriticUpdateAsBuilderEvent(run.id),
           onAgentDurationMs: (ms) => this.deps.attempts.addAgentDuration(run.id, ms),
@@ -426,7 +428,7 @@ export class VerificationCoordinator {
       ...(input.continuationSessionId && input.continuationSessionRowId !== undefined ? { sessionId: input.continuationSessionId, sessionRowId: input.continuationSessionRowId } : {}),
     });
     try {
-      const drive = this.deps.criticDrive ?? createAcpCriticDrive();
+      const drive = this.deps.criticDrive;
       const result = await runTimedCriticDrive(drive, {
         harness,
         harnessId,

@@ -532,6 +532,8 @@ export const verificationAttempts = sqliteTable('verification_attempts', {
   summary: text('summary').notNull(),
   /** Raw verifier output (the critic's agent text), capped by the caller. */
   output: text('output').notNull(),
+  /** Archive-relative key (under the Attempt's archive directory) of the complete, uncapped command output; null when `output` was not truncated, the log was not saved, or for a critic. */
+  fullOutputKey: text('full_output_key'),
   /** The exact prompt sent to the critic for this attempt (`buildCriticPrompt`);
    * null for the command verifier and pre-feature rows. Persisted so Task
    * detail's Review tab shows what actually went to the reviewer. */

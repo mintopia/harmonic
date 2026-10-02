@@ -6,13 +6,17 @@ import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { buildApp, type App } from '../src/server/app.js';
 import type { AppConfig, DeepPartial, HarnessId } from '../src/config.js';
-import type { CriticHarnessDrive } from '../src/verification/critic.js';
+import { createAcpCriticDrive, type CriticHarnessDrive } from '../src/verification/critic.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { settings, workspaces } from '../src/db/schema.js';
 import type { ScheduledJobRegistration } from '../src/scheduler/scheduler.js';
 import type { DistributionMode } from '../src/distribution-mode.js';
 import { SettingsStore } from '../src/server/settings-store.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
+import { BackgroundWork } from '../src/error-handling.js';
+import { spawn } from 'node:child_process';
+import { signalProcessGroup, type SpawnProcessGroup } from '../src/execution/process-groups.js';
+import { createChildProcessSpawn } from '../src/verification/command-verifier.js';
 
 /**
  * Build the one `SettingsStore` a hand-built-service test should share for its
@@ -423,5 +427,20 @@ export async function startServer(
       rmSync(dataDir, { recursive: true, force: true });
       rmSync(workspaceDir, { recursive: true, force: true });
     },
+  };
+}
+
+export const testSpawnProcessGroup: SpawnProcessGroup = (command, args, options) => {
+  const child = spawn(command, args, { ...options, detached: true });
+  child.once('exit', () => { if (child.pid !== undefined) signalProcessGroup(child.pid, 'SIGKILL'); });
+  return child;
+};
+
+export function executionPlumbing() {
+  return {
+    fireAndForget: new BackgroundWork().fireAndForget,
+    spawnProcessGroup: testSpawnProcessGroup,
+    commandSpawn: createChildProcessSpawn(testSpawnProcessGroup),
+    criticDrive: createAcpCriticDrive(testSpawnProcessGroup),
   };
 }

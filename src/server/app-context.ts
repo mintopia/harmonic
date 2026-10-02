@@ -1,3 +1,4 @@
+import type { FireAndForget } from '../error-handling.js';
 import type { FastifyInstance } from 'fastify';
 import type { AppConfig, DeepPartial } from '../config.js';
 import { SettingsStore } from './settings-store.js';
@@ -69,6 +70,7 @@ export interface AppOptions {
 }
 
 export interface AppContext {
+  fireAndForget: FireAndForget;
   archive: TaskArchive;
   exporter: TaskExporter;
   distributionMode: DistributionMode;

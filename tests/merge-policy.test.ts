@@ -10,6 +10,7 @@ import { Git } from '../src/execution/git.js';
 import { runMergePolicy, type MergePolicyDeps, type MergeStepEvent } from '../src/execution/merge-policy.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
 import { EpicIntegrationRunner } from '../src/tracker/epic-integration-runner.js';
+import { executionPlumbing } from './helpers.js';
 
 const tmpDirs: string[] = [];
 
@@ -68,6 +69,7 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
       },
     ];
     const runner = new EpicIntegrationRunner({
+      commandSpawn: executionPlumbing().commandSpawn,
       workspace: { id: 1, workingDir: repo },
       worktrees: { release: vi.fn(async () => {}) },
       epics: { retireIntegrationBranch: vi.fn(async () => true) },

@@ -6,13 +6,13 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
-import { TrackerPollerManager } from '../src/tracker/manager.js';
+import { TrackerPollerManager, type TrackerPollerManagerOptions } from '../src/tracker/manager.js';
 import { deriveMaps } from '../src/tracker/mirror.js';
 import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
 import { EPIC_LABEL, TrackerResolutionError } from '../src/tracker/adapter.js';
-import type { EpicService } from '../src/tracker/epic-service.js';
+import { TrackerEpicService, type EpicService } from '../src/tracker/epic-service.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore, waitFor, seedWorkspace } from './helpers.js';
+import { allWorkspaces, executionPlumbing, makeSettingsStore, waitFor, seedWorkspace } from './helpers.js';
 import { yieldToEventLoop } from '../src/reliability/yield.js';
 import { integrationSteps } from '../web/src/epic-model.js';
 import { UpgradeCoordinator } from '../src/upgrade/upgrade-coordinator.js';
@@ -45,6 +45,16 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   let tasks: TaskService;
   let workspaces: WorkspaceService;
   let manager: TrackerPollerManager;
+  const makeManager = (options: Omit<TrackerPollerManagerOptions, 'epicService'> & { epicService?: EpicService }): TrackerPollerManager =>
+    new TrackerPollerManager(tasks, () => workspaces.list(), {
+      epicService: new TrackerEpicService(tasks, () => workspaces.list(), {
+        ...(options.resolveAdapter ? { resolveAdapter: options.resolveAdapter } : {}),
+        ...(options.onError ? { onError: options.onError } : {}),
+        fireAndForget: executionPlumbing().fireAndForget,
+        integration: 'lifecycle-only',
+      }),
+      ...options,
+    });
   let polled: string[];
   let ticketsByRepo: Map<string, Ticket[]>;
   let unresolvable: Set<string>;
@@ -75,7 +85,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
         reopen: async () => {},
       };
     };
-    manager = new TrackerPollerManager(tasks, () => workspaces.list(), { resolveAdapter });
+    manager = makeManager({ resolveAdapter });
   });
   afterEach(async () => {
     await manager.stopAll();
@@ -166,7 +176,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await seedWorkspace(asyncDb);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     workspaces = new WorkspaceService(asyncDb, settingsStore);
-    manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+    manager = makeManager({
       resolveAdapter: async () => {
         throw new Error('restart query must not resolve or poll the tracker');
       },
@@ -207,7 +217,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await seedWorkspace(asyncDb);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     workspaces = new WorkspaceService(asyncDb, settingsStore);
-    manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+    manager = makeManager({
       resolveAdapter: async () => {
         throw new Error('restart query must not resolve or poll the tracker');
       },
@@ -251,7 +261,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await seedWorkspace(asyncDb);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     workspaces = new WorkspaceService(asyncDb, settingsStore);
-    manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+    manager = makeManager({
       resolveAdapter: async () => {
         throw new Error('restart query must not resolve or poll the tracker');
       },
@@ -438,7 +448,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     let yields = 0;
     const order: string[] = [];
     const extraRepos: string[] = [];
-    manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+    manager = makeManager({
       resolveAdapter: async (repoRoot: string) => {
         polled.push(repoRoot);
         return {
@@ -486,7 +496,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await manager.stopAll();
     let tick = 0;
     let yields = 0;
-    manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+    manager = makeManager({
       resolveAdapter: async (repoRoot: string) => {
         if (unresolvable.has(repoRoot))
           throw new TrackerResolutionError('no-declaration', `No tracker declaration at ${repoRoot}`);
@@ -571,7 +581,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
       };
     };
     // A real, never-started Scheduler puts pollers into scheduler-driven mode: only explicit reconcileEpics() calls below trigger a reconcile.
-    manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+    manager = makeManager({
       resolveAdapter,
       epicService: fakeEpicService,
       scheduler: new Scheduler(asyncDb),
@@ -602,7 +612,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     let markScanStarted: () => void = () => {};
     const scanStarted = new Promise<void>((resolve) => { markScanStarted = resolve; });
     const errors: string[] = [];
-    manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+    manager = makeManager({
       onError: (message) => errors.push(message),
       resolveAdapter: async () => ({
         name: 'stub',
@@ -645,7 +655,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await manager.stopAll();
     let releaseGate: () => void = () => {};
     const gate = new Promise<void>((resolve) => { releaseGate = resolve; });
-    manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+    manager = makeManager({
       resolveAdapter: async (repoRoot: string) => {
         await gate; // hold both syncs inside the not-yet-registered window at once
         polled.push(repoRoot);

@@ -5,6 +5,7 @@ import { type ProgressEvent } from '../src/domain/stall-detector.js';
 import { type GuardrailDeps, GuardrailSupervisor, type GuardrailTurn, PROGRESS_NUDGE_TEXT } from '../src/execution/guardrail-supervisor.js';
 import { type AttemptUsageSnapshot } from '../src/execution/usage.js';
 import { startServer, stubHarness, type TestServer } from './helpers.js';
+import { BackgroundWork } from '../src/error-handling.js';
 
 describe('guardrail-events-route', () => {
   describe('GET /api/attempts/:id/guardrail-events (issue #171)', () => {
@@ -142,6 +143,7 @@ describe('guardrail-supervisor', () => {
       sampleSnapshot: async () => state.snapshot,
       spendPollMs: 1000,
       spendGraceMs: opts.spendGraceMs ?? 60_000,
+      fireAndForget: new BackgroundWork().fireAndForget,
     };
 
     const turn: GuardrailTurn = {

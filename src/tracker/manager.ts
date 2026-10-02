@@ -7,7 +7,7 @@ import { InFlight } from '../reliability/in-flight.js';
 import type { Scheduler } from '../scheduler/scheduler.js';
 import type { ResolvedTracker, TrackerAdapter } from './adapter.js';
 import { resolveTracker, resolveTrackerAdapter } from './adapter.js';
-import { TrackerEpicService, type EpicIntegrateOutcome, type EpicService } from './epic-service.js';
+import { type EpicIntegrateOutcome, type EpicService } from './epic-service.js';
 import type { Epic } from '../domain/epic-view.js';
 import type { Ticket } from './adapter.js';
 import type { FeatureIndex } from './local-markdown.js';
@@ -23,7 +23,7 @@ export interface TrackerPollerManagerOptions {
   resolveAdapter?: (repoRoot: string, featureIndex?: FeatureIndex) => Promise<TrackerAdapter>;
   onError?: (message: string) => void;
   scheduler?: Scheduler;
-  epicService?: EpicService;
+  epicService: EpicService;
   yieldOptions?: YieldOptions;
   /** Absent means epic reconcile always runs. */
   workStartAllowed?: () => boolean | Promise<boolean>;
@@ -46,12 +46,12 @@ export class TrackerPollerManager {
   constructor(
     private readonly tasks: TaskService,
     private readonly getWorkspaces: () => Promise<WorkspaceRow[]>,
-    options: TrackerPollerManagerOptions = {},
+    options: TrackerPollerManagerOptions,
   ) {
     this.resolveAdapter = options.resolveAdapter ?? resolveTrackerAdapter;
     this.onError = options.onError ?? logger.error;
     this.scheduler = options.scheduler;
-    this.epicService = options.epicService ?? new TrackerEpicService(tasks, getWorkspaces, { resolveAdapter: this.resolveAdapter, onError: this.onError });
+    this.epicService = options.epicService;
     this.yieldOptions = options.yieldOptions;
     this.workStartAllowed = options.workStartAllowed;
     // Boot, every workspace POST/PATCH/DELETE, and the workspace watcher all call

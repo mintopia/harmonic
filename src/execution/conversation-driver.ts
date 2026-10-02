@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
-import { killProcessGroup, spawnProcessGroup } from './process-groups.js';
+import { killProcessGroup, type SpawnProcessGroup } from './process-groups.js';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { AcpDriver } from '../acp/driver.js';
@@ -20,7 +20,7 @@ import type { PermissionRuleStore } from '../domain/permission-rules.js';
 import type { ConversationRow } from '../db/schema.js';
 import { startOperation } from '../telemetry/operations.js';
 import { logger } from '../logger.js';
-import { reportFailure, fireAndForget } from '../error-handling.js';
+import { reportFailure, type FireAndForget } from '../error-handling.js';
 import { InFlight } from '../reliability/in-flight.js';
 import { childExited } from './child-exit.js';
 
@@ -35,7 +35,7 @@ export interface HarnessSpawn {
   spawn(req: HarnessSpawnRequest): ChildProcess;
 }
 
-export function createHarnessProcessSpawn(): HarnessSpawn {
+export function createHarnessProcessSpawn(spawnProcessGroup: SpawnProcessGroup): HarnessSpawn {
   return {
     spawn(req: HarnessSpawnRequest): ChildProcess {
       return spawnProcessGroup(req.command, req.args, {
@@ -187,7 +187,8 @@ export interface ConversationDriverOptions {
   onTurnSettled?: () => void;
   /** Roots a Conversation's workingDir must resolve inside (or equal); undefined skips the check (e.g. in tests that don't wire it). */
   allowedRoots?: () => Promise<string[]>;
-  processSpawn?: HarnessSpawn;
+  processSpawn: HarnessSpawn;
+  fireAndForget: FireAndForget;
   fs?: WorkingDirProbe;
   timers?: ConversationTimers;
 }
@@ -224,6 +225,7 @@ export class ConversationDriver {
   private readonly onTurnSettled: (() => void) | undefined;
   private readonly allowedRoots: ConversationDriverOptions['allowedRoots'];
   private readonly processSpawn: HarnessSpawn;
+  private readonly fireAndForget: FireAndForget;
   private readonly fs: WorkingDirProbe;
   private readonly timers: ConversationTimers;
   /** The MCP endpoint agents call back to; set once the server listens. */
@@ -232,14 +234,15 @@ export class ConversationDriver {
   constructor(
     private readonly store: ConversationStore,
     private readonly getConfig: () => AppConfig,
-    options: ConversationDriverOptions = {},
+    options: ConversationDriverOptions,
   ) {
     this.events = options.events ?? {};
     this.rules = options.rules;
     this.keys = options.keys;
     this.onTurnSettled = options.onTurnSettled;
     this.allowedRoots = options.allowedRoots;
-    this.processSpawn = options.processSpawn ?? createHarnessProcessSpawn();
+    this.processSpawn = options.processSpawn;
+    this.fireAndForget = options.fireAndForget;
     this.fs = options.fs ?? createFsWorkingDirProbe();
     this.timers = options.timers ?? createRealTimers();
   }
@@ -348,7 +351,7 @@ export class ConversationDriver {
     const minutes = this.getConfig().conversationIdleTimeoutMinutes;
     if (!minutes || minutes <= 0) return;
     entry.idleTimer = this.timers.setTimeout(() => {
-      fireAndForget(async () => {
+      this.fireAndForget(async () => {
         if (!this.active.has(entry.conversationId)) return;
         await this.record(entry.conversationId, 'lifecycle', { event: 'idle_timeout' });
         await this.end(entry.conversationId);
@@ -502,7 +505,7 @@ export class ConversationDriver {
           this.events.onCommandsUpdate?.({ conversationId: convo.id, commands: this.availableCommands(convo.id) });
         }
         if (replay) return;
-        fireAndForget(() => this.record(convo.id, 'session_update', update), {
+        this.fireAndForget(() => this.record(convo.id, 'session_update', update), {
           op: 'conversationDriver.record',
           level: 'warn',
           context: { conversationId: convo.id, kind: 'session_update' },
@@ -646,7 +649,7 @@ export class ConversationDriver {
       this.pendingPermissions.delete(reqId);
       const outcome = autoPermissionOutcome(pending.request);
       pending.resolve({ outcome });
-      fireAndForget(() => this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId, automatic: true }), {
+      this.fireAndForget(() => this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId, automatic: true }), {
         op: 'conversationDriver.record',
         level: 'warn',
         context: { conversationId, kind: 'permission_request' },
@@ -670,7 +673,7 @@ export class ConversationDriver {
       this.pendingPermissions.delete(reqId);
       const outcome = { outcome: 'cancelled' as const };
       pending.resolve({ outcome });
-      fireAndForget(() => this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId }), {
+      this.fireAndForget(() => this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId }), {
         op: 'conversationDriver.record',
         level: 'warn',
         context: { conversationId, kind: 'permission_request' },
@@ -681,7 +684,7 @@ export class ConversationDriver {
       this.pendingElicitations.delete(reqId);
       const answer = { action: 'cancel' as const };
       pending.resolve(answer);
-      fireAndForget(() => this.record(conversationId, 'elicitation_request', { request: pending.request, answer, reqId }), {
+      this.fireAndForget(() => this.record(conversationId, 'elicitation_request', { request: pending.request, answer, reqId }), {
         op: 'conversationDriver.record',
         level: 'warn',
         context: { conversationId, kind: 'elicitation_request' },
@@ -745,7 +748,7 @@ export class ConversationDriver {
   }
 
   private revokeKey(conversationId: number): void {
-    fireAndForget(() => this.keys?.revoke(conversationId), {
+    this.fireAndForget(() => this.keys?.revoke(conversationId), {
       op: 'conversationDriver.revokeKey',
       level: 'error',
       context: { conversationId },

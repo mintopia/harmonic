@@ -1,6 +1,6 @@
 import type { ChildProcess } from 'node:child_process';
 import { GitError } from '../domain/errors.js';
-import { bestEffort, fireAndForget } from '../error-handling.js';
+import { bestEffort, type FireAndForget } from '../error-handling.js';
 import { classifyGitFailure, type GitCircuitBreaker } from './git-failure.js';
 import { adapterFor } from './harness/registry.js';
 import type { LiveUsageTailer } from './live-usage-tailer.js';
@@ -66,6 +66,7 @@ export interface TurnDriverDeps {
   attempts: AttemptStore;
   sessionStore: SessionStore;
   guardrailEvents: GuardrailEventStore;
+  fireAndForget: FireAndForget;
   usage: UsageSampler;
   tailer: LiveUsageTailer;
   getConfig: () => AppConfig;
@@ -427,7 +428,7 @@ export class TurnDriver {
       }
       return { ok: true, workspace, mcpServers, child, stderr, rebaseConflict };
     } catch (err) {
-      fireAndForget(() => this.deps.keys?.revoke(run.id), { op: 'runner.revokeKeyOnStartError', level: 'error', context: { attemptId: run.id, taskId: task.id } });
+      this.deps.fireAndForget(() => this.deps.keys?.revoke(run.id), { op: 'runner.revokeKeyOnStartError', level: 'error', context: { attemptId: run.id, taskId: task.id } });
       if (err instanceof EpicBaseNotReady) {
         await this.deps.coordinateSettle(task, run, 'failed', {
           runState: 'failed',
@@ -519,7 +520,7 @@ export class TurnDriver {
     };
     this.deps.activeRuns.set(run.id, active);
     turn.toolCallFlushTimer = setInterval(() => {
-      fireAndForget(() => flushToolCalls(), { op: 'runner.flushToolCalls.interval', level: 'warn', context: { attemptId: run.id } });
+      this.deps.fireAndForget(() => flushToolCalls(), { op: 'runner.flushToolCalls.interval', level: 'warn', context: { attemptId: run.id } });
     }, 10_000);
     turn.toolCallFlushTimer.unref?.();
     const guardrails = new GuardrailSupervisor(
@@ -530,6 +531,7 @@ export class TurnDriver {
         sampleSnapshot: (attemptId) => this.deps.usage.sampleSnapshot(attemptId),
         spendPollMs: this.deps.spendPollMs,
         spendGraceMs: this.deps.spendGraceMs,
+        fireAndForget: this.deps.fireAndForget,
       },
       {
         taskId: task.id,
@@ -571,7 +573,7 @@ export class TurnDriver {
       await bestEffort(() => flushToolCalls(), { op: 'runner.finalize.flushToolCalls', level: 'warn', context: { attemptId: run.id } });
       this.deps.usage.dropReader(run.id);
       this.deps.kill(active);
-      fireAndForget(() => this.deps.keys?.revoke(run.id), { op: 'runner.revokeKeyOnFinalize', level: 'error', context: { attemptId: run.id, taskId: task.id } });
+      this.deps.fireAndForget(() => this.deps.keys?.revoke(run.id), { op: 'runner.revokeKeyOnFinalize', level: 'error', context: { attemptId: run.id, taskId: task.id } });
       await bestEffort(() => this.deps.finalizeWorkspace(task, run, attemptNumber, workspace), {
         op: 'runner.finalize.finalizeWorkspace',
         level: 'error',

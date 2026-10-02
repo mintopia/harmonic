@@ -10,6 +10,7 @@ import { openAsyncDb } from '../src/db/async.js';
 import { processGroups } from '../src/db/schema.js';
 import { ProcessGroupJournal } from '../src/execution/process-groups.js';
 import { waitFor } from './helpers.js';
+import { BackgroundWork } from '../src/error-handling.js';
 
 const spawnedChildren: ChildProcess[] = [];
 
@@ -140,7 +141,7 @@ describe('ProcessGroupJournal.reapOrphans', () => {
         { pgid: 4_000_003, startToken: '3', owner: 'c', startedAt: 1 },
       ]).run());
       const tables: unknown[] = [];
-      const journal = new ProcessGroupJournal(db, {
+      const journal = new ProcessGroupJournal(db, new BackgroundWork().fireAndForget, {
         reap: async (_identity, options) => {
           tables.push(options?.processTable);
           return 'not-running';

@@ -14,6 +14,7 @@ import { TaskArchive } from '../src/archive/task-archive.js';
 import { TaskExporter } from '../src/archive/task-export.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import { emptyGitProvenance } from '../src/archive/git-provenance.js';
+import { BackgroundWork } from '../src/error-handling.js';
 
 const ACCESS = 'harmonicaccess';
 const SECRET = 'harmonicsecretkey123';
@@ -136,6 +137,7 @@ describe.skipIf(!dockerAvailable())('TaskExporter S3 destination (#737)', () => 
 
   const exporter = (cfg: AppConfig, workspace?: Parameters<typeof resolveExportSettings>[1], now?: () => Date): TaskExporter =>
     new TaskExporter({
+      fireAndForget: new BackgroundWork().fireAndForget,
       dataDir: dir,
       archive,
       version: '9.9.9',
@@ -202,6 +204,7 @@ describe.skipIf(!dockerAvailable())('TaskExporter S3 destination (#737)', () => 
     let healed = false;
     const failures: unknown[] = [];
     const sut = new TaskExporter({
+      fireAndForget: new BackgroundWork().fireAndForget,
       dataDir: dir,
       archive,
       version: '9.9.9',

@@ -4,7 +4,7 @@ import type { AppConfig } from '../config.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { EpicMergeEventStore } from '../domain/epic-merge-events.js';
-import { createAcpCriticDrive, runTimedCriticDrive } from '../verification/critic.js';
+import { runTimedCriticDrive } from '../verification/critic.js';
 import type { createPostMergeCheck } from '../verification/post-merge-check.js';
 import { integrationBranchName } from './epic-coordinator.js';
 import { logger } from '../logger.js';
@@ -200,7 +200,7 @@ export class MergeCoordinator {
       resolveConflictTurn: async (ctx) => {
         try {
           if (!harness) return;
-          const drive = this.deps.criticDrive ?? createAcpCriticDrive();
+          const drive = this.deps.criticDrive;
           const prompt = conflictResolutionPrompt(
             `## Epic integration merge conflict resolution (turn ${ctx.turn})\n` +
               `Merging the Epic integration branch \`${ctx.taskBranch}\` into \`${ctx.baseBranch}\` conflicted in:\n`,
@@ -281,7 +281,7 @@ export class MergeCoordinator {
           const harnessId = task.harness;
           const harness = config.harnesses[harnessId as keyof typeof config.harnesses];
           if (!harness) return;
-          const drive = this.deps.criticDrive ?? createAcpCriticDrive();
+          const drive = this.deps.criticDrive;
           const prompt = conflictResolutionPrompt(
             `## Merge conflict resolution (turn ${ctx.turn})\n` +
               `Merging \`${ctx.taskBranch}\` into \`${ctx.baseBranch}\` conflicted in:\n`,

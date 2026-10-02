@@ -10,7 +10,6 @@ import type { PostMergeCheckResult } from './merge-policy.js';
 import type { PostMergeHook } from './branch-merge.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
-import type { ProcessGroupJournal } from './process-groups.js';
 import { logger } from '../logger.js';
 import type { TaskArchive } from '../archive/task-archive.js';
 
@@ -38,8 +37,6 @@ export class CrashRecoveryCoordinator {
        * poll owns retrying its verification; this hook restores its live read model. */
       onEpicAttemptInterrupted?: (attempt: EpicAttemptRow) => Promise<void> | void;
       yieldOptions?: YieldOptions;
-      /** Absent ⇒ no orphan process groups are reaped. */
-      processGroups?: Pick<ProcessGroupJournal, 'reapOrphans'>;
       archive?: TaskArchive;
       sessionTranscriptPath?: (sessionRowId: number) => Promise<string | null>;
     },
@@ -59,7 +56,6 @@ export class CrashRecoveryCoordinator {
   private async reconcileInterrupted(): Promise<void> {
     await this.reconcileMergeOrphans();
     await this.reconcileMergedButUnsettled();
-    await this.deps.processGroups?.reapOrphans(this.deps.yieldOptions);
     const interrupted = await this.attempts.markInterrupted();
     await forEachYielding(
       interrupted.filter(isEpicAttempt),

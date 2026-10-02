@@ -14,6 +14,7 @@ import type { EpicExportStep } from '../src/domain/epic-merge-events.js';
 import { TaskExporter, type EpicExportSnapshot, type ExportFailure, type TaskExporterDeps } from '../src/archive/task-export.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import { emptyGitProvenance } from '../src/archive/git-provenance.js';
+import { BackgroundWork } from '../src/error-handling.js';
 
 const EPIC = 77;
 
@@ -52,6 +53,7 @@ describe('Epic Export (#739)', () => {
 
   const exporter = (overrides: Partial<TaskExporterDeps> = {}): TaskExporter =>
     new TaskExporter({
+      fireAndForget: new BackgroundWork().fireAndForget,
       dataDir: dir,
       archive,
       version: '9.9.9',
@@ -97,7 +99,7 @@ describe('Epic Export (#739)', () => {
     mkdirSync(critic, { recursive: true });
     writeFileSync(join(critic, 'prompt.md'), 'critic prompt');
     const log = await archive.epicVerificationOutputLog(workspaceId, EPIC, 1, 'cmd-test');
-    writeFileSync(log!, 'command output');
+    writeFileSync(log!.path, 'command output');
   });
 
   afterEach(async () => {

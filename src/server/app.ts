@@ -1,3 +1,4 @@
+import { BackgroundWork } from '../error-handling.js';
 import Fastify from 'fastify';
 import { join, resolve } from 'node:path';
 import { openAsyncDb } from '../db/async.js';
@@ -46,6 +47,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const worktreesDir = join(opts.dataDir, 'worktrees');
   const managedWorktreesRoot = resolve(worktreesDir);
   const bus = new EventBus();
+  const background = new BackgroundWork();
+  const { fireAndForget } = background;
   const scheduler = new Scheduler(asyncDb, (jobs) => bus.emit('scheduled_jobs', jobs));
   const runningVersion = opts.version ?? readPackageManifest().version;
   const updateCheck = new UpdateCheck({
@@ -55,7 +58,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   });
   operationRegistry.setBus(bus);
 
-  const stores = await createStores({ opts, asyncDb, bus });
+  const stores = await createStores({ opts, asyncDb, bus, fireAndForget });
   const worktrees = createWorktreeServices({
     workspaces: stores.workspaces,
     tasks: stores.tasks,
@@ -74,6 +77,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     managedWorktreesRoot,
     distributionMode,
     runningVersion,
+    fireAndForget,
   });
 
   registerAppJobs(scheduler, {
@@ -94,9 +98,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     tasks: stores.tasks,
     attempts: stores.attempts,
     notifier: stores.notifier,
+    fireAndForget,
   });
 
   const ctx: AppContext = {
+    fireAndForget,
     distributionMode,
     runningVersion,
     installMode: opts.installMode ?? { kind: 'systemd' },
@@ -160,7 +166,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     hostLoad: runtime.hostLoad,
     workspaceWatcher: runtime.workspaceWatcher,
     statsReader,
-    processGroups: runtime.processGroups,
+    background,
     transcripts: runtime.transcripts,
     asyncDb,
   });
