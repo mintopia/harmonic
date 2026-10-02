@@ -1,6 +1,7 @@
 # Tasks: Agent Messages
 
-Vertical slices in dependency order. GitHub issue numbers are filled in when
+Vertical slices in dependency order. Epic #757; blockers are native GitHub
+dependencies.
 
 ## 1. (#758) Prefactor: MCP caller identity and conditional tool registration
 Blocked by: none.
