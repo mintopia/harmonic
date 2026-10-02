@@ -2,8 +2,8 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { touchOverlay } from '../ui';
 
 /**
- * Native <dialog> modal: focus trapping, Escape-to-close, top-layer stacking
- * and focus restore all come from the platform. Clicking the backdrop closes.
+ * Native <dialog> supplies focus trapping and top-layer stacking. Escape and
+ * backdrop clicks request closure when onRequestClose is supplied.
  * Keep the dialog itself padding-free so backdrop-click detection (target ===
  * dialog) never fires from clicks inside the panel; children own their padding.
  */
