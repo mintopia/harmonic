@@ -1,3 +1,20 @@
+CREATE TABLE `agent_messages` (
+	`id` text PRIMARY KEY NOT NULL,
+	`workspace_id` integer NOT NULL,
+	`role` text NOT NULL,
+	`parts` text NOT NULL,
+	`reply_to` text,
+	`thread_id` text NOT NULL,
+	`sender_task_id` integer NOT NULL,
+	`sender_attempt_id` integer NOT NULL,
+	`recipients` text NOT NULL,
+	`created_at` integer NOT NULL,
+	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX `agent_messages_sender_attempt_idx` ON `agent_messages` (`sender_attempt_id`);--> statement-breakpoint
+CREATE INDEX `agent_messages_thread_idx` ON `agent_messages` (`thread_id`);--> statement-breakpoint
+CREATE INDEX `agent_messages_workspace_idx` ON `agent_messages` (`workspace_id`);--> statement-breakpoint
 CREATE TABLE `api_keys` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`name` text NOT NULL,

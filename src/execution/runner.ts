@@ -323,6 +323,10 @@ export class Runner {
     };
   }
 
+  hasLiveAgent(taskId: number): boolean {
+    return this.activeRuns.hasTask(taskId);
+  }
+
   get activeCount(): number {
     return this.activeRuns.activeCount;
   }
