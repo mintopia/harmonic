@@ -19,7 +19,7 @@ import { HostLoadSampler } from '../host-load.js';
 import { WorkspaceWatcher } from '../domain/workspace-watcher.js';
 import { logger } from '../logger.js';
 import { attachProcessGroupJournal, ProcessGroupJournal } from '../execution/process-groups.js';
-import { errorMessage, fireAndForget } from '../error-handling.js';
+import { attempted, errorMessage, fireAndForget } from '../error-handling.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import type { Scheduler } from '../scheduler/scheduler.js';
 import { AutoDrive } from '../execution/auto-drive.js';
@@ -278,16 +278,23 @@ export async function createRuntime(deps: {
       }
     },
   });
+  const transcripts = new TranscriptCapture(sessionStore, verificationAttempts, () => settingsStore.getGlobal());
   const postMergeCheck = createPostMergeCheck({
-    workspaces,
-    settingsStore,
+    getWorkspace: async (workspaceId) => {
+      if (workspaceId === null) return undefined;
+      const result = await attempted(() => workspaces.get(workspaceId), {
+        op: 'postMerge.resolveWorkspace', level: 'error', context: { workspaceId },
+      });
+      return result.ok ? result.value : undefined;
+    },
+    getConfig: () => settingsStore.getGlobal(),
     verificationAttempts,
     attempts,
     criticDrive: opts.criticDrive,
     archive,
+    transcripts,
   });
   touchStartupProgress(opts.dataDir);
-  const transcripts = new TranscriptCapture(sessionStore, verificationAttempts, () => settingsStore.getGlobal());
   const processGroups = new ProcessGroupJournal(asyncDb);
   await runStartupRecovery({
     attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus, archive,

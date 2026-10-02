@@ -28,6 +28,7 @@ import type { TaskService } from '../domain/tasks.js';
 import { resolveGuardrails } from '../domain/setting-override.js';
 import { SessionContinuation } from './session-continuation.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
+import { createPostMergeCheck } from '../verification/post-merge-check.js';
 import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { MergeCoordinator, BaseBranchUnresolved, EpicBaseNotReady, type EpicIntegrationMergeInput, type MergeCoordinatorDeps } from './merge-coordinator.js';
 export { BaseBranchUnresolved, EpicBaseNotReady };
@@ -172,12 +173,17 @@ export class Runner {
     return {
       getConfig: this.getConfig,
       attempts: this.attempts,
-      verificationAttempts: this.verificationAttempts,
       epicMergeEvents: new EpicMergeEventStore(this.asyncDb),
-      transcripts: this.transcripts,
-      getWorkspace: this.getWorkspace,
       criticDrive: this.criticDrive,
-      archive: this.archive,
+      postMergeCheck: createPostMergeCheck({
+        getConfig: this.getConfig,
+        getWorkspace: async (workspaceId) => this.getWorkspace?.(workspaceId),
+        verificationAttempts: this.verificationAttempts,
+        attempts: this.attempts,
+        criticDrive: this.criticDrive,
+        archive: this.archive,
+        transcripts: this.transcripts,
+      }),
       postMerge: this.postMerge,
       urlFor: this.urlFor,
       listWorkingTasks: () => this.taskService.list({ state: 'working' }),

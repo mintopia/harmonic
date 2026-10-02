@@ -4,12 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { TaskService } from '../src/domain/tasks.js';
+import { AttemptStore } from '../src/domain/attempts.js';
+import { SessionStore } from '../src/domain/sessions.js';
+import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import { TaskArchive } from '../src/archive/task-archive.js';
+import { TranscriptCapture } from '../src/execution/transcript-capture.js';
 import { baselineConfig } from '../src/config.js';
 import { createPostMergeCheck } from '../src/verification/post-merge-check.js';
-import type { AttemptRow } from '../src/db/schema.js';
-import type { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
-import type { WorkspaceService } from '../src/domain/workspaces.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 describe('createPostMergeCheck archive output', () => {
@@ -39,24 +40,29 @@ describe('createPostMergeCheck archive output', () => {
     });
     const tasks = new TaskService(db, () => baselineConfig(), allWorkspaces(db, settings));
     const task = await tasks.create({ prompt: 'p' });
+    const attempts = new AttemptStore(db);
+    const run = await attempts.create(task.id);
+    const verificationAttempts = new VerificationAttemptStore(db);
     const archive = new TaskArchive({
       dataDir: dir,
       ensureArchiveId: (id) => tasks.ensureArchiveId(id),
       workspaceName: async () => null,
     });
     const check = createPostMergeCheck({
-      workspaces: { get: async () => undefined } as unknown as WorkspaceService,
-      settingsStore: settings,
-      verificationAttempts: { append: async () => ({ id: 1 }) } as unknown as VerificationAttemptStore,
+      getWorkspace: async () => undefined,
+      getConfig: () => settings.getGlobal(),
+      verificationAttempts,
+      attempts,
       archive,
+      transcripts: new TranscriptCapture(new SessionStore(db), verificationAttempts, () => settings.getGlobal()),
     });
 
     const detached = { ...task, workspaceId: null };
-    const result = await check({ task: detached, run: { id: 1, number: 3 } as AttemptRow, mergeOid: 'a'.repeat(40), baseDir: dir });
+    const result = await check({ task: detached, run, mergeOid: 'a'.repeat(40), baseDir: dir });
 
     expect(result.pass).toBe(true);
     const root = await archive.ensure(detached);
-    const log = readFileSync(join(root, 'attempts', '3', 'verification', 'post-merge', 'pm-echo', 'output.log'), 'utf8');
+    const log = readFileSync(join(root, 'attempts', String(run.number), 'verification', 'post-merge', 'pm-echo', 'output.log'), 'utf8');
     expect(log).toContain('post-merge-out');
   });
 });

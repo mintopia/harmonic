@@ -8,9 +8,11 @@ import { type AppConfig, baselineConfig, type DeepPartial } from '../src/config.
 import { type AsyncDbHandle, openAsyncDb } from '../src/db/async.js';
 import { workspaces as workspacesTable } from '../src/db/schema.js';
 import { AttemptStore } from '../src/domain/attempts.js';
+import { SessionStore } from '../src/domain/sessions.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import type { EpicWorktreePool } from '../src/execution/epic-worktree-pool.js';
+import { TranscriptCapture } from '../src/execution/transcript-capture.js';
 import { EpicVerificationRunner } from '../src/tracker/epic-verification-runner.js';
 import type { CriticDriveRequest, CriticHarnessDrive } from '../src/verification/critic.js';
 import { createPostMergeCheck } from '../src/verification/post-merge-check.js';
@@ -165,18 +167,27 @@ describe('Critic Step archive wiring (#730)', () => {
       const archive = new TaskArchive({ dataDir: dir, ensureArchiveId: (id) => tasks.ensureArchiveId(id), workspaceName: async () => 'ws' });
       const task = await tasks.create({ prompt: 'post-merge', state: 'ready', workingDir: repoDir, isolationMode: 'direct' });
       const run = await attempts.create(task.id);
-      const ws = { taskPostMergeCommands: null, taskPostMergeCritics: JSON.stringify(twoCritics), taskPreMergeCommands: null, taskPreMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null };
+      const ws = { taskPostMergeCommands: null, taskPostMergeCritics: JSON.stringify(twoCritics.map((entry) => ({ ...entry, critic: { ...entry.critic, timeoutSeconds: 17 } }))), taskPreMergeCommands: null, taskPreMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null };
+      const verificationAttempts = new VerificationAttemptStore(asyncDb);
+      const transcripts = new TranscriptCapture(new SessionStore(asyncDb), verificationAttempts, () => criticConfig(logDir));
+      const captureUsage = vi.spyOn(transcripts, 'captureCriticUsage');
+      const timeouts: number[] = [];
       const check = createPostMergeCheck({
-        workspaces: { get: async () => ws } as never,
-        settingsStore: { getGlobal: () => criticConfig(logDir) } as never,
-        verificationAttempts: new VerificationAttemptStore(asyncDb),
-        criticDrive: drive,
+        getWorkspace: async () => ws,
+        getConfig: () => criticConfig(logDir),
+        verificationAttempts,
+        attempts,
+        criticDrive: { run: (request) => { timeouts.push(request.timeoutMs); return drive.run(request); } },
         archive,
+        transcripts,
       });
 
       const result = await check({ task, run, mergeOid: git(repoDir, 'rev-parse', 'HEAD'), baseDir: repoDir });
 
       expect(result.pass).toBe(true);
+      expect(timeouts).toEqual([17_000, 17_000]);
+      expect(captureUsage).toHaveBeenCalledTimes(2);
+      transcripts.close();
       const postMerge = join(findDir(join(dir, 'archive'), `${task.id}-`), 'attempts', String(run.number), 'verification', 'post-merge');
       expect(readdirSync(postMerge).sort()).toEqual(['critic-1', 'critic-2']);
       expectStepTrio(join(postMerge, 'critic-1'), 'alpha');

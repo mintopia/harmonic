@@ -7,7 +7,6 @@ import { integrationBranchName } from './epic-coordinator.js';
 import { LIVE_RUN_LOG_EVENT_ID_OFFSET } from './live-events.js';
 import type { RunnerEvents } from './runner.js';
 import type { ActiveRuns } from './active-runs.js';
-import type { PostMergeCheckResult } from './merge-policy.js';
 import type { TaskArchive } from '../archive/task-archive.js';
 import type { TranscriptCapture } from './transcript-capture.js';
 import type { AppConfig, HarnessConfig, TaskVerificationCritic, VerificationCommand } from '../config.js';
@@ -379,79 +378,6 @@ export class VerificationCoordinator {
     record('lifecycle', { event: 'verification-actionable-fail', reason: decision.reason });
     const reason = decision.outcome === 'block' ? decision.reason : `verification ${decision.outcome}: ${decision.reason}`;
     return { kind: 'actionable-fail', reason, output };
-  }
-
-  async runPostMergeVerification(args: {
-    task: TaskRow;
-    run: AttemptRow;
-    mergeOid: string;
-    baseDir: string;
-    signal: AbortSignal;
-    record: LifecycleRecorder;
-  }): Promise<PostMergeCheckResult> {
-    const { task, run, mergeOid, baseDir, signal, record } = args;
-    const { config, resolvedTask } = await this.resolveTaskVerifiers(task);
-    const { commands, critics } = resolvedTask.postMerge;
-    const timelineAttempt = await this.deps.latestAttemptFor(task);
-    for (const command of commands) {
-      const outputLogPath = (await this.deps.archive?.verificationOutputLog(task, run.number, 'post-merge', command.id)) ?? null;
-      const attempt = await runCommandVerifier({
-        outputLogPath,
-        cwd: baseDir,
-        verifiedHeadOid: mergeOid,
-        command,
-        signal,
-        attributes: { 'task.id': task.id, 'attempt.id': run.id },
-      });
-      await this.deps.verificationAttempts.append(timelineAttempt.id, commandAttemptToInput(attempt));
-      record('lifecycle', { event: 'verification', mechanism: 'command', verdict: attempt.verdict, summary: attempt.summary });
-      if (attempt.verdict !== 'pass') return { pass: false, output: attempt.output };
-    }
-    const baseOid = await Git.revParse(baseDir, `${mergeOid}^1`).catch(() => null);
-    if (critics.length > 0) await indexWorktree(baseDir);
-    const criticAttempts = await Promise.all(critics.map(async (configuredCritic) => {
-      const critic = this.buildCriticInput(task, configuredCritic);
-      const criticHarnessId = critic.harness ?? task.harness;
-      const criticHarness = this.resolveCriticHarness(config, criticHarnessId);
-      const attempt = await runCritic({
-        cwd: baseDir,
-        verifiedHeadOid: mergeOid,
-        ...(baseOid ? { baseOid } : {}),
-        critic,
-        timeoutMs: configuredCritic.timeoutSeconds * 1000,
-        fields: driveFields(task, this.deps.urlFor),
-        harness: criticHarness,
-        harnessId: criticHarnessId,
-        attributes: { 'task.id': task.id, 'attempt.id': run.id },
-        ...(this.deps.criticDrive ? { drive: this.deps.criticDrive } : {}),
-        onUpdate: this.relayCriticUpdateAsBuilderEvent(run.id),
-        onAgentDurationMs: (ms) => this.deps.attempts.addAgentDuration(run.id, ms),
-      });
-      const persisted = await this.deps.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
-      this.captureCriticArtifacts({
-        persisted,
-        sessionId: attempt.sessionId,
-        transcriptPath: attempt.transcriptPath,
-        criticHarnessId,
-        criticHarness,
-        cwd: baseDir,
-      });
-      record('lifecycle', { event: 'verification', mechanism: 'critic', verdict: attempt.verdict, summary: attempt.summary });
-      return attempt;
-    }));
-    const decision = combineVerdicts(criticAttempts.map((attempt) => ({ verifier: attempt.verifier, verdict: attempt.verdict })));
-    if (decision.outcome === 'proceed') return { pass: true, output: '' };
-    return {
-      pass: false,
-      output: criticAttempts
-        .map((attempt, index) => [attempt, index] as const)
-        .filter(([attempt]) => attempt.verdict !== 'pass')
-        .map(([attempt, index]) => [
-          `Task critic ${index + 1} (${attempt.verdict}): ${attempt.summary}`,
-          attempt.output,
-        ].filter(Boolean).join('\n'))
-        .join('\n\n'),
-    };
   }
 
   async resolveEpicVerification(input: EpicVerificationResolutionInput): Promise<void> {
