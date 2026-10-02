@@ -2,6 +2,7 @@
 
 Status: accepted
 Date: 2026-09-01
+Reconciled: 2026-10-02. The Board focus view is retired; ADR-0018 adds stored history and ADR-0033 scopes the URL.
 
 ## Context
 
@@ -39,7 +40,7 @@ one rich Epic surface.
   at the top; a running or escalated member appears **both** in its Epic band and
   in the global section.
 - **Every Epic entry point opens the Epic summary page** at a dedicated
-  **`/epic/:ref`** route: the Tasks-list Epic row, the Table Epic group header,
+  **`/workspace/:id/epic/:ref`** route: the Tasks-list Epic row, the Table Epic group header,
   the Board Epic band header, and a child Ticket's breadcrumb (which links up to
   its parent Epic). The summary page is keyed by Epic ref and reads the server
   Epic read model directly — no synthetic task row, no `/task/:id` overload.
@@ -53,15 +54,15 @@ one rich Epic surface.
   content; only its route and keying change (ref, not a mirrored `isEpic` task).
 - One Epic surface, not two — the coexistence risk ADR-0015 flagged ("they must
   not drift") is gone.
-- `/epic/:ref` is a new client route; `/task/:id` is tickets only. The dead
+- ADR-0033 scopes Epic and Task routes by Workspace; they retain separate
+  identity spaces. The dead
   `isEpic`-task → summary path and its `focusedSurface` seam are deleted.
 - The band model reads every open member (ready/blocked/running/escalated) from
   the derived Epic read model; deliberate duplication into the global
   Attention/Running sections is intended, not a bug.
-- Epics remain the derived, open-only container model of ADR-0016 for now. The
-  separately-planned first-class stored Epic object (start-hash + epic-wide diff)
-  is a later feature and does not block this change — the summary page and bands
-  read an Epic by ref either way.
+- ADR-0018 subsequently shipped stored Epic identity and historical diffs
+  anchored on the integration merge commit. The summary page reads that
+  durable record; an integrated Epic leaves the Board.
 
 ## Supersedes
 

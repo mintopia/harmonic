@@ -17,7 +17,7 @@ import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
 import { worktreeId, type WorktreeInventoryEntry } from '../domain/worktree-inventory.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
-import { sumCosts, type Cost } from '../domain/pricing.js';
+import { parseCost, sumCosts, type Cost } from '../domain/pricing.js';
 import type { AttemptUsage, AttemptUsageSnapshot, ProcessTree } from '../execution/usage.js';
 import type { OperationEvent, OperationSnapshot } from '../telemetry/operations.js';
 import { z } from 'zod';
@@ -30,7 +30,7 @@ import { firstLineTitle } from '../domain/task-title.js';
 export { firstLineTitle, taskDisplayTitle } from '../domain/task-title.js';
 
 export const parseUsage = (raw: string | null): AttemptUsage | null => (raw ? (JSON.parse(raw) as AttemptUsage) : null);
-export const parseCost = (raw: string | null): Cost | null => (raw ? (JSON.parse(raw) as Cost) : null);
+export { parseCost };
 
 /** `workspaceId` is nullable only because SQLite can't ADD COLUMN NOT NULL without a default; every row has one at rest. */
 export const atRestWorkspaceId = (workspaceId: number | null): number => workspaceId!;

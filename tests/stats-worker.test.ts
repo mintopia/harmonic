@@ -58,12 +58,13 @@ describe('stats worker survives bad input (#651)', () => {
     worker = spawnStatsWorker(server.dataDir);
 
     const invalidResponse = waitForMessage(worker, (m) => m?.kind === 'invalid');
-    worker.postMessage({ kind: 'read' });
+    worker.postMessage({ kind: 'compute' });
     await expect(invalidResponse).resolves.toMatchObject({ kind: 'invalid', message: expect.any(String) });
 
     const readResult = waitForMessage(worker, (m) => m?.kind === 'result' && m?.id === 1);
-    worker.postMessage({ kind: 'read', id: 1, range: { from: 0, to: Date.now() } });
-    await expect(readResult).resolves.toMatchObject({ kind: 'result', id: 1, result: expect.anything() });
+    worker.postMessage({ kind: 'compute', id: 1, range: { from: 0, to: Date.now() } });
+    await expect(readResult).resolves.toMatchObject({ kind: 'result', id: 1, result: { attemptCount: expect.any(Number) } });
+    expect((await readResult).result).not.toHaveProperty('rows');
   });
 
   it('rejects an oversized probe from probeHeavyRead itself, and keeps processing later requests', async () => {
@@ -79,7 +80,7 @@ describe('stats worker survives bad input (#651)', () => {
     });
 
     const readResult = waitForMessage(worker, (m) => m?.kind === 'result' && m?.id === 2);
-    worker.postMessage({ kind: 'read', id: 2, range: { from: 0, to: Date.now() } });
+    worker.postMessage({ kind: 'compute', id: 2, range: { from: 0, to: Date.now() } });
     await expect(readResult).resolves.toMatchObject({ kind: 'result', id: 2, result: expect.anything() });
   });
 });

@@ -3,6 +3,11 @@
 Status: accepted
 Date: 2026-09-30
 
+Current status (2026-10-02): The file Archive and Export paths are implemented
+in `src/archive/task-archive.ts` and `src/archive/task-export.ts`. This ADR
+supersedes only ADR-0007's no-copy/no-retention clause; the database still
+stores aggregates and facts.
+
 ## Context
 
 An operator must be able to review, after the fact, everything that happened

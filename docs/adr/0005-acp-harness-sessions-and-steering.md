@@ -2,11 +2,13 @@
 
 Status: accepted
 Date: 2026-08-28
+Reconciled: 2026-10-02. OpenCode and per-harness modes are covered by ADR-0025/0036; pause/resume by ADR-0027.
+
 Part of the 2026-08-28 ADR reset (see README.md).
 
 ## ACP is the only harness integration protocol
 
-Harmonic drives all harnesses (Claude, Codex, Copilot) exclusively over ACP —
+Harmonic drives all harnesses (Claude, Codex, Copilot, OpenCode) exclusively over ACP —
 stdio JSON-RPC with structured streaming. The one-shot CLI modes are
 deliberately unsupported, even as fallback: one code path, uniform real-time
 observability, no second-class degraded mode. Neither Claude nor Codex speaks
@@ -47,9 +49,10 @@ own `sessionId`, a durable first-class resource with a Harmonic-generated id
   progress detection.
 - **The continuation rule** (deterministic, at Attempt N+1): continue the
   prior Session — feedback appended — iff its context usage is below
-  `contextReuseThreshold` AND it is warm; otherwise a fresh Session seeded by
-  the condensed continuation plus the feedback. The repo is the diff. The
-  warm-Session "start now" override on reject is ADR-0002's.
+  `contextReuseTokenLimit` AND it is warm; otherwise a fresh Session seeded by
+  the condensed continuation plus the feedback. The repo is the diff. Manual resume also offers a cold load of a stored Session (ADR-0027);
+  automatic continuation uses the rule above. Reject creates a new Attempt
+  and may reuse the prior warm Session (ADR-0038).
 - A Session moves `active → idle → retiring → retired`. Worktree removal is
   owned by the **Task**, not the Session (ADR-0001).
 

@@ -2,6 +2,8 @@
 
 Status: accepted
 Date: 2026-08-28
+Reconciled: 2026-10-02. First-class transcript UI and eager command discovery are covered by ADR-0029/0035.
+
 Part of the 2026-08-28 ADR reset (see README.md).
 Amended 2026-09-10: adds an opt-in Automatic (full-auto) permission mode — see "Automatic mode" below.
 Amended 2026-09-12: `ended` is no longer terminal — any Conversation holding a stored session resumes from it — see "Ended is not terminal when a session survives" below.
@@ -90,11 +92,11 @@ where the harness exposes a native full-access session mode (Codex
 `decidePermission` short-circuits to the request's allow option instead of
 holding it open for the operator.
 
-Automatic approves **everything, unfenced** — edits, commands, fetches,
-anywhere. The safety argument is containment, not restraint: a Conversation runs
-in an isolated Workspace, so blanket approval stays inside that sandbox and is
-the operator's informed choice. It is deliberately **not** gated to a Working
-Directory the way a Permission Rule is.
+Automatic approves **everything, unfenced**: edits, commands, and fetches.
+A Workspace identifies the working directory; it is not an operating-system
+sandbox. Tools have the daemon account's permissions unless the deployment
+adds external isolation. Automatic is the operator's explicit choice and is
+not directory-scoped like a Permission Rule.
 
 Constraints that keep it consistent with the escalation posture above:
 

@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-09-14
 
+Current status (2026-10-02): The workspace Files view is implemented. Its route is scoped by ADR-0033; filesystem containment and basic git operations remain the contract here.
+
 ## Context
 
 Harmonic had no way to look at or edit the files in a Workspace's Working

@@ -26,6 +26,8 @@ export interface Cost {
   incomplete: boolean;
 }
 
+export const parseCost = (raw: string | null): Cost | null => (raw ? (JSON.parse(raw) as Cost) : null);
+
 /** The selected harness owns the model catalog, so identical ids may price differently. */
 export function pricesForHarness(harness: Pick<HarnessConfig, 'models'>): PriceTable {
   return Object.fromEntries(harness.models.flatMap((model) => (model.price ? [[model.id, model.price]] : [])));

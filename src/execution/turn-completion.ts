@@ -69,10 +69,13 @@ export class TurnCompletion {
     // input.operatorSeed — ever reaches the harness. The caller must put the seed back rather
     // than treat it as delivered (ADR-0005 §6).
     if (active.pauseRequested) return { result: {}, connectionGone: false, escalating: null, operatorSeedDelivered: false };
+    const timedPromptTurn = (text: string) => this.deps.attempts.measureAgentTurn(
+      active.attemptId, () => promptTurn(driver, text, record, listeners.archive),
+    );
     active.steerable = true;
     let connectionGone = false;
     if (input.operatorSeed !== undefined) record('lifecycle', { event: 'steer_delivered', text: input.operatorSeed });
-    const first = await promptTurn(driver, promptText, record, listeners.archive);
+    const first = await timedPromptTurn(promptText);
     connectionGone ||= first.connectionGone;
     let result: PromptResult = first.result ?? {};
     active.idle = true;
@@ -88,7 +91,7 @@ export class TurnCompletion {
       if (steer !== undefined) {
         record('lifecycle', { event: 'steer_delivered', text: steer });
         active.idle = false;
-        const turn = await promptTurn(driver, steer, record, listeners.archive);
+        const turn = await timedPromptTurn(steer);
         connectionGone ||= turn.connectionGone;
         if (turn.result) result = turn.result;
         active.idle = true;
@@ -101,7 +104,7 @@ export class TurnCompletion {
       record('lifecycle', { event: 'continue', attempt });
       promptText = await this.deps.autoDrive!.continuePrompt(task);
       active.idle = false;
-      const turn = await promptTurn(driver, promptText, record, listeners.archive);
+      const turn = await timedPromptTurn(promptText);
       connectionGone ||= turn.connectionGone;
       if (turn.result) result = turn.result;
       active.idle = true;
@@ -113,7 +116,7 @@ export class TurnCompletion {
     while (!connectionGone && !active.externallySettled && !escalating && !listeners.stoppedShort && active.steerQueue.length > 0) {
       const steer = active.steerQueue.shift()!;
       record('lifecycle', { event: 'steer_delivered', text: steer });
-      const turn = await promptTurn(driver, steer, record, listeners.archive);
+      const turn = await timedPromptTurn(steer);
       connectionGone ||= turn.connectionGone;
       if (turn.result) result = turn.result;
     }
@@ -281,7 +284,9 @@ export class TurnCompletion {
       const nudge = 'Your implementation left uncommitted changes. Commit the completed work now, then finish.';
       record('lifecycle', { event: 'commit-nudge' });
       active.idle = false;
-      const turn = await promptTurn(active.driver, nudge, record, input.archive);
+      const turn = await this.deps.attempts.measureAgentTurn(
+        active.attemptId, () => promptTurn(active.driver, nudge, record, input.archive),
+      );
       connectionGone ||= turn.connectionGone;
       if (turn.result) result = turn.result;
       active.idle = true;

@@ -2,6 +2,7 @@
 
 Status: accepted
 Date: 2026-09-01
+Reconciled: 2026-10-02. Structural roots, Epic Attempts, and all-direct completion follow ADR-0023/0028/0039.
 
 ## Context
 
@@ -52,15 +53,16 @@ replacement for it.
   facts (Map = `wayfinder:map` label; Spec = spec body + children; plain Epic =
   children only), so it tracks reality while live and freezes when the issue
   closes.
-- **Every Epic cuts `epic/<ref>`** (uniform across kinds — a Map can produce
-  ADRs / CONTEXT.md changes like any Epic). Finishing merges the branch to base;
+- **Epics with worktree-mode Members cut `epic/<ref>`**, across kinds.
+  All-direct Epics complete in place without an integration branch or Epic
+  Verification Attempt (ADR-0039). Finishing merges the branch to base;
   when branch and base already match it is a **no-op** and the merge-commit hash
   stays null. The whole-Epic diff is `base head vs epic-branch head` while open
   and `git diff <M>^1 <M>^2` from the stored merge commit `M` once integrated.
 - **Epic completion closes the tracker issue.** When a leaf-most Epic is done
   (integrated, or a no-op finish), Harmonic closes its tracker issue via the
-  writable adapter — the container itself never runs an agent, so nothing else
-  would close it.
+  writable adapter. Epic Verification and corrective agents, when needed,
+  run as Epic Attempts under ADR-0028.
 - **The stored `epics` record is the single enumeration source for surfaced
   Epics.** `listStoredEpics` drives both `listEpics` and `epicDetail` — there is
   no second, tree-walking surfacer alongside it. `listEpics` (the Board) is
@@ -72,8 +74,8 @@ replacement for it.
   ready frontier are still derived at read time (`deriveLeafEpics`) while its
   container is in the scan, open or closed (`includeClosed`), falling back to
   the frozen integration snapshot once the Epic is integrated or has aged out of
-  the scan. A bare parent of work Tasks — no `epic` label, not a Map — is not an
-  Epic and never surfaces, stored or derived. Nested spine parents surface as
+  the scan. ADR-0023 also recognizes an unlabelled root with children as
+  a structural Epic; a bare nested parent still requires a container label. Nested spine parents surface as
   their own leaf-most stored Epics, never rolled up into a top-level container.
 
 ## Consequences
@@ -81,20 +83,20 @@ replacement for it.
 - The whole-Epic diff resolves for open **and** historical Epics without
   grepping the log or depending on the merge-commit message format.
 - Reverses ADR-0016's "not a stored entity" for the leaf-most Epic only; the
-  container model, label-driven identification, non-runnable/non-blocking
-  semantics, and the derived roll-up for spine Epics all stand.
+  container model stands, with structural-root identity from ADR-0023 and
+  workable Epic Verification from ADR-0028.
 - Reverses the direction of ADR-0004's closure rule **for Epics**: issue closure
   is normally mirrored *in* as an output side-effect, but an Epic's own tracker
   issue is now closed *out* by Harmonic on completion.
 - Extends the ADR-0017 Epic surface with a diff panel fed by the stored record.
 - Adds a third `kind`, the **plain Epic** (bare parent/child, neither Map nor
   Spec); only `map` changes child-drive behaviour.
-- `/wayfinder {mapRef}` child drive is net-new: `skillFor` currently emits only
-  `/research` or `/implement`, always against the child's own ref.
+- Map child drive uses `/wayfinder {mapRef}`; other kinds retain their
+  configured per-child drive behaviour.
 - `deriveEpics` (the top-level roll-up surfacer) is deleted. Board and Tasks
   list enumerate Epics from the stored record, not a tree walk. User-visible: a
-  bare-parent band and a top-level roll-up of a nested-open structure no longer
-  surface as an Epic — only stored, label-identified leaf-most Epics do.
+  top-level roll-up of a nested structure no longer substitutes for its
+  stored leaf-most integration units. Structural roots follow ADR-0023.
 - A finished Epic is not a Board band. It stays addressable (summary page,
   Tasks-list filter) from its stored record.
 

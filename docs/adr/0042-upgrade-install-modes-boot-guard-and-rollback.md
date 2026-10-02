@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-09-23
 
+Current status (2026-10-02): Managed-install upgrades, the Boot Guard, and rollback are implemented. ADR-0043 defines the supported runtime; this decision owns the upgrade recovery contract.
+
 Amends ADR-0041 (non-privileged atomic self-upgrade).
 
 ## Context

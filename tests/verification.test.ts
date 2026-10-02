@@ -457,6 +457,7 @@ describe('verification-critic', () => {
     let repoDir: string;
     let workspaceId: number;
     let criticResult: { verdict: Verdict; summary: string };
+    let reportedCriticDurationMs: number | null = null;
     let lastCriticHarnessId: string | undefined;
     let lastCriticCwd: string | undefined;
     let codeIndexDir: string;
@@ -465,6 +466,7 @@ describe('verification-critic', () => {
 
     const criticDrive: CriticHarnessDrive = {
       run: async (req) => {
+        if (reportedCriticDurationMs !== null) await req.onAgentDurationMs?.(reportedCriticDurationMs);
         lastCriticHarnessId = req.harnessId;
         lastCriticCwd = req.cwd;
         req.onUpdate?.({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'reviewing the change' } });
@@ -518,6 +520,7 @@ describe('verification-critic', () => {
     });
     beforeEach(async () => {
       criticResult = { verdict: 'pass', summary: 'the change matches the ticket' };
+      reportedCriticDurationMs = null;
       lastCriticHarnessId = undefined;
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'worktree',
@@ -582,6 +585,16 @@ describe('verification-critic', () => {
       ]);
       // ...and never leak into the builder's Implementation transcript stream.
       expect([...server.app.ctx.bus.replayAttemptLog({ attemptId, after: 0 })].some((e) => e.payload.sessionUpdate === 'tool_call' && e.payload.toolCallId === 'c1')).toBe(false);
+    });
+
+    it('adds a critic prompt duration to the builder duration exactly once', async () => {
+      reportedCriticDurationMs = 100_000;
+      await server.app.ctx.workspaces.update(workspaceId, critic());
+      const { taskId, attemptId } = await createAndRun();
+      await waitFor(async () => (await server.app.ctx.tasks.get(taskId)).state === 'done' ? true : undefined);
+      const duration = (await server.app.ctx.attempts.get(attemptId)).agentDurationMs;
+      expect(duration ?? -1).toBeGreaterThanOrEqual(100_000);
+      expect(duration ?? Infinity).toBeLessThan(200_000);
     });
 
     it('AC3: a failing critic records feedback on attempt 1 and escalates after attempt 2', async () => {

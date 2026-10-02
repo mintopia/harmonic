@@ -2,6 +2,7 @@
 
 Status: accepted
 Date: 2026-08-31
+Reconciled: 2026-10-02. Amended by ADR-0018 (storage), ADR-0023 (structural roots), and ADR-0028 (Epic Attempts).
 
 ## Context
 
@@ -33,38 +34,31 @@ the mirrored **task** row — which presumes an epic is a task.
 
 ## Decision
 
-An epic is a **container**, never a runnable work Task.
+An Epic is a **container**, never an ordinary runnable work Task. It can
+run Epic Verification and corrective Attempts under ADR-0028.
 
 - **Container identification (mirror).** A tracker ticket is a container when it
-  carries the `epic` label or `wayfinder:map`. The mirror persists it to
+  carries the `epic` label or `wayfinder:map`, or is an unlabelled root with
+  children (ADR-0023). The mirror persists it to
   `tracker_containers` and does **not** mirror it as a work Task. Container
   tickets are re-derived from the label + structure every poll, so they are
   immune to the work-Task delete/tombstone path.
-- **The epic (top-level).** The epic surfaced on the Board and as a Tasks-list
-  row is a container with **no parent of its own**. A container that itself has
-  a parent is a nested sub-container: also non-runnable, its leaves rolling up to
-  the top-level epic rather than standing alone.
-- **One source of truth.** Epics are read from the derived-epic model
-  (`deriveEpics` / `listEpics`), not from a mirrored task row. The Tasks list,
-  Board grouping, and Graph all read the same derived epics; the Tasks list
-  renders an epic as an epic-format row (the row work already done stays).
-  (Superseded by ADR-0018: the stored `epics` record is the single enumeration
-  source; `deriveEpics` is deleted and each Epic's membership is derived
-  per-Epic at read time.)
+- **Integration unit.** ADR-0018 replaced top-level rollup with durable
+  leaf-most Epics. Nested container structure is retained to determine the
+  appropriate integration unit, rather than making a container a work Task.
+- **One source of truth.** Stored `epics` records enumerate Board, Tasks-list,
+  and Graph Epics. Membership is derived from tracker structure while available
+  and falls back to the retained integration snapshot for history (ADR-0018).
 
 ## Consequences
 
 - Fixes the child-orphaning bug for open epics (#408 today, and the whole class).
-- The `epic` label becomes load-bearing tracker metadata: a ticket that groups
-  work must carry `epic` (or be a `wayfinder:map`).
-- Existing epic Tasks (~26 rows on the live instance) must be **demoted** to
-  containers by a non-tombstoning migration — distinct from the operator Delete
-  path, which must keep its dismissal semantics for real work Tasks.
-- #408's stale `tracker_dismissals` row is cleared so it re-derives as a
-  container.
-- Nested epics (epic → sub-epic → leaves) collapse to a single top-level epic for
-  grouping; member rollup is over leaf descendants. Only closed/historical data
-  currently nests; the one open epic is flat.
+- Nested containers require `epic` or `wayfinder:map`; structural roots
+  with children do not require a label (ADR-0023).
+- The original remediation demoted mirrored Epic Tasks without creating
+  dismissal tombstones. This was rollout work, not a pending migration.
+- ADR-0018 replaced top-level rollup with stored leaf-most integration
+  units; member rollup follows that current containment model.
 - The Tasks-list / Graph epic entry points move from `isEpic` task rows to the
   derived model. The epic **row format** is unchanged.
 

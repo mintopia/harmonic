@@ -9,6 +9,7 @@ import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { Git } from '../src/execution/git.js';
 import { runMergePolicy, type MergePolicyDeps, type MergeStepEvent } from '../src/execution/merge-policy.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
+import { EpicIntegrationRunner } from '../src/tracker/epic-integration-runner.js';
 
 const tmpDirs: string[] = [];
 
@@ -49,6 +50,50 @@ function neverCalled(name: string) {
 }
 
 describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
+  it('runs Epic post-merge commands sequentially in the merge operation worktree', async () => {
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'epic-42', (wt) => {
+      writeFileSync(join(wt, 'feature.txt'), 'feature\n');
+    });
+    const commands = [
+      {
+        id: 'produce', command: process.execPath,
+        args: ['-e', "require('node:fs').writeFileSync('artifact.txt', 'ok')"],
+        env: {}, timeoutSeconds: 10,
+      },
+      {
+        id: 'consume', command: process.execPath,
+        args: ['-e', "if (require('node:fs').readFileSync('artifact.txt', 'utf8') !== 'ok') process.exit(1)"],
+        env: {}, timeoutSeconds: 10,
+      },
+    ];
+    const runner = new EpicIntegrationRunner({
+      workspace: { id: 1, workingDir: repo },
+      worktrees: { release: vi.fn(async () => {}) },
+      epics: { retireIntegrationBranch: vi.fn(async () => true) },
+      resolvePostMergeCommands: async () => commands,
+      mergeEpicIntegration: async (input) => runMergePolicy(
+        {
+          baseDir: input.repoDir,
+          baseBranch: input.defaultBranch,
+          taskBranch: input.integrationBranch,
+          conflictResolveTurns: 0,
+          postMergeCheck: true,
+        },
+        {
+          resolveConflictTurn: neverCalled('resolveConflictTurn'),
+          runPostMergeCheck: input.runPostMergeCheck,
+          escalate: vi.fn(async () => {}),
+        },
+      ),
+    });
+
+    const result = await runner.integrate({ repoDir: repo, epicRef: 42, defaultBranch: 'main', integrationBranch: 'epic-42' });
+
+    expect(result.kind).toBe('merged');
+    expect(git(repo, 'show', 'main:feature.txt')).toBe('feature');
+  });
+
   it('merges a non-conflicting task branch with a real merge commit and does not escalate', async () => {
     const repo = makeRepo();
     await makeTaskBranch(repo, 'task-clean', (wt) => {

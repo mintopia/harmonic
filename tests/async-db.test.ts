@@ -11,7 +11,7 @@ import {
   type AsyncDbHandle,
 } from '../src/db/async.js';
 import { isUniqueViolation } from '../src/db/errors.js';
-import { attempts, guardrailEvents, tasks, workspaces } from '../src/db/schema.js';
+import { attempts, guardrailEvents, settings, tasks, workspaces } from '../src/db/schema.js';
 
 interface Latch {
   promise: Promise<void>;
@@ -102,6 +102,20 @@ describe('openAsyncDb boot', () => {
     } finally {
       await again.close();
     }
+  });
+
+  it('does not migrate legacy tracker settings or assign orphan Tasks on boot', async () => {
+    const now = Date.now();
+    const workspace = await h.db.insert(workspaces).values({ name: 'Test', workingDir: '/tmp', createdAt: now, updatedAt: now }).returning().get();
+    await h.db.insert(settings).values({ key: 'config', value: JSON.stringify({ tracker: { enabled: true, pollIntervalSeconds: 15 } }) }).run();
+    const orphan = await h.db.insert(tasks).values({ prompt: 'orphan', state: 'ready', workingDir: '/tmp', createdAt: now, updatedAt: now }).returning().get();
+
+    await h.close();
+    h = await openAsyncDb(dir);
+
+    expect((await h.db.select().from(workspaces).where(eq(workspaces.id, workspace.id)).get())?.trackerEnabled).toBe(false);
+    expect((await h.db.select().from(tasks).where(eq(tasks.id, orphan.id)).get())?.workspaceId).toBeNull();
+    expect(await h.db.select().from(settings).where(eq(settings.key, 'trackerEnabledBackfilled')).get()).toBeUndefined();
   });
 });
 

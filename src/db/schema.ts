@@ -192,6 +192,8 @@ export const attempts = sqliteTable('attempts', {
   state: text('state').$type<AttemptState>().notNull().default('running'),
   startedAt: integer('started_at').notNull(),
   endedAt: integer('ended_at'),
+  /** Cumulative agent-turn duration; null when timing is missing or incomplete. */
+  agentDurationMs: integer('agent_duration_ms'),
   /** Feedback from the failure that led to the following attempt. */
   feedback: text('feedback'),
   continuation: text('continuation'),

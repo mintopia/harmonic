@@ -168,6 +168,7 @@ export class EpicVerificationRunner {
         harnessId,
         ...(criticDrive ? { drive: criticDrive } : {}),
         ...(archive ? { archive } : {}),
+        ...(tracked ? { onAgentDurationMs: (ms: number) => tracked.epicAttempts.addAgentDuration(tracked.attempt.id, ms) } : {}),
       });
       const usage = collectUsage({
         harnessId,

@@ -1,20 +1,17 @@
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { WorkspaceRow } from '../db/schema.js';
 import type { EpicLifecycle } from '../execution/epic-coordinator.js';
 import type { EpicWorktreePool } from '../execution/epic-worktree-pool.js';
 import type { PostMergeCheckResult, MergePolicyOutcome } from '../execution/merge-policy.js';
-import { runCommandVerifierDetached } from '../verification/command-verifier.js';
+import { runCommandVerifier } from '../verification/command-verifier.js';
 import type { ResolvedVerifiers } from '../domain/setting-override.js';
 import type { MergeEpicIntegration } from './epic-service.js';
 
 export interface EpicIntegrationRunnerDeps {
-  workspace: WorkspaceRow;
-  worktreesDir?: string | undefined;
-  worktrees: EpicWorktreePool;
-  epics: EpicLifecycle;
+  workspace: Pick<WorkspaceRow, 'id' | 'workingDir'>;
+  worktrees: Pick<EpicWorktreePool, 'release'>;
+  epics: Pick<EpicLifecycle, 'retireIntegrationBranch'>;
   mergeEpicIntegration: MergeEpicIntegration;
-  resolveWorkspaceVerifiers: () => Promise<ResolvedVerifiers>;
+  resolvePostMergeCommands: () => Promise<ResolvedVerifiers['epic']['preMerge']['commands']>;
 }
 
 /** Merges an Epic's integration branch into the default branch under the one merge policy. */
@@ -34,7 +31,7 @@ export class EpicIntegrationRunner {
         epicRef,
         defaultBranch,
         integrationBranch,
-        runPostMergeCheck: (mergeOid, baseDir) => this.runPostMergeCheck(epicRef, mergeOid, baseDir),
+        runPostMergeCheck: (mergeOid, baseDir) => this.runPostMergeCheck(mergeOid, baseDir),
       });
     } finally {
       await this.deps.worktrees.release(this.deps.workspace.workingDir, epicRef);
@@ -46,12 +43,11 @@ export class EpicIntegrationRunner {
     await this.deps.epics.retireIntegrationBranch(epicRef);
   }
 
-  private async runPostMergeCheck(epicRef: number, mergeOid: string, baseDir: string): Promise<PostMergeCheckResult> {
-    const stage = (await this.deps.resolveWorkspaceVerifiers()).epic.preMerge;
-    for (const command of stage.commands) {
-      const attempt = await runCommandVerifierDetached({
-        repoDir: baseDir,
-        worktreePath: join(this.deps.worktreesDir ?? tmpdir(), `epic-post-merge-${this.deps.workspace.id}-${epicRef}`),
+  private async runPostMergeCheck(mergeOid: string, baseDir: string): Promise<PostMergeCheckResult> {
+    const commands = await this.deps.resolvePostMergeCommands();
+    for (const command of commands) {
+      const attempt = await runCommandVerifier({
+        cwd: baseDir,
         verifiedHeadOid: mergeOid,
         command,
       });

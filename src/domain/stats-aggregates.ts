@@ -1,6 +1,6 @@
-import { sumCosts, type Cost } from '../domain/pricing.js';
+import { parseCost, sumCosts, type Cost } from './pricing.js';
 import { mergeUsage, type AttemptUsage } from '../execution/usage.js';
-import { isExecutionFailure } from '../domain/attempt-failure.js';
+import { isExecutionFailure } from './attempt-failure.js';
 import type {
   GuardrailTripRow,
   SettledTaskAttempt,
@@ -9,8 +9,6 @@ import type {
   VerificationRow,
   WorkspaceNameRow,
 } from '../db/stats-reader.js';
-
-const parseCost = (raw: string | null): Cost | null => (raw ? (JSON.parse(raw) as Cost) : null);
 
 function dayBucket(ts: number): number {
   const d = new Date(ts);
@@ -147,7 +145,6 @@ export function guardrailTripsByDimension(trips: GuardrailTripRow[]): Record<str
   return counts;
 }
 
-/** The Attempt slice the per-Workspace breakdown needs from each in-range row. */
 export interface WorkspaceAttempt {
   taskId: number | null;
   /** Present on Epic-owned Attempts; Task ownership resolves through taskWorkspaces. */

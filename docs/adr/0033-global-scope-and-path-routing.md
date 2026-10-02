@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-09-15
 
+Current status (2026-10-02): Global scope and path-based routing are implemented. Global Settings uses `/settings`; Workspace Settings uses `/workspace/:id/settings`.
+
 Refines: 0011-web-ui-and-api-conventions.md (retires the implicit `?view=`
 scheme; changes the Workspace-wide search and `workspaceId`-required list rules
 for Global scope), 0024-operations-worktree-control-surface.md and

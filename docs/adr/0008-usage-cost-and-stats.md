@@ -2,9 +2,10 @@
 
 Status: accepted
 Date: 2026-08-28
-Part of the 2026-08-28 ADR reset (see README.md). Target-state note: metric
-code still reads pre-reset Run tables until the ADR-0001 epic re-keys them to
-Attempts.
+Reconciled: 2026-10-02. Measured agent duration is persisted per Attempt; missing historical measurements use the stated fallback.
+
+Part of the 2026-08-28 ADR reset (see README.md). Metrics read the current
+Attempt schema; the Run-to-Attempt migration completed in epic #390.
 
 ## Usage comes from native session logs
 
@@ -53,11 +54,14 @@ silently reprices history, so the three contested ones are locked here:
 2. **Active-execution duration** = **the sum of agent time only** — the time
    agents (builder, critic, conflict-resolve turns) were actually working an
    Attempt. Time not spent with agents never counts: scheduling waits, git
-   operations, merge/post-merge checks, and escalated idle time are all
+   operations, command verification, and escalated idle time are all
    excluded. Reported p50 / p95; where agent-time facts are missing
-   (historical rows), wall-clock start→finish is the recorded fallback, and
-   the percentile reporting keeps a minority of fallbacks from moving the
-   headline.
+   (historical rows or interrupted executions with incomplete timing),
+   wall-clock start→finish is the fallback. Those fallback values can affect
+   the reported percentiles. New Attempt rows accumulate measured agent-turn
+   duration; zero means measured no-agent work, while null identifies missing
+   or incomplete measurement. Parallel critic durations are summed, rather
+   than treated as elapsed wall-clock time.
 3. **Failure rate** = failed Attempts over total Attempts, at Attempt grain:
    a **failed Attempt counts, and a review rejection is a failed Attempt**
    (the loop's uniform outcome — command fail, critic reject, and

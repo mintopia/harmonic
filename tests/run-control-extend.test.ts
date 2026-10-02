@@ -16,6 +16,7 @@ function runningAttempt(over: Partial<TaskAttemptRow> = {}): TaskAttemptRow {
     state: 'running',
     startedAt: 1_000,
     endedAt: null,
+    agentDurationMs: 0,
     feedback: null,
     continuation: null,
     reason: null,

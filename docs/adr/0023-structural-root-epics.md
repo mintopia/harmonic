@@ -2,6 +2,7 @@
 
 Status: accepted
 Date: 2026-09-03
+Reconciled: 2026-10-02. Structural-root identification is implemented on the stored Epic model in ADR-0018.
 
 Amends ADR-0016 (see "Amends" below).
 

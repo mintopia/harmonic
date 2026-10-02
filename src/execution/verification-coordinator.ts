@@ -20,7 +20,7 @@ import type { VerificationAttemptStore } from '../domain/verification-attempts.j
 import { resolveVerifiers, type ResolvedVerifiers } from '../domain/setting-override.js';
 import { pricesForHarness } from '../domain/pricing.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
-import { createAcpCriticDrive, runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
+import { createAcpCriticDrive, runCritic, runTimedCriticDrive, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
 import type { SpanContext } from '@opentelemetry/api';
 import { fireAndForget } from '../error-handling.js';
@@ -318,6 +318,7 @@ export class VerificationCoordinator {
           ...(this.deps.criticDrive ? { drive: this.deps.criticDrive } : {}),
           ...(archive ? { archive } : {}),
           onUpdate: this.relayCriticUpdateAsBuilderEvent(run.id),
+          onAgentDurationMs: (ms) => this.deps.attempts.addAgentDuration(run.id, ms),
         });
         const persisted = await this.deps.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
         this.captureCriticArtifacts({
@@ -424,6 +425,7 @@ export class VerificationCoordinator {
         attributes: { 'task.id': task.id, 'attempt.id': run.id },
         ...(this.deps.criticDrive ? { drive: this.deps.criticDrive } : {}),
         onUpdate: this.relayCriticUpdateAsBuilderEvent(run.id),
+        onAgentDurationMs: (ms) => this.deps.attempts.addAgentDuration(run.id, ms),
       });
       const persisted = await this.deps.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
       this.captureCriticArtifacts({
@@ -499,7 +501,7 @@ export class VerificationCoordinator {
     });
     try {
       const drive = this.deps.criticDrive ?? createAcpCriticDrive();
-      const result = await drive.run({
+      const result = await runTimedCriticDrive(drive, {
         harness,
         harnessId,
         model,
@@ -523,7 +525,7 @@ export class VerificationCoordinator {
           await this.deps.attempts.update(input.attempt.id, { sessionId, sessionRowId: session.id });
           await this.deps.attempts.updateStep(step.id, { logLocator: `session:${session.id}` });
         },
-      });
+      }, (ms) => this.deps.attempts.addAgentDuration(input.attempt.id, ms));
       if (await Git.currentBranch(worktreePath) !== branch) {
         throw new Error(`Epic verification resolver left '${branch}'`);
       }

@@ -3,6 +3,10 @@
 Status: accepted
 Date: 2026-09-04
 
+Current status (2026-10-02): The app-wide permission alert is implemented;
+`tests/app-smoke.test.ts` covers showing and clearing it outside Activity.
+The "Until it ships" consequence below records the interim state at acceptance.
+
 Relates to ADR-0010 (the Activity/Operations split).
 Refined by: 0033-global-scope-and-path-routing.md (Activity is Scope-aware —
 Workspace-filtered in Workspace scope, instance-wide in Global scope — rather than
@@ -67,11 +71,9 @@ now" line on the Activity surface.
 - Activity loses its action wiring (permission/resolve/stop) and its
   transcript/drill-in; it becomes a pure snapshot+firehose glance that deep-links
   out. Simpler, and back in line with CONTEXT.md's Activity definition.
-- The **global permission alert** is new app-shell behaviour (it needs
-  pending-permission state available app-wide, not just on Activity) — tracked as
-  its own ticket. Until it ships, a permission is answered by deep-linking to the
-  Task page: a click-count regression, never a loss of capability, and the review
-  gate stays sacred.
+- The **global permission alert** needs pending-permission state available
+  app-wide, not just on Activity. It shipped after this ADR; the Task page
+  remains the place where the operator answers the request.
 - `lastTool` is a small addition to the server snapshot, DTO, and the `ProcessNode`
   type; the UI renders a single tool per node, no trail.
 - Tradeoff accepted: unblocking an Agent is one deep-link from Activity rather

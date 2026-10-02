@@ -2,6 +2,8 @@
 
 Status: accepted
 Date: 2026-08-31
+Reconciled: 2026-10-02. ADR-0017 makes this the sole Epic detail view; ADR-0018 supplies persistence and ADR-0033 the scoped route.
+
 Refined by: 0016-epics-are-containers.md (epics surface from the derived-epic model, not `isEpic` task rows), 0017-epic-summary-page-replaces-board-focus.md (the summary page is the only Epic surface, reached at `/epic/:ref`; the board's epic-focus mode is removed)
 
 ## Context
@@ -23,12 +25,13 @@ Board well, but two gaps have opened:
 
 ## Decision
 
-Add a dedicated **Epic summary page**, complementary to (not a replacement for)
-ADR-0011's board-of-tasks presentation, which stays for active-epic work on the
-Board.
+The dedicated **Epic summary page** is the only rich Epic detail view
+(ADR-0017). Active Epics remain visible as bands on the Board; clicking one
+opens `/workspace/:id/epic/:ref` (ADR-0033).
 
-- **Reached by** opening an Epic ticket from the Tasks list (`isEpic` rows) or
-  the Graph. The Board's epic-focus mode is unchanged.
+- **Reached by** the Board Epic header, Tasks-list Epic row, Graph, or
+  member breadcrumb. It reads a stored Epic by Workspace and tracker ref
+  (ADR-0018), never by a synthetic Task id.
 - **Layout** mirrors the Ticket-page shell: header (title, an `EPIC` tag, state),
   description, then a body of —
   - the **integration progress bar** shown **as-is** from ADR-0011 / ADR-0001:
@@ -50,19 +53,16 @@ Board.
 
 ## Consequences
 
-- The Epic read model and stats scope must resolve **closed** Epics, which today
-  derive only from open tickets — a bounded server-side fold (ADR-0007's
-  event-loop guarantee), not a new write path.
-- **Two Epic surfaces coexist**: the Board's board-of-tasks (active work) and the
-  summary page (any Epic, at-a-glance + history). They read the **same
-  server-authoritative integration facts** and share the merged/merging
-  vocabulary, so they must not drift.
-- The child-tasks table reuses the lean Tasks-list row contract and the `isEpic`
-  flag already shipped; no bespoke row shape.
+- The Epic read model resolves open and historical Epics from stored
+  records. Membership comes from current tracker structure or the retained
+  integration snapshot (ADR-0018).
+- The Board band and summary page share server-authoritative integration
+  facts. The old single-Epic Board focus view has been removed (ADR-0017).
+- The child-tasks table reuses the lean Tasks-list row contract.
 - Integration state stays server-only (ADR-0011): the progress bar renders what
   the read model reports and never re-derives it from child states.
 
 ## Supersedes
 
-None. Refines ADR-0011's Epic presentation by adding a complementary summary
-surface; the board-of-tasks presentation is unchanged.
+Originally extended ADR-0011. ADR-0017 subsequently made this the sole Epic
+detail view, ADR-0018 supplied stored identity, and ADR-0033 scoped its URL.

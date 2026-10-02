@@ -3,6 +3,11 @@
 Status: accepted
 Date: 2026-09-04
 
+Current status (2026-10-02): Implemented in `src/execution/harness/opencode.ts`
+and the four-entry `HARNESS_IDS` in `src/config.ts`. The 2026-09-05 amendment
+below is authoritative for unattended access and transcript export; the
+original `--auto` mechanism in §2 is retained as decision history.
+
 Amends ADR-0022 (see "Amends" below).
 
 ## Context
@@ -76,7 +81,7 @@ Two §1/§2 details were wrong in practice and are corrected here:
   transcript. (`opencode export` truncates piped stdout at the 64KB pipe buffer,
   so the Adapter captures it via a temp file.)
 
-### 2. Unattended access via `--auto`, not a permission mode
+### 2. Original unattended-access proposal (replaced by the 2026-09-05 amendment)
 
 OpenCode has no full-access ACP mode to flip into, so unattended access comes
 from the **CLI flag `--auto`** (allow-all-except-explicitly-denied → the agent
@@ -150,8 +155,8 @@ Harness still has exactly one Collector.
   metadata.
 - A new Usage Collector reads a SQLite store (Copilot's `node:sqlite` pattern,
   a bounded `WHERE session_id = ?` read).
-- No code ships with this ADR; it records the decided shape. Delivery is the
-  epic and its child tickets.
+- No code shipped when this ADR was accepted; the implementation status is
+  recorded above.
 
 ## Amends
 

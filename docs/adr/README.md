@@ -1,20 +1,49 @@
-# Harmonic ADRs — the 2026-08-28 reset
+# Harmonic architecture decisions
 
-On 2026-08-28 the accumulated 49-ADR trail was replaced by the **12 definitive
-ADRs** in this directory. The old set had grown amendment chains, superseded
-halves, and residue from an unapproved reliability design; the reset gives one
-authoritative document per topic. The full pre-reset set — including its final
-amendment notes and the review-audited reset plan (`ADR-RESET-PLAN.md`,
-`ADR-RESET-REVIEW-LOG.md` at the repo root) — is preserved in git at annotated
-tag **`adr-reset-2026-08-28`** (commit `1411730a8043`).
+The current set contains **44 ADRs**, reconciled on **2026-10-02**. They record
+accepted decisions, their rationale, and explicit amendments. A Context section
+may describe a historical defect; it does not by itself identify an open issue.
+Current-status notes and the operative Decision sections describe the current
+contract. Later ADRs override only the clauses they identify.
 
-**Status banner — target state.** These ADRs describe the decided target
-model. Until the ADR-0001 implementation epic ships, code, tables, and API
-fields still carry pre-reset vocabulary (Run, phases, candidate refs, the
-freshness gate); where they disagree, **the ADRs win**, and a code comment on
-not-yet-torn-down machinery is marked `legacy until ADR-1 epic`.
+The ADR-0001 execution teardown shipped in
+[epic #390](https://github.com/mintopia/harmonic/issues/390), closed 2026-08-29.
+The architecture-remediation epics
+[#444](https://github.com/mintopia/harmonic/issues/444) and
+[#460](https://github.com/mintopia/harmonic/issues/460), and code-quality epic
+[#647](https://github.com/mintopia/harmonic/issues/647), are also complete.
+Their review grades and original task lists are historical, not a remaining
+architecture backlog.
 
-## The definitive set
+This reconciliation closes the identified implementation gaps: Epic
+post-merge commands share the administrative merge worktree, Stats accumulates
+measured agent-turn time and computes aggregates in its worker, and startup no
+longer runs the pre-Workspace configuration/association backfill. Historical
+Attempts without timing measurements retain the documented wall-clock fallback.
+
+## Reading amended decisions
+
+| Topic | Foundation | Current amendments |
+|---|---|---|
+| Execution and escalation | 0001, 0002, 0005 | 0020 transition rules; 0027 pause/resume; 0038 step-aware Accept and fresh-Attempt Reject |
+| Merge placement and publication | 0001 | 0039 administrative worktrees and base synchronization; 0040 reconciliation and atomic publication |
+| Epics | 0004, 0015, 0016 | 0017 summary page; 0018 stored identity; 0023 structural roots; 0028 Epic Attempts; 0039 all-direct completion |
+| Verification | 0003 | 0028 stage lists; 0031 ordering; 0037 additive overlays; 0038 Step overrides; 0039 post-merge checkout |
+| Configuration and harnesses | 0009 | 0022 baseline/global/workspace layering; 0025 OpenCode; 0036 unattended permission modes; 0037 verifier overlays |
+| Conversations and navigation | 0006, 0011 | 0026 read-only Activity; 0029 transcript view; 0033 scoped routes; 0035 eager command discovery |
+| Persistence and evidence | 0007, 0008 | 0014 fleet Stats; 0042 managed-upgrade snapshots; 0044 Task Archives and Exports |
+| Distribution and operation | 0010, 0012 | 0013 releases; 0024 worktree controls; 0030 updates; 0034 services; 0041 atomic installs; 0042 install modes and rollback; 0043 toolchain |
+
+## Reset archive
+
+On 2026-08-28 the previous 49-document set was replaced by the first 12 ADRs
+in this directory. Subsequent decisions extended the set to its current size.
+The old documents and reset review records remain at git tag
+`adr-reset-2026-08-28` (commit `1411730a8043`). A pre-reset ADR citation resolves
+there, never to a same-numbered document in the current set. The mapping below
+is historical and retains the terminology used at the reset.
+
+## Current decision index
 
 | # | ADR |
 |---|---|

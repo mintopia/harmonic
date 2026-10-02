@@ -2,17 +2,22 @@
 
 Status: accepted
 Date: 2026-09-10
-Implementation pending (epic to follow). Extends ADR-0006 (Conversations) and
+Current status (2026-10-02): The v1 page and shared transcript are implemented
+in `web/src/components/ConversationLauncher.tsx`; highlighting lives in
+`web/src/syntax.ts`. ADR-0033 replaced the `view=conversations` URL described
+below with path routing, and ADR-0035 shipped the slash-command part of v2.
+Extends ADR-0006 (Conversations) and
 ADR-0011 (Web UI conventions); changes no lifecycle, table, or API contract.
 Shipped in phases — v1 (rendering + shell) is the committed scope here; v2
-(composer) and v3 (work-session) are recorded as intent, not built.
+(composer) and v3 (work-session) were recorded as later intent.
 
 ## The Conversation surface is promoted to a first-class view
 
 A Conversation today is reachable only as a docked overlay (`route.conversation`).
 It becomes a **top-level, workspace-scoped view** — its own entry in the nav
-rail, its own `view=conversations` route, deep-linkable to a specific
-Conversation. This is a **client route**, not an API `view`/`mode` flag: the
+rail, deep-linkable to a specific Conversation. ADR-0033 later replaced the
+original `view=conversations` query route with `/workspace/<id>/conversations`.
+This is a **client route**, not an API `view`/`mode` flag: the
 `conversations` list endpoint stays lean and paginated exactly as ADR-0011
 requires, and the conversation id rides the existing URL params (ADR-0009 makes
 Conversations workspace-scoped, so the route is too).

@@ -12,7 +12,7 @@ import type { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import type { TaskArchive } from '../archive/task-archive.js';
 import type { TranscriptCapture } from './transcript-capture.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
-import { createAcpCriticDrive, runCritic, criticAttemptToInput } from '../verification/critic.js';
+import { createAcpCriticDrive, runCritic, runTimedCriticDrive, criticAttemptToInput } from '../verification/critic.js';
 import { combineVerdicts } from '../verification/combine.js';
 import { integrationBranchName } from './epic-coordinator.js';
 import { logger } from '../logger.js';
@@ -202,6 +202,7 @@ export class MergeCoordinator {
    */
   async mergeEpicIntegration(input: EpicIntegrationMergeInput): Promise<MergePolicyOutcome> {
     const config = this.deps.getConfig();
+    const epicAttempt = (await this.deps.attempts.listForEpic({ workspaceId: input.workspaceId, epicRef: input.epicRef })).at(-1);
     const host = (await this.deps.listWorkingTasks()).find((task) => task.baseBranch === input.integrationBranch);
     const harnessId = host?.harness ?? config.defaults.harness;
     const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
@@ -216,14 +217,19 @@ export class MergeCoordinator {
               `Merging the Epic integration branch \`${ctx.taskBranch}\` into \`${ctx.baseBranch}\` conflicted in:\n`,
             ctx,
           );
-          await drive.run({
+          const request = {
             harness,
             harnessId,
             model,
             cwd: ctx.baseDir,
             prompt,
             timeoutMs: RESOLVE_TURN_TIMEOUT_MS,
-          });
+          };
+          if (epicAttempt) {
+            await runTimedCriticDrive(drive, request, (ms) => this.deps.attempts.addAgentDuration(epicAttempt.id, ms));
+          } else {
+            await drive.run(request);
+          }
         } catch (err) {
           reportFailure(err, {
             op: 'runner.mergeEpicIntegration.resolveConflictTurn',
@@ -292,14 +298,14 @@ export class MergeCoordinator {
               `Merging \`${ctx.taskBranch}\` into \`${ctx.baseBranch}\` conflicted in:\n`,
             ctx,
           );
-          await drive.run({
+          await runTimedCriticDrive(drive, {
             harness,
             harnessId,
             model: task.model,
             cwd: ctx.baseDir,
             prompt,
             timeoutMs: RESOLVE_TURN_TIMEOUT_MS,
-          });
+          }, (ms) => this.deps.attempts.addAgentDuration(run.id, ms));
         } catch (err) {
           reportFailure(err, {
             op: 'runner.mergeDeps.resolveConflictTurn',
@@ -367,6 +373,7 @@ export class MergeCoordinator {
             ...(this.deps.criticDrive ? { drive: this.deps.criticDrive } : {}),
             ...(archive ? { archive } : {}),
             onUpdate: this.deps.criticUpdateRelay(run.id),
+            onAgentDurationMs: (ms) => this.deps.attempts.addAgentDuration(run.id, ms),
           });
           const persisted = await this.deps.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
           const criticSessionId = attempt.sessionId;

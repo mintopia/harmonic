@@ -650,12 +650,12 @@ Verification** (`verify.epic.preMerge`). Each stage is a pair of lists —
 **verify commands** (ordered, fail-fast, one Verification Step each) that
 **gate** the **Critics** (parallel, all-must-pass, every critic's feedback
 collected before the retry). A stage with zero verifiers passes; resolved
-global default with **per-stage, per-list** Workspace override. Any command
+global default with **per-stage, id-keyed** Workspace verifier overlays (ADR-0037). Any command
 fail or critic reject/*inconclusive* is a **failed Attempt** — feedback into
 the next Attempt, counter +1 (ADR-0003, ADR-0028). The verdict attaches to the
 Attempt, never to a SHA (ADR-0001); Merge never re-checks it. Everything runs
-**in place** in the live worktree; the one detached check is the Epic's
-merge-to-default post-merge check.
+**in place** in the worktree for that stage. Post-merge commands share the
+administrative worktree where their merge was built (ADR-0039).
 _Avoid_: review gate (deleted), Review Task / single critic (superseded — a
 Critic is a listable verifier now), validation, lint, test (more than either)
 
@@ -674,11 +674,10 @@ _Avoid_: review, reviewer Task (the single-critic name, superseded)
 
 **Continuation rule**:
 The deterministic choice at Attempt N+1: continue the prior Session (feedback
-appended) iff its context usage is below `contextReuseThreshold` (config,
-default 0.2) AND it is warm within a fixed per-Harness constant seeded from
-known provider cache TTLs; otherwise a fresh Session seeded by the condensed
-summary (issue #170 machinery) plus the feedback. The repo is the diff —
-nothing else is passed.
+appended) when its context usage is below the configured token limit and
+its cache is estimated warm under that Harness's configured warm window.
+Otherwise, start a fresh Session with the condensed continuation and feedback.
+Manual resume may explicitly load a cold Session (ADR-0027).
 _Avoid_: session reuse policy, cache gate
 
 **Usage**:
@@ -1099,26 +1098,26 @@ _Avoid_: alert, toast (the transient display, not the record), message
 A named, revocable bearer token for the REST API and MCP server, created
 and managed by the operator. Full scope by default (drives the whole fleet);
 a **read** scope mints a read-only variant. Listing keys shows both — never
-the ephemeral Run/Conversation Keys.
-_Avoid_: token (ambiguous with Run Key)
+the ephemeral Attempt/Conversation Keys.
+_Avoid_: token (ambiguous with Attempt Key)
 
 **Read Key**:
 A read-scoped API Key for a viz client: it may GET tasks, runs, and Maps and
 open the firehose WebSocket (filtered to task/run/run-event/run-usage — no
 Conversation or permission traffic), but every mutation and the operator surface (keys,
 config, channels, Conversations) is blocked. Operator-created and listed like
-a full API Key, unlike the ephemeral Run/Conversation Keys.
+a full API Key, unlike the ephemeral Attempt/Conversation Keys.
 _Avoid_: viz key, guest key
 
-**Run Key**:
+**Attempt Key**:
 An ephemeral bearer token Harmonic mints per execution and injects into the
 spawned Harness so agents reach MCP without setup. Deleted outright when
 the execution finishes (a startup sweep removes orphans); never listed or
-shown in the UI. (Renames to Attempt Key with the ADR-0001 epic.)
+shown in the UI.
 _Avoid_: scoped key, per-run API key
 
 **Conversation Key**:
-The Conversation analogue of a Run Key — an ephemeral bearer token minted
+The Conversation analogue of an Attempt Key — an ephemeral bearer token minted
 per Conversation and injected into its Harness (same `HARMONIC_API_KEY` /
 `HARMONIC_MCP_URL` mechanism) so the chatting agent can reach MCP (e.g.
 create Tasks mid-conversation). Deleted when the Conversation ends; the

@@ -1,6 +1,6 @@
 import { mergeUsage, type AttemptUsage } from '../execution/usage.js';
-import type { Cost } from '../domain/pricing.js';
-import { isExecutionFailure } from '../domain/attempt-failure.js';
+import type { Cost } from './pricing.js';
+import { isExecutionFailure } from './attempt-failure.js';
 
 /** One day's bucket in the Stats time series (by run start time). */
 export interface DaySeriesEntry {
@@ -18,7 +18,6 @@ export interface DaySeriesEntry {
   fails: number;
 }
 
-/** The minimum a run needs to be bucketed and aggregated here. */
 export interface DaySeriesRun {
   /** Epoch ms the run started. */
   startedAt: number;

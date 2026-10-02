@@ -38,6 +38,7 @@ CREATE TABLE `attempts` (
 	`state` text DEFAULT 'running' NOT NULL,
 	`started_at` integer NOT NULL,
 	`ended_at` integer,
+	`agent_duration_ms` integer,
 	`feedback` text,
 	`continuation` text,
 	`reason` text,

@@ -1,6 +1,7 @@
 import type { TaskArchive } from '../archive/task-archive.js';
 import type { AppConfig } from '../config.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
+import type { AttemptStore } from '../domain/attempts.js';
 import { DomainError } from '../domain/errors.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
@@ -17,10 +18,11 @@ export function createPostMergeCheck(deps: {
   workspaces: WorkspaceService;
   settingsStore: SettingsStore;
   verificationAttempts: VerificationAttemptStore;
+  attempts?: AttemptStore | undefined;
   criticDrive?: CriticHarnessDrive | undefined;
   archive?: TaskArchive | undefined;
 }): (input: { task: TaskRow; run: AttemptRow; mergeOid: string; baseDir: string }) => Promise<{ pass: boolean; output: string }> {
-  const { workspaces, settingsStore, verificationAttempts, criticDrive, archive: taskArchive } = deps;
+  const { workspaces, settingsStore, verificationAttempts, attempts, criticDrive, archive: taskArchive } = deps;
   return async ({
     task,
     run,
@@ -83,6 +85,7 @@ export function createPostMergeCheck(deps: {
         attributes: { 'task.id': task.id, 'attempt.id': run.id },
         ...(criticDrive ? { drive: criticDrive } : {}),
         ...(archive ? { archive } : {}),
+        ...(attempts ? { onAgentDurationMs: (ms: number) => attempts.addAgentDuration(run.id, ms) } : {}),
       });
       await verificationAttempts.append(run.id, criticAttemptToInput(attempt));
       return attempt;

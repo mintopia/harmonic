@@ -75,11 +75,11 @@ export interface StatsReadResult {
 }
 
 export type StatsWorkerRequest =
-  | { kind: 'read'; id: number; range: StatsRange }
+  | { kind: 'compute'; id: number; range: StatsRange }
   | { kind: 'probe'; id: number; iterations: number }
   | { kind: 'close' };
 export type StatsWorkerResponse =
-  | { kind: 'result'; id: number; result: StatsReadResult }
+  | { kind: 'result'; id: number; result: unknown }
   | { kind: 'probe-result'; id: number; value: number }
   | { kind: 'error'; id: number; message: string; stack?: string }
   | { kind: 'closed' }
@@ -97,8 +97,8 @@ export function invalidProbeIterationsReason(iterations: number): string | null 
 }
 
 type PendingRequest = {
-  kind: 'read';
-  resolve: (result: StatsReadResult) => void;
+  kind: 'compute';
+  resolve: (result: unknown) => void;
   reject: (error: Error) => void;
   timer?: NodeJS.Timeout;
 } | {
@@ -128,57 +128,11 @@ export function isStatsWorkerRequest(value: unknown): value is StatsWorkerReques
   if (!isRecord(value) || typeof value.kind !== 'string') return false;
   if (value.kind === 'close') return true;
   if (!isId(value.id)) return false;
-  if (value.kind === 'read') return isStatsRange(value.range);
+  if (value.kind === 'compute') return isStatsRange(value.range);
   return value.kind === 'probe'
     && typeof value.iterations === 'number'
     && Number.isSafeInteger(value.iterations)
     && value.iterations > 0;
-}
-
-function isTotalsDimension(value: unknown): boolean {
-  return isRecord(value) && Object.values(value).every(
-    (bucket) => isRecord(bucket) && Object.values(bucket).every((count) => typeof count === 'number'),
-  );
-}
-
-function isStatsReadResult(value: unknown): value is StatsReadResult {
-  return isRecord(value)
-    && Array.isArray(value.rows)
-    && value.rows.every(isRecord)
-    && Array.isArray(value.attemptReasons)
-    && value.attemptReasons.every(
-      (row) => isRecord(row) && typeof row.attemptId === 'number' && (row.reason === null || typeof row.reason === 'string'),
-    )
-    && isRecord(value.toolTotals)
-    && isTotalsDimension(value.toolTotals.byTask)
-    && isTotalsDimension(value.toolTotals.byEpic)
-    && Array.isArray(value.workspaces)
-    && value.workspaces.every(
-      (row) => isRecord(row) && typeof row.id === 'number' && typeof row.name === 'string' && typeof row.color === 'string',
-    )
-    && Array.isArray(value.taskWorkspaces)
-    && value.taskWorkspaces.every(
-      (row) => isRecord(row) && typeof row.taskId === 'number' && (row.workspaceId === null || typeof row.workspaceId === 'number'),
-    )
-    && Array.isArray(value.settleEvents)
-    && value.settleEvents.every(
-      (row) =>
-        isRecord(row)
-        && typeof row.taskId === 'number'
-        && typeof row.ts === 'number'
-        && (row.kind === 'merged' || row.kind === 'escalated')
-        && (row.gate === null || typeof row.gate === 'string'),
-    )
-    && Array.isArray(value.settledTaskAttempts)
-    && value.settledTaskAttempts.every(
-      (row) => isRecord(row) && typeof row.taskId === 'number' && (row.cost === null || typeof row.cost === 'string'),
-    )
-    && Array.isArray(value.verifications)
-    && value.verifications.every(
-      (row) => isRecord(row) && typeof row.mechanism === 'string' && typeof row.verdict === 'string',
-    )
-    && Array.isArray(value.guardrailTrips)
-    && value.guardrailTrips.every((row) => isRecord(row) && typeof row.attemptId === 'number' && typeof row.dimension === 'string');
 }
 
 function isStatsWorkerResponse(value: unknown): value is StatsWorkerResponse {
@@ -186,7 +140,7 @@ function isStatsWorkerResponse(value: unknown): value is StatsWorkerResponse {
   if (value.kind === 'closed') return true;
   if (value.kind === 'invalid') return typeof value.message === 'string';
   if (!isId(value.id)) return false;
-  if (value.kind === 'result') return isStatsReadResult(value.result);
+  if (value.kind === 'result') return isRecord(value.result);
   if (value.kind === 'probe-result') return typeof value.value === 'number' && Number.isFinite(value.value);
   return value.kind === 'error'
     && typeof value.message === 'string'
@@ -202,7 +156,6 @@ export function resolveStatsWorkerEntry(): { url: URL; execArgv?: string[] } {
     : { url: jsEntry };
 }
 
-/** Typed RPC client for the one heavy read Harmonic currently runs off-loop. */
 export class StatsWorkerClient {
   readonly #worker: Worker;
   readonly #defaultTimeoutMs: number;
@@ -240,12 +193,12 @@ export class StatsWorkerClient {
     });
   }
 
-  read(range: StatsRange, opts?: QueryTimeoutOptions): Promise<StatsReadResult> {
+  compute(range: StatsRange, opts?: QueryTimeoutOptions): Promise<unknown> {
     if (this.#closed) return Promise.reject(new Error('Stats worker is closed'));
     const id = this.#nextId++;
-    return new Promise<StatsReadResult>((resolve, reject) => {
+    return new Promise<unknown>((resolve, reject) => {
       const timeoutMs = opts?.timeoutMs ?? this.#defaultTimeoutMs;
-      const pending: PendingRequest = { kind: 'read', resolve, reject };
+      const pending: PendingRequest = { kind: 'compute', resolve, reject };
       if (timeoutMs > 0) {
         pending.timer = setTimeout(() => {
           this.#pending.delete(id);
@@ -254,7 +207,7 @@ export class StatsWorkerClient {
         pending.timer.unref?.();
       }
       this.#pending.set(id, pending);
-      this.#worker.postMessage({ kind: 'read', id, range } satisfies StatsWorkerRequest);
+      this.#worker.postMessage({ kind: 'compute', id, range } satisfies StatsWorkerRequest);
     });
   }
 
@@ -313,7 +266,7 @@ export class StatsWorkerClient {
     if (!pending) return;
     this.#pending.delete(message.id);
     if (pending.timer) clearTimeout(pending.timer);
-    if (message.kind === 'result' && pending.kind === 'read') pending.resolve(message.result);
+    if (message.kind === 'result' && pending.kind === 'compute') pending.resolve(message.result);
     else if (message.kind === 'probe-result' && pending.kind === 'probe') pending.resolve(message.value);
     else if (message.kind === 'error') {
       const error = new Error(message.message);

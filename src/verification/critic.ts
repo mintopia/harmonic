@@ -47,11 +47,33 @@ export interface CriticDriveRequest {
   onSessionCreated?: (sessionId: string, initialize: AcpInitializeResult) => Promise<void> | void;
   /** Reload this prior ACP session instead of starting a fresh one. */
   continueSessionId?: string;
+  /** Elapsed ACP prompt time; the real drive reports zero if startup fails before a prompt. */
+  onAgentDurationMs?: (durationMs: number) => Promise<void>;
 }
 
 /** The injectable seam between {@link runCritic} and an actual harness spawn. */
 export interface CriticHarnessDrive {
   run(req: CriticDriveRequest): Promise<CriticDriveResult>;
+}
+
+export async function runTimedCriticDrive(
+  drive: CriticHarnessDrive,
+  req: CriticDriveRequest,
+  record: (durationMs: number) => Promise<void>,
+): Promise<CriticDriveResult> {
+  const started = performance.now();
+  let recorded = false;
+  try {
+    return await drive.run({
+      ...req,
+      onAgentDurationMs: async (ms) => {
+        recorded = true;
+        await record(ms);
+      },
+    });
+  } finally {
+    if (!recorded) await record(Math.round(performance.now() - started));
+  }
 }
 
 function criticSpawnEnv(
@@ -111,6 +133,7 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
       const kill = (): void => killProcessGroup(child);
 
       let timer: NodeJS.Timeout | undefined;
+      let agentTimingRecorded = false;
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
           kill();
@@ -137,12 +160,20 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
           await Promise.race([driver.setMode(mode), timeout]);
         }
 
-        const promptResult = await Promise.race([driver.prompt([{ type: 'text', text: req.prompt }]), timeout]);
+        const promptStarted = performance.now();
+        let promptResult: Awaited<ReturnType<AcpDriver['prompt']>>;
+        try {
+          promptResult = await Promise.race([driver.prompt([{ type: 'text', text: req.prompt }]), timeout]);
+        } finally {
+          agentTimingRecorded = true;
+          await req.onAgentDurationMs?.(Math.round(performance.now() - promptStarted));
+        }
         return { output, permissionRequests, sessionId: sessionId ?? null, ...(promptResult.usage ? { usage: promptResult.usage } : {}) };
       } finally {
         if (timer) clearTimeout(timer);
         driver.dispose();
         kill();
+        if (!agentTimingRecorded) await req.onAgentDurationMs?.(0);
       }
     },
   };
@@ -174,6 +205,7 @@ export interface RunCriticArgs {
   /** Receives the prompt, the ACP update stream and the native transcript for the Archive. */
   archive?: StepArchiveWriter;
   transcriptRetryDelaysMs?: number[];
+  onAgentDurationMs?: (durationMs: number) => Promise<void>;
 }
 
 export interface CriticAttempt {
@@ -277,7 +309,7 @@ async function runCriticArchived(args: RunCriticArgs, archive: StepArchiveWriter
         }
       : undefined;
   try {
-    const result = await drive.run({
+    const request: CriticDriveRequest = {
       harness: args.harness,
       harnessId: args.harnessId,
       model: args.critic.model,
@@ -285,7 +317,10 @@ async function runCriticArchived(args: RunCriticArgs, archive: StepArchiveWriter
       prompt,
       timeoutMs,
       ...(onUpdate ? { onUpdate } : {}),
-    });
+    };
+    const result = args.onAgentDurationMs
+      ? await runTimedCriticDrive(drive, request, args.onAgentDurationMs)
+      : await drive.run(request);
     output = result.output;
     sessionId = result.sessionId ?? null;
     usage = result.usage;

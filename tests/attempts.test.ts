@@ -51,6 +51,21 @@ describe('AttemptStore', () => {
     expect(second.state).toBe('running');
   });
 
+  it('accumulates agent turns once per turn across a resumed task attempt', async () => {
+    const run = await attempts.create(taskId);
+    await Promise.all([attempts.addAgentDuration(run.id, 12), attempts.addAgentDuration(run.id, 18)]);
+    expect((await attempts.get(run.id)).agentDurationMs).toBe(30);
+    expect((await attempts.create(taskId)).agentDurationMs).toBe(30);
+    await expect(attempts.measureAgentTurn(run.id, async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      throw new Error('failed turn');
+    })).rejects.toThrow('failed turn');
+    expect((await attempts.get(run.id)).agentDurationMs).toBeGreaterThan(30);
+    await attempts.update(run.id, { agentDurationMs: null });
+    await attempts.addAgentDuration(run.id, 5);
+    expect((await attempts.get(run.id)).agentDurationMs).toBeNull();
+  });
+
   it('numbers and lists an Epic timeline independently of its Task attempts', async () => {
     const workspace = new WorkspaceService(db, settingsStore);
     const workspaceId = (await workspace.create({ name: 'Epic workspace', workingDir: dir, trackerEnabled: true })).id;
@@ -58,10 +73,12 @@ describe('AttemptStore', () => {
     await tasks.syncEpics(workspaceId, [{ ref: 526, kind: 'epic' }]);
 
     const first = await attempts.createForEpic({ workspaceId, epicRef: 526 });
+    await attempts.addAgentDuration(first.id, 25);
     await attempts.finish(first.id, 'passed');
     const second = await attempts.createForEpic({ workspaceId, epicRef: 526 });
 
-    expect(first).toMatchObject({ taskId: null, workspaceId, epicRef: 526, number: 1 });
+    expect((await attempts.get(first.id)).agentDurationMs).toBe(25);
+    expect(first).toMatchObject({ taskId: null, workspaceId, epicRef: 526, number: 1, agentDurationMs: 0 });
     expect(second).toMatchObject({ taskId: null, workspaceId, epicRef: 526, number: 2 });
     expect(await attempts.listForEpic({ workspaceId, epicRef: 526 })).toMatchObject([
       { id: first.id, number: 1, state: 'passed' },

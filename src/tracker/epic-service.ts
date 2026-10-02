@@ -190,11 +190,10 @@ export class TrackerEpicService implements EpicService {
       });
       const integration = new EpicIntegrationRunner({
         workspace,
-        worktreesDir: this.worktreesDir,
         worktrees,
         epics,
         mergeEpicIntegration,
-        resolveWorkspaceVerifiers: () => verification.resolveWorkspaceVerifiers(),
+        resolvePostMergeCommands: async () => (await verification.resolveWorkspaceVerifiers()).epic.preMerge.commands,
       });
       const { epicAttempts, dispatchEpicResolution } = this;
       const resolution = epicAttempts && dispatchEpicResolution

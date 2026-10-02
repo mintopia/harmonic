@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { join } from 'node:path';
 import { parentPort, workerData } from 'node:worker_threads';
 import { totalsForRange } from '../domain/tool-call-aggregates.js';
+import { aggregateStats } from '../domain/stats-computation.js';
 import { attemptEvents, attempts, guardrailEvents, isTaskAttempt, tasks, verificationAttempts, workspaces } from './schema.js';
 import * as schema from './schema.js';
 import {
@@ -173,7 +174,7 @@ port.on('message', (message: unknown) => {
         port.postMessage({ kind: 'probe-result', id: request.id, value } satisfies StatsWorkerResponse);
         return;
       }
-      const result = await readStats(request.range);
+      const result = aggregateStats(await readStats(request.range), request.range);
       port.postMessage({ kind: 'result', id: request.id, result } satisfies StatsWorkerResponse);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);

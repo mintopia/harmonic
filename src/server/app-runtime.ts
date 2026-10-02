@@ -282,6 +282,7 @@ export async function createRuntime(deps: {
     workspaces,
     settingsStore,
     verificationAttempts,
+    attempts,
     criticDrive: opts.criticDrive,
     archive,
   });

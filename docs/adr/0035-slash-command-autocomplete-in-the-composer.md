@@ -3,6 +3,11 @@
 Status: accepted
 Date: 2026-09-16
 
+Current status (2026-10-02): Implemented in
+`web/src/components/conversation/Composer.tsx` and
+`web/src/components/conversation/command-picker-model.ts`; the original
+unshipped consequence below describes the state at acceptance.
+
 Builds on ADR-0005 (ACP harness, Sessions), ADR-0006 (Conversations), and
 ADR-0025 (`commandPrefix`, Harness Capability).
 
@@ -107,5 +112,5 @@ Composer picker must **not** copy that; Escape closes the menu.)
 - New runtime behaviour: a Harness Session is spawned on Composer open (token-
   free; resource cost bounded by the idle timeout).
 - The decorative `/ commands` footer hint becomes real.
-- No code ships with this ADR; it records the decided shape. Delivery is the epic
-  and its child tickets.
+- No code shipped when this ADR was accepted; the current implementation is
+  noted above.

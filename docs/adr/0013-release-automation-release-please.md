@@ -2,6 +2,7 @@
 
 Status: accepted
 Date: 2026-08-30
+Reconciled: 2026-10-02. Release automation is implemented; supported toolchain versions follow ADR-0043.
 
 ## Context
 

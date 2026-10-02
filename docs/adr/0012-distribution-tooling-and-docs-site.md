@@ -2,6 +2,8 @@
 
 Status: accepted
 Date: 2026-08-28
+Reconciled: 2026-10-02. CI includes lint; release, service and upgrade mechanics are detailed in ADR-0013/0034/0041–0043.
+
 Part of the 2026-08-28 ADR reset (see README.md).
 
 ## Distribution is an npm package
@@ -41,8 +43,9 @@ TS 7, and a side-by-side TS 6 toolchain purely for linting is brittle).
 - Existing `// eslint-disable` directives are honoured; `no-unused-vars`
   uses `ignoreRestSiblings` + `^_`; per-file env overrides (node for
   src/scripts/tests, browser for web, vitest for tests).
-- `npm run lint` / `lint:fix`; local-only until CI exists. Reconsider
-  typescript-eslint when it supports the repo's TS major.
+- `npm run lint` / `lint:fix`; CI runs lint alongside typecheck and the
+  coverage suite on the supported Node matrix. Type safety remains a
+  separate TypeScript check.
 
 ## The docs site is Astro Starlight on GitHub Pages
 
@@ -57,10 +60,11 @@ zod route schemas (ADR-0011). Theming is deliberately light. If the reference
 or brand needs outgrow Starlight's plugins, supersede this rather than
 bolting a second generator alongside.
 
-The site's ADR index reflects this reset: a 12-entry index plus a reset
-notice; old ADR-page deep links resolve to a legacy redirect or an
-explanatory 404 pointing at the reset index and the archive tag — never
-silently to a wrong-numbered page.
+The repository ADR index lists the current decision set and its amendment
+relationships. The original 12-document reset has grown; the index must not
+freeze that historical count. Pre-reset ADR numbers refer to the archive
+tag, not to same-numbered current decisions. The docs-site build and
+OpenAPI generation remain separate from editing these repository ADRs.
 
 ## Absorbed at the reset
 

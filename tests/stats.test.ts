@@ -3,7 +3,7 @@ import { attemptEvents, attempts, type AttemptState, attemptToolCalls, guardrail
 import { type GateReason, type SettledTaskAttempt, type SettleEventRow, StatsWorkerClient } from '../src/db/stats-reader.js';
 import { type AttemptUsage } from '../src/execution/usage.js';
 import { EventLoopMonitor, type StallInfo } from '../src/reliability/event-loop-monitor.js';
-import { attemptsPerTask, byWorkspace, costPerMergedTask, gateOutcomes, guardrailTripsByDimension, tasksMergedByDay, verdicts, type WorkspaceAttempt } from '../src/server/stats-aggregates.js';
+import { attemptsPerTask, byWorkspace, costPerMergedTask, gateOutcomes, guardrailTripsByDimension, tasksMergedByDay, verdicts, type WorkspaceAttempt } from '../src/domain/stats-aggregates.js';
 import { startServer, stubHarness, type TestServer } from './helpers.js';
 
 describe('stats-async-path', () => {
@@ -19,7 +19,7 @@ describe('stats-async-path', () => {
       expect(server.app.ctx.statsReader).toBeInstanceOf(StatsWorkerClient);
     });
 
-    it('serves /api/stats through ctx.statsReader.read, with tool calls from their aggregate store', async () => {
+    it('serves /api/stats through ctx.statsReader.compute, with tool calls from their aggregate store', async () => {
       server = await startServer(stubHarness());
       const { ctx } = server.app;
 
@@ -47,7 +47,7 @@ describe('stats-async-path', () => {
       );
       await ctx.asyncDb.write((d) => d.insert(attemptToolCalls).values({ attemptId: attempt.id, toolName: 'Read', count: 3 }).run());
 
-      const readSpy = vi.spyOn(ctx.statsReader, 'read');
+      const readSpy = vi.spyOn(ctx.statsReader, 'compute');
       const res = await server.api('GET', `/api/stats?from=0&to=${now + 1000}`);
 
       expect(res.status).toBe(200);
@@ -85,7 +85,7 @@ describe('stats-async-path', () => {
       await seed(ws.id);
       await seed(other.id);
 
-      const readSpy = vi.spyOn(ctx.statsReader, 'read');
+      const readSpy = vi.spyOn(ctx.statsReader, 'compute');
       const scoped = await server.api('GET', `/api/stats?from=0&to=${now + 1000}&workspaceId=${other.id}`);
 
       expect(scoped.status).toBe(200);
@@ -121,6 +121,55 @@ describe('stats-async-path', () => {
       }
     }, 30_000);
 
+    it('keeps the HTTP event loop responsive while aggregating a large stats range', async () => {
+      server = await startServer(stubHarness());
+      const { ctx } = server.app;
+      const now = Date.now();
+      const ws = (await ctx.asyncDb.read((d) => d.select().from(workspaces).get()))!;
+      const task = await ctx.asyncDb.write((d) =>
+        d.insert(tasks).values({ prompt: 'stats load', state: 'ready', workingDir: '/tmp', createdAt: now, updatedAt: now, workspaceId: ws.id }).returning().get(),
+      );
+      const usage = JSON.stringify({
+        models: Object.fromEntries(Array.from({ length: 80 }, (_, i) => [
+          `model-${i}`,
+          { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        ])),
+        totals: null,
+        toolCalls: {},
+        source: 'session-log',
+      } satisfies AttemptUsage);
+      for (let offset = 0; offset < 2_000; offset += 250) {
+        await ctx.asyncDb.write((d) =>
+          d.insert(attempts).values(Array.from({ length: 250 }, (_, i) => ({
+            taskId: task.id,
+            number: offset + i + 1,
+            state: 'passed' as const,
+            startedAt: now,
+            endedAt: now + 1,
+            usage,
+          }))).run(),
+        );
+      }
+
+      const stalls: StallInfo[] = [];
+      const monitor = new EventLoopMonitor({ probeMs: 10, stallMs: 50, onStall: (stall) => stalls.push(stall) });
+      monitor.start();
+      try {
+        const startedAt = performance.now();
+        const res = await server.api('GET', `/api/stats?from=0&to=${now + 1}`);
+        const elapsedMs = performance.now() - startedAt;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        expect(res.status).toBe(200);
+        expect(res.body.attemptCount).toBe(2_000);
+        expect(elapsedMs).toBeGreaterThan(100);
+        const worstLagMs = stalls.reduce((max, stall) => Math.max(max, stall.lagMs), 0);
+        expect(worstLagMs).toBeLessThan(Math.max(100, elapsedMs / 2));
+      } finally {
+        monitor.stop();
+      }
+    }, 30_000);
+
     it('gracefully closes the Stats worker and rejects later reads', async () => {
       server = await startServer(stubHarness());
       const reader = server.app.ctx.statsReader;
@@ -129,7 +178,7 @@ describe('stats-async-path', () => {
       server = undefined;
 
       expect(closeSpy).toHaveBeenCalledOnce();
-      await expect(reader.read({ from: 0, to: Date.now() })).rejects.toThrow('Stats worker is closed');
+      await expect(reader.compute({ from: 0, to: Date.now() })).rejects.toThrow('Stats worker is closed');
     });
   });
 });
@@ -376,6 +425,26 @@ describe('stats-route', () => {
       expect(body.failedAttempts).toBe(0);
       expect(body.durationMs).toBeNull();
     });
+  });
+
+  it('uses persisted agent-turn duration, including zero, and falls back for historical Attempts', async () => {
+    const server = await startServer();
+    try {
+      const task = await server.api('POST', '/api/tasks', { prompt: 'duration seed' });
+      await server.app.ctx.asyncDb.write((d) =>
+        d.insert(attempts).values([
+          { taskId: task.body.id, number: 1, state: 'passed', startedAt: 1_000, endedAt: 101_000, agentDurationMs: 10_000 },
+          { taskId: task.body.id, number: 2, state: 'passed', startedAt: 1_000, endedAt: 11_000, agentDurationMs: 0 },
+          { taskId: task.body.id, number: 3, state: 'passed', startedAt: 1_000, endedAt: 31_000, agentDurationMs: null },
+        ]).run(),
+      );
+
+      const { status, body } = await server.api('GET', '/api/stats?from=0');
+      expect(status).toBe(200);
+      expect(body.durationMs).toEqual({ p50: 10_000, p95: 28_000 });
+    } finally {
+      await server.close();
+    }
   });
 
   describe('GET /api/stats — per-tool output attribution', () => {

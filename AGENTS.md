@@ -74,13 +74,12 @@ Default vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, 
 
 Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
-The ADR set was **reset on 2026-08-28** to 12 definitive target-state ADRs
-(`docs/adr/README.md` has the old→new mapping; the pre-reset set lives at git
-tag `adr-reset-2026-08-28`). Until the ADR-0001 implementation epic ships,
-code, comments, migrations, and historical docs still cite pre-reset ADR
-numbers and vocabulary (Run, phases, candidate refs, leases): treat those as
-**legacy references into the archived set**, never as the current decision —
-where code and the ADRs disagree, the ADRs win.
+The ADR-0001 implementation epic is complete. `docs/adr/README.md` indexes
+current decisions and their amendments; later ADRs take precedence only for
+the clauses they explicitly replace. Pre-reset ADR numbers refer to the set
+archived at `adr-reset-2026-08-28`, not same-numbered current documents.
+Check the current decision and its amendments before treating old terminology
+or a historical review finding as unfinished work.
 
 ### Design context
 
