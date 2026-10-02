@@ -26,6 +26,7 @@ import { exportRoutes } from './routes/export.js';
 import { fsRoutes } from './routes/fs.js';
 import { openapiRoutes } from './routes/openapi.js';
 import { buildMcpServer } from '../mcp/server.js';
+import { resolveMcpCaller } from '../mcp/caller.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { updateRoutes } from './routes/update.js';
 import type { App, AppContext, AppContexts } from './app-context.js';
@@ -66,7 +67,7 @@ export async function registerRoutes(app: App, ctx: AppContext, contexts: AppCon
   await app.register(openapiRoutes, { prefix: '/api' });
 
   app.post('/mcp', { schema: { hide: true } }, async (req, reply) => {
-    const mcp = buildMcpServer(ctx);
+    const mcp = buildMcpServer(ctx, await resolveMcpCaller(ctx, req));
     // MCP SDK option/interface types don't satisfy this project's exactOptionalPropertyTypes; both casts erase that mismatch, not our types.
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined } as any);
     reply.hijack();

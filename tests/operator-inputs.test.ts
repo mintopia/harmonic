@@ -121,7 +121,7 @@ describe('operator inputs are recorded (#732)', () => {
 
   it('records an MCP cancel_task reason as the agent', async () => {
     const taskId = (await server.api('POST', '/api/tasks', { prompt: 'mcp cancel' })).body.id as number;
-    const mcp = buildMcpServer(server.app.ctx) as unknown as {
+    const mcp = buildMcpServer(server.app.ctx, { scope: null, attempt: null, task: null, workspace: null }) as unknown as {
       _registeredTools: Record<string, { handler: (args: unknown, extra: unknown) => Promise<unknown> }>;
     };
     await mcp._registeredTools.cancel_task!.handler({ taskId, reason: 'duplicate' }, {});

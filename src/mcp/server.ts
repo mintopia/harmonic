@@ -7,14 +7,21 @@ import { serializeAttempt } from '../domain/attempts.js';
 import { DomainError } from '../domain/errors.js';
 import { deleteTaskKeepingArchive, operatorReasonSchema, recordOperatorActionBestEffort, recordOperatorActionsBestEffort } from '../server/operator-inputs.js';
 
+import type { McpCaller } from './caller.js';
+
 const taskId = { taskId: z.number().int().positive().describe('Task id') };
+
+export type CallerToolRegistrar = (server: McpServer, ctx: AppContext, caller: McpCaller) => void;
+
+/** Registrars run per request after the base tools; each decides from the caller whether to register its tools. */
+export const callerToolRegistrars: CallerToolRegistrar[] = [];
 
 /**
  * The agent-facing MCP surface: task CRUD, dependencies, queue/cancel, and
  * read access to Attempts and Attempt events. Built per request (stateless
  * streamable HTTP).
  */
-export function buildMcpServer(ctx: AppContext): McpServer {
+export function buildMcpServer(ctx: AppContext, caller: McpCaller): McpServer {
   const server = new McpServer({ name: 'harmonic', version: '0.1.0' });
 
   const json = (value: unknown) => ({
@@ -206,6 +213,8 @@ export function buildMcpServer(ctx: AppContext): McpServer {
       return { acknowledged: true, running: ctx.runner.markEscalate(taskId, reason) };
     }),
   );
+
+  for (const register of callerToolRegistrars) register(server, ctx, caller);
 
   return server;
 }
