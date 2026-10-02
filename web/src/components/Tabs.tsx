@@ -1,16 +1,10 @@
-import { touchOverlay } from '../ui';
+import { useEffect, useRef } from 'react';
 
 export interface TabDef {
   id: string;
   label: string;
 }
 
-/** An ARIA-correct tab strip (`role="tablist"`/`role="tab"`/`aria-selected`) in
- * Paper's underline style — the same active border-accent / inactive muted
- * treatment ApiReference's PaneTab uses, promoted to a proper tablist so the
- * Settings shell is keyboard- and screen-reader-legible. Tab state lives with
- * the caller; this is presentational. Each tab points at its panel via
- * `aria-controls={settings-panel-<id>}`, which the caller sets on the panel. */
 export function Tabs({
   tabs,
   active,
@@ -22,9 +16,15 @@ export function Tabs({
   onChange: (id: string) => void;
   label: string;
 }) {
+  const strip = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    strip.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [active]);
+
   return (
-    <div role="tablist" aria-label={label} className="flex flex-wrap gap-x-5 gap-y-1 border-b border-hairline">
-      {tabs.map((tab) => {
+    <div ref={strip} role="tablist" aria-label={label} className="flex gap-x-5 overflow-x-auto border-b border-hairline">
+      {tabs.map((tab, index) => {
         const selected = tab.id === active;
         return (
           <button
@@ -32,15 +32,28 @@ export function Tabs({
             type="button"
             role="tab"
             id={`settings-tab-${tab.id}`}
+            tabIndex={selected ? 0 : -1}
             aria-selected={selected}
             aria-controls={`settings-panel-${tab.id}`}
             onClick={() => onChange(tab.id)}
-            className={`relative -mb-px border-b-2 px-1 pb-2 font-medium transition-colors duration-150 ${
+            onKeyDown={(event) => {
+              let next = index;
+              if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+              else if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
+              else if (event.key === 'Home') next = 0;
+              else if (event.key === 'End') next = tabs.length - 1;
+              else return;
+              event.preventDefault();
+              const target = tabs[next];
+              if (!target) return;
+              onChange(target.id);
+              strip.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+            }}
+            className={`min-h-11 shrink-0 whitespace-nowrap border-b-2 focus-visible:outline-offset-[-2px] px-1 font-medium transition-colors duration-150 ${
               selected ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'
             }`}
           >
             {tab.label}
-            <span aria-hidden="true" className={touchOverlay} />
           </button>
         );
       })}

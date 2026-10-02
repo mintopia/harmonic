@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { act, createElement } from 'react';
+import { act, createElement, Fragment } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TaskActions } from '../web/src/components/TaskActions.js';
 import type { Task } from '../web/src/types.js';
+import { Toaster } from '../web/src/toast.js';
 import { cleanup, flush, makeTask, mountComponent } from './component-smoke-harness.js';
 
 let host: HTMLDivElement | null = null;
@@ -54,7 +55,7 @@ describe('TaskActions smoke (issue #469)', () => {
 
     const accept = [...host!.querySelectorAll('button')].find((b) => b.textContent?.includes('Accept'));
     expect(accept?.disabled).toBe(true);
-    expect(accept?.title).toBe('Branch is empty — nothing to merge');
+    expect(accept?.title).toBe('No candidate commits to accept');
   });
 
   it('disables the escalation actions while an Accept is merging', async () => {
@@ -129,5 +130,30 @@ describe('TaskActions smoke (issue #469)', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(`/api/tasks/${task.id}/resume`, { method: 'POST' });
     expect(changed).toHaveBeenCalledOnce();
+  });
+});
+
+describe('Accept feedback', () => {
+  it('explains the overridden step and reports the actual server response', async () => {
+    const task = makeTask({ state: 'escalated', hasCandidate: true });
+    const updated = makeTask({ state: 'working', currentStep: 'review' });
+    const fetch = vi.fn(async () => new Response(JSON.stringify(updated)));
+    vi.stubGlobal('fetch', fetch);
+    const onChanged = vi.fn();
+    const host = await mountComponent(createElement(Fragment, null,
+      createElement(TaskActions, { task, failedStep: 'verification', variant: 'footer', onEdit: () => {}, onChanged }),
+      createElement(Toaster),
+    ));
+    expect(host.textContent).toContain('Override the failed verification step and continue with review.');
+    await act(async () => {
+      [...host.querySelectorAll('button')].find((button) => button.textContent === 'Accept & review')!.click();
+      await flush();
+    });
+    expect(fetch).toHaveBeenCalledWith(`/api/tasks/${task.id}/accept`, { method: 'POST' });
+    const accepted = [...host.querySelectorAll('[role="status"]')].find((notice) => notice.textContent?.includes('Task 42 accepted'));
+    expect(accepted?.textContent).toContain('accepted — continuing with review');
+    expect(accepted?.textContent).not.toContain('merging');
+    expect(onChanged).toHaveBeenCalledOnce();
+    await act(async () => host.querySelectorAll<HTMLButtonElement>('button[aria-label="Dismiss"]').forEach((button) => button.click()));
   });
 });

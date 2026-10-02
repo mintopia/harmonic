@@ -245,6 +245,36 @@ export function TableView({
     </div>
   );
 
+  const pagination = pageCount > 1 && (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <span className="text-small tabular-nums text-muted">
+        {total === 0 ? 0 : (currentPage - 1) * TABLE_PAGE_SIZE + 1}–
+        {(currentPage - 1) * TABLE_PAGE_SIZE + pageTasks.length} of {total}
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className={btnGhost}
+          disabled={currentPage <= 1}
+          onClick={() => setPage(currentPage - 1)}
+        >
+          Prev
+        </button>
+        <span className="text-small tabular-nums text-muted">
+          Page {currentPage} of {pageCount}
+        </span>
+        <button
+          type="button"
+          className={btnGhost}
+          disabled={currentPage >= pageCount}
+          onClick={() => setPage(currentPage + 1)}
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div>
       <PageHeader
@@ -292,6 +322,8 @@ export function TableView({
           capitalize
         />
       </div>
+
+      <div className="mb-3 md:hidden">{pagination}</div>
 
       <div className={`${tableShell} relative`} aria-busy={loading} role="table" aria-label="Tasks">
         {loading && (
@@ -363,35 +395,7 @@ export function TableView({
         )}
       </div>
 
-      {pageCount > 1 && (
-        <div className="mt-3 flex items-center justify-between gap-2">
-          <span className="text-small tabular-nums text-muted">
-            {total === 0 ? 0 : (currentPage - 1) * TABLE_PAGE_SIZE + 1}–
-            {(currentPage - 1) * TABLE_PAGE_SIZE + pageTasks.length} of {total}
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className={btnGhost}
-              disabled={currentPage <= 1}
-              onClick={() => setPage(currentPage - 1)}
-            >
-              Prev
-            </button>
-            <span className="text-small tabular-nums text-muted">
-              Page {currentPage} of {pageCount}
-            </span>
-            <button
-              type="button"
-              className={btnGhost}
-              disabled={currentPage >= pageCount}
-              onClick={() => setPage(currentPage + 1)}
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      )}
+      <div className="mt-3">{pagination}</div>
     </div>
   );
 }
