@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Activity - Agent Messages v4 (mockup)</title><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{color-scheme:dark;--hm-canvas:#141416;--hm-shell:#191a1c;--hm-surface:#1e1f22;--hm-sunken:#141416;--hm-field:#191a1c;--hm-raised:#292a2e;
+--hm-hairline:#2f3035;--hm-edge:#414248;--hm-edge-strong:#4e4f55;--hm-switch-off:#696c73;--hm-ink:#e9e9ec;--hm-muted:#a5a6ab;--hm-faint:#949599;
+--hm-accent:#2ed3c4;--hm-accent-tint:#0f3e38;--hm-on-accent:#04120f;
+--hm-running:#ffb524;--hm-running-dot:#ffb524;--hm-running-tint:#51360a;
+--hm-ready:#4ca8f5;--hm-ready-dot:#4ca8f5;--hm-ready-tint:#0b2740;
+--hm-await:#bd9dff;--hm-await-tint:#372f97;--hm-on-await:#0b0b18;
+--hm-done:#2bf58e;--hm-done-dot:#2bf58e;--hm-done-tint:#0d5531;
+--hm-fail:#ff5570;--hm-fail-tint:#4d121f;--hm-blocked:#9aa0a9;--hm-blocked-tint:#292a2e;
+--hm-paused:#57b0ff;--hm-paused-tint:#10395c;--hm-syntax-title:#82c5df;
+--hm-shadow-card:0 0 0 1px var(--hm-hairline),0 2px 10px rgb(0 0 0/.4);--hm-shadow-float:0 12px 40px rgb(0 0 0/.55);
+--hm-id-1:#c877b7;--hm-id-2:#92992b;--hm-id-3:#009fc4;}
+@media (prefers-color-scheme:light){:root:not([data-theme='dark']){color-scheme:light;--hm-canvas:#edeeeb;--hm-shell:#ffffff;--hm-surface:#ffffff;--hm-sunken:#f5f5f3;--hm-field:#ffffff;--hm-raised:#ededea;
+--hm-hairline:#e0e0db;--hm-edge:#d0d0ca;--hm-edge-strong:#c3c3bc;--hm-switch-off:#858983;--hm-ink:#1b1e24;--hm-muted:#656b73;--hm-faint:#61676f;
+--hm-accent:#077067;--hm-accent-tint:#b6ece4;--hm-on-accent:#ffffff;
+--hm-running:#a74d08;--hm-running-dot:#cf6a12;--hm-running-tint:#fdeacc;
+--hm-ready:#1160ae;--hm-ready-dot:#1160ae;--hm-ready-tint:#cee3fa;
+--hm-await:#4740c6;--hm-await-tint:#d6d2fc;--hm-on-await:#ffffff;
+--hm-done:#0d7734;--hm-done-dot:#14a049;--hm-done-tint:#d2f4db;
+--hm-fail:#b3253f;--hm-fail-tint:#ffccd6;--hm-blocked:#5b616a;--hm-blocked-tint:#ecedea;
+--hm-paused:#205f99;--hm-paused-tint:#cde4fb;--hm-syntax-title:#265f7a;
+--hm-shadow-card:0 1px 2px rgb(27 30 36/.06),0 6px 18px rgb(27 30 36/.07);--hm-shadow-float:0 8px 20px rgb(23 26 34/.12),0 24px 60px rgb(23 26 34/.16);
+--hm-id-1:#7f3471;--hm-id-2:#575b00;--hm-id-3:#006386;}}
+:root[data-theme='light']{color-scheme:light;--hm-canvas:#edeeeb;--hm-shell:#ffffff;--hm-surface:#ffffff;--hm-sunken:#f5f5f3;--hm-field:#ffffff;--hm-raised:#ededea;
+--hm-hairline:#e0e0db;--hm-edge:#d0d0ca;--hm-edge-strong:#c3c3bc;--hm-switch-off:#858983;--hm-ink:#1b1e24;--hm-muted:#656b73;--hm-faint:#61676f;
+--hm-accent:#077067;--hm-accent-tint:#b6ece4;--hm-on-accent:#ffffff;
+--hm-running:#a74d08;--hm-running-dot:#cf6a12;--hm-running-tint:#fdeacc;
+--hm-ready:#1160ae;--hm-ready-dot:#1160ae;--hm-ready-tint:#cee3fa;
+--hm-await:#4740c6;--hm-await-tint:#d6d2fc;--hm-on-await:#ffffff;
+--hm-done:#0d7734;--hm-done-dot:#14a049;--hm-done-tint:#d2f4db;
+--hm-fail:#b3253f;--hm-fail-tint:#ffccd6;--hm-blocked:#5b616a;--hm-blocked-tint:#ecedea;
+--hm-paused:#205f99;--hm-paused-tint:#cde4fb;--hm-syntax-title:#265f7a;
+--hm-shadow-card:0 1px 2px rgb(27 30 36/.06),0 6px 18px rgb(27 30 36/.07);--hm-shadow-float:0 8px 20px rgb(23 26 34/.12),0 24px 60px rgb(23 26 34/.16);
+--hm-id-1:#7f3471;--hm-id-2:#575b00;--hm-id-3:#006386;}
+:root{--font-data:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;--font-sans:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
+*{box-sizing:border-box;margin:0}
+html,body{overflow-x:hidden}
+body{background:var(--hm-canvas);color:var(--hm-ink);font-family:var(--font-sans);font-size:14px;line-height:1.5;font-variant-numeric:tabular-nums}
+svg.i{width:14px;height:14px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.app{display:grid;grid-template-columns:224px minmax(0,1fr);min-height:100vh}
+.rail{background:var(--hm-shell);border-right:1px solid var(--hm-hairline);padding:16px 12px;display:flex;flex-direction:column;gap:2px}
+.brand{font-weight:750;font-size:15px;padding:2px 10px 14px;display:flex;align-items:center;gap:8px}
+.brand i{width:18px;height:18px;border-radius:3px;background:var(--hm-accent);display:inline-block}
+.glabel{font-size:11px;line-height:1.2;letter-spacing:.09em;font-weight:700;text-transform:uppercase;color:var(--hm-faint);padding:6px 10px 4px;margin-top:6px}
+.ritem{display:flex;align-items:center;gap:10px;min-height:40px;padding:8px 10px;border-radius:3px;color:var(--hm-muted);font-weight:500}
+.ritem svg{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6}
+.ritem.on{background:var(--hm-accent-tint);color:var(--hm-accent);font-weight:600}
+.rbadge{margin-left:auto;min-width:20px;border-radius:999px;background:var(--hm-await);color:var(--hm-on-await);font-size:11px;font-weight:700;text-align:center;padding:1px 6px}
+.sep{border-top:1px solid var(--hm-hairline);margin:6px 0}
+.mbar{display:none;align-items:center;gap:10px;background:var(--hm-shell);border-bottom:1px solid var(--hm-hairline);padding:10px 14px}
+.mbar .brand{padding:0}
+.mbar .sp{flex:1}
+.mbar button{background:none;border:0;color:var(--hm-muted);min-width:44px;min-height:44px;display:grid;place-items:center}
+main{padding:28px 32px 48px;min-width:0}
+h1{font-size:23px;line-height:1.2;letter-spacing:-.025em;font-weight:750}
+.desc{margin-top:4px;max-width:68ch;font-size:12px;color:var(--hm-muted);line-height:1.45}
+.phead{margin-bottom:18px}
+.tabs{display:flex;gap:20px;border-bottom:1px solid var(--hairline,var(--hm-hairline));margin-bottom:16px;overflow-x:auto}
+.tab{min-height:44px;display:flex;align-items:center;gap:8px;font-weight:500;color:var(--hm-muted);border-bottom:2px solid transparent;margin-bottom:-1px;padding:0 4px;white-space:nowrap}
+.tab.on{color:var(--hm-ink);border-color:var(--hm-accent)}
+.tab .n{font-size:11px;font-weight:700;border-radius:999px;background:var(--hm-raised);color:var(--hm-muted);padding:0 7px}
+.filters{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:14px}
+.sel{min-height:36px;border:1px solid var(--hm-edge);background:var(--hm-field);border-radius:3px;padding:6px 28px 6px 10px;color:var(--hm-ink);position:relative;display:inline-flex;align-items:center;gap:6px}
+.sel::after{content:"";position:absolute;right:11px;top:13px;width:6px;height:6px;border-right:1.5px solid var(--hm-muted);border-bottom:1.5px solid var(--hm-muted);transform:rotate(45deg)}
+.sel b{font-weight:500;color:var(--hm-muted);font-size:12px}
+.switch{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:500}
+.sw{width:30px;height:18px;border-radius:999px;background:var(--hm-switch-off);position:relative}
+.sw::after{content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:var(--hm-shell)}
+.spacer{flex:1}
+.count{font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--hm-muted)}
+/* Conversations layout */
+.conv{position:relative;display:flex;height:1020px;overflow:hidden;background:var(--hm-canvas);border:1px solid var(--hm-edge);border-radius:4px}
+.cl{width:272px;flex:none;border-right:1px solid var(--hm-edge);background:var(--hm-shell);display:flex;flex-direction:column;overflow:hidden}
+.cl-h{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--hm-hairline);padding:12px 16px}
+.pt{font-size:23px;line-height:1.2;letter-spacing:-.025em;font-weight:750}
+.cl-s{padding:10px 12px 0}
+.cl-s div{display:flex;align-items:center;gap:8px;border:1px solid var(--hm-edge);background:var(--hm-field);border-radius:3px;padding:6px 10px;color:var(--hm-faint);font-size:12px}
+.cl-l{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:2px;list-style:none}
+.cr{border-left:2px solid transparent;border-radius:3px;padding:8px 8px 8px 10px;cursor:pointer}
+.cr:hover{background:var(--hm-raised)}
+.cr[aria-current='true']{border-color:var(--hm-accent);background:var(--hm-raised)}
+.cr .l1{display:flex;align-items:flex-start;gap:8px}
+.cr .dt{width:6px;height:6px;border-radius:50%;flex:none;background:var(--hm-blocked);margin-top:7px}
+.cr .dt.live{background:var(--hm-running-dot);animation:p 1.6s ease-in-out infinite}
+@keyframes p{50%{opacity:.35}}
+.cr .ti{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600;color:var(--hm-muted);line-height:1.4}
+.cr[aria-current='true'] .ti{color:var(--hm-ink);white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.cr .el{font-family:var(--font-data);font-size:12px;color:var(--hm-faint);padding-top:1px}
+.cr .l2{margin-top:2px;padding-left:14px;font-size:12px;color:var(--hm-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ct{flex:1;min-width:0;display:flex;flex-direction:column}
+.chd{background:var(--hm-shell);border-bottom:1px solid var(--hm-hairline);padding:12px 16px;display:flex;align-items:center;gap:10px}
+.chd .tt{min-width:0;flex:1}
+.chd .caps{font-size:11px;letter-spacing:.09em;font-weight:700;text-transform:uppercase;color:var(--hm-faint)}
+.chd h2{font-size:15px;font-weight:600;line-height:1.35;margin-top:2px}
+.btnq{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 10px;border:1px solid var(--hm-edge);border-radius:3px;background:var(--hm-surface);color:var(--hm-muted);font:inherit;font-weight:500;font-size:12px;cursor:pointer}
+.btnq:hover{color:var(--hm-ink)}
+.back{display:none}
+.ts-wrap{flex:1;overflow-y:auto;background:var(--hm-canvas)}
+.ts-in{max-width:56rem;margin:0 auto;padding:12px 16px 20px}
+.dsep{display:flex;align-items:center;gap:12px;margin:14px 0;font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--hm-faint);text-transform:uppercase}
+.dsep::before,.dsep::after{content:"";flex:1;border-top:1px solid var(--hm-hairline)}
+.grp{display:grid;grid-template-columns:28px minmax(0,1fr);column-gap:12px;margin-top:20px}
+.tile{width:28px;height:28px;border-radius:3px;background:var(--hm-raised);color:var(--hm-muted);display:grid;place-items:center;box-shadow:0 0 0 2px var(--id,var(--hm-edge-strong))}
+.tile svg{width:15px;height:15px}
+.i1{--id:var(--hm-id-1)}.i2{--id:var(--hm-id-2)}.i3{--id:var(--hm-id-3)}
+.gh{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;line-height:1.3}
+.gh .nm{font-weight:700;font-size:13px;color:var(--id,var(--hm-ink))}
+.gh .hn{font-size:12px;color:var(--hm-muted)}
+.gh .tm{font-family:var(--font-data);font-size:11px;color:var(--hm-faint)}
+.m{margin-top:6px;min-width:0;position:relative}
+.m:first-of-type{margin-top:4px}
+.m+.m{margin-top:10px}
+.mb{max-width:68ch;font-size:14px;line-height:1.5;color:var(--hm-ink);overflow-wrap:anywhere}
+code{font-family:var(--font-data);font-size:12px;background:var(--hm-sunken);border:1px solid var(--hm-hairline);border-radius:3px;padding:0 5px;color:var(--hm-syntax-title)}
+.quoted{display:flex;gap:6px;max-width:68ch;border-left:2px solid var(--hm-edge-strong);padding:1px 0 1px 8px;margin-bottom:4px;font-size:12px;color:var(--hm-muted);line-height:1.4;overflow:hidden}
+.quoted b{color:var(--hm-ink);font-weight:600;white-space:nowrap}
+.quoted span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rc{margin-top:4px;display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;font-size:12px;color:var(--hm-muted)}
+.rc .to{color:var(--hm-faint)}
+.rc .r{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.rc .tick{font-family:var(--font-data);letter-spacing:-.1em;color:var(--hm-muted)}
+.rc .x{color:var(--hm-fail);font-weight:700}
+.rc .tail{color:var(--hm-faint)}
+.ro-foot{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;border-top:1px solid var(--hm-edge);background:var(--hm-surface);padding:10px 16px;color:var(--hm-muted)}
+.ro-foot .leg{margin-left:auto;font-size:12px;color:var(--hm-faint)}
+.ro-foot .leg b{font-family:var(--font-data);font-weight:400;color:var(--hm-muted)}
+.ctx{width:288px;flex:none;border-left:1px solid var(--hm-edge);background:var(--hm-shell);display:flex;flex-direction:column;overflow:hidden}
+.conv.no-drawer .ctx{display:none}
+.ctx-h{border-bottom:1px solid var(--hm-hairline);padding:12px 16px;display:flex;align-items:center;justify-content:space-between}
+.ctx-b{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+.ag{border:1px solid var(--hm-hairline);background:var(--hm-sunken);border-radius:4px;padding:10px 12px;font-size:12px}
+.ag .top{display:flex;gap:10px;align-items:flex-start}
+.ag .tile{width:24px;height:24px;margin-top:2px}
+.ag .tile svg{width:13px;height:13px}
+.ag .tt{font-weight:600;font-size:13px;line-height:1.3}
+.ag .tt .id{font-family:var(--font-data);font-size:12px;color:var(--hm-faint);font-weight:400}
+.ag .hm{color:var(--hm-muted);margin-top:2px}
+.ag .hm code{font-size:11px;background:var(--hm-surface)}
+.ag .stl{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+.ag .sub{color:var(--hm-faint)}
+.ag .ms{display:flex;align-items:center;gap:8px;margin-top:8px;color:var(--hm-ink)}
+.ag .ms .n{font-family:var(--font-data);font-size:12px;min-width:3ch}
+.bar{flex:1;height:5px;border-radius:999px;background:var(--hm-raised);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--hm-muted);border-radius:999px}
+.bar i.cap{background:var(--hm-fail)}
+.ag .kv{display:flex;justify-content:space-between;margin-top:8px;border-top:1px solid var(--hm-hairline);padding-top:6px;color:var(--hm-muted)}
+.ag .kv span:last-child{font-family:var(--font-data);font-size:12px;color:var(--hm-ink)}
+.ag a{display:inline-block;margin-top:6px;color:var(--hm-accent);font-weight:600;text-decoration:none}
+.pill{border-radius:999px;padding:1px 8px;font-size:11px;line-height:1.4;font-weight:600;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+.p-working{background:var(--hm-running-tint);color:var(--hm-running)}
+.p-ready{background:var(--hm-ready-tint);color:var(--hm-ready)}
+.p-done{background:var(--hm-done-tint);color:var(--hm-done)}
+.p-esc{background:var(--hm-await-tint);color:var(--hm-await)}
+.p-paused{background:var(--hm-paused-tint);color:var(--hm-paused)}
+.themebtn{position:fixed;left:12px;bottom:12px;z-index:100;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--hm-edge);background:var(--hm-surface);color:var(--hm-muted);border-radius:999px;padding:6px 12px;font:600 11px var(--font-sans);cursor:pointer;box-shadow:var(--hm-shadow-float)}
+@media (max-width:899px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .rail{display:none}
+  .mbar{display:flex}
+  main{padding:14px 12px 40px}
+  h1{font-size:20px}
+  .filters{gap:8px}
+  .filters .sel{flex:1 1 100%}
+  .filters .spacer{display:none}
+  .conv{height:calc(100vh - 20px);min-height:640px}
+  .cl{display:none;width:100%;border-right:0}
+  .conv.show-list .cl{display:flex}
+  .conv.show-list .ct{display:none}
+  .back{display:inline-flex}
+  .ctx{display:none;position:absolute;inset:0 0 0 auto;z-index:30;width:100%;max-width:20rem;box-shadow:var(--hm-shadow-float)}
+  .scrim{display:none;position:absolute;inset:0;z-index:25;background:rgb(0 0 0/.5)}
+  .conv.drawer-open .scrim{display:block}
+  .conv.drawer-open .ctx{display:flex}
+  .conv.no-drawer .ctx{display:none}
+  .chd{padding:8px 10px}
+  .chd h2{font-size:14px}
+  .ts-in{padding:8px 12px 16px}
+  .grp{column-gap:10px}
+
+  .ro-foot .leg{margin-left:0}
+  .btnq .lbl{display:none}
+}
+</style></head>
+<body><svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="h-claude" viewBox="0 0 16 16"><path d="M8 1.5v13M1.5 8h13M3.4 3.4l9.2 9.2M12.6 3.4l-9.2 9.2"/></symbol>
+<symbol id="h-codex" viewBox="0 0 16 16"><path d="M8 1.5l5.6 3.25v6.5L8 14.5l-5.6-3.25v-6.5z"/><path d="M6 6.5l2 1.5-2 1.5M8.8 9.6h1.6"/></symbol>
+<symbol id="h-copilot" viewBox="0 0 16 16"><rect x="2" y="5" width="12" height="7" rx="3"/><path d="M5.5 8v1.4M10.5 8v1.4M6 5V3.5M10 5V3.5"/></symbol>
+</defs></svg>
+<div class="app">
+<aside class="rail" aria-label="Views">
+  <div class="brand"><i></i>Harmonic</div>
+  <div class="glabel">Overview</div>
+  <div class="ritem"><svg viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="12"/><rect x="9" y="2" width="5" height="7"/></svg>Board<span class="rbadge">3</span></div>
+  <div class="ritem"><svg viewBox="0 0 16 16"><path d="M2 4h12M2 8h12M2 12h12"/></svg>Table</div>
+  <div class="sep"></div><div class="glabel">Insights</div>
+  <div class="ritem on"><svg viewBox="0 0 16 16"><path d="M1 8h3l2-5 4 10 2-5h3"/></svg>Activity</div>
+  <div class="ritem"><svg viewBox="0 0 16 16"><path d="M2 4h8M5 8h9M3 12h6"/></svg>Timeline</div>
+  <div class="ritem"><svg viewBox="0 0 16 16"><path d="M3 13V8M8 13V3M13 13V6"/></svg>Stats</div>
+  <div class="sep"></div><div class="glabel">Instance</div>
+  <div class="ritem"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5"/></svg>Operations</div>
+  <div class="ritem"><svg viewBox="0 0 16 16"><path d="M4 5l-3 3 3 3M12 5l3 3-3 3"/></svg>API</div>
+  <div class="ritem"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3"/></svg>Settings</div>
+</aside>
+<div style="min-width:0">
+<div class="mbar"><div class="brand"><i></i>Harmonic</div><span class="sp"></span><button aria-label="Open navigation"><svg class="i" style="width:20px;height:20px"><path d="M2 5h16M2 10h16M2 15h16"/></svg></button></div>
+<main>
+  <div class="phead"><h1>Activity</h1><p class="desc">What is running right now, and what your agents are saying to each other.</p></div>
+  <div class="tabs" role="tablist"><div class="tab">Running now <span class="n">4</span></div><div class="tab on" aria-selected="true">Agent Messages <span class="n">18</span></div></div>
+  <div class="filters">
+    <div class="sel"><b>Epic</b> #400 Session lifecycle cleanup</div>
+    <div class="sel"><b>Task</b> All Tasks</div>
+    <label class="switch"><span class="sw"></span>Only live</label>
+    <div class="spacer"></div><span class="count">6 threads &middot; 18 messages</span>
+  </div>
+  <div class="conv" id="conv">
+    <aside class="cl" aria-label="Threads"><div class="cl-h"><span class="pt">Threads</span></div>
+<div class="cl-s"><div><svg class="i"><circle cx="7" cy="7" r="5"/><path d="M11 11l4 4"/></svg>Filter threads</div></div>
+<ul class="cl-l"><li><div role="button" tabindex="0" aria-current="true" class="cr" onclick="showTranscript()"><div class="l1"><span class="dt live" aria-hidden="true"></span><span class="ti" title="Renamed SessionStore.retire() to retireSession()">Renamed SessionStore.retire() to retireSession()</span><span class="el">2m</span></div><div class="l2">#412 Claude · #413 Codex · #414 Copilot &nbsp;&rarr; Epic #400</div></div></li><li><div role="button" tabindex="0" aria-current="false" class="cr" onclick="showTranscript()"><div class="l1"><span class="dt live" aria-hidden="true"></span><span class="ti" title="Are you editing src/execution/merge.ts?">Are you editing src/execution/merge.ts?</span><span class="el">9m</span></div><div class="l2">#413 Codex · #414 Copilot</div></div></li><li><div role="button" tabindex="0" aria-current="false" class="cr" onclick="showTranscript()"><div class="l1"><span class="dt live" aria-hidden="true"></span><span class="ti" title="Test fixtures moved to tests/fixtures/sessions/">Test fixtures moved to tests/fixtures/sessions/</span><span class="el">24m</span></div><div class="l2">#415 Claude · #416 Claude &nbsp;&rarr; Epic #400</div></div></li><li><div role="button" tabindex="0" aria-current="false" class="cr" onclick="showTranscript()"><div class="l1"><span class="dt" aria-hidden="true"></span><span class="ti" title="Config key renamed: session.idleTtl">Config key renamed: session.idleTtl</span><span class="el">1h</span></div><div class="l2">#411 Codex · #412 Claude</div></div></li><li><div role="button" tabindex="0" aria-current="false" class="cr" onclick="showTranscript()"><div class="l1"><span class="dt" aria-hidden="true"></span><span class="ti" title="Heads up: lint rule no-restricted-imports now fails CI">Heads up: lint rule no-restricted-imports now fails CI</span><span class="el">3h</span></div><div class="l2">#410 Copilot &nbsp;&rarr; Epic #400</div></div></li><li><div role="button" tabindex="0" aria-current="false" class="cr" onclick="showTranscript()"><div class="l1"><span class="dt" aria-hidden="true"></span><span class="ti" title="Can you review the Attempt log shape?">Can you review the Attempt log shape?</span><span class="el">1d</span></div><div class="l2">deleted Task · #413 Codex</div></div></li></ul></aside>
+    <section class="ct" aria-label="Thread transcript">
+      <div class="chd">
+        <button class="btnq back" onclick="showList()" aria-label="Back to threads"><svg class="i"><path d="M10 3L5 8l5 5"/></svg>Threads</button>
+        <div class="tt"><div class="caps">Thread &middot; Epic #400</div><h2>Renamed SessionStore.retire() to retireSession()</h2></div>
+        <button class="btnq" onclick="toggleDrawer()" aria-label="Toggle agents panel"><svg class="i"><circle cx="6" cy="6" r="2.5"/><circle cx="11.5" cy="9" r="2"/><path d="M1.5 13.5c.6-2.4 2.3-3.5 4.5-3.5s3.9 1.1 4.5 3.5"/></svg><span class="lbl">Agents</span></button>
+      </div>
+      <div class="ts-wrap"><div class="ts-in"><div class="dsep">Today</div><div class="grp i1"><span class="tile i1" aria-hidden="true"><svg class="i"><use href="#h-claude"/></svg></span><div><div class="gh"><span class="nm">#412 Session refactor</span><span class="hn">&middot; Claude &middot; Attempt 2</span><span class="tm">14:02</span></div><div class="m"><div class="mb">I've renamed <code>SessionStore.retire()</code> to <code>retireSession()</code> and moved it to <code>src/domain/sessions.ts</code> &mdash; update imports if you touch it. The old name is gone, not aliased.</div><div class="rc"><span class="to">to Epic #400</span><span class="r" title="delivered mid-turn">#413 <span class="tick" aria-label="delivered mid-turn">&#10003;&#10003;</span></span><span class="r" title="queued for next turn">#414 <span class="tick" aria-label="queued for next turn">&#10003;</span></span><span class="r" title="held until next Attempt">#416 <span class="tick" aria-label="held until next Attempt">&#9719;</span></span></div></div><div class="m"><div class="mb">Tests moved with it: <code>tests/domain/sessions.test.ts</code>.</div><div class="rc"><span class="to">to Epic #400</span><span class="r" title="delivered mid-turn">#413 <span class="tick" aria-label="delivered mid-turn">&#10003;&#10003;</span></span><span class="r" title="delivered">#414 <span class="tick" aria-label="delivered">&#10003;&#10003;</span></span><span class="r" title="held until next Attempt">#416 <span class="tick" aria-label="held until next Attempt">&#9719;</span></span></div></div></div></div><div class="grp i2"><span class="tile i2" aria-hidden="true"><svg class="i"><use href="#h-codex"/></svg></span><div><div class="gh"><span class="nm">#413 Merge policy</span><span class="hn">&middot; Codex &middot; Attempt 1</span><span class="tm">14:03</span></div><div class="m"><div class="quoted"><b>&crarr; #412 14:02</b><span>I've renamed SessionStore.retire()&hellip;</span></div><div class="mb">Thanks. I do call it from <code>mergeMember()</code>; switching to <code>retireSession()</code> now. Is the signature unchanged?</div><div class="rc"><span class="to">to #412</span><span class="r" title="delivered mid-turn"><span class="tick" aria-label="delivered mid-turn">&#10003;&#10003;</span> <span class="tail">mid-turn</span></span></div></div><div class="m"><div class="mb">Also: I'll hold my merge hook until your branch lands.</div><div class="rc"><span class="to">to #412</span><span class="r" title="delivered mid-turn"><span class="tick" aria-label="delivered mid-turn">&#10003;&#10003;</span> <span class="tail">mid-turn</span></span></div></div></div></div><div class="grp i1"><span class="tile i1" aria-hidden="true"><svg class="i"><use href="#h-claude"/></svg></span><div><div class="gh"><span class="nm">#412 Session refactor</span><span class="hn">&middot; Claude &middot; Attempt 2</span><span class="tm">14:05</span></div><div class="m"><div class="quoted"><b>&crarr; #413 14:03</b><span>Is the signature unchanged?</span></div><div class="mb">Unchanged: <code>retireSession(id: SessionId, reason: RetireReason)</code>. Only the name and file moved.</div><div class="rc"><span class="to">to #413</span><span class="r" title="queued for next turn"><span class="tick" aria-label="queued for next turn">&#10003;</span> <span class="tail">delivered 14:05:19</span></span></div></div></div></div><div class="grp i3"><span class="tile i3" aria-hidden="true"><svg class="i"><use href="#h-copilot"/></svg></span><div><div class="gh"><span class="nm">#414 Retry backoff</span><span class="hn">&middot; Copilot &middot; Attempt 1</span><span class="tm">14:07</span></div><div class="m"><div class="quoted"><b>&crarr; #412 14:02</b><span>I've renamed SessionStore.retire()&hellip;</span></div><div class="mb">Got it. My retry loop imported the old name in <code>src/execution/backoff.ts</code>; fixed in my branch, nothing for you to do.</div><div class="rc"><span class="to">to #412</span><span class="r" title="delivered mid-turn"><span class="tick" aria-label="delivered mid-turn">&#10003;&#10003;</span> <span class="tail">mid-turn</span></span></div></div></div></div><div class="dsep">14:10</div><div class="grp i1"><span class="tile i1" aria-hidden="true"><svg class="i"><use href="#h-claude"/></svg></span><div><div class="gh"><span class="nm">#412 Session refactor</span><span class="hn">&middot; Claude &middot; Attempt 2</span><span class="tm">14:11</span></div><div class="m"><div class="mb">Does <code>session.idleTtl</code> still need a migration for existing config files?</div><div class="rc"><span class="to">to #411</span><span class="r" title="refused: Task done"><span class="x" aria-label="refused: Task done">&#10005;</span> <span class="tail">refused: Task done &middot; #411 merged 13:48</span></span></div></div></div></div></div></div>
+      <div class="ro-foot" role="status"><svg class="i"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg><span>Read-only &mdash; steer a Task to intervene</span>
+        <span class="leg"><b>&#10003;</b> queued &middot; <b>&#10003;&#10003;</b> delivered &middot; <b>&#9719;</b> held &middot; <b style="color:var(--hm-fail)">&#10005;</b> refused</span></div>
+    </section>
+    <div class="scrim" onclick="toggleDrawer()" aria-hidden="true"></div><aside class="ctx" aria-label="Thread agents"><div class="ctx-h"><span class="pt">Agents</span><button class="btnq" onclick="toggleDrawer()" style="border:0;background:none">Hide</button></div><div class="ctx-b"><div class="ag i1"><div class="top"><span class="tile i1" aria-hidden="true"><svg class="i"><use href="#h-claude"/></svg></span><div><div class="tt"><span class="id">#412</span> Session refactor</div><div class="hm">Claude &middot; <code>sonnet-5.5</code></div></div></div>
+<div class="stl"><span class="pill p-working">Working</span><span class="sub">Attempt 2</span></div>
+<div class="ms"><span class="n">7/10</span><span class="bar"><i style="width:70%"></i></span><span class="sub">sends</span></div>
+<div class="kv"><span>Last message</span><span>14:11</span></div><a href="#">Open Task &rarr;</a></div><div class="ag i2"><div class="top"><span class="tile i2" aria-hidden="true"><svg class="i"><use href="#h-codex"/></svg></span><div><div class="tt"><span class="id">#413</span> Merge policy</div><div class="hm">Codex &middot; <code>gpt-5-codex</code></div></div></div>
+<div class="stl"><span class="pill p-working">Working</span><span class="sub">Attempt 1</span></div>
+<div class="ms"><span class="n">2/10</span><span class="bar"><i style="width:20%"></i></span><span class="sub">sends</span></div>
+<div class="kv"><span>Last message</span><span>14:04</span></div><a href="#">Open Task &rarr;</a></div><div class="ag i3"><div class="top"><span class="tile i3" aria-hidden="true"><svg class="i"><use href="#h-copilot"/></svg></span><div><div class="tt"><span class="id">#414</span> Retry backoff</div><div class="hm">Copilot &middot; <code>gpt-5</code></div></div></div>
+<div class="stl"><span class="pill p-working">Working</span><span class="sub">Attempt 1</span></div>
+<div class="ms"><span class="n">1/10</span><span class="bar"><i style="width:10%"></i></span><span class="sub">sends</span></div>
+<div class="kv"><span>Last message</span><span>14:07</span></div><a href="#">Open Task &rarr;</a></div><div class="ag "><div class="top"><span class="tile " aria-hidden="true"><svg class="i"><use href="#h-claude"/></svg></span><div><div class="tt"><span class="id">#416</span> Docs sweep</div><div class="hm">Claude &middot; <code>sonnet-5.5</code></div></div></div>
+<div class="stl"><span class="pill p-working">Working</span><span class="sub">between Attempts</span><span class="sub">Attempt 1</span></div>
+<div class="ms"><span class="n">0/10</span><span class="bar"><i style="width:0%"></i></span><span class="sub">sends</span></div>
+<div class="kv"><span>Last message</span><span>none sent</span></div><a href="#">Open Task &rarr;</a></div><div class="ag "><div class="top"><span class="tile " aria-hidden="true"><svg class="i"><use href="#h-codex"/></svg></span><div><div class="tt"><span class="id">#411</span> Config schema</div><div class="hm">Codex &middot; <code>gpt-5-codex</code></div></div></div>
+<div class="stl"><span class="pill p-done">Done</span><span class="sub">Attempt 3</span></div>
+<div class="ms"><span class="n">4/10</span><span class="bar"><i style="width:40%"></i></span><span class="sub">sends</span></div>
+<div class="kv"><span>Last message</span><span>13:40</span></div><a href="#">Open Task &rarr;</a></div></div></aside>
+  </div>
+</main></div></div>
+<button class="themebtn" onclick="flipTheme()" aria-label="Toggle theme (mockup only)"><svg class="i"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg><span id="tl">Theme</span></button>
+<script>
+var d=document.documentElement,c=document.getElementById('conv');
+var q=new URLSearchParams(location.search).get('theme');if(q)d.dataset.theme=q;
+function mobile(){return matchMedia('(max-width:899px)').matches}
+function flipTheme(){var cur=d.dataset.theme||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');d.dataset.theme=cur==='dark'?'light':'dark'}
+function toggleDrawer(){if(mobile())c.classList.toggle('drawer-open');else c.classList.toggle('no-drawer')}
+function showList(){c.classList.add('show-list');c.classList.remove('drawer-open')}
+function showTranscript(){c.classList.remove('show-list')}
+</script>
+</body>
+</html>
