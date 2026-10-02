@@ -95,14 +95,30 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
   const [taskNotFound, setTaskNotFound] = useState(false);
 
   const failStreak = useRef(0);
+  const taskRequest = useRef(0);
+  const epicRequest = useRef(0);
+  const currentWorkspaceId = useRef<number | null>(null);
+  useEffect(() => {
+    currentWorkspaceId.current = authed ? activeWorkspaceId : null;
+    taskRequest.current += 1;
+    epicRequest.current += 1;
+    return () => {
+      currentWorkspaceId.current = null;
+      taskRequest.current += 1;
+      epicRequest.current += 1;
+    };
+  }, [authed, activeWorkspaceId]);
   const refresh = useCallback(async () => {
-    if (activeWorkspaceId === null) return;
+    if (activeWorkspaceId === null || activeWorkspaceId !== currentWorkspaceId.current) return;
+    const request = ++taskRequest.current;
     try {
       const tasks = await fetchOpenTasks(apiImpl, activeWorkspaceId);
+      if (request !== taskRequest.current || activeWorkspaceId !== currentWorkspaceId.current) return;
       setTasks(tasks);
       failStreak.current = 0;
       setError(null);
     } catch (e) {
+      if (request !== taskRequest.current || activeWorkspaceId !== currentWorkspaceId.current) return;
       failStreak.current += 1;
       if (failStreak.current >= 2) setError(e instanceof Error ? e.message : String(e));
     }
@@ -116,27 +132,42 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
   }, [apiImpl]);
 
   const refreshEpics = useCallback(async () => {
-    if (activeWorkspaceId === null) return;
+    if (activeWorkspaceId === null || activeWorkspaceId !== currentWorkspaceId.current) return;
+    const request = ++epicRequest.current;
     try {
-      setEpics(await fetchAllEpics(apiImpl, activeWorkspaceId));
+      const epics = await fetchAllEpics(apiImpl, activeWorkspaceId);
+      if (request === epicRequest.current && activeWorkspaceId === currentWorkspaceId.current) setEpics(epics);
     } catch (error) {
-      console.warn('refreshEpics: fetch failed, keeping last-known epics', error);
+      if (request === epicRequest.current && activeWorkspaceId === currentWorkspaceId.current) {
+        console.warn('refreshEpics: fetch failed, keeping last-known epics', error);
+      }
     }
   }, [activeWorkspaceId, apiImpl]);
 
   useLiveEffect((live) => {
     if (!authed) return;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryDelay = 2_000;
+    let reported = false;
     apiImpl.config().then((next) => live() && setConfig(next), (error) => live() && toastError(error));
     apiImpl
       .globalPause()
       .then(({ paused }) => live() && setGlobalPaused(paused))
       .catch((error) => live() && console.warn('useAppSync: initial globalPause fetch failed', error));
-    apiImpl.workspaces().then(({ workspaces }) => {
+    const loadWorkspaces = () => apiImpl.workspaces().then(({ workspaces }) => {
       if (!live()) return;
       setWorkspaces(workspaces);
       setWorkspacesLoaded(true);
       if (route.scope.kind === 'workspace') setActiveWorkspaceId(route.scope.workspaceId);
-    }, (error) => live() && toastError(error));
+    }, (error) => {
+      if (!live()) return;
+      if (!reported) toastError(error);
+      reported = true;
+      retryTimer = setTimeout(loadWorkspaces, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, 30_000);
+    });
+    loadWorkspaces();
+    return () => { if (retryTimer !== undefined) clearTimeout(retryTimer); };
   }, [authed, route.scope, apiImpl]);
 
   useLiveEffect((live) => {

@@ -8,7 +8,7 @@ import { workContextKey } from '../domain/work-context-key.js';
 import { repoKey } from './repo-lock.js';
 import type { GitCircuitBreaker } from './git-failure.js';
 import type { Runner } from './runner.js';
-import { forEachYielding } from '../reliability/yield.js';
+import { forEachYielding, yieldToEventLoop } from '../reliability/yield.js';
 import { InFlight } from '../reliability/in-flight.js';
 import { DomainError } from '../domain/errors.js';
 import { startOperation, type Operation } from '../telemetry/operations.js';
@@ -369,8 +369,13 @@ export class AutoRunner {
       });
     }
 
+    let sliceStart = Date.now();
     for (const task of ordered) {
       if (running >= ceiling) break;
+      if (Date.now() - sliceStart >= 25) {
+        await yieldToEventLoop();
+        sliceStart = Date.now();
+      }
       if (!this.slotCandidate(task, { skip, workspacesById, runningByWorkspace, ceiling, occupied, epicGate })) {
         continue;
       }

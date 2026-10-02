@@ -6,6 +6,7 @@ import { changedChannelEvents, channelsDirty, toggleChannelEvent } from '../chan
 import { humanizeSaveError, parseFieldErrors } from './SettingsSection';
 import { firstPatternError, normalizeConfigExport } from '../archive-export-model';
 import { SettingsForm } from './SettingsForm';
+import { LoadError } from './LoadError';
 import type { GlobalRenderCtx } from './settings-schema';
 import { SETTING_TABS, type SettingTab } from '../../../src/domain/settings-registry.js';
 
@@ -26,24 +27,29 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [tab, setTab] = useState<SettingTab>('general');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
-    api.configLayers().then(({ baseline, global, harnessPermissionModes }) => {
-      setBaseline(baseline);
-      setPristine(global);
-      setLocal(global);
-      setHarnessPermissionModes(harnessPermissionModes);
-    });
-    api
-      .channels()
-      .then(({ channels }) => {
+    let active = true;
+    Promise.all([api.configLayers(), api.channels()])
+      .then(([{ baseline, global, harnessPermissionModes }, { channels }]) => {
+        if (!active) return;
+        setBaseline(baseline);
+        setPristine(global);
+        setLocal(global);
+        setHarnessPermissionModes(harnessPermissionModes);
         setPristineChannels(channels);
         setLocalChannels(channels);
       })
-      .catch((e) => console.warn('failed to load channels', e));
-  }, []);
+      .catch((e) => {
+        if (active) setLoadError(e instanceof Error ? e.message : String(e));
+      });
+    return () => { active = false; };
+  }, [loadAttempt]);
 
-  if (!local || !pristine || !baseline) return null;
+  if (loadError) return <LoadError message={`settings: ${loadError}`} onRetry={() => { setLoadError(null); setLoadAttempt((n) => n + 1); }} />;
+  if (!local || !pristine || !baseline) return <p role="status" className="p-4 text-muted">Loading settings…</p>;
 
   const dirty =
     JSON.stringify(local) !== JSON.stringify(pristine) || channelsDirty(localChannels, pristineChannels);
@@ -65,17 +71,25 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
       setSaving(false);
       return;
     }
+    let configSaved = false;
     try {
-      const updated = await api.replaceConfig(normalizeConfigExport(local));
-      setPristine(updated);
-      setLocal(updated);
+      if (JSON.stringify(local) !== JSON.stringify(pristine)) {
+        const updated = await api.replaceConfig(normalizeConfigExport(local));
+        setPristine(updated);
+        setLocal(updated);
+        onSaved(updated);
+        configSaved = true;
+      }
       let savedChannels = pristineChannels;
       for (const { id, events } of changedChannelEvents(localChannels, pristineChannels)) {
-        await api.updateChannel(id, { events });
+        try {
+          await api.updateChannel(id, { events });
+        } catch (e) {
+          throw new Error(`${configSaved ? 'Global settings were saved, but a notification channel failed to save.' : 'A notification channel failed to save.'} Retry to save the remaining channel changes: ${e instanceof Error ? e.message : String(e)}`);
+        }
         savedChannels = savedChannels.map((c) => (c.id === id ? { ...c, events } : c));
         setPristineChannels(savedChannels);
       }
-      onSaved(updated);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setError(humanizeSaveError(message));

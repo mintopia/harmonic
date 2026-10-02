@@ -227,13 +227,15 @@ export function useConversationDetail(
 
   const rename = async (title: string | null) => {
     const id = focusedId;
-    if (id === null) return;
+    if (id === null) return false;
     try {
       const updated = await api.renameConversation(id, title);
       setConversation(updated);
       upsertConversationInList(updated);
+      return true;
     } catch (e) {
       toastError(e);
+      return false;
     }
   };
 

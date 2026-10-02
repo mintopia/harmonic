@@ -333,7 +333,7 @@ type ConversationHeaderProps = {
   conversation: Conversation | null;
   composing: boolean;
   onBack: () => void;
-  onRename: (title: string | null) => Promise<void>;
+  onRename: (title: string | null) => Promise<boolean>;
   onEnd: () => void;
   onDelete: () => void;
   onOpenContext?: () => void;
@@ -359,8 +359,7 @@ function ConversationHeader(props: ConversationHeaderProps) {
     setSaving(true);
     const trimmed = draft.trim();
     try {
-      await onRename(trimmed.length > 0 ? trimmed : null);
-      setEditing(false);
+      if (await onRename(trimmed.length > 0 ? trimmed : null)) setEditing(false);
     } finally {
       setSaving(false);
     }

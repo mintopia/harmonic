@@ -1,5 +1,29 @@
 import { describe, it, expect } from 'vitest';
 import { scopedKeyAllowed, readScopeAllowed } from '../src/server/app-auth-hook.js';
+import { startServer } from './helpers.js';
+
+it('enforces operator-only routes for encoded and noncanonical task ids', async () => {
+  const server = await startServer();
+  try {
+    const task = await server.app.ctx.tasks.create({ prompt: 'scope regression' });
+    for (const scope of ['attempt', 'conversation', 'read'] as const) {
+      const { token } = await server.app.ctx.auth.createKey('scope regression', { scope });
+      const headers = { authorization: `Bearer ${token}` };
+      for (const id of [String(task.id), `%${task.id.toString().charCodeAt(0).toString(16)}${String(task.id).slice(1)}`, `${task.id}e0`]) {
+        for (const action of ['accept', 'reject', 'close', 'complete', 'steer']) {
+          const response = await server.app.inject({ method: 'POST', url: `/api/tasks/${id}/${action}`, headers, payload: {} });
+          expect(response.statusCode, `${scope} ${id}/${action}`).toBe(403);
+        }
+        const response = await server.app.inject({ method: 'GET', url: `/api/tasks/${id}/channels`, headers });
+        expect(response.statusCode, `${scope} ${id}/channels`).toBe(403);
+      }
+      const response = await server.app.inject({ method: 'GET', url: `/api/tasks/${task.id}`, headers });
+      expect(response.statusCode).toBe(200);
+    }
+  } finally {
+    await server.close();
+  }
+});
 
 describe('scopedKeyAllowed', () => {
   it('allows /mcp regardless of the rest of the path', () => {

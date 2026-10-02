@@ -84,18 +84,11 @@ where code and the ADRs disagree, the ADRs win.
 
 ### Design context
 
-Strategic design context (register, users, personality, anti-references, design
-principles) lives in `PRODUCT.md`. The visual system spec is `DESIGN.md` — it
-describes **"Aurora"**, the system the UI actually ships (chosen and merged
-2026-07-16), so read it as current and binding, not aspirational. Read both
-before any frontend work.
-
-(This note used to say DESIGN.md described a "terminal-native redesign target,
-not the shipped zinc + amber UI". Both halves went stale two design iterations
-ago — terminal-native "Signal Console" was dropped for Aurora, and zinc + amber
-is long gone. Telling readers to distrust the spec is worse than saying nothing:
-if DESIGN.md and the code ever disagree again, that is a bug in one of them to
-be reconciled and written down, not a standing caveat to route around.)
+Before frontend work, read `PRODUCT.md` for users, product behavior, and design
+principles, and `DESIGN.md` for the current **Paper** visual system. The CSS
+tokens in `web/src/index.css` define its palette. Reconcile disagreements
+between the design documentation and shipped UI rather than treating the spec
+as aspirational. Execution behavior follows the current ADRs.
 
 ## Coding conventions
 

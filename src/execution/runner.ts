@@ -473,6 +473,7 @@ export class Runner {
   private async beginRun(task: TaskRow, parent?: SpanContext, resumedAttempt?: AttemptRow): Promise<AttemptRow> {
     // Covers the pre-spawn/between-turns gaps too, so a steer can't mistake a healthy Task for stranded.
     this.activeRuns.markDriving(task.id);
+    let created: AttemptRow | undefined;
     try {
       if (await this.epicBaseNotReady?.(task)) {
         throw new DomainError(
@@ -489,7 +490,7 @@ export class Runner {
         guardrailConfig: resolveGuardrails(ws, config),
         priceTable: pricesForHarness(harness),
       };
-      const created = resumedAttempt
+      created = resumedAttempt
         ? await this.attempts.update(resumedAttempt.id, {
             state: 'running',
             startedAt: Date.now(),
@@ -541,6 +542,14 @@ export class Runner {
       return bound;
     } catch (err) {
       this.activeRuns.clearDriving(task.id);
+      if (created && (await this.attempts.get(created.id)).state === 'running') {
+        await this.attempts.update(created.id, {
+          state: 'failed',
+          endedAt: Date.now(),
+          reason: 'failed',
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      }
       throw err;
     }
   }

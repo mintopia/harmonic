@@ -550,4 +550,25 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     await vi.waitFor(() => expect(started).toContain(blocked.id));
     expect(ar.waitingSince(blocked.id)).toBeUndefined();
   });
+
+  it('yields while scanning a long list of skipped candidates', async () => {
+    await directTask(freshDir(), 'candidate');
+    const candidate = (await tasks.orderedEligibleWork())[0];
+    if (!candidate) throw new Error('missing ready candidate');
+    vi.spyOn(tasks, 'list').mockResolvedValue([]);
+    vi.spyOn(tasks, 'orderedEligibleWork').mockResolvedValue(
+      Array.from({ length: 128 }, () => ({ ...candidate, state: 'working' })),
+    );
+    let now = 0;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => (now += 30));
+    let yielded = false;
+    setImmediate(() => { yielded = true; });
+    const { ar } = build();
+    try {
+      await ar['fillSlots'](new Map(), 10, () => { throw new Error('unexpected launch'); });
+    } finally {
+      clock.mockRestore();
+    }
+    expect(yielded).toBe(true);
+  });
 });

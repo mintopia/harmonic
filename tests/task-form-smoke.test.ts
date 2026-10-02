@@ -9,7 +9,7 @@ let host: HTMLDivElement | null = null;
 
 afterEach(cleanup);
 
-async function renderForm(props: { task: Task | null; workspace: Workspace | null; workspaceId: number | null; onSaved?: () => void }): Promise<HTMLDivElement> {
+async function renderForm(props: { task: Task | null; workspace: Workspace | null; workspaceId: number | null; onSaved?: () => void; onClose?: () => void }): Promise<HTMLDivElement> {
   vi.stubGlobal('fetch', async () => new Response(JSON.stringify(props.task ?? {})));
   host = await mountComponent(
     createElement(TaskForm, {
@@ -19,7 +19,7 @@ async function renderForm(props: { task: Task | null; workspace: Workspace | nul
       task: props.task,
       workspace: props.workspace,
       workspaceId: props.workspaceId,
-      onClose: () => {},
+      onClose: props.onClose ?? (() => {}),
       onSaved: props.onSaved ?? (() => {}),
     }),
   );
@@ -63,6 +63,27 @@ describe('TaskForm smoke (issue #469)', () => {
 
     const submit = [...host!.querySelectorAll('button')].find((b) => b.textContent === 'Create ready')!;
     expect(submit.disabled).toBe(false);
+  });
+
+  it('confirms before discarding a typed task and keeps it after cancel', async () => {
+    const onClose = vi.fn();
+    await renderForm({ task: null, workspace: null, workspaceId: null, onClose });
+    const prompt = host!.querySelector<HTMLTextAreaElement>('#task-prompt')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+    await act(async () => {
+      setValue.call(prompt, 'Keep this task');
+      prompt.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await act(async () => { host!.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click(); });
+    expect(host!.textContent).toContain('Discard unsaved changes?');
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => { [...host!.querySelectorAll('button')].find((button) => button.textContent === 'Cancel')!.click(); });
+    expect(prompt.value).toBe('Keep this task');
+
+    await act(async () => { host!.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click(); });
+    await act(async () => { [...host!.querySelectorAll('button')].find((button) => button.textContent === 'Discard')!.click(); });
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it('disables Save and shows a load error when lazily hydrating the prompt fails (issue #654)', async () => {

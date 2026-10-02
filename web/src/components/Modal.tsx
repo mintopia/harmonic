@@ -10,12 +10,14 @@ import { touchOverlay } from '../ui';
 export function Modal({
   label,
   onClose,
+  onRequestClose,
   className = '',
   closeClassName = 'text-faint hover:text-ink',
   children,
 }: {
   label: string;
   onClose: () => void;
+  onRequestClose?: () => void;
   className?: string;
   /** Colour classes for the ✕. Override when the dialog's top is a dark band. */
   closeClassName?: string;
@@ -40,15 +42,19 @@ export function Modal({
       ref={ref}
       aria-label={label}
       onClose={onClose}
+      onCancel={onRequestClose ? (e) => { e.preventDefault(); onRequestClose(); } : undefined}
       onClick={(e) => {
-        if (e.target === ref.current) ref.current.close();
+        if (e.target === ref.current) {
+          if (onRequestClose) onRequestClose();
+          else ref.current.close();
+        }
       }}
       className={`relative m-auto w-[calc(100%-2rem)] rounded-xl bg-surface p-0 text-ink shadow-bar ${className}`}
     >
       <button
         type="button"
         aria-label="Close"
-        onClick={() => ref.current?.close()}
+        onClick={() => onRequestClose ? onRequestClose() : ref.current?.close()}
         className={`absolute right-3 top-3 z-10 rounded-md px-1.5 py-0.5 transition-colors duration-150 ${closeClassName}`}
       >
         <span aria-hidden="true" className={touchOverlay} />

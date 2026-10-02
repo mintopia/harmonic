@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import type { Attributes } from '@opentelemetry/api';
 import { withRepoLock } from './repo-lock.js';
 import { startActiveChildOperation } from '../telemetry/operations.js';
-import { forEachYielding } from '../reliability/yield.js';
+import { forEachYielding, yieldToEventLoop } from '../reliability/yield.js';
 import { logger } from '../logger.js';
 import { GitError } from '../domain/errors.js';
 
@@ -610,6 +610,21 @@ export const Git = {
     } catch {
       return false;
     }
+  },
+
+  async taskMergeCommit(dir: string, baseBranch: string, branch: string): Promise<string | null> {
+    const branchOid = await Git.revParse(dir, branch);
+    const commits = await git(dir, 'rev-list', '--first-parent', '--merges', '--parents', `${branch}..${baseBranch}`);
+    let sliceStart = Date.now();
+    for (const line of commits.split('\n')) {
+      const [mergeOid, , secondParent] = line.split(' ');
+      if (secondParent === branchOid) return mergeOid ?? null;
+      if (Date.now() - sliceStart >= 25) {
+        await yieldToEventLoop();
+        sliceStart = Date.now();
+      }
+    }
+    return null;
   },
 
   /**

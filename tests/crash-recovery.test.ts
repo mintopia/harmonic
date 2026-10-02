@@ -136,6 +136,27 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     expect(await Git.revParse(repo, baseBranch)).toBe(revertedTip);
   });
 
+  it.each(['commit', 'merge'] as const)('does not check or revert a later base %s when recovering an already merged task', async (advance) => {
+    const { task, run, baseBranch } = await seedAlreadyMergedOrphan();
+    if (advance === 'merge') git(repo, 'checkout', '-b', 'other-branch');
+    commit(repo, 'later.txt', 'later work\n', 'later work');
+    if (advance === 'merge') {
+      git(repo, 'checkout', baseBranch);
+      git(repo, 'merge', '--no-ff', '-m', 'merge other-branch', 'other-branch');
+    }
+    const laterTip = await Git.revParse(repo, baseBranch);
+    const runPostMergeCheck = vi.fn(async () => ({ pass: false, output: 'later commit fails' }));
+    const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck });
+
+    await coord.reconcile();
+
+    expect(runPostMergeCheck).not.toHaveBeenCalled();
+    expect(await Git.revParse(repo, baseBranch)).toBe(laterTip);
+    expect(existsSync(join(repo, 'later.txt'))).toBe(true);
+    expect((await attempts.get(run.id)).state).toBe('passed');
+    expect((await tasks.get(task.id)).state).toBe('done');
+  });
+
   it('leaves a crashed worktree Run whose branch never landed as an ordinary interrupted orphan, never consulting the post-merge check', async () => {
     const { run } = await seedUnmergedOrphan();
     const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
@@ -147,6 +168,19 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     const interrupted = await attempts.get(run.id);
     expect(interrupted.state).toBe('failed');
     expect(interrupted.reason).toBe('process-death');
+  });
+
+  it('does not mistake a fast-forwarded branch for a published task merge', async () => {
+    const { run } = await seedUnmergedOrphan();
+    git(repo, 'merge', '--ff-only', run.branch!);
+    const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
+    const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck });
+
+    await coord.reconcile();
+
+    expect(runPostMergeCheck).not.toHaveBeenCalled();
+    expect((await attempts.get(run.id)).state).toBe('failed');
+    expect((await attempts.get(run.id)).reason).toBe('process-death');
   });
 
   it('marks a generic (non-worktree) interrupted Run interrupted, never consulting the post-merge check or git', async () => {
@@ -219,17 +253,17 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     }
   });
 
-  it('uses the injected isMerged seam instead of spawning git when supplied', async () => {
-    const { run } = await seedUnmergedOrphan();
-    const isMerged = vi.fn(async () => true);
+  it('uses the injected isMerged seam to reject recovery when supplied', async () => {
+    const { run } = await seedAlreadyMergedOrphan();
+    const isMerged = vi.fn(async () => false);
     const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
     const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck, isMerged });
 
     await coord.reconcile();
 
-    expect(isMerged).toHaveBeenCalledWith(repo, 'main', 'never-merged-branch');
-    expect(runPostMergeCheck).toHaveBeenCalledTimes(1);
-    expect((await attempts.get(run.id)).state).toBe('passed');
+    expect(isMerged).toHaveBeenCalledWith(repo, 'main', 'run-branch');
+    expect(runPostMergeCheck).not.toHaveBeenCalled();
+    expect((await attempts.get(run.id)).state).toBe('failed');
   });
 
   it('yields while reconciling a large backlog of running orphans', async () => {

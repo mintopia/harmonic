@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { AppConfig, Task, Workspace } from '../types';
 import { Modal } from './Modal';
+import { ConfirmDialog } from './ConfirmDialog';
 import { DiscoveryModelPicker } from './DiscoveryModelPicker.js';
 import { InheritField } from './InheritField';
 import { inheritSource } from './inherit-field-model';
@@ -37,18 +38,27 @@ export function TaskForm({
   useEffect(() => {
     if (full.data?.prompt !== undefined) setPrompt(full.data.prompt);
   }, [full.data]);
-  const [ov, setOv] = useState<Overrides>(
-    task?.overrides ?? {
+  const originalOv: Overrides = task?.overrides ?? {
       harness: null,
       model: null,
       isolationMode: null,
       priority: null,
       conflictResolveTurns: null,
-    },
-  );
-  const [workingDir, setWorkingDir] = useState(task?.workingDir ?? workspace?.workingDir ?? '');
+    };
+  const [ov, setOv] = useState<Overrides>(originalOv);
+  const originalWorkingDir = task?.workingDir ?? workspace?.workingDir ?? '';
+  const [workingDir, setWorkingDir] = useState(originalWorkingDir);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmClose, setConfirmClose] = useState(false);
+
+  const dirty = prompt !== (full.data?.prompt ?? task?.prompt ?? '') ||
+    JSON.stringify(ov) !== JSON.stringify(originalOv) || workingDir !== originalWorkingDir;
+  const requestClose = () => {
+    if (busy) return;
+    if (dirty) setConfirmClose(true);
+    else onClose();
+  };
 
   const set = <K extends keyof Overrides>(key: K, value: Overrides[K]) =>
     setOv((current) => ({ ...current, [key]: value }));
@@ -88,7 +98,8 @@ export function TaskForm({
   };
 
   return (
-    <Modal label={task ? `Edit ${taskLabel(task.id)}` : 'New task'} onClose={onClose} className="max-w-lg">
+    <>
+    <Modal label={task ? `Edit ${taskLabel(task.id)}` : 'New task'} onClose={onClose} onRequestClose={requestClose} className="max-w-lg">
       <form onSubmit={submit} className="p-5">
         <h2 className={`${panelTitle} mb-4`}>{task ? `Edit ${taskLabel(task.id)}` : 'New task'}</h2>
 
@@ -224,5 +235,18 @@ export function TaskForm({
         </div>
       </form>
     </Modal>
+    {confirmClose && (
+      <ConfirmDialog
+        label="Discard task changes"
+        title="Discard unsaved changes?"
+        confirmLabel="Discard"
+        tone="danger"
+        onConfirm={onClose}
+        onCancel={() => setConfirmClose(false)}
+      >
+        Your task changes will be lost.
+      </ConfirmDialog>
+    )}
+    </>
   );
 }

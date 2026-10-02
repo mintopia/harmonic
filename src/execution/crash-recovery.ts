@@ -98,9 +98,17 @@ export class CrashRecoveryCoordinator {
         const merged = await isMerged(task.workingDir, run.baseBranch!, run.branch!);
         if (!merged) return;
 
+        const taskMergeOid = await Git.taskMergeCommit(task.workingDir, run.baseBranch!, run.branch!);
+        if (!taskMergeOid) return;
+
         await withBaseCheckoutLock(task.workingDir, () =>
           withRepoLock(task.workingDir, async () => {
             const mergeOid = await Git.revParse(task.workingDir, run.baseBranch!);
+            if (mergeOid !== taskMergeOid) {
+              await this.settle.settle(task, run, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'done', reason: null });
+              await this.deps.postMerge?.({ repoDir: task.workingDir, baseBranch: run.baseBranch! });
+              return;
+            }
             const check = await this.deps.runPostMergeCheck({ task, run, mergeOid, baseDir: task.workingDir });
             if (check.pass) {
               await this.settle.settle(task, run, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'done', reason: null });

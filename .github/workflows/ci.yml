@@ -41,6 +41,8 @@ jobs:
 
       - run: npm run typecheck
 
+      - run: npm run lint
+
       # Fails if line coverage drops below the floor in vitest.config.ts.
       - run: npm run test:coverage
 

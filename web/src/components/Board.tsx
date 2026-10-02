@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Task, TaskState } from '../types';
 import type { Epic, EpicMember, MemberPipStatus } from '../epic-model';
 import { closedMembers, isEpicIntegrating, memberPipLabel, memberPipStatus } from '../epic-model';
@@ -324,14 +324,16 @@ export function EpicAttentionCard({ epic, onOpenEpic }: { epic: Epic; onOpenEpic
 function CardStrip({ count, children }: { count: number; children: React.ReactNode }) {
   const stripRef = useRef<HTMLDivElement>(null);
   const [more, setMore] = useState(0);
+  const measure = useCallback(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const right = strip.getBoundingClientRect().right;
+    setMore(Array.from(strip.children).filter((card) => card.getBoundingClientRect().right > right + 1).length);
+  }, []);
 
   useEffect(() => {
     const strip = stripRef.current;
     if (!strip) return;
-    const measure = () => {
-      const visibleCards = Math.max(1, Math.floor(strip.clientWidth / 432));
-      setMore(Math.max(0, count - visibleCards));
-    };
     measure();
     if (typeof ResizeObserver === 'undefined') {
       window.addEventListener('resize', measure);
@@ -340,19 +342,19 @@ function CardStrip({ count, children }: { count: number; children: React.ReactNo
     const observer = new ResizeObserver(measure);
     observer.observe(strip);
     return () => observer.disconnect();
-  }, [count]);
+  }, [count, measure]);
 
   return (
     <div className="relative">
-      <div ref={stripRef} data-board-layout="card-strip" className="flex gap-3 overflow-x-auto pb-2 pr-20 [scrollbar-width:thin] max-md:flex-col max-md:overflow-visible max-md:pr-0">
+      <div ref={stripRef} onScroll={measure} data-board-layout="card-strip" className="flex gap-3 overflow-x-auto pb-2 pr-20 [scrollbar-width:thin] max-md:flex-col max-md:overflow-visible max-md:pr-0">
         {children}
       </div>
       {more > 0 && (
         <>
           <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-canvas max-md:hidden" />
-          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-raised px-2 py-1 text-small font-medium text-muted max-md:hidden">
+          <button type="button" aria-label={`Show ${more} more cards`} onClick={() => stripRef.current?.scrollBy({ left: 432 })} className={`${HIT44} absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-raised px-2 py-1 text-small font-medium text-muted max-md:hidden`}>
             → {more} more
-          </span>
+          </button>
         </>
       )}
     </div>
