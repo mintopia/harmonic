@@ -5,7 +5,7 @@ import { processGroups } from '../db/schema.js';
 import { fireAndForget, reportFailure } from '../error-handling.js';
 import { logger } from '../logger.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
-import { ProcGroupReaper, readProcStartToken, type ProcessReaper } from './process-reaper.js';
+import { ProcGroupReaper, readProcStartToken, readProcessTable, type ProcessReaper } from './process-reaper.js';
 
 /** Persists every spawned process group so a boot after a crash can reap the ones left running. */
 export class ProcessGroupJournal {
@@ -28,8 +28,10 @@ export class ProcessGroupJournal {
   /** Boot only, before this instance spawns anything: every journaled group belongs to a dead predecessor. */
   async reapOrphans(yieldOptions?: YieldOptions): Promise<void> {
     const rows = await this.db.read((d) => d.select().from(processGroups).all());
+    if (rows.length === 0) return;
+    const processTable = readProcessTable();
     await forEachYielding(rows, async (row) => {
-      const outcome = await this.reaper.reap({ pgid: row.pgid, startToken: row.startToken });
+      const outcome = await this.reaper.reap({ pgid: row.pgid, startToken: row.startToken }, { processTable });
       logger.info('crash-recovery: reaping orphan process group', { owner: row.owner, pgid: row.pgid, outcome });
       await this.forget(row.id);
     }, yieldOptions);
@@ -38,8 +40,7 @@ export class ProcessGroupJournal {
 
 let journal: ProcessGroupJournal | undefined;
 
-/** Process groups are per OS process, so one journal serves the whole process; the app attaches it after the boot reap. */
-export function attachProcessGroupJournal(next: ProcessGroupJournal): void {
+export function attachJournalAfterBootReap(next: ProcessGroupJournal): void {
   journal = next;
 }
 

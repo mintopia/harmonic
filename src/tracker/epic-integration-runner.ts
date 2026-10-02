@@ -2,7 +2,11 @@ import type { WorkspaceRow } from '../db/schema.js';
 import type { EpicLifecycle } from '../execution/epic-coordinator.js';
 import type { EpicWorktreePool } from '../execution/epic-worktree-pool.js';
 import type { PostMergeCheckResult, MergePolicyOutcome } from '../execution/merge-policy.js';
-import { runCommandVerifier } from '../verification/command-verifier.js';
+import { commandAttemptToInput } from '../verification/command-verifier.js';
+import { runPostMergeCommands } from '../verification/post-merge-commands.js';
+import type { AttemptStore } from '../domain/attempts.js';
+import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
+import type { TaskArchive } from '../archive/task-archive.js';
 import type { ResolvedVerifiers } from '../domain/setting-override.js';
 import type { MergeEpicIntegration } from './epic-service.js';
 
@@ -11,6 +15,9 @@ export interface EpicIntegrationRunnerDeps {
   worktrees: Pick<EpicWorktreePool, 'release'>;
   epics: Pick<EpicLifecycle, 'retireIntegrationBranch'>;
   mergeEpicIntegration: MergeEpicIntegration;
+  epicAttempts?: Pick<AttemptStore, 'listForEpic'> | undefined;
+  verificationAttemptStore?: Pick<VerificationAttemptStore, 'append'> | undefined;
+  archive?: Pick<TaskArchive, 'epicVerificationOutputLog'> | undefined;
   resolvePostMergeCommands: () => Promise<ResolvedVerifiers['epic']['preMerge']['commands']>;
 }
 
@@ -31,7 +38,7 @@ export class EpicIntegrationRunner {
         epicRef,
         defaultBranch,
         integrationBranch,
-        runPostMergeCheck: (mergeOid, baseDir) => this.runPostMergeCheck(mergeOid, baseDir),
+        runPostMergeCheck: (mergeOid, baseDir) => this.runPostMergeCheck(epicRef, mergeOid, baseDir),
       });
     } finally {
       await this.deps.worktrees.release(this.deps.workspace.workingDir, epicRef);
@@ -43,16 +50,18 @@ export class EpicIntegrationRunner {
     await this.deps.epics.retireIntegrationBranch(epicRef);
   }
 
-  private async runPostMergeCheck(mergeOid: string, baseDir: string): Promise<PostMergeCheckResult> {
-    const commands = await this.deps.resolvePostMergeCommands();
-    for (const command of commands) {
-      const attempt = await runCommandVerifier({
-        cwd: baseDir,
-        verifiedHeadOid: mergeOid,
-        command,
-      });
-      if (attempt.verdict !== 'pass') return { pass: false, output: `${attempt.summary}\n${attempt.output}`.trim() };
-    }
-    return { pass: true, output: '' };
+  private async runPostMergeCheck(epicRef: number, mergeOid: string, baseDir: string): Promise<PostMergeCheckResult> {
+    const { workspace, epicAttempts, verificationAttemptStore, archive } = this.deps;
+    const attempt = (await epicAttempts?.listForEpic({ workspaceId: workspace.id, epicRef }))?.at(-1);
+    return runPostMergeCommands({
+      commands: await this.deps.resolvePostMergeCommands(),
+      cwd: baseDir,
+      mergeOid,
+      outputLogPath: async (command) =>
+        (attempt ? await archive?.epicVerificationOutputLog(workspace.id, epicRef, attempt.number, command.id, 'post-merge') : null) ?? null,
+      onAttempt: async (commandAttempt) => {
+        if (attempt) await verificationAttemptStore?.append(attempt.id, commandAttemptToInput(commandAttempt));
+      },
+    });
   }
 }

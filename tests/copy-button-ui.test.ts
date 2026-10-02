@@ -103,12 +103,12 @@ describe('copy placements', () => {
     const statuses: VerifierStatus[] = [{ mechanism: 'command', state: 'failed', reason: null }];
     const host = await mountComponent(createElement(Verification, { attempts: [attempt({ id: 9, output: 'head…[truncated]…tail', outputTruncated: true })], statuses, run }));
     await click(button(host, 'Copy full output'));
-    expect(fetchMock).toHaveBeenCalledWith('/api/verification-attempts/9/output');
+    expect(fetchMock).toHaveBeenCalledWith('/api/verification-attempts/9/output', { method: 'GET' });
     expect(writeText).toHaveBeenCalledWith('FULL OUTPUT');
   });
 
   it('toasts when the full output is no longer archived', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404, statusText: 'Not Found' }));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404, statusText: 'Not Found', text: () => Promise.resolve('') }));
     const statuses: VerifierStatus[] = [{ mechanism: 'command', state: 'failed', reason: null }];
     const host = await mountComponent(createElement(Verification, { attempts: [attempt({ id: 9, outputTruncated: true })], statuses, run }));
     await click(button(host, 'Copy full output'));

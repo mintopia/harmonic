@@ -50,19 +50,30 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public code: string | null = null,
   ) {
     super(message);
   }
 }
 
-export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function send(method: string, path: string, body?: unknown): Promise<{ res: Response; text: string }> {
   const res = await fetch(path, {
     method,
     ...(body === undefined
       ? {}
       : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
   });
-  const text = await res.text();
+  return { res, text: await res.text() };
+}
+
+function failure(method: string, path: string, res: Response, json: unknown): ApiError {
+  const fallback = `${method} ${path} failed (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`;
+  const envelope = json && typeof json === 'object' && 'error' in json ? (json as { error?: { message?: string; code?: string } }).error : undefined;
+  return new ApiError(res.status, envelope?.message ?? fallback, envelope?.code ?? null);
+}
+
+export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const { res, text } = await send(method, path, body);
   let json: unknown = null;
   try {
     json = text ? JSON.parse(text) : null;
@@ -71,14 +82,17 @@ export async function request<T>(method: string, path: string, body?: unknown): 
     // surface that raw body to the operator.
     throw new ApiError(res.status, `${method} ${path} failed (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`);
   }
-  if (!res.ok) {
-    const message = json && typeof json === 'object' && 'error' in json ? (json as { error?: { message?: string } }).error?.message : undefined;
-    throw new ApiError(res.status, message ?? `${method} ${path} failed (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`);
-  }
+  if (!res.ok) throw failure(method, path, res, json);
   if (json === null && res.status !== 204) {
     throw new ApiError(res.status, `Empty response from ${method} ${path}`);
   }
   return json as T;
+}
+
+async function requestText(path: string): Promise<string> {
+  const { res, text } = await send('GET', path);
+  if (!res.ok) throw new ApiError(res.status, `Full output unavailable (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`);
+  return text;
 }
 
 export const api = {
@@ -315,11 +329,7 @@ export const api = {
   verificationAttempt: (id: number) =>
     request<{ output: string; summary: string; hasTranscript: boolean }>('GET', `/api/verification-attempts/${id}`),
   verificationOutputUrl: (id: number) => `/api/verification-attempts/${id}/output`,
-  verificationFullOutput: async (id: number): Promise<string> => {
-    const res = await fetch(`/api/verification-attempts/${id}/output`);
-    if (!res.ok) throw new ApiError(res.status, `Full output unavailable (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`);
-    return res.text();
-  },
+  verificationFullOutput: (id: number) => requestText(`/api/verification-attempts/${id}/output`),
   criticLog: (attemptId: number) =>
     request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number; fromArchive?: boolean } | { status: 'unavailable'; liveCursor: number }>(
       'GET',

@@ -1,4 +1,5 @@
 import type { Epic } from '../epic-model.js';
+import { eventCount } from '../id-format.js';
 import { epicTimelineRows } from '../epic-timeline-model.js';
 import type { MergeStepTone } from '../merge-progress-model.js';
 import { card, railSectionCount } from '../ui.js';
@@ -34,7 +35,7 @@ export function EpicTimeline({ epic }: { epic: Epic }) {
         <div className="flex items-center justify-between gap-4 border-b border-hairline px-5 py-3">
           <div className="flex items-baseline gap-2.5">
             <span className={CAPS}>Lifecycle</span>
-            <span className={railSectionCount}>{rows.length} events</span>
+            <span className={railSectionCount}>{eventCount(rows.length)}</span>
           </div>
         </div>
         <ol className="px-5 py-4" aria-label="Chronological epic timeline">

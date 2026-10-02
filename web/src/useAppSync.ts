@@ -3,7 +3,7 @@ import { api, ApiError } from './api';
 import { boardSections } from './board-sections-model';
 import { debounce } from './debounce';
 import type { Epic } from './epic-model';
-import { taskLabel } from './id-format.js';
+import { epicLabel, taskLabel } from './id-format.js';
 import { exportFailedMessage } from './task-export-model.js';
 import {
   advanceReviewAnnouncements,
@@ -185,7 +185,7 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
         },
         (error) => {
           if (!live() || request !== updateRequest.current) return;
-          if (error instanceof ApiError && error.status === 409 && error.message === 'in-place upgrades are only available for packaged instances') return;
+          if (error instanceof ApiError && error.code === 'not_packaged') return;
           timer = setTimeout(load, 1_000);
         },
       );
@@ -244,7 +244,7 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
         debouncedRefreshEpics();
       }
       if (msg.type === 'epic_integrated' && msg.workspaceId === activeWorkspaceId) {
-        toastSuccess(`Epic #${msg.epicRef} merged`);
+        toastSuccess(`${epicLabel(msg.epicRef)} merged`);
         debouncedRefreshEpics();
       }
       if (msg.type === 'task_removed') {

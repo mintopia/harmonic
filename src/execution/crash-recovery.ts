@@ -4,6 +4,8 @@ import type { TaskService } from '../domain/tasks.js';
 import type { AttemptSettleCoordinator } from '../domain/attempt-settle.js';
 import { Git } from './git.js';
 import { withBaseCheckoutLock, withRepoLock } from './repo-lock.js';
+import { withEphemeralMergeWorktree } from './ephemeral-merge-worktree.js';
+import { captureDirtyPaths, syncBaseCheckout } from './base-checkout-sync.js';
 import type { PostMergeCheckResult } from './merge-policy.js';
 import type { PostMergeHook } from './branch-merge.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
@@ -103,29 +105,61 @@ export class CrashRecoveryCoordinator {
 
         await withBaseCheckoutLock(task.workingDir, () =>
           withRepoLock(task.workingDir, async () => {
-            const mergeOid = await Git.revParse(task.workingDir, run.baseBranch!);
-            if (mergeOid !== taskMergeOid) {
-              await this.settle.settle(task, run, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'done', reason: null });
-              await this.deps.postMerge?.({ repoDir: task.workingDir, baseBranch: run.baseBranch! });
+            const repoDir = task.workingDir;
+            const baseBranch = run.baseBranch!;
+            const mergeOid = await Git.revParse(repoDir, baseBranch);
+            const hasDependentCommitAfterMerge = mergeOid !== taskMergeOid;
+            if (hasDependentCommitAfterMerge) {
+              await this.settleMerged(task, run);
               return;
             }
-            const check = await this.deps.runPostMergeCheck({ task, run, mergeOid, baseDir: task.workingDir });
-            if (check.pass) {
-              await this.settle.settle(task, run, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'done', reason: null });
-              await this.deps.postMerge?.({ repoDir: task.workingDir, baseBranch: run.baseBranch! });
-            } else {
-              await Git.revertMergeCommit(task.workingDir, mergeOid);
-              await this.settle.settle(task, run, 'escalate', {
-                runState: 'failed',
-                taskAction: 'escalate',
-                reason: `escalated to human: post-merge check failed after restart: ${check.output}`,
+            const verdict = await withEphemeralMergeWorktree({ repoDir, baseTipOid: mergeOid }, async (adminPath) => {
+              const check = await this.deps.runPostMergeCheck({ task, run, mergeOid, baseDir: adminPath });
+              if (check.pass) return { pass: true as const };
+              const revertOid = await Git.revertMergeCommit(adminPath, mergeOid).catch((error: unknown) => {
+                logger.warn('crash-recovery: reverting the red merge failed', { repoDir, baseBranch, mergeOid, error: error instanceof Error ? error.message : String(error) });
+                return null;
               });
+              return { pass: false as const, output: check.output, revertOid };
+            });
+            if (verdict.pass) {
+              await this.settleMerged(task, run);
+              return;
             }
+            const reverted = verdict.revertOid !== null && (await this.publishRevert(repoDir, baseBranch, mergeOid, verdict.revertOid));
+            await this.settle.settle(task, run, 'escalate', {
+              runState: 'failed',
+              taskAction: 'escalate',
+              reason: `escalated to human: post-merge check failed after restart${reverted ? '' : ` and the merge could not be reverted from ${baseBranch}`}: ${verdict.output}`,
+            });
           }),
         );
       },
       this.deps.yieldOptions,
     );
+  }
+
+  private async settleMerged(task: TaskRow, run: TaskAttemptRow): Promise<void> {
+    await this.settle.settle(task, run, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'done', reason: null });
+    await this.deps.postMerge?.({ repoDir: task.workingDir, baseBranch: run.baseBranch! });
+  }
+
+  private async publishRevert(repoDir: string, baseBranch: string, mergeOid: string, revertOid: string): Promise<boolean> {
+    const checkoutDir = await Git.branchCheckedOutAt(repoDir, baseBranch);
+    const dirtyPaths = checkoutDir !== null ? await captureDirtyPaths(checkoutDir) : new Set<string>();
+    const cas = await Git.casUpdateRef(repoDir, baseBranch, revertOid, mergeOid);
+    if (!cas.ok) {
+      logger.warn('crash-recovery: base moved before the red merge could be reverted', { repoDir, baseBranch, mergeOid, detail: cas.detail });
+      return false;
+    }
+    if (checkoutDir !== null) {
+      try {
+        await syncBaseCheckout(checkoutDir, dirtyPaths, mergeOid, revertOid);
+      } catch (error) {
+        logger.warn('crash-recovery: syncing the base checkout after the revert failed', { checkoutDir, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return true;
   }
 
   private async reconcileMergedButUnsettled(): Promise<void> {

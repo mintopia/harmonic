@@ -525,7 +525,7 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
         { resolveConflictTurn: neverCalled('resolveConflictTurn'), runPostMergeCheck: neverCalled('runPostMergeCheck'), escalate },
       );
 
-      expect(outcome).toMatchObject({ kind: 'escalated', reason: 'conflict' });
+      expect(outcome).toMatchObject({ kind: 'escalated', reason: 'write-failed' });
       if (outcome.kind !== 'escalated') throw new Error('unreachable');
       expect(outcome.message).toContain('cannot lock ref');
       expect(escalate).toHaveBeenCalledTimes(1);

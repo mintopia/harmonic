@@ -72,7 +72,15 @@ export async function runTimedCriticDrive(
       },
     });
   } finally {
-    if (!recorded) await record(Math.round(performance.now() - started));
+    if (!recorded) await recordDurationBestEffort(record, Math.round(performance.now() - started));
+  }
+}
+
+async function recordDurationBestEffort(record: ((durationMs: number) => Promise<void>) | undefined, durationMs: number): Promise<void> {
+  try {
+    await record?.(durationMs);
+  } catch (err) {
+    logger.warn('critic: recording agent duration failed', { error: err instanceof Error ? err.message : String(err) });
   }
 }
 
@@ -166,14 +174,14 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
           promptResult = await Promise.race([driver.prompt([{ type: 'text', text: req.prompt }]), timeout]);
         } finally {
           agentTimingRecorded = true;
-          await req.onAgentDurationMs?.(Math.round(performance.now() - promptStarted));
+          await recordDurationBestEffort(req.onAgentDurationMs, Math.round(performance.now() - promptStarted));
         }
         return { output, permissionRequests, sessionId: sessionId ?? null, ...(promptResult.usage ? { usage: promptResult.usage } : {}) };
       } finally {
         if (timer) clearTimeout(timer);
         driver.dispose();
         kill();
-        if (!agentTimingRecorded) await req.onAgentDurationMs?.(0);
+        if (!agentTimingRecorded) await recordDurationBestEffort(req.onAgentDurationMs, 0);
       }
     },
   };

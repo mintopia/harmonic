@@ -94,7 +94,7 @@ export async function taskExportRoutes(fastify: FastifyInstance, ctx: AppContext
       const outcomes = await ctx.exporter.exportAgain(task, { forcePartial });
       if (outcomes === null) throw new DomainError('conflict', 'No Export Destination is enabled for this Task');
       return {
-        outcomes: outcomes.map((o) => ({ destination: o.destination, status: o.status, file: o.file, error: o.error ?? null })),
+        outcomes: outcomes.map((o) => ({ destination: o.destination, status: o.status, file: o.file, error: o.status === 'failed' ? o.error : null })),
         export: { exportable: true, ...(await ctx.exporter.status(task)) },
       };
     },
@@ -166,7 +166,7 @@ export async function taskExportRoutes(fastify: FastifyInstance, ctx: AppContext
       const outcomes = await ctx.exporter.exportEpicAgain(workspaceId, epicRef);
       if (outcomes === null) throw new DomainError('conflict', 'No Export Destination is enabled for this Epic');
       return {
-        outcomes: outcomes.map((o) => ({ destination: o.destination, status: o.status, file: o.file, error: o.error ?? null })),
+        outcomes: outcomes.map((o) => ({ destination: o.destination, status: o.status, file: o.file, error: o.status === 'failed' ? o.error : null })),
         export: { exportable: true, ...(await ctx.exporter.epicStatus(workspaceId, epicRef)) },
       };
     },

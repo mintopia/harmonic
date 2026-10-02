@@ -32,7 +32,11 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
 
   useEffect(() => {
     let active = true;
-    Promise.all([api.configLayers(), api.channels()])
+    const channelsLoad = api.channels().catch((e) => {
+      console.warn('failed to load channels', e);
+      return { channels: [] };
+    });
+    Promise.all([api.configLayers(), channelsLoad])
       .then(([{ baseline, global, harnessPermissionModes }, { channels }]) => {
         if (!active) return;
         setBaseline(baseline);
@@ -51,8 +55,8 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
   if (loadError) return <LoadError message={`settings: ${loadError}`} onRetry={() => { setLoadError(null); setLoadAttempt((n) => n + 1); }} />;
   if (!local || !pristine || !baseline) return <p role="status" className="p-4 text-muted">Loading settings…</p>;
 
-  const dirty =
-    JSON.stringify(local) !== JSON.stringify(pristine) || channelsDirty(localChannels, pristineChannels);
+  const configDirty = JSON.stringify(local) !== JSON.stringify(pristine);
+  const dirty = configDirty || channelsDirty(localChannels, pristineChannels);
 
   const discard = () => {
     setLocal(pristine);
@@ -73,7 +77,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
     }
     let configSaved = false;
     try {
-      if (JSON.stringify(local) !== JSON.stringify(pristine)) {
+      if (configDirty) {
         const updated = await api.replaceConfig(normalizeConfigExport(local));
         setPristine(updated);
         setLocal(updated);

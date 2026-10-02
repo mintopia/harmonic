@@ -99,6 +99,8 @@ export type ReapOutcome = 'reaped' | 'not-running' | 'identity-mismatch' | 'refu
 export interface ReapOptions {
   termGraceMs?: number;
   pollMs?: number;
+  /** A process table already read by the caller, so a batch of reaps shares one read; null means unreadable. Read fresh when omitted. */
+  processTable?: readonly ProcessStart[] | null;
 }
 
 export type ReapTargets = { kind: 'reap'; members: ProcessStart[] } | { kind: 'skip'; outcome: 'not-running' | 'identity-mismatch' };
@@ -131,7 +133,7 @@ export class ProcGroupReaper implements ProcessReaper {
     const recordedStart = startOrder(startToken);
     const selfToken = readProcStartToken(process.pid);
     const selfStart = selfToken === null ? null : startOrder(selfToken);
-    const table = readProcessTable();
+    const table = options.processTable === undefined ? readProcessTable() : options.processTable;
     if (recordedStart === null || selfStart === null || table === null) return 'unreadable';
     const targets = reapTargets({ pgid, start: recordedStart }, table, selfStart);
     if (targets.kind === 'skip') return targets.outcome;

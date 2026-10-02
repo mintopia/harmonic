@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from './git.js';
-import { fireAndForget } from '../error-handling.js';
+import { bestEffort, errorMessage, fireAndForget } from '../error-handling.js';
 import type { GitCircuitBreaker } from './git-failure.js';
 import type { AttemptUsageSnapshot } from './usage.js';
 import { LiveUsageTailer } from './live-usage-tailer.js';
@@ -548,13 +548,12 @@ export class Runner {
       return bound;
     } catch (err) {
       this.activeRuns.clearDriving(task.id);
-      if (created && (await this.attempts.get(created.id)).state === 'running') {
-        await this.attempts.update(created.id, {
-          state: 'failed',
-          endedAt: Date.now(),
-          reason: 'failed',
-          detail: err instanceof Error ? err.message : String(err),
-        });
+      if (created) {
+        const attemptId = created.id;
+        await bestEffort(async () => {
+          if ((await this.attempts.get(attemptId)).state !== 'running') return;
+          await this.attempts.update(attemptId, { state: 'failed', endedAt: Date.now(), reason: 'failed', detail: errorMessage(err) });
+        }, { op: 'runner.beginRun.failAttempt', level: 'warn', context: { taskId: task.id, attemptId } });
       }
       throw err;
     }

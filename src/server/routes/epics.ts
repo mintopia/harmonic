@@ -88,7 +88,7 @@ const mergeStepSchema = z
     z.object({ step: z.literal('completed-in-place'), baseBranch: z.string(), leftBranch: z.string().optional() }),
     z.object({ step: z.literal('reconciled'), fromBase: z.string(), toBase: z.string(), mergeOid: z.string() }),
     z.object({ step: z.literal('rebuilding'), fromBase: z.string(), toBase: z.string(), paths: z.array(z.string()) }),
-    z.object({ step: z.literal('escalated'), reason: z.enum(['conflict', 'post-merge-red', 'target-advanced']), message: z.string() }),
+    z.object({ step: z.literal('escalated'), reason: z.enum(['conflict', 'post-merge-red', 'write-failed', 'target-advanced']), message: z.string() }),
   ])
   .meta({ id: 'MergeStepEvent' });
 

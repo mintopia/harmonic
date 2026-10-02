@@ -22,9 +22,11 @@ import { LifecycleTimeline } from '../components/ticket/LifecycleTimeline';
 import { MergeProgress } from '../components/MergeProgress';
 import { EpicIntegrationBar } from '../components/EpicIntegrationBar';
 import type { MergeStepEvent } from '../merge-progress-model';
+import { HintBanner } from '../components/HintBanner';
+import { SettingsPage } from '../components/SettingsPage';
 import { ExportPanel } from '../components/ticket/ExportPanel';
 import type { TaskExportStatus } from '../types';
-import { task, boardEpic, boardTasks, doneEpic, runs, timeline } from './fixtures';
+import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline } from './fixtures';
 
 const mergedSteps: MergeStepEvent[] = [
   { step: 'started', baseBranch: 'develop', taskBranch: 'task/handoff-10-merge-visibility' },
@@ -304,7 +306,38 @@ const exportStory: TaskExportStatus = {
 function ExportStory() {
   return (
     <StoryFrame style={{ padding: 30, maxWidth: 820, margin: '0 auto' }}>
-      <ExportPanel target={{ key: 'task:185', noun: 'Task', load: async () => exportStory, exportAgain: async () => ({ outcomes: [], export: exportStory }), downloadUrl: '/api/tasks/185/export/download' }} state="done" refreshKey={0} />
+      <ExportPanel target={{ key: 'task:185', noun: 'Task', load: async () => exportStory, exportAgain: async () => ({ outcomes: [], export: exportStory }), downloadUrl: '/api/tasks/185/export/download' }} finished refreshKey={0} />
+    </StoryFrame>
+  );
+}
+
+function HintsStory() {
+  return (
+    <StoryFrame style={{ padding: '8px 0' }}>
+      <HintBanner tone="ready" onDismiss={() => {}}>
+        Your first task is ready, but nothing's running it yet. Press <span className="font-semibold text-ink">Run now</span> on the card, or turn the{' '}
+        <span className="font-semibold text-ink">Auto-runner</span> on above.
+      </HintBanner>
+      <HintBanner tone="await" onDismiss={() => {}}>
+        A ticket is escalated. Open it to read why and the changes so far, then <span className="font-semibold text-ink">Accept</span> to merge as-is,{' '}
+        <span className="font-semibold text-ink">Reject</span> with guidance for the next attempt, or <span className="font-semibold text-ink">Close</span> it.
+      </HintBanner>
+    </StoryFrame>
+  );
+}
+
+function ArchiveStory() {
+  return (
+    <StoryFrame style={{ padding: 30, maxWidth: 760, margin: '0 auto' }}>
+      <ChatTranscript events={criticLog as AttemptLogEvent[]} unavailable={false} model="opus-4.8" agent="claude" stepLabel="Critic" fromArchive />
+    </StoryFrame>
+  );
+}
+
+function SettingsPageStory() {
+  return (
+    <StoryFrame style={{ padding: 24 }}>
+      <SettingsPage onSaved={() => {}} />
     </StoryFrame>
   );
 }
@@ -357,7 +390,12 @@ const STORIES: Record<string, () => JSX.Element> = {
   dashboard: DashboardStory,
   guardrail: GuardrailStory,
   epic: EpicStory,
+  'epic-done': EpicStory,
   export: ExportStory,
+  hints: HintsStory,
+  'settings-error': SettingsPageStory,
+  'settings-page': SettingsPageStory,
+  archive: ArchiveStory,
 };
 
 function Story() {

@@ -239,7 +239,8 @@ describe.skipIf(!dockerAvailable())('TaskExporter S3 destination (#737)', () => 
     const outcomes = await exporter(config({ accessKeyId: 'wrong', secretAccessKey: 'wrongwrongwrong' })).run(task, 'done');
 
     expect(outcomes?.map((o) => [o.destination, o.status])).toEqual([['directory', 'succeeded'], ['s3', 'failed']]);
-    expect(outcomes![1]!.error).toBeTruthy();
+    const s3 = outcomes![1]!;
+    expect(s3.status === 'failed' && s3.error).toBeTruthy();
     expect(readdirSync(join(dest, 'my-workspace'))).toHaveLength(1);
     expect(facts.map((f) => [f.destination, f.status])).toEqual([['directory', 'succeeded'], ['s3', 'failed']]);
     expect(await keys(globalBucket)).toEqual([]);

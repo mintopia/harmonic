@@ -74,11 +74,11 @@ function latestExportAt(exports: ExportRecord[]): number | null {
   return times.length > 0 ? Math.max(...times) : null;
 }
 
-function ownerKey(manifest: Manifest): string {
+function ownerKey(manifest: Manifest): string | null {
   if (typeof manifest.epicRef === 'number' && typeof manifest.workspaceId === 'number') {
     return exportOwnerKey({ kind: 'epic', workspaceId: manifest.workspaceId, epicRef: manifest.epicRef });
   }
-  return exportOwnerKey({ kind: 'task', taskId: manifest.taskId ?? -1 });
+  return typeof manifest.taskId === 'number' ? exportOwnerKey({ kind: 'task', task: { id: manifest.taskId } }) : null;
 }
 
 async function terminalAt(manifest: Manifest, deps: ArchivePruneDeps): Promise<number | null> {
@@ -141,7 +141,8 @@ export async function pruneArchives(deps: ArchivePruneDeps): Promise<number> {
       const manifest = JSON.parse(await readFile(join(dir, 'archive.json'), 'utf8')) as Manifest;
       const bytes = await directoryBytes(dir);
       const exports = manifest.exports ?? [];
-      const awaitingExport = pending.has(ownerKey(manifest));
+      const key = ownerKey(manifest);
+      const awaitingExport = key !== null && pending.has(key);
       const at = exportsSettled(exports) && !awaitingExport ? await terminalAt(manifest, deps) : null;
       const settled = at !== null && now - Math.max(at, latestExportAt(exports) ?? 0) >= EXPORT_GRACE_MS;
       candidates.push({ dir, pool, bytes, terminalAt: settled ? at : null });

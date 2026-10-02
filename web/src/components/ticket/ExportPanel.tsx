@@ -2,7 +2,7 @@ import { exportPanelModel, type DestinationRow, type ExportSummaryView } from '.
 import { btnGhost, btnPrimary, card, statePill, statePillShape } from '../../ui';
 import { CopyButton } from '../CopyButton';
 import { Icon } from '../Icon';
-import { useTaskExport, type ExportTarget } from '../useTaskExport';
+import { useExport, type ExportTarget } from '../useExport';
 import { humanState, sectionCaps, StatePill } from './shared';
 
 function stamp(iso: string): string {
@@ -32,12 +32,12 @@ function Destination({ row }: { row: DestinationRow }) {
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-          <span className="w-[74px] text-[13px] font-semibold">{row.label}</span>
-          {row.location && <span className="break-all font-data text-[12.5px] text-muted">{row.location}</span>}
+          <span className="text-[13px] font-semibold sm:w-[74px]">{row.label}</span>
+          {row.location && <span className="font-data text-[12.5px] text-muted [overflow-wrap:anywhere]">{row.location}</span>}
         </div>
         {row.error && (
-          <div role="alert" className="ml-[86px] mt-1 text-small text-fail">
-            <span className="break-all font-data text-[11.5px]">{row.error}</span>
+          <div role="alert" className="mt-1 text-small text-fail sm:ml-[86px]">
+            <span className="font-data text-[11.5px] [overflow-wrap:anywhere]">{row.error}</span>
             {row.retryText && (
               <span className={`ml-2 ${row.retryExhausted ? 'font-semibold text-fail' : 'text-muted'}`}>
                 <span aria-hidden className="mr-2 text-edge-strong">
@@ -62,7 +62,7 @@ function Latest({ latest, noun }: { latest: ExportSummaryView; noun: string }) {
   return (
     <>
       {latest.name && (
-        <div className="mt-3 flex items-center gap-1.5 break-all text-[13px]">
+        <div className="mt-3 flex items-center gap-1.5 break-words text-[13px]">
           <span className="font-data">{latest.name}</span>
           <CopyButton text={latest.name} label="Copy tarball name" className="size-7 text-muted hover:bg-raised" />
         </div>
@@ -122,16 +122,15 @@ function Latest({ latest, noun }: { latest: ExportSummaryView; noun: string }) {
  */
 export function ExportPanel({
   target,
-  state,
+  finished,
   refreshKey,
 }: {
   target: ExportTarget;
-  state: string;
+  finished: boolean;
   /** Changes whenever the page's timeline gains a fact, so the panel re-reads. */
   refreshKey: number;
 }) {
-  const finished = state === 'done' || state === 'cancelled';
-  const { status, busy, feedback, exportAgain, now } = useTaskExport(target, finished, refreshKey);
+  const { status, busy, feedback, exportAgain, now } = useExport(target, finished, refreshKey);
   const model = exportPanelModel(status, now);
   if (!finished || model === null) return null;
   const { latest, earlier } = model;
@@ -144,7 +143,7 @@ export function ExportPanel({
             Export
           </h2>
           {latest?.partial && <span className={`${statePillShape} bg-running-tint text-running`}>partial</span>}
-          <StatePill state={latest?.disposition ?? state} />
+          {latest && <StatePill state={latest.disposition} />}
           {model.totalLabel && <span className="text-small text-faint">{model.totalLabel}</span>}
           <span className="ml-auto" />
           <button type="button" className={`${btnGhost} gap-1.5`} disabled={busy} aria-busy={busy} onClick={exportAgain}>

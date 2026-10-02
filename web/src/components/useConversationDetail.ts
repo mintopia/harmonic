@@ -183,18 +183,17 @@ export function useConversationDetail(
   };
 
   const send = async (fields: { harness: string; model: string; permissionMode: Conversation['permissionMode'] }, text: string) => {
-    const steering = focusedId !== null;
+    const steeringOpenConversation = focusedId !== null;
     let id = focusedId;
     let createdConversation: Conversation | null = null;
+    const stillHere = () => mounted.current && activeWorkspaceId.current === workspaceId && activeFocusedId.current === focusedId;
     if (id === null) {
       createdConversation = await createConversation(fields);
       id = createdConversation.id;
+      if (stillHere()) upsertConversationInList(createdConversation);
     }
-    // Show the message in the transcript right away when steering the open
-    // conversation. A brand-new conversation switches focus and reloads events,
-    // which would discard an optimistic turn, so we skip it there.
     let optimisticId: number | null = null;
-    if (steering) {
+    if (steeringOpenConversation) {
       const turnId = optimisticSeq.current;
       optimisticSeq.current -= 1;
       optimisticId = turnId;
@@ -212,9 +211,8 @@ export function useConversationDetail(
     }
     try {
       const { queued } = await api.sendTurn(id, text);
-      if (createdConversation && mounted.current && activeWorkspaceId.current === workspaceId && activeFocusedId.current === focusedId) {
+      if (createdConversation && stillHere()) {
         setConversation(createdConversation);
-        upsertConversationInList(createdConversation);
         openConversation(id);
       }
       return { queued };

@@ -330,9 +330,9 @@ export class TaskArchive {
     }
   }
 
-  async epicVerificationOutputLog(workspaceId: number, epicRef: number, attemptNumber: number, commandId: string): Promise<string | null> {
+  async epicVerificationOutputLog(workspaceId: number, epicRef: number, attemptNumber: number, commandId: string, stage: 'pre-merge' | 'post-merge' = 'pre-merge'): Promise<string | null> {
     try {
-      const dir = join(await this.ensureEpic(workspaceId, epicRef), 'attempts', String(attemptNumber), 'verification', 'pre-merge', safeSegment(commandId));
+      const dir = join(await this.ensureEpic(workspaceId, epicRef), 'attempts', String(attemptNumber), 'verification', stage, safeSegment(commandId));
       await mkdir(dir, { recursive: true });
       return join(dir, 'output.log');
     } catch (err) {

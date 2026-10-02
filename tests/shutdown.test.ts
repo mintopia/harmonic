@@ -173,4 +173,32 @@ describe('app.close() — ordered shutdown', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('still closes the stats reader, process-group journal link and DB when a component fails to stop', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harmonic-shutdown-reject-'));
+    const db = await openAsyncDb(dir);
+    const logs = captureLogs();
+    const closed: string[] = [];
+    const app = Fastify() as unknown as App;
+    registerShutdown(app, {
+      trackerManager: { stopAll: async () => {} },
+      scheduler: { stop: async () => { throw new Error('scheduler stop exploded'); } },
+      autoRunner: { close: async () => {} },
+      upgrade: { close: async () => {} },
+      runner: { shutdown: async () => {} },
+      conversationDriver: { shutdown: async () => {} },
+      loopMonitor: undefined,
+      hostLoad: { stop: () => {} },
+      workspaceWatcher: { stopAll: async () => {} },
+      statsReader: { close: async () => { closed.push('stats'); } },
+      asyncDb: { close: async () => { closed.push('db'); await db.close(); } },
+    });
+    try {
+      await app.close();
+      expect(closed).toEqual(['stats', 'db']);
+      expect(logs.some((line) => line.startsWith('warn shutdown: a component failed to stop') && line.includes('scheduler stop exploded'))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

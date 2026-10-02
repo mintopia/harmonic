@@ -91,6 +91,6 @@ describe('Update routes (issue #638)', () => {
     const res = await server.api('POST', '/api/update/check');
 
     expect(res.status).toBe(409);
-    expect(res.body.error.code).toBe('invalid_state');
+    expect(res.body.error.code).toBe('not_packaged');
   });
 });

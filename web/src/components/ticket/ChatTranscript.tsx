@@ -1,4 +1,5 @@
 import { useMemo, type ReactNode } from 'react';
+import { eventCount } from '../../id-format';
 import { coalesceEvents, coalesceTail } from '../../event-stream-model';
 import { transcriptLanes } from '../../transcript-timeline-model';
 import { chatRows, type ChatRow, type ChatToolStatus } from '../../attempt-chat-model';
@@ -205,20 +206,20 @@ export function ChatTranscript({
   return (
     <section className="pt-2">
       <div className="sticky top-0 z-10 -mx-[30px] mb-3 flex items-center justify-between gap-4 border-b border-hairline bg-canvas px-[30px] py-3">
-        <div className="flex items-baseline gap-2.5">
+        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
           <h2 className={CAPS}>Transcript{stepLabel && ` · ${stepLabel}`}</h2>
           {fromArchive ? (
             <>
-              <span className="inline-flex items-center gap-[5px] rounded-[4px] border border-hairline px-[7px] py-px text-[10.5px] font-semibold tracking-[0.02em] text-muted">
+              <span className="inline-flex items-center gap-[5px] whitespace-nowrap rounded-[4px] border border-hairline px-[7px] py-px text-[10.5px] font-semibold tracking-[0.02em] text-muted">
                 <Icon name="files" className="size-3" />
                 from Archive
               </span>
               <span className="text-small font-normal normal-case tracking-normal text-faint">
-                Harness log no longer on disk · {events.length.toLocaleString()} events
+                Harness log no longer on disk · {eventCount(events.length)}
               </span>
             </>
           ) : (
-            <span className={railSectionCount}>{events.length} events</span>
+            <span className={railSectionCount}>{eventCount(events.length)}</span>
           )}
         </div>
         {onToggleFollow && <FollowTail following={following ?? false} onToggle={onToggleFollow} />}

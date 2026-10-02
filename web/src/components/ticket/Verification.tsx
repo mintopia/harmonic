@@ -159,7 +159,7 @@ export function Verification({ attempts, statuses, run, only, verifier, steps = 
                 <span className={`text-[13px] font-semibold ${status.state === 'disabled' ? 'text-muted' : 'text-ink'}`}>{mechanismName(status.mechanism, run)}</span>
                 {summaryText && <CopyButton text={summaryText} label={resultLabel} className={revealOnHover} />}
               </div>
-              <div className="mt-1 text-[13px] leading-[1.55] text-muted [&_code]:rounded-[5px] [&_code]:bg-raised [&_code]:px-[5px] [&_code]:py-px [&_code]:font-data [&_code]:text-[12px]">{attempt ? attempt.mechanism === 'critic' ? <Markdown source={attempt.summary} className="text-muted" /> : attempt.summary : status.reason}</div>
+              <div className="mt-1 text-[13px] leading-[1.55] text-muted [&_code]:rounded-[5px] [&_code]:bg-raised [&_code]:px-[5px] [&_code]:py-px [&_code]:font-data [&_code]:text-[12px]">{attempt?.mechanism === 'critic' ? <Markdown source={attempt.summary} className="text-muted" /> : summaryText}</div>
               {attempt?.mechanism === 'command' && attempt.output && (
                 <div className="relative mt-2">
                   <pre className="max-h-72 overflow-auto rounded-md border border-hairline bg-sunken px-3 py-2 font-data text-[11.5px] leading-[1.55] text-muted">{attempt.output}</pre>

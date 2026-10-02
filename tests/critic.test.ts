@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, afterAll, afterEach, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -8,6 +8,7 @@ import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-tr
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import {
   runCritic,
+  runTimedCriticDrive,
   createAcpCriticDrive,
   criticAttemptToInput,
   type CriticHarnessDrive,
@@ -453,4 +454,26 @@ describe('createAcpCriticDrive (issue #136): the real ACP drive has builder-equi
       }),
     ).rejects.toThrow(/timed out/i);
   }, 10_000);
+});
+
+describe('runTimedCriticDrive', () => {
+  const request = { harness: {}, harnessId: 'claude', model: 'm', cwd: '/tmp', prompt: 'p', timeoutMs: 1000 } as unknown as CriticDriveRequest;
+
+  it('does not let a failing duration write mask the drive error', async () => {
+    const drive: CriticHarnessDrive = { run: async () => { throw new Error('prompt failed'); } };
+    await expect(runTimedCriticDrive(drive, request, async () => { throw new Error('db down'); })).rejects.toThrow('prompt failed');
+  });
+
+  it('records the duration once when the drive reports it itself', async () => {
+    const record = vi.fn(async () => {});
+    const drive: CriticHarnessDrive = {
+      run: async (req) => {
+        await req.onAgentDurationMs?.(5);
+        return { output: '', permissionRequests: [], sessionId: null };
+      },
+    };
+    await runTimedCriticDrive(drive, request, record);
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith(5);
+  });
 });

@@ -40,14 +40,19 @@ export function registerShutdown(app: App, deps: {
 }): void {
   app.addHook('onClose', async () => {
     deps.transcripts?.close();
-    const drained = Promise.all([
+    const drained = Promise.allSettled([
       deps.autoRunner.close(),
       deps.scheduler.stop(),
       deps.trackerManager.stopAll(),
       deps.upgrade.close(),
       deps.runner.shutdown(),
       deps.conversationDriver.shutdown(),
-    ]).then(() => drainFireAndForget());
+    ]).then(async (results) => {
+      for (const result of results) {
+        if (result.status === 'rejected') logger.warn('shutdown: a component failed to stop', { error: errorMessage(result.reason) });
+      }
+      await drainFireAndForget();
+    });
     deps.loopMonitor?.stop();
     deps.hostLoad.stop();
     await deps.workspaceWatcher.stopAll();

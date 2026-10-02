@@ -193,6 +193,9 @@ export class TrackerEpicService implements EpicService {
         worktrees,
         epics,
         mergeEpicIntegration,
+        epicAttempts: this.epicAttempts,
+        verificationAttemptStore: this.verificationAttemptStore,
+        archive: this.archive,
         resolvePostMergeCommands: async () => (await verification.resolveWorkspaceVerifiers()).epic.preMerge.commands,
       });
       const { epicAttempts, dispatchEpicResolution } = this;

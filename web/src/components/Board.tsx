@@ -10,7 +10,7 @@ import {
   type BlockerColumn,
   type PendingItem,
 } from '../board-sections-model';
-import { ticketRowId } from '../id-format.js';
+import { epicLabel, ticketRowId } from '../id-format.js';
 import { api } from '../api';
 import { subscribe } from '../ws';
 import { toastError } from '../toast';
@@ -542,7 +542,7 @@ export function EpicBand({
         <button
           type="button"
           onClick={() => onOpenEpic?.(epic)}
-          title={`Open Epic #${epic.ref}`}
+          title={`Open ${epicLabel(epic.ref)}`}
           className={`${touchTargetInline} min-w-0 flex-1 basis-full gap-2.5 text-left sm:basis-0`}
         >
           <EpicKindBadge epic={epic} />
@@ -561,7 +561,7 @@ export function EpicBand({
             <button
               type="button"
               aria-expanded={open}
-              aria-label={open ? `Collapse Epic #${epic.ref} members` : `Expand Epic #${epic.ref} members`}
+              aria-label={open ? `Collapse ${epicLabel(epic.ref)} members` : `Expand ${epicLabel(epic.ref)} members`}
               onClick={() => setOpen((v) => !v)}
               className={`${touchTargetInline} shrink-0`}
             >

@@ -1,11 +1,14 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { once } from 'node:events';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { ProcGroupReaper, readProcStartToken, readSelfPgid, reapTargets, type ProcessStart } from '../src/execution/process-reaper.js';
+import { openAsyncDb } from '../src/db/async.js';
+import { processGroups } from '../src/db/schema.js';
+import { ProcessGroupJournal } from '../src/execution/process-groups.js';
 import { waitFor } from './helpers.js';
 
 const spawnedChildren: ChildProcess[] = [];
@@ -123,5 +126,35 @@ describe('reapTargets', () => {
 
   it('reports not-running when nothing is left in the group', () => {
     expect(reapTargets(recorded, [proc(900, 900, 100)], selfStart)).toEqual({ kind: 'skip', outcome: 'not-running' });
+  });
+});
+
+describe('ProcessGroupJournal.reapOrphans', () => {
+  it('reads the process table once and shares it across every journaled group', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harmonic-reap-orphans-'));
+    const db = await openAsyncDb(dir);
+    try {
+      await db.write((d) => d.insert(processGroups).values([
+        { pgid: 4_000_001, startToken: '1', owner: 'a', startedAt: 1 },
+        { pgid: 4_000_002, startToken: '2', owner: 'b', startedAt: 1 },
+        { pgid: 4_000_003, startToken: '3', owner: 'c', startedAt: 1 },
+      ]).run());
+      const tables: unknown[] = [];
+      const journal = new ProcessGroupJournal(db, {
+        reap: async (_identity, options) => {
+          tables.push(options?.processTable);
+          return 'not-running';
+        },
+      });
+      await journal.reapOrphans();
+      expect(tables).toHaveLength(3);
+      expect(Array.isArray(tables[0])).toBe(true);
+      expect(tables[1]).toBe(tables[0]);
+      expect(tables[2]).toBe(tables[0]);
+      expect(await db.read((d) => d.select().from(processGroups).all())).toEqual([]);
+    } finally {
+      await db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

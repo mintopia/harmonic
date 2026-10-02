@@ -3819,6 +3819,7 @@
                 "enum": [
                   "conflict",
                   "post-merge-red",
+                  "write-failed",
                   "target-advanced"
                 ]
               },
@@ -4102,6 +4103,7 @@
                 "enum": [
                   "conflict",
                   "post-merge-red",
+                  "write-failed",
                   "target-advanced"
                 ]
               },
@@ -11271,6 +11273,7 @@
                 "enum": [
                   "conflict",
                   "post-merge-red",
+                  "write-failed",
                   "target-advanced"
                 ]
               },
@@ -11567,6 +11570,7 @@
                 "enum": [
                   "conflict",
                   "post-merge-red",
+                  "write-failed",
                   "target-advanced"
                 ]
               },

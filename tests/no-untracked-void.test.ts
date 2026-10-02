@@ -2,9 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-// `void <promise>` detaches work that app shutdown cannot await, so it can outlive the DB close.
-// Background work goes through fireAndForget or an InFlight; only these deliberate exceptions may use `void`.
-const ALLOWED: ReadonlyArray<{ file: string; snippet: string; count?: number; reason: string }> = [
+const ALLOWED_DETACHED_VOID_CALLS: ReadonlyArray<{ file: string; snippet: string; count?: number; reason: string }> = [
   { file: 'src/telemetry.ts', snippet: 'void flushMetricSummary()', reason: 'logs a metrics summary, no DB; shutdown runs its own final flush' },
   { file: 'src/tracker/poller.ts', snippet: 'void this.poll().catch(', count: 2, reason: 'poll() tracks itself; stop() drains it' },
   { file: 'src/scheduler/scheduler.ts', snippet: 'void job.tick()', reason: 'job.tick() tracks itself; stop() drains it' },
@@ -27,7 +25,7 @@ function sourceFiles(dir: string): string[] {
     .map((name) => join(dir, name));
 }
 
-describe('no untracked void promises in src', () => {
+describe('void detaches work shutdown cannot await, so src may use it only on the allowlist; background work uses fireAndForget or an InFlight', () => {
   it('every `void <expr>` is on the allowlist, and every allowlist entry still exists', () => {
     const root = join(import.meta.dirname, '..');
     const found: Array<{ file: string; line: string }> = [];
@@ -40,10 +38,10 @@ describe('no untracked void promises in src', () => {
       }
     }
 
-    const unexpected = found.filter(({ file, line }) => !ALLOWED.some((entry) => entry.file === file && line.includes(entry.snippet)));
+    const unexpected = found.filter(({ file, line }) => !ALLOWED_DETACHED_VOID_CALLS.some((entry) => entry.file === file && line.includes(entry.snippet)));
     expect(unexpected, 'route background work through fireAndForget or an InFlight, or allowlist it with a reason').toEqual([]);
 
-    const stale = ALLOWED.filter((entry) => found.filter(({ file, line }) => entry.file === file && line.includes(entry.snippet)).length !== (entry.count ?? 1));
+    const stale = ALLOWED_DETACHED_VOID_CALLS.filter((entry) => found.filter(({ file, line }) => entry.file === file && line.includes(entry.snippet)).length !== (entry.count ?? 1));
     expect(stale).toEqual([]);
   });
 });

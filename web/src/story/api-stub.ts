@@ -21,6 +21,11 @@ import type {
 import type { EpicIntegrateOutcome } from '../epic-model.js';
 import type { WorktreeInventoryEntry } from '../worktree-inventory-model.js';
 
+export { ApiError } from '../api';
+
+const storyName = new URLSearchParams(window.location.search).get('story');
+const epicIntegrated = storyName === 'epic-done';
+
 const ok = <T>(v: T) => Promise.resolve(v);
 
 const FILE_TREE: Record<string, any[]> = {
@@ -241,7 +246,7 @@ export const api: typeof RealApi = {
   checkUpdate: () => ok(updateState),
   pauseGlobal: () => ok({ paused: true }),
   resumeGlobal: () => ok({ paused: false }),
-  configLayers: () => ok(configLayers),
+  configLayers: () => (storyName === 'settings-error' ? Promise.reject(new Error('GET /api/config/layers failed: 503')) : ok(configLayers)),
   updateConfig: (_patch: object) => ok(f.config),
   testExportDestination: (body: { destination: 'directory' | 's3' }) => ok({ destination: body.destination, ok: true, testedAt: new Date().toISOString() }),
   replaceConfig: (_config: AppConfig) => ok(f.config),
@@ -322,7 +327,7 @@ export const api: typeof RealApi = {
   taskExport: (_id: number) => ok({ exportable: true, latest: null, earlier: [] }),
   exportTaskAgain: (_id: number) => ok({ outcomes: [], export: { exportable: true, latest: null, earlier: [] } }),
   taskExportDownloadUrl: (id: number) => `/api/tasks/${id}/export/download`,
-  epicExport: (_workspaceId: number, _epicRef: number) => ok({ exportable: true, latest: null, earlier: [] }),
+  epicExport: (_workspaceId: number, _epicRef: number) => ok(epicIntegrated ? f.epicExportFixture : { exportable: true, latest: null, earlier: [] }),
   exportEpicAgain: (_workspaceId: number, _epicRef: number) => ok({ outcomes: [], export: { exportable: true, latest: null, earlier: [] } }),
   epicExportDownloadUrl: (workspaceId: number, epicRef: number) => `/api/workspaces/${workspaceId}/epics/${epicRef}/export/download`,
   verificationOutputUrl: (id: number) => `/api/verification-attempts/${id}/output`,
@@ -336,7 +341,7 @@ export const api: typeof RealApi = {
   attemptGuardrailEvents: (_id: number) => ok({ guardrailEvents: [], total: 0 }),
   attemptVerificationAttempts: (_id: number) => ok({ verificationAttempts: f.verificationAttempts, verifierStatuses: f.verifierStatuses, total: f.verificationAttempts.length }),
   verificationAttempt: (_id: number) => ok({ output: '', summary: 'pass', hasTranscript: false }),
-  criticLog: (_id: number) => ok({ status: 'available' as const, events: f.criticLog, liveCursor: 999 }),
+  criticLog: (_id: number) => ok({ status: 'available' as const, events: f.criticLog, liveCursor: 999, fromArchive: storyName === 'x-archive' }),
   attemptDiff: (_id: number) => ok({ branch: f.task.branch ?? null, baseBranch: f.task.baseBranch ?? null, stat: f.task.stat }),
   attemptDiffFiles: (_id: number) => ok({ files: f.diffFiles, total: f.diffFiles.length }),
   changePassword: (_currentPassword: string, _newPassword: string) => ok({ ok: true as const }),
@@ -355,14 +360,14 @@ export const api: typeof RealApi = {
   answerElicitation: (_conversationId: number, _reqId: string, _answer: ElicitationAnswer) => ok({ ok: true as const }),
   permissionRules: () => ok({ rules: permissionRulesFixture, total: permissionRulesFixture.length }),
   deletePermissionRule: (_id: number) => ok(undefined),
-  channels: () => ok({ channels: channelFixtures, total: channelFixtures.length }),
+  channels: () => (storyName === 'settings-page' ? Promise.reject(new Error('channels unavailable')) : ok({ channels: channelFixtures, total: channelFixtures.length })),
   createChannel: (input: { name: string; type: Channel['type']; config: Record<string, unknown> }) =>
     ok({ id: channelFixtures.length + 1, name: input.name, type: input.type, config: input.config, events: [] }),
   updateChannel: (id: number, patch: { events: string[] }) =>
     ok({ ...(channelFixtures.find((c) => c.id === id) ?? channelFixtures[0]!), events: patch.events }),
   deleteChannel: (_id: number) => ok(undefined),
   epics: (_workspaceId: number, _opts?: { limit?: number; offset?: number; q?: string }) => ok({ epics: [f.epic], total: 1 }),
-  epic: (_workspaceId: number, _epicRef: number) => ok(f.epic),
+  epic: (_workspaceId: number, _epicRef: number) => ok(epicIntegrated ? f.epicIntegrated : f.epic),
   epicAttempts: (_workspaceId: number, _epicRef: number) => ok({ attempts: [] }),
   epicDiffFiles: (_workspaceId: number, _epicRef: number) => ok({ files: f.diffFiles, total: f.diffFiles.length }),
   maps: (_opts?: { workspaceId?: number; limit?: number; offset?: number; q?: string }) => ok({ maps: [], total: 0 }),

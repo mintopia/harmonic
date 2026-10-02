@@ -81,7 +81,6 @@ export type LifecycleStepKey =
   | 'closeIssue'
   | 'retire';
 
-/** A lifecycle node is completed, active, waiting, unreached, failed, or inapplicable. */
 export type LifecycleStepStatus = 'done' | 'current' | 'awaiting' | 'pending' | 'failed' | 'skipped';
 
 export interface LifecycleStep {

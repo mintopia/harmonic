@@ -39,12 +39,12 @@ export function TaskForm({
     if (full.data?.prompt !== undefined) setPrompt(full.data.prompt);
   }, [full.data]);
   const originalOv: Overrides = task?.overrides ?? {
-      harness: null,
-      model: null,
-      isolationMode: null,
-      priority: null,
-      conflictResolveTurns: null,
-    };
+    harness: null,
+    model: null,
+    isolationMode: null,
+    priority: null,
+    conflictResolveTurns: null,
+  };
   const [ov, setOv] = useState<Overrides>(originalOv);
   const originalWorkingDir = task?.workingDir ?? workspace?.workingDir ?? '';
   const [workingDir, setWorkingDir] = useState(originalWorkingDir);
@@ -99,154 +99,154 @@ export function TaskForm({
 
   return (
     <>
-    <Modal label={task ? `Edit ${taskLabel(task.id)}` : 'New task'} onClose={onClose} onRequestClose={requestClose} className="max-w-lg">
-      <form onSubmit={submit} className="p-5">
-        <h2 className={`${panelTitle} mb-4`}>{task ? `Edit ${taskLabel(task.id)}` : 'New task'}</h2>
+      <Modal label={task ? `Edit ${taskLabel(task.id)}` : 'New task'} onClose={onClose} onRequestClose={requestClose} className="max-w-lg">
+        <form onSubmit={submit} className="p-5">
+          <h2 className={`${panelTitle} mb-4`}>{task ? `Edit ${taskLabel(task.id)}` : 'New task'}</h2>
 
-        <div className="mb-3">
-          <label className={label} htmlFor="task-prompt">Prompt</label>
-          {full.error && <LoadError message={full.error} onRetry={full.reload} className="mb-2" />}
-          <textarea
-            id="task-prompt"
-            className={`${field} min-h-28`}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            autoFocus
-            required
-            disabled={full.loading || full.error !== null}
-            placeholder={full.loading ? 'Loading…' : undefined}
-          />
-        </div>
-
-        <div className="mb-3 grid gap-3 sm:grid-cols-2">
-          <InheritField
-            label="Harness"
-            htmlFor="task-harness"
-            value={ov.harness}
-            inherited={workspace?.harness ?? config.defaults.harness}
-            inheritedFrom={inheritSource(workspace?.harness)}
-            onChange={(harness) => set('harness', harness)}
-          >
-            {({ id, value, onChange }) => (
-              <select id={id} className={`${selectField} w-full`} value={value} onChange={(e) => onChange(e.target.value)}>
-                {Object.keys(config.harnesses).map((h) => (
-                  <option key={h} value={h}>{h}</option>
-                ))}
-              </select>
-            )}
-          </InheritField>
-
-          <InheritField
-            label="Model"
-            htmlFor="task-model"
-            value={ov.model}
-            inherited={inheritedModel}
-            inheritedFrom={inheritSource(workspace?.model)}
-            onChange={(model) => set('model', model)}
-          >
-            {({ id, value, onChange }) => (
-              <DiscoveryModelPicker id={id ?? 'task-model'} harness={effHarness ?? config.defaults.harness ?? ''} value={value ?? inheritedModel ?? ''} onChange={onChange} options={models} />
-            )}
-          </InheritField>
-
-          <InheritField
-            label="Isolation Mode"
-            htmlFor="task-isolation"
-            value={ov.isolationMode}
-            inherited={workspace?.isolationMode ?? config.defaults.isolationMode}
-            inheritedFrom={inheritSource(workspace?.isolationMode)}
-            onChange={(isolationMode) => set('isolationMode', isolationMode)}
-          >
-            {({ id, value, onChange }) => (
-              <select
-                id={id}
-                className={`${selectField} w-full`}
-                value={value}
-                onChange={(e) => onChange(e.target.value as 'direct' | 'worktree')}
-              >
-                <option value="direct">direct</option>
-                <option value="worktree">worktree</option>
-              </select>
-            )}
-          </InheritField>
-
-          <InheritField
-            label="Priority"
-            htmlFor="task-priority"
-            value={ov.priority}
-            inherited={workspace?.priority ?? config.defaults.priority}
-            inheritedFrom={inheritSource(workspace?.priority)}
-            onChange={(priority) => set('priority', priority)}
-          >
-            {({ id, value, onChange }) => (
-              <select
-                id={id}
-                className={`${selectField} w-full`}
-                value={value}
-                onChange={(e) => onChange(e.target.value as 'high' | 'normal' | 'low')}
-              >
-                <option value="high">high</option>
-                <option value="normal">normal</option>
-                <option value="low">low</option>
-              </select>
-            )}
-          </InheritField>
-
-          <InheritField
-            label="Conflict resolve turns"
-            htmlFor="task-conflict-turns"
-            value={ov.conflictResolveTurns}
-            inherited={workspace?.conflictResolveTurns ?? config.defaults.conflictResolveTurns}
-            inheritedFrom={inheritSource(workspace?.conflictResolveTurns)}
-            onChange={(conflictResolveTurns) => set('conflictResolveTurns', conflictResolveTurns)}
-            description="How many agentic turns may attempt to resolve a merge conflict before the Attempt escalates."
-          >
-            {({ id, value, onChange }) => (
-              <input
-                id={id}
-                type="number"
-                min={0}
-                className={`${field} w-full tabular-nums`}
-                value={value}
-                onChange={(e) => onChange(Number(e.target.value))}
-              />
-            )}
-          </InheritField>
-        </div>
-
-        {showWorkingDir && (
-          <div className="mb-4">
-            <label className={label} htmlFor="task-workdir">Working Directory</label>
-            <input id="task-workdir" className={`${field} font-data`} value={workingDir} onChange={(e) => setWorkingDir(e.target.value)} />
+          <div className="mb-3">
+            <label className={label} htmlFor="task-prompt">Prompt</label>
+            {full.error && <LoadError message={full.error} onRetry={full.reload} className="mb-2" />}
+            <textarea
+              id="task-prompt"
+              className={`${field} min-h-28`}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              autoFocus
+              required
+              disabled={full.loading || full.error !== null}
+              placeholder={full.loading ? 'Loading…' : undefined}
+            />
           </div>
-        )}
 
-        {error && <p role="alert" className="mb-3 text-fail">{error}</p>}
+          <div className="mb-3 grid gap-3 sm:grid-cols-2">
+            <InheritField
+              label="Harness"
+              htmlFor="task-harness"
+              value={ov.harness}
+              inherited={workspace?.harness ?? config.defaults.harness}
+              inheritedFrom={inheritSource(workspace?.harness)}
+              onChange={(harness) => set('harness', harness)}
+            >
+              {({ id, value, onChange }) => (
+                <select id={id} className={`${selectField} w-full`} value={value} onChange={(e) => onChange(e.target.value)}>
+                  {Object.keys(config.harnesses).map((h) => (
+                    <option key={h} value={h}>{h}</option>
+                  ))}
+                </select>
+              )}
+            </InheritField>
 
-        <div className="flex justify-end gap-2">
-          {!task && (
-            <button type="button" disabled={busy || !prompt || full.loading || full.error !== null} onClick={() => save('draft')} className={btnGhost}>
-              Save draft
-            </button>
+            <InheritField
+              label="Model"
+              htmlFor="task-model"
+              value={ov.model}
+              inherited={inheritedModel}
+              inheritedFrom={inheritSource(workspace?.model)}
+              onChange={(model) => set('model', model)}
+            >
+              {({ id, value, onChange }) => (
+                <DiscoveryModelPicker id={id ?? 'task-model'} harness={effHarness ?? config.defaults.harness ?? ''} value={value ?? inheritedModel ?? ''} onChange={onChange} options={models} />
+              )}
+            </InheritField>
+
+            <InheritField
+              label="Isolation Mode"
+              htmlFor="task-isolation"
+              value={ov.isolationMode}
+              inherited={workspace?.isolationMode ?? config.defaults.isolationMode}
+              inheritedFrom={inheritSource(workspace?.isolationMode)}
+              onChange={(isolationMode) => set('isolationMode', isolationMode)}
+            >
+              {({ id, value, onChange }) => (
+                <select
+                  id={id}
+                  className={`${selectField} w-full`}
+                  value={value}
+                  onChange={(e) => onChange(e.target.value as 'direct' | 'worktree')}
+                >
+                  <option value="direct">direct</option>
+                  <option value="worktree">worktree</option>
+                </select>
+              )}
+            </InheritField>
+
+            <InheritField
+              label="Priority"
+              htmlFor="task-priority"
+              value={ov.priority}
+              inherited={workspace?.priority ?? config.defaults.priority}
+              inheritedFrom={inheritSource(workspace?.priority)}
+              onChange={(priority) => set('priority', priority)}
+            >
+              {({ id, value, onChange }) => (
+                <select
+                  id={id}
+                  className={`${selectField} w-full`}
+                  value={value}
+                  onChange={(e) => onChange(e.target.value as 'high' | 'normal' | 'low')}
+                >
+                  <option value="high">high</option>
+                  <option value="normal">normal</option>
+                  <option value="low">low</option>
+                </select>
+              )}
+            </InheritField>
+
+            <InheritField
+              label="Conflict resolve turns"
+              htmlFor="task-conflict-turns"
+              value={ov.conflictResolveTurns}
+              inherited={workspace?.conflictResolveTurns ?? config.defaults.conflictResolveTurns}
+              inheritedFrom={inheritSource(workspace?.conflictResolveTurns)}
+              onChange={(conflictResolveTurns) => set('conflictResolveTurns', conflictResolveTurns)}
+              description="How many agentic turns may attempt to resolve a merge conflict before the Attempt escalates."
+            >
+              {({ id, value, onChange }) => (
+                <input
+                  id={id}
+                  type="number"
+                  min={0}
+                  className={`${field} w-full tabular-nums`}
+                  value={value}
+                  onChange={(e) => onChange(Number(e.target.value))}
+                />
+              )}
+            </InheritField>
+          </div>
+
+          {showWorkingDir && (
+            <div className="mb-4">
+              <label className={label} htmlFor="task-workdir">Working Directory</label>
+              <input id="task-workdir" className={`${field} font-data`} value={workingDir} onChange={(e) => setWorkingDir(e.target.value)} />
+            </div>
           )}
-          <button type="submit" disabled={busy || !prompt || full.loading || full.error !== null} className={btnPrimary}>
-            {task ? 'Save' : 'Create ready'}
-          </button>
-        </div>
-      </form>
-    </Modal>
-    {confirmClose && (
-      <ConfirmDialog
-        label="Discard task changes"
-        title="Discard unsaved changes?"
-        confirmLabel="Discard"
-        tone="danger"
-        onConfirm={onClose}
-        onCancel={() => setConfirmClose(false)}
-      >
-        Your task changes will be lost.
-      </ConfirmDialog>
-    )}
+
+          {error && <p role="alert" className="mb-3 text-fail">{error}</p>}
+
+          <div className="flex justify-end gap-2">
+            {!task && (
+              <button type="button" disabled={busy || !prompt || full.loading || full.error !== null} onClick={() => save('draft')} className={btnGhost}>
+                Save draft
+              </button>
+            )}
+            <button type="submit" disabled={busy || !prompt || full.loading || full.error !== null} className={btnPrimary}>
+              {task ? 'Save' : 'Create ready'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+      {confirmClose && (
+        <ConfirmDialog
+          label="Discard task changes"
+          title="Discard unsaved changes?"
+          confirmLabel="Discard"
+          tone="danger"
+          onConfirm={onClose}
+          onCancel={() => setConfirmClose(false)}
+        >
+          Your task changes will be lost.
+        </ConfirmDialog>
+      )}
     </>
   );
 }

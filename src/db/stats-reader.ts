@@ -14,7 +14,7 @@ export interface StatsRange {
 }
 
 /** The merge-policy escalation reason (merge-policy.ts `MergePolicyOutcome`). */
-export type GateReason = 'conflict' | 'post-merge-red' | 'target-advanced';
+export type GateReason = 'conflict' | 'post-merge-red' | 'write-failed' | 'target-advanced';
 
 /** One `merged`/`escalated` settling event, carrying the merge gate that produced an escalation. */
 export interface SettleEventRow {

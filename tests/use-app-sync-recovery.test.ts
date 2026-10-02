@@ -156,7 +156,7 @@ describe('useAppSync recovery', () => {
     }
     await mountComponent(createElement(Probe));
     vi.useFakeTimers();
-    await act(async () => { first.reject(new ApiError(409, 'in-place upgrades are only available for packaged instances')); });
+    await act(async () => { first.reject(new ApiError(409, 'in-place upgrades are only available for packaged instances', 'not_packaged')); });
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     expect(updateState).toHaveBeenCalledTimes(1);
   });

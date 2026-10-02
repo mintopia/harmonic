@@ -1,3 +1,4 @@
+import { epicLabel } from '../id-format.js';
 import { createElement, useState, type ReactNode } from 'react';
 import { operationForest, visibleOperationForest, type Operation, type OperationForest } from '../operations-model.js';
 import type { WorktreeInventoryEntry } from '../worktree-inventory-model.js';
@@ -71,7 +72,7 @@ function subject(operation: Operation, tasks: readonly OperationTask[], epics: r
   const epicRef = operation.attributes['epic.ref'];
   if (typeof epicRef === 'number') {
     const title = operation.attributes['epic.title'];
-    return { kind: 'epic', id: epicRef, title: typeof title === 'string' ? title : epics.find((epic) => epic.ref === epicRef)?.title ?? `Epic #${epicRef}` };
+    return { kind: 'epic', id: epicRef, title: typeof title === 'string' ? title : epics.find((epic) => epic.ref === epicRef)?.title ?? epicLabel(epicRef) };
   }
   return null;
 }

@@ -1,5 +1,5 @@
 import type { Epic, EpicBranchStep, EpicExportStep, EpicTimelineStep } from './epic-model.js';
-import { exportFactRows, formatBytes } from './task-export-model.js';
+import { exportOutcomeRow, formatBytes } from './task-export-model.js';
 import { mergeStepRow, type MergeStepTone } from './merge-progress-model.js';
 
 export interface EpicTimelineRow {
@@ -25,20 +25,19 @@ function branchStepRow(step: EpicBranchStep): { label: string; detail: string | 
 }
 
 function isExportStep(step: EpicTimelineStep): step is EpicExportStep {
-  return step.step.startsWith('export-');
+  return step.step === 'export-built' || step.step === 'export-delivered' || step.step === 'export-failed';
 }
 
 function exportStepRow(step: EpicExportStep): { label: string; detail: string | null; tone: MergeStepTone } {
   if (step.step === 'export-built') {
     return { label: 'Export built', detail: [step.name, formatBytes(step.bytes), step.partial ? 'partial' : null].filter(Boolean).join(' · '), tone: 'neutral' };
   }
-  const [row] = exportFactRows(
+  const row = exportOutcomeRow(
     step.step === 'export-failed'
       ? { status: 'failed', destination: step.destination, error: step.error, retry: step.retry, nextRetryAt: step.nextRetryAt }
       : { status: 'succeeded', destination: step.destination, file: step.file },
-    true,
   );
-  return { label: row!.label, detail: row!.detail, tone: row!.tone };
+  return { label: row.label, detail: row.detail, tone: row.tone };
 }
 
 function timelineStepRow(step: EpicTimelineStep, index: number): { label: string; detail: string | null; tone: MergeStepTone } {
@@ -52,7 +51,8 @@ export function epicTimelineRows(epic: Epic): EpicTimelineRow[] {
   const integrationRows = epic.timelineEvents
     .map((event, index) => {
       const row = timelineStepRow(event.step, index);
-      return { id: `event:${event.seq}`, at: event.at, label: row.label, detail: row.detail, tone: row.tone, tag: (isExportStep(event.step) ? 'EXPORT' : 'INTEGRATION') as EpicTimelineRow['tag'], seq: event.seq };
+      const tag: EpicTimelineRow['tag'] = isExportStep(event.step) ? 'EXPORT' : 'INTEGRATION';
+      return { id: `event:${event.seq}`, at: event.at, label: row.label, detail: row.detail, tone: row.tone, tag, seq: event.seq };
     })
     .sort((a, b) => a.at - b.at || a.seq - b.seq)
     .map(({ seq: _, ...row }) => row);

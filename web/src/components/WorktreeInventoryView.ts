@@ -1,3 +1,4 @@
+import { epicLabel } from '../id-format.js';
 import { createElement, useCallback, useState } from 'react';
 import { api } from '../api.js';
 import { mergeWorktrees, type WorktreeInventoryEntry, type WorktreeState } from '../worktree-inventory-model.js';
@@ -30,7 +31,7 @@ function worktreeName(path: string): string {
 
 function subjectLabel(worktree: WorktreeInventoryEntry): string {
   if (!worktree.subject) return 'Unassigned';
-  return worktree.subject.kind === 'task' ? `Task ${worktree.subject.taskId}: ${worktree.subject.title}` : `Epic #${worktree.subject.epicRef}: ${worktree.subject.title}`;
+  return worktree.subject.kind === 'task' ? `Task ${worktree.subject.taskId}: ${worktree.subject.title}` : `${epicLabel(worktree.subject.epicRef)}: ${worktree.subject.title}`;
 }
 
 function changesCell(worktree: WorktreeInventoryEntry) {

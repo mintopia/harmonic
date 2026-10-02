@@ -25,7 +25,7 @@ import { Description } from './ticket/Description';
 import { Metrics, Properties } from './ticket/Metrics';
 import { TaskProgressBar } from './ticket/TaskProgressBar';
 import { ExportPanel } from './ticket/ExportPanel';
-import { taskExportTarget } from './useTaskExport';
+import { taskExportTarget } from './useExport';
 import { ChangesPane, NoRunsYet } from './ticket/ChangesPane';
 import { AttemptsNav, PanelNav } from './ticket/AttemptsNav';
 import { AttemptPanel } from './ticket/AttemptPanel';
@@ -198,7 +198,7 @@ export function TicketPage({
 
             <TaskProgressBar task={task} attempts={runs} attemptDetails={attempts} commandConfigured={commandConfigured} />
 
-            <ExportPanel target={taskExportTarget(task.id)} state={task.state} refreshKey={timelineEvents.length} />
+            <ExportPanel target={taskExportTarget(task.id)} finished={task.state === 'done' || task.state === 'cancelled'} refreshKey={timelineEvents.length} />
 
             {task.skipReason && (
               <div className="mb-4 text-small text-muted">

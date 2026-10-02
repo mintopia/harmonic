@@ -21,6 +21,7 @@ import type { HostLoad } from '../ws';
 import type { View } from '../rail-model';
 import { NO_SELECTION, type Route, type TableFilters } from '../router-model';
 import { btnGhost, btnPrimary } from '../ui';
+import { HintBanner } from './HintBanner';
 import type { PendingPermissionAlert } from '../usePendingPermissionAlerts';
 import type { NavigateFn } from '../useRoute';
 import type { NotificationsApi } from '../useNotifications';
@@ -281,137 +282,122 @@ export function AppContent({
         </div>
       )}
       <div className="min-h-0 flex-1">
-      {route.epic !== null && activeWorkspaceId !== null ? (
-        <EpicPage
-          epicRef={route.epic}
-          workspaceId={activeWorkspaceId}
-          onClose={() => navigate({ ...route, epic: null, panel: NO_SELECTION }, { replace: true })}
-          onOpenTask={onOpenTask}
-          selection={route.panel}
-          onSelect={(panel) => navigate({ ...route, panel })}
-        />
-      ) : openTask ? (
-        <TicketPage
-          task={openTask}
-          onEdit={onEdit}
-          onChanged={onChanged}
-          onClose={() => navigate({ ...route, task: null, panel: NO_SELECTION }, { replace: true })}
-          onOpenTask={onOpenTask}
-          selection={route.panel}
-          onSelect={(panel) => navigate({ ...route, panel })}
-          onOpenEpic={onOpenEpic}
-          parentEpicRef={epics.find((e) => e.members.some((m) => m.taskId === openTask.id))?.ref ?? null}
-          error={error}
-        />
-      ) : route.task !== null && taskNotFound ? (
-        <div className="flex h-full flex-col items-center justify-center">
-          <EmptyState
-            title="Task not found"
-            action={
-              <button
-                type="button"
-                className={btnGhost}
-                onClick={() => navigate({ ...route, task: null, panel: NO_SELECTION }, { replace: true })}
-              >
-                Back to Board
-              </button>
-            }
-          >
-            {`Task ${route.task} doesn't exist, or it's been deleted.`}
-          </EmptyState>
-        </div>
-      ) : (
-        <div className="flex h-full flex-col">
-          {error && (
-            <div role="alert" className="mx-6 mt-4 shrink-0 rounded-lg bg-fail-tint px-4 py-2 text-fail">
-              {error}
-            </div>
-          )}
-          {showRunHint && (
-            <div className="mx-6 mt-4 flex shrink-0 items-start gap-3 rounded-lg border-l-4 border-l-ready bg-ready-tint px-4 py-2.5 text-small">
-              <span
-                aria-hidden="true"
-                className="mt-1 size-2 shrink-0 rounded-full bg-ready-dot"
-              />
-              <p className="flex-1 text-ink">
+        {route.epic !== null && activeWorkspaceId !== null ? (
+          <EpicPage
+            epicRef={route.epic}
+            workspaceId={activeWorkspaceId}
+            onClose={() => navigate({ ...route, epic: null, panel: NO_SELECTION }, { replace: true })}
+            onOpenTask={onOpenTask}
+            selection={route.panel}
+            onSelect={(panel) => navigate({ ...route, panel })}
+          />
+        ) : openTask ? (
+          <TicketPage
+            task={openTask}
+            onEdit={onEdit}
+            onChanged={onChanged}
+            onClose={() => navigate({ ...route, task: null, panel: NO_SELECTION }, { replace: true })}
+            onOpenTask={onOpenTask}
+            selection={route.panel}
+            onSelect={(panel) => navigate({ ...route, panel })}
+            onOpenEpic={onOpenEpic}
+            parentEpicRef={epics.find((e) => e.members.some((m) => m.taskId === openTask.id))?.ref ?? null}
+            error={error}
+          />
+        ) : route.task !== null && taskNotFound ? (
+          <div className="flex h-full flex-col items-center justify-center">
+            <EmptyState
+              title="Task not found"
+              action={
+                <button
+                  type="button"
+                  className={btnGhost}
+                  onClick={() => navigate({ ...route, task: null, panel: NO_SELECTION }, { replace: true })}
+                >
+                  Back to Board
+                </button>
+              }
+            >
+              {`Task ${route.task} doesn't exist, or it's been deleted.`}
+            </EmptyState>
+          </div>
+        ) : (
+          <div className="flex h-full flex-col">
+            {error && (
+              <div role="alert" className="mx-6 mt-4 shrink-0 rounded-lg bg-fail-tint px-4 py-2 text-fail">
+                {error}
+              </div>
+            )}
+            {showRunHint && (
+              <HintBanner tone="ready" onDismiss={dismissRunHint}>
                 Your first task is ready, but nothing's running it yet. Press{' '}
                 <span className="font-semibold text-ink">Run now</span> on the card, or turn the{' '}
                 <span className="font-semibold text-ink">Auto-runner</span> on above.
-              </p>
-              <button className="inline-flex min-h-11 shrink-0 items-center font-medium text-ink transition-colors duration-150 hover:text-ink" onClick={dismissRunHint}>
-                Dismiss
-              </button>
-            </div>
-          )}
-          {showEscalationHint && (
-            <div className="mx-6 mt-4 flex shrink-0 items-start gap-3 rounded-lg border-l-4 border-l-await bg-await-tint px-4 py-2.5 text-small">
-              <span aria-hidden="true" className="mt-1 size-2 shrink-0 rounded-full bg-await-dot" />
-              <p className="flex-1 text-ink">
+              </HintBanner>
+            )}
+            {showEscalationHint && (
+              <HintBanner tone="await" onDismiss={dismissEscalationHint}>
                 A ticket is escalated. Open it to read why and the changes so far, then{' '}
                 <span className="font-semibold text-ink">Accept</span> to merge as-is,{' '}
                 <span className="font-semibold text-ink">Reject</span> with guidance for the next attempt, or{' '}
                 <span className="font-semibold text-ink">Close</span> it — the one decision agents don't take for you.
-              </p>
-              <button className="inline-flex min-h-11 shrink-0 items-center font-medium text-ink transition-colors duration-150 hover:text-ink" onClick={dismissEscalationHint}>
-                Dismiss
-              </button>
-            </div>
-          )}
-          <main
-            id="main-content"
-            tabIndex={-1}
-            className={`min-h-0 min-w-0 flex-1 ${
-              view === 'conversations' || view === 'files' ? 'overflow-hidden' : 'overflow-y-auto px-6 pt-5 pb-16'
-            }`}
-          >
-            {showWorkspaceEmptyState ? (
-              <EmptyState
-                title="No workspace open"
-                className="mt-24"
-                action={
-                  <button className={btnPrimary} onClick={() => setCreatingWorkspace(true)}>
-                    Open a workspace
-                  </button>
-                }
-              >
-                A workspace points Harmonic at a project directory — its tasks, attempts, and cost all
-                scope to it. Open one to get started.
-              </EmptyState>
-            ) : (
-              <MainViewContent
-                view={view}
-                route={route}
-                navigate={navigate}
-                activeWorkspaceId={activeWorkspaceId}
-                activeWorkspace={activeWorkspace}
-                epics={epics}
-                taskList={taskList}
-                tasks={tasks}
-                hasHistory={hasHistory}
-                config={config}
-                hostLoad={hostLoad}
-                pendingPermissionAlerts={pendingPermissionAlerts}
-                workspaces={workspaces}
-                runningCount={runningCount}
-                onEdit={onEdit}
-                onOpenTask={onOpenTask}
-                onOpenRow={onOpenRow}
-                onOpenEpic={onOpenEpic}
-                pickView={pickView}
-                switchWorkspace={switchWorkspace}
-                setTableFilters={setTableFilters}
-                setConfig={setConfig}
-                handleWorkspaceSaved={handleWorkspaceSaved}
-                handleWorkspaceDeleted={handleWorkspaceDeleted}
-                pickConversation={pickConversation}
-                notifications={notifications}
-                ticketHref={ticketHref}
-                onOpenNotification={onOpenNotification}
-              />
+              </HintBanner>
             )}
-          </main>
-        </div>
-      )}
+            <main
+              id="main-content"
+              tabIndex={-1}
+              className={`min-h-0 min-w-0 flex-1 ${
+                view === 'conversations' || view === 'files' ? 'overflow-hidden' : 'overflow-y-auto px-6 pt-5 pb-16'
+              }`}
+            >
+              {showWorkspaceEmptyState ? (
+                <EmptyState
+                  title="No workspace open"
+                  className="mt-24"
+                  action={
+                    <button className={btnPrimary} onClick={() => setCreatingWorkspace(true)}>
+                      Open a workspace
+                    </button>
+                  }
+                >
+                  A workspace points Harmonic at a project directory — its tasks, attempts, and cost all
+                  scope to it. Open one to get started.
+                </EmptyState>
+              ) : (
+                <MainViewContent
+                  view={view}
+                  route={route}
+                  navigate={navigate}
+                  activeWorkspaceId={activeWorkspaceId}
+                  activeWorkspace={activeWorkspace}
+                  epics={epics}
+                  taskList={taskList}
+                  tasks={tasks}
+                  hasHistory={hasHistory}
+                  config={config}
+                  hostLoad={hostLoad}
+                  pendingPermissionAlerts={pendingPermissionAlerts}
+                  workspaces={workspaces}
+                  runningCount={runningCount}
+                  onEdit={onEdit}
+                  onOpenTask={onOpenTask}
+                  onOpenRow={onOpenRow}
+                  onOpenEpic={onOpenEpic}
+                  pickView={pickView}
+                  switchWorkspace={switchWorkspace}
+                  setTableFilters={setTableFilters}
+                  setConfig={setConfig}
+                  handleWorkspaceSaved={handleWorkspaceSaved}
+                  handleWorkspaceDeleted={handleWorkspaceDeleted}
+                  pickConversation={pickConversation}
+                  notifications={notifications}
+                  ticketHref={ticketHref}
+                  onOpenNotification={onOpenNotification}
+                />
+              )}
+            </main>
+          </div>
+        )}
       </div>
 
       {!noWorkspaces && view !== 'conversations' && (

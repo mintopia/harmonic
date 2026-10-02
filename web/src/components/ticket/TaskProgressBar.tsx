@@ -30,19 +30,21 @@ const STEP_STATUS_LABEL: Record<LifecycleStepStatus, string> = {
 };
 
 function stepCaption(key: LifecycleStepKey, status: LifecycleStepStatus, task: Task, attemptCount: number, disabled: boolean): string | null {
+  if (key === 'merge' && status === 'awaiting') return 'awaiting review';
+  if (key !== 'implementation' && task.isolationMode === 'direct') return 'direct mode';
   switch (key) {
     case 'worktree':
-      return task.isolationMode === 'direct' ? 'direct mode' : task.branch ? splitPathTail(task.branch).tail : null;
+      return task.branch ? splitPathTail(task.branch).tail : null;
     case 'implementation':
       return attemptCount > 0 ? `${attemptCount} attempt${attemptCount === 1 ? '' : 's'}` : null;
     case 'merge':
-      return status === 'awaiting' ? 'awaiting review' : task.isolationMode === 'direct' ? 'direct mode' : null;
+      return null;
     case 'postMergeCheck':
-      return task.isolationMode === 'direct' ? 'direct mode' : disabled ? 'not configured' : 'revert on red';
+      return disabled ? 'not configured' : 'revert on red';
     case 'closeIssue':
-      return task.isolationMode === 'direct' ? 'direct mode' : task.trackerRef != null ? `#${task.trackerRef}` : 'no linked issue';
+      return task.trackerRef != null ? `#${task.trackerRef}` : 'no linked issue';
     case 'retire':
-      return task.isolationMode === 'direct' ? 'direct mode' : 'cleanup';
+      return 'cleanup';
   }
 }
 
@@ -68,7 +70,7 @@ function TaskProgressBar({ task, attempts, attemptDetails, commandConfigured }: 
               <div className="flex w-full items-center max-md:w-auto max-md:flex-none">
                 <span className={`-mx-px h-0.5 flex-1 rounded max-md:hidden ${i === 0 ? 'invisible' : leftConnectorSolid ? 'bg-merged' : 'bg-edge'}`} />
                 <span
-                  className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.status === 'skipped' ? 'pending' : step.status]} ${step.disabled ? 'opacity-60' : ''}`}
+                  className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.status]} ${step.disabled ? 'opacity-60' : ''}`}
                 >
                   {stepGlyph(step.status, i)}
                 </span>

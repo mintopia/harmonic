@@ -8,7 +8,7 @@ import { workContextKey } from '../domain/work-context-key.js';
 import { repoKey } from './repo-lock.js';
 import type { GitCircuitBreaker } from './git-failure.js';
 import type { Runner } from './runner.js';
-import { forEachYielding, yieldToEventLoop } from '../reliability/yield.js';
+import { forEachYielding } from '../reliability/yield.js';
 import { InFlight } from '../reliability/in-flight.js';
 import { DomainError } from '../domain/errors.js';
 import { startOperation, type Operation } from '../telemetry/operations.js';
@@ -369,25 +369,18 @@ export class AutoRunner {
       });
     }
 
-    let sliceStart = Date.now();
-    for (const task of ordered) {
-      if (running >= ceiling) break;
-      if (Date.now() - sliceStart >= 25) {
-        await yieldToEventLoop();
-        sliceStart = Date.now();
-      }
-      if (!this.slotCandidate(task, { skip, workspacesById, runningByWorkspace, ceiling, occupied, epicGate })) {
-        continue;
-      }
+    await forEachYielding(ordered, async (task) => {
+      if (running >= ceiling) return;
+      if (!this.slotCandidate(task, { skip, workspacesById, runningByWorkspace, ceiling, occupied, epicGate })) return;
       const started = await this.startPicked(task, skip, tickParent);
-      if (!started) continue;
+      if (!started) return;
       running += 1;
       if (task.workspaceId != null) {
         runningByWorkspace.set(task.workspaceId, (runningByWorkspace.get(task.workspaceId) ?? 0) + 1);
       }
       const key = directContextKey(task);
       if (key && !occupied.has(key)) occupied.set(key, { ...task, state: 'working' });
-    }
+    });
 
     await forEachYielding(this.contextWaitingSince.keys(), (taskId) => {
       if (!this.schedulerSkipReasons.has(taskId)) this.contextWaitingSince.delete(taskId);

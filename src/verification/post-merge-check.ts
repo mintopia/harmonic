@@ -11,7 +11,8 @@ import { Git } from '../execution/git.js';
 import { driveFields } from '../execution/prompt-template.js';
 import type { TranscriptCapture } from '../execution/transcript-capture.js';
 import type { PostMergeCheckResult } from '../execution/merge-policy.js';
-import { commandAttemptToInput, runCommandVerifier } from './command-verifier.js';
+import { commandAttemptToInput } from './command-verifier.js';
+import { runPostMergeCommands } from './post-merge-commands.js';
 import { criticAttemptToInput, runCritic, type CriticHarnessDrive } from './critic.js';
 
 type VerifierWorkspace = Pick<WorkspaceRow,
@@ -57,20 +58,19 @@ export function createPostMergeCheck(deps: {
       config,
     );
     const { commands, critics } = resolvedTask.postMerge;
-    for (const command of commands) {
-      const outputLogPath = (await taskArchive?.verificationOutputLog(task, run.number, 'post-merge', command.id)) ?? null;
-      const cmdAttempt = await runCommandVerifier({
-        outputLogPath,
-        cwd: baseDir,
-        verifiedHeadOid: mergeOid,
-        command,
-        ...(signal ? { signal } : {}),
-        attributes: { 'task.id': task.id, 'attempt.id': run.id },
-      });
-      await verificationAttempts.append(verificationAttempt.id, commandAttemptToInput(cmdAttempt));
-      record?.('lifecycle', { event: 'verification', mechanism: 'command', verdict: cmdAttempt.verdict, summary: cmdAttempt.summary });
-      if (cmdAttempt.verdict !== 'pass') return { pass: false, output: cmdAttempt.output };
-    }
+    const commandResult = await runPostMergeCommands({
+      commands,
+      cwd: baseDir,
+      mergeOid,
+      signal,
+      attributes: { 'task.id': task.id, 'attempt.id': run.id },
+      outputLogPath: async (command) => (await taskArchive?.verificationOutputLog(task, run.number, 'post-merge', command.id)) ?? null,
+      onAttempt: async (cmdAttempt) => {
+        await verificationAttempts.append(verificationAttempt.id, commandAttemptToInput(cmdAttempt));
+        record?.('lifecycle', { event: 'verification', mechanism: 'command', verdict: cmdAttempt.verdict, summary: cmdAttempt.summary });
+      },
+    });
+    if (!commandResult.pass) return commandResult;
     // A merge with no first parent (root commit, or a rewritten history) just means no base-diff context for the critic; the critic falls back to its no-baseOid prompt.
     const baseOid = await Git.revParse(baseDir, `${mergeOid}^1`).catch(() => null);
     if (critics.length > 0) await indexWorktree(baseDir);

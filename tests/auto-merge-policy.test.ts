@@ -83,14 +83,17 @@ function lockWorktreeAdminVerifier(repo: string) {
   });
 }
 
+function restoreWorktreesDirIfLockedByAdminVerifier(dir: string): void {
+  try {
+    chmodSync(join(dir, '.git', 'worktrees'), 0o755);
+  } catch {
+    return;
+  }
+}
+
 afterAll(() => {
   for (const d of tmpDirs) {
-    const worktrees = join(d, '.git', 'worktrees');
-    try {
-      chmodSync(worktrees, 0o755);
-    } catch {
-      // Only repos the lock-admin verifier touched have a read-only worktrees dir.
-    }
+    restoreWorktreesDirIfLockedByAdminVerifier(d);
     rmSync(d, { recursive: true, force: true });
   }
 });

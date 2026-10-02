@@ -1,4 +1,5 @@
 import { lifecycleTimelineRows, type LifecycleTimelineTone } from '../../lifecycle-timeline-model.js';
+import { eventCount } from '../../id-format.js';
 import type { TicketTimelineEvent } from '../../types.js';
 import { card, railSectionCount } from '../../ui.js';
 import { FollowTail } from './FollowTail';
@@ -51,7 +52,7 @@ export function LifecycleTimeline({
         <div className="flex items-center justify-between gap-4 border-b border-hairline px-5 py-3">
           <div className="flex items-baseline gap-2.5">
             <span className={CAPS}>Lifecycle</span>
-            <span className={railSectionCount}>{events.length} events</span>
+            <span className={railSectionCount}>{eventCount(events.length)}</span>
           </div>
           <FollowTail following={following} onToggle={onToggleFollow} />
         </div>

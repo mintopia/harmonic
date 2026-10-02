@@ -38,6 +38,9 @@ action taken with no span or log entry is a defect.** The merge path records mer
 checks, and reverts. A newly discovered missing operation is a defect,
 not evidence that the completed ADR-0001 epic is still pending.
 
+Every harness and verify child process runs in its own process group,
+journaled at spawn so that boot can reap orphans left by a crash.
+
 Mechanics: hybrid AsyncLocalStorage plus explicitly-stored parent context for
 long-lived hierarchies; a custom `SpanProcessor` is the single fan-out point
 (in-memory open-span registry, `operations` bus event, metrics, batch

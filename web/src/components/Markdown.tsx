@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
-import { copyText } from '../clipboard';
+import { useCopyConfirmation } from './CopyButton';
 import { renderMarkdown } from '../markdown';
 import { useLiveEffect } from '../useLiveEffect';
 
@@ -20,17 +20,10 @@ function decorateCodeBlocks(root: HTMLElement): void {
   }
 }
 
-async function copyFrom(button: HTMLElement): Promise<void> {
+function codeOf(button: HTMLElement): string {
   const pre = button.closest('pre');
   const code = pre?.querySelector('code')?.textContent ?? pre?.textContent ?? '';
-  if (!(await copyText(code.replace(/\n$/, '')))) return;
-  const prev = button.textContent;
-  button.textContent = 'Copied';
-  button.classList.add('is-copied');
-  setTimeout(() => {
-    button.textContent = prev;
-    button.classList.remove('is-copied');
-  }, 1200);
+  return code.replace(/\n$/, '');
 }
 
 /**
@@ -43,6 +36,8 @@ const isExternalHref = (href: string) => /^[a-z][a-z0-9+.-]*:/i.test(href) || hr
 export function Markdown({ source, className = '', onFileLink }: { source: string; className?: string; onFileLink?: (href: string) => void }) {
   const [html, setHtml] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const copiedButton = useRef<HTMLElement | null>(null);
+  const { copied, copy } = useCopyConfirmation();
 
   useLiveEffect((live) => {
     setHtml(null);
@@ -55,9 +50,20 @@ export function Markdown({ source, className = '', onFileLink }: { source: strin
     if (ref.current) decorateCodeBlocks(ref.current);
   }, [html]);
 
+  useEffect(() => {
+    const button = copiedButton.current;
+    if (!copied || !button) return;
+    button.textContent = 'Copied';
+    button.classList.add('is-copied');
+    return () => {
+      button.textContent = 'Copy';
+      button.classList.remove('is-copied');
+    };
+  }, [copied]);
+
   const onClick = (e: MouseEvent<HTMLDivElement>) => {
     const button = (e.target as HTMLElement).closest<HTMLElement>('[data-copy]');
-    if (button) { void copyFrom(button); return; }
+    if (button) { copiedButton.current = button; void copy(codeOf(button)); return; }
     if (onFileLink) {
       const anchor = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[href]');
       const href = anchor?.getAttribute('href');

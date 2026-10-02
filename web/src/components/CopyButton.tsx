@@ -8,6 +8,22 @@ export const revealOnHover = 'opacity-0 group-hover:opacity-100 focus-visible:op
 
 const CONFIRM_MS = 1200;
 
+/** Copy to the clipboard and expose a brief `copied` confirmation; the timer is cleared on unmount. */
+export function useCopyConfirmation(): { copied: boolean; copy: (source: CopySource) => Promise<void> } {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+  const copy = async (source: CopySource) => {
+    if (!(await copyText(source))) return;
+    setCopied(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(false), CONFIRM_MS);
+  };
+  return { copied, copy };
+}
+
 export function CopyButton({
   text,
   label,
@@ -19,17 +35,8 @@ export function CopyButton({
   variant?: 'icon' | 'text';
   className?: string;
 }) {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-  }, []);
-  const copy = async () => {
-    if (!(await copyText(text))) return;
-    setCopied(true);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setCopied(false), CONFIRM_MS);
-  };
+  const { copied, copy: copySource } = useCopyConfirmation();
+  const copy = () => copySource(text);
   return (
     <>
       {variant === 'icon' ? (

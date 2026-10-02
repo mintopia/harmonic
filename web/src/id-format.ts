@@ -8,6 +8,11 @@ export function taskLabel(id: number): string {
   return `Task ${id}`;
 }
 
+/** An epic ref in prose or a title: `Epic #42`. */
+export function epicLabel(ref: number): string {
+  return `Epic ${issueRef(ref)}`;
+}
+
 /** A tracker (GitHub) issue ref: `#185`. The only place a bare `#n` is legitimate. */
 export function issueRef(ref: number): string {
   return `#${ref}`;
@@ -30,4 +35,8 @@ export function ticketIdentity(id: number, trackerRef: number | null | undefined
  */
 export function ticketRowId(id: number, trackerRef: number | null | undefined): string {
   return trackerRef != null ? `${issueRef(trackerRef)} · ${taskKey(id)}` : taskKey(id);
+}
+
+export function eventCount(n: number): string {
+  return `${n.toLocaleString()} ${n === 1 ? 'event' : 'events'}`;
 }

@@ -13,11 +13,11 @@ import { createTempDirTracker, packFixtureTarball } from './helpers/upgrade-fixt
 
 const execFileAsync = promisify(execFile);
 const npmEnv = { ...process.env, npm_config_audit: 'false', npm_config_fund: 'false', npm_config_update_notifier: 'false', npm_config_offline: 'true' };
-// Durability syncs are not under test and can flush the whole filesystem on a loaded CI runner.
-const run = async (command: string, args: readonly string[]) => {
+const withoutDurabilitySync = (exec: typeof execFileAsync) => async (command: string, args: readonly string[]) => {
   if (command === 'sync') return { stdout: '', stderr: '' };
-  return execFileAsync(command, [...args], { env: npmEnv });
+  return exec(command, [...args], { env: npmEnv });
 };
+const run = withoutDurabilitySync(execFileAsync);
 const readFileUtf8 = (path: string): string => readFileSync(path, 'utf8');
 
 const { tempDir, cleanupAll } = createTempDirTracker();

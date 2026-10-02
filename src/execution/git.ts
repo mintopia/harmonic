@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import type { Attributes } from '@opentelemetry/api';
 import { withRepoLock } from './repo-lock.js';
 import { startActiveChildOperation } from '../telemetry/operations.js';
-import { forEachYielding, yieldToEventLoop } from '../reliability/yield.js';
+import { forEachYielding } from '../reliability/yield.js';
 import { logger } from '../logger.js';
 import { GitError } from '../domain/errors.js';
 
@@ -27,6 +27,10 @@ const WAIT_FOR_REF_LOCK = ['-c', 'core.filesRefLockTimeout=3000'];
 
 async function git(cwd: string, ...args: string[]): Promise<string> {
   return gitEnv(cwd, {}, ...args);
+}
+
+function gitRefWrite(cwd: string, ...args: string[]): Promise<string> {
+  return git(cwd, ...WAIT_FOR_REF_LOCK, ...args);
 }
 
 async function gitEnv(cwd: string, env: Record<string, string>, ...args: string[]): Promise<string> {
@@ -259,10 +263,10 @@ export const Git = {
    * Create `ref` pointing at `oid`, failing if it already exists — the CAS
    * from empty (`''` old-value = "must not exist").
    */
-  createRef: (dir: string, ref: string, oid: string) => git(dir, 'update-ref', ref, oid, ''),
+  createRef: (dir: string, ref: string, oid: string) => gitRefWrite(dir, 'update-ref', ref, oid, ''),
 
   /** Set `ref` to `oid` unconditionally (no old-value CAS). */
-  setRef: (dir: string, ref: string, oid: string) => git(dir, 'update-ref', ref, oid),
+  setRef: (dir: string, ref: string, oid: string) => gitRefWrite(dir, 'update-ref', ref, oid),
 
   /** Add a disposable worktree with a DETACHED HEAD at `oid` — no branch is
    * created or moved, so a verifier sees a stable tree it cannot merge. */
@@ -335,12 +339,12 @@ export const Git = {
    */
   createBranch: (dir: string, name: string, startPoint: string) =>
     withGitOperation('git.branch-cut', { 'git.branch': name, 'git.ref': startPoint }, () =>
-      withRepoLock(dir, () => git(dir, ...WAIT_FOR_REF_LOCK, 'branch', name, startPoint)),
+      withRepoLock(dir, () => gitRefWrite(dir, 'branch', name, startPoint)),
     ),
 
   /** Delete local branch `name` (`-D`, force). Under the base-repo lock. */
   deleteBranch: (dir: string, name: string) =>
-    withRepoLock(dir, () => git(dir, ...WAIT_FOR_REF_LOCK, 'branch', '-D', name)),
+    withRepoLock(dir, () => gitRefWrite(dir, 'branch', '-D', name)),
 
   /**
    * Add a worktree on new branch `newBranch`, under the base-repo lock (scoped
@@ -351,7 +355,7 @@ export const Git = {
   addWorktree: (dir: string, worktreePath: string, newBranch: string, startPoint?: string) =>
     withGitOperation('git.branch-cut', { 'git.branch': newBranch, 'git.ref': startPoint ?? 'HEAD' }, () =>
       withRepoLock(dir, () =>
-        git(dir, 'worktree', 'add', '-b', newBranch, worktreePath, ...(startPoint ? [startPoint] : [])),
+        gitRefWrite(dir, 'worktree', 'add', '-b', newBranch, worktreePath, ...(startPoint ? [startPoint] : [])),
       ),
     ),
 
@@ -420,7 +424,7 @@ export const Git = {
     withRepoLock(dir, async () => {
       if (!(await beforeRemove())) return false;
       await git(dir, 'worktree', 'remove', '--force', worktreePath);
-      if (branch?.startsWith('harmonic/')) await git(dir, 'branch', '-D', branch);
+      if (branch?.startsWith('harmonic/')) await gitRefWrite(dir, 'branch', '-D', branch);
       return true;
     }),
 
@@ -477,7 +481,7 @@ export const Git = {
     await git(worktreePath, 'add', '-A');
     const status = await git(worktreePath, 'status', '--porcelain');
     if (status.length === 0) return null;
-    await git(worktreePath, ...IDENTITY, 'commit', '-m', message);
+    await gitRefWrite(worktreePath, ...IDENTITY, 'commit', '-m', message);
     return git(worktreePath, 'rev-parse', 'HEAD');
   },
 
@@ -495,7 +499,7 @@ export const Git = {
     } catch {
       // A non-zero exit means there are staged changes to commit.
     }
-    await git(dir, ...IDENTITY, 'commit', '-m', message);
+    await gitRefWrite(dir, ...IDENTITY, 'commit', '-m', message);
     return git(dir, 'rev-parse', 'HEAD');
   },
 
@@ -524,7 +528,7 @@ export const Git = {
 
   commit: (dir: string, message: string) =>
     withRepoLock(dir, async () => {
-      await git(dir, ...IDENTITY, 'commit', '-m', message);
+      await gitRefWrite(dir, ...IDENTITY, 'commit', '-m', message);
       logger.info('git: committed workspace changes', { 'git.dir': dir });
     }),
 
@@ -615,16 +619,12 @@ export const Git = {
   async taskMergeCommit(dir: string, baseBranch: string, branch: string): Promise<string | null> {
     const branchOid = await Git.revParse(dir, branch);
     const commits = await git(dir, 'rev-list', '--first-parent', '--merges', '--parents', `${branch}..${baseBranch}`);
-    let sliceStart = Date.now();
-    for (const line of commits.split('\n')) {
+    let found: string | null = null;
+    await forEachYielding(commits.split('\n'), (line) => {
       const [mergeOid, , secondParent] = line.split(' ');
-      if (secondParent === branchOid) return mergeOid ?? null;
-      if (Date.now() - sliceStart >= 25) {
-        await yieldToEventLoop();
-        sliceStart = Date.now();
-      }
-    }
-    return null;
+      if (found === null && secondParent === branchOid) found = mergeOid ?? null;
+    });
+    return found;
   },
 
   /**
@@ -689,7 +689,7 @@ export const Git = {
    */
   async casUpdateRef(dir: string, branch: string, newOid: string, expectedOld: string): Promise<{ ok: boolean; detail?: string }> {
     try {
-      await git(dir, ...WAIT_FOR_REF_LOCK, 'update-ref', `refs/heads/${branch}`, newOid, expectedOld);
+      await gitRefWrite(dir, 'update-ref', `refs/heads/${branch}`, newOid, expectedOld);
       return { ok: true };
     } catch (err) {
       return { ok: false, detail: err instanceof GitError ? err.message : String(err) };
@@ -756,7 +756,7 @@ export const Git = {
       { 'git.branch': branch, 'git.ref': 'HEAD' },
       async () => {
         try {
-          await git(worktreeDir, ...IDENTITY, 'merge', '--no-edit', branch);
+          await gitRefWrite(worktreeDir, ...IDENTITY, 'merge', '--no-edit', branch);
           return { ok: true };
         } catch (err) {
           const detail = err instanceof GitError ? err.message : String(err);
@@ -787,7 +787,7 @@ export const Git = {
       { 'git.branch': branch, 'git.ref': 'HEAD' },
       async () => {
         try {
-          await git(worktreeDir, ...IDENTITY, 'merge', '--no-edit', branch);
+          await gitRefWrite(worktreeDir, ...IDENTITY, 'merge', '--no-edit', branch);
           return { ok: true };
         } catch (err) {
           return { ok: false, detail: err instanceof GitError ? err.message : String(err) };
@@ -833,7 +833,7 @@ export const Git = {
           return { ok: false, conflict: true, detail: 'unresolved conflicts from an earlier rebase remain' };
         }
         try {
-          await git(worktreeDir, ...IDENTITY, 'rebase', '--autostash', ontoOid);
+          await gitRefWrite(worktreeDir, ...IDENTITY, 'rebase', '--autostash', ontoOid);
           if (await hasUnmergedPaths()) {
             return { ok: false, conflict: true, detail: 'autostash re-apply conflicted after rebase' };
           }
@@ -858,7 +858,7 @@ export const Git = {
     return withGitOperation('git.ff-only', { 'git.ref': oid }, () =>
       withRepoLock(dir, async () => {
         try {
-          await git(dir, 'merge', '--ff-only', oid);
+          await gitRefWrite(dir, 'merge', '--ff-only', oid);
           return { ok: true };
         } catch (err) {
           return { ok: false, detail: err instanceof GitError ? err.message : String(err) };
@@ -883,7 +883,7 @@ export const Git = {
       { 'git.branch': branch, 'git.ref': 'HEAD' },
       async () => {
         try {
-          await git(worktreeDir, ...IDENTITY, 'merge', '--no-ff', '--no-edit', branch);
+          await gitRefWrite(worktreeDir, ...IDENTITY, 'merge', '--no-ff', '--no-edit', branch);
           return { ok: true, mergeOid: await Git.revParse(worktreeDir, 'HEAD') };
         } catch (err) {
           const detail = err instanceof GitError ? err.message : String(err);
@@ -932,7 +932,7 @@ export const Git = {
   async completeMerge(worktreeDir: string): Promise<{ ok: true; mergeOid: string } | { ok: false; detail: string }> {
     return withGitOperation('git.merge-complete', { 'git.ref': 'HEAD' }, async () => {
       try {
-        await git(worktreeDir, ...IDENTITY, 'commit', '--no-edit');
+        await gitRefWrite(worktreeDir, ...IDENTITY, 'commit', '--no-edit');
         return { ok: true, mergeOid: await Git.revParse(worktreeDir, 'HEAD') };
       } catch (err) {
         return { ok: false, detail: err instanceof GitError ? err.message : String(err) };
@@ -961,7 +961,7 @@ export const Git = {
    */
   async revertMergeCommit(worktreeDir: string, mergeOid: string): Promise<string> {
     return withGitOperation('git.revert', { 'git.ref': mergeOid }, async () => {
-      await git(worktreeDir, ...IDENTITY, 'revert', '-m', '1', '--no-edit', mergeOid);
+      await gitRefWrite(worktreeDir, ...IDENTITY, 'revert', '-m', '1', '--no-edit', mergeOid);
       return Git.revParse(worktreeDir, 'HEAD');
     });
   },

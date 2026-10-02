@@ -11,6 +11,7 @@ import { AttemptStore } from '../src/domain/attempts.js';
 import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
 import { CrashRecoveryCoordinator } from '../src/execution/crash-recovery.js';
 import { Git } from '../src/execution/git.js';
+import { isEphemeralMergeWorktree } from '../src/execution/ephemeral-merge-worktree.js';
 import { readProcStartToken } from '../src/execution/process-reaper.js';
 import { ProcessGroupJournal } from '../src/execution/process-groups.js';
 import type { TaskRow, AttemptRow } from '../src/db/schema.js';
@@ -94,13 +95,14 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
   it('completes a crashed worktree Run whose branch already landed in its base: re-runs the post-merge check and settles it green, idempotently on a second reconcile', async () => {
     const { task, run, baseBranch } = await seedAlreadyMergedOrphan();
     const baseTip = await Git.revParse(repo, baseBranch);
-    const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
+    const runPostMergeCheck = vi.fn(async (_args: { baseDir: string }) => ({ pass: true, output: '' }));
     const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck });
 
     await coord.reconcile();
 
     expect(runPostMergeCheck).toHaveBeenCalledTimes(1);
-    expect(runPostMergeCheck).toHaveBeenCalledWith({ task: expect.objectContaining({ id: task.id }), run: expect.objectContaining({ id: run.id }), mergeOid: baseTip, baseDir: repo });
+    expect(runPostMergeCheck).toHaveBeenCalledWith({ task: expect.objectContaining({ id: task.id }), run: expect.objectContaining({ id: run.id }), mergeOid: baseTip, baseDir: expect.not.stringMatching(new RegExp(`^${repo}$`)) });
+    expect(isEphemeralMergeWorktree(runPostMergeCheck.mock.calls[0]![0].baseDir)).toBe(true);
     const settled = await attempts.get(run.id);
     expect(settled.state).toBe('passed');
     expect((await tasks.get(task.id)).state).toBe('done');
@@ -114,7 +116,12 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
   it('reverts a crashed merge whose post-merge check now fails, and escalates the task — idempotently on a second reconcile', async () => {
     const { task, run, baseBranch } = await seedAlreadyMergedOrphan();
     const preRevertTip = await Git.revParse(repo, baseBranch);
-    const runPostMergeCheck = vi.fn(async () => ({ pass: false, output: 'lint failed: feature.txt' }));
+    let checkedIn = '';
+    const runPostMergeCheck = vi.fn(async ({ baseDir }: { baseDir: string }) => {
+      checkedIn = baseDir;
+      expect(existsSync(join(baseDir, 'feature.txt'))).toBe(true);
+      return { pass: false, output: 'lint failed: feature.txt' };
+    });
     const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck });
 
     await coord.reconcile();
@@ -130,10 +137,31 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     const revertedTip = await Git.revParse(repo, baseBranch);
     expect(revertedTip).not.toBe(preRevertTip);
     expect(existsSync(join(repo, 'feature.txt'))).toBe(false);
+    expect(isEphemeralMergeWorktree(checkedIn)).toBe(true);
+    expect(existsSync(checkedIn)).toBe(false);
+    expect(git(repo, 'status', '--porcelain')).toBe('');
+    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe(baseBranch);
 
     await coord.reconcile();
     expect(runPostMergeCheck).toHaveBeenCalledTimes(1);
     expect(await Git.revParse(repo, baseBranch)).toBe(revertedTip);
+  });
+
+  it('escalates without touching the base when the red merge cannot be reverted', async () => {
+    const { task, run, baseBranch } = await seedAlreadyMergedOrphan();
+    const tip = await Git.revParse(repo, baseBranch);
+    const runPostMergeCheck = vi.fn(async ({ baseDir }: { baseDir: string }) => {
+      writeFileSync(join(baseDir, 'feature.txt'), 'dirtied by the check\n');
+      return { pass: false, output: 'lint failed' };
+    });
+    const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck });
+
+    await coord.reconcile();
+
+    expect((await attempts.get(run.id)).state).toBe('escalated');
+    expect((await tasks.get(task.id)).escalationReason).toContain('could not be reverted');
+    expect(await Git.revParse(repo, baseBranch)).toBe(tip);
+    expect(git(repo, 'status', '--porcelain')).toBe('');
   });
 
   it.each(['commit', 'merge'] as const)('does not check or revert a later base %s when recovering an already merged task', async (advance) => {

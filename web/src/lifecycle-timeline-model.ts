@@ -88,7 +88,13 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
     case 'escalated': {
       const gate = text(payload?.gate);
       const label =
-        gate === 'conflict' ? 'Escalated — merge conflict' : gate === 'post-merge-red' ? 'Escalated — post-merge check failed' : 'Escalated → awaiting review';
+        gate === 'conflict'
+          ? 'Escalated — merge conflict'
+          : gate === 'post-merge-red'
+            ? 'Escalated — post-merge check failed'
+            : gate === 'write-failed'
+              ? 'Escalated — base update failed'
+              : 'Escalated → awaiting review';
       return { label, detail: clip(text(payload?.reason)), tone: 'awaiting', tag: null };
     }
     case 'merge-step': {

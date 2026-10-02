@@ -18,7 +18,7 @@ import { EventLoopMonitor } from '../reliability/event-loop-monitor.js';
 import { HostLoadSampler } from '../host-load.js';
 import { WorkspaceWatcher } from '../domain/workspace-watcher.js';
 import { logger } from '../logger.js';
-import { attachProcessGroupJournal, ProcessGroupJournal } from '../execution/process-groups.js';
+import { attachJournalAfterBootReap, ProcessGroupJournal } from '../execution/process-groups.js';
 import { attempted, errorMessage, fireAndForget } from '../error-handling.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import type { Scheduler } from '../scheduler/scheduler.js';
@@ -301,7 +301,7 @@ export async function createRuntime(deps: {
     sessionTranscriptPath: (id) => transcripts.ensureSessionTranscript(id),
     processGroups,
   });
-  attachProcessGroupJournal(processGroups);
+  attachJournalAfterBootReap(processGroups);
   touchStartupProgress(opts.dataDir);
   const getWorkspaceRow = async (id: number | null) => {
     if (id == null) return undefined;

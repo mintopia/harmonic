@@ -30,7 +30,7 @@ export const epicExportTarget = (workspaceId: number, epicRef: number): ExportTa
   downloadUrl: api.epicExportDownloadUrl(workspaceId, epicRef),
 });
 
-export type TaskExportState = {
+export type ExportState = {
   status: TaskExportStatus | null;
   loadError: string | null;
   busy: boolean;
@@ -41,7 +41,7 @@ export type TaskExportState = {
 };
 
 /** Export status for a finished Task or Epic, refreshed when `refreshKey` changes (a new timeline fact) and polled so retry countdowns stay honest. */
-export function useTaskExport(target: ExportTarget, enabled: boolean, refreshKey: number): TaskExportState {
+export function useExport(target: ExportTarget, enabled: boolean, refreshKey: number): ExportState {
   const targetRef = useRef(target);
   useEffect(() => {
     targetRef.current = target;

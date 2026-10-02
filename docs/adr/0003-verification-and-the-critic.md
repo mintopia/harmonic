@@ -51,7 +51,8 @@ Task and Epic post-merge commands run in the ephemeral administrative
 worktree already owned by the merge operation (ADR-0039). Commands in that
 stage share the checkout, so artifacts and mutations remain visible to later
 commands. They do not create a fresh checkout per verifier or mutate the
-operator's base checkout.
+operator's base checkout. The Epic-to-default-branch post-merge check reuses
+the `verify.epic.preMerge` commands and runs no critics.
 
 ## The critic is an independent, tool-enabled evaluator
 

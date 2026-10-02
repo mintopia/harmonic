@@ -40,6 +40,26 @@ export interface HostLoad {
   saturated: boolean;
 }
 
+/** What an export belongs to; parsed from the wire's nullable taskId/epicRef pair. */
+export type ExportOwner = { kind: 'task'; taskId: number } | { kind: 'epic'; epicRef: number; workspaceId: number };
+
+interface ExportFailedWire extends Omit<Extract<ServerMessage, { type: 'export_failed' }>, 'owner'> {
+  taskId: number | null;
+  epicRef: number | null;
+  workspaceId: number | null;
+}
+
+type WireMessage = Exclude<ServerMessage, { type: 'export_failed' }> | ExportFailedWire;
+
+export function parseServerMessage(wire: WireMessage): ServerMessage | null {
+  if (wire.type !== 'export_failed') return wire;
+  const { taskId, epicRef, workspaceId, ...rest } = wire;
+  if (taskId !== null) return { ...rest, owner: { kind: 'task', taskId } };
+  if (epicRef !== null && workspaceId !== null) return { ...rest, owner: { kind: 'epic', epicRef, workspaceId } };
+  console.warn('ws: dropping export_failed with no Task or Epic owner');
+  return null;
+}
+
 export type ServerMessage =
   | { type: 'attempt_event'; event: AttemptEvent }
   | { type: 'attempt_log_event'; event: AttemptLogEvent }
@@ -65,9 +85,7 @@ export type ServerMessage =
   // Sent to every client regardless of workspace; nextRetryAt is null when no further retry is scheduled.
   | {
       type: 'export_failed';
-      taskId: number | null;
-      epicRef: number | null;
-      workspaceId: number | null;
+      owner: ExportOwner;
       trackerRef: number | null;
       destination: string;
       disposition: string;
@@ -164,7 +182,8 @@ function connect(): void {
     for (const listener of listeners) listener.onOpen?.(socket);
   };
   socket.onmessage = (ev) => {
-    const message: ServerMessage = JSON.parse(String(ev.data));
+    const message = parseServerMessage(JSON.parse(String(ev.data)));
+    if (message === null) return;
     updatePendingPermissions(message);
     for (const listener of listeners) listener.onMessage(message);
   };
