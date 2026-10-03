@@ -129,13 +129,21 @@ export function fakeForgejo(options: FakeForgejoOptions): FakeForgejo {
       const blockers = (options.dependencies?.[Number(m[1])] ?? []).map((n) => rawIssue(fake.issues.find((i) => i.number === n)!));
       return json(page(blockers, u.searchParams));
     }
+    if ((m = /^\/repos\/owner\/name\/issues\/(\d+)\/blocks$/.exec(path))) {
+      if (options.dependenciesEnabled === false) return json({ message: 'dependencies disabled' }, 404);
+      const blocked = Object.entries(options.dependencies ?? {})
+        .filter(([, blockers]) => blockers.includes(Number(m![1])))
+        .map(([n]) => rawIssue(fake.issues.find((i) => i.number === Number(n))!));
+      return json(page(blocked, u.searchParams));
+    }
     if (method === 'GET' && path === '/repos/owner/name/milestones') {
       const state = u.searchParams.get('state');
       return json(page(fake.milestones.filter((c) => !state || c.state === state).map(rawContainer), u.searchParams));
     }
-    if (method === 'PATCH' && (m = /^\/repos\/owner\/name\/milestones\/(\d+)$/.exec(path))) {
-      const found = fake.milestones.find((c) => c.id === Number(m![1]))!;
-      found.state = body.state;
+    if ((m = /^\/repos\/owner\/name\/milestones\/(\d+)$/.exec(path))) {
+      const found = fake.milestones.find((c) => c.id === Number(m![1]));
+      if (!found) return json({ message: 'not found' }, 404);
+      if (method === 'PATCH') found.state = body.state;
       return json(rawContainer(found));
     }
     if (method === 'POST' && path === '/repos/owner/name/pulls') {

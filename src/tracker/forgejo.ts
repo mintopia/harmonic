@@ -114,6 +114,30 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
     }
   };
 
+  const nativeBlocks = async (issueNumber: number): Promise<RawIssue[]> => {
+    try {
+      return await client.paginate(`${repo}/issues/${issueNumber}/blocks`, PAGE_SIZE, issueSchema);
+    } catch (err) {
+      if (err instanceof RestError && err.status === 404) return [];
+      throw err;
+    }
+  };
+
+  const parentOfIssue = async (raw: RawIssue): Promise<TrackerRef | null> => {
+    if (source === 'label') {
+      const bodyParent = parsePartOfParent(raw.body ?? '');
+      return bodyParent === null ? null : trackerRef(bodyParent);
+    }
+    if (!raw.milestone) return null;
+    try {
+      const m = await client.request('GET', `${repo}/milestones/${raw.milestone.id}`, containerSchema);
+      return m.state === 'open' ? containerRef(m.id) : null;
+    } catch (err) {
+      if (err instanceof RestError && err.status === 404) return null;
+      throw err;
+    }
+  };
+
   /** Open containers of the configured source with the numbers of the issues they hold. */
   const containers = async (): Promise<HeldContainer[]> => {
     if (source === 'label') return [];
@@ -237,11 +261,48 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
     identify: ensureMe,
 
     async readTicket(ref: TicketRef) {
-      const found = (await scanAll()).find((t) => t.number === ref.number);
-      if (!found) throw new Error(`Forgejo: no issue ${ref.number} in ${settings.repo}`);
-      if (parseContainerRef(found.number)) return found;
-      const notes = await client.paginate(`${repo}/issues/${ref.number}/comments`, PAGE_SIZE, commentSchema);
-      return { ...found, comments: notes.map((n) => ({ author: n.user?.login ?? '', body: n.body, createdAt: n.created_at })) };
+      if (parseContainerRef(ref.number)) {
+        const found = (await scanAll()).find((t) => t.number === ref.number);
+        if (!found) throw new Error(`Forgejo: no issue ${ref.number} in ${settings.repo}`);
+        return found;
+      }
+      let raw: RawIssue;
+      try {
+        raw = await client.request('GET', `${repo}/issues/${ref.number}`, issueSchema);
+      } catch (err) {
+        if (err instanceof RestError && err.status === 404) throw new Error(`Forgejo: no issue ${ref.number} in ${settings.repo}`);
+        throw err;
+      }
+      const self = trackerRef(raw.number);
+      const open = raw.state !== 'closed';
+      const toRef = (d: RawIssue): TicketRef => ({ number: trackerRef(d.number), title: d.title, state: state(d.state) });
+      const [nativeBlockers, nativeBlocking, notes, parent] = await Promise.all([
+        open ? nativeBlockedBy(raw.number) : [],
+        open ? nativeBlocks(raw.number) : [],
+        client.paginate(`${repo}/issues/${raw.number}/comments`, PAGE_SIZE, commentSchema),
+        parentOfIssue(raw),
+      ]);
+      const seen = new Set<TrackerRef>([self, ...nativeBlockers.map((d) => trackerRef(d.number))]);
+      const bodyRefs = parseBlockedByLines(raw.body ?? '')
+        .map(trackerRef)
+        .filter((n) => !seen.has(n));
+      const fromBody = await Promise.all(
+        bodyRefs.map(async (n): Promise<TicketRef> => {
+          try {
+            return toRef(await client.request('GET', `${repo}/issues/${n}`, issueSchema));
+          } catch (err) {
+            if (err instanceof RestError && err.status === 404) return { number: n, title: '', state: 'open' };
+            throw err;
+          }
+        }),
+      );
+      return {
+        ...toBase(raw),
+        parent,
+        blockedBy: [...nativeBlockers.map(toRef), ...fromBody],
+        blocking: nativeBlocking.map(toRef),
+        comments: notes.map((n) => ({ author: n.user?.login ?? '', body: n.body, createdAt: n.created_at })),
+      };
     },
 
     claim: (ticket) =>
