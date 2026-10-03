@@ -12,7 +12,7 @@ import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 const ticket = (number: number, assignees: string[] = []): Ticket => ({
-  number: trackerRef(number),
+  ref: trackerRef(number),
   title: `ticket ${number}`,
   state: 'open',
   body: '',
@@ -45,15 +45,15 @@ function fakeAdapter(opts: { claimThrows?: boolean } = {}) {
     name: 'fake',
     scan: async () => [],
     readTicket: async (ref) => {
-      calls.read.push(ref.number);
+      calls.read.push(ref.ref);
       return readResult;
     },
     claim: async (t) => {
-      calls.claim.push(t.number);
+      calls.claim.push(t.ref);
       if (opts.claimThrows) throw new Error('claim failed');
     },
     release: async (t) => {
-      calls.release.push(t.number);
+      calls.release.push(t.ref);
     },
     close: async () => {},
     reopen: async () => {},

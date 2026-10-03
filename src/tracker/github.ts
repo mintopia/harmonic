@@ -60,20 +60,20 @@ interface RawIssue {
 }
 
 const state = (s: string): TicketState => (s.toUpperCase() === 'CLOSED' ? 'closed' : 'open');
-const ref = (r: RawRef): TicketRef => ({ number: trackerRef(r.number), title: r.title, state: state(r.state) });
+const ref = (r: RawRef): TicketRef => ({ ref: trackerRef(r.number), title: r.title, state: state(r.state) });
 
 function normalise(raw: RawIssue): Ticket {
   const labels = (raw.labels ?? []).map((l) => l.name);
   const nativeBlockedBy = (raw.blockedBy?.nodes ?? []).map(ref);
-  const seen = new Set<TrackerRef>(nativeBlockedBy.map((r) => r.number));
+  const seen = new Set<TrackerRef>(nativeBlockedBy.map((r) => r.ref));
   const blockedBy = [
     ...nativeBlockedBy,
     ...parseBlockedByLines(raw.body ?? '')
       .filter((n) => n !== raw.number && !seen.has(trackerRef(n)))
-      .map((n): TicketRef => ({ number: trackerRef(n), title: '', state: 'open' })),
+      .map((n): TicketRef => ({ ref: trackerRef(n), title: '', state: 'open' })),
   ];
   return {
-    number: trackerRef(raw.number),
+    ref: trackerRef(raw.number),
     title: raw.title,
     state: state(raw.state),
     body: raw.body ?? '',
@@ -123,25 +123,25 @@ export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): Writ
     },
 
     async readTicket(ref: TicketRef) {
-      return normalise(await json<RawIssue>(['issue', 'view', String(ref.number), '--json', FIELDS]));
+      return normalise(await json<RawIssue>(['issue', 'view', String(ref.ref), '--json', FIELDS]));
     },
 
     async claim(ticket: TicketRef) {
-      await run(['issue', 'edit', String(ticket.number), '--add-assignee', '@me'], repoRoot);
+      await run(['issue', 'edit', String(ticket.ref), '--add-assignee', '@me'], repoRoot);
     },
 
     async release(ticket: TicketRef) {
-      await run(['issue', 'edit', String(ticket.number), '--remove-assignee', '@me'], repoRoot);
+      await run(['issue', 'edit', String(ticket.ref), '--remove-assignee', '@me'], repoRoot);
     },
 
     async close(ticket: TicketRef, comment: string) {
-      const args = ['issue', 'close', String(ticket.number)];
+      const args = ['issue', 'close', String(ticket.ref)];
       if (comment) args.push('--comment', comment);
       await run(args, repoRoot);
     },
 
     async reopen(ticket: TicketRef, comment: string) {
-      const args = ['issue', 'reopen', String(ticket.number)];
+      const args = ['issue', 'reopen', String(ticket.ref)];
       if (comment) args.push('--comment', comment);
       await run(args, repoRoot);
     },

@@ -3,7 +3,7 @@ import type { TrackerAdapter, TrackerRef } from './adapter.js';
 /** Close an integrated Epic's tracker issue; idempotent, since `gh issue close` errors on an already-closed issue. */
 export async function closeIntegratedEpic(adapter: TrackerAdapter, epicRef: TrackerRef): Promise<void> {
   if (!adapter.close) return;
-  const ref = { number: epicRef, title: '', state: 'open' as const };
+  const ref = { ref: epicRef, title: '', state: 'open' as const };
   if ((await adapter.readTicket(ref)).state === 'closed') return;
   await adapter.close(ref, 'Epic integrated by Harmonic.');
 }

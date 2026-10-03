@@ -88,7 +88,7 @@ const sameName = (a: string, b: string): boolean => a.toLowerCase() === b.toLowe
 const jqlQuote = (s: string): string => `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 
 const refOf = (i: RawLinkedIssue): TicketRef => ({
-  number: trackerRef(i.key),
+  ref: trackerRef(i.key),
   title: i.fields?.summary ?? i.key,
   state: i.fields?.status ? stateOf(i.fields.status) : 'open',
 });
@@ -137,13 +137,13 @@ export function jiraAdapter(config: JiraConfig, client: RestClient, triageLabels
     for (const key of [...parseBlockedByLines(desc, 'jira'), ...parseBlockedBySection(desc, 'jira')]) {
       if (seen.has(key) || !inProject(key)) continue;
       seen.add(key);
-      blockedBy.push(known.get(key) ?? { number: trackerRef(key), title: key, state: 'open' });
+      blockedBy.push(known.get(key) ?? { ref: trackerRef(key), title: key, state: 'open' });
     }
 
     const bodyParent = parsePartOfParent(desc, 'jira');
     const parent = f.parent?.key ?? (bodyParent && inProject(bodyParent) ? bodyParent : null);
     return {
-      number: trackerRef(raw.key),
+      ref: trackerRef(raw.key),
       title: f.summary,
       state: stateOf(f.status),
       body: desc,
@@ -177,18 +177,18 @@ export function jiraAdapter(config: JiraConfig, client: RestClient, triageLabels
   };
 
   const lifecycle = async (ticket: TicketRef, comment: string, target: string | undefined, categoryKey: 'done' | 'new', verb: string) => {
-    const current = await client.request('GET', `/issue/${ticket.number}?fields=status`, statusOnlySchema);
+    const current = await client.request('GET', `/issue/${ticket.ref}?fields=status`, statusOnlySchema);
     if (current.fields.status.statusCategory?.key === categoryKey) return;
-    const available = await transitionsOf(ticket.number);
+    const available = await transitionsOf(ticket.ref);
     const chosen =
       (target ? available.find((t) => sameName(t.to.name, target)) : undefined) ??
       available.find((t) => t.to.statusCategory?.key === categoryKey);
     if (!chosen) {
       const list = available.map((t) => `${t.name} -> ${t.to.name}`).join(', ') || 'none';
-      throw new Error(`Jira: no transition to ${verb} ${ticket.number}; available transitions: ${list}`);
+      throw new Error(`Jira: no transition to ${verb} ${ticket.ref}; available transitions: ${list}`);
     }
-    await doTransition(ticket.number, chosen.id);
-    if (comment) await client.send('POST', `/issue/${ticket.number}/comment`, { body: comment });
+    await doTransition(ticket.ref, chosen.id);
+    if (comment) await client.send('POST', `/issue/${ticket.ref}/comment`, { body: comment });
   };
 
   const pickup = async (key: string): Promise<void> => {
@@ -236,7 +236,7 @@ export function jiraAdapter(config: JiraConfig, client: RestClient, triageLabels
       const raws = await searchAll();
       const known = new Map<string, TicketRef>();
       await forEachYielding(raws, (r) => {
-        known.set(r.key, { number: trackerRef(r.key), title: r.fields.summary, state: stateOf(r.fields.status) });
+        known.set(r.key, { ref: trackerRef(r.key), title: r.fields.summary, state: stateOf(r.fields.status) });
       });
       const tickets: Ticket[] = [];
       await forEachYielding(raws, (r) => {
@@ -253,8 +253,8 @@ export function jiraAdapter(config: JiraConfig, client: RestClient, triageLabels
     },
 
     async readTicket(ref: TicketRef) {
-      const raw = await client.request('GET', `/issue/${ref.number}?fields=${FIELDS}`, issueSchema);
-      const res = await client.request('GET', `/issue/${ref.number}/comment`, commentsSchema);
+      const raw = await client.request('GET', `/issue/${ref.ref}?fields=${FIELDS}`, issueSchema);
+      const res = await client.request('GET', `/issue/${ref.ref}/comment`, commentsSchema);
       return {
         ...normalise(raw, new Map()),
         comments: (res.comments ?? [])
@@ -266,16 +266,16 @@ export function jiraAdapter(config: JiraConfig, client: RestClient, triageLabels
     async claim(ticket: TicketRef) {
       const id = idOf(await ensureMe());
       if (!id) throw new Error('Jira: /myself returned no user id');
-      await client.send('PUT', `/issue/${ticket.number}/assignee`, assigneeBody(id));
-      await pickup(ticket.number);
+      await client.send('PUT', `/issue/${ticket.ref}/assignee`, assigneeBody(id));
+      await pickup(ticket.ref);
     },
 
     async release(ticket: TicketRef) {
       const id = idOf(await ensureMe());
-      const issue = await client.request('GET', `/issue/${ticket.number}?fields=assignee`, assigneeOnlySchema);
+      const issue = await client.request('GET', `/issue/${ticket.ref}?fields=assignee`, assigneeOnlySchema);
       const current = issue.fields.assignee;
       if (!id || !current || idOf(current) !== id) return;
-      await client.send('PUT', `/issue/${ticket.number}/assignee`, assigneeBody(null));
+      await client.send('PUT', `/issue/${ticket.ref}/assignee`, assigneeBody(null));
     },
 
     close: (ticket, comment) => lifecycle(ticket, comment, config.doneStatus, 'done', 'close'),

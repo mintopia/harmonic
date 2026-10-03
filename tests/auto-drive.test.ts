@@ -53,9 +53,9 @@ function fakeAdapter(ticketState: 'open' | 'closed' = 'open') {
     name: 'fake',
     scan: async () => [],
     readTicket: async (ref): Promise<Ticket> => {
-      calls.read.push(ref.number);
+      calls.read.push(ref.ref);
       return {
-        number: ref.number,
+        ref: ref.ref,
         title: ref.title,
         state: ticketState,
         body: '',
@@ -68,16 +68,16 @@ function fakeAdapter(ticketState: 'open' | 'closed' = 'open') {
         blocking: [],
         comments: [],
         isMap: false,
-        url: `https://x/${ref.number}`,
+        url: `https://x/${ref.ref}`,
       };
     },
     claim: async () => {},
     release: async () => {},
     close: async (t) => {
-      calls.close.push(t.number);
+      calls.close.push(t.ref);
     },
     reopen: async (t) => {
-      calls.reopen.push(t.number);
+      calls.reopen.push(t.ref);
     },
   };
   const repository: RepositoryAdapter = {
@@ -225,7 +225,7 @@ describe('Drive Prompt fill (issue #33)', () => {
       name: 'other',
       scan: async () => [],
       readTicket: async (ref) => ({
-        number: ref.number,
+        ref: ref.ref,
         title: ref.title,
         state: 'open',
         body: '',

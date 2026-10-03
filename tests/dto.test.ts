@@ -144,7 +144,7 @@ const conversationRow = (over: Partial<ConversationRow> = {}): ConversationRow =
 });
 
 const ticket = (over: Partial<Ticket> = {}): Ticket => ({
-  number: trackerRef(100),
+  ref: trackerRef(100),
   title: 'A ticket',
   state: 'open',
   labels: [],
@@ -469,7 +469,7 @@ describe('taskToApiDto', () => {
 
 describe('epicToListRow', () => {
   it('projects a Ticket onto a list row with isEpic/humanOnly set and identity fields threaded', () => {
-    const row = epicToListRow(ticket({ number: trackerRef(42), title: 'The Epic', url: 'https://tracker.example/42' }), 9);
+    const row = epicToListRow(ticket({ ref: trackerRef(42), title: 'The Epic', url: 'https://tracker.example/42' }), 9);
     expect(row.isEpic).toBe(true);
     expect(row.humanOnly).toBe(true);
     expect(row.id).toBe(0);

@@ -13,7 +13,7 @@ const build = (options: FakeForgejoOptions, settings: Record<string, unknown> = 
   };
   return { fake, ctx, adapter: forgejoKind.create(ctx) };
 };
-const ref = (number: string | number): TicketRef => ({ number: trackerRef(number), title: '', state: 'open' });
+const ref = (number: string | number): TicketRef => ({ ref: trackerRef(number), title: '', state: 'open' });
 
 describe('Forgejo tracker', () => {
   it('sends the token and reads the account for verify', async () => {
@@ -33,10 +33,10 @@ describe('Forgejo tracker', () => {
   it('merges native dependencies with the body convention and tolerates dependencies being off', async () => {
     const issues = [issue(1, 'A'), issue(2, 'B'), issue(3, 'C', { body: 'Blocked by #1' })];
     const native = await build({ issues, dependencies: { 3: [2] } }).adapter.scan();
-    expect(native.find((t) => t.number === '3')!.blockedBy.map((r) => r.number)).toEqual(['2', '1']);
-    expect(native.find((t) => t.number === '2')!.blocking.map((r) => r.number)).toEqual(['3']);
+    expect(native.find((t) => t.ref === '3')!.blockedBy.map((r) => r.ref)).toEqual(['2', '1']);
+    expect(native.find((t) => t.ref === '2')!.blocking.map((r) => r.ref)).toEqual(['3']);
     const off = await build({ issues, dependenciesEnabled: false }).adapter.scan();
-    expect(off.find((t) => t.number === '3')!.blockedBy.map((r) => r.number)).toEqual(['1']);
+    expect(off.find((t) => t.ref === '3')!.blockedBy.map((r) => r.ref)).toEqual(['1']);
   });
 
   it('claim assigns the token account and release removes only it; comments come with readTicket', async () => {
@@ -53,7 +53,7 @@ describe('Forgejo tracker', () => {
   it('label source: epic-labelled issues are epics and children name them in the body', async () => {
     const { adapter } = build({ issues: [issue(1, 'Epic', { labels: ['epic'] }), issue(2, 'Child', { body: 'Part of #1' })] });
     const tickets = await adapter.scan();
-    expect(tickets.map((t) => [t.number, t.labels, t.parent])).toEqual([['1', ['epic'], null], ['2', [], '1']]);
+    expect(tickets.map((t) => [t.ref, t.labels, t.parent])).toEqual([['1', ['epic'], null], ['2', [], '1']]);
   });
 
   it('milestone source: open milestones are epics, their issues are children, close closes the milestone', async () => {
@@ -65,10 +65,10 @@ describe('Forgejo tracker', () => {
       { epicSource: 'milestone' },
     );
     const tickets = await adapter.scan();
-    const epic = tickets.find((t) => t.number === ref7)!;
+    const epic = tickets.find((t) => t.ref === ref7)!;
     expect([epic.title, epic.labels, epic.state, epic.parent]).toEqual(['Release', ['epic'], 'open', null]);
-    expect(tickets.map((t) => [t.number, t.parent])).toEqual([['1', ref7], ['2', null], [ref7, null]]);
-    expect(tickets.some((t) => t.number === 'milestone-8')).toBe(false);
+    expect(tickets.map((t) => [t.ref, t.parent])).toEqual([['1', ref7], ['2', null], [ref7, null]]);
+    expect(tickets.some((t) => t.ref === 'milestone-8')).toBe(false);
 
     await adapter.claim(ref(ref7));
     await adapter.close!(ref(ref7), 'done');

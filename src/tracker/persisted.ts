@@ -36,9 +36,9 @@ function factsFrom(row: StoredFacts): TrackerFacts | null {
   };
 }
 
-function ticketFrom(number: TrackerRef, facts: TrackerFacts, isMap: boolean): Ticket {
+function ticketFrom(ref: TrackerRef, facts: TrackerFacts, isMap: boolean): Ticket {
   return {
-    number,
+    ref,
     ...facts,
     isMap,
     closedAt: null,

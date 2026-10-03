@@ -14,7 +14,7 @@ import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
-  number: trackerRef(100),
+  ref: trackerRef(100),
   title: 'A ticket',
   state: 'open',
   body: '',
@@ -62,10 +62,10 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
 
   it('a scan of an epic-type parent with children creates a durable row with the right kind', async () => {
     await mirrorScan(tasks, [
-      ticket({ number: trackerRef(10), title: 'Spec', labels: [EPIC_LABEL], body: '## What to build\n\nthe spec' }),
-      ticket({ number: trackerRef(11), parent: trackerRef(10) }),
-      ticket({ number: trackerRef(19), title: 'Map', isMap: true, labels: ['wayfinder:map'] }),
-      ticket({ number: trackerRef(20), parent: trackerRef(19) }),
+      ticket({ ref: trackerRef(10), title: 'Spec', labels: [EPIC_LABEL], body: '## What to build\n\nthe spec' }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10) }),
+      ticket({ ref: trackerRef(19), title: 'Map', isMap: true, labels: ['wayfinder:map'] }),
+      ticket({ ref: trackerRef(20), parent: trackerRef(19) }),
     ], wsId);
 
     expect(await readEpics()).toEqual([
@@ -76,8 +76,8 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
 
   it('epicKind reads a single stored row, and null when unmapped', async () => {
     await mirrorScan(tasks, [
-      ticket({ number: trackerRef(19), title: 'Map', isMap: true, labels: ['wayfinder:map'] }),
-      ticket({ number: trackerRef(20), parent: trackerRef(19) }),
+      ticket({ ref: trackerRef(19), title: 'Map', isMap: true, labels: ['wayfinder:map'] }),
+      ticket({ ref: trackerRef(20), parent: trackerRef(19) }),
     ], wsId);
     expect(await tasks.epicKind(wsId, trackerRef(19))).toBe('map');
     expect(await tasks.epicKind(wsId, trackerRef(20))).toBeNull();
@@ -86,22 +86,22 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
 
   it('a root parent of work Tasks is a structural Epic without a label', async () => {
     await mirrorScan(tasks, [
-      ticket({ number: trackerRef(10), title: 'Task with subtasks' }),
-      ticket({ number: trackerRef(11), parent: trackerRef(10) }),
+      ticket({ ref: trackerRef(10), title: 'Task with subtasks' }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10) }),
     ], wsId);
     expect((await readEpics()).map((r) => [r.trackerRef, r.kind])).toEqual([['10', 'epic']]);
   });
 
   it('kind updates on re-scan when labels/structure change', async () => {
     await mirrorScan(tasks, [
-      ticket({ number: trackerRef(10), title: 'Spec', labels: [EPIC_LABEL], body: 'a spec' }),
-      ticket({ number: trackerRef(11), parent: trackerRef(10) }),
+      ticket({ ref: trackerRef(10), title: 'Spec', labels: [EPIC_LABEL], body: 'a spec' }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10) }),
     ], wsId);
     expect((await readEpics())[0]?.kind).toBe('spec');
 
     await mirrorScan(tasks, [
-      ticket({ number: trackerRef(10), title: 'Spec', labels: [EPIC_LABEL], body: '' }),
-      ticket({ number: trackerRef(11), parent: trackerRef(10) }),
+      ticket({ ref: trackerRef(10), title: 'Spec', labels: [EPIC_LABEL], body: '' }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10) }),
     ], wsId);
     const rows = await readEpics();
     expect(rows).toHaveLength(1);
@@ -110,8 +110,8 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
 
   it('the row is untouched by the container wipe and survives the issue disappearing', async () => {
     await mirrorScan(tasks, [
-      ticket({ number: trackerRef(10), title: 'Spec', labels: [EPIC_LABEL], body: 'a spec' }),
-      ticket({ number: trackerRef(11), parent: trackerRef(10) }),
+      ticket({ ref: trackerRef(10), title: 'Spec', labels: [EPIC_LABEL], body: 'a spec' }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10) }),
     ], wsId);
     expect(await readEpics()).toHaveLength(1);
     expect(await tasks.listTrackerContainers(wsId)).toHaveLength(1);
@@ -125,14 +125,14 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
 
   it('closing the tracker issue leaves the row intact', async () => {
     await mirrorScan(tasks, [
-      ticket({ number: trackerRef(10), title: 'Spec', labels: [EPIC_LABEL], body: 'a spec' }),
-      ticket({ number: trackerRef(11), parent: trackerRef(10) }),
+      ticket({ ref: trackerRef(10), title: 'Spec', labels: [EPIC_LABEL], body: 'a spec' }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10) }),
     ], wsId);
     expect(await readEpics()).toHaveLength(1);
 
     await mirrorScan(tasks, [
-      ticket({ number: trackerRef(10), title: 'Spec', state: 'closed', labels: [EPIC_LABEL], body: 'a spec' }),
-      ticket({ number: trackerRef(11), parent: trackerRef(10), state: 'closed' }),
+      ticket({ ref: trackerRef(10), title: 'Spec', state: 'closed', labels: [EPIC_LABEL], body: 'a spec' }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10), state: 'closed' }),
     ], wsId);
     expect(await readEpics()).toHaveLength(1);
     expect((await readEpics())[0]?.kind).toBe('spec');

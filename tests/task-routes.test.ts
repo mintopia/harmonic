@@ -328,7 +328,7 @@ describe('task-list-epics', () => {
     let workspaceId: number;
 
     const epicTicket = (over: Partial<Ticket>): Ticket => ({
-      number: trackerRef(101),
+      ref: trackerRef(101),
       title: 'Alpha epic',
       state: 'open',
       body: '',
@@ -345,7 +345,7 @@ describe('task-list-epics', () => {
       ...over,
     });
     const alpha = epicTicket({});
-    const beta = epicTicket({ number: trackerRef(102), title: 'Beta epic', createdAt: '2999-01-01T00:00:00.000Z', url: 'https://tracker/102' });
+    const beta = epicTicket({ ref: trackerRef(102), title: 'Beta epic', createdAt: '2999-01-01T00:00:00.000Z', url: 'https://tracker/102' });
 
     beforeEach(async () => {
       server = await startServer(stubHarness());

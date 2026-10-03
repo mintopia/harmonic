@@ -30,7 +30,7 @@ import type { SettingsStore } from '../src/server/settings-store.js';
 import { executionPlumbing, allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
-  number: trackerRef(100),
+  ref: trackerRef(100),
   title: 'A ticket',
   state: 'open',
   body: '',
@@ -155,9 +155,9 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
   });
 
   const epicTickets = (): Ticket[] => [
-    ticket({ number: trackerRef(10), title: 'Epic' }),
-    ticket({ number: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
-    ticket({ number: trackerRef(12), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+    ticket({ ref: trackerRef(10), title: 'Epic' }),
+    ticket({ ref: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+    ticket({ ref: trackerRef(12), parent: trackerRef(10), labels: ['ready-for-agent'] }),
   ];
 
   it('creates one integration branch cut from the default branch and points ready members at it', async () => {
@@ -176,12 +176,12 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
 
   it('cuts an epic/<ref> branch for every kind — map, spec, and plain (ADR-0018, #438)', async () => {
     const tickets = [
-      ticket({ number: trackerRef(10), title: 'Spec', labels: [EPIC_LABEL], body: '## What to build\n\nspec' }),
-      ticket({ number: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
-      ticket({ number: trackerRef(20), title: 'Map', isMap: true, labels: ['wayfinder:map'] }),
-      ticket({ number: trackerRef(21), parent: trackerRef(20), labels: ['ready-for-agent'] }),
-      ticket({ number: trackerRef(30), title: 'Plain' }),
-      ticket({ number: trackerRef(31), parent: trackerRef(30), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(10), title: 'Spec', labels: [EPIC_LABEL], body: '## What to build\n\nspec' }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(20), title: 'Map', isMap: true, labels: ['wayfinder:map'] }),
+      ticket({ ref: trackerRef(21), parent: trackerRef(20), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(30), title: 'Plain' }),
+      ticket({ ref: trackerRef(31), parent: trackerRef(30), labels: ['ready-for-agent'] }),
     ];
     const git = new FakeGit([], 'develop');
     const coord = new EpicLifecycle(tasks, dir, fireAndForget, git);
@@ -204,7 +204,7 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
   });
 
   it('creates no branch and sets no base branch when no Epic is derivable', async () => {
-    const flat = [ticket({ number: trackerRef(99), parent: null, labels: ['ready-for-agent'] })];
+    const flat = [ticket({ ref: trackerRef(99), parent: null, labels: ['ready-for-agent'] })];
     const git = new FakeGit([], 'develop');
     const coord = new EpicLifecycle(tasks, dir, fireAndForget, git);
 
@@ -217,13 +217,13 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
 
   it('retargets only the ready frontier, not blocked members', async () => {
     const tickets = [
-      ticket({ number: trackerRef(10), title: 'Epic' }),
-      ticket({ number: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(10), title: 'Epic' }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
       ticket({
-        number: trackerRef(12),
+        ref: trackerRef(12),
         parent: trackerRef(10),
         labels: ['ready-for-agent'],
-        blockedBy: [{ number: trackerRef(11), title: 'member 11', state: 'open' }],
+        blockedBy: [{ ref: trackerRef(11), title: 'member 11', state: 'open' }],
       }),
     ];
     const git = new FakeGit([], 'develop');
@@ -254,8 +254,8 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
 
   it('creates no branch for an Epic with an empty ready frontier', async () => {
     const tickets = [
-      ticket({ number: trackerRef(10), title: 'Epic' }),
-      ticket({ number: trackerRef(11), parent: trackerRef(10), state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
+      ticket({ ref: trackerRef(10), title: 'Epic' }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10), state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
     ];
     const git = new FakeGit([], 'develop');
     const coord = new EpicLifecycle(tasks, dir, fireAndForget, git);
@@ -268,10 +268,10 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
 
   it('gives each Epic its own integration branch', async () => {
     const tickets = [
-      ticket({ number: trackerRef(10), title: 'Epic A' }),
-      ticket({ number: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
-      ticket({ number: trackerRef(20), title: 'Epic B' }),
-      ticket({ number: trackerRef(21), parent: trackerRef(20), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(10), title: 'Epic A' }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(20), title: 'Epic B' }),
+      ticket({ ref: trackerRef(21), parent: trackerRef(20), labels: ['ready-for-agent'] }),
     ];
     const git = new FakeGit([], 'develop');
     const coord = new EpicLifecycle(tasks, dir, fireAndForget, git);
@@ -300,7 +300,7 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
   it('awaitsBase gates only base-pending ready Epic members', async () => {
     const tickets = [
       ...epicTickets(),
-      ticket({ number: trackerRef(99), parent: null, labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(99), parent: null, labels: ['ready-for-agent'] }),
     ];
     const mirrored = await mscan(tickets);
     const git = new FakeGit([], 'develop');
@@ -320,7 +320,7 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
   it('memberBaseNotReady tracks git branch existence, open when epic/<ref> exists, gated when it is gone — and a detached HEAD does not gate an existing branch (#231)', async () => {
     const tickets = [
       ...epicTickets(),
-      ticket({ number: trackerRef(99), parent: null, labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(99), parent: null, labels: ['ready-for-agent'] }),
     ];
     const git = new FakeGit([], 'develop');
     const coord = new EpicLifecycle(tasks, dir, fireAndForget, git);
@@ -358,10 +358,10 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
 
   it('gates a leaf-Epic member before its integration branch is even cut, but never a spine parent’s child (pre-cut race, #334)', async () => {
     const spine = [
-      ticket({ number: trackerRef(1), title: 'Spine', isMap: true }),
-      ticket({ number: trackerRef(10), title: 'Leaf Epic', parent: trackerRef(1) }),
-      ticket({ number: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
-      ticket({ number: trackerRef(5), parent: trackerRef(1), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(1), title: 'Spine', isMap: true }),
+      ticket({ ref: trackerRef(10), title: 'Leaf Epic', parent: trackerRef(1) }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(5), parent: trackerRef(1), labels: ['ready-for-agent'] }),
     ];
     const mirrored = await mscan(spine);
     const m11 = mirrored.find((t) => t.trackerRef === trackerRef(11))!;
@@ -426,8 +426,8 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
 
   it('refreshes a behind epic even with an empty ready frontier (currency is not gated by the ready-frontier early return)', async () => {
     const tickets = [
-      ticket({ number: trackerRef(10), title: 'Epic' }),
-      ticket({ number: trackerRef(11), parent: trackerRef(10), state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
+      ticket({ ref: trackerRef(10), title: 'Epic' }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10), state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
     ];
     const git = new FakeGit(['epic/10'], 'develop');
     git.contained.delete('epic/10');
@@ -481,9 +481,9 @@ describe('EpicLifecycle integration-branch cut visibility (git-visibility)', () 
   }
 
   const epicTickets = (): Ticket[] => [
-    ticket({ number: trackerRef(10), title: 'Epic' }),
-    ticket({ number: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
-    ticket({ number: trackerRef(12), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+    ticket({ ref: trackerRef(10), title: 'Epic' }),
+    ticket({ ref: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+    ticket({ ref: trackerRef(12), parent: trackerRef(10), labels: ['ready-for-agent'] }),
   ];
 
   beforeEach(async () => {
@@ -605,9 +605,9 @@ describe('EpicLifecycle whole-Epic integrate trigger (issue #161)', () => {
   }
 
   const epicTickets = (): Ticket[] => [
-    ticket({ number: trackerRef(10), title: 'Epic' }),
-    ticket({ number: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
-    ticket({ number: trackerRef(12), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+    ticket({ ref: trackerRef(10), title: 'Epic' }),
+    ticket({ ref: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+    ticket({ ref: trackerRef(12), parent: trackerRef(10), labels: ['ready-for-agent'] }),
   ];
   const memberTaskId = async (ref: TrackerRef) => (await tasks.list()).find((t) => t.trackerRef === ref)!.id;
 
@@ -658,9 +658,9 @@ describe('EpicLifecycle whole-Epic integrate trigger (issue #161)', () => {
 
   it('offers a closed Epic whose integration branch still holds unmerged work for integrate', async () => {
     const tickets = [
-      ticket({ number: trackerRef(10), title: 'Epic', state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
-      ticket({ number: trackerRef(11), parent: trackerRef(10), state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
-      ticket({ number: trackerRef(12), parent: trackerRef(10), state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
+      ticket({ ref: trackerRef(10), title: 'Epic', state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10), state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
+      ticket({ ref: trackerRef(12), parent: trackerRef(10), state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
     ];
     const mirrored = await mscan(tickets);
     const git = new FakeGit(['epic/10'], 'develop');
@@ -677,8 +677,8 @@ describe('EpicLifecycle whole-Epic integrate trigger (issue #161)', () => {
 
   it('does not offer a closed Epic with no integration branch (nothing to fold)', async () => {
     const tickets = [
-      ticket({ number: trackerRef(10), title: 'Epic', state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
-      ticket({ number: trackerRef(11), parent: trackerRef(10), state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
+      ticket({ ref: trackerRef(10), title: 'Epic', state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10), state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
     ];
     const mirrored = await mscan(tickets);
     const git = new FakeGit([], 'develop');
@@ -862,9 +862,9 @@ describe('EpicLifecycle direct-mode Epics (isolationMode "direct", ADR-0001 dire
   });
 
   const epicTickets = (): Ticket[] => [
-    ticket({ number: trackerRef(10), title: 'Epic' }),
-    ticket({ number: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
-    ticket({ number: trackerRef(12), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+    ticket({ ref: trackerRef(10), title: 'Epic' }),
+    ticket({ ref: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+    ticket({ ref: trackerRef(12), parent: trackerRef(10), labels: ['ready-for-agent'] }),
   ];
 
   it('cuts no epic/<ref> branch and sets no base branch for an all-direct Epic', async () => {
@@ -969,7 +969,7 @@ describe('EpicLifecycle direct-mode Epics (isolationMode "direct", ADR-0001 dire
         db.insert(workspaces).values({ name: 'Other', workingDir: '/other-repo', createdAt: now, updatedAt: now }).returning().get(),
       )
     ).id;
-    const otherTask = await mirrorScan(tasks, [ticket({ number: trackerRef(11), title: 'Same ref, other repo' })], otherWsId);
+    const otherTask = await mirrorScan(tasks, [ticket({ ref: trackerRef(11), title: 'Same ref, other repo' })], otherWsId);
     await tasks.update(otherTask[0]!.id, { isolationMode: 'worktree' });
     const git = new FakeGit(['epic/10'], 'develop');
     git.contained.delete('epic/10');

@@ -6132,7 +6132,8 @@
                 "enum": [
                   "github",
                   "gitlab",
-                  "forgejo"
+                  "forgejo",
+                  "git"
                 ]
               },
               {
@@ -7478,6 +7479,19 @@
             "maximum": 9007199254740991,
             "description": "Attempt that sent the message."
           },
+          "senderAttemptNumber": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Number of the sending Attempt within its Task; null when the Attempt no longer exists."
+          },
           "workspaceId": {
             "type": "integer",
             "exclusiveMinimum": 0,
@@ -7505,6 +7519,7 @@
           "senderTaskId",
           "senderDeleted",
           "senderAttemptId",
+          "senderAttemptNumber",
           "workspaceId",
           "createdAt",
           "recipients"
@@ -7988,7 +8003,8 @@
                 "enum": [
                   "github",
                   "gitlab",
-                  "forgejo"
+                  "forgejo",
+                  "git"
                 ]
               },
               {
@@ -14337,7 +14353,8 @@
                 "enum": [
                   "github",
                   "gitlab",
-                  "forgejo"
+                  "forgejo",
+                  "git"
                 ]
               },
               {
@@ -15740,6 +15757,19 @@
             "maximum": 9007199254740991,
             "description": "Attempt that sent the message."
           },
+          "senderAttemptNumber": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Number of the sending Attempt within its Task; null when the Attempt no longer exists."
+          },
           "workspaceId": {
             "type": "integer",
             "exclusiveMinimum": 0,
@@ -15767,6 +15797,7 @@
           "senderTaskId",
           "senderDeleted",
           "senderAttemptId",
+          "senderAttemptNumber",
           "workspaceId",
           "createdAt",
           "recipients"
@@ -16260,7 +16291,8 @@
                 "enum": [
                   "github",
                   "gitlab",
-                  "forgejo"
+                  "forgejo",
+                  "git"
                 ]
               },
               {
@@ -21381,7 +21413,8 @@
                         "enum": [
                           "github",
                           "gitlab",
-                          "forgejo"
+                          "forgejo",
+                          "git"
                         ]
                       },
                       {

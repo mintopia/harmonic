@@ -91,8 +91,8 @@ export class MirrorCoordinator {
   }
 }
 
-function ticketRef(task: TaskRow, number: TrackerRef): TicketRef {
-  return { number, title: task.prompt, state: 'open' };
+function ticketRef(task: TaskRow, ref: TrackerRef): TicketRef {
+  return { ref, title: task.prompt, state: 'open' };
 }
 
 function handedBack(task: TaskRow): boolean {
