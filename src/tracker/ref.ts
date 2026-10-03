@@ -6,8 +6,6 @@ export function trackerRef(value: string | number): TrackerRef {
   return String(value) as TrackerRef;
 }
 
-export const compareRefsForDisplay = (a: TrackerRef, b: TrackerRef): number => a.localeCompare(b, undefined, { numeric: true });
-
 /** The label that marks a wayfinder Map — convention on every tracker; `isMap` hides which. */
 export const MAP_LABEL = 'wayfinder:map';
 

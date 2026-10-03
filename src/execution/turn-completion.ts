@@ -92,10 +92,10 @@ export class TurnCompletion {
       if (await guardrails.checkProgressAtBoundary()) break;
       const steer = active.steerQueue.shift();
       if (steer !== undefined) {
-        record('lifecycle', { event: 'steer_delivered', text: steer });
-        active.steerAcks.get(steer)?.shift()?.();
+        record('lifecycle', { event: 'steer_delivered', text: steer.text });
+        steer.onDelivered?.();
         active.idle = false;
-        const turn = await timedPromptTurn(steer);
+        const turn = await timedPromptTurn(steer.text);
         connectionGone ||= turn.connectionGone;
         if (turn.result) result = turn.result;
         active.idle = true;
@@ -119,9 +119,9 @@ export class TurnCompletion {
     active.steerable = false;
     while (!connectionGone && !active.externallySettled && !escalating && !listeners.stoppedShort && active.steerQueue.length > 0) {
       const steer = active.steerQueue.shift()!;
-      record('lifecycle', { event: 'steer_delivered', text: steer });
-      active.steerAcks.get(steer)?.shift()?.();
-      const turn = await timedPromptTurn(steer);
+      record('lifecycle', { event: 'steer_delivered', text: steer.text });
+      steer.onDelivered?.();
+      const turn = await timedPromptTurn(steer.text);
       connectionGone ||= turn.connectionGone;
       if (turn.result) result = turn.result;
     }

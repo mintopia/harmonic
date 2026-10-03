@@ -122,6 +122,10 @@ export async function fsRoutes(fastify: FastifyInstance, ctx: Pick<TrackingConte
     reply.raw.setHeader('content-type', inline ? file.mime : 'application/octet-stream');
     reply.raw.setHeader('content-length', file.size);
     reply.raw.setHeader('content-disposition', inline ? 'inline' : 'attachment');
+    file.stream.on('error', (err) => {
+      logger.error(`workspace file stream failed for ${req.url}: ${err.message}`, { errorId: String(req.id), route: '/fs/raw', url: req.url, stack: err.stack });
+      reply.raw.destroy(err);
+    });
     file.stream.pipe(reply.raw);
   });
 

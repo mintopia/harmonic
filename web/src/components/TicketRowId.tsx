@@ -1,9 +1,9 @@
 import type { Task } from '../types';
-import { issueRef, taskKey } from '../id-format';
+import { TICKET_ROW_SEPARATOR, ticketRowParts } from '../id-format';
 
 export function TicketRowId({ task }: { task: Pick<Task, 'id' | 'trackerRef' | 'url'> }) {
-  if (task.trackerRef == null) return <>{taskKey(task.id)}</>;
-  const ref = issueRef(task.trackerRef);
+  const { ref, key } = ticketRowParts(task.id, task.trackerRef);
+  if (ref === null) return <>{key}</>;
   return (
     <>
       {task.url ? (
@@ -13,7 +13,7 @@ export function TicketRowId({ task }: { task: Pick<Task, 'id' | 'trackerRef' | '
       ) : (
         ref
       )}
-      {` · ${taskKey(task.id)}`}
+      {`${TICKET_ROW_SEPARATOR}${key}`}
     </>
   );
 }

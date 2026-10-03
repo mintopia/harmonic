@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { logger } from '../src/logger.js';
 import { z } from 'zod';
 import { createRestClient, RestError, safeErrorReason } from '../src/tracker/rest-client.js';
 
@@ -68,6 +69,25 @@ describe('REST client', () => {
     const { http, calls } = scripted(ok([1, 2]), ok([3]));
     expect(await client(http).paginate('/l?state=all', 2, z.number())).toEqual([1, 2, 3]);
     expect(calls.map((c) => c.url)).toEqual(['https://x.test/api/l?state=all&page=1&limit=2', 'https://x.test/api/l?state=all&page=2&limit=2']);
+  });
+  it('warns once per path when it stops at the page cap', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const { http, calls } = scripted(ok([1, 2]), ok([3, 4]), ok([5, 6]), ok([7, 8]));
+    const c = client(http);
+    expect(await c.paginate('/l', 2, z.number(), 2)).toEqual([1, 2, 3, 4]);
+    expect(await c.paginate('/l', 2, z.number(), 2)).toEqual([5, 6, 7, 8]);
+    const messages = warn.mock.calls.map((a) => String(a[0]));
+    warn.mockRestore();
+    expect(calls).toHaveLength(4);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain('2-page cap');
+  });
+  it('does not warn when the last page is short', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    await client(scripted(ok([1, 2]), ok([3])).http).paginate('/l', 2, z.number(), 2);
+    const count = warn.mock.calls.length;
+    warn.mockRestore();
+    expect(count).toBe(0);
   });
 });
 

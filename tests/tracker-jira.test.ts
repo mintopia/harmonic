@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { logger } from '../src/logger.js';
 import { resolveTrackerAdapter, trackerRef, type TicketRef, type WritableTrackerAdapter } from '../src/tracker/adapter.js';
 import { jiraKind } from '../src/tracker/jira.js';
 import { parseBlockedByLines, parseBlockedBySection, parsePartOfParent } from '../src/tracker/relationships.js';
@@ -148,7 +149,7 @@ describe('jira scan', () => {
     await make({ ...dcSettings, extraJql: 'component = web' }, f).scan();
     const q = f.of('/search')[0]!.search;
     expect(q.get('jql')).toBe(
-      'project = PROJ AND labels in ("ready-for-agent", "ready-for-human", "epic", "wayfinder:map") AND (component = web)',
+      'project = PROJ AND (labels in ("ready-for-agent", "ready-for-human", "epic", "wayfinder:map") OR issuetype = Epic) AND (component = web)',
     );
     expect(q.get('maxResults')).toBe('100');
     expect(q.get('fields')).toContain('issuelinks');
@@ -158,10 +159,23 @@ describe('jira scan', () => {
     await make({ ...dcSettings, extraJql: 'component = web ORDER BY created DESC' }, f).scan();
     expect(f.of('/search')[0]!.search.get('jql')).toMatch(/AND \(component = web\) ORDER BY created DESC$/);
   });
+  it('does not split extraJql on an ORDER BY inside a quoted string', async () => {
+    const f = fake();
+    await make({ ...dcSettings, extraJql: `summary ~ "order by me" AND text ~ 'x order by y' ORDER BY created DESC` }, f).scan();
+    expect(f.of('/search')[0]!.search.get('jql')).toMatch(
+      /AND \(summary ~ "order by me" AND text ~ 'x order by y'\) ORDER BY created DESC$/,
+    );
+  });
+  it('scans an unlabelled native Epic by issue type', async () => {
+    const f = fake({ issues: [issue('PROJ-9', { issuetype: { name: 'Epic' }, labels: [] })] });
+    const tickets = await make(dcSettings, f).scan();
+    expect(f.of('/search')[0]!.search.get('jql')).toContain('OR issuetype = Epic)');
+    expect(tickets.map((t) => [t.ref, t.labels])).toEqual([['PROJ-9', ['epic']]]);
+  });
   it('omits the extra clause when none is configured', async () => {
     const f = fake();
     await make(dcSettings, f).scan();
-    expect(f.of('/search')[0]!.search.get('jql')).not.toContain('AND (');
+    expect(f.of('/search')[0]!.search.get('jql')).toMatch(/OR issuetype = Epic\)$/);
   });
   it('normalises tickets in one request per page', async () => {
     const f = fake({
@@ -319,7 +333,12 @@ describe('jira claim and release', () => {
     expect(none.of('/issue/PROJ-1/transitions', 'POST')).toHaveLength(0);
 
     const failing = fake({ issues: [issue('PROJ-1')], failTransition: true, transitions: [{ id: '31', name: 'Start', to: status('In Progress', 'indeterminate') }] });
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     await expect(make({ ...dcSettings, pickupStatus: 'In Progress' }, failing).claim(ref('PROJ-1'))).resolves.toBeUndefined();
+    const logged = warn.mock.calls.map((c) => String(c[0])).join('\n');
+    warn.mockRestore();
+    expect(logged).toContain('pickup transition');
+    expect(logged).not.toContain('boom');
   });
 });
 
@@ -379,19 +398,6 @@ describe('jira close and reopen', () => {
     const f = fake({ issues: open, transitions: [] });
     await expect(make(dcSettings, f).close(ref('PROJ-1'), 'x')).rejects.toThrow();
     expect(f.of('/issue/PROJ-1/comment', 'POST')).toHaveLength(0);
-  });
-});
-
-describe('jira verify', () => {
-  it('is ok when /myself answers', async () => {
-    const f = fake();
-    await expect(make(dcSettings, f).verify!()).resolves.toEqual({ ok: true });
-    expect(f.calls[0]!.pathname).toBe('/myself');
-  });
-  it('reports the HTTP failure and never throws', async () => {
-    const res = await make(dcSettings, fake({ failMyself: true })).verify!();
-    expect(res).toMatchObject({ ok: false });
-    if (!res.ok) expect(res.reason).toMatch(/401/);
   });
 });
 

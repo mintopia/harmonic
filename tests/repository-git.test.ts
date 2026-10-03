@@ -30,7 +30,7 @@ describe('plain git Code Repository', () => {
     const { bare, work } = clone();
     const repo = gitRepository(work);
     expect(repo.kind).toBe('git');
-    await repo.openPR({ branch: 'feature', baseBranch: 'main', title: 'T', body: 'B' });
+    expect(await repo.openPR({ branch: 'feature', baseBranch: 'main', title: 'T', body: 'B' })).toBeNull();
     expect(git(bare, 'branch', '--list', 'feature')).toContain('feature');
     expect(git(bare, 'rev-parse', 'feature').trim()).toBe(git(work, 'rev-parse', 'feature').trim());
   });

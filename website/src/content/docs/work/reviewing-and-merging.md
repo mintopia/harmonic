@@ -51,6 +51,10 @@ Tasks, where there is a separate branch to integrate. See
 [Branches & worktrees](/harmonic/work/branches-and-worktrees/) for how
 Harmonic reconciles base-branch movement and handles conflicts.
 
+When an Attempt opens a pull or merge request, a **PR / MR** link appears on
+the Task page above the Attempt details, taking you to the request on the forge.
+If multiple Attempts open requests, the link points to the newest one.
+
 If work needs a human decision or exhausts its Attempts, open the escalated
 Task to resolve it. An escalation keeps the work and its history available
 so you can decide how to proceed.

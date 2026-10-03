@@ -181,6 +181,33 @@ describe('Code repository section', () => {
     expect(host.querySelector<HTMLSelectElement>('#workspace-code-repository')!.value).toBe('');
     await click(button(host, 'Verify repository'));
     expect(host.textContent).toContain('Reachable on octocat');
+    expect(host.textContent).not.toContain('FORGEJO_TOKEN');
+  });
+
+  it('offers the FORGEJO_TOKEN Secret when the Code Repository is Forgejo and no Forgejo tracker supplies one', async () => {
+    stubApi();
+    const host = await mountComponent(createElement(Harness, { initial: makeWorkspace({ id: 3, codeRepository: 'forgejo' }), Section: CodeRepositorySection }));
+    expect(host.textContent).toContain('FORGEJO_TOKEN');
+    const withTracker = await mountComponent(
+      createElement(Harness, { initial: makeWorkspace({ id: 4, codeRepository: 'forgejo', configuredTracker: { kind: 'forgejo' } }), Section: CodeRepositorySection }),
+    );
+    expect(withTracker.textContent).not.toContain('FORGEJO_TOKEN');
+  });
+});
+
+describe('tracker detection sharing', () => {
+  it('fetches detection once when both sections mount together', async () => {
+    stubApi();
+    const host = await mountComponent(
+      createElement(
+        'div',
+        null,
+        createElement(Harness, { initial: makeWorkspace({ id: 3 }), Section: IssueTrackerSection }),
+        createElement(Harness, { initial: makeWorkspace({ id: 3 }), Section: CodeRepositorySection }),
+      ),
+    );
+    expect(host.textContent).toContain('GitHub');
+    expect(vi.mocked(api.trackerDetection)).toHaveBeenCalledTimes(1);
   });
 });
 

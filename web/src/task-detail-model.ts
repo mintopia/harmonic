@@ -475,3 +475,9 @@ export function defaultStepTab(tabs: readonly StepTab[]): string | null {
   const progressed = [...tabs].reverse().find((tab) => !tab.pending);
   return (progressed ?? tabs[0]!).id;
 }
+
+/** The PR/MR link for a Task page: the newest Attempt's opened PR/MR URL, or null when no Attempt opened one. */
+export function pullRequestLink(runs: readonly Pick<AttemptSummary, 'number' | 'pullRequestUrl'>[]): string | null {
+  const opened = runs.filter((run) => run.pullRequestUrl != null).sort((a, b) => b.number - a.number)[0];
+  return opened?.pullRequestUrl ?? null;
+}

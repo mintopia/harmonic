@@ -191,7 +191,6 @@ function formatClock(ms: number): string {
   return new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
-/** The delivered/failed row for one recorded `export` lifecycle fact. */
 export function exportOutcomeRow(payload: Record<string, unknown>): ExportFactRow {
   const destination = destinationLabel(str(payload.destination) ?? 'destination');
   if (payload.status !== 'failed') {

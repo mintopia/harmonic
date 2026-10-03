@@ -74,7 +74,7 @@ function taskTitle(task: TaskRow): string {
   return line.trim().slice(0, 200);
 }
 
-function safeSegment(id: string): string {
+export function safeSegment(id: string): string {
   const cleaned = id.replace(/[^A-Za-z0-9._-]/g, '-');
   if (cleaned === id && id !== '.' && id !== '..' && id !== '') return id;
   const hash = createHash('sha256').update(id).digest('hex').slice(0, 8);
@@ -237,7 +237,7 @@ export class TaskArchive {
   async epicExportHistory(workspaceId: number, epicRef: TrackerRef): Promise<ExportRecord[]> {
     try {
       const workspaceName = await this.deps.workspaceName(workspaceId);
-      return await this.readExports(join(this.deps.dataDir, 'archive', workspaceSlug(workspaceName, workspaceId), `epic-${epicRef}`));
+      return await this.readExports(join(this.deps.dataDir, 'archive', workspaceSlug(workspaceName, workspaceId), `epic-${safeSegment(epicRef)}`));
     } catch (err) {
       warn('archive: epic export history unreadable', err, { workspaceId, epicRef });
       return [];
@@ -372,7 +372,7 @@ export class TaskArchive {
   }
 
   private epicDir(workspaceId: number, epicRef: TrackerRef, workspaceName: string | null): string {
-    return join(this.deps.dataDir, 'archive', workspaceSlug(workspaceName, workspaceId), `epic-${epicRef}`);
+    return join(this.deps.dataDir, 'archive', workspaceSlug(workspaceName, workspaceId), `epic-${safeSegment(epicRef)}`);
   }
 
   private async existingOwnerDir(owner: TaskRow | { workspaceId: number; epicRef: TrackerRef }): Promise<string | null> {

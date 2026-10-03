@@ -52,8 +52,8 @@ export class RunControl {
     return (await this.steerWithMode(taskId, text)) !== null;
   }
 
-  /** Like {@link steer} but reports the mode; `onDelivered` fires when a queued text is sent. */
-  async steerWithMode(taskId: number, text: string, onDelivered?: () => void): Promise<'mid-turn' | 'next-turn' | null> {
+  /** Like {@link steer} but reports the mode; `onDelivered` fires when a queued text is sent, `onDropped` if the run ends first. */
+  async steerWithMode(taskId: number, text: string, onDelivered?: () => void, onDropped?: () => void): Promise<'mid-turn' | 'next-turn' | null> {
     const active = this.deps.activeRuns.forTask(taskId);
     if (!active || !active.steerable) return null;
     // ACP `promptRequired`: an idle session must not start an untracked turn.
@@ -75,8 +75,7 @@ export class RunControl {
       }
     }
     if (!active.steerable) return null;
-    active.steerQueue.push(text);
-    if (onDelivered) active.steerAcks.set(text, [...(active.steerAcks.get(text) ?? []), onDelivered]);
+    active.steerQueue.push({ text, onDelivered, onDropped });
     const event = await this.deps.attempts.appendEvent(active.attemptId, { type: 'lifecycle', payload: { event: 'steer_queued', text } });
     this.deps.events.onAttemptEvent?.(event);
     this.deps.emitSteerLog({ attemptId: active.attemptId, text, queued: true });

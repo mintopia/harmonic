@@ -308,6 +308,16 @@ describe('TaskArchive', () => {
     expect(froms(bDir)).toEqual(['b', 'b', 'b', 'b', 'b']);
   });
 
+  it('keeps an opaque epic ref with path separators inside the archive root', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const archive = archiveFor();
+    const d = await archive.ensureEpic(task.workspaceId!, trackerRef('../../escape'));
+    const root = join(dir, 'archive', 'default');
+    expect(dirname(d)).toBe(root);
+    expect(existsSync(join(d, 'archive.json'))).toBe(true);
+    expect(existsSync(join(dir, 'escape'))).toBe(false);
+  });
+
   it('creates an epic archive idempotently and lays out an epic critic step', async () => {
     const task = await tasks.create({ prompt: 'p' });
     const workspaceId = task.workspaceId!;

@@ -57,8 +57,9 @@ export function integrationBranchName(epicRef: TrackerRef): string {
 /** The inverse of {@link integrationBranchName}, or `null` for a non-Epic branch. */
 export function parseIntegrationBranch(name: string | null | undefined): TrackerRef | null {
   if (!name) return null;
-  const match = /^epic\/(.+)$/.exec(name);
-  return match ? trackerRef(match[1]!) : null;
+  const match = /^epic\/([A-Za-z0-9._-]+)$/.exec(name);
+  const ref = match?.[1];
+  return ref && ref !== '.' && ref !== '..' ? trackerRef(ref) : null;
 }
 
 /** Run a whole-Epic Verification against the integration branch's tip OID and

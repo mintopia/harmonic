@@ -3,6 +3,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { bestEffort, reportFailure } from '../error-handling.js';
+import { safeSegment } from '../archive/task-archive.js';
 import { integrationBranchName } from './epic-coordinator.js';
 import { Git } from './git.js';
 
@@ -27,7 +28,7 @@ export class EpicWorktreePool {
     if (existing) return existing;
     const parent = this.deps.worktreesDir ?? tmpdir();
     mkdirSync(parent, { recursive: true });
-    const path = join(parent, `epic-${this.deps.workspaceId}-${epicRef}`);
+    const path = join(parent, `epic-${this.deps.workspaceId}-${safeSegment(epicRef)}`);
     try {
       await Git.addWorktreeCheckout(repoDir, path, integrationBranchName(epicRef));
     } catch (err) {

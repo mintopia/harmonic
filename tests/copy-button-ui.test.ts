@@ -71,6 +71,7 @@ describe('CopyButton', () => {
 });
 
 const run: AttemptSummary = {
+  pullRequestUrl: null,
   id: 1, taskId: 1, number: 1, state: 'completed', reason: null, stopReason: null, sessionId: null, prompt: null,
   branch: null, baseBranch: null, usage: null, cost: null, startedAt: 0, finishedAt: 1,
 };

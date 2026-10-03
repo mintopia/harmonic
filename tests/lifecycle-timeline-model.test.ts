@@ -263,14 +263,14 @@ describe('lifecycleTimelineRows', () => {
         label: 'Agent Message sent',
         detail: 'New Thread · send 3 of 10 this Attempt',
         tone: 'sent',
-        message: { peer: 'to #413 · Codex', receipt: { label: 'delivered mid-turn', tone: 'done' }, preview: 'Not touching merge.ts, go ahead.', href: '/workspace/3/activity?thread=m1' },
+        message: { peer: 'to T-413 · Codex', receipt: { label: 'delivered mid-turn', tone: 'done' }, preview: 'Not touching merge.ts, go ahead.', href: '/workspace/3/activity?thread=m1' },
       });
     });
 
     it('shows a received row from the sender, marking replies', () => {
       const [row] = lifecycleTimelineRows([message(1_000, { direction: 'received', peerTaskId: 412, peerHarness: 'claude', receipt: 'delivered', isReply: true })]);
 
-      expect(row).toMatchObject({ label: 'Agent Message received', detail: 'Reply to your message', tone: 'received', message: { peer: 'from #412 · Claude', epic: null } });
+      expect(row).toMatchObject({ label: 'Agent Message received', detail: 'Reply to your message', tone: 'received', message: { peer: 'from T-412 · Claude', epic: null } });
     });
 
     it('names the replied-to message time and the Epic on a received Epic broadcast', () => {
@@ -285,7 +285,7 @@ describe('lifecycleTimelineRows', () => {
         message(1_000, { direction: 'sent', peerTaskId: 414, peerHarness: 'copilot', receipt: 'queued' }),
         message(2_000, { direction: 'sent', peerTaskId: 416, peerHarness: 'claude', receipt: 'held' }),
       ]);
-      expect(rows.map((row) => row.detail)).toEqual(['New Thread', '#416 is ready between Attempts']);
+      expect(rows.map((row) => row.detail)).toEqual(['New Thread', 'Task 416 is ready between Attempts']);
 
       expect(rows.map((row) => row.message?.receipt)).toEqual([
         { label: 'queued — next turn', tone: 'ready' },
@@ -296,7 +296,7 @@ describe('lifecycleTimelineRows', () => {
     it('shows a refused send with its reason in place of the thread context', () => {
       const [row] = lifecycleTimelineRows([message(1_000, { direction: 'sent', peerTaskId: 415, peerHarness: null, receipt: 'refused', reason: 'Task #415 is not in this Workspace' })]);
 
-      expect(row).toMatchObject({ detail: 'Task #415 is not in this Workspace', message: { peer: 'to #415', receipt: { label: 'refused', tone: 'fail' } } });
+      expect(row).toMatchObject({ detail: 'Task #415 is not in this Workspace', message: { peer: 'to T-415', receipt: { label: 'refused', tone: 'fail' } } });
     });
   });
 });

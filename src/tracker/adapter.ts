@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { trackerKindFor, TRACKER_KINDS } from './kinds.js';
+import { formatTrackerRef, trackerKindFor, TRACKER_KINDS } from './kinds.js';
 import type { TrackerHttp } from './kind.js';
 import { EPIC_LABEL, MAP_LABEL, type TrackerRef } from './ref.js';
 import { parseStoredJson } from './stored-json.js';
@@ -17,7 +17,7 @@ import type { RepositoryKind } from '../repository/detect.js';
 
 export type TicketState = 'open' | 'closed';
 
-export { EPIC_LABEL, MAP_LABEL, compareRefsForDisplay, trackerRef, type TrackerRef } from './ref.js';
+export { EPIC_LABEL, MAP_LABEL, trackerRef, type TrackerRef } from './ref.js';
 
 /** A directional edge target: the referenced ticket's portable identity + surface state. */
 export interface TicketRef {
@@ -66,8 +66,6 @@ export interface TrackerLifecycleWrite {
   changedPaths?: string[];
 }
 
-export type TrackerVerifyResult = { ok: true } | { ok: false; reason: string };
-
 /** A repo-bound tracker: reads the whole tracker as `Ticket`s; writes only the advisory `claim`/`release` pair and lifecycle `close`/`reopen`. */
 export interface TrackerAdapter {
   readonly name: string;
@@ -89,8 +87,6 @@ export interface TrackerAdapter {
   close?(ticket: TicketRef, comment: string): Promise<TrackerLifecycleWrite | void>;
   /** Re-open a ticket closed prematurely, with a comment. A tracker without lifecycle writes omits this. */
   reopen?(ticket: TicketRef, comment: string): Promise<TrackerLifecycleWrite | void>;
-  /** Checks the tracker is reachable with the configured credentials; never throws. */
-  verify?(): Promise<TrackerVerifyResult>;
 }
 
 /** A tracker that supports Harmonic-owned lifecycle writes as well as inbound reads. */
@@ -181,6 +177,34 @@ export const declaredTrackerName = (doc: string): string | undefined => doc.matc
 
 const defaultHttp: TrackerHttp = (url, init) => fetch(url, init);
 
+/** The tracker precedence applied to a Workspace's repo, without building an adapter: the chosen kind and the declaration it read. */
+async function selectWorkspaceTracker(repoRoot: string, workspace: WorkspaceTrackerSettings, origin: () => Promise<string | null>) {
+  const { configured } = workspace;
+  const docPath = join(repoRoot, 'docs/agents/issue-tracker.md');
+  let doc: string | null = null;
+  if (!configured) {
+    try {
+      doc = await readFile(docPath, 'utf8');
+    } catch {
+      doc = null;
+    }
+  }
+  const detectedName = doc ? declaredTrackerName(doc) : undefined;
+  const detectedKnown = detectedName ? selectTracker({ detectedName })?.source === 'detected' : false;
+  const codeRepository = configured || detectedKnown ? null : await resolveCodeRepository(repoRoot, workspace.codeRepository, undefined, origin);
+  return { selection: selectTracker({ configured, detectedName, codeRepository }), doc, docPath, detectedName };
+}
+
+/** The id of the tracker kind a Workspace's repo resolves to under the precedence (Configured, Detected, Code Repository); null when none. */
+export async function effectiveTrackerKind(repoRoot: string, workspace: WorkspaceTrackerSettings): Promise<string | null> {
+  return (await selectWorkspaceTracker(repoRoot, workspace, originRemote(repoRoot))).selection?.kindId ?? null;
+}
+
+/** A tracker ref as the Workspace's effective tracker kind writes it for a person. */
+export async function formatWorkspaceTrackerRef(repoRoot: string, workspace: WorkspaceTrackerSettings, ref: TrackerRef): Promise<string> {
+  return formatTrackerRef(await effectiveTrackerKind(repoRoot, workspace), ref);
+}
+
 /**
  * Resolve a Workspace's tracker in precedence order: its Configured Tracker, else the repo's
  * `docs/agents/issue-tracker.md` declaration (`# Issue tracker: <name>`), else the Code Repository when it is
@@ -194,19 +218,7 @@ export async function resolveTrackerAdapter(
 ): Promise<TrackerAdapter> {
   const { configured } = workspace;
   const origin = originRemote(repoRoot);
-  const docPath = join(repoRoot, 'docs/agents/issue-tracker.md');
-  let doc: string | null = null;
-  if (!configured) {
-    try {
-      doc = await readFile(docPath, 'utf8');
-    } catch {
-      doc = null;
-    }
-  }
-  const detectedName = doc ? declaredTrackerName(doc) : undefined;
-  const detectedKnown = detectedName ? selectTracker({ detectedName })?.source === 'detected' : false;
-  const codeRepository = configured || detectedKnown ? null : await resolveCodeRepository(repoRoot, workspace.codeRepository, undefined, origin);
-  const selection = selectTracker({ configured, detectedName, codeRepository });
+  const { selection, doc, docPath, detectedName } = await selectWorkspaceTracker(repoRoot, workspace, origin);
   if (!selection) {
     if (doc === null) throw new TrackerResolutionError('no-declaration', `No tracker declaration at ${docPath}`);
     throw new TrackerResolutionError('unsupported', `Unsupported tracker "${detectedName ?? '(none)'}" in ${docPath}`);

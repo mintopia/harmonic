@@ -515,7 +515,6 @@ export class TurnDriver {
       agentFinished: false,
       escalateReason: null,
       steerQueue: [],
-      steerAcks: new Map(),
       idle: false,
       externallySettled: false,
       steerable: false,
@@ -558,7 +557,7 @@ export class TurnDriver {
         isSettled: () => active.externallySettled,
         isFinishing: () => active.agentFinished || active.escalateReason != null,
         hasPendingSteer: () => active.steerQueue.length > 0,
-        pushSteer: (text) => active.steerQueue.push(text),
+        pushSteer: (text) => active.steerQueue.push({ text }),
       },
     );
     active.guardrails = guardrails;
@@ -579,6 +578,7 @@ export class TurnDriver {
       turn.clearTimer();
       await bestEffort(() => flushToolCalls(), { op: 'runner.finalize.flushToolCalls', level: 'warn', context: { attemptId: run.id } });
       this.deps.usage.dropReader(run.id);
+      for (const entry of active.steerQueue.splice(0)) entry.onDropped?.();
       this.deps.kill(active);
       this.deps.fireAndForget(() => this.deps.keys?.revoke(run.id), { op: 'runner.revokeKeyOnFinalize', level: 'error', context: { attemptId: run.id, taskId: task.id } });
       await bestEffort(() => this.deps.finalizeWorkspace(task, run, attemptNumber, workspace), {

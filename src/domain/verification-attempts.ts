@@ -32,7 +32,7 @@ export interface VerificationAttemptInput {
 }
 
 const LEGACY_FULL_OUTPUT_MARKER =
-  /(…\[truncated \d+ chars); full output: (?:[^\n]*?[\\/](verification[\\/](?:pre-merge|post-merge)[\\/][^\\/\n]+[\\/]output\.log)|[^\n]+?[\\/]output\.log)(\]…)/;
+  /(…\[truncated \d+ chars); full output: [^\n]*?[\\/](verification[\\/](?:pre-merge|post-merge)[\\/][^\\/\n]+[\\/]output\.log)(\]…)/;
 const FULL_OUTPUT_BACKFILL_KEY = 'migration.verification-full-output-keys';
 const BACKFILL_PAGE_SIZE = 100;
 
@@ -113,7 +113,7 @@ export class VerificationAttemptStore {
       await forEachYielding(page, async (row) => {
         const match = LEGACY_FULL_OUTPUT_MARKER.exec(row.output);
         if (!match) return;
-        const fullOutputKey = match[2]?.replaceAll('\\', '/') ?? null;
+        const fullOutputKey = match[2]!.replaceAll('\\', '/');
         const output = row.output.replace(LEGACY_FULL_OUTPUT_MARKER, '$1$3');
         await this.db.write((db) => db.update(verificationAttempts).set({ output, fullOutputKey }).where(eq(verificationAttempts.id, row.id)).run());
       });

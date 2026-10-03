@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from './api';
-import { NO_SERVER_FILTER, THREAD_PAGE_SIZE, hasServerFilter, mergeThreadPages, nextPageCount, type ThreadsView } from './agent-messages-model';
+import { NO_SERVER_FILTER, THREAD_PAGE_SIZE, hasServerFilter, mergeThreadPages, nextPageCount, type ServerThreadFilter, type ThreadsView } from './agent-messages-model';
 import { debounce } from './debounce';
 import { useAsyncResource } from './useAsyncResource';
 import { useLiveEffect } from './useLiveEffect';
@@ -21,14 +21,15 @@ const POLL_MS = 5_000;
 const RELOAD_DEBOUNCE_MS = 250;
 
 export function useAgentMessageThreads(workspaceId: number | null, enabled: boolean) {
-  const [filter, setFilter] = useState(NO_SERVER_FILTER);
+  const [filter, setFilterState] = useState(NO_SERVER_FILTER);
+  const [pageCount, setPageCount] = useState(1);
+  const setFilter = useCallback((next: ServerThreadFilter) => {
+    setFilterState(next);
+    setPageCount(1);
+  }, []);
   useEffect(() => {
     setFilter(NO_SERVER_FILTER);
-  }, [workspaceId]);
-  const [pageCount, setPageCount] = useState(1);
-  useEffect(() => {
-    setPageCount(1);
-  }, [workspaceId]);
+  }, [workspaceId, setFilter]);
   const filtering = hasServerFilter(filter);
   const scope = workspaceId ?? filter.workspaceId ?? undefined;
   const optionScope = workspaceId ?? undefined;

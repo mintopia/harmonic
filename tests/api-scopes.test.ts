@@ -25,6 +25,32 @@ it('enforces operator-only routes for encoded and noncanonical task ids', async 
   }
 });
 
+it('rejects attempt-scoped and read keys on the secrets, tracker, repository, detection and Agent Message thread routes', async () => {
+  const server = await startServer();
+  try {
+    const routes: { method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; url: string }[] = [
+      ...(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const).flatMap((method) => [
+        { method, url: '/api/workspaces/1/secrets' },
+        { method, url: '/api/workspaces/1/secrets/TOKEN' },
+      ]),
+      { method: 'GET', url: '/api/agent-messages/threads' },
+      { method: 'POST', url: '/api/workspaces/1/tracker/verify' },
+      { method: 'POST', url: '/api/workspaces/1/repository/verify' },
+      { method: 'GET', url: '/api/workspaces/1/tracker-detection' },
+    ];
+    for (const scope of ['attempt', 'read'] as const) {
+      const { token } = await server.app.ctx.auth.createKey('scope secrets', { scope });
+      const headers = { authorization: `Bearer ${token}` };
+      for (const { method, url } of routes) {
+        const response = await server.app.inject({ method, url, headers, payload: method === 'GET' ? undefined : {} });
+        expect(response.statusCode, `${scope} ${method} ${url}`).toBe(403);
+      }
+    }
+  } finally {
+    await server.close();
+  }
+});
+
 describe('scopedKeyAllowed', () => {
   it('allows /mcp regardless of the rest of the path', () => {
     expect(scopedKeyAllowed('/mcp')).toBe(true);

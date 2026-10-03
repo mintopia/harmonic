@@ -23,7 +23,7 @@ describe('unexpected server errors', () => {
     const response = await app.inject({ method: 'GET', url: '/api/test-unexpected-error' });
 
     expect(response.statusCode).toBe(500);
-    expect(response.json()).toEqual({ error: { code: 'internal', message: 'internal server error' } });
+    expect(response.json()).toEqual({ error: { code: 'internal', message: 'internal server error', id: expect.any(String) } });
     expect(response.body).not.toContain('database password: super-secret');
   });
 });

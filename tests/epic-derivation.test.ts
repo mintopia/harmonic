@@ -161,13 +161,13 @@ describe('deriveStoredEpics', () => {
     expect(deriveStoredEpics(tickets)).toEqual([{ ref: '20', kind: 'spec' }]);
   });
 
-  it('multiple stored Epics are sorted by ref ascending', () => {
+  it('multiple stored Epics keep tracker scan order', () => {
     const tickets = [
       ticket({ ref: trackerRef(30), title: 'Map', isMap: true, labels: ['wayfinder:map'] }),
       ticket({ ref: trackerRef(31), parent: trackerRef(30) }),
       ticket({ ref: trackerRef(10), title: 'Spec', labels: [EPIC_LABEL], body: 'spec' }),
       ticket({ ref: trackerRef(11), parent: trackerRef(10) }),
     ];
-    expect(deriveStoredEpics(tickets).map((e) => e.ref)).toEqual(['10', '30']);
+    expect(deriveStoredEpics(tickets).map((e) => e.ref)).toEqual(['30', '10']);
   });
 });

@@ -104,3 +104,26 @@ Gitea 1.22.0) returned 404 for `/repos/{owner}/{repo}/projects`, while
 Milestones and issues respond normally. Forgejo's API has no Projects
 endpoints, so the `project` Epic source is removed. Forgejo Epics come from
 `epic`-labelled issues or Milestones only. Issue #777.
+
+## Amendment (2026-10-03): Detection probes private hosts
+
+Forgejo detection probes the remote host's `/api/v1/version` endpoint (using
+the remote's port, and http when the remote URL is http) for any host,
+including localhost, RFC1918 and `.local` / `.internal` hosts, because
+Harmonic normally runs on the operator's own network and self-hosted instances
+are the main case. The probe does not follow redirects (a 3xx means "not
+Forgejo") and uses a short timeout. This replaces an earlier private-host
+refusal that was never in the ADR.
+
+When the Forgejo probe fails, detection probes the same host for GitLab's web
+manifest (`/-/manifest.json` naming GitLab), with the same port, scheme,
+redirect and timeout rules, so a self-hosted GitLab resolves a GitLab adapter
+as #775 expected. github.com and gitlab.com are still recognised by hostname
+without a probe.
+
+## Amendment (2026-10-03): Generic git Code Repository
+
+The Code Repository kinds are GitHub, GitLab, Forgejo, plus `git`, a push-only
+Code Repository for hosts with no pull-request API. Detection never selects it;
+only an explicit codeRepository override does. It pushes the Task branch and
+opens no PR.

@@ -33,20 +33,20 @@ Blocked by: 3.
 Blocked by: 3.
 - [x] `agent-message` timeline kind in DTO and web types
 - [x] Sent and received rows on both Tasks with receipt, preview, View Thread
-- [ ] Lifecycle-timeline model test; screenshot vs v1 timeline mock
+- [x] Lifecycle-timeline model test; screenshot vs v1 timeline mock (parity; Task ids render as T-n per ADR-0046)
 
 ## 6. (#764) Activity tab: Threads list and transcript
 Blocked by: 3, 4.
 - [x] Threads API (Workspace and Global, Epic/Task/live filters)
 - [x] Activity tabs; Thread list, transcript, receipts, identity colours
-- [ ] Conversations-page style model tests; screenshot vs v5 mock (desktop dark/light)
+- [x] Conversations-page style model tests; screenshot vs v5 mock (desktop dark/light)
 
 ## 7. (#765) Activity tab: Agents drawer, Global scope, hiding, mobile
 Blocked by: 2, 6.
 - [x] Agents drawer (Harness/model, state, Attempt, sends meter, Open Task)
 - [x] Global aggregation, Workspace filter and row badges
 - [x] Tab hidden where off (Global: off everywhere); 390px overlay layout
-- [ ] Model tests; screenshot vs v5 mock (mobile drawer and list)
+- [x] Model tests; screenshot vs v5 mock (mobile drawer and list)
 
 ## 8. (#763) Archive/Export and deletion
 Blocked by: 3.

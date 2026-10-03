@@ -46,6 +46,7 @@ const attemptRow = (over: Partial<TaskAttemptRow> = {}): TaskAttemptRow => ({
   stat: null,
   verifiedHeadOid: null,
   verifiedRef: null,
+  pullRequestUrl: null,
   startOid: null,
   usage: null,
   cost: null,
@@ -329,6 +330,11 @@ describe('operationsToApi', () => {
 });
 
 describe('attemptToApiSummary', () => {
+  it('exposes the PR/MR URL the Attempt opened, null when none', () => {
+    expect(attemptToApiSummary(attemptRow({ pullRequestUrl: 'https://github.com/o/r/pull/9' }), 0).pullRequestUrl).toBe('https://github.com/o/r/pull/9');
+    expect(attemptToApiSummary(attemptRow(), 0).pullRequestUrl).toBeNull();
+  });
+
   it('collapses passed -> completed and escalated -> failed', () => {
     expect(attemptToApiSummary(attemptRow({ state: 'passed' }), 0).state).toBe('completed');
     expect(attemptToApiSummary(attemptRow({ state: 'escalated' }), 0).state).toBe('failed');

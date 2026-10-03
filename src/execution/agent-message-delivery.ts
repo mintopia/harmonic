@@ -48,8 +48,14 @@ export async function deliverAgentMessage(
       const ack = written;
       if (ack) deps.runner.trackBackground(() => ack.then(() => recordDelivered(deps.store, row.id, taskId)), { op: 'agentMessages.recordDelivered', level: 'warn', context: { taskId } });
     };
+    let dropped = false;
+    const markHeld = () => {
+      dropped = true;
+      const ack = written;
+      if (ack) deps.runner.trackBackground(() => ack.then(() => recordHeld(deps.store, row.id, taskId)), { op: 'agentMessages.recordHeld', level: 'warn', context: { taskId } });
+    };
     if (deps.runner.hasLiveAgent(taskId)) {
-      const mode = await deps.runner.runControl.steerWithMode(taskId, text, markDelivered).catch((err: unknown) => {
+      const mode = await deps.runner.runControl.steerWithMode(taskId, text, markDelivered, markHeld).catch((err: unknown) => {
         logger.warn('Agent Message live delivery failed; holding', { messageId: row.id, taskId, err: String(err) });
         return null;
       });
@@ -59,6 +65,7 @@ export async function deliverAgentMessage(
     const { taskId: _id, ...patch } = receipt;
     written = deps.store.updateRecipient(row.id, taskId, patch);
     await written;
+    if (dropped && !acked) await recordHeld(deps.store, row.id, taskId);
     receipts.push(receipt);
   }
   return receipts;
@@ -69,5 +76,13 @@ async function recordDelivered(store: AgentMessageStore, messageId: string, task
     await store.updateRecipient(messageId, taskId, { receipt: 'delivered', deliveredAt: Date.now() });
   } catch (err) {
     logger.warn('Agent Message receipt update failed', { messageId, taskId, err: String(err) });
+  }
+}
+
+async function recordHeld(store: AgentMessageStore, messageId: string, taskId: number): Promise<void> {
+  try {
+    await store.updateRecipient(messageId, taskId, { receipt: 'held' });
+  } catch (err) {
+    logger.warn('Agent Message receipt reset failed', { messageId, taskId, err: String(err) });
   }
 }

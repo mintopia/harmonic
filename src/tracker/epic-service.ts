@@ -38,7 +38,8 @@ import { EpicVerificationRunner } from './epic-verification-runner.js';
 import { EpicResolutionRunner } from './epic-resolution-runner.js';
 import { EpicIntegrationRunner } from './epic-integration-runner.js';
 import type { Ticket, TrackerAdapter, TrackerRef } from './adapter.js';
-import { compareRefsForDisplay, resolveTrackerAdapter, workspaceTrackerSettings, type WorkspaceTrackerSettings } from './adapter.js';
+import { formatTrackerRef } from './kinds.js';
+import { effectiveTrackerKind, resolveTrackerAdapter, workspaceTrackerSettings, type WorkspaceTrackerSettings } from './adapter.js';
 import type { FeatureIndex } from './local-markdown.js';
 import { persistedTickets } from './persisted.js';
 
@@ -311,24 +312,24 @@ export class TrackerEpicService implements EpicService {
   }
 
   async listEpics(workspaceId: number): Promise<Epic[]> {
-    const { mirrored, tickets, rows } = await this.epicData(workspaceId);
+    const { mirrored, tickets, rows, formatRef } = await this.epicData(workspaceId);
     const rowByRef = new Map(rows.map((row) => [row.trackerRef, row] as const));
     const baseBranch = await this.epicBaseBranch(workspaceId);
     const configured = await this.verificationConfigured(workspaceId);
-    return Promise.all(this.surfacedEpics(rows, tickets, mirrored, false).map((epic) => this.composeOne(workspaceId, epic, tickets, mirrored, baseBranch, rowByRef, configured)));
+    return Promise.all(this.surfacedEpics(rows, tickets, mirrored, false, formatRef).map((epic) => this.composeOne(workspaceId, epic, tickets, mirrored, baseBranch, rowByRef, configured)));
   }
 
   async listEpicTickets(workspaceId: number): Promise<Ticket[]> {
-    const { mirrored, tickets, rows } = await this.epicData(workspaceId);
+    const { mirrored, tickets, rows, formatRef } = await this.epicData(workspaceId);
     const byRef = new Map(tickets.map((ticket) => [ticket.ref, ticket]));
-    return this.surfacedEpics(rows, tickets, mirrored, true).map((epic) => byRef.get(epic.ref) ?? historicalEpicTicket(epic));
+    return this.surfacedEpics(rows, tickets, mirrored, true, formatRef).map((epic) => byRef.get(epic.ref) ?? historicalEpicTicket(epic));
   }
 
   async epicDetail(workspaceId: number, epicRef: TrackerRef): Promise<Epic | null> {
-    const { mirrored, tickets, rows } = await this.epicData(workspaceId);
+    const { mirrored, tickets, rows, formatRef } = await this.epicData(workspaceId);
     const row = rows.find((candidate) => candidate.trackerRef === epicRef);
     if (!row) return null;
-    const epic = this.isHistorical(row) ? this.storedToDerived(row, tickets, mirrored) : this.liveEpics(tickets, mirrored).get(epicRef);
+    const epic = this.isHistorical(row) ? this.storedToDerived(row, tickets, mirrored, formatRef) : this.liveEpics(tickets, mirrored).get(epicRef);
     if (!epic) return null;
     return this.composeOne(workspaceId, epic, tickets, mirrored, await this.epicBaseBranch(workspaceId), new Map(rows.map((item) => [item.trackerRef, item] as const)), await this.verificationConfigured(workspaceId));
   }
@@ -365,35 +366,37 @@ export class TrackerEpicService implements EpicService {
 
   private async epicData(workspaceId: number) {
     const mirrored = (await this.tasks.listWithDeps({ workspaceId })).filter((task) => task.origin === 'mirrored');
-    return { mirrored, tickets: await persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId)), rows: await this.tasks.listStoredEpics(workspaceId) };
+    const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId);
+    const kindId = workspace ? await effectiveTrackerKind(workspace.workingDir, workspaceTrackerSettings(workspace)) : null;
+    return { mirrored, tickets: await persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId)), rows: await this.tasks.listStoredEpics(workspaceId), formatRef: (ref: TrackerRef) => formatTrackerRef(kindId, ref) };
   }
   private liveEpics(tickets: Ticket[], mirrored: TaskWithDeps[]): Map<TrackerRef, DerivedEpic> {
     const readiness = new Map<TrackerRef, { agentWorkable: boolean }>();
     for (const task of mirrored) if (task.trackerRef !== null) readiness.set(task.trackerRef, { agentWorkable: task.agentWorkable });
     return new Map(deriveLeafEpics(tickets, readiness, { includeClosed: true }).map((epic) => [epic.ref, epic] as const));
   }
-  private surfacedEpics(rows: EpicRow[], tickets: Ticket[], mirrored: TaskWithDeps[], includeHistorical: boolean): DerivedEpic[] {
+  private surfacedEpics(rows: EpicRow[], tickets: Ticket[], mirrored: TaskWithDeps[], includeHistorical: boolean, formatRef: (ref: TrackerRef) => string): DerivedEpic[] {
     const live = this.liveEpics(tickets, mirrored); const ticketByRef = new Map(tickets.map((ticket) => [ticket.ref, ticket])); const epics: DerivedEpic[] = [];
     for (const row of rows) {
-      if (this.isHistorical(row)) { if (includeHistorical) epics.push(this.storedToDerived(row, tickets, mirrored)); }
+      if (this.isHistorical(row)) { if (includeHistorical) epics.push(this.storedToDerived(row, tickets, mirrored, formatRef)); }
       else if (row.state !== 'integrated' && ticketByRef.get(row.trackerRef)?.state === 'open') {
         const epic = live.get(row.trackerRef); if (epic) epics.push(epic);
       } else if (row.state !== 'integrated' && ticketByRef.get(row.trackerRef)?.state === 'closed') {
-        epics.push(this.storedToDerived(row, tickets, mirrored));
+        epics.push(this.storedToDerived(row, tickets, mirrored, formatRef));
       }
     }
-    return epics.sort((a, b) => compareRefsForDisplay(a.ref, b.ref));
+    return epics;
   }
   private isHistorical(row: EpicRow): boolean { return row.state === 'integrated' && row.memberRefs !== null; }
-  private storedToDerived(row: EpicRow, tickets: Ticket[], mirrored: TaskRow[]): DerivedEpic {
+  private storedToDerived(row: EpicRow, tickets: Ticket[], mirrored: TaskRow[], formatRef: (ref: TrackerRef) => string): DerivedEpic {
     const ticket = tickets.find((candidate) => candidate.ref === row.trackerRef);
-    return { ref: row.trackerRef, title: ticket?.title ?? mirrored.find((task) => task.trackerRef === row.trackerRef)?.trackerTitle ?? `Epic #${row.trackerRef}`, body: ticket?.body ?? '', url: ticket?.url ?? '', members: [...(row.memberRefs ?? [])].sort(compareRefsForDisplay), ready: [] };
+    return { ref: row.trackerRef, title: ticket?.title ?? mirrored.find((task) => task.trackerRef === row.trackerRef)?.trackerTitle ?? `Epic ${formatRef(row.trackerRef)}`, body: ticket?.body ?? '', url: ticket?.url ?? '', members: [...(row.memberRefs ?? [])], ready: [] };
   }
   private async composeOne(workspaceId: number, epic: DerivedEpic, tickets: Ticket[], mirrored: TaskRow[], baseBranch: string | null, rows: ReadonlyMap<TrackerRef, EpicRow>, configured: boolean): Promise<Epic> {
     const titles = new Map(tickets.map((ticket) => [ticket.ref, ticket.title])); const tasks = new Map<TrackerRef, TaskRow>();
     for (const task of mirrored) if (task.trackerRef !== null) tasks.set(task.trackerRef, task);
     const ticket = tickets.find((candidate) => candidate.ref === epic.ref); const row = rows.get(epic.ref);
-    const meta: EpicMeta = { description: ticket?.body ?? '', createdAt: ticket ? Date.parse(ticket.createdAt) || 0 : 0, baseBranch, dependsOn: (ticket?.blockedBy ?? []).map((blocker) => blocker.ref).sort(compareRefsForDisplay), kind: row?.kind === 'map' ? 'map' : 'spec', state: row?.state ?? 'open' };
+    const meta: EpicMeta = { description: ticket?.body ?? '', createdAt: ticket ? Date.parse(ticket.createdAt) || 0 : 0, baseBranch, dependsOn: (ticket?.blockedBy ?? []).map((blocker) => blocker.ref), kind: row?.kind === 'map' ? 'map' : 'spec', state: row?.state ?? 'open' };
     return composeEpicView(epic, tasks, titles, await this.epicFacts(workspaceId, epic.ref, configured), meta);
   }
   private async epicFacts(workspaceId: number, epicRef: TrackerRef, configured: boolean): Promise<EpicFacts> {

@@ -153,9 +153,10 @@ _Avoid_: issue number, ticket id
 
 **Code Repository**:
 Where a Workspace's branches, PRs/MRs and Merges go — **GitHub**, **GitLab**,
-or **Forgejo**. Detected from the repo's `origin` remote (github.com,
-gitlab.com, otherwise a Forgejo host that answers its version endpoint) and
-overridable per Workspace. Independent of the Resolved Tracker: a Jira
+**Forgejo**, or **git** (push-only for hosts with no PR API). Detected from the
+repo's `origin` remote (github.com, gitlab.com, otherwise a host that answers
+Forgejo's version endpoint or GitLab's web manifest); git is never detected and needs an explicit
+override. Overridable per Workspace. Independent of the Resolved Tracker: a Jira
 Workspace still has a Code Repository, and a Forgejo Workspace usually has the
 same host for both.
 _Avoid_: code host, git provider, remote

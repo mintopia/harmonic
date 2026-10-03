@@ -4,7 +4,7 @@ import { forgejoSettingsSchema } from '../tracker/forgejo.js';
 import { FORGEJO_TOKEN_SECRET, parseForgejoRemote, type ForgejoConnection } from '../tracker/forgejo-client.js';
 import type { TrackerHttp } from '../tracker/kind.js';
 import type { RepositoryAdapter } from './adapter.js';
-import { cachedProbe, detectRepository, forgejoVersionProbe, type ForgejoProbe, type RepositoryKind } from './detect.js';
+import { cachedProbe, detectRepository, forgejoVersionProbe, gitlabProbe, type ForgejoProbe, type RepositoryKind } from './detect.js';
 import { forgejoRepository } from './forgejo.js';
 import { gitRepository } from './git.js';
 import { githubRepository } from './github.js';
@@ -12,6 +12,7 @@ import { gitlabRepository } from './gitlab.js';
 import { originRemote } from './remote.js';
 
 const defaultProbe = cachedProbe(forgejoVersionProbe());
+const defaultGitlabProbe = cachedProbe(gitlabProbe());
 const defaultHttp: TrackerHttp = (url, init) => fetch(url, init);
 
 /** The repo's Code Repository kind: the Workspace override, else detected from its `origin` remote; null when neither names one. */
@@ -20,10 +21,11 @@ export async function resolveCodeRepository(
   override?: RepositoryKind | null,
   probe: ForgejoProbe = defaultProbe,
   origin: () => Promise<string | null> = originRemote(repoRoot),
+  gitlab: ForgejoProbe = defaultGitlabProbe,
 ): Promise<RepositoryKind | null> {
   if (override) return override;
   const url = await origin();
-  return url ? detectRepository(url, probe) : null;
+  return url ? detectRepository(url, probe, gitlab) : null;
 }
 
 /** Forgejo needs a token (a Secret), so its adapter is built only when the caller supplies one. */

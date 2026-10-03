@@ -222,6 +222,7 @@ export const gitlabKind: TrackerKind<{ project?: string | undefined }> = {
   settings: z.object({ project: z.string().min(1).optional().meta({ title: 'Project', description: 'The GitLab project as group/repo; defaults to the origin remote.' }) }).strict(),
   secretNames: [],
   capabilities: { close: true, reopen: true, claim: true, transition: false, epicSources: ['epic-label'] },
+  formatRef: (ref) => `#${ref}`,
   fromDeclaration: async (doc, _repoRoot, origin) => ({
     project: doc.match(/^\s*Project:\s*(.+?)\s*$/im)?.[1] ?? gitlabProject(await origin()) ?? undefined,
   }),

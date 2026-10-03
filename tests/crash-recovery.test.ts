@@ -17,6 +17,7 @@ import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import { yieldToEventLoop } from '../src/reliability/yield.js';
 import { trackerRef } from '../src/tracker/adapter.js';
+import { logger } from '../src/logger.js';
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
@@ -253,6 +254,26 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     expect(runPostMergeCheck).not.toHaveBeenCalled();
     expect(await attempts.get(run.id)).toMatchObject({ state: 'failed', reason: 'process-death' });
     expect((await tasks.get(created.id)).state).toBe('paused');
+  });
+
+  it('warns and runs no post-merge check for an ancestor branch with no merge commit (fast-forward)', async () => {
+    const branch = 'ff-branch';
+    git(repo, 'checkout', '-b', branch);
+    commit(repo, 'ff.txt', 'work\n', 'ff work');
+    git(repo, 'checkout', 'main');
+    git(repo, 'merge', '--ff-only', branch);
+    const created = await tasks.create({ prompt: 'ff', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
+    await tasks.setState(created.id, 'working');
+    const run = await attempts.update((await attempts.create(created.id)).id, { branch, baseBranch: 'main' });
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
+    const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck });
+
+    await coord.reconcile();
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no merge commit'), expect.objectContaining({ attemptId: run.id }));
+    expect(runPostMergeCheck).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('uses the injected isMerged seam to reject recovery when supplied', async () => {

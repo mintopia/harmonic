@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { CliRunner } from '../tracker/kind.js';
-import type { RepositoryAdapter } from './adapter.js';
+import { pullRequestUrlFromOutput, type RepositoryAdapter } from './adapter.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -16,7 +16,8 @@ export function githubRepository(repoRoot: string, run: CliRunner = defaultGh): 
     kind: 'github',
 
     async openPR({ branch, baseBranch, title, body }) {
-      await run(['pr', 'create', '--head', branch, '--base', baseBranch, '--title', title, '--body', body], repoRoot);
+      const stdout = await run(['pr', 'create', '--head', branch, '--base', baseBranch, '--title', title, '--body', body], repoRoot);
+      return pullRequestUrlFromOutput(stdout);
     },
 
     async verify() {

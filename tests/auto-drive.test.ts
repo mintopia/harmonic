@@ -84,6 +84,7 @@ function fakeAdapter(ticketState: 'open' | 'closed' = 'open') {
     kind: 'fake',
     openPR: async (input) => {
       calls.openPR.push(input);
+      return 'https://github.com/o/r/pull/9';
     },
     verify: async () => ({ ok: true }),
   };
@@ -305,6 +306,45 @@ describe('AutoDrive.onCompleted — Merge Fate close-after-verify (issue #139)',
     expect(calls.openPR).toHaveLength(1);
     expect(calls.openPR[0]).toMatchObject({ branch: 'harmonic/task-1-run-1', baseBranch: 'main' });
     expect(calls.close).toEqual([]);
+  });
+
+  it('open-PR records the PR URL on the Attempt that opened it', async () => {
+    const { adapter, repository } = fakeAdapter('open');
+    const recorded: Array<{ attempt: number; url: string }> = [];
+    const drive = new AutoDrive(() => cfg('open-PR'), () => null, async () => adapter, undefined, undefined, undefined, undefined, async () => repository, async (r, url) => {
+      recorded.push({ attempt: r.id, url });
+    });
+    expect(await drive.onCompleted(worktreeTask(), run())).toBe('completed');
+    expect(recorded).toEqual([{ attempt: 1, url: 'https://github.com/o/r/pull/9' }]);
+  });
+
+  it('open-PR records nothing when the Code Repository opened no PR', async () => {
+    const { adapter, repository } = fakeAdapter('open');
+    repository.openPR = async () => null;
+    const recorded: string[] = [];
+    const drive = new AutoDrive(() => cfg('open-PR'), () => null, async () => adapter, undefined, undefined, undefined, undefined, async () => repository, async (_r, url) => {
+      recorded.push(url);
+    });
+    expect(await drive.onCompleted(worktreeTask(), run())).toBe('completed');
+    expect(recorded).toEqual([]);
+  });
+
+  it('open-PR names the ticket as its kind writes it: PROJ-185 for Jira, #185 for a detected GitHub tracker', async () => {
+    const { adapter, repository, calls } = fakeAdapter('open');
+    const jira = new AutoDrive(() => cfg('open-PR'), () => null, async () => adapter, async () => ({ configuredTracker: JSON.stringify({ kind: 'jira', settings: {} }) }) as never, undefined, undefined, undefined, async () => repository);
+    await jira.onCompleted(worktreeTask({ trackerRef: trackerRef('PROJ-185') }), run());
+    expect(calls.openPR[0]!.body).toBe('Auto-driven by Harmonic for PROJ-185.');
+
+    const repo = mkdtempSync(join(tmpdir(), 'harmonic-autodrive-'));
+    mkdirSync(join(repo, 'docs/agents'), { recursive: true });
+    writeFileSync(join(repo, 'docs/agents/issue-tracker.md'), '# Issue tracker: GitHub\n');
+    try {
+      const github = new AutoDrive(() => cfg('open-PR'), () => null, async () => adapter, undefined, undefined, undefined, undefined, async () => repository);
+      await github.onCompleted(worktreeTask({ trackerRef: trackerRef('185'), workingDir: repo }), run());
+      expect(calls.openPR[1]!.body).toBe('Auto-driven by Harmonic for #185.');
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
   });
 
   it('open-PR that fails to create a PR escalates', async () => {

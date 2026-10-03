@@ -5,7 +5,7 @@ import { parseBlockedByLines, parseBlockedBySection, parsePartOfParent } from '.
 import type { TrackerHttp, TrackerKind } from './kind.js';
 import { createRestClient, safeErrorReason, type RestClient } from './rest-client.js';
 import { DEFAULT_TRIAGE_LABELS, type TriageLabels } from './triage-labels.js';
-import type { Ticket, TicketRef, TicketState, TrackerVerifyResult, WritableTrackerAdapter } from './adapter.js';
+import type { Ticket, TicketRef, TicketState, WritableTrackerAdapter } from './adapter.js';
 import { EPIC_LABEL, MAP_LABEL, trackerRef } from './ref.js';
 
 const SCAN_SAFETY_VALVE_PAGES = 100;
@@ -85,6 +85,22 @@ type RawTransition = z.infer<typeof transitionSchema>;
 
 const stateOf = (s: RawStatus): TicketState => (s.statusCategory?.key === 'done' ? 'closed' : 'open');
 const sameName = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
+/** Splits JQL at its first ORDER BY that sits outside a quoted string. */
+function splitOrderBy(jql: string): { filter: string; order: string } {
+  let quote: string | null = null;
+  for (let i = 0; i < jql.length; i++) {
+    const c = jql[i]!;
+    if (quote) {
+      if (c === '\\') i++;
+      else if (c === quote) quote = null;
+    } else if (c === '"' || c === "'") quote = c;
+    else if (i === 0 || /\W/.test(jql[i - 1]!)) {
+      const m = /^order\s+by\b/i.exec(jql.slice(i));
+      if (m) return { filter: jql.slice(0, i).trim(), order: jql.slice(i + m[0].length).trim() };
+    }
+  }
+  return { filter: jql.trim(), order: '' };
+}
 const jqlQuote = (s: string): string => `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 
 const refOf = (i: RawLinkedIssue): TicketRef => ({
@@ -162,11 +178,11 @@ export function jiraAdapter(config: JiraConfig, client: RestClient, triageLabels
 
   const jql = (): string => {
     const labels = Object.values(triageLabels).map(jqlQuote).join(', ');
-    const base = `project = ${config.projectKey} AND labels in (${labels})`;
+    const base = `project = ${config.projectKey} AND (labels in (${labels}) OR issuetype = Epic)`;
     if (!config.extraJql) return base;
-    const [filter = '', ...order] = config.extraJql.split(/\border\s+by\b/i);
-    const where = filter.trim() ? `${base} AND (${filter.trim()})` : base;
-    return order.length ? `${where} ORDER BY ${order.join(' ').trim()}` : where;
+    const { filter, order } = splitOrderBy(config.extraJql);
+    const where = filter ? `${base} AND (${filter})` : base;
+    return order ? `${where} ORDER BY ${order}` : where;
   };
 
   const transitionsOf = async (key: string): Promise<RawTransition[]> =>
@@ -200,7 +216,7 @@ export function jiraAdapter(config: JiraConfig, client: RestClient, triageLabels
       const chosen = (await transitionsOf(key)).find((t) => sameName(t.to.name, target));
       if (chosen) await doTransition(key, chosen.id);
     } catch (err) {
-      logger.warn(`Jira pickup transition for ${key} failed: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(`Jira pickup transition for ${key} failed: ${safeErrorReason(err)}`);
     }
   };
 
@@ -280,15 +296,6 @@ export function jiraAdapter(config: JiraConfig, client: RestClient, triageLabels
 
     close: (ticket, comment) => lifecycle(ticket, comment, config.doneStatus, 'done', 'close'),
     reopen: (ticket, comment) => lifecycle(ticket, comment, config.reopenStatus, 'new', 'reopen'),
-
-    async verify(): Promise<TrackerVerifyResult> {
-      try {
-        await ensureMe();
-        return { ok: true };
-      } catch (err) {
-        return { ok: false, reason: safeErrorReason(err) };
-      }
-    },
   };
 }
 
@@ -299,6 +306,7 @@ export const jiraKind: TrackerKind<JiraSettings> = {
   secretNames: [DEFAULT_TOKEN_SECRET],
   secretsFor: (settings) => [settings.secretName],
   capabilities: { close: true, reopen: true, claim: true, transition: true, epicSources: ['issue-type'] },
+  formatRef: (ref) => ref,
   create: ({ settings, secrets, http, triageLabels }) => {
     const token = secrets[settings.secretName];
     if (!token) throw new Error(`Jira tracker: secret "${settings.secretName}" is not set`);

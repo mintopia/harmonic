@@ -237,6 +237,8 @@ export const attempts = sqliteTable('attempts', {
   priceTable: text('price_table'),
   /** Free-text detail behind {@link reason}; null while running or when the kind needs none. */
   detail: text('detail'),
+  /** The PR/MR the open-PR Merge Fate created for this Attempt's branch; null when none was opened (other fates, or a Code Repository that opens none). */
+  pullRequestUrl: text('pull_request_url'),
 }, (t) => [
   uniqueIndex('attempts_task_number_unique').on(t.taskId, t.number),
   uniqueIndex('attempts_epic_number_unique').on(t.workspaceId, t.epicRef, t.number),

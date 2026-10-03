@@ -247,6 +247,8 @@ export type ApiAttemptSummary = {
   stat: string | null;
   verifiedHeadOid: string | null;
   verifiedRef: string | null;
+  /** The PR/MR the open-PR Merge Fate opened for this Attempt; null when none. */
+  pullRequestUrl: string | null;
   usage: AttemptUsage | null;
   cost: Cost | null;
   /** Total tool calls this Attempt's session made. */
@@ -314,6 +316,7 @@ export function attemptToApiSummary(run: TaskAttemptRow, toolCalls: number, cont
     stat: run.stat,
     verifiedHeadOid: run.verifiedHeadOid,
     verifiedRef: run.verifiedRef,
+    pullRequestUrl: run.pullRequestUrl,
     usage: parseUsage(run.usage),
     cost: parseCost(run.cost),
     toolCalls,

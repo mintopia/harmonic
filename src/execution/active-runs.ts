@@ -7,6 +7,13 @@ import type { ProgressEvent } from '../domain/stall-detector.js';
 import type { Operation } from '../telemetry/operations.js';
 import type { GuardrailSupervisor } from './guardrail-supervisor.js';
 
+/** A steer awaiting the next turn; `onDelivered` fires when sent, `onDropped` if the run ends first. */
+export interface SteerEntry {
+  text: string;
+  onDelivered?: (() => void) | undefined;
+  onDropped?: (() => void) | undefined;
+}
+
 export interface ActiveRun {
   attemptId: number;
   taskId: number;
@@ -18,9 +25,7 @@ export interface ActiveRun {
   activity: string | null;
   agentFinished: boolean;
   escalateReason: string | null;
-  steerQueue: string[];
-  /** Fired per text when a queued steer is sent as a turn. */
-  steerAcks: Map<string, Array<() => void>>;
+  steerQueue: SteerEntry[];
   idle: boolean;
   externallySettled: boolean;
   steerable: boolean;

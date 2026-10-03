@@ -86,23 +86,21 @@ nothing to set globally.
 The section starts with an **Enabled** switch (*Mirror tracker issues onto the
 board*) and a **Poll interval (seconds)**, which can't go below 5.
 
-Harmonic finds a Workspace's tracker in this order, and the **Resolved** line
-at the bottom shows which one won, for example *Resolved: Jira via
-Configured*:
+Harmonic resolves a Workspace's tracker in this order. The **Resolved** line
+at the bottom shows the result, for example *Resolved: Jira via Configured*:
 
 1. **Configured**: the tracker you pick here.
 2. **Detected**: the one named in the repo's `docs/agents/issue-tracker.md`.
 3. **Code Repository**: the forge hosting the code, when it is also an
    issue tracker.
 
-If none of these gives a usable tracker, the line reads *No Tracker declared*,
-*Unsupported Tracker* or *Tracker misconfigured*. While Enabled is off it
-reads *Enable mirroring to resolve the tracker*.
+If no tracker is found, the line reads *No Tracker declared*, *Unsupported
+Tracker* or *Tracker misconfigured*. While Enabled is off, it reads *Enable
+mirroring to resolve the tracker*.
 
 **Configured Tracker** starts on *Inherit (automatic)*, which uses the repo's
-declaration and says which tracker it found. Otherwise pick GitHub, GitLab,
-Forgejo, Jira or Local Markdown. The fields below the picker change with the
-choice, and required ones are marked *(required)*.
+declaration. Otherwise pick GitHub, GitLab, Forgejo, Jira or Local Markdown.
+Fields below change with the choice; required ones are marked *(required)*.
 
 - **GitHub** has no fields. It uses the `gh` login already on the host.
 - **GitLab** has one optional field, **Project**, which defaults to the
@@ -121,22 +119,32 @@ choice, and required ones are marked *(required)*.
 
 Forgejo and Jira show a **Secret** row for their token. It reads **Set** or
 **Not set**. Use **Set** (or **Replace** when one exists) to type the value
-and **Save**, or **Clear** to remove it. A Secret is write-only, so Harmonic
-never shows it again after you save it. It takes effect at once, without the
-settings save bar, and belongs to that Workspace only.
+and **Save**, or **Clear** to remove it. Secrets are write-only and take effect
+immediately without the settings save bar. Each Secret is scoped to its
+Workspace.
+
+Secrets are encrypted with an instance-level key held in the data directory
+(`secret.key`). Back up the data directory with your database to preserve
+these credentials; losing the key file makes stored Secrets unreadable.
 
 **Verify tracker** checks the connection and reports *Verified as* the
-account it signed in as, or the error. It is disabled while you have unsaved
-edits, so save first.
+account, or the error. Disabled while you have unsaved edits; save first.
 
 ### Code Repository
 
-The forge that hosts this Workspace's branches, pull requests and merges.
-**Detected** shows what Harmonic found from the `origin` remote, or *None
-detected from the origin remote*. **Override** starts on *Automatic*; pick
-GitHub, GitLab or Forgejo to choose yourself. **Verify repository** reports
-*Reachable on* the forge, or the error, and is also disabled while you have
-unsaved edits.
+The forge that hosts branches, pull requests and merges. **Detected** shows
+what Harmonic found from `origin`, or *None detected from the origin remote*. **Override** starts on
+*Automatic*; pick GitHub, GitLab, Forgejo or git to choose. **Verify
+repository** reports *Reachable on* the forge or the error; disabled while you
+have unsaved edits.
+
+- **GitHub**, **GitLab** and **Forgejo** open PRs and merge them. GitHub and
+  GitLab use the `gh` or `glab` login already on the host. Forgejo uses the
+  Workspace Secret named by a Forgejo Configured Tracker on the same host,
+  otherwise the Secret `FORGEJO_TOKEN`, which this card offers to set when no
+  Forgejo tracker is configured.
+- **git** is push-only: Harmonic pushes the branch but does not open a PR or merge.
+  Use it for a host with no pull-request API.
 
 The Code Repository can differ from the tracker, for example Jira issues with
 code on GitHub.
@@ -150,17 +158,14 @@ defaults shown as placeholders.
 
 ## Agent Messages
 
-Agents working Tasks in the same Workspace can message each other. It is off
-by default. You turn it on, and cap how much an agent can send, on the
-**Execution** tab in an **Agent Messages** section.
+Agents in the same Workspace can message each other. Off by default. Turn it on
+and set caps on the **Execution** tab under **Agent Messages**.
 
-- **Let Attempts message each other**: the on/off switch.
-- **Send cap**: how many Agent Messages one Attempt may send. The default is
-  10, and the minimum is 1.
+- **Let Attempts message each other**: on/off switch.
+- **Send cap**: how many messages one Attempt may send. Default 10, minimum 1.
 
-Set both globally, then override either per Workspace. A Workspace shows the
-global value until you override it. For what operators see once it is on, see
-[Agent Messages](/harmonic/work/agent-messages/).
+Set both globally, then override either per Workspace; a Workspace shows the global value until you override it. For what operators
+see when messaging is on, see [Agent Messages](/harmonic/work/agent-messages/).
 
 ## Archive & Export
 
