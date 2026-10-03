@@ -58,7 +58,6 @@ function LoadFailure({ message, onRetry }: { message: string; onRetry: () => voi
   );
 }
 
-/** A Verify button plus its outcome: the authenticated identity, or the error. */
 function VerifyControl({
   run,
   disabled,
@@ -134,9 +133,6 @@ function ResolvedTrackerLine({ workspace }: { workspace: Workspace }) {
   );
 }
 
-/** One write-only Secret: only "set" / "not set", Replace and Clear. The value
- * is typed into a password input and never read back. Applies immediately,
- * independent of the settings save bar. */
 export function SecretField({ workspaceId, name, onChange }: { workspaceId: number; name: string; onChange?: () => void }) {
   const { state, reload } = useLoad(() => api.secretStatus(workspaceId, name), `${workspaceId}:${name}`);
   const [editing, setEditing] = useState(false);
@@ -236,8 +232,6 @@ export function SecretField({ workspaceId, name, onChange }: { workspaceId: numb
   );
 }
 
-/** A kind's setting rendered from its JSON Schema property: enum, boolean,
- * number/integer or string. Anything else falls back to a text input. */
 function SchemaField({
   id,
   name,
@@ -353,8 +347,6 @@ function SubHead({ children }: { children: ReactNode }) {
   return <p className="text-small text-muted">{children}</p>;
 }
 
-/** The Issue tracker section: mirroring switch and cadence, Configured Tracker
- * kind + settings, write-only Secrets, Verify, and the read-only Resolved Tracker. */
 export function IssueTrackerSection({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace, pristineWorkspace, errors } = ctx;
   const kinds = useLoad(() => api.trackerKinds().then((r) => r.kinds), 'kinds');
@@ -455,7 +447,6 @@ export function IssueTrackerSection({ ctx }: { ctx: WorkspaceRenderCtx }) {
 
 const REPOSITORY_KINDS: CodeRepositoryKind[] = ['github', 'gitlab', 'forgejo'];
 
-/** The Code Repository section: the detected forge, an override, and Verify. */
 export function CodeRepositorySection({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace, pristineWorkspace, errors } = ctx;
   const detection = useLoad<TrackerDetection>(() => api.trackerDetection(workspace.id), workspace.id);
@@ -510,7 +501,6 @@ const TRIAGE_ROLES: { key: keyof typeof DEFAULT_TRIAGE_LABELS; label: string }[]
   { key: 'wayfinderMap', label: 'Wayfinder map' },
 ];
 
-/** Triage Labels: an empty field inherits (the repo's role table, then the default). */
 export function TriageLabelsSection({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace, errors } = ctx;
   const labels = workspace.triageLabels ?? {};

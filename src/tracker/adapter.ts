@@ -172,7 +172,6 @@ export async function resolveTracker(
   }
 }
 
-/** The tracker name a `docs/agents/issue-tracker.md` declares (`# Issue tracker: <name>`), raw. */
 export const declaredTrackerName = (doc: string): string | undefined => doc.match(/^#\s*Issue tracker:\s*(.+?)\s*$/m)?.[1];
 
 const defaultHttp: TrackerHttp = (url, init) => fetch(url, init);

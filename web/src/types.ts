@@ -348,7 +348,6 @@ export type ResolvedTracker =
   | { ok: true; label: string; kind: string; source: TrackerSource; code: null; reason: null }
   | { ok: false; label: null; kind: null; source: null; code: string; reason: string };
 
-/** A JSON Schema object as served by `GET /tracker-kinds` (the subset the settings UI renders). */
 export interface JSONSchemaObject {
   type?: string;
   properties?: Record<string, JSONSchemaProperty>;
@@ -366,7 +365,6 @@ export interface JSONSchemaProperty {
   [key: string]: unknown;
 }
 
-/** One issue-tracker kind the server can talk to. */
 export interface TrackerKindInfo {
   id: string;
   label: string;
@@ -377,13 +375,11 @@ export interface TrackerKindInfo {
 
 export type CodeRepositoryKind = 'github' | 'gitlab' | 'forgejo';
 
-/** What the repo itself names, and the forge its origin remote points at. */
 export interface TrackerDetection {
   detectedTracker: { name: string; kind: string | null } | null;
   detectedCodeRepository: CodeRepositoryKind | null;
 }
 
-/** The outcome of a credential/connectivity check. */
 export type VerifyResult = { ok: true; identity: string } | { ok: false; reason: string };
 
 /** Where a Resolved Tracker's choice came from. */
