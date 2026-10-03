@@ -1,6 +1,6 @@
-import { and, asc, eq, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
-import { agentMessages, type AgentMessageRecipient, type AgentMessageRow } from '../db/schema.js';
+import { agentMessages, tasks, type AgentMessageRecipient, type AgentMessageRow } from '../db/schema.js';
 
 export interface NewAgentMessage {
   workspaceId: number;
@@ -10,6 +10,20 @@ export interface NewAgentMessage {
   senderTaskId: number;
   senderAttemptId: number;
   recipients: AgentMessageRecipient[];
+}
+
+export interface PresentedAgentMessage {
+  messageId: string;
+  role: string;
+  parts: AgentMessageRow['parts'];
+  replyTo: string | null;
+  threadId: string;
+  senderTaskId: number;
+  senderDeleted: boolean;
+  senderAttemptId: number;
+  workspaceId: number;
+  createdAt: number;
+  recipients: Array<AgentMessageRecipient & { deleted: boolean }>;
 }
 
 export class AgentMessageStore {
@@ -67,5 +81,42 @@ export class AgentMessageStore {
         .orderBy(asc(agentMessages.createdAt), asc(sql`rowid`))
         .all(),
     );
+  }
+
+  /** `listForTask` shaped for the API, marking participants whose Task row no longer exists. */
+  async presentedForTask(workspaceId: number, taskId: number): Promise<PresentedAgentMessage[]> {
+    return this.present(await this.listForTask(workspaceId, taskId));
+  }
+
+  /** Messages any of the given Tasks sent or received, de-duplicated and oldest first. */
+  async presentedForTasks(workspaceId: number, taskIds: readonly number[]): Promise<PresentedAgentMessage[]> {
+    const byId = new Map<string, AgentMessageRow>();
+    for (const taskId of taskIds) {
+      for (const row of await this.listForTask(workspaceId, taskId)) byId.set(row.id, row);
+    }
+    const rows = [...byId.values()].sort((a, b) => a.createdAt - b.createdAt);
+    return this.present(rows);
+  }
+
+  private async present(rows: AgentMessageRow[]): Promise<PresentedAgentMessage[]> {
+    const ids = [...new Set(rows.flatMap((r) => [r.senderTaskId, ...r.recipients.map((x) => x.taskId)]))];
+    const live = new Set(
+      ids.length === 0
+        ? []
+        : (await this.db.read((db) => db.select({ id: tasks.id }).from(tasks).where(inArray(tasks.id, ids)).all())).map((t) => t.id),
+    );
+    return rows.map((row) => ({
+      messageId: row.id,
+      role: row.role,
+      parts: row.parts,
+      replyTo: row.replyTo,
+      threadId: row.threadId,
+      senderTaskId: row.senderTaskId,
+      senderDeleted: !live.has(row.senderTaskId),
+      senderAttemptId: row.senderAttemptId,
+      workspaceId: row.workspaceId,
+      createdAt: row.createdAt,
+      recipients: row.recipients.map((r) => ({ ...r, deleted: !live.has(r.taskId) })),
+    }));
   }
 }

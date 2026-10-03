@@ -144,9 +144,9 @@ describe.skipIf(!dockerAvailable())('TaskExporter S3 destination (#737)', () => 
       ...(now ? { now } : {}),
       settings: async () => resolveExportSettings(cfg, workspace),
       epicSettings: async () => resolveExportSettings(cfg, workspace),
-      epicSnapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, members: [] }),
+      epicSnapshot: async () => ({ ticket: {}, timeline: {}, agentMessages: [], attemptCount: 0, members: [] }),
       workspaceName: async () => 'My Workspace',
-      snapshot: async () => ({ ticket: { title: 'T' }, timeline: {}, attemptCount: 1, git: emptyGitProvenance() }),
+      snapshot: async () => ({ ticket: { title: 'T' }, timeline: {}, agentMessages: [], attemptCount: 1, git: emptyGitProvenance() }),
       recordEpicStep: async () => undefined,
       recordFact: async (_id, payload) => {
         facts.push(payload as Record<string, unknown>);
@@ -211,9 +211,9 @@ describe.skipIf(!dockerAvailable())('TaskExporter S3 destination (#737)', () => 
       now: () => new Date(clock),
       settings: async () => resolveExportSettings(config({}), undefined),
       epicSettings: async () => resolveExportSettings(healed ? config({ prefix: 'again/' }, null) : config({ prefix: 'again/', secretAccessKey: 'wrongwrongwrong' }, null), undefined),
-      epicSnapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, members: [] }),
+      epicSnapshot: async () => ({ ticket: {}, timeline: {}, agentMessages: [], attemptCount: 0, members: [] }),
       workspaceName: async () => 'My Workspace',
-      snapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, git: emptyGitProvenance() }),
+      snapshot: async () => ({ ticket: {}, timeline: {}, agentMessages: [], attemptCount: 0, git: emptyGitProvenance() }),
       recordEpicStep: async () => undefined,
       recordFact: async () => undefined,
       onFailure: (f) => void failures.push(f),

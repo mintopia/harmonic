@@ -112,6 +112,7 @@ Unpacked, it contains:
 | `ticket.json` | The task as Harmonic showed it at export time |
 | `timeline.json` | The task's Timeline: Attempts, verification, merge and other events |
 | `operator-inputs.json` | Everything you did to the task |
+| `agent-messages.json` | Messages the task's agent sent to or received from other tasks |
 | `manifest.json` | Export details: Harmonic version, disposition, file counts, redaction counts, whether it is partial, and git details |
 | `archive.json` | The Archive's identity and its Export history |
 | `attempts/` | One folder per Attempt: prompts, agent transcripts, harness logs, verify output and Critic runs |
