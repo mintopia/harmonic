@@ -47,8 +47,8 @@ function threadWith(messages: AgentMessage[]): AgentMessageThread {
     live: true,
     messages,
     participants: [
-      { taskId: 412, title: 'Session refactor', harness: 'claude', epicId: 400, deleted: false, ...EXTRA },
-      { taskId: 413, title: 'Merge policy', harness: 'codex', epicId: 400, deleted: false, ...EXTRA },
+      { taskId: 412, title: 'Session refactor', harness: 'claude', epicId: '400', deleted: false, ...EXTRA },
+      { taskId: 413, title: 'Merge policy', harness: 'codex', epicId: '400', deleted: false, ...EXTRA },
     ],
   };
 }
@@ -138,7 +138,7 @@ describe('Activity Agent Messages tab', () => {
 
   it('asks the server to filter and keeps the Epic options while a filter is active', async () => {
     activity.mockResolvedValue({ processes: [], agentMessagesEnabledInAnyWorkspace: true });
-    agentMessageThreads.mockImplementation(async (params: { epicId?: number }) =>
+    agentMessageThreads.mockImplementation(async (params: { epicId?: string }) =>
       params.epicId === undefined
         ? { threads: [threadWith([first])], total: 1, totalMessages: 1 }
         : { threads: [], total: 0, totalMessages: 0 },
@@ -154,7 +154,7 @@ describe('Activity Agent Messages tab', () => {
       select.dispatchEvent(new Event('change', { bubbles: true }));
       await flush();
     });
-    expect(agentMessageThreads).toHaveBeenCalledWith(expect.objectContaining({ epicId: 400, limit: 200 }));
+    expect(agentMessageThreads).toHaveBeenCalledWith(expect.objectContaining({ epicId: '400', limit: 200 }));
     expect(host.textContent).toContain('0 threads · 0 messages');
     expect([...host.querySelectorAll('select')[1]!.options].map((o) => o.textContent)).toEqual(['All Epics', 'Epic #400']);
     expect(host.querySelectorAll('[role="tab"]')[1]?.textContent).toBe('Agent Messages1');

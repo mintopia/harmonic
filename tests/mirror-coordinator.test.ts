@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { trackerRef } from '../src/tracker/adapter.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,7 +12,7 @@ import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 const ticket = (number: number, assignees: string[] = []): Ticket => ({
-  number,
+  number: trackerRef(number),
   title: `ticket ${number}`,
   state: 'open',
   body: '',
@@ -28,7 +29,7 @@ const ticket = (number: number, assignees: string[] = []): Ticket => ({
 });
 
 const mirrored = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput => ({
-  trackerRef: ref,
+  trackerRef: trackerRef(ref),
   prompt: `ticket ${ref}`,
   workflow: 'implement',
   wayfinderType: null,
@@ -38,7 +39,7 @@ const mirrored = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput => 
 });
 
 function fakeAdapter(opts: { claimThrows?: boolean } = {}) {
-  const calls = { claim: [] as number[], release: [] as number[], read: [] as number[] };
+  const calls = { claim: [] as string[], release: [] as string[], read: [] as string[] };
   let readResult: Ticket = ticket(0);
   const adapter: TrackerAdapter = {
     name: 'fake',
@@ -88,7 +89,7 @@ describe('MirrorCoordinator (issue #32)', () => {
     const coordA = new MirrorCoordinator(tasks, wsId);
     await coordA.observe(grabbed.adapter);
     await expect(coordA.advertiseClaim(await tasks.get(task.id))).resolves.toBeUndefined();
-    expect(grabbed.calls.claim).toEqual([7]);
+    expect(grabbed.calls.claim).toEqual(['7']);
     expect(grabbed.calls.read).toEqual([]);
 
     const open = fakeAdapter();
@@ -96,7 +97,7 @@ describe('MirrorCoordinator (issue #32)', () => {
     const coordB = new MirrorCoordinator(tasks, wsId);
     await coordB.observe(open.adapter);
     await expect(coordB.advertiseClaim(await tasks.get(task.id))).resolves.toBeUndefined();
-    expect(open.calls.claim).toEqual([7]);
+    expect(open.calls.claim).toEqual(['7']);
 
     const failing = fakeAdapter({ claimThrows: true });
     failing.setRead(ticket(7, []));
@@ -120,13 +121,13 @@ describe('MirrorCoordinator (issue #32)', () => {
     await coord.observe(adapter);
     await coord.reconcile();
 
-    expect(calls.claim).toEqual([10, 14]);
-    expect(calls.release).toEqual([11]);
+    expect(calls.claim).toEqual(['10', '14']);
+    expect(calls.release).toEqual(['11']);
     expect(calls.read).toEqual([]);
-    expect(calls.release).not.toContain(14);
-    expect(calls.claim).not.toContain(12);
-    expect(calls.release).not.toContain(12);
-    expect(calls.release).not.toContain(13);
+    expect(calls.release).not.toContain('14');
+    expect(calls.claim).not.toContain('12');
+    expect(calls.release).not.toContain('12');
+    expect(calls.release).not.toContain('13');
   });
 
   it('reconcile: idempotency guard skips redundant claim/release when state is unchanged, re-writes on change (issue #232)', async () => {
@@ -140,19 +141,19 @@ describe('MirrorCoordinator (issue #32)', () => {
     await coord.observe(adapter);
 
     await coord.reconcile();
-    expect(calls.claim).toEqual([20]);
-    expect(calls.release).toEqual([21]);
+    expect(calls.claim).toEqual(['20']);
+    expect(calls.release).toEqual(['21']);
 
     await coord.reconcile();
-    expect(calls.claim).toEqual([20]);
-    expect(calls.release).toEqual([21]);
+    expect(calls.claim).toEqual(['20']);
+    expect(calls.release).toEqual(['21']);
 
     await tasks.escalate(running.id, 'escalated to human: attempt 2 of 2 failed');
     await coord.reconcile();
-    expect(calls.claim).toEqual([20]);
-    expect(calls.release).toEqual([21, 20]);
+    expect(calls.claim).toEqual(['20']);
+    expect(calls.release).toEqual(['21', '20']);
 
     await coord.reconcile();
-    expect(calls.release).toEqual([21, 20]);
+    expect(calls.release).toEqual(['21', '20']);
   });
 });

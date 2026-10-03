@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { trackerRef } from '../src/tracker/adapter.js';
 import { createElement } from 'react';
 import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -109,7 +110,7 @@ describe('ExportPanel', () => {
 
 describe('ExportPanel for an Epic', () => {
   it('reads the Epic endpoints, names the Epic, and downloads from the Epic route', async () => {
-    const epic = epicExportTarget(3, 42);
+    const epic = epicExportTarget(3, trackerRef(42));
     const host = await mount({ ...epic, load: async () => status({ latest: { ...latest, partial: true } }) });
 
     expect(host.querySelector('a[download]')?.getAttribute('href')).toBe('/api/workspaces/3/epics/42/export/download');
@@ -124,7 +125,7 @@ describe('ExportPanel for an Epic', () => {
       return new Response(JSON.stringify({ exportable: true, latest: null, earlier: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
     }) as typeof fetch;
     try {
-      const epic = epicExportTarget(3, 42);
+      const epic = epicExportTarget(3, trackerRef(42));
       await epic.load();
       await epic.exportAgain();
     } finally {

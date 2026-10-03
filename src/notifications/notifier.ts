@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { createHmac } from 'node:crypto';
 import nodemailer from 'nodemailer';
 import type { TaskRow } from '../db/schema.js';
@@ -35,7 +36,7 @@ export interface NotificationPayload {
 
 export interface ExportFailureDetail {
   /** Set when the Export is an Epic's rather than a Task's. */
-  epicRef?: number;
+  epicRef?: TrackerRef;
   destination: string;
   disposition: string;
   error: string;

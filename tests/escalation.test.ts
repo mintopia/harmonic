@@ -17,6 +17,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 describe('escalation', () => {
   describe('escalation: the disposition actions (direct mode)', () => {
@@ -186,7 +187,7 @@ describe('escalation', () => {
         });
         const workspaceId = (await escServer.app.ctx.workspaces.list())[0]!.id;
         const mirrored = await escServer.app.ctx.tasks.upsertMirrored(
-          { trackerRef: 31_401, prompt: 'ticket 31401', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+          { trackerRef: trackerRef(31_401), prompt: 'ticket 31401', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
           workspaceId,
         );
         expect((await escServer.api('POST', `/api/tasks/${mirrored.id}/run`)).status).toBe(201);

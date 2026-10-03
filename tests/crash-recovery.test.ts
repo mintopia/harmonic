@@ -16,6 +16,7 @@ import type { TaskRow, AttemptRow } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import { yieldToEventLoop } from '../src/reliability/yield.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
@@ -225,8 +226,8 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
   it('settles an interrupted Epic Attempt and notifies the Epic reconciler so its next poll can retry verification', async () => {
     const workspaces = new WorkspaceService(asyncDb, settingsStore);
     const workspace = await workspaces.create({ name: 'Epic recovery', workingDir: repo });
-    await tasks.syncEpics(workspace.id, [{ ref: 42, kind: 'epic' }]);
-    const attempt = await attempts.createForEpic({ workspaceId: workspace.id, epicRef: 42 });
+    await tasks.syncEpics(workspace.id, [{ ref: trackerRef(42), kind: 'epic' }]);
+    const attempt = await attempts.createForEpic({ workspaceId: workspace.id, epicRef: trackerRef(42) });
     const onEpicAttemptInterrupted = vi.fn();
     const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, {
       runPostMergeCheck: async () => ({ pass: true, output: '' }),
@@ -236,7 +237,7 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     await coord.reconcile();
 
     expect(await attempts.get(attempt.id)).toMatchObject({ state: 'failed', reason: 'process-death' });
-    expect(onEpicAttemptInterrupted).toHaveBeenCalledWith(expect.objectContaining({ id: attempt.id, workspaceId: workspace.id, epicRef: 42 }));
+    expect(onEpicAttemptInterrupted).toHaveBeenCalledWith(expect.objectContaining({ id: attempt.id, workspaceId: workspace.id, epicRef: '42' }));
   });
 
   it('leaves a paused Task paused while marking its interrupted Run failed', async () => {

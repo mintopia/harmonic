@@ -1,3 +1,4 @@
+import { trackerRef } from '../src/tracker/adapter.js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { trace } from '@opentelemetry/api';
 import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
@@ -24,7 +25,7 @@ describe('Epic Operations (issue #291)', () => {
   it('keeps cut, member work, healing, verification, integration, and retirement under one root across ticks', async () => {
     const exporter = installOperations();
     const operations = new EpicOperations();
-    const context = { repoDir: '/workspaces/harmonic', epicRef: 291, epicTitle: 'Operations refinement' };
+    const context = { repoDir: '/workspaces/harmonic', epicRef: trackerRef(291), epicTitle: 'Operations refinement' };
 
     for (const type of ['cut', 'member-merge', 'heal', 'member-merge', 'verify', 'merge', 'retire'] as const) {
       await operations.run({ ...context, type, work: async () => {} });
@@ -45,7 +46,7 @@ describe('Epic Operations (issue #291)', () => {
   it('finishes the Epic root with the terminal failure reason', async () => {
     const exporter = installOperations();
     const operations = new EpicOperations();
-    const context = { repoDir: '/workspaces/harmonic', epicRef: 291 };
+    const context = { repoDir: '/workspaces/harmonic', epicRef: trackerRef(291) };
 
     await operations.run({ ...context, type: 'member-merge', work: async () => {} });
     operations.fail({ ...context, reason: 'rebase conflicted after the bounded heal' });

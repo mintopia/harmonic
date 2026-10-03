@@ -5,6 +5,7 @@ import { startServer, waitFor, type TestServer } from './helpers.js';
 import { summarize } from '../src/server/dto.js';
 import { toMirrorInput } from '../src/tracker/mirror.js';
 import type { Ticket } from '../src/tracker/adapter.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 describe('task authoring', () => {
   let server: TestServer;
@@ -170,7 +171,7 @@ describe('task authoring', () => {
     const seededTask = await server.app.ctx.tasks.get(seeded.body.id);
     const mirrored = await server.app.ctx.tasks.upsertMirrored(
       {
-        trackerRef: 91234,
+        trackerRef: trackerRef(91234),
         prompt: 'mirrored issue',
         workflow: 'implement',
         wayfinderType: null,
@@ -186,7 +187,7 @@ describe('task authoring', () => {
     expect((await server.api('GET', `/api/tasks/${mirrored.id}`)).status).toBe(404);
 
     const tombstones = await server.app.ctx.asyncDb.read((d) =>
-      d.select().from(trackerDismissals).where(eq(trackerDismissals.trackerRef, 91234)).all(),
+      d.select().from(trackerDismissals).where(eq(trackerDismissals.trackerRef, trackerRef(91234))).all(),
     );
     expect(tombstones).toHaveLength(1);
     expect(tombstones[0]!.workspaceId).toBe(seededTask.workspaceId);
@@ -196,7 +197,7 @@ describe('task authoring', () => {
     const seeded = await server.api('POST', '/api/tasks', { prompt: 'seed ws for no-op mirror' });
     const ws = (await server.app.ctx.tasks.get(seeded.body.id)).workspaceId ?? undefined;
     const input = {
-      trackerRef: 90777,
+      trackerRef: trackerRef(90777),
       prompt: 'stable mirrored issue',
       workflow: 'implement' as const,
       wayfinderType: null,
@@ -398,8 +399,8 @@ describe('task skipReason (issue #171)', () => {
 describe('task list parent filter — Epic children (ADR-0011, #411)', () => {
   let server: TestServer;
 
-  const childOf = (number: number, parent: number, title: string): Ticket => ({
-    number,
+  const childOf = (num: number, parentNum: number, title: string): Ticket => ({
+    number: trackerRef(num),
     title,
     state: 'open',
     body: '',
@@ -407,12 +408,12 @@ describe('task list parent filter — Epic children (ADR-0011, #411)', () => {
     closedAt: null,
     labels: [],
     assignees: [],
-    parent,
+    parent: trackerRef(parentNum),
     blockedBy: [],
     blocking: [],
     comments: [],
     isMap: false,
-    url: `https://github.com/mintopia/harmonic/issues/${number}`,
+    url: `https://github.com/mintopia/harmonic/issues/${num}`,
   });
 
   beforeAll(async () => {
@@ -431,7 +432,7 @@ describe('task list parent filter — Epic children (ADR-0011, #411)', () => {
     const res = await server.api('GET', '/api/tasks?parent=42');
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(2);
-    expect(res.body.tasks.map((t: any) => t.trackerRef).sort()).toEqual([501, 502]);
+    expect(res.body.tasks.map((t: any) => t.trackerRef).sort()).toEqual(['501', '502']);
   });
 
   it('paginates and totals over the filtered child set', async () => {
@@ -448,8 +449,8 @@ describe('task list parent filter — Epic children (ADR-0011, #411)', () => {
     expect(res.body.tasks).toHaveLength(0);
   });
 
-  it('rejects a non-positive parent ref', async () => {
-    const res = await server.api('GET', '/api/tasks?parent=0');
+  it('rejects an empty parent ref', async () => {
+    const res = await server.api('GET', '/api/tasks?parent=');
     expect(res.status).toBe(400);
   });
 });

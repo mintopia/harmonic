@@ -20,12 +20,13 @@ import {
   type TranscriptGroup,
 } from '../web/src/agent-messages-model.js';
 import type { AgentMessage, AgentMessageThread, AgentMessageThreadParticipant } from '../web/src/types.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const NOW = new Date(2026, 9, 3, 15, 0, 0).getTime();
 const at = (h: number, m: number, s = 0, day = 3) => new Date(2026, 9, day, h, m, s).getTime();
 
 function participant(taskId: number, over: Partial<AgentMessageThreadParticipant> = {}): AgentMessageThreadParticipant {
-  return { taskId, title: `Task ${taskId}`, harness: 'claude', epicId: 400, deleted: false, model: null, state: 'working', betweenAttempts: false, attemptNumber: 1, sends: 0, sendCap: 10, lastMessageAt: null, ...over };
+  return { taskId, title: `Task ${taskId}`, harness: 'claude', epicId: trackerRef(400), deleted: false, model: null, state: 'working', betweenAttempts: false, attemptNumber: 1, sends: 0, sendCap: 10, lastMessageAt: null, ...over };
 }
 
 function message(id: string, sender: number, createdAt: number, over: Partial<AgentMessage> = {}): AgentMessage {
@@ -61,7 +62,7 @@ function thread(id: string, over: Partial<AgentMessageThread> = {}): AgentMessag
 
 describe('filterThreads', () => {
   const a = thread('a', { latestAt: 100, live: true });
-  const b = thread('b', { latestAt: 300, participants: [participant(3, { epicId: 500 }), participant(4, { epicId: 500 })] });
+  const b = thread('b', { latestAt: 300, participants: [participant(3, { epicId: trackerRef(500) }), participant(4, { epicId: trackerRef(500) })] });
   const c = thread('c', { latestAt: 200, messages: [message('c1', 1, 1, { parts: [{ kind: 'text', text: 'Rename the Retire helper' }] })] });
   const all = [a, b, c];
 
@@ -75,7 +76,7 @@ describe('filterThreads', () => {
   });
 
   it('filters by Epic and by Task participation', () => {
-    expect(filterThreads(all, { ...NO_THREAD_FILTER, epicId: 500 }).map((t) => t.threadId)).toEqual(['b']);
+    expect(filterThreads(all, { ...NO_THREAD_FILTER, epicId: trackerRef(500) }).map((t) => t.threadId)).toEqual(['b']);
     expect(filterThreads(all, { ...NO_THREAD_FILTER, taskId: 4 }).map((t) => t.threadId)).toEqual(['b']);
     expect(filterThreads(all, { ...NO_THREAD_FILTER, taskId: 1 }).map((t) => t.threadId)).toEqual(['c', 'a']);
   });
@@ -87,12 +88,12 @@ describe('filterThreads', () => {
   });
 
   it('combines filters', () => {
-    expect(filterThreads(all, { workspaceId: null, epicId: 400, taskId: 2, liveOnly: true, query: 'text' }).map((t) => t.threadId)).toEqual(['a']);
+    expect(filterThreads(all, { workspaceId: null, epicId: trackerRef(400), taskId: 2, liveOnly: true, query: 'text' }).map((t) => t.threadId)).toEqual(['a']);
   });
 
   it('derives Epic and Task options', () => {
-    expect(epicOptions(all).map((o) => o.epicId)).toEqual([400, 500]);
-    expect(taskOptions(all, 500).map((t) => t.taskId)).toEqual([3, 4]);
+    expect(epicOptions(all).map((o) => o.epicId)).toEqual(['400', '500']);
+    expect(taskOptions(all, trackerRef(500)).map((t) => t.taskId)).toEqual([3, 4]);
     expect(taskOptions([thread('d', { participants: [participant(1), participant(9, { deleted: true, title: null })] })], null).map((t) => t.taskId)).toEqual([1]);
   });
 
@@ -234,8 +235,8 @@ describe('bodyParts', () => {
 });
 
 describe('Global scope', () => {
-  const harmonic = thread('h', { latestAt: 300, participants: [participant(1, { epicId: 400 }), participant(2, { epicId: 400 })] });
-  const other = thread('o', { workspaceId: 2, workspaceName: 'Atlas', latestAt: 200, participants: [participant(1, { epicId: 400 }), participant(7, { epicId: 9 })] });
+  const harmonic = thread('h', { latestAt: 300, participants: [participant(1, { epicId: trackerRef(400) }), participant(2, { epicId: trackerRef(400) })] });
+  const other = thread('o', { workspaceId: 2, workspaceName: 'Atlas', latestAt: 200, participants: [participant(1, { epicId: trackerRef(400) }), participant(7, { epicId: trackerRef(9) })] });
   const both = [harmonic, other];
 
   it('aggregates Threads from both Workspaces newest first', () => {
@@ -262,9 +263,9 @@ describe('Global scope', () => {
 
   it('keys Epic options by Workspace, prefixing the name only when asked', () => {
     expect(epicOptions(both, null, true).map((o) => [o.key, o.label])).toEqual([
-      [epicKey(2, 9), 'Atlas · Epic #9'],
-      [epicKey(2, 400), 'Atlas · Epic #400'],
-      [epicKey(1, 400), 'Harmonic · Epic #400'],
+      [epicKey(2, trackerRef(9)), 'Atlas · Epic #9'],
+      [epicKey(2, trackerRef(400)), 'Atlas · Epic #400'],
+      [epicKey(1, trackerRef(400)), 'Harmonic · Epic #400'],
     ]);
     expect(epicOptions(both, 2).map((o) => o.label)).toEqual(['Epic #9', 'Epic #400']);
     expect(taskOptions(both, null, 2).map((t) => t.taskId)).toEqual([1, 7]);

@@ -12,7 +12,7 @@ import type {
 } from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import type { IsolationMode, Priority } from '../config.js';
-import type { Ticket } from '../tracker/adapter.js';
+import type { Ticket, TrackerRef } from '../tracker/adapter.js';
 import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
 import { worktreeId, type WorktreeInventoryEntry } from '../domain/worktree-inventory.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
@@ -436,7 +436,7 @@ export function toListRow({ prompt: _prompt, ...row }: ApiTask): ApiTaskListRow 
 export function epicToListRow(ticket: Ticket, workspaceId: number): ApiTaskListRow {
   const created = Date.parse(ticket.createdAt) || 0;
   return {
-    id: ticket.number,
+    id: 0,
     workspaceId,
     harness: '',
     model: '',
@@ -585,7 +585,7 @@ export interface ApiActivityProcess {
   /** Epoch ms the process started; the client derives elapsed from it. */
   startedAt: number;
   /** The mirrored issue's tracker ref (an Attempt's Task); null on native Tasks and Conversations. */
-  trackerRef: number | null;
+  trackerRef: TrackerRef | null;
   /** The mirrored issue's tracker URL; null on native Tasks, Conversations, or before a poll. */
   trackerUrl: string | null;
   /** True when the Task is escalated; always false for a Conversation. */
@@ -642,7 +642,7 @@ export function epicAttemptProcessToApi(input: {
   run: AttemptRow;
   workspaceId: number;
   workspaceName: string;
-  epicRef: number;
+  epicRef: TrackerRef;
   harness: string;
   model: string;
   trackerUrl: string | null;

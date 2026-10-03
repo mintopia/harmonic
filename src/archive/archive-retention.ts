@@ -1,3 +1,4 @@
+import { trackerRef, type TrackerRef } from '../tracker/adapter.js';
 import { readdir, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { logger } from '../logger.js';
@@ -25,7 +26,8 @@ export interface ArchivePruneDeps {
 
 interface Manifest {
   taskId?: number;
-  epicRef?: number;
+  /** Legacy manifests stored the ref as a number. */
+  epicRef?: TrackerRef | number;
   workspaceId?: number | null;
   dispositions?: { at?: string }[];
   deleted?: { at?: string };
@@ -75,8 +77,8 @@ function latestExportAt(exports: ExportRecord[]): number | null {
 }
 
 function ownerKey(manifest: Manifest): string | null {
-  if (typeof manifest.epicRef === 'number' && typeof manifest.workspaceId === 'number') {
-    return exportOwnerKey({ kind: 'epic', workspaceId: manifest.workspaceId, epicRef: manifest.epicRef });
+  if (manifest.epicRef != null && typeof manifest.workspaceId === 'number') {
+    return exportOwnerKey({ kind: 'epic', workspaceId: manifest.workspaceId, epicRef: trackerRef(manifest.epicRef) });
   }
   return typeof manifest.taskId === 'number' ? exportOwnerKey({ kind: 'task', task: { id: manifest.taskId } }) : null;
 }
@@ -85,7 +87,7 @@ async function terminalAt(manifest: Manifest, deps: ArchivePruneDeps): Promise<n
   const deletedAt = manifest.deleted ? Date.parse(manifest.deleted.at ?? '') : NaN;
   if (Number.isFinite(deletedAt)) return deletedAt;
   if (typeof manifest.taskId === 'number') return await deps.taskTerminalAt(manifest.taskId);
-  if (typeof manifest.epicRef === 'number') {
+  if (manifest.epicRef != null) {
     const stamped = Date.parse(manifest.dispositions?.[0]?.at ?? '');
     return Number.isFinite(stamped) ? stamped : null;
   }

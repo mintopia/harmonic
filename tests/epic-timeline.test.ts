@@ -14,7 +14,7 @@ const TASK_TIMELINE_EVENTS = [
 
 function epic(): Epic {
   return {
-    ref: 701,
+    ref: '701',
     title: 'Timeline',
     kind: 'spec',
     state: 'integrated',

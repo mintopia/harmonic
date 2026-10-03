@@ -2,6 +2,9 @@ import type { Verdict } from '../../src/verification/critic-schema.js';
 
 /** The stored Ticket states; blocked-ness and agent-workability are derived, never stored. */
 export const TASK_STATES = ['draft', 'ready', 'working', 'paused', 'escalated', 'done', 'cancelled'] as const;
+/** An opaque tracker ticket ref (`185`, `PROJ-185`): never parse or do arithmetic on it; compare with ===. */
+export type TrackerRef = string;
+
 export type TaskState = (typeof TASK_STATES)[number];
 
 export interface UpdateState {
@@ -222,7 +225,7 @@ export interface AgentMessageThreadParticipant {
   taskId: number;
   title: string | null;
   harness: string | null;
-  epicId: number | null;
+  epicId: TrackerRef | null;
   deleted: boolean;
   model: string | null;
   state: TaskState | null;
@@ -265,11 +268,11 @@ export interface Cost {
  */
 export interface MapRollup {
   workspaceId: number;
-  ref: number;
+  ref: TrackerRef;
   title: string;
   url: string;
   /** Tracker refs of the mirrored Tasks under this Map. */
-  taskRefs: number[];
+  taskRefs: TrackerRef[];
   /** Task count per state present under this Map. */
   counts: Record<string, number>;
 }
@@ -561,13 +564,13 @@ export interface Task {
   /** native = authored here; mirrored = a projection of a tracker issue. */
   origin: TaskOrigin;
   /** The mirrored issue's number; null on native Tasks. */
-  trackerRef: number | null;
+  trackerRef: TrackerRef | null;
   /** Mirrored role: which workflow the tracker labelled it; null on native Tasks. */
   workflow: Workflow | null;
   /** Mirrored role: the wayfinder decision kind; null on native/implement Tasks. */
   wayfinderType: WayfinderType | null;
   /** The parent Map's tracker ref; null when unmapped or native. */
-  mapRef: number | null;
+  mapRef: TrackerRef | null;
   /** The mirrored issue's tracker URL, from the last poll; null on native Tasks or before a poll. */
   url: string | null;
   /** The parent Map's title, resolved from mapRef; null when unmapped or before a poll. */
@@ -1015,7 +1018,7 @@ export interface ActivityProcess {
   isolation: string;
   /** Epoch ms the process started; the client derives elapsed from it. */
   startedAt: number;
-  trackerRef: number | null;
+  trackerRef: TrackerRef | null;
   /** The mirrored issue's tracker URL — the row's ticket deep-link; null on native Tasks, Conversations, or before a poll. */
   trackerUrl: string | null;
   /** True when the Task is escalated — the "Needs you" signal; always false for a Conversation. */
@@ -1060,7 +1063,7 @@ export interface TimelineAttempt {
   model: string;
   /** An AttemptState: 'running' | 'passed' | 'failed' | 'escalated' | 'cancelled'. */
   state: string;
-  trackerRef: number | null;
+  trackerRef: TrackerRef | null;
   startedAt: number;
   endedAt: number | null;
   /** Frozen Cost for a finished Attempt; null while running or when nothing was priceable. */

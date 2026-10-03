@@ -7,6 +7,7 @@ import type { AppConfig, DeepPartial } from '../src/config.js';
 import { eq } from 'drizzle-orm';
 import { epics, tasks, workspaces } from '../src/db/schema.js';
 import { startServer, type TestServer } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const TOKEN = `ghp_${'a1B2c3D4e5F6'.repeat(3)}`;
 
@@ -115,8 +116,8 @@ describe('Manual Export actions', () => {
     const seedEpic = async (srv: TestServer, ref: number, state: 'open' | 'integrated'): Promise<number> => {
       const { ctx } = srv.app;
       const workspaceId = (await ctx.asyncDb.read((d) => d.select().from(workspaces).get()))!.id;
-      await ctx.asyncDb.write((d) => d.insert(epics).values({ workspaceId, trackerRef: ref, kind: 'epic', state: 'open' } as typeof epics.$inferInsert).run());
-      if (state === 'integrated') await ctx.tasks.markEpicIntegrated(workspaceId, ref, { mergeCommit: 'abc', memberRefs: [] });
+      await ctx.asyncDb.write((d) => d.insert(epics).values({ workspaceId, trackerRef: trackerRef(ref), kind: 'epic', state: 'open' } as typeof epics.$inferInsert).run());
+      if (state === 'integrated') await ctx.tasks.markEpicIntegrated(workspaceId, trackerRef(ref), { mergeCommit: 'abc', memberRefs: [] });
       return workspaceId;
     };
     const base = (workspaceId: number, ref: number): string => `/api/workspaces/${workspaceId}/epics/${ref}/export`;
@@ -137,7 +138,7 @@ describe('Manual Export actions', () => {
       writeFileSync(file, Buffer.from(await res.arrayBuffer()));
       const dest = mkdtempSync(join(root, 'edl-'));
       extract(file, dest);
-      expect(JSON.parse(readFileSync(join(dest, 'manifest.json'), 'utf8'))).toMatchObject({ format: 'harmonic-epic-export', epicRef: 61 });
+      expect(JSON.parse(readFileSync(join(dest, 'manifest.json'), 'utf8'))).toMatchObject({ format: 'harmonic-epic-export', epicRef: '61' });
       expect((await server.api('GET', base(ws, 61))).body.earlier).toEqual([]);
     });
 
@@ -147,7 +148,7 @@ describe('Manual Export actions', () => {
       expect((await bare.api('POST', base(ws, 62))).status).toBe(409);
       expect((await bare.api('GET', `${base(ws, 62)}/download`)).status).toBe(409);
       expect((await bare.api('POST', base(ws, 999))).status).toBe(404);
-      await bare.app.ctx.tasks.markEpicIntegrated(ws, 62, { mergeCommit: 'abc', memberRefs: [] });
+      await bare.app.ctx.tasks.markEpicIntegrated(ws, trackerRef(62), { mergeCommit: 'abc', memberRefs: [] });
       expect((await bare.api('POST', base(ws, 62))).status).toBe(409);
       expect((await bare.anonApi('POST', base(ws, 62))).status).toBe(401);
     });

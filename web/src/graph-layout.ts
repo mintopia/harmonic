@@ -1,5 +1,5 @@
 import ELK, { type ElkNode } from 'elkjs/lib/elk.bundled.js';
-import type { Task } from './types';
+import type { Task, TrackerRef } from './types';
 import { flattenElkLayout, type GraphEdge, type Layout, type LayoutOpts } from './graph-model';
 
 const elk = new ELK();
@@ -8,7 +8,7 @@ export async function layoutGraph(tasks: Task[], edges: GraphEdge[], opts: Layou
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const labelPad = opts.groupLabelPad ?? 34;
 
-  const maps = new Map<number, { title: string; members: Task[] }>();
+  const maps = new Map<TrackerRef, { title: string; members: Task[] }>();
   const loose: Task[] = [];
   for (const t of tasks) {
     if (t.mapRef != null) {

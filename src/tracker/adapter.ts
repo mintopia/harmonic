@@ -11,6 +11,14 @@ import type { RepositoryKind } from '../repository/detect.js';
 
 export type TicketState = 'open' | 'closed';
 
+/** An opaque tracker ticket ref (`185`, `PROJ-185`): Harmonic never parses, orders, or formats it; the owning kind renders it. */
+export type TrackerRef = string & { readonly __trackerRef: unique symbol };
+
+/** Brands a string read from a tracker, a CLI argument, or a DB row as a {@link TrackerRef}. */
+export function trackerRef(value: string | number): TrackerRef {
+  return String(value) as TrackerRef;
+}
+
 /** The label that marks a wayfinder Map — convention on every tracker; `isMap` hides which. */
 export const MAP_LABEL = 'wayfinder:map';
 
@@ -21,7 +29,7 @@ export { READY_FOR_AGENT_LABEL, READY_FOR_HUMAN_LABEL } from '../domain/agent-wo
 
 /** A directional edge target: the referenced ticket's portable identity + surface state. */
 export interface TicketRef {
-  number: number;
+  number: TrackerRef;
   title: string;
   state: TicketState;
 }
@@ -34,11 +42,11 @@ export interface TicketComment {
 
 /** The tracker-identity fields every tracker record carries; {@link Ticket} and the stored Epic are siblings over this base. */
 export interface TrackerIdentity {
-  number: number;
+  number: TrackerRef;
   title: string;
   state: TicketState;
   labels: string[];
-  parent: number | null;
+  parent: TrackerRef | null;
   blockedBy: TicketRef[];
 }
 

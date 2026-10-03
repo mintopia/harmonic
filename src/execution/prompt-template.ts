@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 /** The interpolation tokens a Drive-style prompt fills. `taskId`/`title`/
  * `description` are always populated — a native (non-mirrored) Task has no
  * ticket, so only `ref`/`url` go empty. */
@@ -15,8 +16,8 @@ type DriveTask = {
   harness: string;
   wayfinderType: string | null;
   prompt: string;
-  trackerRef: number | null;
-  mapRef: number | null;
+  trackerRef: TrackerRef | null;
+  mapRef: TrackerRef | null;
   epicKind?: string | null;
 };
 

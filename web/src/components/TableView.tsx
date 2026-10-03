@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../types.js';
 import { useEffect, useState } from 'react';
 import { formatCost } from '../cost';
 import type { Task, Workspace } from '../types';
@@ -50,7 +51,7 @@ export function TableView({
   epics: Epic[];
   onOpen: (task: Task) => void;
   /** Opens the Board focused on an epic's summary panel, keyed by tracker ref. */
-  onOpenEpic: (ref: number) => void;
+  onOpenEpic: (ref: TrackerRef) => void;
   /** Filter/sort selection — lives in the URL, owned by App. */
   filters: TableFilters;
   onFiltersChange: (next: TableFilters) => void;
@@ -192,17 +193,17 @@ export function TableView({
 
   const renderEpicRow = (task: Task) => (
     <div
-      key={`epic-${task.trackerRef ?? task.id}`}
+      key={`epic-${task.trackerRef ?? String(task.id)}`}
       role="row"
       className={`${GRID} min-h-11 cursor-pointer py-2 transition-colors duration-150 hover:bg-raised/50 max-md:py-3`}
-      onClick={() => onOpenEpic(task.trackerRef ?? task.id)}
+      onClick={() => onOpenEpic(task.trackerRef ?? String(task.id))}
     >
       <div role="cell" className="flex items-center justify-end gap-1.5 whitespace-nowrap tabular-nums text-muted max-md:col-start-1 max-md:row-start-1 max-md:justify-start">
         <span className={`${chip} shrink-0 bg-accent-tint text-accent`}>
           <span className="sr-only">Epic: </span>epic
         </span>
         <span className="sr-only">Issue: </span>
-        {issueRef(task.trackerRef ?? task.id)}
+        {issueRef(task.trackerRef ?? String(task.id))}
       </div>
       <div role="cell" className="flex min-w-0 items-center gap-2 pr-2 max-md:col-span-2 max-md:row-start-2 max-md:pr-0">
         <div className="min-w-0 flex-1">
@@ -212,7 +213,7 @@ export function TableView({
             className="block w-full cursor-pointer truncate text-left text-ink max-md:whitespace-normal max-md:overflow-visible max-md:font-medium"
             onClick={(e) => {
               e.stopPropagation();
-              onOpenEpic(task.trackerRef ?? task.id);
+              onOpenEpic(task.trackerRef ?? String(task.id));
             }}
           >
             {task.summary}

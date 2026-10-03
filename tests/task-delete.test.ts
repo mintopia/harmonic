@@ -9,6 +9,7 @@ import { TaskService } from '../src/domain/tasks.js';
 import { attempts, attemptEvents, sessions, taskDependencies, trackerDismissals, tasks } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 describe('TaskService.delete (issue #162)', () => {
   let dataDir: string;
@@ -99,7 +100,7 @@ describe('TaskService.delete (issue #162)', () => {
     const workspace = (await allWorkspaces(asyncDb, settingsStore)())[0]!;
     const mirrored = await tasksSvc.upsertMirrored(
       {
-        trackerRef: 4242,
+        trackerRef: trackerRef(4242),
         prompt: 'mirrored issue',
         workflow: 'implement',
         wayfinderType: null,
@@ -112,7 +113,7 @@ describe('TaskService.delete (issue #162)', () => {
     await tasksSvc.delete(mirrored.id);
 
     const tombstones = await asyncDb.read((d) =>
-      d.select().from(trackerDismissals).where(eq(trackerDismissals.trackerRef, 4242)).all(),
+      d.select().from(trackerDismissals).where(eq(trackerDismissals.trackerRef, trackerRef(4242))).all(),
     );
     expect(tombstones).toHaveLength(1);
     expect(tombstones[0]!.workspaceId).toBe(workspace.id);

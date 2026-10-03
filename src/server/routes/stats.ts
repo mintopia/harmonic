@@ -1,3 +1,4 @@
+import { trackerRef } from '../../tracker/adapter.js';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -190,7 +191,7 @@ const statsResponseSchema = z.object({
 
 /** Path param for the Epic-scoped surface: the Epic ticket's tracker ref. */
 const epicParamsSchema = z.object({
-  ref: z.coerce.number().int().positive().meta({ example: 410 }),
+  ref: z.string().min(1).meta({ example: '410' }),
 });
 
 async function computeStats(statsReader: StatsWorkerClient, range: StatsRange) {
@@ -253,7 +254,7 @@ export async function statsRoutes(fastify: FastifyInstance, ctx: Pick<Persistenc
       return computeStats(ctx.statsReader, {
         from,
         to,
-        epicRef: ref,
+        epicRef: trackerRef(ref),
         ...(workspaceId === undefined ? {} : { workspaceId }),
       });
     },

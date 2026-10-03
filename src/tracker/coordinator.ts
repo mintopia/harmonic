@@ -1,4 +1,4 @@
-import type { TicketRef, TrackerAdapter } from './adapter.js';
+import type { TicketRef, TrackerAdapter, TrackerRef } from './adapter.js';
 import type { TaskRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
 import { forEachYielding } from '../reliability/yield.js';
@@ -91,7 +91,7 @@ export class MirrorCoordinator {
   }
 }
 
-function ticketRef(task: TaskRow, number: number): TicketRef {
+function ticketRef(task: TaskRow, number: TrackerRef): TicketRef {
   return { number, title: task.prompt, state: 'open' };
 }
 

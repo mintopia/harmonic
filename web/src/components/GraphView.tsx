@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { Task } from '../types';
+import type { Task, TrackerRef } from '../types';
 import { api } from '../api';
 import { excludeEpicDrivers, type Epic } from '../epic-model';
 import { toastError } from '../toast';
@@ -56,7 +56,7 @@ export function GraphView({
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [showTerminal, setShowTerminal] = useState(false);
-  const [epicFilter, setEpicFilter] = useState<number | null>(null);
+  const [epicFilter, setEpicFilter] = useState<TrackerRef | null>(null);
 
   useEffect(() => {
     if (workspaceId === null) return;
@@ -188,7 +188,7 @@ export function GraphView({
                 aria-label="Filter by epic"
                 className={selectField}
                 value={epicFilter ?? ''}
-                onChange={(e) => setEpicFilter(e.target.value === '' ? null : Number(e.target.value))}
+                onChange={(e) => setEpicFilter(e.target.value === '' ? null : e.target.value)}
               >
                 <option value="">All epics</option>
                 {epics.map((epic) => (

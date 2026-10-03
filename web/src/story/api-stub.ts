@@ -1,4 +1,5 @@
 /* eslint-disable */
+import type { TrackerRef } from '../types.js';
 import * as f from './fixtures';
 import { agentMessageThreads } from './agent-message-fixtures';
 import { conversationDetail, conversationEventsFixture, conversationList, permissionRulesFixture } from './conversation-fixtures';
@@ -95,8 +96,8 @@ const dashboardStats = { ...f.statsFixture, byWorkspace: dashboardWorkspaces };
 
 const activityDefaults = { trackerUrl: null, escalated: false, usage: null, contextTokens: null, contextWindow: null, activity: null, tree: null, cost: null } as const;
 const activityProcesses: ActivityProcess[] = [
-  { type: 'attempt', attemptId: 9001, conversationId: null, taskId: 503, title: 'Per-task override UI + inherit toggle', workspaceId: 1, workspaceName: 'harmonic', harness: 'codex', model: 'gpt-5.1', state: 'running', isolation: 'worktree', startedAt: Date.now() - 9 * 60_000, trackerRef: 142, ...activityDefaults },
-  { type: 'attempt', attemptId: 9002, conversationId: null, taskId: 455, title: 'Baseline schema-sync boot repair', workspaceId: 1, workspaceName: 'harmonic', harness: 'claude', model: 'claude-opus-4-8', state: 'running', isolation: 'worktree', startedAt: Date.now() - 3 * 60_000, trackerRef: 455, ...activityDefaults },
+  { type: 'attempt', attemptId: 9001, conversationId: null, taskId: 503, title: 'Per-task override UI + inherit toggle', workspaceId: 1, workspaceName: 'harmonic', harness: 'codex', model: 'gpt-5.1', state: 'running', isolation: 'worktree', startedAt: Date.now() - 9 * 60_000, trackerRef: '142', ...activityDefaults },
+  { type: 'attempt', attemptId: 9002, conversationId: null, taskId: 455, title: 'Baseline schema-sync boot repair', workspaceId: 1, workspaceName: 'harmonic', harness: 'claude', model: 'claude-opus-4-8', state: 'running', isolation: 'worktree', startedAt: Date.now() - 3 * 60_000, trackerRef: '455', ...activityDefaults },
   { type: 'chat', attemptId: null, conversationId: 12, taskId: null, title: 'Sketching the dashboard band layout', workspaceId: 2, workspaceName: 'website', harness: 'claude', model: 'claude-sonnet-5', state: 'warm', isolation: 'direct', startedAt: Date.now() - 25 * 60_000, trackerRef: null, ...activityDefaults },
 ];
 
@@ -114,7 +115,7 @@ interface TimelineSpanBase {
   harness: string;
   model: string;
   state: AttemptState;
-  trackerRef: number;
+  trackerRef: TrackerRef;
   startedAt: number;
   endedAt: number | null;
 }
@@ -123,19 +124,19 @@ const timelineSpans = (to: number = TL_REF) => {
   const t = (hoursAgo: number) => Math.round(to - hoursAgo * H);
   const base: TimelineSpanBase[] = [
     // Deeper history so zooming out / panning back reveals more than the last day.
-    { taskId: 4800, attemptId: 20, number: 1, title: 'Retire .harmonic-live reaper', harness: 'claude', model: 'claude-opus-4-8', state: 'passed', trackerRef: 401, startedAt: t(120), endedAt: t(117.5) },
-    { taskId: 4801, attemptId: 21, number: 2, title: 'Epic follows develop advance', harness: 'codex', model: 'gpt-5.6', state: 'failed', trackerRef: 435, startedAt: t(74), endedAt: t(71) },
-    { taskId: 4802, attemptId: 22, number: 1, title: 'Baseline schema-sync boot repair', harness: 'copilot', model: 'gpt-5.6', state: 'passed', trackerRef: 455, startedAt: t(50), endedAt: t(47.2) },
-    { taskId: 4821, attemptId: 1, number: 1, title: 'Worktree inventory API', harness: 'claude', model: 'claude-opus-4-8', state: 'passed', trackerRef: 481, startedAt: t(22), endedAt: t(21.1) },
-    { taskId: 4822, attemptId: 2, number: 2, title: 'Rate-limit ACP reconnect', harness: 'claude', model: 'claude-opus-4-8', state: 'escalated', trackerRef: 470, startedAt: t(19.5), endedAt: t(18) },
-    { taskId: 4823, attemptId: 3, number: 1, title: 'Post-merge revert-on-red', harness: 'claude', model: 'claude-opus-4-8', state: 'passed', trackerRef: 460, startedAt: t(9.5), endedAt: t(8.1) },
-    { taskId: 4824, attemptId: 4, number: 2, title: 'AA-clear the running amber', harness: 'claude', model: 'claude-sonnet-5', state: 'running', trackerRef: 458, startedAt: t(1.7), endedAt: null },
-    { taskId: 4840, attemptId: 5, number: 1, title: 'Delete legacy gate module', harness: 'codex', model: 'gpt-5.6', state: 'passed', trackerRef: 380, startedAt: t(21), endedAt: t(19.4) },
-    { taskId: 4841, attemptId: 6, number: 1, title: 'Force-cleanup orphaned worktrees', harness: 'codex', model: 'gpt-5.6', state: 'passed', trackerRef: 482, startedAt: t(6), endedAt: t(3.6) },
-    { taskId: 4842, attemptId: 7, number: 2, title: 'Baseline schema-sync repair', harness: 'codex', model: 'gpt-5.6', state: 'running', trackerRef: 455, startedAt: t(4.2), endedAt: null },
-    { taskId: 4850, attemptId: 8, number: 1, title: 'URL carries diff + attempt selection', harness: 'copilot', model: 'gpt-5.6', state: 'passed', trackerRef: 449, startedAt: t(18.5), endedAt: t(16) },
-    { taskId: 4851, attemptId: 9, number: 2, title: 'Flaky merge-race guard', harness: 'copilot', model: 'gpt-5.6', state: 'failed', trackerRef: 471, startedAt: t(11), endedAt: t(9.3) },
-    { taskId: 4852, attemptId: 10, number: 1, title: 'Reconcile-on-demand button', harness: 'copilot', model: 'gpt-5.6', state: 'cancelled', trackerRef: 488, startedAt: t(5), endedAt: t(4.2) },
+    { taskId: 4800, attemptId: 20, number: 1, title: 'Retire .harmonic-live reaper', harness: 'claude', model: 'claude-opus-4-8', state: 'passed', trackerRef: '401', startedAt: t(120), endedAt: t(117.5) },
+    { taskId: 4801, attemptId: 21, number: 2, title: 'Epic follows develop advance', harness: 'codex', model: 'gpt-5.6', state: 'failed', trackerRef: '435', startedAt: t(74), endedAt: t(71) },
+    { taskId: 4802, attemptId: 22, number: 1, title: 'Baseline schema-sync boot repair', harness: 'copilot', model: 'gpt-5.6', state: 'passed', trackerRef: '455', startedAt: t(50), endedAt: t(47.2) },
+    { taskId: 4821, attemptId: 1, number: 1, title: 'Worktree inventory API', harness: 'claude', model: 'claude-opus-4-8', state: 'passed', trackerRef: '481', startedAt: t(22), endedAt: t(21.1) },
+    { taskId: 4822, attemptId: 2, number: 2, title: 'Rate-limit ACP reconnect', harness: 'claude', model: 'claude-opus-4-8', state: 'escalated', trackerRef: '470', startedAt: t(19.5), endedAt: t(18) },
+    { taskId: 4823, attemptId: 3, number: 1, title: 'Post-merge revert-on-red', harness: 'claude', model: 'claude-opus-4-8', state: 'passed', trackerRef: '460', startedAt: t(9.5), endedAt: t(8.1) },
+    { taskId: 4824, attemptId: 4, number: 2, title: 'AA-clear the running amber', harness: 'claude', model: 'claude-sonnet-5', state: 'running', trackerRef: '458', startedAt: t(1.7), endedAt: null },
+    { taskId: 4840, attemptId: 5, number: 1, title: 'Delete legacy gate module', harness: 'codex', model: 'gpt-5.6', state: 'passed', trackerRef: '380', startedAt: t(21), endedAt: t(19.4) },
+    { taskId: 4841, attemptId: 6, number: 1, title: 'Force-cleanup orphaned worktrees', harness: 'codex', model: 'gpt-5.6', state: 'passed', trackerRef: '482', startedAt: t(6), endedAt: t(3.6) },
+    { taskId: 4842, attemptId: 7, number: 2, title: 'Baseline schema-sync repair', harness: 'codex', model: 'gpt-5.6', state: 'running', trackerRef: '455', startedAt: t(4.2), endedAt: null },
+    { taskId: 4850, attemptId: 8, number: 1, title: 'URL carries diff + attempt selection', harness: 'copilot', model: 'gpt-5.6', state: 'passed', trackerRef: '449', startedAt: t(18.5), endedAt: t(16) },
+    { taskId: 4851, attemptId: 9, number: 2, title: 'Flaky merge-race guard', harness: 'copilot', model: 'gpt-5.6', state: 'failed', trackerRef: '471', startedAt: t(11), endedAt: t(9.3) },
+    { taskId: 4852, attemptId: 10, number: 1, title: 'Reconcile-on-demand button', harness: 'copilot', model: 'gpt-5.6', state: 'cancelled', trackerRef: '488', startedAt: t(5), endedAt: t(4.2) },
   ];
   return base.map((s) => ({
     ...s,
@@ -205,7 +206,7 @@ const fsListing = (path?: string): FsListing => ({
 
 const worktreeFixtures: WorktreeInventoryEntry[] = [
   { id: 'wt-1', workspaceId: 1, path: '/home/workspace/.harmonic-worktrees/task-172', branch: 'harmonic/task-172', subject: { kind: 'task', taskId: 172, title: f.task.summary }, sizeBytes: 84_000_000, dirty: false, changeCount: 0, state: 'Active' },
-  { id: 'wt-2', workspaceId: 1, path: '/home/workspace/.harmonic-worktrees/epic-166', branch: 'epic/166', subject: { kind: 'epic', epicRef: 166, title: f.epic.title }, sizeBytes: 92_000_000, dirty: true, changeCount: 4, state: 'Dirty' },
+  { id: 'wt-2', workspaceId: 1, path: '/home/workspace/.harmonic-worktrees/epic-166', branch: 'epic/166', subject: { kind: 'epic', epicRef: '166', title: f.epic.title }, sizeBytes: 92_000_000, dirty: true, changeCount: 4, state: 'Dirty' },
 ];
 
 const channelFixtures: Channel[] = [
@@ -252,7 +253,7 @@ export const api: typeof RealApi = {
   testExportDestination: (body: { destination: 'directory' | 's3' }) => ok({ destination: body.destination, ok: true, testedAt: new Date().toISOString() }),
   replaceConfig: (_config: AppConfig) => ok(f.config),
   revertConfig: () => ok(f.config),
-  tasks: (opts?: { workspaceId?: number; state?: 'open'; parent?: number; limit?: number; offset?: number }) =>
+  tasks: (opts?: { workspaceId?: number; state?: 'open'; parent?: TrackerRef; limit?: number; offset?: number }) =>
     opts?.parent !== undefined ? ok({ tasks: f.epicChildren, total: f.epicChildren.length }) : ok({ tasks: [f.task], total: 1 }),
   task: (_id: number) => ok(f.task),
   notifications: (_opts?: { workspaceId?: number; limit?: number; before?: number }) => ok({ items: [], unreadCount: 0 }),
@@ -267,7 +268,7 @@ export const api: typeof RealApi = {
   },
   timeline: (_workspaceId: number | undefined, from: number, to: number) =>
     ok({ attempts: timelineSpans().filter((s) => s.startedAt <= to && (s.endedAt ?? Date.now()) >= from), from, to }),
-  epicStats: (_epicRef: number, _workspaceId: number) => ok(f.epicStats),
+  epicStats: (_epicRef: TrackerRef, _workspaceId: number) => ok(f.epicStats),
   createTask: (_input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready' }) => ok(f.task),
   browseFs: (path?: string) => ok(fsListing(path)),
   workspaceFiles: (_workspaceId: number, path = '', offset = 0) => {
@@ -314,7 +315,7 @@ export const api: typeof RealApi = {
   addDependency: (_id: number, _dependsOnId: number) => ok(f.task),
   removeDependency: (_id: number, _depId: number) => ok(f.task),
   continuationPreview: (_id: number) => ok({ available: false as const }),
-  rejectEpic: (_workspaceId: number, _epicRef: number, _guidance: string, _continuation: 'continue' | 'fresh') =>
+  rejectEpic: (_workspaceId: number, _epicRef: TrackerRef, _guidance: string, _continuation: 'continue' | 'fresh') =>
     ok<EpicIntegrateOutcome>({ status: 'integrated', oid: 'a1b2c3d' }),
   acceptTask: (_id: number) => ok(f.task),
   rejectTask: (_id: number, _guidance: string, _start = false) => ok(f.task),
@@ -332,9 +333,9 @@ export const api: typeof RealApi = {
   taskExport: (_id: number) => ok({ exportable: true, latest: null, earlier: [] }),
   exportTaskAgain: (_id: number) => ok({ outcomes: [], export: { exportable: true, latest: null, earlier: [] } }),
   taskExportDownloadUrl: (id: number) => `/api/tasks/${id}/export/download`,
-  epicExport: (_workspaceId: number, _epicRef: number) => ok(epicIntegrated ? f.epicExportFixture : { exportable: true, latest: null, earlier: [] }),
-  exportEpicAgain: (_workspaceId: number, _epicRef: number) => ok({ outcomes: [], export: { exportable: true, latest: null, earlier: [] } }),
-  epicExportDownloadUrl: (workspaceId: number, epicRef: number) => `/api/workspaces/${workspaceId}/epics/${epicRef}/export/download`,
+  epicExport: (_workspaceId: number, _epicRef: TrackerRef) => ok(epicIntegrated ? f.epicExportFixture : { exportable: true, latest: null, earlier: [] }),
+  exportEpicAgain: (_workspaceId: number, _epicRef: TrackerRef) => ok({ outcomes: [], export: { exportable: true, latest: null, earlier: [] } }),
+  epicExportDownloadUrl: (workspaceId: number, epicRef: TrackerRef) => `/api/workspaces/${workspaceId}/epics/${epicRef}/export/download`,
   verificationOutputUrl: (id: number) => `/api/verification-attempts/${id}/output`,
   verificationFullOutput: (id: number) => ok(`full output of verification ${id}`),
   taskUsage: (id: number) =>
@@ -372,8 +373,8 @@ export const api: typeof RealApi = {
     ok({ ...(channelFixtures.find((c) => c.id === id) ?? channelFixtures[0]!), events: patch.events }),
   deleteChannel: (_id: number) => ok(undefined),
   epics: (_workspaceId: number, _opts?: { limit?: number; offset?: number; q?: string }) => ok({ epics: [f.epic], total: 1 }),
-  epic: (_workspaceId: number, _epicRef: number) => ok(epicIntegrated ? f.epicIntegrated : f.epic),
-  epicAttempts: (_workspaceId: number, _epicRef: number) => ok({ attempts: [] }),
-  epicDiffFiles: (_workspaceId: number, _epicRef: number) => ok({ files: f.diffFiles, total: f.diffFiles.length }),
+  epic: (_workspaceId: number, _epicRef: TrackerRef) => ok(epicIntegrated ? f.epicIntegrated : f.epic),
+  epicAttempts: (_workspaceId: number, _epicRef: TrackerRef) => ok({ attempts: [] }),
+  epicDiffFiles: (_workspaceId: number, _epicRef: TrackerRef) => ok({ files: f.diffFiles, total: f.diffFiles.length }),
   maps: (_opts?: { workspaceId?: number; limit?: number; offset?: number; q?: string }) => ok({ maps: [], total: 0 }),
 };

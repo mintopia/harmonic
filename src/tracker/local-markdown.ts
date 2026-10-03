@@ -4,7 +4,7 @@ import { basename, isAbsolute, join } from 'node:path';
 import { z } from 'zod';
 import { parseBlockedByField } from './relationships.js';
 import type { TrackerKind } from './kind.js';
-import { type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
+import { type Ticket, type TicketRef, type TicketState, type TrackerRef, trackerRef, type WritableTrackerAdapter } from './adapter.js';
 
 /** A `**Status:**` word that means the ticket is done. */
 const CLOSED_STATUS = /\b(done|closed|complete|completed|merged|shipped)\b/i;
@@ -91,8 +91,8 @@ export function localMarkdownAdapter(
 }
 
 /** Persist one lifecycle state through the adapter-owned Status field; returns the ticket file's absolute path so the caller can commit it. */
-async function writeStatus(root: string, ticketNumber: number, status: string, featureIndex?: FeatureIndex): Promise<string> {
-  const ticket = (await parseAll(root, featureIndex)).find((parsed) => parsed.id === ticketNumber && !parsed.isMap);
+async function writeStatus(root: string, ticketNumber: TrackerRef, status: string, featureIndex?: FeatureIndex): Promise<string> {
+  const ticket = (await parseAll(root, featureIndex)).find((parsed) => trackerRef(parsed.id) === ticketNumber && !parsed.isMap);
   if (!ticket) throw new Error(`local-markdown: no ticket #${ticketNumber} under ${root}`);
   const raw = await readFile(ticket.path, 'utf8');
   const field = `**Status:** ${status}`;
@@ -262,7 +262,7 @@ function synthesise(files: Parsed[]): Ticket[] {
   const byId = new Map(files.map((f) => [f.id, f]));
   const ref = (id: number): TicketRef | null => {
     const f = byId.get(id);
-    return f ? { number: f.id, title: f.title, state: f.state } : null;
+    return f ? { number: trackerRef(f.id), title: f.title, state: f.state } : null;
   };
   const blockedBy = new Map<number, Set<number>>(
     files.map((f) => [f.id, new Set(f.blockedBy.filter((b) => byId.has(b)))]),
@@ -272,7 +272,7 @@ function synthesise(files: Parsed[]): Ticket[] {
   const refs = (ids: Set<number>): TicketRef[] => [...ids].map(ref).filter((r): r is TicketRef => r !== null);
 
   return files.map((f) => ({
-    number: f.id,
+    number: trackerRef(f.id),
     title: f.title,
     state: f.state,
     body: f.body,
@@ -280,7 +280,7 @@ function synthesise(files: Parsed[]): Ticket[] {
     closedAt: f.closedAt,
     labels: f.labels,
     assignees: [],
-    parent: f.parent !== null && byId.has(f.parent) ? f.parent : null,
+    parent: f.parent !== null && byId.has(f.parent) ? trackerRef(f.parent) : null,
     blockedBy: refs(blockedBy.get(f.id)!),
     blocking: refs(blocking.get(f.id)!),
     comments: [],

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { eq, inArray } from 'drizzle-orm';
 import { attempts, tasks } from '../src/db/schema.js';
 import { startServer, stubHarness, type TestServer } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 describe('Agent Message Threads API', () => {
   let server: TestServer;
@@ -20,7 +21,7 @@ describe('Agent Message Threads API', () => {
   const mkTask = async (name: string, workspaceId: number, parent: number | null = null) => {
     const created = await server.api('POST', '/api/tasks', { prompt: name, workspaceId, state: 'draft' });
     const id = created.body.id as number;
-    await ctx().asyncDb.write((d) => d.update(tasks).set({ trackerParent: parent, harness: 'claude' }).where(eq(tasks.id, id)).run());
+    await ctx().asyncDb.write((d) => d.update(tasks).set({ trackerParent: parent === null ? null : trackerRef(parent), harness: 'claude' }).where(eq(tasks.id, id)).run());
     t[name] = id;
     attempt[name] = (await ctx().attempts.create(id)).id;
     await setAttemptState(attempt[name]!, 'failed');
@@ -108,14 +109,14 @@ describe('Agent Message Threads API', () => {
   it('orders de-duplicated participants by first appearance with Task facts', async () => {
     const a = (await get()).body.threads.find((th: any) => th.threadId === threadA);
     expect(a.participants.map((p: any) => p.taskId)).toEqual([t.a, t.b, t.c]);
-    expect(a.participants[0]).toEqual({ taskId: t.a, title: expect.any(String), harness: 'claude', epicId: 500, deleted: false, model: null, state: 'draft', betweenAttempts: false, attemptNumber: 1, sends: 2, sendCap: expect.any(Number), lastMessageAt: expect.any(Number) });
+    expect(a.participants[0]).toEqual({ taskId: t.a, title: expect.any(String), harness: 'claude', epicId: '500', deleted: false, model: null, state: 'draft', betweenAttempts: false, attemptNumber: 1, sends: 2, sendCap: expect.any(Number), lastMessageAt: expect.any(Number) });
     expect(a.workspaceName).toBe((await ctx().workspaces.list()).find((w) => w.id === ws1)!.name);
     const sentByB = a.messages.filter((m: any) => m.senderTaskId === t.b);
     expect(a.participants[1].lastMessageAt).toBe(sentByB.at(-1).createdAt);
     expect(a.participants[1].sends).toBe(1);
     expect(a.participants[2].lastMessageAt).toBeNull();
     expect(a.participants[2].sends).toBe(1); // attempt-wide: c's one send was in another Thread
-    expect(a.participants[2].epicId).toBe(600);
+    expect(a.participants[2].epicId).toBe('600');
   });
 
   it('scopes to a Workspace and returns nothing for a disabled one', async () => {

@@ -18,11 +18,12 @@ import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
 import type { OpenPRInput, RepositoryAdapter } from '../src/repository/adapter.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { executionPlumbing, allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const STUB = join(import.meta.dirname, 'stub-harness.mjs');
 
 const mirroredAfk = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput => ({
-  trackerRef: ref,
+  trackerRef: trackerRef(ref),
   prompt: `ticket ${ref}\n\nbody of ${ref}`,
   workflow: 'implement',
   wayfinderType: null,
@@ -34,7 +35,7 @@ const mirroredAfk = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput 
 const worktreeTask = (over: Partial<TaskRow> = {}): TaskRow =>
   ({
     id: 1,
-    trackerRef: 7,
+    trackerRef: trackerRef(7),
     prompt: 'Fix the bug\n\ndetails',
     workingDir: '/repo',
     isolationMode: 'worktree',
@@ -47,7 +48,7 @@ const run = (over: Partial<AttemptRow> = {}): AttemptRow =>
   ({ id: 1, number: 1, branch: 'harmonic/task-1-run-1', baseBranch: 'main', ...over }) as AttemptRow;
 
 function fakeAdapter(ticketState: 'open' | 'closed' = 'open') {
-  const calls = { close: [] as number[], reopen: [] as number[], openPR: [] as OpenPRInput[], read: [] as number[] };
+  const calls = { close: [] as string[], reopen: [] as string[], openPR: [] as OpenPRInput[], read: [] as string[] };
   const adapter: TrackerAdapter = {
     name: 'fake',
     scan: async () => [],
@@ -116,8 +117,8 @@ describe('Drive Prompt fill (issue #33)', () => {
       ...baselineConfig(),
       drive: { ...baselineConfig().drive, prompt: '{skill} {ref} {url}\n\n{title}::{description}' },
     };
-    const research = worktreeTask({ trackerRef: 9, wayfinderType: 'research', prompt: 'Investigate X\n\nwhy' });
-    const drive = new AutoDrive(() => config, (task) => (task.trackerRef === 9 ? 'https://x/9' : null));
+    const research = worktreeTask({ trackerRef: trackerRef(9), wayfinderType: 'research', prompt: 'Investigate X\n\nwhy' });
+    const drive = new AutoDrive(() => config, (task) => (task.trackerRef === '9' ? 'https://x/9' : null));
     expect(await drive.prompt(research)).toBe(`/research 9 https://x/9\n\nInvestigate X::why\n\n${reminder(1)}`);
   });
 
@@ -126,17 +127,17 @@ describe('Drive Prompt fill (issue #33)', () => {
       ...baselineConfig(),
       drive: { ...baselineConfig().drive, prompt: '{skill} {ref} {url}\n\n{title}::{description}' },
     };
-    const child = worktreeTask({ trackerRef: 7, mapRef: 100, workspaceId: 1, prompt: 'Chart it\n\nwhy' });
+    const child = worktreeTask({ trackerRef: trackerRef(7), mapRef: trackerRef(100), workspaceId: 1, prompt: 'Chart it\n\nwhy' });
     const drive = new AutoDrive(
       () => config,
       (task) => `https://x/${task.trackerRef}`,
       undefined,
       undefined,
-      async (_ws, ref) => (ref === 100 ? 'map' : null),
+      async (_ws, ref) => (ref === '100' ? 'map' : null),
     );
     expect(await drive.prompt(child)).toBe(`/wayfinder 100 https://x/100\n\nChart it::why\n\n${reminder(1)}`);
 
-    const plainChild = worktreeTask({ trackerRef: 7, mapRef: 200, workspaceId: 1, prompt: 'Build it\n\nnow' });
+    const plainChild = worktreeTask({ trackerRef: trackerRef(7), mapRef: trackerRef(200), workspaceId: 1, prompt: 'Build it\n\nnow' });
     const plainDrive = new AutoDrive(
       () => config,
       (task) => `https://x/${task.trackerRef}`,
@@ -153,11 +154,11 @@ describe('Drive Prompt fill (issue #33)', () => {
       drive: { ...baselineConfig().drive, prompt: '{skill} {ref}\n\n{title}::{description}' },
     };
     const drive = new AutoDrive(() => config, () => null);
-    const withFeedback = worktreeTask({ trackerRef: 9, prompt: 'Fix it\n\ndetails', feedback: '  tests are red  ' });
+    const withFeedback = worktreeTask({ trackerRef: trackerRef(9), prompt: 'Fix it\n\ndetails', feedback: '  tests are red  ' });
     expect(await drive.prompt(withFeedback)).toBe(
       `/implement 9\n\nFix it::details\n\n## Feedback from the previous attempt\n\ntests are red\n\n${reminder(1)}`,
     );
-    const plain = worktreeTask({ trackerRef: 9, prompt: 'Fix it\n\ndetails', feedback: null });
+    const plain = worktreeTask({ trackerRef: trackerRef(9), prompt: 'Fix it\n\ndetails', feedback: null });
     expect(await drive.prompt(plain)).toBe(`/implement 9\n\nFix it::details\n\n${reminder(1)}`);
   });
 
@@ -194,7 +195,7 @@ describe('Drive Prompt fill (issue #33)', () => {
       driveContinueAttempts: 5,
     };
     const drive = new AutoDrive(() => config, () => null, undefined, async () => wsOverride as never);
-    const task = worktreeTask({ id: 3, trackerRef: 9, workspaceId: 2 });
+    const task = worktreeTask({ id: 3, trackerRef: trackerRef(9), workspaceId: 2 });
     expect(await drive.prompt(task)).toBe('WS 9\n\nws-reminder 3');
     expect(await drive.continuePrompt(task)).toBe('ws-continue 3\n\nws-reminder 3');
     expect(await drive.continueAttempts(task)).toBe(5);
@@ -209,7 +210,7 @@ describe('Drive Prompt fill (issue #33)', () => {
     const open = fakeAdapter('open');
     const drive = new AutoDrive(() => baselineConfig(), () => null, async () => open.adapter);
     expect(await drive.closeTicket(worktreeTask(), 'Closed by a Harmonic operator without merging (task 1).')).toBe(true);
-    expect(open.calls.close).toEqual([7]);
+    expect(open.calls.close).toEqual(['7']);
 
     const closed = fakeAdapter('closed');
     const idempotent = new AutoDrive(() => baselineConfig(), () => null, async () => closed.adapter);
@@ -250,7 +251,7 @@ describe('Drive Prompt fill (issue #33)', () => {
     const { adapter, calls } = fakeAdapter('open');
     const drive = new AutoDrive(() => baselineConfig(), () => null, async () => adapter);
     expect(await drive.closeCompleted(worktreeTask())).toBe(true);
-    expect(calls.close).toEqual([7]);
+    expect(calls.close).toEqual(['7']);
   });
 
   it('closeCompleted is idempotent — an already-closed ticket is not re-closed', async () => {
@@ -261,17 +262,17 @@ describe('Drive Prompt fill (issue #33)', () => {
   });
 
   it('fires onTicketClosed only on a genuine close — never on an already-closed ticket or a Task with no ref', async () => {
-    const closed: (number | null)[] = [];
+    const closed: (string | null)[] = [];
     const open = fakeAdapter('open');
     const drive = new AutoDrive(() => baselineConfig(), () => null, async () => open.adapter, undefined, undefined, (task) => closed.push(task.trackerRef));
     await drive.closeCompleted(worktreeTask());
-    expect(closed).toEqual([7]);
+    expect(closed).toEqual(['7']);
 
     const already = fakeAdapter('closed');
     const idempotent = new AutoDrive(() => baselineConfig(), () => null, async () => already.adapter, undefined, undefined, (task) => closed.push(task.trackerRef));
     await idempotent.closeCompleted(worktreeTask());
     await idempotent.closeTicket(worktreeTask({ trackerRef: null }));
-    expect(closed).toEqual([7]);
+    expect(closed).toEqual(['7']);
   });
 });
 
@@ -285,7 +286,7 @@ describe('AutoDrive.onCompleted — Merge Fate close-after-verify (issue #139)',
     const { adapter, calls } = fakeAdapter('open');
     const drive = new AutoDrive(() => cfg('auto-merge'), () => null, async () => adapter);
     expect(await drive.onCompleted(worktreeTask(), run())).toBe('completed');
-    expect(calls.close).toEqual([7]);
+    expect(calls.close).toEqual(['7']);
   });
 
   it('auto-merge whose close fails escalates', async () => {
@@ -344,7 +345,7 @@ describe('AutoDrive.onCompleted — Merge Fate close-after-verify (issue #139)',
     expect(
       await drive.onCompleted(worktreeTask({ isolationMode: 'direct' }), run({ branch: null, baseBranch: null })),
     ).toBe('completed');
-    expect(calls.close).toEqual([7]);
+    expect(calls.close).toEqual(['7']);
   });
 });
 
@@ -652,7 +653,7 @@ describe('AutoDrive.closeTicket — file-backed tracker commits its status chang
   it('closes the ticket, commits it onto the base branch, and leaves the checkout clean', async () => {
     const adapter = localMarkdownAdapter(join(repo, '.scratch'));
     const drive = new AutoDrive(() => baselineConfig(), () => null, async () => adapter);
-    const task = worktreeTask({ trackerRef: 7, workingDir: repo });
+    const task = worktreeTask({ trackerRef: trackerRef(7), workingDir: repo });
     const before = Number(g('rev-list', '--count', 'HEAD'));
 
     expect(await drive.closeTicket(task, 'Completed and merged by Harmonic (task 1).')).toBe(true);
@@ -669,7 +670,7 @@ describe('AutoDrive.closeTicket — file-backed tracker commits its status chang
   it('is idempotent — re-closing an already-closed ticket commits nothing and stays clean', async () => {
     const adapter = localMarkdownAdapter(join(repo, '.scratch'));
     const drive = new AutoDrive(() => baselineConfig(), () => null, async () => adapter);
-    const task = worktreeTask({ trackerRef: 7, workingDir: repo });
+    const task = worktreeTask({ trackerRef: trackerRef(7), workingDir: repo });
 
     expect(await drive.closeTicket(task)).toBe(true);
     const afterFirst = g('rev-list', '--count', 'HEAD');
@@ -683,7 +684,7 @@ describe('AutoDrive.closeTicket — file-backed tracker commits its status chang
     const adapter = localMarkdownAdapter(join(repo, '.scratch'));
     const commits: ({ oid: string; paths: string[] } | null)[] = [];
     const drive = new AutoDrive(() => baselineConfig(), () => null, async () => adapter, undefined, undefined, (_task, commit) => commits.push(commit));
-    const task = worktreeTask({ trackerRef: 7, workingDir: repo });
+    const task = worktreeTask({ trackerRef: trackerRef(7), workingDir: repo });
 
     expect(await drive.closeTicket(task)).toBe(true);
 
@@ -697,7 +698,7 @@ describe('AutoDrive.closeTicket — file-backed tracker commits its status chang
       throw new Error('locked by another process');
     };
     const closed: unknown[] = [];
-    const failed: [number | null, string][] = [];
+    const failed: [string | null, string][] = [];
     const drive = new AutoDrive(
       () => baselineConfig(),
       () => null,
@@ -707,11 +708,11 @@ describe('AutoDrive.closeTicket — file-backed tracker commits its status chang
       (task) => closed.push(task.trackerRef),
       (task, err) => failed.push([task.trackerRef, err instanceof Error ? err.message : String(err)]),
     );
-    const task = worktreeTask({ trackerRef: 7, workingDir: repo });
+    const task = worktreeTask({ trackerRef: trackerRef(7), workingDir: repo });
 
     expect(await drive.closeTicket(task)).toBe(false);
 
     expect(closed).toEqual([]);
-    expect(failed).toEqual([[7, 'locked by another process']]);
+    expect(failed).toEqual([['7', 'locked by another process']]);
   });
 });

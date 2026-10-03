@@ -166,7 +166,7 @@ export const timelineAttemptSchema = z
     harness: z.string().meta({ example: 'claude' }),
     model: z.string().meta({ example: 'claude-opus-4-8' }),
     state: z.enum(ATTEMPT_STATES).meta({ example: 'passed' }),
-    trackerRef: z.number().int().nullable().meta({ example: 470 }),
+    trackerRef: z.string().nullable().meta({ example: '470' }),
     startedAt: z.number().meta({ example: 1784032020000 }),
     /** null while the Attempt is still running; the client extends its bar to now. */
     endedAt: z.number().nullable().meta({ example: 1784032200000 }),
@@ -245,7 +245,7 @@ export const activityProcessSchema = z
     /** Epoch ms the process started; the client derives elapsed from it. */
     startedAt: z.number().meta({ example: 1784032260000 }),
     /** The mirrored issue's tracker ref (an Attempt's Task); null on native Tasks and Conversations. */
-    trackerRef: z.number().nullable().meta({ example: 51 }),
+    trackerRef: z.string().nullable().meta({ example: '51' }),
     /** The mirrored issue's tracker URL; null on native Tasks, Conversations, or before a poll. */
     trackerUrl: z.string().nullable().meta({ example: 'https://github.com/mintopia/harmonic/issues/55' }),
     /** True when the Task is escalated; always false for a Conversation. */
@@ -291,7 +291,7 @@ export const worktreeInventorySchema = z
     branch: z.string().nullable().meta({ example: 'harmonic/task-42' }),
     subject: z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('task'), taskId: z.number(), title: z.string() }),
-      z.object({ kind: z.literal('epic'), epicRef: z.number(), title: z.string() }),
+      z.object({ kind: z.literal('epic'), epicRef: z.string(), title: z.string() }),
     ]).nullable(),
     sizeBytes: z.number().int().nonnegative().nullable().meta({ example: 1048576 }),
     dirty: z.boolean().nullable().meta({ example: false }),

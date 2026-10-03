@@ -270,7 +270,7 @@ function agentMessageRow(data: Record<string, unknown> | null): Omit<LifecycleTi
         : sent && sendNumber !== null
           ? [context, `send ${sendNumber}${sendCap !== null ? ` of ${sendCap}` : ''} this Attempt`].filter(Boolean).join(' · ')
           : context;
-  const epic = num(data?.epic);
+  const epic = text(data?.epic) ?? (num(data?.epic) !== null ? String(data?.epic) : null);
   return {
     label: sent ? 'Agent Message sent' : 'Agent Message received',
     detail,

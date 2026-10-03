@@ -50,7 +50,7 @@ CREATE TABLE `attempts` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`task_id` integer,
 	`workspace_id` integer,
-	`epic_ref` text,
+	`epic_ref` integer,
 	`number` integer NOT NULL,
 	`state` text DEFAULT 'running' NOT NULL,
 	`started_at` integer NOT NULL,
@@ -125,7 +125,7 @@ CREATE TABLE `conversations` (
 --> statement-breakpoint
 CREATE TABLE `epics` (
 	`workspace_id` integer NOT NULL,
-	`tracker_ref` text NOT NULL,
+	`tracker_ref` integer NOT NULL,
 	`kind` text NOT NULL,
 	`merge_commit` text,
 	`state` text NOT NULL,
@@ -148,7 +148,7 @@ CREATE TABLE `secrets` (
 CREATE TABLE `epic_merge_events` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`workspace_id` integer NOT NULL,
-	`epic_ref` text NOT NULL,
+	`epic_ref` integer NOT NULL,
 	`seq` integer NOT NULL,
 	`ts` integer NOT NULL,
 	`payload` text NOT NULL,
@@ -299,15 +299,15 @@ CREATE TABLE `tasks` (
 	`feedback` text,
 	`continuation_choice` text,
 	`origin` text DEFAULT 'native' NOT NULL,
-	`tracker_ref` text,
+	`tracker_ref` integer,
 	`workflow` text,
 	`wayfinder_type` text,
 	`escalation_reason` text,
 	`merge_status` text,
-	`map_ref` text,
+	`map_ref` integer,
 	`base_branch` text,
 	`tracker_state` text,
-	`tracker_parent` text,
+	`tracker_parent` integer,
 	`tracker_blocked_by` text,
 	`tracker_labels` text,
 	`tracker_title` text,
@@ -325,9 +325,9 @@ CREATE UNIQUE INDEX `tasks_tracker_ref_idx` ON `tasks` (`workspace_id`,`tracker_
 CREATE INDEX `tasks_workspace_id_idx` ON `tasks` (`workspace_id`);--> statement-breakpoint
 CREATE TABLE `tracker_containers` (
 	`workspace_id` integer NOT NULL,
-	`tracker_ref` text NOT NULL,
+	`tracker_ref` integer NOT NULL,
 	`tracker_state` text NOT NULL,
-	`tracker_parent` text,
+	`tracker_parent` integer,
 	`tracker_blocked_by` text NOT NULL,
 	`tracker_labels` text NOT NULL,
 	`tracker_title` text NOT NULL,
@@ -341,7 +341,7 @@ CREATE TABLE `tracker_containers` (
 CREATE TABLE `tracker_dismissals` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`workspace_id` integer,
-	`tracker_ref` text NOT NULL,
+	`tracker_ref` integer NOT NULL,
 	`dismissed_at` integer NOT NULL,
 	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE no action
 );

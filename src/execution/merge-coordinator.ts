@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { Git } from './git.js';
 import { reportFailure } from '../error-handling.js';
 import type { AppConfig } from '../config.js';
@@ -55,7 +56,7 @@ export class EpicBaseNotReady extends Error {
 export interface EpicIntegrationMergeInput {
   workspaceId: number;
   repoDir: string;
-  epicRef: number;
+  epicRef: TrackerRef;
   defaultBranch: string;
   integrationBranch: string;
   runPostMergeCheck: (mergeOid: string, baseDir: string) => Promise<PostMergeCheckResult>;
@@ -75,7 +76,7 @@ export interface MergeCoordinatorDeps {
   criticUpdateRelay: (attemptId: number) => (update: { sessionUpdate: string; [key: string]: unknown }) => void;
   recordRunEvent: (task: TaskRow, run: AttemptRow, type: 'lifecycle', payload: unknown) => void;
   settleEscalated: (task: TaskRow, run: AttemptRow, reason: string, patch: Partial<AttemptRow>) => Promise<void>;
-  onEpicMergeStep: (payload: { workspaceId: number; epicRef: number }) => void;
+  onEpicMergeStep: (payload: { workspaceId: number; epicRef: TrackerRef }) => void;
 }
 
 export class MergeCoordinator {

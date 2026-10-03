@@ -1,3 +1,4 @@
+import type { TrackerRef } from './types.js';
 import type {
   Attempt,
   Conversation,
@@ -41,11 +42,11 @@ export interface HostLoad {
 }
 
 /** What an export belongs to; parsed from the wire's nullable taskId/epicRef pair. */
-export type ExportOwner = { kind: 'task'; taskId: number } | { kind: 'epic'; epicRef: number; workspaceId: number };
+export type ExportOwner = { kind: 'task'; taskId: number } | { kind: 'epic'; epicRef: TrackerRef; workspaceId: number };
 
 interface ExportFailedWire extends Omit<Extract<ServerMessage, { type: 'export_failed' }>, 'owner'> {
   taskId: number | null;
-  epicRef: number | null;
+  epicRef: TrackerRef | null;
   workspaceId: number | null;
 }
 
@@ -72,8 +73,8 @@ export type ServerMessage =
   | { type: 'task_removed'; id: number }
   // An Epic's integration merge advanced a step; the board refetches its epics
   // so the merge progress follows live (Epics carry no Attempt stream).
-  | { type: 'epic_changed'; workspaceId: number; epicRef: number }
-  | { type: 'epic_integrated'; workspaceId: number; epicRef: number }
+  | { type: 'epic_changed'; workspaceId: number; epicRef: TrackerRef }
+  | { type: 'epic_integrated'; workspaceId: number; epicRef: TrackerRef }
   | { type: 'agent_messages_changed'; workspaceId: number }
   // Live AttemptSummary usage: the Activity view merges these deltas into its
   // rows so tokens/context/cost tick live. Sent to read keys too.
@@ -87,7 +88,7 @@ export type ServerMessage =
   | {
       type: 'export_failed';
       owner: ExportOwner;
-      trackerRef: number | null;
+      trackerRef: TrackerRef | null;
       destination: string;
       disposition: string;
       error: string;

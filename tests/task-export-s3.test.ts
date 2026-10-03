@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { trackerRef } from '../src/tracker/adapter.js';
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -189,7 +190,7 @@ describe.skipIf(!dockerAvailable())('TaskExporter S3 destination (#737)', () => 
   it('delivers an Epic Export to directory and S3 and retries a failed S3 upload', async () => {
     const epicHistory = (): Array<Record<string, unknown>> =>
       JSON.parse(readFileSync(join(dir, 'archive', 'my-workspace', 'epic-5', 'archive.json'), 'utf8')).exports;
-    const outcomes = await exporter(config({ prefix: 'exports/' })).runEpic(1, 5, 'done');
+    const outcomes = await exporter(config({ prefix: 'exports/' })).runEpic(1, trackerRef(5), 'done');
 
     expect(outcomes?.map((o) => [o.destination, o.status])).toEqual([['directory', 'succeeded'], ['s3', 'succeeded']]);
     const objects = await keys(globalBucket);
@@ -218,7 +219,7 @@ describe.skipIf(!dockerAvailable())('TaskExporter S3 destination (#737)', () => 
       recordFact: async () => undefined,
       onFailure: (f) => void failures.push(f),
     });
-    expect((await sut.exportEpicAgain(1, 5))?.map((o) => [o.destination, o.status])).toEqual([['s3', 'failed']]);
+    expect((await sut.exportEpicAgain(1, trackerRef(5)))?.map((o) => [o.destination, o.status])).toEqual([['s3', 'failed']]);
     expect(failures).toHaveLength(1);
     expect((await keys(globalBucket)).filter((k) => k.startsWith('again/'))).toEqual([]);
     expect([...(await sut.pendingOwnerKeys())]).toEqual(['epic:1:5']);

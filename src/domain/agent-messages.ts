@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { and, asc, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { taskDisplayTitle } from './task-title.js';
@@ -31,7 +32,7 @@ export interface AgentMessageThreadParticipant {
   taskId: number;
   title: string | null;
   harness: string | null;
-  epicId: number | null;
+  epicId: TrackerRef | null;
   deleted: boolean;
   model: string | null;
   state: TaskState | null;
@@ -59,7 +60,7 @@ export interface ThreadQuery {
   workspaceIds: readonly number[];
   /** Display name and resolved send cap per Workspace id. */
   workspaceInfo: ReadonlyMap<number, { name: string; sendCap: number }>;
-  epicId?: number | undefined;
+  epicId?: TrackerRef | undefined;
   taskId?: number | undefined;
   live?: boolean | undefined;
   limit?: number | undefined;

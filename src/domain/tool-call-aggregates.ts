@@ -1,10 +1,11 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { and, eq, gte, lte, sql } from 'drizzle-orm';
 import type { AsyncDb, AsyncDbHandle } from '../db/async.js';
 import { attemptToolCalls, attempts, tasks } from '../db/schema.js';
 
 export interface ToolCallTotals {
   byTask: Record<number, Record<string, number>>;
-  byEpic: Record<number, Record<string, number>>;
+  byEpic: Record<string, Record<string, number>>;
 }
 
 export interface ToolCallRange {
@@ -12,7 +13,7 @@ export interface ToolCallRange {
   to: number;
   workspaceId?: number;
   /** Scope to one Epic's child Tasks by their rollup key (`tasks.mapRef`). */
-  epicRef?: number;
+  epicRef?: TrackerRef;
 }
 
 /**
@@ -81,7 +82,7 @@ export async function totalsForRange(db: AsyncDb, range: ToolCallRange): Promise
   return totals;
 }
 
-function addTotal(totals: Record<number, Record<string, number>>, dimension: number, toolName: string, count: number): void {
+function addTotal(totals: Record<string, Record<string, number>>, dimension: number | string, toolName: string, count: number): void {
   const tools = totals[dimension];
   if (tools) tools[toolName] = (tools[toolName] ?? 0) + count;
   else totals[dimension] = { [toolName]: count };

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { exportAgainFeedback, exportFactRows, exportFailedMessage, exportPanelModel, formatBytes, redactionSummary, splitExportError } from '../web/src/task-export-model.js';
 import type { ExportDestinationStatus, ExportSummary, TaskExportStatus } from '../web/src/types.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const NOW = Date.parse('2026-09-30T11:50:00.000Z');
 
@@ -110,7 +111,7 @@ describe('export helpers', () => {
 describe('exportFailedMessage', () => {
   const base = { destination: 's3', retry: 0, nextRetryAt: null };
   const task = { kind: 'task', taskId: 412 } as const;
-  const epic = { kind: 'epic', epicRef: 42, workspaceId: 1 } as const;
+  const epic = { kind: 'epic', epicRef: trackerRef(42), workspaceId: 1 } as const;
 
   it('names a Task by its label and an Epic by its ref, never "#null"', () => {
     expect(exportFailedMessage({ ...base, owner: task })).toBe('Export of Task 412 to S3 failed — not retried');

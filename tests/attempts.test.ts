@@ -9,6 +9,7 @@ import { TaskService } from '../src/domain/tasks.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 describe('AttemptStore', () => {
   let dir: string;
@@ -70,17 +71,17 @@ describe('AttemptStore', () => {
     const workspace = new WorkspaceService(db, settingsStore);
     const workspaceId = (await workspace.create({ name: 'Epic workspace', workingDir: dir, trackerEnabled: true })).id;
     const tasks = new TaskService(db, () => baselineConfig(), allWorkspaces(db, settingsStore));
-    await tasks.syncEpics(workspaceId, [{ ref: 526, kind: 'epic' }]);
+    await tasks.syncEpics(workspaceId, [{ ref: trackerRef(526), kind: 'epic' }]);
 
-    const first = await attempts.createForEpic({ workspaceId, epicRef: 526 });
+    const first = await attempts.createForEpic({ workspaceId, epicRef: trackerRef(526) });
     await attempts.addAgentDuration(first.id, 25);
     await attempts.finish(first.id, 'passed');
-    const second = await attempts.createForEpic({ workspaceId, epicRef: 526 });
+    const second = await attempts.createForEpic({ workspaceId, epicRef: trackerRef(526) });
 
     expect((await attempts.get(first.id)).agentDurationMs).toBe(25);
-    expect(first).toMatchObject({ taskId: null, workspaceId, epicRef: 526, number: 1, agentDurationMs: 0 });
-    expect(second).toMatchObject({ taskId: null, workspaceId, epicRef: 526, number: 2 });
-    expect(await attempts.listForEpic({ workspaceId, epicRef: 526 })).toMatchObject([
+    expect(first).toMatchObject({ taskId: null, workspaceId, epicRef: '526', number: 1, agentDurationMs: 0 });
+    expect(second).toMatchObject({ taskId: null, workspaceId, epicRef: '526', number: 2 });
+    expect(await attempts.listForEpic({ workspaceId, epicRef: trackerRef(526) })).toMatchObject([
       { id: first.id, number: 1, state: 'passed' },
       { id: second.id, number: 2, state: 'running' },
     ]);
