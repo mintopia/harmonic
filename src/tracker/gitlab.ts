@@ -178,6 +178,10 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
   return {
     name: 'gitlab',
 
+    async identify() {
+      return (await ensureMe()).username;
+    },
+
     scan: scanAll,
 
     async readTicket(ref: TicketRef) {

@@ -83,6 +83,8 @@ export interface TrackerAdapter {
   readonly persistsInWorkingTree?: boolean;
   /** Whole tracker, one read. Poll = call on an interval; frontier/board derive from the array. */
   scan(): Promise<Ticket[]>;
+  /** The authenticated identity the tracker acts as; throws when credentials are missing or rejected. A tracker without identity omits this. */
+  identify?(): Promise<string>;
   /** Fresh single-ticket read for consumers that need current tracker details. */
   readTicket(ref: TicketRef): Promise<Ticket>;
   /** Advertise local ownership by assigning the ambient identity. Best-effort; never a lock. */
@@ -170,6 +172,9 @@ export async function resolveTracker(
   }
 }
 
+/** The tracker name a `docs/agents/issue-tracker.md` declares (`# Issue tracker: <name>`), raw. */
+export const declaredTrackerName = (doc: string): string | undefined => doc.match(/^#\s*Issue tracker:\s*(.+?)\s*$/m)?.[1];
+
 const defaultHttp: TrackerHttp = (url, init) => fetch(url, init);
 
 /**
@@ -192,7 +197,7 @@ export async function resolveTrackerAdapter(
       doc = null;
     }
   }
-  const detectedName = doc?.match(/^#\s*Issue tracker:\s*(.+?)\s*$/m)?.[1];
+  const detectedName = doc ? declaredTrackerName(doc) : undefined;
   const detectedKnown = detectedName ? selectTracker({ detectedName })?.source === 'detected' : false;
   const codeRepository = configured || detectedKnown ? null : await resolveCodeRepository(repoRoot, workspace.codeRepository);
   const selection = selectTracker({ configured, detectedName, codeRepository });
@@ -200,7 +205,7 @@ export async function resolveTrackerAdapter(
     if (doc === null) throw new TrackerResolutionError('no-declaration', `No tracker declaration at ${docPath}`);
     throw new TrackerResolutionError('unsupported', `Unsupported tracker "${detectedName ?? '(none)'}" in ${docPath}`);
   }
-  const where = selection.source === 'detected' ? docPath : selection.source === 'configured' ? 'the Workspace tracker setting' : 'the Code Repository';
+  const where = selection.source === 'detected' ? docPath : selection.source === 'configured' ? 'the Configured Tracker settings' : 'the Code Repository';
   const kind = trackerKindFor(selection.kindId);
   if (!kind) throw new TrackerResolutionError('unsupported', `Unsupported tracker "${selection.kindId}" in ${where}`);
   try {

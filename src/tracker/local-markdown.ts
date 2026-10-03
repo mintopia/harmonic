@@ -68,6 +68,10 @@ export function localMarkdownAdapter(
     name: 'local-markdown',
     persistsInWorkingTree: true,
 
+    async identify() {
+      return 'local files';
+    },
+
     async scan() {
       return synthesise(await parseAll(dir, opts.featureIndex));
     },
