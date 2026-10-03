@@ -340,6 +340,7 @@ export function AgentMessagesTab({
   onFilterChange,
   error,
   onRetry,
+  onLoadMore,
 }: {
   global: boolean;
   view: ThreadsView | null;
@@ -348,6 +349,7 @@ export function AgentMessagesTab({
   onFilterChange: (filter: ServerThreadFilter) => void;
   error: string | null;
   onRetry: () => void;
+  onLoadMore: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -488,7 +490,14 @@ export function AgentMessagesTab({
               />
             </div>
           </div>
-          {capHint && <p className="px-4 pt-2 text-small text-faint">{capHint}</p>}
+          {capHint && (
+            <div className="flex items-center gap-3 px-4 pt-2 text-small text-faint">
+              <span>{capHint}</span>
+              <button type="button" className="text-ink underline" onClick={onLoadMore}>
+                Load more
+              </button>
+            </div>
+          )}
           <div className="flex-1 overflow-y-auto p-2">
             {all.length === 0 ? (
               <EmptyState className="mt-10 px-2" title="No Agent Messages yet">

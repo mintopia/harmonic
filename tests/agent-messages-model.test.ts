@@ -15,6 +15,9 @@ import {
   resolveSelectedThread,
   segmentThread,
   threadsCapHint,
+  THREAD_PAGE_SIZE,
+  nextPageCount,
+  mergeThreadPages,
   trappedFocusIndex,
   taskOptions,
   threadParticipantsLine,
@@ -327,6 +330,31 @@ describe('threadsCapHint', () => {
   it('hints only when the server holds more threads than are shown', () => {
     expect(threadsCapHint(200, 350)).toBe('Showing 200 of 350 threads');
     expect(threadsCapHint(200, 200)).toBeNull();
+  });
+});
+
+describe('nextPageCount', () => {
+  it('adds a page while the server holds more threads than are covered', () => {
+    expect(nextPageCount(1, 450)).toBe(2);
+    expect(nextPageCount(2, 450)).toBe(3);
+  });
+  it('stops once every thread is covered', () => {
+    expect(nextPageCount(1, THREAD_PAGE_SIZE)).toBe(1);
+    expect(nextPageCount(3, 450)).toBe(3);
+    expect(nextPageCount(1, 0)).toBe(1);
+  });
+});
+
+describe('mergeThreadPages', () => {
+  const t = (id: string) => thread(id);
+  it('concatenates pages, drops threads repeated by a shifting page boundary, and takes totals from the last page', () => {
+    const merged = mergeThreadPages([
+      { threads: [t('a'), t('b')], total: 4, totalMessages: 8 },
+      { threads: [t('b'), t('c')], total: 5, totalMessages: 9 },
+    ]);
+    expect(merged.threads.map((x) => x.threadId)).toEqual(['a', 'b', 'c']);
+    expect(merged.total).toBe(5);
+    expect(merged.totalMessages).toBe(9);
   });
 });
 

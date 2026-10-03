@@ -137,6 +137,23 @@ describe('Activity Agent Messages tab', () => {
     expect(agentMessageThreads.mock.calls.length - before).toBe(1);
   });
 
+  it('shows a capped-list hint and fetches the next page by offset on Load more', async () => {
+    activity.mockResolvedValue({ processes: [], agentMessagesEnabledInAnyWorkspace: true });
+    agentMessageThreads.mockResolvedValue({ threads: [threadWith([first])], total: 450, totalMessages: 1 });
+    const host = await mount();
+    await act(async () => {
+      (host.querySelectorAll('[role="tab"]')[1] as HTMLElement).click();
+      await flush();
+    });
+    expect(host.textContent).toContain('Showing 1 of 450 threads');
+    const loadMore = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Load more') as HTMLElement;
+    await act(async () => {
+      loadMore.click();
+      await flush();
+    });
+    expect(agentMessageThreads).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 200, offset: 200 }));
+  });
+
   it('asks the server to filter and keeps the Epic options while a filter is active', async () => {
     activity.mockResolvedValue({ processes: [], agentMessagesEnabledInAnyWorkspace: true });
     agentMessageThreads.mockImplementation(async (params: { epicId?: string }) =>
