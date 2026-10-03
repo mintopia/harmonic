@@ -34,6 +34,7 @@ describe('Agent Messages on the Task timeline API', () => {
       ['sent', 'delivered', 'again', recipient, true],
       ['sent', 'refused', 'nope', recipient, false],
     ]);
+    expect(rows.map((r: any) => r.sendNumber)).toEqual([1, 2, 3]);
     expect(rows[1].threadId).toBe(rows[0].threadId);
     expect(rows[2].reason).toBe('recipient is done');
   });

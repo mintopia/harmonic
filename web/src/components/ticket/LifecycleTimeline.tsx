@@ -95,6 +95,9 @@ export function LifecycleTimeline({
                     {row.message && (
                       <>
                         <span className="rounded-[4px] bg-raised px-1.5 py-px text-[11px] font-semibold text-muted">{row.message.peer}</span>
+                        {row.message.epic && (
+                          <span className="rounded-[4px] bg-await-tint px-1.5 py-px text-[11px] font-semibold text-await">{row.message.epic}</span>
+                        )}
                         <span className={`rounded-[4px] px-1.5 py-px text-[11px] font-semibold ${PILL[row.message.receipt.tone]}`}>{row.message.receipt.label}</span>
                       </>
                     )}

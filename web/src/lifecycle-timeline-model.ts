@@ -7,10 +7,9 @@ export type LifecycleTimelineTone = 'neutral' | 'running' | 'passed' | 'failed' 
 
 export type ReceiptPillTone = 'done' | 'ready' | 'paused' | 'fail';
 
-/** What an Agent Message row adds to the plain label/detail: who the other
- * side is, where delivery stands, a one-line preview, and the Thread link. */
 export interface AgentMessageRowView {
   peer: string;
+  epic: string | null;
   receipt: { label: string; tone: ReceiptPillTone };
   preview: string | null;
   href: string;
@@ -26,7 +25,6 @@ export interface LifecycleTimelineRow {
    * issue closed), RUNNING (a live Attempt), VERIFY / CRITIC (a verification
    * pass), EXPORT (an Export build or delivery) — or null. */
   tag: string | null;
-  /** Present only on Agent Message rows. */
   message?: AgentMessageRowView;
 }
 
@@ -240,11 +238,15 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
 }
 
 const RECEIPT_PILL: Record<string, { label: string; tone: ReceiptPillTone }> = {
-  delivered: { label: 'delivered', tone: 'done' },
+  delivered: { label: 'delivered mid-turn', tone: 'done' },
   queued: { label: 'queued — next turn', tone: 'ready' },
   held: { label: 'held — next Attempt', tone: 'paused' },
   refused: { label: 'refused', tone: 'fail' },
 };
+
+function hourMinute(at: number): string {
+  return new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+}
 
 function agentMessageRow(data: Record<string, unknown> | null): Omit<LifecycleTimelineRow, 'id' | 'at'> {
   const sent = text(data?.direction) === 'sent';
@@ -256,13 +258,25 @@ function agentMessageRow(data: Record<string, unknown> | null): Omit<LifecycleTi
   const thread = text(data?.threadId);
   const base = workspaceId !== null ? `/workspace/${workspaceId}/activity` : '/activity';
   const reason = text(data?.reason);
-  const context = receipt.tone === 'fail' && reason ? reason : data?.isReply === true ? (sent && peerId !== null ? `Reply to #${peerId}` : 'Reply to your message') : 'New Thread';
+  const replyToAt = num(data?.replyToAt);
+  const sendNumber = num(data?.sendNumber);
+  const sendCap = num(data?.sendCap);
+  const context = data?.isReply === true ? (sent ? `Reply to ${peerId !== null ? `#${peerId}` : 'a Task'}` : replyToAt !== null ? `Reply to your message of ${hourMinute(replyToAt)}` : 'Reply to your message') : sent ? 'New Thread' : null;
+  const detail =
+    receipt.tone === 'fail' && reason
+      ? reason
+      : sent && text(data?.receipt) === 'held'
+        ? `${peerId !== null ? `#${peerId}` : 'The recipient'} is ready between Attempts`
+        : sent && sendNumber !== null
+          ? [context, `send ${sendNumber}${sendCap !== null ? ` of ${sendCap}` : ''} this Attempt`].filter(Boolean).join(' · ')
+          : context;
+  const epic = num(data?.epic);
   return {
     label: sent ? 'Agent Message sent' : 'Agent Message received',
-    detail: context,
+    detail,
     tone: sent ? 'sent' : 'received',
     tag: null,
-    message: { peer, receipt, preview: clip(text(data?.preview), 200), href: thread ? `${base}?thread=${encodeURIComponent(thread)}` : base },
+    message: { peer, epic: epic !== null ? `Epic #${epic}` : null, receipt, preview: clip(text(data?.preview), 200), href: thread ? `${base}?thread=${encodeURIComponent(thread)}` : base },
   };
 }
 

@@ -4,7 +4,7 @@ import type { AttemptRow, AttemptState, TaskAttemptRow, VerificationAttemptRow, 
 import { attempts, steps, guardrailEvents, attemptEvents, isEpicAttempt, isTaskAttempt, verificationAttempts } from '../db/schema.js';
 import { and, desc, eq } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
-import { resolveVerifiers } from '../domain/setting-override.js';
+import { resolveScoped, resolveVerifiers } from '../domain/setting-override.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
 import { costOfUsages, pricesForHarness, resolveContextWindowForHarness, withCriticContribution, type Cost } from '../domain/pricing.js';
 import { DomainError } from '../domain/errors.js';
@@ -152,23 +152,29 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
   await forEachYielding(guardrails, async ({ event }) => { add({ attemptId: event.attemptId, ts: event.ts, kind: 'guardrail', data: { dimension: event.dimension, limitValue: event.limitValue, observedValue: event.observedValue, configSource: event.configSource, payload: parsePayload(event.payload) } }, 2); });
   await forEachYielding(taskLevel, async (event) => { add({ attemptId: null, ts: event.ts, kind: 'lifecycle', data: { type: 'lifecycle', payload: event.payload } }, 3); });
 
-  const peerHarness = new Map<number, string | null>();
-  const harnessOf = async (taskId: number): Promise<string | null> => {
-    if (!peerHarness.has(taskId)) peerHarness.set(taskId, await ctx.tasks.get(taskId).then((t) => t.harness ?? null, () => null));
-    return peerHarness.get(taskId) ?? null;
+  const peers = new Map<number, { harness: string | null; epic: number | null }>();
+  const peerOf = async (peerId: number) => {
+    if (!peers.has(peerId)) peers.set(peerId, await ctx.tasks.get(peerId).then((t) => ({ harness: t.harness ?? null, epic: t.trackerParent ?? null }), () => ({ harness: null, epic: null })));
+    return peers.get(peerId)!;
   };
+  const sendCap = resolveScoped('agentMessagesSendCap', workspace?.agentMessagesSendCap ?? null, ctx.settingsStore.getGlobal().agentMessages.sendCap);
+  const sendsByAttempt = new Map<number, number>();
   await forEachYielding(await ctx.agentMessages.listForTask(atRestWorkspaceId(task.workspaceId), taskId), async (message) => {
     const preview = message.parts.map((part) => part.text).join(' ');
-    const common = { messageId: message.id, threadId: message.threadId, workspaceId: message.workspaceId, preview, isReply: message.replyTo !== null };
+    const replyToAt = message.replyTo === null ? null : ((await ctx.agentMessages.get(message.replyTo))?.createdAt ?? null);
+    const common = { messageId: message.id, threadId: message.threadId, workspaceId: message.workspaceId, preview, isReply: message.replyTo !== null, replyToAt };
     if (message.senderTaskId === taskId) {
+      const sendNumber = (sendsByAttempt.get(message.senderAttemptId) ?? 0) + 1;
+      sendsByAttempt.set(message.senderAttemptId, sendNumber);
       for (const recipient of message.recipients) {
-        add({ attemptId: message.senderAttemptId, ts: message.createdAt, kind: 'agent-message', data: { ...common, direction: 'sent', peerTaskId: recipient.taskId, peerHarness: await harnessOf(recipient.taskId), receipt: recipient.receipt, reason: recipient.reason ?? null } }, 5);
+        add({ attemptId: message.senderAttemptId, ts: message.createdAt, kind: 'agent-message', data: { ...common, direction: 'sent', peerTaskId: recipient.taskId, peerHarness: (await peerOf(recipient.taskId)).harness, receipt: recipient.receipt, reason: recipient.reason ?? null, sendNumber, sendCap, epic: null } }, 5);
       }
       return;
     }
     const mine = message.recipients.find((recipient) => recipient.taskId === taskId);
     if (mine === undefined || mine.receipt === 'refused') return;
-    add({ attemptId: null, ts: message.createdAt, kind: 'agent-message', data: { ...common, direction: 'received', peerTaskId: message.senderTaskId, peerHarness: await harnessOf(message.senderTaskId), receipt: mine.receipt, reason: null } }, 5);
+    const sender = await peerOf(message.senderTaskId);
+    add({ attemptId: null, ts: message.createdAt, kind: 'agent-message', data: { ...common, direction: 'received', peerTaskId: message.senderTaskId, peerHarness: sender.harness, receipt: mine.receipt, reason: null, sendNumber: null, sendCap: null, epic: message.recipients.length > 1 ? sender.epic : null } }, 5);
   });
 
   add({ attemptId: null, ts: task.createdAt, kind: 'fact', data: { type: 'task-created', trackerRef: task.trackerRef != null ? String(task.trackerRef) : null, workspace: workspace?.name ?? null } }, -1);
