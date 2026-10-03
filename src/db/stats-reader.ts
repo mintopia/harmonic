@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
@@ -10,7 +11,7 @@ export interface StatsRange {
   to: number;
   workspaceId?: number;
   /** Scope to one Epic's child Tasks (those whose `mapRef` is this ref); composes with `workspaceId`. */
-  epicRef?: number;
+  epicRef?: TrackerRef;
 }
 
 /** The merge-policy escalation reason (merge-policy.ts `MergePolicyOutcome`). */
@@ -121,7 +122,7 @@ function isStatsRange(value: unknown): value is StatsRange {
     && typeof value.from === 'number'
     && typeof value.to === 'number'
     && (value.workspaceId === undefined || typeof value.workspaceId === 'number')
-    && (value.epicRef === undefined || typeof value.epicRef === 'number');
+    && (value.epicRef === undefined || typeof value.epicRef === 'string');
 }
 
 export function isStatsWorkerRequest(value: unknown): value is StatsWorkerRequest {

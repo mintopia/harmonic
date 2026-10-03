@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type AppConfig, type DeepPartial } from '../src/config.js';
 import { Git } from '../src/execution/git.js';
-import { type Ticket } from '../src/tracker/adapter.js';
+import { type Ticket, trackerRef } from '../src/tracker/adapter.js';
 import { startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdtempSync, writeFileSync } from 'node:fs';
@@ -245,7 +245,7 @@ describe('task-steering', () => {
       const seed = (await server.api('POST', '/api/tasks', { prompt: 'workspace seed' })).body;
       const workspaceId = (await server.app.ctx.tasks.get(seed.id)).workspaceId ?? undefined;
       const mirrored = await server.app.ctx.tasks.upsertMirrored(
-        { trackerRef: 90210, prompt: 'ticket 90210\n\nbody', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+        { trackerRef: trackerRef(90210), prompt: 'ticket 90210\n\nbody', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
         workspaceId,
       );
       await server.api('POST', `/api/tasks/${mirrored.id}/run`);
@@ -275,7 +275,7 @@ describe('task-steering', () => {
       const seed = (await server.api('POST', '/api/tasks', { prompt: 'workspace seed' })).body;
       const workspaceId = (await server.app.ctx.tasks.get(seed.id)).workspaceId ?? undefined;
       const mirrored = await server.app.ctx.tasks.upsertMirrored(
-        { trackerRef: 90211, prompt: 'ticket 90211\n\nbody', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+        { trackerRef: trackerRef(90211), prompt: 'ticket 90211\n\nbody', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
         workspaceId,
       );
       await server.api('POST', `/api/tasks/${mirrored.id}/run`);
@@ -328,7 +328,7 @@ describe('task-list-epics', () => {
     let workspaceId: number;
 
     const epicTicket = (over: Partial<Ticket>): Ticket => ({
-      number: 101,
+      number: trackerRef(101),
       title: 'Alpha epic',
       state: 'open',
       body: '',
@@ -345,7 +345,7 @@ describe('task-list-epics', () => {
       ...over,
     });
     const alpha = epicTicket({});
-    const beta = epicTicket({ number: 102, title: 'Beta epic', createdAt: '2999-01-01T00:00:00.000Z', url: 'https://tracker/102' });
+    const beta = epicTicket({ number: trackerRef(102), title: 'Beta epic', createdAt: '2999-01-01T00:00:00.000Z', url: 'https://tracker/102' });
 
     beforeEach(async () => {
       server = await startServer(stubHarness());
@@ -368,7 +368,7 @@ describe('task-list-epics', () => {
       expect(summaries(res.body).sort()).toEqual(['Alpha epic', 'Beta epic', 'task a', 'task b', 'task c']);
       expect(res.body.total).toBe(5);
       const epicRow = rows(res.body).find((t) => t.summary === 'Alpha epic');
-      expect(epicRow).toMatchObject({ isEpic: true, trackerRef: 101, url: 'https://tracker/101' });
+      expect(epicRow).toMatchObject({ isEpic: true, trackerRef: '101', url: 'https://tracker/101' });
     });
 
     it('omits epic rows unless epics=true is requested', async () => {

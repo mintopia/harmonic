@@ -11,6 +11,7 @@ import { runMergePolicy, type MergePolicyDeps, type MergeStepEvent } from '../sr
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
 import { EpicIntegrationRunner } from '../src/tracker/epic-integration-runner.js';
 import { executionPlumbing } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const tmpDirs: string[] = [];
 
@@ -90,7 +91,7 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
       ),
     });
 
-    const result = await runner.integrate({ repoDir: repo, epicRef: 42, defaultBranch: 'main', integrationBranch: 'epic-42' });
+    const result = await runner.integrate({ repoDir: repo, epicRef: trackerRef(42), defaultBranch: 'main', integrationBranch: 'epic-42' });
 
     expect(result.kind).toBe('merged');
     expect(git(repo, 'show', 'main:feature.txt')).toBe('feature');

@@ -1,6 +1,6 @@
 import type { TaskRow, TrackerContainerRow, TrackerFacts } from '../db/schema.js';
 import { forEachYielding } from '../reliability/yield.js';
-import { MAP_LABEL, type Ticket } from './adapter.js';
+import { MAP_LABEL, type Ticket, type TrackerRef } from './adapter.js';
 
 type StoredFacts = Pick<
   TaskRow,
@@ -36,7 +36,7 @@ function factsFrom(row: StoredFacts): TrackerFacts | null {
   };
 }
 
-function ticketFrom(number: number, facts: TrackerFacts, isMap: boolean): Ticket {
+function ticketFrom(number: TrackerRef, facts: TrackerFacts, isMap: boolean): Ticket {
   return {
     number,
     ...facts,

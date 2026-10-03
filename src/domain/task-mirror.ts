@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
@@ -7,11 +8,11 @@ import type { TaskBlockerGraph } from './task-blocker-graph.js';
 import { logger } from '../logger.js';
 
 export interface MirrorInput {
-  trackerRef: number;
+  trackerRef: TrackerRef;
   prompt: string;
   workflow: Workflow;
   wayfinderType: WayfinderType | null;
-  mapRef: number | null;
+  mapRef: TrackerRef | null;
   closed: boolean;
   trackerCanClose?: boolean;
   facts?: TrackerFacts;
@@ -23,7 +24,7 @@ export interface TaskMirrorOptions {
   resolveWorkspace: (workspaceId?: number) => Promise<WorkspaceRow>;
   changed: (task: RawTaskRow) => Promise<TaskRow>;
   get: (id: number) => Promise<TaskRow>;
-  clearDismissal: (workspaceId: number, trackerRef: number) => Promise<void>;
+  clearDismissal: (workspaceId: number, trackerRef: TrackerRef) => Promise<void>;
   removeTaskCascade: (id: number, tombstone: DeletionDecision['tombstone']) => Promise<void>;
   blockerGraph: TaskBlockerGraph;
 }
@@ -116,7 +117,7 @@ export class TaskMirror {
     await this.options.blockerGraph.rederiveBlocked(taskId);
   }
 
-  async demoteMirroredToContainer(workspaceId: number, trackerRef: number): Promise<void> {
+  async demoteMirroredToContainer(workspaceId: number, trackerRef: TrackerRef): Promise<void> {
     await this.options.clearDismissal(workspaceId, trackerRef);
     const row = await this.db.read((db) => db.select({ id: tasks.id, state: tasks.state, origin: tasks.origin, trackerRef: tasks.trackerRef, workspaceId: tasks.workspaceId }).from(tasks).where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.trackerRef, trackerRef))).get());
     if (!row || !decideTaskDeletion(row).ok) return;

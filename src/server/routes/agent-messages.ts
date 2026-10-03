@@ -1,3 +1,4 @@
+import { trackerRef } from '../../tracker/adapter.js';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -35,7 +36,7 @@ const participantSchema = z.object({
   taskId: z.number().int(),
   title: z.string().nullable(),
   harness: z.string().nullable(),
-  epicId: z.number().int().nullable(),
+  epicId: z.string().nullable(),
   deleted: z.boolean(),
   model: z.string().nullable().meta({ description: "The Task's stored model; null when unset or the Task is deleted." }),
   state: z.enum(TASK_STATES).nullable().meta({ description: "The Task's lifecycle state; null when deleted." }),
@@ -72,7 +73,7 @@ export async function agentMessageRoutes(fastify: FastifyInstance, ctx: AppConte
         querystring: paginationQuerySchema.extend({
           limit: z.coerce.number().int().positive().max(MAX_LIMIT).default(DEFAULT_THREAD_LIMIT),
           workspaceId: z.coerce.number().int().positive().optional(),
-          epicId: z.coerce.number().int().optional(),
+          epicId: z.string().min(1).optional(),
           taskId: z.coerce.number().int().optional(),
           live: z.enum(['true', 'false']).optional(),
         }),
@@ -92,7 +93,7 @@ export async function agentMessageRoutes(fastify: FastifyInstance, ctx: AppConte
       const workspaceIds = all
         .filter((ws) => (workspaceId === undefined || ws.id === workspaceId) && resolveScoped('agentMessagesEnabled', ws.agentMessagesEnabled, globalEnabled))
         .map((ws) => ws.id);
-      return ctx.agentMessages.listThreads({ workspaceIds, workspaceInfo, epicId, taskId, live: live === 'true', limit, offset });
+      return ctx.agentMessages.listThreads({ workspaceIds, workspaceInfo, epicId: epicId === undefined ? undefined : trackerRef(epicId), taskId, live: live === 'true', limit, offset });
     },
   );
 }

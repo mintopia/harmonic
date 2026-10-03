@@ -1,3 +1,5 @@
+import type { TrackerRef } from './types.js';
+
 /** A task id in a compact identifier slot (Deck row, graph node, table cell): `T-174`. */
 export function taskKey(id: number): string {
   return `T-${id}`;
@@ -9,12 +11,12 @@ export function taskLabel(id: number): string {
 }
 
 /** An epic ref in prose or a title: `Epic #42`. */
-export function epicLabel(ref: number): string {
+export function epicLabel(ref: TrackerRef): string {
   return `Epic ${issueRef(ref)}`;
 }
 
 /** A tracker (GitHub) issue ref: `#185`. The only place a bare `#n` is legitimate. */
-export function issueRef(ref: number): string {
+export function issueRef(ref: TrackerRef): string {
   return `#${ref}`;
 }
 
@@ -23,7 +25,7 @@ export function issueRef(ref: number): string {
  * mirrored Task: `Task 174 · issue #185`. A native Task (no tracker ref) shows
  * just its task label.
  */
-export function ticketIdentity(id: number, trackerRef: number | null | undefined): string {
+export function ticketIdentity(id: number, trackerRef: TrackerRef | null | undefined): string {
   return trackerRef != null ? `${taskLabel(id)} · issue ${issueRef(trackerRef)}` : taskLabel(id);
 }
 
@@ -33,7 +35,7 @@ export function ticketIdentity(id: number, trackerRef: number | null | undefined
  * cross-reference), then the task key. A native Task (no tracker ref) shows just
  * its `T-` key. Keeps every listing surface labelling a ticket the same way.
  */
-export function ticketRowId(id: number, trackerRef: number | null | undefined): string {
+export function ticketRowId(id: number, trackerRef: TrackerRef | null | undefined): string {
   return trackerRef != null ? `${issueRef(trackerRef)} · ${taskKey(id)}` : taskKey(id);
 }
 

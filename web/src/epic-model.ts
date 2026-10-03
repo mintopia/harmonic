@@ -1,7 +1,7 @@
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
 import type { MergeStepEvent } from './merge-progress-model.js';
-import type { Task } from './types.js';
+import type { Task , TrackerRef } from './types.js';
 
 /** Mirrors `EpicBranchStep` in `src/domain/epic-merge-events.ts`; an
  * integration-branch cut observed outside a merge. */
@@ -22,7 +22,7 @@ export type MemberMergeStatus = 'completed' | 'blocked' | 'pending';
 
 export interface EpicMember {
   /** Member ticket ref. */
-  ref: number;
+  ref: TrackerRef;
   /** Member title (from ticket/task); '' if unknown. */
   title: string;
   /** Mirrored Harmonic Task id for the TaskDetail deep-link; null if unmirrored. */
@@ -67,7 +67,7 @@ export interface EpicTimelineEvent {
 }
 
 export interface Epic {
-  ref: number;
+  ref: TrackerRef;
   title: string;
   kind: 'map' | 'spec';
   /** Lifecycle from the stored record. */
@@ -81,11 +81,11 @@ export interface Epic {
   /** The repo default branch the whole-Epic gate merges into (git-derived); null if unresolved. */
   baseBranch: string | null;
   /** The Epic container ticket's own blocker refs, ascending. */
-  dependsOn: number[];
+  dependsOn: TrackerRef[];
   /** Ascending by ref. */
   members: EpicMember[];
   /** Ready-frontier refs (ascending). */
-  ready: number[];
+  ready: TrackerRef[];
   integration: EpicIntegration;
   verification: EpicVerification;
   integrate: EpicIntegrateState;
@@ -101,11 +101,11 @@ export interface Epic {
   inPlace: boolean;
 }
 
-export function epicDriverRefs(epics: Epic[]): Set<number> {
+export function epicDriverRefs(epics: Epic[]): Set<TrackerRef> {
   return new Set(epics.map((epic) => epic.ref));
 }
 
-export function isEpicDriver(row: Pick<Task, 'trackerRef'>, refs: ReadonlySet<number>): boolean {
+export function isEpicDriver(row: Pick<Task, 'trackerRef'>, refs: ReadonlySet<TrackerRef>): boolean {
   return row.trackerRef != null && refs.has(row.trackerRef);
 }
 

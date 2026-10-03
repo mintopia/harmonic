@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 describe('Activity API Workspace scope (issue #600)', () => {
   let server: TestServer | undefined;
@@ -24,8 +25,8 @@ describe('Activity API Workspace scope (issue #600)', () => {
     const secondTask = await server.api('POST', '/api/tasks', { prompt: 'second task', workspaceId: secondWorkspace.body.id });
     const firstAttempt = await server.app.ctx.attempts.create(firstTask.body.id);
     const secondAttempt = await server.app.ctx.attempts.create(secondTask.body.id);
-    await server.app.ctx.tasks.syncEpics(secondWorkspace.body.id, [{ ref: 625, kind: 'epic' }]);
-    const epicAttempt = await server.app.ctx.attempts.createForEpic({ workspaceId: secondWorkspace.body.id, epicRef: 625 });
+    await server.app.ctx.tasks.syncEpics(secondWorkspace.body.id, [{ ref: trackerRef(625), kind: 'epic' }]);
+    const epicAttempt = await server.app.ctx.attempts.createForEpic({ workspaceId: secondWorkspace.body.id, epicRef: trackerRef(625) });
     const first = await server.api('POST', '/api/conversations', {});
     const second = await server.api('POST', '/api/conversations', { workspaceId: secondWorkspace.body.id });
 

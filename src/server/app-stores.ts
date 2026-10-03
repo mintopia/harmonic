@@ -12,6 +12,8 @@ import { PermissionRuleStore } from '../domain/permission-rules.js';
 import { SessionStore } from '../domain/sessions.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
+import { SecretService } from '../secrets/secret-service.js';
+import { loadSecretKey } from '../secrets/secret-key.js';
 import { logger } from '../logger.js';
 import { ChannelService } from '../notifications/channels.js';
 import { NotificationStore } from '../notifications/notification-store.js';
@@ -24,6 +26,7 @@ export interface Stores {
   settingsStore: SettingsStore;
   workspaces: WorkspaceService;
   channels: ChannelService;
+  secrets: SecretService;
   notifier: Notifier;
   notifications: NotificationStore;
   tasks: TaskService;
@@ -50,6 +53,7 @@ export async function createStores({ opts, asyncDb, bus, fireAndForget }: Create
   const settingsStore = await SettingsStore.create(opts.dataDir, opts.configOverrides);
   const workspaces = new WorkspaceService(asyncDb, settingsStore);
   const channels = new ChannelService(asyncDb);
+  const secrets = new SecretService(asyncDb, loadSecretKey(opts.dataDir));
   const notifications = new NotificationStore(asyncDb, {
     created: (row) => bus.emit('notification_created', row),
     read: (ids) => bus.emit('notifications_read', { ids }),
@@ -91,6 +95,7 @@ export async function createStores({ opts, asyncDb, bus, fireAndForget }: Create
     settingsStore,
     workspaces,
     channels,
+    secrets,
     notifier,
     notifications,
     tasks,

@@ -7,6 +7,7 @@ import { startServer, stubHarness, waitFor, seedLocalMarkdownTicket, type TestSe
 import { AttemptStore } from '../src/domain/attempts.js';
 import type { CriticHarnessDrive, CriticDriveRequest } from '../src/verification/critic.js';
 import type { Verdict } from '../src/verification/critic-schema.js';
+import { trackerRef as brandRef } from '../src/tracker/adapter.js';
 
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -68,7 +69,7 @@ describe('a finish_task that changed nothing', () => {
     git(repoDir, 'add', '-A');
     git(repoDir, 'commit', '-q', '-m', `ticket ${ref}`);
     const mirrored = await server.app.ctx.tasks.upsertMirrored(
-      { trackerRef: ref, prompt: `ticket ${ref}`, workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+      { trackerRef: brandRef(ref), prompt: `ticket ${ref}`, workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
       workspaceId,
     );
     expect((await server.api('POST', `/api/tasks/${mirrored.id}/run`)).status).toBe(201);

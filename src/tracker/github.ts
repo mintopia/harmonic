@@ -1,7 +1,10 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { logger } from '../logger.js';
-import { MAP_LABEL, type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
+import { z } from 'zod';
+import { parseBlockedByLines } from './relationships.js';
+import type { TrackerKind } from './kind.js';
+import { MAP_LABEL, type Ticket, type TicketRef, type TicketState, type TrackerRef, trackerRef, type WritableTrackerAdapter } from './adapter.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -56,36 +59,20 @@ interface RawIssue {
 }
 
 const state = (s: string): TicketState => (s.toUpperCase() === 'CLOSED' ? 'closed' : 'open');
-const ref = (r: RawRef): TicketRef => ({ number: r.number, title: r.title, state: state(r.state) });
-
-/**
- * GitHub's native `blockedBy` is empty unless the repo enabled the dependency preview and the edges were
- * filed in the UI, so also read the "Blocked by" / "Depends on" body convention. The scan stops before a
- * "Blocks" clause on the same line so reverse edges never leak into `blockedBy`.
- */
-function parseBodyBlockers(body: string): number[] {
-  const out = new Set<number>();
-  for (const line of body.split('\n')) {
-    const m = /\b(?:blocked by|depends on)\b[:\s]*(.*)/i.exec(line);
-    if (!m) continue;
-    const clause = m[1]!.split(/\bblock(?:s|ing)\b/i)[0]!;
-    for (const h of clause.matchAll(/#(\d+)/g)) out.add(Number(h[1]));
-  }
-  return [...out];
-}
+const ref = (r: RawRef): TicketRef => ({ number: trackerRef(r.number), title: r.title, state: state(r.state) });
 
 function normalise(raw: RawIssue): Ticket {
   const labels = (raw.labels ?? []).map((l) => l.name);
   const nativeBlockedBy = (raw.blockedBy?.nodes ?? []).map(ref);
-  const seen = new Set(nativeBlockedBy.map((r) => r.number));
+  const seen = new Set<TrackerRef>(nativeBlockedBy.map((r) => r.number));
   const blockedBy = [
     ...nativeBlockedBy,
-    ...parseBodyBlockers(raw.body ?? '')
-      .filter((n) => n !== raw.number && !seen.has(n))
-      .map((n): TicketRef => ({ number: n, title: '', state: 'open' })),
+    ...parseBlockedByLines(raw.body ?? '')
+      .filter((n) => n !== raw.number && !seen.has(trackerRef(n)))
+      .map((n): TicketRef => ({ number: trackerRef(n), title: '', state: 'open' })),
   ];
   return {
-    number: raw.number,
+    number: trackerRef(raw.number),
     title: raw.title,
     state: state(raw.state),
     body: raw.body ?? '',
@@ -93,7 +80,7 @@ function normalise(raw: RawIssue): Ticket {
     closedAt: raw.closedAt ?? null,
     labels,
     assignees: (raw.assignees ?? []).map((a) => a.login),
-    parent: raw.parent?.number ?? null,
+    parent: raw.parent ? trackerRef(raw.parent.number) : null,
     blockedBy,
     blocking: (raw.blocking?.nodes ?? []).map(ref),
     comments: (raw.comments ?? []).map((c) => ({
@@ -112,6 +99,10 @@ export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): Writ
 
   return {
     name: 'github',
+
+    async identify() {
+      return (await run(['api', 'user', '--jq', '.login'], repoRoot)).trim();
+    },
 
     async scan() {
       const raw = await json<RawIssue[]>([
@@ -153,9 +144,14 @@ export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): Writ
       if (comment) args.push('--comment', comment);
       await run(args, repoRoot);
     },
-
-    async openPR({ branch, baseBranch, title, body }) {
-      await run(['pr', 'create', '--head', branch, '--base', baseBranch, '--title', title, '--body', body], repoRoot);
-    },
   };
 }
+
+export const githubKind: TrackerKind<Record<string, never>> = {
+  id: 'github',
+  label: 'GitHub',
+  settings: z.object({}).strict(),
+  secretNames: [],
+  capabilities: { close: true, reopen: true, claim: true, transition: false, epicSources: ['epic-label'] },
+  create: ({ repoRoot, run }) => githubAdapter(repoRoot, run),
+};

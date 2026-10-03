@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { trackerRef } from '../src/tracker/adapter.js';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -194,12 +195,12 @@ describe('TaskArchive', () => {
 
     it('resolves under an epic root', async () => {
       const archive = archiveFor();
-      const owner = { workspaceId: 1, epicRef: 5 };
+      const owner = { workspaceId: 1, epicRef: trackerRef(5) };
       expect(await archive.archivedTranscript(owner, 1, 'verification', '/x/e.jsonl')).toBeNull();
       const src = join(dir, 'src');
       mkdirSync(src, { recursive: true });
       writeFileSync(join(src, 'e.jsonl'), 'e\n');
-      const writer = archive.epicCriticStep(1, 5, 1, 'critic-1');
+      const writer = archive.epicCriticStep(1, trackerRef(5), 1, 'critic-1');
       await writer.copyNative('claude', join(src, 'e.jsonl'));
       await writer.close();
       expect(await archive.archivedTranscript(owner, 1, 'verification', '/x/e.jsonl')).toBe(join(await writer.dir, 'native', 'e.jsonl'));
@@ -311,18 +312,18 @@ describe('TaskArchive', () => {
     const task = await tasks.create({ prompt: 'p' });
     const workspaceId = task.workspaceId!;
     const archive = archiveFor();
-    const [d1, d2] = await Promise.all([archive.ensureEpic(workspaceId, 42), archive.ensureEpic(workspaceId, 42)]);
+    const [d1, d2] = await Promise.all([archive.ensureEpic(workspaceId, trackerRef(42)), archive.ensureEpic(workspaceId, trackerRef(42))]);
     expect(d1).toBe(d2);
     expect(d1).toBe(join(dir, 'archive', 'default', 'epic-42'));
     const manifest = JSON.parse(readFileSync(join(d1, 'archive.json'), 'utf8'));
-    expect(manifest).toMatchObject({ epicRef: 42, workspace: 'Default', workspaceId, title: 'Epic #42', dispositions: [], exports: [] });
+    expect(manifest).toMatchObject({ epicRef: '42', workspace: 'Default', workspaceId, title: 'Epic #42', dispositions: [], exports: [] });
     expect(typeof manifest.createdAt).toBe('string');
     writeFileSync(join(d1, 'archive.json'), '{"custom":true}');
-    await archive.ensureEpic(workspaceId, 42);
+    await archive.ensureEpic(workspaceId, trackerRef(42));
     expect(readFileSync(join(d1, 'archive.json'), 'utf8')).toBe('{"custom":true}');
     expect(readdirSync(d1).filter((n) => n.endsWith('.tmp'))).toEqual([]);
 
-    const writer = archive.epicCriticStep(workspaceId, 42, 3, 'critic-x');
+    const writer = archive.epicCriticStep(workspaceId, trackerRef(42), 3, 'critic-x');
     writer.appendPrompt('epic prompt');
     writer.appendUpdate({ n: 1 });
     await writer.close();

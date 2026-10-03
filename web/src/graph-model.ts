@@ -1,6 +1,6 @@
 // Explicit .js extensions: this module is shared with the node-side test
 // project, whose nodenext resolution requires them (Vite maps .js → .ts).
-import type { Task, TaskState } from './types.js';
+import type { Task, TaskState , TrackerRef } from './types.js';
 import { TERMINAL_STATES } from './task-state-model.js';
 
 /** A directed Dependency edge: `from` is a prerequisite of `to`. */
@@ -42,7 +42,7 @@ export function visibleTasks(tasks: Task[], showTerminal: boolean): Task[] {
   );
 }
 
-export function filterByEpic(tasks: Task[], epicRef: number | null): Task[] {
+export function filterByEpic(tasks: Task[], epicRef: TrackerRef | null): Task[] {
   return epicRef == null ? tasks : tasks.filter((t) => t.mapRef === epicRef);
 }
 
@@ -89,9 +89,9 @@ export function nodeTitle(prompt: string): string {
  * layers by dependency first, scattering a Map's members, so a box would tear —
  * the shared badge number is what actually carries membership.
  */
-export function mapBadges(tasks: Task[]): Map<number, number> {
-  const refs = [...new Set(tasks.map((t) => t.mapRef).filter((r): r is number => r != null))].sort(
-    (a, b) => a - b,
+export function mapBadges(tasks: Task[]): Map<TrackerRef, number> {
+  const refs = [...new Set(tasks.map((t) => t.mapRef).filter((r): r is TrackerRef => r != null))].sort(
+    (a, b) => a.localeCompare(b, undefined, { numeric: true }),
   );
   return new Map(refs.map((ref, i) => [ref, i + 1]));
 }
@@ -201,7 +201,7 @@ export interface LaidNode extends NodeBox {
 /** A laid-out Map group box (never drawn as a container — only its
  * origin/size inform the floating label). */
 export interface LaidGroup extends NodeBox {
-  ref: number;
+  ref: TrackerRef;
   title: string;
 }
 export interface Layout {
@@ -256,7 +256,7 @@ function laidNode(elkNode: ElkLaidNode, byId: Map<number, Task>, ox: number, oy:
  */
 export function flattenElkLayout(
   res: ElkLaidGraph,
-  groupTitles: Map<number, string>,
+  groupTitles: Map<TrackerRef, string>,
   byId: Map<number, Task>,
   edges: GraphEdge[],
 ): Layout {
@@ -264,7 +264,7 @@ export function flattenElkLayout(
   const groups: LaidGroup[] = [];
   for (const child of res.children ?? []) {
     if (child.id.startsWith('m')) {
-      const ref = Number(child.id.slice(1));
+      const ref: TrackerRef = child.id.slice(1);
       const ox = child.x ?? 0;
       const oy = child.y ?? 0;
       groups.push({ ref, title: groupTitles.get(ref) ?? `Map ${ref}`, x: ox, y: oy, w: child.width ?? 0, h: child.height ?? 0 });

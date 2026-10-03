@@ -13,7 +13,7 @@ import { AttemptStore } from '../src/domain/attempts.js';
 import { Runner } from '../src/execution/runner.js';
 import { TrackerEpicService } from '../src/tracker/epic-service.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
-import type { Ticket } from '../src/tracker/adapter.js';
+import { type Ticket, trackerRef, type TrackerRef } from '../src/tracker/adapter.js';
 import type { CriticDriveRequest } from '../src/verification/critic.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { executionPlumbing, allWorkspaces, makeSettingsStore, waitFor, seedWorkspace } from './helpers.js';
@@ -21,7 +21,7 @@ import { executionPlumbing, allWorkspaces, makeSettingsStore, waitFor, seedWorks
 const fakeGit = { revParse: async () => 'develop-tip' };
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
-  number: 100,
+  number: trackerRef(100),
   title: 'A ticket',
   state: 'open',
   body: '',
@@ -57,7 +57,7 @@ describe('EpicRefresh', () => {
       escalate: () => {},
     });
 
-    await expect(coordinator.refresh({ ref: 42, repoDir: '/repo', defaultBranch: 'develop' })).resolves.toEqual({
+    await expect(coordinator.refresh({ ref: trackerRef(42), repoDir: '/repo', defaultBranch: 'develop' })).resolves.toEqual({
       status: 'refreshed', oid: 'merge-oid',
     });
     expect(calls).toEqual(['epic/42<-develop']);
@@ -66,7 +66,7 @@ describe('EpicRefresh', () => {
   it('dispatches exactly one resolution turn, then escalates the Epic with the recorded conflict', async () => {
     const outcomes = [conflict('first conflict'), conflict('second conflict')];
     const resolutions: string[] = [];
-    const escalations: Array<{ ref: number; reason: string }> = [];
+    const escalations: Array<{ ref: TrackerRef; reason: string }> = [];
     const coordinator = new EpicRefresh({
       git: fakeGit,
       merge: async () => outcomes.shift()!,
@@ -77,14 +77,14 @@ describe('EpicRefresh', () => {
       escalate: (ref, reason) => { escalations.push({ ref, reason }); },
     });
 
-    await expect(coordinator.refresh({ ref: 7, repoDir: '/repo', defaultBranch: 'develop' })).resolves.toEqual({
+    await expect(coordinator.refresh({ ref: trackerRef(7), repoDir: '/repo', defaultBranch: 'develop' })).resolves.toEqual({
       status: 'resolving', detail: 'first conflict',
     });
-    await expect(coordinator.refresh({ ref: 7, repoDir: '/repo', defaultBranch: 'develop' })).resolves.toMatchObject({
+    await expect(coordinator.refresh({ ref: trackerRef(7), repoDir: '/repo', defaultBranch: 'develop' })).resolves.toMatchObject({
       status: 'escalated',
     });
     expect(resolutions).toEqual(['first conflict']);
-    expect(escalations).toEqual([{ ref: 7, reason: expect.stringContaining('second conflict') }]);
+    expect(escalations).toEqual([{ ref: '7', reason: expect.stringContaining('second conflict') }]);
   });
 
   it('serializes refreshes on the same base repo', async () => {
@@ -102,8 +102,8 @@ describe('EpicRefresh', () => {
       escalate: () => {},
     });
 
-    const one = coordinator.refresh({ ref: 9, repoDir: '/repo', defaultBranch: 'develop' });
-    const two = coordinator.refresh({ ref: 9, repoDir: '/repo', defaultBranch: 'develop' });
+    const one = coordinator.refresh({ ref: trackerRef(9), repoDir: '/repo', defaultBranch: 'develop' });
+    const two = coordinator.refresh({ ref: trackerRef(9), repoDir: '/repo', defaultBranch: 'develop' });
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(starts).toEqual([1]);
     release();
@@ -120,7 +120,7 @@ describe('EpicRefresh', () => {
       escalate: (_ref, reason) => { escalations.push(reason); },
     });
 
-    await expect(coordinator.refresh({ ref: 12, repoDir: '/repo', defaultBranch: 'develop' })).resolves.toEqual({
+    await expect(coordinator.refresh({ ref: trackerRef(12), repoDir: '/repo', defaultBranch: 'develop' })).resolves.toEqual({
       status: 'deferred', reason: 'branch is checked out',
     });
     expect(escalations).toEqual([]);
@@ -139,7 +139,7 @@ describe('EpicRefresh', () => {
       },
       escalate: (_ref, reason) => { escalations.push(reason); },
     });
-    const target = { ref: 13, repoDir: '/repo', defaultBranch: 'develop' };
+    const target = { ref: trackerRef(13), repoDir: '/repo', defaultBranch: 'develop' };
 
     await expect(coordinator.refresh(target)).rejects.toThrow('no corrective turn was dispatched');
     await expect(coordinator.refresh(target)).resolves.toEqual({
@@ -159,7 +159,7 @@ describe('EpicRefresh', () => {
       }),
       escalate: () => {},
     });
-    const target = { ref: 14, repoDir: '/repo', defaultBranch: 'develop' };
+    const target = { ref: trackerRef(14), repoDir: '/repo', defaultBranch: 'develop' };
 
     await expect(coordinator.refresh(target)).resolves.toEqual({
       status: 'escalated',
@@ -229,15 +229,15 @@ describe('epic refresh corrective turn (issue #315)', () => {
   }
 
   const epicTickets = (): Ticket[] => [
-    ticket({ number: 5, title: 'Resolver epic' }),
-    ticket({ number: 6, parent: 5 }),
+    ticket({ number: trackerRef(5), title: 'Resolver epic' }),
+    ticket({ number: trackerRef(6), parent: trackerRef(5) }),
   ];
 
   /** Mirrors a done, worktree-mode member for Epic 5 onto `workspaceId`, so the
    * whole-Epic integrate gate opens without a force override. */
   async function readyEpicMember(workspaceId: number, tickets: Ticket[]): Promise<void> {
     const mirrored = await mirrorScan(tasks, tickets, workspaceId);
-    const member = mirrored.find((t) => t.trackerRef === 6)!;
+    const member = mirrored.find((t) => t.trackerRef === trackerRef(6))!;
     await tasks.update(member.id, { isolationMode: 'worktree' });
     await tasks.setState(member.id, 'done');
   }
@@ -257,7 +257,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     await runningMember('epic/5');
     git(repo, 'checkout', '--detach');
 
-    const target = { ref: 5, repoDir: repo, defaultBranch: 'develop' };
+    const target = { ref: trackerRef(5), repoDir: repo, defaultBranch: 'develop' };
     const coordinator: EpicRefresh = new EpicRefresh({
       dispatchResolve: (t, detail) =>
         runner.enqueueEpicRefreshResolution(t, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
@@ -288,7 +288,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     await runningMember('epic/5');
     git(repo, 'checkout', '--detach');
 
-    const target = { ref: 5, repoDir: repo, defaultBranch: 'develop' };
+    const target = { ref: trackerRef(5), repoDir: repo, defaultBranch: 'develop' };
     const coordinator: EpicRefresh = new EpicRefresh({
       dispatchResolve: (t, detail) =>
         runner.enqueueEpicRefreshResolution(t, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
@@ -315,7 +315,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     await runningMember('epic/9');
 
     const outcome = await runner.enqueueEpicRefreshResolution(
-      { ref: 9, repoDir: repo, defaultBranch: 'develop' },
+      { ref: trackerRef(9), repoDir: repo, defaultBranch: 'develop' },
       'both changed shared.txt',
       () => {},
       async () => {
@@ -341,7 +341,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     });
     git(repo, 'checkout', '--detach');
 
-    const target = { ref: 5, repoDir: repo, defaultBranch: 'develop' };
+    const target = { ref: trackerRef(5), repoDir: repo, defaultBranch: 'develop' };
     const coordinator: EpicRefresh = new EpicRefresh({
       dispatchResolve: (t, detail) =>
         runner.enqueueEpicRefreshResolution(t, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
@@ -367,9 +367,9 @@ describe('epic refresh corrective turn (issue #315)', () => {
   it('uses an existing Epic checkout and persists the resolver session, usage, process identity, and Step', async () => {
     const workspaces = new WorkspaceService(asyncDb, settingsStore);
     const workspace = await workspaces.create({ name: 'Epic resolver', workingDir: repo });
-    await tasks.syncEpics(workspace.id, [{ ref: 5, kind: 'epic' }]);
+    await tasks.syncEpics(workspace.id, [{ ref: trackerRef(5), kind: 'epic' }]);
     const attempts = new AttemptStore(asyncDb);
-    const attempt = await attempts.createForEpic({ workspaceId: workspace.id, epicRef: 5 });
+    const attempt = await attempts.createForEpic({ workspaceId: workspace.id, epicRef: trackerRef(5) });
     const liveWorktree = join(dir, 'epic-live');
     git(repo, 'worktree', 'add', liveWorktree, 'epic/5');
     const cwd: string[] = [];
@@ -400,7 +400,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
 
     await runner.resolveEpicVerification({
       workspaceId: workspace.id,
-      epicRef: 5,
+      epicRef: trackerRef(5),
       repoDir: repo,
       worktreePath: liveWorktree,
       attempt,
@@ -505,12 +505,12 @@ describe('epic refresh corrective turn (issue #315)', () => {
     await epics.reconcile(tickets, await tasks.list({ workspaceId: workspace.id }));
 
     const escalated = await waitFor(async () => {
-      const rows = await attempts.listForEpic({ workspaceId: workspace.id, epicRef: 5 });
+      const rows = await attempts.listForEpic({ workspaceId: workspace.id, epicRef: trackerRef(5) });
       const row = rows.at(-1);
       return row?.state === 'escalated' ? row : undefined;
     });
 
-    await expect(service.rejectEpic(workspace.id, 5, 'Keep the public API compatible.', 'fresh')).resolves.toMatchObject({ status: 'waiting' });
+    await expect(service.rejectEpic(workspace.id, trackerRef(5), 'Keep the public API compatible.', 'fresh')).resolves.toMatchObject({ status: 'waiting' });
     expect(await attempts.get(escalated.id)).toMatchObject({ id: escalated.id, number: escalated.number, state: 'failed', feedback: 'Keep the public API compatible.' });
     expect(guidance.at(-1)).toContain('Keep the public API compatible.');
   });
@@ -544,7 +544,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     const epics = service.startWorkspace(workspace);
 
     await epics.reconcile(tickets, await tasks.list({ workspaceId: workspace.id }));
-    await waitFor(async () => ((await tasks.epicState(workspace.id, 5)) === 'integrated' ? true : undefined));
+    await waitFor(async () => ((await tasks.epicState(workspace.id, trackerRef(5))) === 'integrated' ? true : undefined));
 
     expect(existsSync(stale)).toBe(false);
     expect(git(repo, 'worktree', 'list')).not.toContain(stale);

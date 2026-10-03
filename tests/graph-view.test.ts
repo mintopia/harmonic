@@ -12,7 +12,7 @@ const task = ({
 }: {
   id: number;
   origin: Task['origin'];
-  trackerRef?: number | null;
+  trackerRef?: string | null;
   state?: Task['state'];
 }): Task => ({
   id,
@@ -93,7 +93,7 @@ describe('CardNode', () => {
   });
 
   it('shows a mirrored ticket by both ids, tracker ref first', () => {
-    const html = render(task({ id: 325, origin: 'mirrored', trackerRef: 436 }));
+    const html = render(task({ id: 325, origin: 'mirrored', trackerRef: '436' }));
 
     expect(html).toContain('x="182"');
     expect(html).toContain('>#436 · T-325<');

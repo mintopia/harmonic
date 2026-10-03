@@ -31,7 +31,7 @@ const process = (type: "attempt" | "chat"): ActivityProcess => ({
   state: "running",
   isolation: "worktree",
   startedAt: Date.now(),
-  trackerRef: type === "attempt" ? 499 : null,
+  trackerRef: type === "attempt" ? '499' : null,
   trackerUrl: null,
   escalated: false,
   usage: null,

@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { epicMergeEvents, type EpicMergeEventRow } from '../db/schema.js';
@@ -37,7 +38,7 @@ export class EpicMergeEventStore {
   constructor(private readonly db: AsyncDbHandle) {}
 
   /** Append one step, assigning the next monotonic `seq` (1-based). */
-  append(workspaceId: number, epicRef: number, step: EpicTimelineStep): Promise<PersistedEpicMergeEvent> {
+  append(workspaceId: number, epicRef: TrackerRef, step: EpicTimelineStep): Promise<PersistedEpicMergeEvent> {
     return this.db.write(async (db) => {
       const seq =
         ((
@@ -57,7 +58,7 @@ export class EpicMergeEventStore {
   }
 
   /** One Epic's steps in `seq` order. */
-  async list(workspaceId: number, epicRef: number): Promise<PersistedEpicMergeEvent[]> {
+  async list(workspaceId: number, epicRef: TrackerRef): Promise<PersistedEpicMergeEvent[]> {
     const rows = await this.db.read((db) =>
       db
         .select()

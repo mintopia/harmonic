@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type AppConfig, type DeepPartial } from '../src/config.js';
 import { startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
+import { trackerRef as brandRef } from '../src/tracker/adapter.js';
 
 describe('steering/resuming a Task whose Session is incompatible or stranded (issue: 409 after pause+resume across an upgrade)', () => {
   const scenario = (s: object) => JSON.stringify(s);
@@ -26,7 +27,7 @@ describe('steering/resuming a Task whose Session is incompatible or stranded (is
     const seed = (await server.api('POST', '/api/tasks', { prompt: 'workspace seed' })).body;
     const workspaceId = (await server.app.ctx.tasks.get(seed.id)).workspaceId ?? undefined;
     const mirrored = await server.app.ctx.tasks.upsertMirrored(
-      { trackerRef, prompt: `ticket ${trackerRef}\n\nbody`, workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+      { trackerRef: brandRef(trackerRef), prompt: `ticket ${trackerRef}\n\nbody`, workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
       workspaceId,
     );
     await server.api('POST', `/api/tasks/${mirrored.id}/run`);

@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { tasks, agentMessages, type AgentMessageRecipient } from '../src/db/schema.js';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const EPIC = 500;
 const parse = (result: any) => JSON.parse(result.content[0].text);
@@ -33,7 +34,7 @@ describe('agent message delivery (stub Harness, run-control seam)', () => {
   });
 
   const inEpic = (id: number) =>
-    server.app.ctx.asyncDb.write((d) => d.update(tasks).set({ trackerParent: EPIC }).where(eq(tasks.id, id)).run());
+    server.app.ctx.asyncDb.write((d) => d.update(tasks).set({ trackerParent: trackerRef(EPIC) }).where(eq(tasks.id, id)).run());
 
   async function boot(dir?: string) {
     dataDir = dir ?? mkdtempSync(join(tmpdir(), 'am-delivery-'));
@@ -46,7 +47,7 @@ describe('agent message delivery (stub Harness, run-control seam)', () => {
     await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
     const workspaceId = (await server.app.ctx.tasks.get(created.body.id)).workspaceId!;
     await server.app.ctx.workspaces.update(workspaceId, { agentMessagesEnabled: true });
-    await server.app.ctx.asyncDb.write((d) => d.update(tasks).set({ state: 'working', trackerParent: EPIC }).where(eq(tasks.id, created.body.id)).run());
+    await server.app.ctx.asyncDb.write((d) => d.update(tasks).set({ state: 'working', trackerParent: trackerRef(EPIC) }).where(eq(tasks.id, created.body.id)).run());
     const key = await server.app.ctx.auth.createKey(`am-${created.body.id}`, { scope: 'attempt', attemptId: started.body.id });
     const client = await mcpClient(server, key.token);
     clients.push(client);

@@ -8,7 +8,7 @@ import { subscribe, type OperationEvent } from '../ws.js';
 import { ScheduledJobsView } from './ScheduledJobsView.js';
 import { CleanupDialog, sizeLabel, useWorktreeInventory, WorktreesTable } from './WorktreeInventoryView.js';
 import { useLiveEffect } from '../useLiveEffect.js';
-import type { Task } from '../types.js';
+import type { Task , TrackerRef } from '../types.js';
 import type { Epic } from '../epic-model.js';
 
 export interface OperationsPageProps {
@@ -18,7 +18,7 @@ export interface OperationsPageProps {
   tasks?: readonly Task[];
   epics?: readonly Epic[];
   onOpenTask?: (taskId: number) => void;
-  onOpenEpic?: (epicRef: number) => void;
+  onOpenEpic?: (epicRef: TrackerRef) => void;
 }
 
 const ATTENTION_STATES = new Set(['Dirty', 'Unreadable', 'Orphan']);
@@ -54,11 +54,9 @@ function elapsed(ms: number): string {
   return minutes > 0 ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
 }
 
-interface OperationSubject {
-  kind: 'task' | 'epic';
-  id: number;
-  title: string;
-}
+type OperationSubject =
+  | { kind: 'task'; id: number; title: string }
+  | { kind: 'epic'; id: TrackerRef; title: string };
 
 type OperationTask = Pick<Task, 'id' | 'summary'>;
 type OperationEpic = Pick<Epic, 'ref' | 'title'>;
@@ -70,7 +68,7 @@ function subject(operation: Operation, tasks: readonly OperationTask[], epics: r
     return { kind: 'task', id: taskId, title: typeof title === 'string' ? title : tasks.find((task) => task.id === taskId)?.summary ?? `Task ${taskId}` };
   }
   const epicRef = operation.attributes['epic.ref'];
-  if (typeof epicRef === 'number') {
+  if (typeof epicRef === 'string') {
     const title = operation.attributes['epic.title'];
     return { kind: 'epic', id: epicRef, title: typeof title === 'string' ? title : epics.find((epic) => epic.ref === epicRef)?.title ?? epicLabel(epicRef) };
   }
@@ -116,7 +114,7 @@ export function OperationRow({
   tasks?: readonly OperationTask[];
   epics?: readonly OperationEpic[];
   onOpenTask?: (taskId: number) => void;
-  onOpenEpic?: (epicRef: number) => void;
+  onOpenEpic?: (epicRef: TrackerRef) => void;
   owner?: OperationSubject | null;
 }): ReactNode {
   const duration = (operation.endedAt ?? now) - operation.startedAt;

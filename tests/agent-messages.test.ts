@@ -1,3 +1,4 @@
+import { trackerRef } from '../src/tracker/adapter.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -29,7 +30,7 @@ describe('agent messages over MCP', () => {
   const ids: Record<string, number> = {};
 
   const setState = (id: number, state: TaskState, parent: number | null = EPIC) =>
-    server.app.ctx.asyncDb.write((d) => d.update(tasks).set({ state, trackerParent: parent }).where(eq(tasks.id, id)).run());
+    server.app.ctx.asyncDb.write((d) => d.update(tasks).set({ state, trackerParent: parent === null ? null : trackerRef(parent) }).where(eq(tasks.id, id)).run());
 
   async function runToDone(prompt: string) {
     const created = await server.api('POST', '/api/tasks', { prompt });

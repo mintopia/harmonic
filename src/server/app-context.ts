@@ -25,6 +25,7 @@ import { Scheduler, type ScheduledJobRegistration } from '../scheduler/scheduler
 import { TrackerPollerManager } from '../tracker/manager.js';
 import type { EpicService } from '../tracker/epic-service.js';
 import { ChannelService } from '../notifications/channels.js';
+import { SecretService } from '../secrets/secret-service.js';
 import { NotificationStore } from '../notifications/notification-store.js';
 import { Notifier } from '../notifications/notifier.js';
 import type { TaskArchive } from '../archive/task-archive.js';
@@ -103,6 +104,7 @@ export interface AppContext {
   scheduler: Scheduler;
   auth: AuthService;
   channels: ChannelService;
+  secrets: SecretService;
   notifier: Notifier;
   notifications: NotificationStore;
   bus: EventBus;
@@ -131,6 +133,7 @@ export type PersistenceContext = Pick<
   | 'verificationAttempts'
   | 'auth'
   | 'channels'
+  | 'secrets'
   | 'notifications'
 >;
 
@@ -167,8 +170,8 @@ export interface AppContexts {
 }
 
 export function createPersistenceContext(ctx: AppContext): PersistenceContext {
-  const { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, taskEvents, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels, notifications } = ctx;
-  return { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, taskEvents, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels, notifications };
+  const { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, taskEvents, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels, secrets, notifications } = ctx;
+  return { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, taskEvents, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels, secrets, notifications };
 }
 
 export function createExecutionContext(ctx: AppContext): ExecutionContext {

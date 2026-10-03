@@ -19,6 +19,7 @@ import { OverrideField, type OverridableDescriptor } from './settings-override-f
 import { InheritField } from './InheritField';
 import { LayerField } from './LayerField';
 import { Switch } from './Switch';
+import { CodeRepositorySection, IssueTrackerSection, TriageLabelsSection } from './TrackerSettings';
 import { HarnessesSection } from './HarnessSettings';
 import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
@@ -839,32 +840,6 @@ function WorkspaceGuardrails({ ctx }: { ctx: WorkspaceRenderCtx }) {
   );
 }
 
-const RESOLVE_FAILURE_LABEL: Record<string, string> = {
-  'no-declaration': 'No tracker declared',
-  unsupported: 'Unsupported tracker',
-  misconfigured: 'Tracker misconfigured',
-};
-
-function ResolvedTrackerValue({ workspace }: { workspace: Workspace }) {
-  const resolved = workspace.resolvedTracker;
-  if (!resolved) {
-    return (
-      <p className="pt-1 text-small text-muted">
-        {workspace.trackerEnabled ? 'Resolving…' : 'Enable mirroring to resolve the tracker.'}
-      </p>
-    );
-  }
-  if (resolved.ok) {
-    return <p className="pt-1 font-medium text-ink">{resolved.label}</p>;
-  }
-  const friendly = (resolved.code && RESOLVE_FAILURE_LABEL[resolved.code]) ?? 'Cannot resolve tracker';
-  return (
-    <p className="pt-1 text-fail" title={resolved.reason ?? undefined}>
-      {friendly}
-    </p>
-  );
-}
-
 function WorkspaceIdentity({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace, errors } = ctx;
   return (
@@ -996,41 +971,6 @@ function hslToHex(hue: number, saturation: number, lightness: number): string {
   return `#${channel(red)}${channel(green)}${channel(blue)}`.toUpperCase();
 }
 
-function WorkspaceTracker({ ctx }: { ctx: WorkspaceRenderCtx }) {
-  const { workspace, pristineWorkspace, errors } = ctx;
-  return (
-    <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
-      <div>
-        <span className={fieldLabel}>Enabled</span>
-        <div className="pt-1">
-          <Switch
-            checked={workspace.trackerEnabled}
-            onChange={(trackerEnabled) => ctx.setWorkspace({ ...workspace, trackerEnabled })}
-          >
-            Mirror tracker issues onto the board
-          </Switch>
-        </div>
-      </div>
-      <div>
-        <label className={fieldLabel} htmlFor="workspace-poll-interval">Poll interval (seconds)</label>
-        <input
-          id="workspace-poll-interval"
-          type="number"
-          min={5}
-          className={`${field} w-28 tabular-nums`}
-          value={workspace.trackerPollIntervalSeconds}
-          onChange={(e) => ctx.setWorkspace({ ...workspace, trackerPollIntervalSeconds: Number(e.target.value) })}
-        />
-        <FieldError message={errors['trackerPollIntervalSeconds']} />
-      </div>
-      <div>
-        <span className={fieldLabel}>Resolved tracker</span>
-        <ResolvedTrackerValue workspace={pristineWorkspace} />
-      </div>
-    </div>
-  );
-}
-
 function WorkspaceExcludedFolders({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace } = ctx;
   const [value, setValue] = useState('');
@@ -1112,14 +1052,6 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     title: 'Identity',
     description: "This Workspace's name and the project directory it points at.",
     body: (ctx) => (ctx.surface === 'workspace' ? <WorkspaceIdentity ctx={ctx} /> : null),
-  },
-  {
-    tab: 'general',
-    surfaces: ['workspace'],
-    title: 'Tracker mirroring',
-    description:
-      'Poll this Workspace’s issue tracker and mirror its issues onto the board as Tasks. Needs docs/agents/issue-tracker.md in the repo and gh (GitHub) auth.',
-    body: (ctx) => (ctx.surface === 'workspace' ? <WorkspaceTracker ctx={ctx} /> : null),
   },
   {
     tab: 'general',
@@ -1277,6 +1209,28 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     ),
   },
 
+  {
+    tab: 'integrations',
+    surfaces: ['workspace'],
+    title: 'Issue tracker',
+    description:
+      'Mirror this Workspace’s issue tracker onto the board as Tasks. The Configured Tracker wins over the repo’s docs/agents/issue-tracker.md, which wins over the Code Repository.',
+    body: (ctx) => (ctx.surface === 'workspace' ? <IssueTrackerSection ctx={ctx} /> : null),
+  },
+  {
+    tab: 'integrations',
+    surfaces: ['workspace'],
+    title: 'Code repository',
+    description: 'The forge that hosts this Workspace’s branches, PRs/MRs and Merges. Detected from the origin remote unless overridden.',
+    body: (ctx) => (ctx.surface === 'workspace' ? <CodeRepositorySection ctx={ctx} /> : null),
+  },
+  {
+    tab: 'integrations',
+    surfaces: ['workspace'],
+    title: 'Triage labels',
+    description: 'The label names the tracker uses for each role Harmonic acts on. Empty roles use the repo’s docs/agents/triage-labels.md, then the defaults.',
+    body: (ctx) => (ctx.surface === 'workspace' ? <TriageLabelsSection ctx={ctx} /> : null),
+  },
   {
     tab: 'integrations',
     surfaces: ['global'],

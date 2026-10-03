@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import type { TaskArchive } from '../archive/task-archive.js';
 import type { AgentMessageStore } from '../domain/agent-messages.js';
 import type { AutoDrive } from './auto-drive.js';
@@ -32,7 +33,7 @@ export interface RunnerEvents {
   onStepChanged?: (taskId: number) => void;
   /** Fired after each Epic integration-merge step is persisted, so the Epic's
    * merge progress can follow live (Epics have no Attempt row to stream). */
-  onEpicMergeStep?: (payload: { workspaceId: number; epicRef: number }) => void;
+  onEpicMergeStep?: (payload: { workspaceId: number; epicRef: TrackerRef }) => void;
   /** Fired after a Task-level lifecycle event (no owning Attempt) is
    * persisted, so the ticket timeline can follow live. */
   onTaskEvent?: (taskId: number) => void;

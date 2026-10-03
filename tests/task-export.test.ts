@@ -13,6 +13,7 @@ import { EXPORT_RETRY_DELAYS_MS, TaskExporter, type ExportFailure, type TaskExpo
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import { emptyGitProvenance } from '../src/archive/git-provenance.js';
 import { BackgroundWork } from '../src/error-handling.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const TARBALL = /^(\d+)-(\d+-)?done-\d{8}T\d{6}\.\d{3}Z(-\d+)?\.tar\.gz$/;
 
@@ -359,7 +360,7 @@ describe('TaskExporter (#734)', () => {
 
   it('includes the tracker reference in the filename', async () => {
     const now = new Date('2026-01-02T03:04:05.006Z');
-    await exporter({ now: () => now }).run({ ...task, trackerRef: 42 }, 'done');
+    await exporter({ now: () => now }).run({ ...task, trackerRef: trackerRef(42) }, 'done');
     expect(tarballs()).toEqual([`${task.id}-42-done-20260102T030405.006Z.tar.gz`]);
   });
 

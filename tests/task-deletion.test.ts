@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { decideTaskDeletion, type DeletableTaskFacts } from '../src/domain/task-deletion.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 describe('decideTaskDeletion (issue #162)', () => {
   const base: DeletableTaskFacts = {
@@ -21,7 +22,7 @@ describe('decideTaskDeletion (issue #162)', () => {
       ...base,
       state: 'working',
       origin: 'mirrored',
-      trackerRef: 42,
+      trackerRef: trackerRef(42),
     });
     expect(decision.ok).toBe(false);
     expect(decision.reason).toMatch(/working/);
@@ -48,12 +49,12 @@ describe('decideTaskDeletion (issue #162)', () => {
     const decision = decideTaskDeletion({
       ...base,
       origin: 'mirrored',
-      trackerRef: 42,
+      trackerRef: trackerRef(42),
       workspaceId: 7,
     });
     expect(decision).toEqual({
       ok: true,
-      tombstone: { workspaceId: 7, trackerRef: 42 },
+      tombstone: { workspaceId: 7, trackerRef: '42' },
     });
   });
 

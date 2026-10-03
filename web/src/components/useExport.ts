@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../types.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { exportAgainFeedback, type ExportFeedback } from '../task-export-model';
@@ -22,7 +23,7 @@ export const taskExportTarget = (taskId: number): ExportTarget => ({
   downloadUrl: api.taskExportDownloadUrl(taskId),
 });
 
-export const epicExportTarget = (workspaceId: number, epicRef: number): ExportTarget => ({
+export const epicExportTarget = (workspaceId: number, epicRef: TrackerRef): ExportTarget => ({
   key: `epic:${workspaceId}:${epicRef}`,
   noun: 'Epic',
   load: () => api.epicExport(workspaceId, epicRef),

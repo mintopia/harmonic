@@ -1,3 +1,4 @@
+import type { TrackerRef } from './types.js';
 import type {
   Attempt,
   ActivityProcess,
@@ -35,6 +36,9 @@ import type {
   EpicCriticOverlayEntry,
   VerifierStatus,
   Workspace,
+  TrackerKindInfo,
+  TrackerDetection,
+  VerifyResult,
   UpdateState,
   HarnessProvider,
   DiscoveredHarnessModel,
@@ -97,6 +101,16 @@ async function requestText(path: string): Promise<string> {
 }
 
 export const api = {
+  trackerKinds: () => request<{ kinds: TrackerKindInfo[] }>('GET', '/api/tracker-kinds'),
+  trackerDetection: (workspaceId: number) => request<TrackerDetection>('GET', `/api/workspaces/${workspaceId}/tracker-detection`),
+  verifyTracker: (workspaceId: number) => request<VerifyResult>('POST', `/api/workspaces/${workspaceId}/tracker/verify`),
+  verifyRepository: (workspaceId: number) => request<VerifyResult>('POST', `/api/workspaces/${workspaceId}/repository/verify`),
+  secretStatus: (workspaceId: number, name: string) =>
+    request<{ name: string; set: boolean }>('GET', `/api/workspaces/${workspaceId}/secrets/${encodeURIComponent(name)}`),
+  setSecret: (workspaceId: number, name: string, value: string) =>
+    request<unknown>('PUT', `/api/workspaces/${workspaceId}/secrets/${encodeURIComponent(name)}`, { value }),
+  clearSecret: (workspaceId: number, name: string) =>
+    request<unknown>('DELETE', `/api/workspaces/${workspaceId}/secrets/${encodeURIComponent(name)}`),
   harnessProviders: (harness: string) => request<{ providers: HarnessProvider[] }>('GET', `/api/harnesses/${encodeURIComponent(harness)}/providers`),
   harnessModels: (harness: string, provider: string) => request<{ models: DiscoveredHarnessModel[] }>('GET', `/api/harnesses/${encodeURIComponent(harness)}/models?provider=${encodeURIComponent(provider)}`),
   config: () => request<AppConfig>('GET', '/api/config'),
@@ -118,7 +132,7 @@ export const api = {
    * The response is the shared paginated envelope: the page under
    * `tasks` plus the filtered `total`. Pass `limit`/`offset` to page through it;
    * omit `limit` for the whole filtered list. */
-  tasks: ({ workspaceId, state, parent, limit, offset }: { workspaceId?: number; state?: 'open'; parent?: number; limit?: number; offset?: number } = {}) => {
+  tasks: ({ workspaceId, state, parent, limit, offset }: { workspaceId?: number; state?: 'open'; parent?: TrackerRef; limit?: number; offset?: number } = {}) => {
     const params = new URLSearchParams();
     if (workspaceId) params.set('workspaceId', String(workspaceId));
     if (state) params.set('state', state);
@@ -146,7 +160,7 @@ export const api = {
     return request<Stats>('GET', `/api/stats?${query}`);
   },
   activity: (workspaceId?: number) => request<{ processes: ActivityProcess[]; agentMessagesEnabledInAnyWorkspace: boolean }>('GET', workspaceId === undefined ? '/api/activity' : `/api/activity?workspaceId=${workspaceId}`),
-  agentMessageThreads: (params: { workspaceId?: number; epicId?: number; taskId?: number; live?: boolean; limit?: number; offset?: number } = {}) => {
+  agentMessageThreads: (params: { workspaceId?: number; epicId?: TrackerRef; taskId?: number; live?: boolean; limit?: number; offset?: number } = {}) => {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) if (value !== undefined) query.set(key, String(value));
     const qs = query.toString();
@@ -157,7 +171,7 @@ export const api = {
     if (workspaceId !== undefined) query.set('workspaceId', String(workspaceId));
     return request<TimelineResponse>('GET', `/api/timeline?${query}`);
   },
-  epicStats: (epicRef: number, workspaceId: number) =>
+  epicStats: (epicRef: TrackerRef, workspaceId: number) =>
     request<Stats>('GET', `/api/epics/${epicRef}/stats?workspaceId=${workspaceId}`),
   createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready' }) =>
     request<Task>('POST', '/api/tasks', input),
@@ -244,6 +258,9 @@ export const api = {
       exportS3SecretAccessKey?: string | null;
       exportRedactPatterns?: { id: string; regex: string }[] | null;
       exportIncludeStates?: ExportState[] | null;
+      configuredTracker?: Workspace['configuredTracker'];
+      codeRepository?: Workspace['codeRepository'];
+      triageLabels?: Workspace['triageLabels'];
       archiveRetentionDays?: number | null;
       archiveRetentionMaxTotalMB?: number | null;
       toolTimeoutMinutes?: number | null;
@@ -296,7 +313,7 @@ export const api = {
   removeDependency: (id: number, depId: number) =>
     request<Task>('DELETE', `/api/tasks/${id}/dependencies/${depId}`),
   continuationPreview: (id: number) => request<ContinuationPreview>('GET', `/api/tasks/${id}/continuation`),
-  rejectEpic: (workspaceId: number, epicRef: number, guidance: string, continuation: 'continue' | 'fresh') =>
+  rejectEpic: (workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh') =>
     request<EpicIntegrateOutcome>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/reject`, { guidance, continuation }),
   // The three escalation actions, escalated tickets only.
   // Accept merges the candidate as-is — the operator's judgement is the gate,
@@ -320,9 +337,9 @@ export const api = {
   taskExport: (id: number) => request<TaskExportStatus>('GET', `/api/tasks/${id}/export`),
   exportTaskAgain: (id: number) => request<TaskExportAgainResult>('POST', `/api/tasks/${id}/export`),
   taskExportDownloadUrl: (id: number) => `/api/tasks/${id}/export/download`,
-  epicExport: (workspaceId: number, epicRef: number) => request<TaskExportStatus>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/export`),
-  exportEpicAgain: (workspaceId: number, epicRef: number) => request<TaskExportAgainResult>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/export`),
-  epicExportDownloadUrl: (workspaceId: number, epicRef: number) => `/api/workspaces/${workspaceId}/epics/${epicRef}/export/download`,
+  epicExport: (workspaceId: number, epicRef: TrackerRef) => request<TaskExportStatus>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/export`),
+  exportEpicAgain: (workspaceId: number, epicRef: TrackerRef) => request<TaskExportAgainResult>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/export`),
+  epicExportDownloadUrl: (workspaceId: number, epicRef: TrackerRef) => `/api/workspaces/${workspaceId}/epics/${epicRef}/export/download`,
   taskUsage: (id: number) =>
     request<AttemptUsage & { cost: Cost | null; attemptCount: number }>('GET', `/api/tasks/${id}/usage`),
   attempt: (id: number) => request<AttemptSummary>('GET', `/api/attempts/${id}`),
@@ -415,11 +432,11 @@ export const api = {
     const base = `/api/workspaces/${workspaceId}/epics`;
     return request<{ epics: Epic[]; total: number }>('GET', query ? `${base}?${query}` : base);
   },
-  epic: (workspaceId: number, epicRef: number) =>
+  epic: (workspaceId: number, epicRef: TrackerRef) =>
     request<Epic>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}`),
-  epicAttempts: (workspaceId: number, epicRef: number) =>
+  epicAttempts: (workspaceId: number, epicRef: TrackerRef) =>
     request<{ attempts: EpicAttempt[] }>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/attempts`),
-  epicDiffFiles: (workspaceId: number, epicRef: number) =>
+  epicDiffFiles: (workspaceId: number, epicRef: TrackerRef) =>
     request<{ files: DiffFile[]; total: number }>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/diff/files`),
 
   // Derived Map rollup, paginated on the shared envelope

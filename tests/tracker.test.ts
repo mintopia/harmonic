@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { logger } from '../src/logger.js';
-import { resolveTracker, resolveTrackerAdapter } from '../src/tracker/adapter.js';
+import { resolveTracker, resolveTrackerAdapter, trackerRef } from '../src/tracker/adapter.js';
 import { githubAdapter, type GhRunner } from '../src/tracker/github.js';
 import { gitlabAdapter, type GlabRunner } from '../src/tracker/gitlab.js';
 import { localMarkdownAdapter } from '../src/tracker/local-markdown.js';
@@ -45,23 +45,23 @@ describe('github tracker adapter', () => {
     const { run } = fakeGh();
     const t = (await githubAdapter('/repo', run).scan())[0]!;
     expect(t).toMatchObject({
-      number: 29,
+      number: '29',
       state: 'open',
       url: 'https://github.com/mintopia/harmonic/issues/29',
-      parent: 19,
+      parent: '19',
       isMap: true,
       labels: ['ready-for-agent', 'wayfinder:map'],
       assignees: [],
     });
-    expect(t.blocking).toEqual([{ number: 30, title: 'Mirror tracker issues', state: 'open' }]);
+    expect(t.blocking).toEqual([{ number: '30', title: 'Mirror tracker issues', state: 'open' }]);
     expect(t.blockedBy).toEqual([]);
     expect(t.comments).toEqual([{ author: 'mintopia', body: 'first', createdAt: '2026-08-06T12:00:00Z' }]);
   });
 
   it('readTicket reads one fresh issue by number', async () => {
     const { run, calls } = fakeGh();
-    const t = await githubAdapter('/repo', run).readTicket({ number: 29, title: '', state: 'open' });
-    expect(t.number).toBe(29);
+    const t = await githubAdapter('/repo', run).readTicket({ number: trackerRef(29), title: '', state: 'open' });
+    expect(t.number).toBe('29');
     expect(calls).toContainEqual(['issue', 'view', '29', '--json', expect.any(String)]);
   });
 
@@ -162,9 +162,9 @@ describe('resolveTrackerAdapter', () => {
   });
 
   it('rejects an unknown tracker and a missing declaration', async () => {
-    const root = mkRepo('# Issue tracker: Jira\n');
+    const root = mkRepo('# Issue tracker: Linear\n');
     try {
-      await expect(resolveTrackerAdapter(root)).rejects.toThrow(/Jira/);
+      await expect(resolveTrackerAdapter(root)).rejects.toThrow(/Linear/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -183,7 +183,7 @@ describe('resolveTracker (Resolved Tracker surface, issue #83)', () => {
   it('resolves to the adapter display label on success', async () => {
     const root = mkRepo('# Issue tracker: GitHub\n');
     try {
-      expect(await resolveTracker(root)).toEqual({ ok: true, name: 'github', label: 'GitHub' });
+      expect(await resolveTracker(root)).toEqual({ ok: true, name: 'github', label: 'GitHub', source: 'detected' });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -203,11 +203,11 @@ describe('resolveTracker (Resolved Tracker surface, issue #83)', () => {
   });
 
   it('reports "unsupported" for a declared name no adapter serves', async () => {
-    const root = mkRepo('# Issue tracker: Jira\n');
+    const root = mkRepo('# Issue tracker: Linear\n');
     try {
       const res = await resolveTracker(root);
       expect(res).toMatchObject({ ok: false, code: 'unsupported' });
-      if (!res.ok) expect(res.reason).toMatch(/Jira/);
+      if (!res.ok) expect(res.reason).toMatch(/Linear/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -266,15 +266,15 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
   it('scan mints ids from the filename, parses the prose fields, skips non-tickets', async () => {
     const root = mkTree();
     try {
-      const tickets = (await localMarkdownAdapter(root).scan()).sort((a, b) => a.number - b.number);
-      expect(tickets.map((t) => t.number)).toEqual([0, 1, 2]);
-      const t1 = tickets.find((t) => t.number === 1)!;
+      const tickets = (await localMarkdownAdapter(root).scan()).sort((a, b) => Number(a.number) - Number(b.number));
+      expect(tickets.map((t) => t.number)).toEqual(['0', '1', '2']);
+      const t1 = tickets.find((t) => t.number === '1')!;
       expect(t1).toMatchObject({
         title: 'Tracker Adapter interface',
         state: 'open',
         labels: ['ready-for-agent'],
         assignees: [],
-        parent: 0,
+        parent: '0',
         isMap: false,
         comments: [],
       });
@@ -290,11 +290,11 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
     const root = mkTree();
     try {
       const tickets = await localMarkdownAdapter(root).scan();
-      const map = tickets.find((t) => t.number === 0)!;
+      const map = tickets.find((t) => t.number === '0')!;
       expect(map).toMatchObject({ isMap: true, title: 'local-markdown tracker', parent: null });
       expect(map.body).toBe('The problem and the solution.');
       expect(map.url).toMatch(/spec\.md$/);
-      expect(tickets.filter((t) => !t.isMap).every((t) => t.parent === 0)).toBe(true);
+      expect(tickets.filter((t) => !t.isMap).every((t) => t.parent === '0')).toBe(true);
       expect(map.blockedBy).toEqual([]);
       expect(map.blocking).toEqual([]);
     } finally {
@@ -307,7 +307,7 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
     try {
       const tickets = await localMarkdownAdapter(root).scan();
       expect(tickets.some((t) => t.isMap)).toBe(false);
-      expect(tickets.map((t) => t.number).sort((a, b) => a - b)).toEqual([1, 2]);
+      expect(tickets.map((t) => t.number).sort((a, b) => Number(a) - Number(b))).toEqual(['1', '2']);
       expect(tickets.every((t) => t.parent === null)).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -318,10 +318,10 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
     const root = mkTree();
     try {
       const tickets = await localMarkdownAdapter(root).scan();
-      const t1 = tickets.find((t) => t.number === 1)!;
-      const t2 = tickets.find((t) => t.number === 2)!;
-      expect(t2.blockedBy).toEqual([{ number: 1, title: 'Tracker Adapter interface', state: 'open' }]);
-      expect(t1.blocking).toEqual([{ number: 2, title: 'local-markdown tracker adapter', state: 'closed' }]);
+      const t1 = tickets.find((t) => t.number === '1')!;
+      const t2 = tickets.find((t) => t.number === '2')!;
+      expect(t2.blockedBy).toEqual([{ number: '1', title: 'Tracker Adapter interface', state: 'open' }]);
+      expect(t1.blocking).toEqual([{ number: '2', title: 'local-markdown tracker adapter', state: 'closed' }]);
       expect(t1.blockedBy).toEqual([]);
       expect(t2.state).toBe('closed');
       expect(t2.closedAt).not.toBeNull();
@@ -346,7 +346,7 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
     t(5, 'done', '- [ ] a');
     try {
       const byNum = new Map((await localMarkdownAdapter(root).scan()).map((x) => [x.number, x.state]));
-      expect([byNum.get(1), byNum.get(2), byNum.get(3), byNum.get(4), byNum.get(5)]).toEqual([
+      expect([byNum.get(trackerRef(1)), byNum.get(trackerRef(2)), byNum.get(trackerRef(3)), byNum.get(trackerRef(4)), byNum.get(trackerRef(5))]).toEqual([
         'open',
         'closed',
         'closed',
@@ -364,17 +364,17 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
       const md = localMarkdownAdapter(root);
       const file = join(root, 'harmonic-v1', 'issues', '01-adapter-interface.md');
       const before = readFileSync(file, 'utf8');
-      const ticket = await md.readTicket({ number: 1, title: '', state: 'open' });
+      const ticket = await md.readTicket({ number: trackerRef(1), title: '', state: 'open' });
       await md.claim(ticket);
       await md.release(ticket);
       await md.close(ticket, 'accepted');
       expect(readFileSync(file, 'utf8')).not.toBe(before);
       expect(readFileSync(file, 'utf8')).toContain('**Status:** closed');
-      expect((await md.readTicket({ number: 1, title: '', state: 'open' })).state).toBe('closed');
+      expect((await md.readTicket({ number: trackerRef(1), title: '', state: 'open' })).state).toBe('closed');
 
       await md.reopen(ticket, 'premature');
       expect(readFileSync(file, 'utf8')).toContain('**Status:** open');
-      const after = await md.readTicket({ number: 1, title: '', state: 'closed' });
+      const after = await md.readTicket({ number: trackerRef(1), title: '', state: 'closed' });
       expect(after.assignees).toEqual([]);
       expect(after.state).toBe('open');
     } finally {
@@ -393,7 +393,7 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
     writeFileSync(join(issues, '03-t.md'), ['# 03 — T3', '', '- [x] a', '- [X] b'].join('\n'));
     try {
       const byNum = new Map((await localMarkdownAdapter(root).scan()).map((x) => [x.number, x.state]));
-      expect([byNum.get(1), byNum.get(2), byNum.get(3)]).toEqual(['open', 'closed', 'closed']);
+      expect([byNum.get(trackerRef(1)), byNum.get(trackerRef(2)), byNum.get(trackerRef(3))]).toEqual(['open', 'closed', 'closed']);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -407,11 +407,11 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
     writeFileSync(file, ['# 01 — T1', '', '**Status:** closed', '', '- [x] a', '- [X] b'].join('\n'));
     try {
       const md = localMarkdownAdapter(root);
-      expect((await md.readTicket({ number: 1, title: '', state: 'open' })).state).toBe('closed');
-      await md.reopen({ number: 1, title: '', state: 'closed' }, 'premature');
+      expect((await md.readTicket({ number: trackerRef(1), title: '', state: 'open' })).state).toBe('closed');
+      await md.reopen({ number: trackerRef(1), title: '', state: 'closed' }, 'premature');
       expect(readFileSync(file, 'utf8')).toContain('- [x] a');
       expect(readFileSync(file, 'utf8')).toContain('**Status:** open');
-      expect((await md.readTicket({ number: 1, title: '', state: 'closed' })).state).toBe('open');
+      expect((await md.readTicket({ number: trackerRef(1), title: '', state: 'closed' })).state).toBe('open');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -430,13 +430,13 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
     try {
       addFeatureB(root);
 
-      const tickets = (await localMarkdownAdapter(root).scan()).sort((a, b) => a.number - b.number);
-      expect(tickets.map((t) => t.number)).toEqual([0, 1, 2, 10000, 10001, 10002]);
-      expect(tickets.filter((t) => t.isMap).map((t) => t.number)).toEqual([0, 10000]);
-      expect(tickets.find((t) => t.number === 1)!.parent).toBe(0);
-      expect(tickets.find((t) => t.number === 10001)!.parent).toBe(10000);
-      expect(tickets.find((t) => t.number === 10002)!.blockedBy).toEqual([
-        { number: 10001, title: 'Foo', state: 'open' },
+      const tickets = (await localMarkdownAdapter(root).scan()).sort((a, b) => Number(a.number) - Number(b.number));
+      expect(tickets.map((t) => t.number)).toEqual(['0', '1', '2', '10000', '10001', '10002']);
+      expect(tickets.filter((t) => t.isMap).map((t) => t.number)).toEqual(['0', '10000']);
+      expect(tickets.find((t) => t.number === '1')!.parent).toBe('0');
+      expect(tickets.find((t) => t.number === '10001')!.parent).toBe('10000');
+      expect(tickets.find((t) => t.number === '10002')!.blockedBy).toEqual([
+        { number: '10001', title: 'Foo', state: 'open' },
       ]);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -526,26 +526,26 @@ describe('gitlab tracker adapter', () => {
   it('scan normalises iid/opened-state and synthesises directional edges', async () => {
     const { run } = fakeGlab();
     const tickets = await gitlabAdapter(cfg, run).scan();
-    const t36 = tickets.find((t) => t.number === 36)!;
-    const t22 = tickets.find((t) => t.number === 22)!;
+    const t36 = tickets.find((t) => t.number === '36')!;
+    const t22 = tickets.find((t) => t.number === '22')!;
     expect(t36).toMatchObject({
-      number: 36,
+      number: '36',
       state: 'open',
-      parent: 19,
+      parent: '19',
       isMap: false,
       labels: ['ready-for-agent'],
       url: 'https://gitlab.com/mintopia/harmonic/-/issues/36',
     });
-    expect(t36.blockedBy).toEqual([{ number: 22, title: 'The Tracker Adapter interface', state: 'closed' }]);
-    expect(t22.blocking).toEqual([{ number: 36, title: 'GitLab tracker adapter', state: 'open' }]);
+    expect(t36.blockedBy).toEqual([{ number: '22', title: 'The Tracker Adapter interface', state: 'closed' }]);
+    expect(t22.blocking).toEqual([{ number: '36', title: 'GitLab tracker adapter', state: 'open' }]);
     expect(t22).toMatchObject({ state: 'closed', isMap: true });
     expect(t22.assignees).toEqual(['mintopia']);
   });
 
   it('readTicket adds non-system comments to the synthesised ticket', async () => {
     const { run } = fakeGlab();
-    const t = await gitlabAdapter(cfg, run).readTicket({ number: 36, title: '', state: 'open' });
-    expect(t.number).toBe(36);
+    const t = await gitlabAdapter(cfg, run).readTicket({ number: trackerRef(36), title: '', state: 'open' });
+    expect(t.number).toBe('36');
     expect(t.comments).toEqual([{ author: 'mintopia', body: 'first', createdAt: '2026-08-08T12:00:00Z' }]);
   });
 
@@ -623,18 +623,18 @@ describe('gitlab tracker adapter', () => {
       return JSON.stringify({});
     };
     const tickets = await gitlabAdapter(cfg, run).scan();
-    const t = (n: number) => tickets.find((x) => x.number === n)!;
+    const t = (n: number) => tickets.find((x) => x.number === trackerRef(n))!;
 
     expect(t(33).labels).toContain('epic');
     expect(t(33).isMap).toBe(false);
     expect(t(33).blockedBy).toEqual([]);
     expect(t(33).parent).toBeNull();
 
-    expect(t(34).parent).toBe(33);
-    expect(t(40).parent).toBe(33);
+    expect(t(34).parent).toBe('33');
+    expect(t(40).parent).toBe('33');
     expect(t(34).blockedBy).toEqual([]);
-    expect(t(40).blockedBy).toEqual([{ number: 34, title: 'Fix proxy version stamp', state: 'open' }]);
-    expect(t(34).blocking).toEqual([{ number: 40, title: 'Proxy self-update', state: 'open' }]);
+    expect(t(40).blockedBy).toEqual([{ number: '34', title: 'Fix proxy version stamp', state: 'open' }]);
+    expect(t(34).blocking).toEqual([{ number: '40', title: 'Proxy self-update', state: 'open' }]);
   });
 
   it('warns loudly (never truncates silently) when the page safety valve is hit', async () => {

@@ -50,7 +50,7 @@ CREATE TABLE `attempts` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`task_id` integer,
 	`workspace_id` integer,
-	`epic_ref` integer,
+	`epic_ref` text,
 	`number` integer NOT NULL,
 	`state` text DEFAULT 'running' NOT NULL,
 	`started_at` integer NOT NULL,
@@ -125,7 +125,7 @@ CREATE TABLE `conversations` (
 --> statement-breakpoint
 CREATE TABLE `epics` (
 	`workspace_id` integer NOT NULL,
-	`tracker_ref` integer NOT NULL,
+	`tracker_ref` text NOT NULL,
 	`kind` text NOT NULL,
 	`merge_commit` text,
 	`state` text NOT NULL,
@@ -134,10 +134,21 @@ CREATE TABLE `epics` (
 	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE TABLE `secrets` (
+	`workspace_id` integer NOT NULL,
+	`name` text NOT NULL,
+	`ciphertext` text NOT NULL,
+	`nonce` text NOT NULL,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL,
+	PRIMARY KEY(`workspace_id`, `name`),
+	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
 CREATE TABLE `epic_merge_events` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`workspace_id` integer NOT NULL,
-	`epic_ref` integer NOT NULL,
+	`epic_ref` text NOT NULL,
 	`seq` integer NOT NULL,
 	`ts` integer NOT NULL,
 	`payload` text NOT NULL,
@@ -288,15 +299,15 @@ CREATE TABLE `tasks` (
 	`feedback` text,
 	`continuation_choice` text,
 	`origin` text DEFAULT 'native' NOT NULL,
-	`tracker_ref` integer,
+	`tracker_ref` text,
 	`workflow` text,
 	`wayfinder_type` text,
 	`escalation_reason` text,
 	`merge_status` text,
-	`map_ref` integer,
+	`map_ref` text,
 	`base_branch` text,
 	`tracker_state` text,
-	`tracker_parent` integer,
+	`tracker_parent` text,
 	`tracker_blocked_by` text,
 	`tracker_labels` text,
 	`tracker_title` text,
@@ -314,9 +325,9 @@ CREATE UNIQUE INDEX `tasks_tracker_ref_idx` ON `tasks` (`workspace_id`,`tracker_
 CREATE INDEX `tasks_workspace_id_idx` ON `tasks` (`workspace_id`);--> statement-breakpoint
 CREATE TABLE `tracker_containers` (
 	`workspace_id` integer NOT NULL,
-	`tracker_ref` integer NOT NULL,
+	`tracker_ref` text NOT NULL,
 	`tracker_state` text NOT NULL,
-	`tracker_parent` integer,
+	`tracker_parent` text,
 	`tracker_blocked_by` text NOT NULL,
 	`tracker_labels` text NOT NULL,
 	`tracker_title` text NOT NULL,
@@ -330,7 +341,7 @@ CREATE TABLE `tracker_containers` (
 CREATE TABLE `tracker_dismissals` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`workspace_id` integer,
-	`tracker_ref` integer NOT NULL,
+	`tracker_ref` text NOT NULL,
 	`dismissed_at` integer NOT NULL,
 	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE no action
 );

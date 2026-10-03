@@ -15,6 +15,7 @@ import {
   type GraphEdge,
 } from '../web/src/graph-model.js';
 import { TASK_STATES, type Task, type TaskState } from '../web/src/types.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const task = (
   id: number,
@@ -107,23 +108,23 @@ describe('terminal-state visibility', () => {
 
 describe('epic filter', () => {
   it('passes every Task through when no epic is chosen', () => {
-    const tasks = [task(1, 'ready', { mapRef: 52 }), task(2, 'ready', { mapRef: null })];
+    const tasks = [task(1, 'ready', { mapRef: trackerRef(52) }), task(2, 'ready', { mapRef: null })];
     expect(filterByEpic(tasks, null)).toEqual(tasks);
   });
 
   it('narrows to the chosen epic\'s members by mapRef', () => {
     const tasks = [
-      task(1, 'ready', { mapRef: 52 }),
-      task(2, 'ready', { mapRef: 30 }),
-      task(3, 'ready', { mapRef: 52 }),
+      task(1, 'ready', { mapRef: trackerRef(52) }),
+      task(2, 'ready', { mapRef: trackerRef(30) }),
+      task(3, 'ready', { mapRef: trackerRef(52) }),
       task(4, 'ready', { mapRef: null }),
     ];
-    expect(filterByEpic(tasks, 52).map((t) => t.id)).toEqual([1, 3]);
+    expect(filterByEpic(tasks, trackerRef(52)).map((t) => t.id)).toEqual([1, 3]);
   });
 
   it('renders an empty set, not a crash, for an epic with no members', () => {
-    const tasks = [task(1, 'ready', { mapRef: 30 })];
-    expect(filterByEpic(tasks, 999)).toEqual([]);
+    const tasks = [task(1, 'ready', { mapRef: trackerRef(30) })];
+    expect(filterByEpic(tasks, trackerRef(999))).toEqual([]);
   });
 });
 
@@ -135,7 +136,7 @@ describe('dependency edges', () => {
 
   it('unifies native and mirrored Tasks over the same relation', () => {
     const tasks = [
-      task(1, 'done', { origin: 'mirrored', trackerRef: 10 }),
+      task(1, 'done', { origin: 'mirrored', trackerRef: trackerRef(10) }),
       task(2, 'ready', { origin: 'native', dependsOn: [1] }),
     ];
     expect(graphEdges(tasks)).toEqual<GraphEdge[]>([{ from: 1, to: 2 }]);
@@ -176,22 +177,22 @@ describe('node title', () => {
 describe('map badges', () => {
   it('numbers the Maps present, 1-based, in ascending mapRef order', () => {
     const tasks = [
-      task(1, 'ready', { mapRef: 52, mapTitle: 'Activity' }),
-      task(2, 'ready', { mapRef: 30, mapTitle: 'Mirroring' }),
-      task(3, 'ready', { mapRef: 52, mapTitle: 'Activity' }),
+      task(1, 'ready', { mapRef: trackerRef(52), mapTitle: 'Activity' }),
+      task(2, 'ready', { mapRef: trackerRef(30), mapTitle: 'Mirroring' }),
+      task(3, 'ready', { mapRef: trackerRef(52), mapTitle: 'Activity' }),
       task(4, 'ready'),
     ];
     const badges = mapBadges(tasks);
-    expect(badges.get(30)).toBe(1);
-    expect(badges.get(52)).toBe(2);
+    expect(badges.get(trackerRef(30))).toBe(1);
+    expect(badges.get(trackerRef(52))).toBe(2);
     expect(badges.size).toBe(2);
   });
 
   it('badges an epic exactly like a Map (ADR-0016) — members share their epic ref\'s badge, the epic is never a node', () => {
     const tasks = [
-      task(410, 'ready', { mapRef: 502, mapTitle: 'Stats enrichment' }),
-      task(409, 'ready', { mapRef: 408, mapTitle: 'Epic summary page' }),
-      task(411, 'ready', { mapRef: 408, mapTitle: 'Epic summary page' }),
+      task(410, 'ready', { mapRef: trackerRef(502), mapTitle: 'Stats enrichment' }),
+      task(409, 'ready', { mapRef: trackerRef(408), mapTitle: 'Epic summary page' }),
+      task(411, 'ready', { mapRef: trackerRef(408), mapTitle: 'Epic summary page' }),
       task(500, 'ready'),
     ];
     const badges = mapBadges(tasks);

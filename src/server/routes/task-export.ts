@@ -1,3 +1,4 @@
+import { trackerRef, type TrackerRef } from '../../tracker/adapter.js';
 import { createReadStream } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import type { FastifyInstance, FastifyReply } from 'fastify';
@@ -24,7 +25,7 @@ async function finishedTask(ctx: AppContext, id: number): Promise<{ task: TaskRo
 
 const epicExportParamsSchema = z.object({
   workspaceId: z.coerce.number().int().meta({ example: 1 }),
-  epicRef: z.coerce.number().int().meta({ example: 42 }),
+  epicRef: z.string().min(1).meta({ example: '42' }),
 });
 
 async function sendDownload(reply: FastifyReply, built: ExportDownload): Promise<FastifyReply> {
@@ -42,7 +43,7 @@ async function sendDownload(reply: FastifyReply, built: ExportDownload): Promise
     .send(stream);
 }
 
-async function integratedEpic(ctx: AppContext, workspaceId: number, epicRef: number): Promise<void> {
+async function integratedEpic(ctx: AppContext, workspaceId: number, epicRef: TrackerRef): Promise<void> {
   await ctx.workspaces.assertExists(workspaceId);
   const stored = (await ctx.tasks.listStoredEpics(workspaceId)).find((e) => e.trackerRef === epicRef);
   if (!stored) throw new DomainError('not_found', `no Epic ${epicRef} stored for workspace ${workspaceId}`);
@@ -136,7 +137,8 @@ export async function taskExportRoutes(fastify: FastifyInstance, ctx: AppContext
       },
     },
     async (req) => {
-      const { workspaceId, epicRef } = req.params;
+      const workspaceId = req.params.workspaceId;
+      const epicRef = trackerRef(req.params.epicRef);
       await ctx.workspaces.assertExists(workspaceId);
       const stored = (await ctx.tasks.listStoredEpics(workspaceId)).find((e) => e.trackerRef === epicRef);
       return { exportable: stored?.state === 'integrated', ...(await ctx.exporter.epicStatus(workspaceId, epicRef)) };
@@ -161,7 +163,8 @@ export async function taskExportRoutes(fastify: FastifyInstance, ctx: AppContext
       },
     },
     async (req) => {
-      const { workspaceId, epicRef } = req.params;
+      const workspaceId = req.params.workspaceId;
+      const epicRef = trackerRef(req.params.epicRef);
       await integratedEpic(ctx, workspaceId, epicRef);
       const outcomes = await ctx.exporter.exportEpicAgain(workspaceId, epicRef);
       if (outcomes === null) throw new DomainError('conflict', 'No Export Destination is enabled for this Epic');
@@ -188,7 +191,8 @@ export async function taskExportRoutes(fastify: FastifyInstance, ctx: AppContext
       },
     },
     async (req, reply) => {
-      const { workspaceId, epicRef } = req.params;
+      const workspaceId = req.params.workspaceId;
+      const epicRef = trackerRef(req.params.epicRef);
       await integratedEpic(ctx, workspaceId, epicRef);
       await sendDownload(reply, await ctx.exporter.buildEpicDownload(workspaceId, epicRef));
     },

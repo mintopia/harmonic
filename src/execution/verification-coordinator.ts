@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { Git } from './git.js';
 import { adapterFor, adapterVersion } from './harness/registry.js';
 import { collectUsage, toolCallName } from './usage.js';
@@ -31,7 +32,7 @@ const VERIFICATION_OUTPUT_FLUSH_BYTES = 8 * 1024;
 
 export interface EpicVerificationResolutionInput {
   workspaceId: number;
-  epicRef: number;
+  epicRef: TrackerRef;
   title?: string;
   body?: string;
   url?: string;

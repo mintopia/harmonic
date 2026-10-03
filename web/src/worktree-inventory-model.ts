@@ -1,3 +1,4 @@
+import type { TrackerRef } from './types.js';
 export type WorktreeState = 'Active' | 'Stale' | 'Dirty' | 'Unreadable' | 'Orphan' | 'Missing';
 
 export interface WorktreeInventoryEntry {
@@ -5,7 +6,7 @@ export interface WorktreeInventoryEntry {
   workspaceId: number;
   path: string;
   branch: string | null;
-  subject: { kind: 'task'; taskId: number; title: string } | { kind: 'epic'; epicRef: number; title: string } | null;
+  subject: { kind: 'task'; taskId: number; title: string } | { kind: 'epic'; epicRef: TrackerRef; title: string } | null;
   sizeBytes: number | null;
   dirty: boolean | null;
   changeCount: number | null;

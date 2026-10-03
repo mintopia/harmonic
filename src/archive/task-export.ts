@@ -1,3 +1,4 @@
+import { trackerRef, type TrackerRef } from '../tracker/adapter.js';
 import { createWriteStream } from 'node:fs';
 import { link, mkdir, readdir, readFile, rm, copyFile, rename, stat, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
@@ -30,7 +31,7 @@ export interface ExportSnapshot {
 }
 
 export interface EpicExportMember {
-  ref: number;
+  ref: TrackerRef;
   task: TaskRow | null;
 }
 
@@ -121,7 +122,7 @@ const pendingBodySchema = {
 };
 const ownerSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('task'), task: taskRowSchema }),
-  z.object({ kind: z.literal('epic'), workspaceId: z.number(), epicRef: z.number() }),
+  z.object({ kind: z.literal('epic'), workspaceId: z.number(), epicRef: z.union([z.string(), z.number()]).transform(trackerRef) }),
 ]);
 function upgradeLegacyTaskSidecar<T extends { task: z.output<typeof taskRowSchema> }>({ task, ...rest }: T) {
   return { owner: { kind: 'task' as const, task }, ...rest };
@@ -153,11 +154,11 @@ export interface TaskExporterDeps {
   version: string;
   settings: (task: TaskRow) => Promise<ResolvedExportSettings>;
   epicSettings: (workspaceId: number) => Promise<ResolvedExportSettings>;
-  epicSnapshot: (workspaceId: number, epicRef: number) => Promise<EpicExportSnapshot>;
+  epicSnapshot: (workspaceId: number, epicRef: TrackerRef) => Promise<EpicExportSnapshot>;
   workspaceName: (workspaceId: number) => Promise<string | null>;
   snapshot: (task: TaskRow) => Promise<ExportSnapshot>;
   recordFact: (taskId: number, payload: unknown) => Promise<void>;
-  recordEpicStep: (workspaceId: number, epicRef: number, step: EpicExportStep) => Promise<void>;
+  recordEpicStep: (workspaceId: number, epicRef: TrackerRef, step: EpicExportStep) => Promise<void>;
   now?: () => Date;
   onFailure?: (failure: ExportFailure) => void;
 }
@@ -210,7 +211,7 @@ function exportRecord(disposition: ExportDisposition, outcome: ExportOutcome, at
   };
 }
 
-function ownerContext(owner: ExportOwner): Record<string, number> {
+function ownerContext(owner: ExportOwner): Record<string, number | string> {
   return owner.kind === 'task' ? { taskId: owner.task.id } : { workspaceId: owner.workspaceId, epicRef: owner.epicRef };
 }
 
@@ -274,13 +275,13 @@ function readme(args: {
 }
 
 interface EpicMemberEntry {
-  ref: number;
+  ref: TrackerRef;
   taskId: number | null;
   status: string | null;
   export: string | null;
 }
 
-function epicReadme(args: { epicRef: number; ticket: unknown; workspace: string | null; disposition: string; exportedAt: string; attemptCount: number; members: EpicMemberEntry[] }): string {
+function epicReadme(args: { epicRef: TrackerRef; ticket: unknown; workspace: string | null; disposition: string; exportedAt: string; attemptCount: number; members: EpicMemberEntry[] }): string {
   const { epicRef, ticket, workspace, disposition, exportedAt, attemptCount, members } = args;
   const title = (ticket as { title?: unknown } | null)?.title;
   const heading = typeof title === 'string' && title.trim() !== '' ? title.trim() : `Epic #${epicRef}`;
@@ -398,7 +399,7 @@ export class TaskExporter {
     return buildExportStatus(history, destinationLocations(settings), pending);
   }
 
-  async epicStatus(workspaceId: number, epicRef: number): Promise<ExportStatus> {
+  async epicStatus(workspaceId: number, epicRef: TrackerRef): Promise<ExportStatus> {
     const owner: ExportOwner = { kind: 'epic', workspaceId, epicRef };
     await this.chains.get(exportOwnerKey(owner))?.catch(() => undefined);
     const [history, pending, settings] = await Promise.all([
@@ -457,18 +458,18 @@ export class TaskExporter {
     }
   }
 
-  triggerEpic(workspaceId: number, epicRef: number, disposition: ExportDisposition): void {
+  triggerEpic(workspaceId: number, epicRef: TrackerRef, disposition: ExportDisposition): void {
     const owner: ExportOwner = { kind: 'epic', workspaceId, epicRef };
     const snapshot = this.deps.epicSnapshot(workspaceId, epicRef);
     snapshot.catch(() => undefined);
     this.enqueue(exportOwnerKey(owner), () => this.runEpic(workspaceId, epicRef, disposition, snapshot), { workspaceId, epicRef, disposition });
   }
 
-  exportEpicAgain(workspaceId: number, epicRef: number): Promise<ExportOutcome[] | null> {
+  exportEpicAgain(workspaceId: number, epicRef: TrackerRef): Promise<ExportOutcome[] | null> {
     return this.serialize(exportOwnerKey({ kind: 'epic', workspaceId, epicRef }), () => this.runEpic(workspaceId, epicRef, 'done', undefined, {}));
   }
 
-  buildEpicDownload(workspaceId: number, epicRef: number): Promise<ExportDownload> {
+  buildEpicDownload(workspaceId: number, epicRef: TrackerRef): Promise<ExportDownload> {
     return this.serialize(exportOwnerKey({ kind: 'epic', workspaceId, epicRef }), async () => {
       const settings = await this.deps.epicSettings(workspaceId);
       const built = await this.stageEpic(workspaceId, epicRef, 'done', settings.redactPatterns, this.now());
@@ -476,7 +477,7 @@ export class TaskExporter {
     });
   }
 
-  async runEpic(workspaceId: number, epicRef: number, disposition: ExportDisposition, snapshot?: Promise<EpicExportSnapshot>, manual?: ManualExportOptions): Promise<ExportOutcome[] | null> {
+  async runEpic(workspaceId: number, epicRef: TrackerRef, disposition: ExportDisposition, snapshot?: Promise<EpicExportSnapshot>, manual?: ManualExportOptions): Promise<ExportOutcome[] | null> {
     let settings: ResolvedExportSettings;
     try {
       settings = await this.deps.epicSettings(workspaceId);
@@ -801,7 +802,7 @@ export class TaskExporter {
 
   private async stageEpic(
     workspaceId: number,
-    epicRef: number,
+    epicRef: TrackerRef,
     disposition: ExportDisposition,
     patterns: readonly RedactionPattern[],
     at: Date,

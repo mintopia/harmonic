@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,15 +14,15 @@ import { Git } from './git.js';
  * directory behind — {@link acquire} reclaims either before retrying.
  */
 export class EpicWorktreePool {
-  private readonly paths = new Map<number, string>();
+  private readonly paths = new Map<TrackerRef, string>();
 
   constructor(private readonly deps: { workspaceId: number; worktreesDir?: string | undefined }) {}
 
-  get(epicRef: number): string | undefined {
+  get(epicRef: TrackerRef): string | undefined {
     return this.paths.get(epicRef);
   }
 
-  async acquire(repoDir: string, epicRef: number): Promise<string> {
+  async acquire(repoDir: string, epicRef: TrackerRef): Promise<string> {
     const existing = this.paths.get(epicRef);
     if (existing) return existing;
     const parent = this.deps.worktreesDir ?? tmpdir();
@@ -42,7 +43,7 @@ export class EpicWorktreePool {
     return path;
   }
 
-  async release(repoDir: string, epicRef: number): Promise<void> {
+  async release(repoDir: string, epicRef: TrackerRef): Promise<void> {
     const worktreePath = this.paths.get(epicRef);
     if (!worktreePath) return;
     this.paths.delete(epicRef);

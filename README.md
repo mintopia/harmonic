@@ -1,6 +1,7 @@
 # Harmonic
 
-Point Harmonic at your issue tracker and it works through your backlog on
+Point Harmonic at your issue tracker (GitHub, GitLab, Forgejo, Jira or local
+Markdown files) and it works through your backlog on
 its own. Write a spec, break it into tickets, and Harmonic runs the ready
 ones out to merged code: for each ticket it starts a coding agent,
 implements the change, runs your configured verification, and merges the branch when using worktree isolation,

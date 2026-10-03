@@ -1,3 +1,4 @@
+import type { TrackerRef } from './adapter.js';
 import type { TaskArchive } from '../archive/task-archive.js';
 import type { AppConfig } from '../config.js';
 import { isEpicAttempt, type AttemptRow, type EpicAttemptRow, type WorkspaceRow } from '../db/schema.js';
@@ -35,19 +36,19 @@ export interface EpicVerificationRunnerDeps {
  * steps) when Attempt tracking is configured.
  */
 export class EpicVerificationRunner {
-  private readonly runningAttempts = new Map<number, EpicAttemptRow>();
+  private readonly runningAttempts = new Map<TrackerRef, EpicAttemptRow>();
 
   constructor(private readonly deps: EpicVerificationRunnerDeps) {}
 
-  getTrackedAttempt(epicRef: number): EpicAttemptRow | undefined {
+  getTrackedAttempt(epicRef: TrackerRef): EpicAttemptRow | undefined {
     return this.runningAttempts.get(epicRef);
   }
 
-  clearTrackedAttempt(epicRef: number): void {
+  clearTrackedAttempt(epicRef: TrackerRef): void {
     this.runningAttempts.delete(epicRef);
   }
 
-  worktreePath(epicRef: number): string | undefined {
+  worktreePath(epicRef: TrackerRef): string | undefined {
     return this.deps.worktrees.get(epicRef);
   }
 
@@ -56,7 +57,7 @@ export class EpicVerificationRunner {
     return resolveVerifiers(live, this.deps.getConfig());
   }
 
-  async verify({ repoDir, epicRef, verifiedHeadOid }: { repoDir: string; epicRef: number; verifiedHeadOid: string }): Promise<VerificationDecision> {
+  async verify({ repoDir, epicRef, verifiedHeadOid }: { repoDir: string; epicRef: TrackerRef; verifiedHeadOid: string }): Promise<VerificationDecision> {
     const { epicAttempts } = this.deps;
     const attempt = epicAttempts ? await epicAttempts.createForEpic({ workspaceId: this.deps.workspace.id, epicRef }) : undefined;
     const criticUsages: Parameters<typeof withCriticContribution>[2] = [];
@@ -128,7 +129,7 @@ export class EpicVerificationRunner {
 
   private async runEpicCritic({ repoDir, epicRef, attempt, criticUsages, cwd, verifiedHeadOid: criticHeadOid, critic }: {
     repoDir: string;
-    epicRef: number;
+    epicRef: TrackerRef;
     attempt: EpicAttemptRow | undefined;
     criticUsages: Parameters<typeof withCriticContribution>[2];
     cwd: string;

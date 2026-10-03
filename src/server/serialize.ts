@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import type { AppContext } from './app.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { AttemptRow, AttemptState, TaskAttemptRow, VerificationAttemptRow, StepType, ConversationRow } from '../db/schema.js';
@@ -152,7 +153,7 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
   await forEachYielding(guardrails, async ({ event }) => { add({ attemptId: event.attemptId, ts: event.ts, kind: 'guardrail', data: { dimension: event.dimension, limitValue: event.limitValue, observedValue: event.observedValue, configSource: event.configSource, payload: parsePayload(event.payload) } }, 2); });
   await forEachYielding(taskLevel, async (event) => { add({ attemptId: null, ts: event.ts, kind: 'lifecycle', data: { type: 'lifecycle', payload: event.payload } }, 3); });
 
-  const peers = new Map<number, { harness: string | null; epic: number | null }>();
+  const peers = new Map<number, { harness: string | null; epic: TrackerRef | null }>();
   const peerOf = async (peerId: number) => {
     if (!peers.has(peerId)) peers.set(peerId, await ctx.tasks.get(peerId).then((t) => ({ harness: t.harness ?? null, epic: t.trackerParent ?? null }), () => ({ harness: null, epic: null })));
     return peers.get(peerId)!;
@@ -210,7 +211,7 @@ export async function attemptToApi(ctx: AppContext, run: AttemptRow): Promise<Ap
  * details are intentionally absent from this distinct owner projection. */
 export async function epicAttemptTimelineToApi(
   ctx: AppContext,
-  owner: { workspaceId: number; epicRef: number },
+  owner: { workspaceId: number; epicRef: TrackerRef },
 ): Promise<{ attempts: ApiEpicAttempt[] }> {
   const runs = await ctx.attempts.listForEpic(owner);
   return {
@@ -384,7 +385,7 @@ export interface TimelineAttemptApi {
   harness: string;
   model: string;
   state: AttemptState;
-  trackerRef: number | null;
+  trackerRef: TrackerRef | null;
   startedAt: number;
   endedAt: number | null;
   cost: Cost | null;

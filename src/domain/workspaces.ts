@@ -13,6 +13,7 @@ import {
   trackerDismissals,
   sessions,
   scheduledJobs,
+  secrets,
   type WorkspaceRow,
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
@@ -27,6 +28,10 @@ import {
   budgetGuardrailSchema,
   MERGE_FATES,
 } from '../config.js';
+import { configuredTrackerSchema } from '../tracker/configured.js';
+import { triageLabelsOverrideSchema } from '../tracker/triage-labels.js';
+
+export const codeRepositorySchema = z.enum(['github', 'gitlab', 'forgejo']);
 
 export const DEFAULT_EXCLUDED_DIRECTORIES = ['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.turbo', 'out', 'target'] as const;
 export { WORKSPACE_COLORS, WORKSPACE_BADGE_INK };
@@ -116,6 +121,12 @@ export const workspaceOverridesSchema = z.object({
   exportRedactPatterns: redactPatternsSchema.nullable().optional().meta({ example: [{ id: 'internal-host', regex: 'corp\\.example\\.internal' }] }),
   /** Dispositions-to-export override; null inherits `config.export.includeStates`. */
   exportIncludeStates: z.array(z.enum(EXPORT_STATES)).nullable().optional().meta({ example: ['done'] }),
+  /** Explicit issue tracker; null falls back to the repo's declaration, then the code repository. */
+  configuredTracker: configuredTrackerSchema.nullable().optional(),
+  /** Code-repository kind override; null detects it from the git remote. */
+  codeRepository: codeRepositorySchema.nullable().optional().meta({ example: 'github' }),
+  /** Triage Label overrides per role; null inherits the repo's role table, then the defaults. */
+  triageLabels: triageLabelsOverrideSchema.nullable().optional(),
   /** Archive retention overrides; a null field inherits `config.archive.retain`. */
   archiveRetentionDays: z.number().int().positive().nullable().optional().meta({ example: 90 }),
   archiveRetentionMaxTotalMB: z.number().positive().nullable().optional().meta({ example: 2048 }),
@@ -165,6 +176,9 @@ export const OVERRIDE_KEYS = [
   'exportS3SecretAccessKey',
   'exportRedactPatterns',
   'exportIncludeStates',
+  'configuredTracker',
+  'codeRepository',
+  'triageLabels',
   'archiveRetentionDays',
   'archiveRetentionMaxTotalMB',
 ] as const;
@@ -252,6 +266,9 @@ export class WorkspaceService {
       exportS3SecretAccessKey: o.exportS3SecretAccessKey,
       exportRedactPatterns: o.exportRedactPatterns != null ? JSON.stringify(o.exportRedactPatterns) : null,
       exportIncludeStates: o.exportIncludeStates != null ? JSON.stringify(o.exportIncludeStates) : null,
+      configuredTracker: o.configuredTracker != null ? JSON.stringify(o.configuredTracker) : null,
+      codeRepository: o.codeRepository,
+      triageLabels: o.triageLabels != null ? JSON.stringify(o.triageLabels) : null,
       archiveRetentionDays: o.archiveRetentionDays,
       archiveRetentionMaxTotalMB: o.archiveRetentionMaxTotalMB,
     };
@@ -370,6 +387,7 @@ export class WorkspaceService {
         await tx.delete(conversationEvents).where(inArray(conversationEvents.conversationId, convIds)).run();
         await tx.delete(conversations).where(inArray(conversations.id, convIds)).run();
       }
+      await tx.delete(secrets).where(eq(secrets.workspaceId, id)).run();
       await tx.delete(sessions).where(eq(sessions.workspaceId, id)).run();
       await tx.delete(scheduledJobs).where(eq(scheduledJobs.workspaceId, id)).run();
       await tx.delete(trackerDismissals).where(eq(trackerDismissals.workspaceId, id)).run();

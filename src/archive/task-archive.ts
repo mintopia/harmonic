@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { createWriteStream, type WriteStream } from 'node:fs';
 import { access, appendFile, copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { createHash, randomBytes } from 'node:crypto';
@@ -233,7 +234,7 @@ export class TaskArchive {
     }
   }
 
-  async epicExportHistory(workspaceId: number, epicRef: number): Promise<ExportRecord[]> {
+  async epicExportHistory(workspaceId: number, epicRef: TrackerRef): Promise<ExportRecord[]> {
     try {
       const workspaceName = await this.deps.workspaceName(workspaceId);
       return await this.readExports(join(this.deps.dataDir, 'archive', workspaceSlug(workspaceName, workspaceId), `epic-${epicRef}`));
@@ -272,13 +273,13 @@ export class TaskArchive {
     });
   }
 
-  async recordEpicExport(workspaceId: number, epicRef: number, entry: ExportRecord): Promise<void> {
+  async recordEpicExport(workspaceId: number, epicRef: TrackerRef, entry: ExportRecord): Promise<void> {
     await this.updateManifest(await this.ensureEpic(workspaceId, epicRef), (body) => {
       body.exports = [...(body.exports ?? []), entry];
     });
   }
 
-  async recordEpicDisposition(workspaceId: number, epicRef: number, disposition: string): Promise<void> {
+  async recordEpicDisposition(workspaceId: number, epicRef: TrackerRef, disposition: string): Promise<void> {
     await this.updateManifest(await this.ensureEpic(workspaceId, epicRef), (body) => {
       body.dispositions = [...(body.dispositions ?? []), { disposition, at: new Date().toISOString() }];
     });
@@ -336,7 +337,7 @@ export class TaskArchive {
     }
   }
 
-  async epicVerificationOutputLog(workspaceId: number, epicRef: number, attemptNumber: number, commandId: string, stage: 'pre-merge' | 'post-merge' = 'pre-merge'): Promise<VerificationOutputLog | null> {
+  async epicVerificationOutputLog(workspaceId: number, epicRef: TrackerRef, attemptNumber: number, commandId: string, stage: 'pre-merge' | 'post-merge' = 'pre-merge'): Promise<VerificationOutputLog | null> {
     try {
       return await this.createOutputLog(await this.ensureEpic(workspaceId, epicRef), attemptNumber, stage, commandId);
     } catch (err) {
@@ -354,14 +355,14 @@ export class TaskArchive {
     return this.stepWriter(dir, { taskId: task.id, attemptNumber, stage, stepId });
   }
 
-  epicCriticStep(workspaceId: number, epicRef: number, attemptNumber: number, stepId: string): StepArchiveWriter {
+  epicCriticStep(workspaceId: number, epicRef: TrackerRef, attemptNumber: number, stepId: string): StepArchiveWriter {
     const dir = this.ensureEpic(workspaceId, epicRef).then((root) =>
       this.makeDir(join(root, 'attempts', String(attemptNumber), 'verification', 'pre-merge', stepId)),
     );
     return this.stepWriter(dir, { workspaceId, epicRef, attemptNumber, stepId });
   }
 
-  ensureEpic(workspaceId: number, epicRef: number): Promise<string> {
+  ensureEpic(workspaceId: number, epicRef: TrackerRef): Promise<string> {
     const key = `epic:${workspaceId}:${epicRef}`;
     const inflight = this.ensuring.get(key);
     if (inflight) return inflight;
@@ -370,18 +371,18 @@ export class TaskArchive {
     return promise;
   }
 
-  private epicDir(workspaceId: number, epicRef: number, workspaceName: string | null): string {
+  private epicDir(workspaceId: number, epicRef: TrackerRef, workspaceName: string | null): string {
     return join(this.deps.dataDir, 'archive', workspaceSlug(workspaceName, workspaceId), `epic-${epicRef}`);
   }
 
-  private async existingOwnerDir(owner: TaskRow | { workspaceId: number; epicRef: number }): Promise<string | null> {
+  private async existingOwnerDir(owner: TaskRow | { workspaceId: number; epicRef: TrackerRef }): Promise<string | null> {
     if (!('epicRef' in owner)) return this.existingDir(owner);
     const dir = this.epicDir(owner.workspaceId, owner.epicRef, await this.deps.workspaceName(owner.workspaceId));
     return (await pathExists(join(dir, 'archive.json'))) ? dir : null;
   }
 
   async archivedVerificationOutput(
-    owner: TaskRow | { workspaceId: number; epicRef: number },
+    owner: TaskRow | { workspaceId: number; epicRef: TrackerRef },
     attemptNumber: number,
     fullOutputKey: string,
   ): Promise<string | null> {
@@ -399,7 +400,7 @@ export class TaskArchive {
   }
 
   async archivedTranscript(
-    owner: TaskRow | { workspaceId: number; epicRef: number },
+    owner: TaskRow | { workspaceId: number; epicRef: TrackerRef },
     attemptNumber: number,
     kind: 'implementation' | 'verification',
     nativePath: string | null,
@@ -432,7 +433,7 @@ export class TaskArchive {
     }
   }
 
-  private async doEnsureEpic(workspaceId: number, epicRef: number): Promise<string> {
+  private async doEnsureEpic(workspaceId: number, epicRef: TrackerRef): Promise<string> {
     const workspaceName = await this.deps.workspaceName(workspaceId);
     const dir = this.epicDir(workspaceId, epicRef, workspaceName);
     await mkdir(dir, { recursive: true });

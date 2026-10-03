@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../types.js';
 import { lazy, Suspense } from 'react';
 import { Board } from './Board';
 import { EpicPage } from './EpicPage';
@@ -46,7 +47,7 @@ interface MainViewContentProps {
   onEdit: (task: Task | 'new' | null) => void;
   onOpenTask: (taskId: number) => void;
   onOpenRow: (task: Task) => void;
-  onOpenEpic: (ref: number) => void;
+  onOpenEpic: (ref: TrackerRef) => void;
   pickView: (v: View) => void;
   switchWorkspace: (id: number) => void;
   setTableFilters: (table: TableFilters) => void;
@@ -212,7 +213,7 @@ interface AppContentProps {
   onChanged: () => void;
   onOpenTask: (taskId: number) => void;
   onOpenRow: (task: Task) => void;
-  onOpenEpic: (ref: number) => void;
+  onOpenEpic: (ref: TrackerRef) => void;
   pickView: (v: View) => void;
   switchWorkspace: (id: number) => void;
   setTableFilters: (table: TableFilters) => void;

@@ -130,7 +130,7 @@ describe('taskLifecycle', () => {
   });
 
   it('marks only applicable stages done on worktree completion', () => {
-    const task = progressTask({ state: 'done', branch: 'agent/1', trackerRef: 17 });
+    const task = progressTask({ state: 'done', branch: 'agent/1', trackerRef: '17' });
     expect(statuses(task, [stateAttempt(1, 'completed')])).toEqual({
       worktree: 'done', implementation: 'done', merge: 'done',
       postMergeCheck: 'done', closeIssue: 'done', retire: 'done',

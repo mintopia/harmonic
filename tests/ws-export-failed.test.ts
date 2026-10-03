@@ -12,13 +12,13 @@ describe('parseServerMessage export_failed', () => {
   });
 
   it('parses an Epic owner with its workspace', () => {
-    expect(parseServerMessage({ ...wire, taskId: null, epicRef: 42, workspaceId: 3 })).toMatchObject({ owner: { kind: 'epic', epicRef: 42, workspaceId: 3 } });
+    expect(parseServerMessage({ ...wire, taskId: null, epicRef: '42', workspaceId: 3 })).toMatchObject({ owner: { kind: 'epic', epicRef: '42', workspaceId: 3 } });
   });
 
   it('drops a payload with no owner', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     expect(parseServerMessage({ ...wire, taskId: null, epicRef: null, workspaceId: 1 })).toBeNull();
-    expect(parseServerMessage({ ...wire, taskId: null, epicRef: 42, workspaceId: null })).toBeNull();
+    expect(parseServerMessage({ ...wire, taskId: null, epicRef: '42', workspaceId: null })).toBeNull();
     warn.mockRestore();
   });
 

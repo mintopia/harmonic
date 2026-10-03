@@ -5,11 +5,11 @@ import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import { InFlight } from '../reliability/in-flight.js';
 import type { Scheduler } from '../scheduler/scheduler.js';
-import type { ResolvedTracker, TrackerAdapter } from './adapter.js';
-import { resolveTracker, resolveTrackerAdapter } from './adapter.js';
+import type { ResolvedTracker, TrackerAdapter, WorkspaceTrackerSettings } from './adapter.js';
+import { resolveTracker, resolveTrackerAdapter, workspaceTrackerSettings } from './adapter.js';
 import { type EpicIntegrateOutcome, type EpicService } from './epic-service.js';
 import type { Epic } from '../domain/epic-view.js';
-import type { Ticket } from './adapter.js';
+import type { Ticket, TrackerRef } from './adapter.js';
 import type { FeatureIndex } from './local-markdown.js';
 import { deriveMaps, type DerivedMap } from './mirror.js';
 import { MirrorCoordinator } from './coordinator.js';
@@ -17,10 +17,10 @@ import { TrackerPoller } from './poller.js';
 import { persistedTickets } from './persisted.js';
 
 interface Entry { poller: TrackerPoller; mirror: MirrorCoordinator; sig: string; unregister?: () => void }
-const sigOf = (workspace: WorkspaceRow): string => `${workspace.workingDir}|${workspace.trackerPollIntervalSeconds * 1000}`;
+const sigOf = (workspace: WorkspaceRow): string => `${workspace.workingDir}|${workspace.trackerPollIntervalSeconds * 1000}|${workspace.configuredTracker ?? ''}|${workspace.codeRepository ?? ''}`;
 
 export interface TrackerPollerManagerOptions {
-  resolveAdapter?: (repoRoot: string, featureIndex?: FeatureIndex) => Promise<TrackerAdapter>;
+  resolveAdapter?: (repoRoot: string, featureIndex?: FeatureIndex, workspace?: WorkspaceTrackerSettings) => Promise<TrackerAdapter>;
   onError?: (message: string) => void;
   scheduler?: Scheduler;
   epicService: EpicService;
@@ -36,7 +36,7 @@ export class TrackerPollerManager {
   private closed = false;
   private readonly resolved = new Map<number, ResolvedTracker>();
   private readonly epicService: EpicService;
-  private readonly resolveAdapter: (repoRoot: string, featureIndex?: FeatureIndex) => Promise<TrackerAdapter>;
+  private readonly resolveAdapter: (repoRoot: string, featureIndex?: FeatureIndex, workspace?: WorkspaceTrackerSettings) => Promise<TrackerAdapter>;
   private readonly onError: (message: string) => void;
   private readonly scheduler: Scheduler | undefined;
   private readonly yieldOptions: YieldOptions | undefined;
@@ -66,7 +66,7 @@ export class TrackerPollerManager {
     await forEachYielding(this.resolved.keys(), async (id) => { const workspace = workspaces.get(id); if (!workspace || !workspace.trackerEnabled) this.resolved.delete(id); }, this.yieldOptions);
     await forEachYielding(workspaces.values(), async (workspace) => {
       if (!workspace.trackerEnabled || this.entries.has(workspace.id)) return;
-      const resolved = await resolveTracker(workspace.workingDir, this.resolveAdapter);
+      const resolved = await resolveTracker(workspace.workingDir, (dir) => this.resolveAdapter(dir, undefined, workspaceTrackerSettings(workspace)));
       this.resolved.set(workspace.id, resolved);
       if (resolved.ok || this.scheduler) this.startLoop(workspace);
     }, this.yieldOptions);
@@ -75,7 +75,7 @@ export class TrackerPollerManager {
   private startLoop(workspace: WorkspaceRow): void {
     if (this.closed) return;
     const mirror = new MirrorCoordinator(this.tasks, workspace.id);
-    const poller = new TrackerPoller(this.tasks, workspace.id, workspace.workingDir, workspace.trackerPollIntervalSeconds * 1000, (dir) => this.resolveAdapter(dir, (slug) => this.tasks.mdFeatureIndex(workspace.id, slug)), this.onError, mirror, (resolved) => this.resolved.set(workspace.id, resolved), this.epicService.startWorkspace(workspace), { reconcileOnPoll: this.scheduler === undefined, ...(this.workStartAllowed ? { workStartAllowed: this.workStartAllowed } : {}) });
+    const poller = new TrackerPoller(this.tasks, workspace.id, workspace.workingDir, workspace.trackerPollIntervalSeconds * 1000, (dir) => this.resolveAdapter(dir, (slug) => this.tasks.mdFeatureIndex(workspace.id, slug), workspaceTrackerSettings(workspace)), this.onError, mirror, (resolved) => this.resolved.set(workspace.id, resolved), this.epicService.startWorkspace(workspace), { reconcileOnPoll: this.scheduler === undefined, ...(this.workStartAllowed ? { workStartAllowed: this.workStartAllowed } : {}) });
     const scheduler = this.scheduler;
     if (!scheduler) poller.start();
     const unregister = scheduler?.register({ name: 'Tracker poll', workspaceId: workspace.id, intervalMs: workspace.trackerPollIntervalSeconds * 1000, run: async () => { await poller.poll(); await scheduler.runNow('Epic reconcile'); }, enabled: () => this.resolved.get(workspace.id)?.ok === true });
@@ -88,14 +88,15 @@ export class TrackerPollerManager {
     this.epicService.stopWorkspace(workspaceId);
     await entry.poller.stop();
   }
+  adapterFor(workspace: WorkspaceRow): Promise<TrackerAdapter> { return this.resolveAdapter(workspace.workingDir, undefined, workspaceTrackerSettings(workspace)); }
   resolvedTracker(workspaceId: number): ResolvedTracker | null { return this.resolved.get(workspaceId) ?? null; }
-  async rejectEpic(workspaceId: number, epicRef: number, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null> { return this.epicService.rejectEpic(workspaceId, epicRef, guidance, continuation); }
+  async rejectEpic(workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null> { return this.epicService.rejectEpic(workspaceId, epicRef, guidance, continuation); }
   async epicBaseNotReady(task: TaskRow): Promise<boolean> { return this.epicService.epicBaseNotReady(task); }
   async refreshAfterDefaultBranchAdvance(workingDir: string, defaultBranch: string): Promise<void> { await this.epicService.refreshAfterDefaultBranchAdvance(workingDir, defaultBranch); }
   async listEpics(workspaceId: number): Promise<Epic[]> { return this.epicService.listEpics(workspaceId); }
   async listEpicTickets(workspaceId: number): Promise<Ticket[]> { return this.epicService.listEpicTickets(workspaceId); }
-  async epicDetail(workspaceId: number, epicRef: number): Promise<Epic | null> { return this.epicService.epicDetail(workspaceId, epicRef); }
-  async epicDiff(workspaceId: number, epicRef: number): Promise<string> { return this.epicService.epicDiff(workspaceId, epicRef); }
+  async epicDetail(workspaceId: number, epicRef: TrackerRef): Promise<Epic | null> { return this.epicService.epicDetail(workspaceId, epicRef); }
+  async epicDiff(workspaceId: number, epicRef: TrackerRef): Promise<string> { return this.epicService.epicDiff(workspaceId, epicRef); }
   coordinatorFor(workspaceId: number | null): MirrorCoordinator | undefined { return workspaceId === null ? undefined : this.entries.get(workspaceId)?.mirror; }
 
   async maps(workspaceId?: number): Promise<DerivedMap[]> {
@@ -110,11 +111,11 @@ export class TrackerPollerManager {
     return maps;
   }
 
-  urlFor(workspaceId: number | null, ref: number | null): string | null { return workspaceId === null ? null : this.entries.get(workspaceId)?.poller.urlFor(ref) ?? null; }
-  titleForMap(workspaceId: number | null, ref: number | null): string | null { return workspaceId === null ? null : this.entries.get(workspaceId)?.poller.titleForMap(ref) ?? null; }
+  urlFor(workspaceId: number | null, ref: TrackerRef | null): string | null { return workspaceId === null ? null : this.entries.get(workspaceId)?.poller.urlFor(ref) ?? null; }
+  titleForMap(workspaceId: number | null, ref: TrackerRef | null): string | null { return workspaceId === null ? null : this.entries.get(workspaceId)?.poller.titleForMap(ref) ?? null; }
   async pollNow(workspaceId: number): Promise<void> {
     const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); if (!workspace || !workspace.trackerEnabled) return;
-    const resolved = await resolveTracker(workspace.workingDir, this.resolveAdapter); this.resolved.set(workspace.id, resolved); const entry = this.entries.get(workspace.id);
+    const resolved = await resolveTracker(workspace.workingDir, (dir) => this.resolveAdapter(dir, undefined, workspaceTrackerSettings(workspace))); this.resolved.set(workspace.id, resolved); const entry = this.entries.get(workspace.id);
     if (!resolved.ok) { if (!this.scheduler && entry) this.stopping.add(this.stopEntry(workspace.id, entry), 'trackerManager.stopEntry'); return; }
     if (entry) await entry.poller.poll(); else this.startLoop(workspace);
   }

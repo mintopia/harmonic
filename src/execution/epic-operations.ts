@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import type { Attributes } from '@opentelemetry/api';
 import { startOperation, type Operation } from '../telemetry/operations.js';
 
@@ -9,7 +10,7 @@ export class EpicOperations {
 
   run<T>({ repoDir, epicRef, epicTitle, type, attributes = {}, parent, work }: {
     repoDir: string;
-    epicRef: number;
+    epicRef: TrackerRef;
     epicTitle?: string;
     type: EpicOperationType;
     attributes?: Attributes;
@@ -34,14 +35,14 @@ export class EpicOperations {
     });
   }
 
-  fail({ repoDir, epicRef, reason }: { repoDir: string; epicRef: number; reason: string }): void {
+  fail({ repoDir, epicRef, reason }: { repoDir: string; epicRef: TrackerRef; reason: string }): void {
     const key = this.key(repoDir, epicRef);
     const root = this.roots.get(key) ?? this.root(repoDir, epicRef);
     root.fail(reason);
     this.roots.delete(key);
   }
 
-  complete({ repoDir, epicRef }: { repoDir: string; epicRef: number }): void {
+  complete({ repoDir, epicRef }: { repoDir: string; epicRef: TrackerRef }): void {
     const key = this.key(repoDir, epicRef);
     const root = this.roots.get(key);
     if (!root) return;
@@ -49,11 +50,11 @@ export class EpicOperations {
     this.roots.delete(key);
   }
 
-  has({ repoDir, epicRef }: { repoDir: string; epicRef: number }): boolean {
+  has({ repoDir, epicRef }: { repoDir: string; epicRef: TrackerRef }): boolean {
     return this.roots.has(this.key(repoDir, epicRef));
   }
 
-  private root(repoDir: string, epicRef: number, epicTitle?: string): Operation {
+  private root(repoDir: string, epicRef: TrackerRef, epicTitle?: string): Operation {
     const key = this.key(repoDir, epicRef);
     const current = this.roots.get(key);
     if (current) return current;
@@ -65,7 +66,7 @@ export class EpicOperations {
     return root;
   }
 
-  private key(repoDir: string, epicRef: number): string {
+  private key(repoDir: string, epicRef: TrackerRef): string {
     return `${repoDir}:${epicRef}`;
   }
 }

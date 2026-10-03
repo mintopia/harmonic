@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { closedMembers, epicByTaskId, excludeEpicDrivers, integrateOutcomeBanner, integrationSteps, isEpicIntegrating, memberPipStatus, statusLineParts, epicLifecycleSteps } from '../web/src/epic-model';
 import type { Epic, EpicIntegrateOutcome, EpicMember } from '../web/src/epic-model.js';
 
-const member = (overrides: Partial<EpicMember> & { ref: number }): EpicMember => ({
+const member = (overrides: Partial<EpicMember> & { ref: string }): EpicMember => ({
   title: `member ${overrides.ref}`,
-  taskId: overrides.ref,
+  taskId: Number(overrides.ref),
   state: null,
   escalated: false,
   mergeStatus: 'pending',
@@ -16,7 +16,7 @@ const member = (overrides: Partial<EpicMember> & { ref: number }): EpicMember =>
 const epic = (overrides: Partial<Epic> = {}): Epic => {
   const members = overrides.members ?? [];
   return {
-    ref: 1,
+    ref: '1',
     title: 'epic 1',
     kind: 'map',
     state: 'open',
@@ -39,7 +39,7 @@ const epic = (overrides: Partial<Epic> = {}): Epic => {
   };
 };
 
-const driverRow = ({ id, ...overrides }: { id: number; trackerRef?: number | null; isEpic?: boolean }) => ({
+const driverRow = ({ id, ...overrides }: { id: number; trackerRef?: string | null; isEpic?: boolean }) => ({
   id,
   trackerRef: null,
   isEpic: false,
@@ -49,23 +49,23 @@ const driverRow = ({ id, ...overrides }: { id: number; trackerRef?: number | nul
 describe('excludeEpicDrivers', () => {
   it('removes a mirrored driver while retaining the separate Epic row and ordinary Tasks', () => {
     const rows = [
-      driverRow({ id: 1, trackerRef: 10 }),
-      driverRow({ id: 2, trackerRef: 10, isEpic: true }),
-      driverRow({ id: 3, trackerRef: 11 }),
+      driverRow({ id: 1, trackerRef: '10' }),
+      driverRow({ id: 2, trackerRef: '10', isEpic: true }),
+      driverRow({ id: 3, trackerRef: '11' }),
       driverRow({ id: 4 }),
     ];
 
-    expect(excludeEpicDrivers(rows, [epic({ ref: 10 })]).map((row) => row.id)).toEqual([2, 3, 4]);
+    expect(excludeEpicDrivers(rows, [epic({ ref: '10' })]).map((row) => row.id)).toEqual([2, 3, 4]);
   });
 });
 
 
 describe('statusLineParts', () => {
   it('renders tip, pass verification, and the fold count', () => {
-    const m1 = member({ ref: 1, mergeStatus: 'completed' });
-    const m2 = member({ ref: 2, mergeStatus: 'pending' });
+    const m1 = member({ ref: '1', mergeStatus: 'completed' });
+    const m2 = member({ ref: '2', mergeStatus: 'pending' });
     const e = epic({
-      ref: 7,
+      ref: '7',
       members: [m1, m2],
       integration: { branch: 'epic/7', exists: true, tip: 'abc1234' },
       verification: { status: 'pass', configured: true },
@@ -81,7 +81,7 @@ describe('statusLineParts', () => {
 
   it('renders a dash tip when the branch is absent', () => {
     const e = epic({
-      ref: 9,
+      ref: '9',
       members: [],
       integration: { branch: 'epic/9', exists: false, tip: null },
       verification: { status: null, configured: true },
@@ -97,7 +97,7 @@ describe('statusLineParts', () => {
 
   it('renders a fail verdict', () => {
     const e = epic({
-      ref: 3,
+      ref: '3',
       members: [],
       integration: { branch: 'epic/3', exists: true, tip: 'deadbee' },
       verification: { status: 'fail', configured: true },
@@ -113,13 +113,13 @@ describe('statusLineParts', () => {
 
   it('renders a pending verdict the same as a null (unknown) one', () => {
     const pending = epic({
-      ref: 4,
+      ref: '4',
       members: [],
       integration: { branch: 'epic/4', exists: true, tip: 'cafefee' },
       verification: { status: 'pending', configured: true },
     });
     const unknown = epic({
-      ref: 4,
+      ref: '4',
       members: [],
       integration: { branch: 'epic/4', exists: true, tip: 'cafefee' },
       verification: { status: null, configured: true },
@@ -137,11 +137,11 @@ describe('statusLineParts', () => {
 
 describe('epicByTaskId', () => {
   it('maps each member taskId to its owning Epic', () => {
-    const m1 = member({ ref: 1, taskId: 101 });
-    const m2 = member({ ref: 2, taskId: 102 });
-    const e1 = epic({ ref: 10, members: [m1, m2] });
-    const m3 = member({ ref: 3, taskId: 103 });
-    const e2 = epic({ ref: 20, members: [m3] });
+    const m1 = member({ ref: '1', taskId: 101 });
+    const m2 = member({ ref: '2', taskId: 102 });
+    const e1 = epic({ ref: '10', members: [m1, m2] });
+    const m3 = member({ ref: '3', taskId: 103 });
+    const e2 = epic({ ref: '20', members: [m3] });
     const map = epicByTaskId([e1, e2]);
     expect(map.get(101)).toBe(e1);
     expect(map.get(102)).toBe(e1);
@@ -150,8 +150,8 @@ describe('epicByTaskId', () => {
   });
 
   it('skips unmirrored members (taskId null)', () => {
-    const mirrored = member({ ref: 1, taskId: 5 });
-    const unmirrored = member({ ref: 2, taskId: null });
+    const mirrored = member({ ref: '1', taskId: 5 });
+    const unmirrored = member({ ref: '2', taskId: null });
     const e = epic({ members: [mirrored, unmirrored] });
     const map = epicByTaskId([e]);
     expect(map.size).toBe(1);
@@ -203,67 +203,67 @@ describe('integrateOutcomeBanner', () => {
 
 describe('memberPipStatus', () => {
   it('maps escalated to escalated', () => {
-    const m = member({ ref: 1, escalated: true });
+    const m = member({ ref: '1', escalated: true });
     expect(memberPipStatus(m)).toBe('escalated');
   });
 
   it('maps mergeStatus blocked to blocked', () => {
-    const m = member({ ref: 1, mergeStatus: 'blocked' });
+    const m = member({ ref: '1', mergeStatus: 'blocked' });
     expect(memberPipStatus(m)).toBe('blocked');
   });
 
   it('maps mergeStatus completed to merged', () => {
-    const m = member({ ref: 1, mergeStatus: 'completed' });
+    const m = member({ ref: '1', mergeStatus: 'completed' });
     expect(memberPipStatus(m)).toBe('merged');
   });
 
   it('maps state cancelled to cancelled', () => {
-    const m = member({ ref: 1, state: 'cancelled' });
+    const m = member({ ref: '1', state: 'cancelled' });
     expect(memberPipStatus(m)).toBe('cancelled');
   });
 
   it('maps state working to running', () => {
-    const m = member({ ref: 1, state: 'working' });
+    const m = member({ ref: '1', state: 'working' });
     expect(memberPipStatus(m)).toBe('running');
   });
 
   it('maps state running to running', () => {
-    const m = member({ ref: 1, state: 'running' });
+    const m = member({ ref: '1', state: 'running' });
     expect(memberPipStatus(m)).toBe('running');
   });
 
   it('maps a ready-frontier member (pending, not running) to ready', () => {
-    const m = member({ ref: 1, state: null, mergeStatus: 'pending', ready: true });
+    const m = member({ ref: '1', state: null, mergeStatus: 'pending', ready: true });
     expect(memberPipStatus(m)).toBe('ready');
   });
 
   it('running outranks ready', () => {
-    const m = member({ ref: 1, state: 'running', ready: true });
+    const m = member({ ref: '1', state: 'running', ready: true });
     expect(memberPipStatus(m)).toBe('running');
   });
 
   it('merged outranks ready (a completed member is never a ready pip)', () => {
-    const m = member({ ref: 1, mergeStatus: 'completed', ready: true });
+    const m = member({ ref: '1', mergeStatus: 'completed', ready: true });
     expect(memberPipStatus(m)).toBe('merged');
   });
 
   it('maps state null, mergeStatus pending, not ready to waiting', () => {
-    const m = member({ ref: 1, state: null, mergeStatus: 'pending' });
+    const m = member({ ref: '1', state: null, mergeStatus: 'pending' });
     expect(memberPipStatus(m)).toBe('waiting');
   });
 
   it('escalation outranks blocked', () => {
-    const m = member({ ref: 1, escalated: true, mergeStatus: 'blocked' });
+    const m = member({ ref: '1', escalated: true, mergeStatus: 'blocked' });
     expect(memberPipStatus(m)).toBe('escalated');
   });
 });
 
 describe('closedMembers', () => {
   it('filters to completed/cancelled/done members, excludes pending/running, preserves order', () => {
-    const completed = member({ ref: 1, mergeStatus: 'completed' });
-    const cancelled = member({ ref: 2, mergeStatus: 'pending', state: 'cancelled' });
-    const done = member({ ref: 3, mergeStatus: 'pending', state: 'done' });
-    const running = member({ ref: 4, mergeStatus: 'pending', state: 'running' });
+    const completed = member({ ref: '1', mergeStatus: 'completed' });
+    const cancelled = member({ ref: '2', mergeStatus: 'pending', state: 'cancelled' });
+    const done = member({ ref: '3', mergeStatus: 'pending', state: 'done' });
+    const running = member({ ref: '4', mergeStatus: 'pending', state: 'running' });
     const e = epic({ members: [completed, cancelled, done, running] });
     expect(closedMembers(e)).toEqual([completed, cancelled, done]);
   });
@@ -271,27 +271,27 @@ describe('closedMembers', () => {
 
 describe('isEpicIntegrating', () => {
   it('is true when every member is folded', () => {
-    const m1 = member({ ref: 1, mergeStatus: 'completed' });
-    const m2 = member({ ref: 2, mergeStatus: 'completed' });
+    const m1 = member({ ref: '1', mergeStatus: 'completed' });
+    const m2 = member({ ref: '2', mergeStatus: 'completed' });
     const e = epic({ members: [m1, m2] });
     expect(isEpicIntegrating(e)).toBe(true);
   });
 
   it('is true when an integrate is in flight', () => {
-    const m1 = member({ ref: 1, mergeStatus: 'pending' });
+    const m1 = member({ ref: '1', mergeStatus: 'pending' });
     const e = epic({ members: [m1], integrate: { inFlight: true, held: null } });
     expect(isEpicIntegrating(e)).toBe(true);
   });
 
   it('is true when an integrate is held', () => {
-    const m1 = member({ ref: 1, mergeStatus: 'pending' });
+    const m1 = member({ ref: '1', mergeStatus: 'pending' });
     const e = epic({ members: [m1], integrate: { inFlight: false, held: 'verification failed' } });
     expect(isEpicIntegrating(e)).toBe(true);
   });
 
   it('is false for an epic with pending members, not in flight, not held', () => {
-    const m1 = member({ ref: 1, mergeStatus: 'completed' });
-    const m2 = member({ ref: 2, mergeStatus: 'pending' });
+    const m1 = member({ ref: '1', mergeStatus: 'completed' });
+    const m2 = member({ ref: '2', mergeStatus: 'pending' });
     const e = epic({ members: [m1, m2], integrate: { inFlight: false, held: null } });
     expect(isEpicIntegrating(e)).toBe(false);
   });
@@ -302,7 +302,7 @@ describe('isEpicIntegrating', () => {
   });
 
   it('is false for an in-place Epic even with every member folded (no gate to show)', () => {
-    const m1 = member({ ref: 1, mergeStatus: 'completed', isolationMode: 'direct' });
+    const m1 = member({ ref: '1', mergeStatus: 'completed', isolationMode: 'direct' });
     const e = epic({ members: [m1], inPlace: true });
     expect(isEpicIntegrating(e)).toBe(false);
   });
@@ -383,7 +383,7 @@ describe('finished (integrated) epics', () => {
 
 describe('epicLifecycleSteps for an in-place Epic', () => {
   it('stages just build + complete, sublabelled with the base branch', () => {
-    const m1 = member({ ref: 1, mergeStatus: 'pending', isolationMode: 'direct' });
+    const m1 = member({ ref: '1', mergeStatus: 'pending', isolationMode: 'direct' });
     const e = epic({ members: [m1], inPlace: true, baseBranch: 'develop' });
     const steps = epicLifecycleSteps(e);
     expect(steps.map((s) => s.key)).toEqual(['build', 'complete']);
@@ -392,7 +392,7 @@ describe('epicLifecycleSteps for an in-place Epic', () => {
   });
 
   it('marks both stages done once integrated', () => {
-    const m1 = member({ ref: 1, mergeStatus: 'completed', isolationMode: 'direct' });
+    const m1 = member({ ref: '1', mergeStatus: 'completed', isolationMode: 'direct' });
     const e = epic({ members: [m1], inPlace: true, baseBranch: 'develop', state: 'integrated', foldedCount: 1, memberCount: 1 });
     const steps = epicLifecycleSteps(e);
     expect(steps.map((s) => s.state)).toEqual(['done', 'done']);
@@ -401,7 +401,7 @@ describe('epicLifecycleSteps for an in-place Epic', () => {
 
 describe('epicLifecycleSteps with an unconfigured whole-Epic verifier', () => {
   it('marks verify disabled and satisfied, reads "not configured", and leaves merge as the live step', () => {
-    const m1 = member({ ref: 1, mergeStatus: 'completed' });
+    const m1 = member({ ref: '1', mergeStatus: 'completed' });
     const e = epic({ members: [m1], verification: { status: null, configured: false } });
     const steps = epicLifecycleSteps(e);
     const verify = steps.find((s) => s.key === 'verify')!;
@@ -413,7 +413,7 @@ describe('epicLifecycleSteps with an unconfigured whole-Epic verifier', () => {
   });
 
   it('leaves configured epics unaffected (no disabled flag, honest sublabel)', () => {
-    const m1 = member({ ref: 1, mergeStatus: 'completed' });
+    const m1 = member({ ref: '1', mergeStatus: 'completed' });
     const e = epic({ members: [m1], verification: { status: 'pending', configured: true } });
     const steps = epicLifecycleSteps(e);
     const verify = steps.find((s) => s.key === 'verify')!;

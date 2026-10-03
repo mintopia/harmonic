@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, check, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { Verdict } from '../verification/critic-schema.js';
-import type { TicketRef, TicketState } from '../tracker/adapter.js';
+import type { TicketRef, TicketState, TrackerRef } from '../tracker/adapter.js';
 
 /** A Task is either authored here or a 1:1 projection of a tracker issue. */
 export const TASK_ORIGINS = ['native', 'mirrored'] as const;
@@ -14,7 +14,7 @@ export type WayfinderType = (typeof WAYFINDER_TYPES)[number];
 /** A mirrored issue's last successful scan, persisted verbatim; a field-for-field subset of the tracker `Ticket`. */
 export interface TrackerFacts {
   state: TicketState;
-  parent: number | null;
+  parent: TrackerRef | null;
   blockedBy: TicketRef[];
   labels: string[];
   title: string;
@@ -63,7 +63,8 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   exportEnabled: boolean | null; exportDirectoryPath: string | null; exportRedactPatterns: string | null;
   exportS3Endpoint: string | null; exportS3Region: string | null; exportS3Bucket: string | null; exportS3Prefix: string | null;
   exportS3ForcePathStyle: boolean | null; exportS3AccessKeyId: string | null; exportS3SecretAccessKey: string | null;
-  exportIncludeStates: string | null; archiveRetentionDays: number | null; archiveRetentionMaxTotalMB: number | null;
+  exportIncludeStates: string | null;
+  configuredTracker: string | null; codeRepository: 'github' | 'gitlab' | 'forgejo' | null; triageLabels: string | null; archiveRetentionDays: number | null; archiveRetentionMaxTotalMB: number | null;
 };
 
 /** `jobKey` is the job name plus optional Workspace id, so SQLite's NULL-distinct unique semantics can't duplicate global job rows. */
@@ -108,7 +109,7 @@ export const tasks = sqliteTable('tasks', {
   continuationChoice: text('continuation_choice').$type<'full' | 'condensed'>(),
   origin: text('origin').$type<TaskOrigin>().notNull().default('native'),
   /** The mirrored issue's portable number; the upsert key. Null on native Tasks. */
-  trackerRef: integer('tracker_ref'),
+  trackerRef: text('tracker_ref').$type<TrackerRef>(),
   /** wayfinder (charting) | implement (build tickets). Derived from labels. */
   workflow: text('workflow').$type<Workflow>(),
   /** research/prototype/grilling/task; null for implement and native Tasks. */
@@ -118,13 +119,13 @@ export const tasks = sqliteTable('tasks', {
   /** Live merge indicator, orthogonal to `state`; null at rest. */
   mergeStatus: text('merge_status').$type<MergeStatus>(),
   /** The parent Map issue's number, for the query-time Map rollup. Not a Dependency edge. */
-  mapRef: integer('map_ref'),
+  mapRef: text('map_ref').$type<TrackerRef>(),
   /** Null ⇒ resolved at spawn to the working dir's current branch. */
   baseBranch: text('base_branch'),
   /** The ticket's open/closed axis at last scan; null on native Tasks. Distinct from `state`, the Task's execution state. */
   trackerState: text('tracker_state').$type<TicketState>(),
   /** The ticket's parent pointer at last scan (the raw `#<n>` fact; `mapRef` is the derived Map rollup key). */
-  trackerParent: integer('tracker_parent'),
+  trackerParent: text('tracker_parent').$type<TrackerRef>(),
   trackerBlockedBy: text('tracker_blocked_by', { mode: 'json' }).$type<TicketRef[]>(),
   trackerLabels: text('tracker_labels', { mode: 'json' }).$type<string[]>(),
   /** The ticket's title at last scan, verbatim (`prompt` is the derived title+body blend). */
@@ -146,7 +147,7 @@ export const tasks = sqliteTable('tasks', {
 export const trackerDismissals = sqliteTable('tracker_dismissals', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   workspaceId: integer('workspace_id').references(() => workspaces.id),
-  trackerRef: integer('tracker_ref').notNull(),
+  trackerRef: text('tracker_ref').$type<TrackerRef>().notNull(),
   dismissedAt: integer('dismissed_at').notNull(),
 }, (t) => [
   uniqueIndex('tracker_dismissals_ws_ref_idx').on(t.workspaceId, t.trackerRef),
@@ -188,7 +189,7 @@ export const attempts = sqliteTable('attempts', {
   /** Exactly one owner: a Task, or a stored Epic identified by workspace and tracker refs. */
   taskId: integer('task_id').references(() => tasks.id),
   workspaceId: integer('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
-  epicRef: integer('epic_ref'),
+  epicRef: text('epic_ref').$type<TrackerRef>(),
   number: integer('number').notNull(),
   state: text('state').$type<AttemptState>().notNull().default('running'),
   startedAt: integer('started_at').notNull(),
@@ -246,7 +247,7 @@ export const attempts = sqliteTable('attempts', {
 ]);
 export type AttemptRow = typeof attempts.$inferSelect;
 export type TaskAttemptRow = AttemptRow & { taskId: number };
-export type EpicAttemptRow = AttemptRow & { taskId: null; workspaceId: number; epicRef: number };
+export type EpicAttemptRow = AttemptRow & { taskId: null; workspaceId: number; epicRef: TrackerRef };
 
 export function isTaskAttempt(attempt: AttemptRow): attempt is TaskAttemptRow {
   return attempt.taskId !== null;
@@ -500,12 +501,23 @@ export type TaskRow = Omit<
   conflictResolveTurns: number;
 };
 
+/** A named per-Workspace credential, AES-256-GCM encrypted with the instance key; `ciphertext` carries the auth tag, both columns are base64. */
+export const secrets = sqliteTable('secrets', {
+  workspaceId: integer('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  ciphertext: text('ciphertext').notNull(),
+  nonce: text('nonce').notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (t) => [primaryKey({ columns: [t.workspaceId, t.name] })]);
+export type SecretRow = typeof secrets.$inferSelect;
+
 /** Persisted facts for tracker containers that deliberately have no Task row, currently Maps. */
 export const trackerContainers = sqliteTable('tracker_containers', {
   workspaceId: integer('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
-  trackerRef: integer('tracker_ref').notNull(),
+  trackerRef: text('tracker_ref').$type<TrackerRef>().notNull(),
   trackerState: text('tracker_state').$type<TicketState>().notNull(),
-  trackerParent: integer('tracker_parent'),
+  trackerParent: text('tracker_parent').$type<TrackerRef>(),
   trackerBlockedBy: text('tracker_blocked_by', { mode: 'json' }).$type<TicketRef[]>().notNull(),
   trackerLabels: text('tracker_labels', { mode: 'json' }).$type<string[]>().notNull(),
   trackerTitle: text('tracker_title').notNull(),
@@ -526,13 +538,13 @@ export type EpicLifecycleState = (typeof EPIC_LIFECYCLE_STATES)[number];
 /** The leaf-most Epic as a stored resource, keyed `(workspaceId, trackerRef)`; survives the tracker issue closing, removed only on Dismiss. `mergeCommit`/`memberRefs` are null while live. */
 export const epics = sqliteTable('epics', {
   workspaceId: integer('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
-  trackerRef: integer('tracker_ref').notNull(),
+  trackerRef: text('tracker_ref').$type<TrackerRef>().notNull(),
   kind: text('kind').$type<StoredEpicKind>().notNull(),
   /** The integration merge-commit hash; null while live and on a no-op finish (branch already matched base). */
   mergeCommit: text('merge_commit'),
   state: text('state').$type<EpicLifecycleState>().notNull(),
   /** Member refs snapshotted at integration (JSON int array); null while live. */
-  memberRefs: text('member_refs', { mode: 'json' }).$type<number[]>(),
+  memberRefs: text('member_refs', { mode: 'json' }).$type<TrackerRef[]>(),
 }, (t) => [primaryKey({ columns: [t.workspaceId, t.trackerRef] })]);
 export type EpicRow = typeof epics.$inferSelect;
 
@@ -542,7 +554,7 @@ export type EpicRow = typeof epics.$inferSelect;
 export const epicMergeEvents = sqliteTable('epic_merge_events', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   workspaceId: integer('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
-  epicRef: integer('epic_ref').notNull(),
+  epicRef: text('epic_ref').$type<TrackerRef>().notNull(),
   seq: integer('seq').notNull(),
   ts: integer('ts').notNull(),
   /** JSON `EpicTimelineStep` payload. */
