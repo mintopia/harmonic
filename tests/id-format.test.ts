@@ -17,6 +17,13 @@ describe('id-format', () => {
     expect(issueRef('185')).toBe('#185');
   });
 
+  it('renders key-style refs unprefixed (Jira keys, Forgejo milestone refs)', () => {
+    expect(issueRef('PROJ-185')).toBe('PROJ-185');
+    expect(issueRef('milestone-3')).toBe('milestone-3');
+    expect(ticketIdentity(174, 'PROJ-185')).toBe('Task 174 · issue PROJ-185');
+    expect(ticketRowId(430, 'PROJ-185')).toBe('PROJ-185 · T-430');
+  });
+
   it('shows both spaces disambiguated when a task mirrors an issue', () => {
     expect(ticketIdentity(174, '185')).toBe('Task 174 · issue #185');
   });

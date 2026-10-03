@@ -10,7 +10,8 @@ import { epicLifecycleSteps } from '../epic-model';
 import type { Stats } from '../stats-model';
 import { epicUsageSummary, tokenBarSegments, tokenBarEmpty, rowCost } from '../epic-summary-model';
 import { formatCost } from '../cost';
-import { issueRef, ticketRowId } from '../id-format.js';
+import { issueRef } from '../id-format.js';
+import { TicketRowId } from './TicketRowId';
 import { toastError } from '../toast';
 import { cardTitle } from '../board-sections-model';
 import {
@@ -407,7 +408,7 @@ function ChildRow({
       <div role="cell" className="flex items-center justify-end gap-1.5 whitespace-nowrap tabular-nums text-muted max-md:col-start-1 max-md:row-start-1 max-md:justify-start">
         <span aria-hidden="true" className={stateDot(child.state)} />
         <span className="sr-only">Id: </span>
-        {ticketRowId(child.id, child.trackerRef)}
+        <TicketRowId task={child} />
       </div>
       <div role="cell" className="min-w-0 pr-2 max-md:col-span-2 max-md:row-start-2 max-md:pr-0">
         <span title={child.summary} className="block truncate text-ink max-md:whitespace-normal max-md:overflow-visible max-md:font-medium">

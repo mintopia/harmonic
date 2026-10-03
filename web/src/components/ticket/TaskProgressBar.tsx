@@ -4,6 +4,7 @@ import { card, PHASE_NODE_STYLES } from '../../ui';
 import { splitPathTail } from '../../path';
 import { taskLifecycle, type LifecycleStepKey, type LifecycleStepStatus } from '../../task-detail-model';
 import { sectionCaps } from './shared';
+import { issueRef } from '../../id-format';
 
 function stepGlyph(status: LifecycleStepStatus, index: number) {
   if (status === 'done') return <Icon name="check" className="size-3.5" />;
@@ -42,7 +43,7 @@ function stepCaption(key: LifecycleStepKey, status: LifecycleStepStatus, task: T
     case 'postMergeCheck':
       return disabled ? 'not configured' : 'revert on red';
     case 'closeIssue':
-      return task.trackerRef != null ? `#${task.trackerRef}` : 'no linked issue';
+      return task.trackerRef != null ? issueRef(task.trackerRef) : 'no linked issue';
     case 'retire':
       return 'cleanup';
   }

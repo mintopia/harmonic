@@ -20,7 +20,8 @@ import { toastError } from '../toast';
 import { PageHeader } from './PageHeader';
 import { fetchTasks, TABLE_PAGE_SIZE } from '../table-model';
 import { excludeEpicDrivers, type Epic } from '../epic-model';
-import { issueRef, ticketRowId } from '../id-format.js';
+import { issueRef } from '../id-format.js';
+import { TicketRowId } from './TicketRowId';
 import { EmptyState } from './EmptyState';
 import { FilterSelect } from './FilterSelect';
 import { ModelLabel, ProviderChip, TaskIdentity } from './TaskIdentity';
@@ -140,7 +141,7 @@ export function TableView({
         <span aria-hidden="true" className={stateDot(task.state)} />
         {workspace && <WorkspaceBadge workspace={workspace} label={`Workspace: ${workspace.name}`} />}
         <span className="sr-only">Id: </span>
-        {ticketRowId(task.id, task.trackerRef)}
+        <TicketRowId task={task} />
       </div>
       <div role="cell" className="flex min-w-0 items-center gap-2 pr-2 max-md:col-span-2 max-md:row-start-2 max-md:pr-0">
         <div className="min-w-0 flex-1">
