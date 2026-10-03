@@ -67,3 +67,10 @@ describe('REST client', () => {
     expect(calls.map((c) => c.url)).toEqual(['https://x.test/api/l?state=all&page=1&limit=2', 'https://x.test/api/l?state=all&page=2&limit=2']);
   });
 });
+
+describe('REST client malformed replies', () => {
+  it('reports a non-JSON success body with the request, and a non-list page', async () => {
+    await expect(client(scripted(new Response('<html>')).http).request('GET', '/a')).rejects.toMatchObject({ name: 'RestError', message: expect.stringContaining('GET /a returned non-JSON') });
+    await expect(client(scripted(ok({ a: 1 })).http).paginate('/l', 2)).rejects.toThrow('did not return a list');
+  });
+});

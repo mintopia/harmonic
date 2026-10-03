@@ -225,9 +225,15 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
       return { ...found, comments: notes.map((n) => ({ author: n.user?.login ?? '', body: n.body, createdAt: n.created_at })) };
     },
 
-    claim: (ticket) => reassign(ticket, (logins, login) => void logins.add(login)),
+    claim: (ticket) =>
+      reassign(ticket, (logins, login) => {
+        logins.add(login);
+      }),
 
-    release: (ticket) => reassign(ticket, (logins, login) => void logins.delete(login)),
+    release: (ticket) =>
+      reassign(ticket, (logins, login) => {
+        logins.delete(login);
+      }),
 
     close: (ticket, body) => setIssueState(ticket, body, 'closed'),
 

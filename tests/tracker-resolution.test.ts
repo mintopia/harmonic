@@ -31,7 +31,10 @@ describe('selectTracker precedence', () => {
   });
   it('is none when nothing is configured, detected, or inferable', () => {
     expect(selectTracker({})).toBeNull();
-    expect(selectTracker({ detectedName: 'Jira', codeRepository: 'forgejo' })).toBeNull();
+    expect(selectTracker({ detectedName: 'Jira' })).toBeNull();
+  });
+  it('falls back to Forgejo when it is the Code Repository and the declaration names an unknown tracker', () => {
+    expect(selectTracker({ detectedName: 'Jira', codeRepository: 'forgejo' })).toEqual({ kindId: 'forgejo', source: 'code-repository' });
   });
 });
 

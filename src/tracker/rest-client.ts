@@ -66,10 +66,15 @@ export function createRestClient(options: RestClientOptions): RestClient {
       }
       if (res?.ok) {
         const text = await res.text();
-        return (text.trim() ? JSON.parse(text) : undefined) as T;
+        try {
+          return (text.trim() ? JSON.parse(text) : undefined) as T;
+        } catch {
+          throw new RestError(`${method} ${path} returned non-JSON: ${text.slice(0, 80)}`, res.status, text);
+        }
       }
       const transient = res ? retryable(method, res.status) : IDEMPOTENT.has(method);
       if (transient && attempt < retries) {
+        await res?.body?.cancel();
         await sleep((res && retryAfterMs(res)) ?? backoffMs(attempt));
         continue;
       }
@@ -84,6 +89,7 @@ export function createRestClient(options: RestClientOptions): RestClient {
     const items: T[] = [];
     for (let page = 1; page <= maxPages; page++) {
       const batch = await request<T[]>('GET', `${path}${sep}page=${page}&limit=${pageSize}`);
+      if (!Array.isArray(batch)) throw new Error(`GET ${path} did not return a list`);
       items.push(...batch);
       if (batch.length < pageSize) break;
     }
