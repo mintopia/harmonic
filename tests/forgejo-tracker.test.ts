@@ -50,6 +50,20 @@ describe('Forgejo tracker', () => {
     expect([ticket.state, ticket.comments.map((c) => c.body)]).toEqual(['closed', ['done']]);
   });
 
+  it('readTicket costs O(1) requests however many issues are open, and still reads edges and parent', async () => {
+    const many = Array.from({ length: 120 }, (_, i) => issue(i + 10, `Filler ${i}`));
+    const issues = [issue(1, 'A'), issue(2, 'B'), issue(3, 'C', { body: 'Blocked by #1\nPart of #9' }), ...many];
+    const { fake, adapter } = build({ issues, dependencies: { 3: [2] } });
+    fake.requests.length = 0;
+    const ticket = await adapter.readTicket(ref(3));
+    expect(ticket.blockedBy.map((r) => r.number)).toEqual(['2', '1']);
+    expect(ticket.parent).toBe('9');
+    expect((await adapter.readTicket(ref(2))).blocking.map((r) => r.number)).toEqual(['3']);
+    expect(fake.requests.filter((r) => r.path.startsWith('/repos/owner/name/issues') && r.path !== '/repos/owner/name/issues').length).toBeLessThan(15);
+    expect(fake.requests.some((r) => r.path === '/repos/owner/name/issues')).toBe(false);
+    await expect(adapter.readTicket(ref(999))).rejects.toThrow('no issue 999');
+  });
+
   it('label source: epic-labelled issues are epics and children name them in the body', async () => {
     const { adapter } = build({ issues: [issue(1, 'Epic', { labels: ['epic'] }), issue(2, 'Child', { body: 'Part of #1' })] });
     const tickets = await adapter.scan();
