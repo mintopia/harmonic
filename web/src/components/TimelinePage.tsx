@@ -3,6 +3,7 @@ import { api } from '../api';
 import type { Attempt, TimelineAttempt } from '../types';
 import { taskLabel } from '../id-format.js';
 import { formatCost } from '../cost';
+import { issueRef } from '../id-format';
 import { displayTitle } from '../ui';
 import { EmptyState } from './EmptyState';
 import { Icon } from './Icon';
@@ -456,7 +457,7 @@ export function TimelinePage({
                       <>
                         <span className={st!.text}>{st!.label.toLowerCase()}</span>{' '}
                         <span className="text-muted">
-                          {active.trackerRef ? `#${active.trackerRef}` : taskLabel(active.taskId)}
+                          {active.trackerRef ? issueRef(active.trackerRef) : taskLabel(active.taskId)}
                         </span>{' '}
                         {active.title}
                       </>
@@ -553,7 +554,7 @@ export function TimelinePage({
                           onMouseLeave={() => setHover((h) => (h?.span.attemptId === s.attemptId ? null : h))}
                           onFocus={(e) => setHover({ span: s, rect: e.currentTarget.getBoundingClientRect() })}
                           onBlur={() => setHover((h) => (h?.span.attemptId === s.attemptId ? null : h))}
-                          aria-label={`${s.workspace.name}: ${s.trackerRef ? `#${s.trackerRef}` : taskLabel(s.taskId)} ${s.title}, ${st.label}, attempt ${s.number}. Inspect steps.`}
+                          aria-label={`${s.workspace.name}: ${s.trackerRef ? issueRef(s.trackerRef) : taskLabel(s.taskId)} ${s.title}, ${st.label}, attempt ${s.number}. Inspect steps.`}
                           className={`absolute flex items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-md border-l-[3px] px-2 text-small font-medium text-ink transition-[filter,transform] hover:z-10 hover:-translate-y-px hover:brightness-110 ${st.bar}`}
                           style={{ left: `${left}%`, width: `${width}%`, top: s.row * ROW_H + 5, height: ROW_H - 8 }}
                         >
@@ -608,7 +609,7 @@ function HoverCard({ hover, now }: { hover: NonNullable<Hover>; now: number }) {
       <div className="flex items-center gap-2">
         <WorkspaceBadge workspace={span.workspace} />
         <span className="font-data text-data text-faint">
-          {span.trackerRef ? `#${span.trackerRef}` : taskLabel(span.taskId)}
+          {span.trackerRef ? issueRef(span.trackerRef) : taskLabel(span.taskId)}
         </span>
         <span className={`ml-auto inline-flex items-center gap-1.5 text-label font-semibold ${st.text}`}>
           <span className={`size-1.5 rounded-full ${st.dot}`} aria-hidden="true" />
@@ -691,7 +692,7 @@ function AttemptInspector({
           </button>
           <h1 className={`${displayTitle} flex items-center gap-2.5`}>
             <span className="font-data text-title text-faint">
-              {span.trackerRef ? `#${span.trackerRef}` : taskLabel(span.taskId)}
+              {span.trackerRef ? issueRef(span.trackerRef) : taskLabel(span.taskId)}
             </span>
             <span className="truncate">{span.title}</span>
           </h1>

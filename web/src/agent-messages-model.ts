@@ -1,4 +1,5 @@
 import type { TrackerRef } from './types.js';
+import { epicLabel } from './id-format.js';
 import type {
   AgentMessage,
   AgentMessageReceipt,
@@ -145,7 +146,7 @@ export function epicOptions(threads: readonly AgentMessageThread[], workspaceId:
       if (p.epicId == null) continue;
       const key = epicKey(thread.workspaceId, p.epicId);
       if (byKey.has(key)) continue;
-      const label = `${prefixed ? `${thread.workspaceName} · ` : ''}Epic #${p.epicId}`;
+      const label = `${prefixed ? `${thread.workspaceName} · ` : ''}${epicLabel(p.epicId)}`;
       byKey.set(key, { key, workspaceId: thread.workspaceId, epicId: p.epicId, label, workspaceName: thread.workspaceName });
     }
   }

@@ -2,6 +2,7 @@ import type { TicketTimelineEvent } from './types.js';
 import { exportFactRows } from './task-export-model.js';
 import { harnessLabel } from './task-detail-model.js';
 import { mergeStepRow, type MergeStepEvent } from './merge-progress-model.js';
+import { issueRef } from './id-format.js';
 
 export type LifecycleTimelineTone = 'neutral' | 'running' | 'passed' | 'failed' | 'awaiting' | 'sent' | 'received';
 
@@ -169,11 +170,11 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
       const paths = payload?.paths;
       const fileCount = Array.isArray(paths) ? paths.length : null;
       const detail = oid ? `Committed ${shortOid(oid)} to the base checkout${fileCount !== null ? ` (${fileCount === 1 ? '1 file' : `${fileCount} files`})` : ''}` : null;
-      return { label: ref ? `Issue #${ref} closed` : 'Issue closed', detail, tone: 'passed', tag: 'GITHUB' };
+      return { label: ref ? `Issue ${issueRef(ref)} closed` : 'Issue closed', detail, tone: 'passed', tag: 'GITHUB' };
     }
     case 'ticket-close-failed': {
       const ref = text(payload?.trackerRef);
-      return { label: ref ? `Issue #${ref} could not be closed` : 'Issue could not be closed', detail: text(payload?.error), tone: 'failed', tag: 'GITHUB' };
+      return { label: ref ? `Issue ${issueRef(ref)} could not be closed` : 'Issue could not be closed', detail: text(payload?.error), tone: 'failed', tag: 'GITHUB' };
     }
     case 'retired': {
       const worktree = text(payload?.worktree);
@@ -330,7 +331,7 @@ export function lifecycleTimelineRows(events: TicketTimelineEvent[]): LifecycleT
         if (text(data?.type) === 'task-created') {
           const ref = text(data?.trackerRef);
           const ws = text(data?.workspace);
-          const detail = ref ? `Imported from issue #${ref}${ws ? ` · queued to ${ws}` : ''}` : ws ? `Queued to ${ws}` : null;
+          const detail = ref ? `Imported from issue ${issueRef(ref)}${ws ? ` · queued to ${ws}` : ''}` : ws ? `Queued to ${ws}` : null;
           return { ...base, label: 'Task created', detail, tone: 'neutral', tag: 'GITHUB' };
         }
         const type = text(data?.type);

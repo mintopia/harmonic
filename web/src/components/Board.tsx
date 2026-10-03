@@ -10,7 +10,8 @@ import {
   type BlockerColumn,
   type PendingItem,
 } from '../board-sections-model';
-import { epicLabel, ticketRowId } from '../id-format.js';
+import { epicLabel, issueRef } from '../id-format.js';
+import { TicketRowId } from './TicketRowId';
 import { api } from '../api';
 import { subscribe } from '../ws';
 import { toastError } from '../toast';
@@ -41,10 +42,6 @@ import { PageHeader } from './PageHeader';
 /** The recorded trigger, without the settle fact's `escalated to human:` preamble. */
 export function escalationReasonText(reason: string): string {
   return reason.replace(/^escalated to human:\s*/i, '');
-}
-
-function rowId(task: Task): string {
-  return ticketRowId(task.id, task.trackerRef);
 }
 
 function Dot({ task }: { task: Task }) {
@@ -214,7 +211,7 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
         <div className="flex items-center gap-2">
           {task.mapRef != null && <span className={toolChip}>epic/{task.mapRef}</span>}
           <Dot task={task} />
-          <span className="font-data text-small text-faint">{rowId(task)}</span>
+          <span className="font-data text-small text-faint"><TicketRowId task={task} /></span>
           <span className="ml-auto flex items-center gap-1.5">
             {task.openBlockerCount > 0 && <BlockerBadge count={task.openBlockerCount} blockedOnFailed={task.blockedOnFailed} />}
             {task.mergeStatus === 'resolving-conflicts' ? (
@@ -681,7 +678,7 @@ function StatusPips({ epic }: { epic: Epic }) {
     >
       {epic.members.map((m) => {
         const status = memberPipStatus(m);
-        return <span key={m.ref} title={`#${m.ref} · ${memberPipLabel(status)}`} className={`h-2 w-3 rounded-[3px] ${PIP_FILL[status]}`} />;
+        return <span key={m.ref} title={`${issueRef(m.ref)} · ${memberPipLabel(status)}`} className={`h-2 w-3 rounded-[3px] ${PIP_FILL[status]}`} />;
       })}
     </span>
   );

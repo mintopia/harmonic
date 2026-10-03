@@ -15,9 +15,13 @@ export function epicLabel(ref: TrackerRef): string {
   return `Epic ${issueRef(ref)}`;
 }
 
-/** A tracker (GitHub) issue ref: `#185`. The only place a bare `#n` is legitimate. */
+/**
+ * A tracker issue ref as its adapter renders it (ADR-0046): numeric refs
+ * (GitHub, GitLab, Forgejo) get `#185`; key-style refs (Jira `PROJ-185`,
+ * Forgejo `milestone-3`) are shown as-is. The only place a bare `#n` is legitimate.
+ */
 export function issueRef(ref: TrackerRef): string {
-  return `#${ref}`;
+  return /^\d+$/.test(ref) ? `#${ref}` : ref;
 }
 
 /**
