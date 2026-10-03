@@ -16,7 +16,8 @@ import {
   segmentThread,
   threadsCapHint,
   THREAD_PAGE_SIZE,
-  nextThreadLimit,
+  nextPageCount,
+  mergeThreadPages,
   trappedFocusIndex,
   taskOptions,
   threadParticipantsLine,
@@ -332,14 +333,28 @@ describe('threadsCapHint', () => {
   });
 });
 
-describe('nextThreadLimit', () => {
-  it('grows the window by one page while the server holds more threads', () => {
-    expect(nextThreadLimit(THREAD_PAGE_SIZE, 450)).toBe(THREAD_PAGE_SIZE * 2);
-    expect(nextThreadLimit(THREAD_PAGE_SIZE * 2, 450)).toBe(THREAD_PAGE_SIZE * 3);
+describe('nextPageCount', () => {
+  it('adds a page while the server holds more threads than are covered', () => {
+    expect(nextPageCount(1, 450)).toBe(2);
+    expect(nextPageCount(2, 450)).toBe(3);
   });
-  it('does not grow once everything is loaded', () => {
-    expect(nextThreadLimit(THREAD_PAGE_SIZE, THREAD_PAGE_SIZE)).toBe(THREAD_PAGE_SIZE);
-    expect(nextThreadLimit(THREAD_PAGE_SIZE, 0)).toBe(THREAD_PAGE_SIZE);
+  it('stops once every thread is covered', () => {
+    expect(nextPageCount(1, THREAD_PAGE_SIZE)).toBe(1);
+    expect(nextPageCount(3, 450)).toBe(3);
+    expect(nextPageCount(1, 0)).toBe(1);
+  });
+});
+
+describe('mergeThreadPages', () => {
+  const t = (id: string) => thread(id);
+  it('concatenates pages, drops threads repeated by a shifting page boundary, and takes totals from the last page', () => {
+    const merged = mergeThreadPages([
+      { threads: [t('a'), t('b')], total: 4, totalMessages: 8 },
+      { threads: [t('b'), t('c')], total: 5, totalMessages: 9 },
+    ]);
+    expect(merged.threads.map((x) => x.threadId)).toEqual(['a', 'b', 'c']);
+    expect(merged.total).toBe(5);
+    expect(merged.totalMessages).toBe(9);
   });
 });
 

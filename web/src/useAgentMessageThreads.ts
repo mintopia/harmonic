@@ -1,10 +1,21 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
-import { NO_SERVER_FILTER, THREAD_PAGE_SIZE, hasServerFilter, nextThreadLimit, type ThreadsView } from './agent-messages-model';
+import { NO_SERVER_FILTER, THREAD_PAGE_SIZE, hasServerFilter, mergeThreadPages, nextPageCount, type ThreadsView } from './agent-messages-model';
 import { debounce } from './debounce';
 import { useAsyncResource } from './useAsyncResource';
 import { useLiveEffect } from './useLiveEffect';
 import { subscribe } from './ws';
+
+type ThreadParams = Parameters<typeof api.agentMessageThreads>[0];
+
+async function fetchThreadPages(params: ThreadParams, pageCount: number): Promise<ThreadsView> {
+  const pages = await Promise.all(
+    Array.from({ length: pageCount }, (_, i) =>
+      api.agentMessageThreads({ ...params, limit: THREAD_PAGE_SIZE, offset: i * THREAD_PAGE_SIZE }),
+    ),
+  );
+  return mergeThreadPages(pages);
+}
 
 const POLL_MS = 5_000;
 const RELOAD_DEBOUNCE_MS = 250;
@@ -14,31 +25,33 @@ export function useAgentMessageThreads(workspaceId: number | null, enabled: bool
   useEffect(() => {
     setFilter(NO_SERVER_FILTER);
   }, [workspaceId]);
-  const [limit, setLimit] = useState(THREAD_PAGE_SIZE);
+  const [pageCount, setPageCount] = useState(1);
   useEffect(() => {
-    setLimit(THREAD_PAGE_SIZE);
+    setPageCount(1);
   }, [workspaceId]);
   const filtering = hasServerFilter(filter);
   const scope = workspaceId ?? filter.workspaceId ?? undefined;
   const optionScope = workspaceId ?? undefined;
 
   const all = useAsyncResource(
-    enabled ? () => api.agentMessageThreads({ workspaceId: optionScope, limit }) : null,
-    [workspaceId, enabled, limit],
+    enabled ? () => fetchThreadPages({ workspaceId: optionScope }, pageCount) : null,
+    [workspaceId, enabled, pageCount],
     { pollMs: POLL_MS },
   );
   const filtered = useAsyncResource(
     enabled && filtering
       ? () =>
-          api.agentMessageThreads({
-            workspaceId: scope,
-            epicId: filter.epicId ?? undefined,
-            taskId: filter.taskId ?? undefined,
-            live: filter.liveOnly ? true : undefined,
-            limit,
-          })
+          fetchThreadPages(
+            {
+              workspaceId: scope,
+              epicId: filter.epicId ?? undefined,
+              taskId: filter.taskId ?? undefined,
+              live: filter.liveOnly ? true : undefined,
+            },
+            pageCount,
+          )
       : null,
-    [scope, enabled, filter.epicId, filter.taskId, filter.liveOnly, limit],
+    [scope, enabled, filter.epicId, filter.taskId, filter.liveOnly, pageCount],
     { pollMs: POLL_MS },
   );
   const current = filtering ? filtered : all;
@@ -68,7 +81,7 @@ export function useAgentMessageThreads(workspaceId: number | null, enabled: bool
   }, [workspaceId, reloadAll, reloadFiltered]);
 
   const loadedTotal = current.data?.total ?? 0;
-  const loadMore = () => setLimit((l) => nextThreadLimit(l, loadedTotal));
+  const loadMore = () => setPageCount((n) => nextPageCount(n, loadedTotal));
 
   return {
     loadMore,

@@ -137,7 +137,7 @@ describe('Activity Agent Messages tab', () => {
     expect(agentMessageThreads.mock.calls.length - before).toBe(1);
   });
 
-  it('shows a capped-list hint and widens the fetch window on Load more', async () => {
+  it('shows a capped-list hint and fetches the next page by offset on Load more', async () => {
     activity.mockResolvedValue({ processes: [], agentMessagesEnabledInAnyWorkspace: true });
     agentMessageThreads.mockResolvedValue({ threads: [threadWith([first])], total: 450, totalMessages: 1 });
     const host = await mount();
@@ -151,7 +151,7 @@ describe('Activity Agent Messages tab', () => {
       loadMore.click();
       await flush();
     });
-    expect(agentMessageThreads).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 400 }));
+    expect(agentMessageThreads).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 200, offset: 200 }));
   });
 
   it('asks the server to filter and keeps the Epic options while a filter is active', async () => {

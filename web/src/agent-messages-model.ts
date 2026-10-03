@@ -193,8 +193,15 @@ export function threadsCapHint(shown: number, total: number): string | null {
 
 export const THREAD_PAGE_SIZE = 200;
 
-export function nextThreadLimit(limit: number, total: number): number {
-  return total > limit ? limit + THREAD_PAGE_SIZE : limit;
+export function nextPageCount(pageCount: number, total: number): number {
+  return total > pageCount * THREAD_PAGE_SIZE ? pageCount + 1 : pageCount;
+}
+
+export function mergeThreadPages(pages: readonly ThreadsView[]): ThreadsView {
+  const last = pages[pages.length - 1];
+  const seen = new Set<string>();
+  const threads = pages.flatMap((page) => page.threads).filter((t) => !seen.has(t.threadId) && seen.add(t.threadId));
+  return { threads, total: last?.total ?? 0, totalMessages: last?.totalMessages ?? 0 };
 }
 
 /** Index to focus so Tab stays inside a modal drawer; -1 means focus is outside it. Null lets the browser move focus. */
