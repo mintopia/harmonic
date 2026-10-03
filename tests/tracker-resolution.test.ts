@@ -31,7 +31,7 @@ describe('selectTracker precedence', () => {
   });
   it('is none when nothing is configured, detected, or inferable', () => {
     expect(selectTracker({})).toBeNull();
-    expect(selectTracker({ detectedName: 'Jira', codeRepository: 'forgejo' })).toBeNull();
+    expect(selectTracker({ detectedName: 'Linear', codeRepository: 'forgejo' })).toBeNull();
   });
 });
 
@@ -54,7 +54,7 @@ describe('resolveTrackerAdapter end to end', () => {
     await expect(resolveTrackerAdapter(mkRepo())).rejects.toMatchObject({ code: 'no-declaration' });
   });
   it('an unknown declaration name still reports unsupported', async () => {
-    await expect(resolveTrackerAdapter(mkRepo('# Issue tracker: Jira\n'))).rejects.toMatchObject({ code: 'unsupported' });
+    await expect(resolveTrackerAdapter(mkRepo('# Issue tracker: Linear\n'))).rejects.toMatchObject({ code: 'unsupported' });
   });
   it('a misconfigured Configured Tracker reports misconfigured', async () => {
     await expect(resolveTrackerAdapter(mkRepo(), undefined, { configured: { kind: 'gitlab' } })).rejects.toMatchObject({ code: 'misconfigured' });

@@ -74,6 +74,8 @@ export interface TrackerLifecycleWrite {
   changedPaths?: string[];
 }
 
+export type TrackerVerifyResult = { ok: true } | { ok: false; reason: string };
+
 /** A repo-bound tracker: reads the whole tracker as `Ticket`s; writes only the advisory `claim`/`release` pair and lifecycle `close`/`reopen`. */
 export interface TrackerAdapter {
   readonly name: string;
@@ -93,6 +95,8 @@ export interface TrackerAdapter {
   close?(ticket: TicketRef, comment: string): Promise<TrackerLifecycleWrite | void>;
   /** Re-open a ticket closed prematurely, with a comment. A tracker without lifecycle writes omits this. */
   reopen?(ticket: TicketRef, comment: string): Promise<TrackerLifecycleWrite | void>;
+  /** Checks the tracker is reachable with the configured credentials; never throws. */
+  verify?(): Promise<TrackerVerifyResult>;
 }
 
 /** A tracker that supports Harmonic-owned lifecycle writes as well as inbound reads. */
@@ -148,6 +152,8 @@ export function resolutionFailure(err: unknown): ResolvedTracker & { ok: false }
 export interface WorkspaceTrackerSettings {
   configured?: ConfiguredTracker | null | undefined;
   codeRepository?: RepositoryKind | null | undefined;
+  /** Secret values by name, for kinds that read credentials from `secretName` settings. */
+  secrets?: Readonly<Record<string, string>> | undefined;
 }
 
 /** A Workspace row's tracker-related overrides, parsed from its stored form. */
@@ -206,7 +212,7 @@ export async function resolveTrackerAdapter(
   try {
     const raw = selection.source === 'configured' ? configured!.settings : await kind.fromDeclaration?.(doc ?? '', repoRoot);
     const settings = kind.settings.parse(raw ?? {});
-    const adapter = kind.create({ settings, secrets: {}, repoRoot, http: defaultHttp, ...(featureIndex && { featureIndex }) });
+    const adapter = kind.create({ settings, secrets: workspace.secrets ?? {}, repoRoot, http: defaultHttp, ...(featureIndex && { featureIndex }) });
     adapterSources.set(adapter, selection.source);
     return adapter;
   } catch (err) {
