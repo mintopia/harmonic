@@ -1,25 +1,9 @@
-import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
-import { promisify } from 'node:util';
+import { join } from 'node:path';
 
-const execFileAsync = promisify(execFile);
-
-async function gitlabRemote(repoRoot: string): Promise<string | null> {
-  let url: string;
-  try {
-    const { stdout } = await execFileAsync('git', ['-C', repoRoot, 'remote', 'get-url', 'origin']);
-    url = stdout.trim();
-  } catch {
-    // No `origin` remote (or `git` unavailable) just means the GitLab project can't be inferred; the caller falls back to requiring an explicit `Project:` line.
-    return null;
-  }
-  const m = url.match(/^(?:git@|(?:https?|ssh):\/\/(?:[^@/]+@)?)[^:/]+[:/](?:\d+\/)?(.+?)(?:\.git)?$/);
-  return m ? m[1]! : null;
-}
-import { githubAdapter } from './github.js';
-import { gitlabAdapter } from './gitlab.js';
-import { localMarkdownAdapter, type FeatureIndex } from './local-markdown.js';
+import { trackerKindFor, normaliseKindId, TRACKER_KINDS } from './kinds.js';
+import type { TrackerHttp } from './kind.js';
+import type { FeatureIndex } from './local-markdown.js';
 
 export type TicketState = 'open' | 'closed';
 
@@ -97,22 +81,12 @@ export interface TrackerAdapter {
   close?(ticket: TicketRef, comment: string): Promise<TrackerLifecycleWrite | void>;
   /** Re-open a ticket closed prematurely, with a comment. A tracker without lifecycle writes omits this. */
   reopen?(ticket: TicketRef, comment: string): Promise<TrackerLifecycleWrite | void>;
-  /** Open a PR from an Attempt's worktree branch; a tracker with no PR concept omits it (treated as artifact). */
-  openPR?(input: OpenPRInput): Promise<void>;
 }
 
 /** A tracker that supports Harmonic-owned lifecycle writes as well as inbound reads. */
 export interface WritableTrackerAdapter extends TrackerAdapter {
   close(ticket: TicketRef, comment: string): Promise<TrackerLifecycleWrite | void>;
   reopen(ticket: TicketRef, comment: string): Promise<TrackerLifecycleWrite | void>;
-}
-
-/** The open-PR Merge Fate's inputs. */
-export interface OpenPRInput {
-  branch: string;
-  baseBranch: string;
-  title: string;
-  body: string;
 }
 
 /**
@@ -140,16 +114,9 @@ export type ResolvedTracker =
   | { ok: true; name: string; label: string }
   | { ok: false; code: TrackerResolveFailureCode; reason: string };
 
-/** Human display labels for the internal adapter names (`github` → `GitHub`). */
-const TRACKER_LABELS: Record<string, string> = {
-  github: 'GitHub',
-  gitlab: 'GitLab',
-  'local-markdown': 'Local Markdown',
-};
-
 /** The display label for an adapter name, falling back to the raw name. */
 export function trackerLabel(name: string): string {
-  return TRACKER_LABELS[name] ?? name;
+  return TRACKER_KINDS.find((k) => k.id === name)?.label ?? name;
 }
 
 /** A resolved adapter as a successful {@link ResolvedTracker}. */
@@ -175,11 +142,11 @@ export async function resolveTracker(
   }
 }
 
+const defaultHttp: TrackerHttp = (url, init) => fetch(url, init);
+
 /**
- * Resolve the repo's tracker from its `docs/agents/issue-tracker.md` declaration (`# Issue tracker: <name>`).
- * GitHub uses ambient `gh` auth. local-markdown reads an optional `Path: <dir>` line (default `.scratch`).
- * GitLab reads an optional `Project: <group/repo>` line, inferring it from the `origin` remote when absent;
- * auth and host come from the ambient `glab` CLI.
+ * Resolve the repo's tracker from its `docs/agents/issue-tracker.md` declaration (`# Issue tracker: <name>`)
+ * by looking the name up in the kinds registry; the kind reads its own settings from the declaration.
  */
 export async function resolveTrackerAdapter(
   repoRoot: string,
@@ -193,23 +160,12 @@ export async function resolveTrackerAdapter(
     throw new TrackerResolutionError('no-declaration', `No tracker declaration at ${docPath}`);
   }
   const name = doc.match(/^#\s*Issue tracker:\s*(.+?)\s*$/m)?.[1];
-  switch (name?.trim().toLowerCase().replace(/[\s_]+/g, '-')) {
-    case 'github':
-      return githubAdapter(repoRoot);
-    case 'local-markdown': {
-      const path = doc.match(/^\s*Path:\s*(.+?)\s*$/im)?.[1] ?? '.scratch';
-      return localMarkdownAdapter(isAbsolute(path) ? path : join(repoRoot, path), { ...(featureIndex && { featureIndex }) });
-    }
-    case 'gitlab': {
-      const project = doc.match(/^\s*Project:\s*(.+?)\s*$/im)?.[1] ?? (await gitlabRemote(repoRoot));
-      if (!project)
-        throw new TrackerResolutionError(
-          'misconfigured',
-          `GitLab tracker needs a "Project: <group/repo>" line in ${docPath} (or an origin remote)`,
-        );
-      return gitlabAdapter({ project, repoRoot });
-    }
-    default:
-      throw new TrackerResolutionError('unsupported', `Unsupported tracker "${name ?? '(none)'}" in ${docPath}`);
+  const kind = name ? trackerKindFor(normaliseKindId(name)) : undefined;
+  if (!kind) throw new TrackerResolutionError('unsupported', `Unsupported tracker "${name ?? '(none)'}" in ${docPath}`);
+  try {
+    const settings = kind.settings.parse(await kind.fromDeclaration?.(doc, repoRoot) ?? {});
+    return kind.create({ settings, secrets: {}, repoRoot, http: defaultHttp, ...(featureIndex && { featureIndex }) });
+  } catch (err) {
+    throw new TrackerResolutionError('misconfigured', `${err instanceof Error ? err.message : String(err)} in ${docPath}`);
   }
 }

@@ -1,9 +1,24 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { logger } from '../logger.js';
+import { z } from 'zod';
+import { parseBlockedBySection, parsePartOfParent } from './relationships.js';
+import type { TrackerKind } from './kind.js';
 import { EPIC_LABEL, MAP_LABEL, type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
 
 const execFileAsync = promisify(execFile);
+
+async function gitlabRemote(repoRoot: string): Promise<string | null> {
+  let url: string;
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', repoRoot, 'remote', 'get-url', 'origin']);
+    url = stdout.trim();
+  } catch {
+    return null;
+  }
+  const m = url.match(/^(?:git@|(?:https?|ssh):\/\/(?:[^@/]+@)?)[^:/]+[:/](?:\d+\/)?(.+?)(?:\.git)?$/);
+  return m ? m[1]! : null;
+}
 
 const SCAN_SAFETY_VALVE_PAGES = 100;
 
@@ -81,29 +96,11 @@ function normaliseBase(raw: RawIssue): Omit<Ticket, 'parent' | 'blockedBy' | 'bl
   };
 }
 
-/**
- * Body-line relationships — GitLab's free tier has neither native sub-issues
- * (Epics/work-items are Premium+) nor `blocks`/`is_blocked_by` issue links
- * (also Premium+), so the description carries them: a `Part of [epic] #<n>`
- * line names the parent, and a `Blocked by` section names the dependencies.
- */
-function parseBody(desc: string): { parent: number | null; blockedBy: number[] } {
-  const parentMatch = desc.match(/^\s*Part of\b[^#\n]*#(\d+)/im);
-  return { parent: parentMatch ? Number(parentMatch[1]) : null, blockedBy: readBlockedBySection(desc) };
-}
-
-/** The `#<n>`s named in the `Blocked by` section: its heading/label line up to the blank line that ends the block. */
-function readBlockedBySection(desc: string): number[] {
-  const lines = desc.split('\n');
-  const start = lines.findIndex((l) => /^\s*#{0,6}\s*Blocked by\b/i.test(l));
-  if (start === -1) return [];
-  const block: string[] = [];
-  for (let i = start; i < lines.length && !(i > start && lines[i]!.trim() === ''); i++) block.push(lines[i]!);
-  return [...new Set([...block.join('\n').matchAll(/#(\d+)/g)].map((m) => Number(m[1])))];
-}
-
 function synthesise(raws: RawIssue[]): Ticket[] {
-  const parsed = raws.map((raw) => ({ raw, ...parseBody(raw.description ?? '') }));
+  const parsed = raws.map((raw) => {
+    const desc = raw.description ?? '';
+    return { raw, parent: parsePartOfParent(desc), blockedBy: parseBlockedBySection(desc) };
+  });
   const byId = new Map(parsed.map((p) => [p.raw.iid, p]));
   const mkRef = (iid: number): TicketRef | null => {
     const p = byId.get(iid);
@@ -220,3 +217,18 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
     },
   };
 }
+
+export const gitlabKind: TrackerKind<{ project?: string | undefined }> = {
+  id: 'gitlab',
+  label: 'GitLab',
+  settings: z.object({ project: z.string().min(1).optional() }).strict(),
+  secretNames: [],
+  capabilities: { close: true, reopen: true, claim: true, transition: false, epicSources: ['epic-label'] },
+  fromDeclaration: async (doc, repoRoot) => ({
+    project: doc.match(/^\s*Project:\s*(.+?)\s*$/im)?.[1] ?? (await gitlabRemote(repoRoot)) ?? undefined,
+  }),
+  create: ({ settings, repoRoot, run }) => {
+    if (!settings.project) throw new Error('GitLab tracker needs a "Project: <group/repo>" line (or an origin remote)');
+    return gitlabAdapter({ project: settings.project, repoRoot }, run);
+  },
+};

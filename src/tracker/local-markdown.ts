@@ -1,6 +1,9 @@
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { basename, join } from 'node:path';
+import { basename, isAbsolute, join } from 'node:path';
+import { z } from 'zod';
+import { parseBlockedByField } from './relationships.js';
+import type { TrackerKind } from './kind.js';
 import { type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
 
 /** A `**Status:**` word that means the ticket is done. */
@@ -211,10 +214,7 @@ function parse(raw: string, id: number, path: string, mtime: string, parent: num
         ? 'closed'
         : 'open';
 
-  const blockedLine = raw.match(/^\s*\*\*Blocked by:\*\*\s*(.+?)\s*$/im)?.[1] ?? '';
-  const blockedBy = /\bnone\b/i.test(blockedLine)
-    ? []
-    : [...blockedLine.matchAll(/\d+/g)].map((m) => base + parseInt(m[0]!, 10));
+  const blockedBy = parseBlockedByField(raw).map((n) => base + n);
 
   return {
     id,
@@ -288,3 +288,16 @@ function synthesise(files: Parsed[]): Ticket[] {
     url: pathToFileURL(f.path).href,
   }));
 }
+
+export const localMarkdownKind: TrackerKind<{ path: string }> = {
+  id: 'local-markdown',
+  label: 'Local Markdown',
+  settings: z.object({ path: z.string().min(1).default('.scratch') }).strict(),
+  secretNames: [],
+  capabilities: { close: true, reopen: true, claim: false, transition: false, epicSources: ['spec'] },
+  fromDeclaration: (doc) => ({ path: doc.match(/^\s*Path:\s*(.+?)\s*$/im)?.[1] }),
+  create: ({ settings, repoRoot, featureIndex }) =>
+    localMarkdownAdapter(isAbsolute(settings.path) ? settings.path : join(repoRoot, settings.path), {
+      ...(featureIndex && { featureIndex }),
+    }),
+};

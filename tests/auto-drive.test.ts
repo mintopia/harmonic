@@ -14,7 +14,8 @@ import { AutoDrive } from '../src/execution/auto-drive.js';
 import { fillTemplate, skillFor, splitTitleBody } from '../src/execution/prompt-template.js';
 import type { TaskRow, AttemptRow } from '../src/db/schema.js';
 import { workspaces } from '../src/db/schema.js';
-import type { Ticket, TrackerAdapter, OpenPRInput } from '../src/tracker/adapter.js';
+import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
+import type { OpenPRInput, RepositoryAdapter } from '../src/repository/adapter.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { executionPlumbing, allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
@@ -77,11 +78,15 @@ function fakeAdapter(ticketState: 'open' | 'closed' = 'open') {
     reopen: async (t) => {
       calls.reopen.push(t.number);
     },
+  };
+  const repository: RepositoryAdapter = {
+    kind: 'fake',
     openPR: async (input) => {
       calls.openPR.push(input);
     },
+    verify: async () => ({ ok: true }),
   };
-  return { adapter, calls };
+  return { adapter, repository, calls };
 }
 
 const reminder = (taskId: number) => UNATTENDED_REMINDER.replace(/\{taskId\}/g, String(taskId));
@@ -293,8 +298,8 @@ describe('AutoDrive.onCompleted — Merge Fate close-after-verify (issue #139)',
   });
 
   it('open-PR opens a PR and leaves the issue open — no close', async () => {
-    const { adapter, calls } = fakeAdapter('open');
-    const drive = new AutoDrive(() => cfg('open-PR'), () => null, async () => adapter);
+    const { adapter, repository, calls } = fakeAdapter('open');
+    const drive = new AutoDrive(() => cfg('open-PR'), () => null, async () => adapter, undefined, undefined, undefined, undefined, async () => repository);
     expect(await drive.onCompleted(worktreeTask(), run())).toBe('completed');
     expect(calls.openPR).toHaveLength(1);
     expect(calls.openPR[0]).toMatchObject({ branch: 'harmonic/task-1-run-1', baseBranch: 'main' });
@@ -302,19 +307,18 @@ describe('AutoDrive.onCompleted — Merge Fate close-after-verify (issue #139)',
   });
 
   it('open-PR that fails to create a PR escalates', async () => {
-    const { adapter, calls } = fakeAdapter('open');
-    adapter.openPR = async () => {
+    const { adapter, repository, calls } = fakeAdapter('open');
+    repository.openPR = async () => {
       throw new Error('no push permission');
     };
-    const drive = new AutoDrive(() => cfg('open-PR'), () => null, async () => adapter);
+    const drive = new AutoDrive(() => cfg('open-PR'), () => null, async () => adapter, undefined, undefined, undefined, undefined, async () => repository);
     expect(await drive.onCompleted(worktreeTask(), run())).toBe('escalate');
     expect(calls.close).toEqual([]);
   });
 
-  it('open-PR without PR capability degrades to artifact: completed, no close', async () => {
+  it('open-PR without a Code Repository degrades to artifact: completed, no close', async () => {
     const { adapter, calls } = fakeAdapter('open');
-    delete adapter.openPR;
-    const drive = new AutoDrive(() => cfg('open-PR'), () => null, async () => adapter);
+    const drive = new AutoDrive(() => cfg('open-PR'), () => null, async () => adapter, undefined, undefined, undefined, undefined, async () => null);
     expect(await drive.onCompleted(worktreeTask(), run())).toBe('completed');
     expect(calls.close).toEqual([]);
   });
