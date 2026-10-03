@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { AgentMessageRecipient, AgentMessageRow, TaskRow } from '../db/schema.js';
+import type { AgentMessageRecipient, TaskRow } from '../db/schema.js';
 import { DomainError } from '../domain/errors.js';
 import { resolveScoped } from '../domain/setting-override.js';
 import type { AppContext } from '../server/app.js';
@@ -10,21 +10,6 @@ import { wrapAsync } from './tool-result.js';
 const OPEN_STATES: readonly string[] = ['ready', 'working', 'paused', 'escalated'];
 
 const epicAddress = (task: TaskRow): string | null => (task.trackerParent == null ? null : `epic:${task.trackerParent}`);
-
-function present(row: AgentMessageRow) {
-  return {
-    messageId: row.id,
-    role: row.role,
-    parts: row.parts,
-    replyTo: row.replyTo,
-    threadId: row.threadId,
-    senderTaskId: row.senderTaskId,
-    senderAttemptId: row.senderAttemptId,
-    workspaceId: row.workspaceId,
-    createdAt: row.createdAt,
-    recipients: row.recipients,
-  };
-}
 
 async function openSiblings(ctx: AppContext, task: TaskRow): Promise<TaskRow[]> {
   if (task.trackerParent == null || task.workspaceId == null) return [];
@@ -103,7 +88,7 @@ export function registerAgentMessageTools(server: McpServer, ctx: AppContext, ca
   server.registerTool(
     'read_messages',
     { description: 'Read the Agent Messages this Task has sent and received, oldest first.', inputSchema: {} },
-    wrapAsync(async () => (await ctx.agentMessages.listForTask(workspace.id, task.id)).map(present)),
+    wrapAsync(async () => await ctx.agentMessages.presentedForTask(workspace.id, task.id)),
   );
 
   server.registerTool(

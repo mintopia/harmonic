@@ -50,9 +50,9 @@ describe('TaskExporter (#734)', () => {
       version: '9.9.9',
       settings: async () => settingsFor(),
       epicSettings: async () => settingsFor(),
-      epicSnapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, members: [] }),
+      epicSnapshot: async () => ({ ticket: {}, timeline: {}, agentMessages: [], attemptCount: 0, members: [] }),
       workspaceName: async () => 'My Workspace',
-      snapshot: async () => ({ ticket: { title: 'Ticket title', id: task.id }, timeline: { events: [{ kind: 'fact' }] }, attemptCount: 1, git: emptyGitProvenance() }),
+      snapshot: async () => ({ ticket: { title: 'Ticket title', id: task.id }, timeline: { events: [{ kind: 'fact' }] }, agentMessages: [], attemptCount: 1, git: emptyGitProvenance() }),
       recordEpicStep: async () => undefined,
       recordFact: async (taskId, payload) => {
         facts.push({ taskId, payload: payload as Record<string, unknown> });
@@ -116,6 +116,7 @@ describe('TaskExporter (#734)', () => {
     try {
       expect(listAll(out)).toEqual([
         'README.md',
+        'agent-messages.json',
         'archive.json',
         'attempts/1/implementation/acp.jsonl',
         'attempts/1/implementation/native/x.jsonl',
@@ -144,6 +145,22 @@ describe('TaskExporter (#734)', () => {
       expect(Number.isNaN(Date.parse(manifest.exportedAt))).toBe(false);
       expect(readFileSync(join(out, 'README.md'), 'utf8')).toContain('Ticket title');
       expect(JSON.parse(readFileSync(join(out, 'archive.json'), 'utf8')).taskId).toBe(task.id);
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+
+  it('exports the Agent Messages the Task sent or received and documents the file in the README', async () => {
+    const messages = [
+      { messageId: 'm1', threadId: 'm1', senderTaskId: task.id, senderDeleted: false, recipients: [{ taskId: 99, receipt: 'delivered', deleted: true }] },
+    ];
+    await exporter({
+      snapshot: async () => ({ ticket: {}, timeline: {}, agentMessages: messages, attemptCount: 1, git: emptyGitProvenance() }),
+    }).run(task, 'done');
+    const out = extract(join(dest, 'my-workspace', tarballs()[0]!));
+    try {
+      expect(JSON.parse(readFileSync(join(out, 'agent-messages.json'), 'utf8'))).toEqual(messages);
+      expect(readFileSync(join(out, 'README.md'), 'utf8')).toMatch(/\| `agent-messages\.json` \|.*Agent Messages/);
     } finally {
       rmSync(out, { recursive: true, force: true });
     }
@@ -276,9 +293,9 @@ describe('TaskExporter (#734)', () => {
         throw new Error('settings boom');
       },
       epicSettings: async () => settingsFor(),
-      epicSnapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, members: [] }),
+      epicSnapshot: async () => ({ ticket: {}, timeline: {}, agentMessages: [], attemptCount: 0, members: [] }),
       workspaceName: async () => null,
-      snapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, git: emptyGitProvenance() }),
+      snapshot: async () => ({ ticket: {}, timeline: {}, agentMessages: [], attemptCount: 0, git: emptyGitProvenance() }),
       recordEpicStep: async () => undefined,
       recordFact: async () => undefined,
     });
@@ -307,7 +324,7 @@ describe('TaskExporter (#734)', () => {
     const sut = exporter({
       snapshot: async () => {
         seen.push(++counter);
-        return { ticket: { value: counter }, timeline: {}, attemptCount: 1, git: emptyGitProvenance() };
+        return { ticket: { value: counter }, timeline: {}, agentMessages: [], attemptCount: 1, git: emptyGitProvenance() };
       },
     });
 
@@ -410,7 +427,7 @@ describe('TaskExporter (#734)', () => {
         },
         snapshot: async () => {
           if (broken) throw new Error('snapshot broke');
-          return { ticket: { title: 'Ticket title', id: task.id }, timeline: {}, attemptCount: 1, git: emptyGitProvenance() };
+          return { ticket: { title: 'Ticket title', id: task.id }, timeline: {}, agentMessages: [], attemptCount: 1, git: emptyGitProvenance() };
         },
       });
       const outcome = await e.run(task, 'done');
@@ -705,7 +722,7 @@ describe('TaskExporter (#734)', () => {
         snapshot: async () => {
           const value = rowsGone ? 'after' : 'before';
           await new Promise((r) => setTimeout(r, 20));
-          return { ticket: { title: value }, timeline: { events: [value] }, attemptCount: 2, git: emptyGitProvenance() };
+          return { ticket: { title: value }, timeline: { events: [value] }, agentMessages: [], attemptCount: 2, git: emptyGitProvenance() };
         },
       });
       await sut.captureForDelete(task);
@@ -729,7 +746,7 @@ describe('TaskExporter (#734)', () => {
     });
 
     it('produces no Export when deleting a Task that never ran', async () => {
-      await exporter({ snapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, git: emptyGitProvenance() }) }).captureForDelete(task);
+      await exporter({ snapshot: async () => ({ ticket: {}, timeline: {}, agentMessages: [], attemptCount: 0, git: emptyGitProvenance() }) }).captureForDelete(task);
       await new Promise((r) => setTimeout(r, 100));
       expect(tarballs()).toEqual([]);
     });
@@ -740,7 +757,7 @@ describe('TaskExporter (#734)', () => {
       await exporter({
         snapshot: async () => {
           snapshots++;
-          return { ticket: {}, timeline: {}, attemptCount: 1, git: emptyGitProvenance() };
+          return { ticket: {}, timeline: {}, agentMessages: [], attemptCount: 1, git: emptyGitProvenance() };
         },
       }).captureForDelete(task);
       expect(snapshots).toBe(0);
@@ -840,7 +857,7 @@ describe('TaskExporter (#734)', () => {
 
     it('redacts the ticket and timeline documents too', async () => {
       await exporter({
-        snapshot: async () => ({ ticket: { title: `leak ${token}` }, timeline: { note: 'Bearer abcdefgh1jklmnopqr' }, attemptCount: 1, git: emptyGitProvenance() }),
+        snapshot: async () => ({ ticket: { title: `leak ${token}` }, timeline: { note: 'Bearer abcdefgh1jklmnopqr' }, agentMessages: [], attemptCount: 1, git: emptyGitProvenance() }),
       }).run(task, 'done');
       expect(exportedFile('ticket.json').text).toContain('leak [REDACTED:github-token]');
       const { text, manifest } = exportedFile('timeline.json');
