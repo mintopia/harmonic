@@ -152,6 +152,25 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
   await forEachYielding(guardrails, async ({ event }) => { add({ attemptId: event.attemptId, ts: event.ts, kind: 'guardrail', data: { dimension: event.dimension, limitValue: event.limitValue, observedValue: event.observedValue, configSource: event.configSource, payload: parsePayload(event.payload) } }, 2); });
   await forEachYielding(taskLevel, async (event) => { add({ attemptId: null, ts: event.ts, kind: 'lifecycle', data: { type: 'lifecycle', payload: event.payload } }, 3); });
 
+  const peerHarness = new Map<number, string | null>();
+  const harnessOf = async (taskId: number): Promise<string | null> => {
+    if (!peerHarness.has(taskId)) peerHarness.set(taskId, await ctx.tasks.get(taskId).then((t) => t.harness ?? null, () => null));
+    return peerHarness.get(taskId) ?? null;
+  };
+  await forEachYielding(await ctx.agentMessages.listForTask(atRestWorkspaceId(task.workspaceId), taskId), async (message) => {
+    const preview = message.parts.map((part) => part.text).join(' ');
+    const common = { messageId: message.id, threadId: message.threadId, workspaceId: message.workspaceId, preview, isReply: message.replyTo !== null };
+    if (message.senderTaskId === taskId) {
+      for (const recipient of message.recipients) {
+        add({ attemptId: message.senderAttemptId, ts: message.createdAt, kind: 'agent-message', data: { ...common, direction: 'sent', peerTaskId: recipient.taskId, peerHarness: await harnessOf(recipient.taskId), receipt: recipient.receipt, reason: recipient.reason ?? null } }, 5);
+      }
+      return;
+    }
+    const mine = message.recipients.find((recipient) => recipient.taskId === taskId);
+    if (mine === undefined || mine.receipt === 'refused') return;
+    add({ attemptId: null, ts: message.createdAt, kind: 'agent-message', data: { ...common, direction: 'received', peerTaskId: message.senderTaskId, peerHarness: await harnessOf(message.senderTaskId), receipt: mine.receipt, reason: null } }, 5);
+  });
+
   add({ attemptId: null, ts: task.createdAt, kind: 'fact', data: { type: 'task-created', trackerRef: task.trackerRef != null ? String(task.trackerRef) : null, workspace: workspace?.name ?? null } }, -1);
 
   return {

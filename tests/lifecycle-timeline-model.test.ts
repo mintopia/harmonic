@@ -252,4 +252,43 @@ describe('lifecycleTimelineRows', () => {
     expect(rows[3]!.detail).toBe('s3:PutObject. Retry 1 of 3. Next: retry 2 of 3 in 30 min.');
     expect(new Set(rows.map((row) => row.id)).size).toBe(4);
   });
+  describe('Agent Message rows', () => {
+    const message = (ts: number, data: Record<string, unknown>) =>
+      event('agent-message', ts, { messageId: 'm1', threadId: 'm1', workspaceId: 3, preview: 'Not touching merge.ts, go ahead.', isReply: false, reason: null, ...data });
+
+    it('shows a sent row with the peer, receipt, preview and a Thread link, and no reply control', () => {
+      const [row] = lifecycleTimelineRows([message(1_000, { direction: 'sent', peerTaskId: 413, peerHarness: 'codex', receipt: 'delivered' })]);
+
+      expect(row).toMatchObject({
+        label: 'Agent Message sent',
+        detail: 'New Thread',
+        tone: 'sent',
+        message: { peer: 'to #413 · Codex', receipt: { label: 'delivered', tone: 'done' }, preview: 'Not touching merge.ts, go ahead.', href: '/workspace/3/activity?thread=m1' },
+      });
+    });
+
+    it('shows a received row from the sender, marking replies', () => {
+      const [row] = lifecycleTimelineRows([message(1_000, { direction: 'received', peerTaskId: 412, peerHarness: 'claude', receipt: 'delivered', isReply: true })]);
+
+      expect(row).toMatchObject({ label: 'Agent Message received', detail: 'Reply to your message', tone: 'received', message: { peer: 'from #412 · Claude' } });
+    });
+
+    it('labels queued and held receipts for the recipient\'s next turn or Attempt', () => {
+      const rows = lifecycleTimelineRows([
+        message(1_000, { direction: 'sent', peerTaskId: 414, peerHarness: 'copilot', receipt: 'queued' }),
+        message(2_000, { direction: 'sent', peerTaskId: 416, peerHarness: 'claude', receipt: 'held' }),
+      ]);
+
+      expect(rows.map((row) => row.message?.receipt)).toEqual([
+        { label: 'queued — next turn', tone: 'ready' },
+        { label: 'held — next Attempt', tone: 'paused' },
+      ]);
+    });
+
+    it('shows a refused send with its reason in place of the thread context', () => {
+      const [row] = lifecycleTimelineRows([message(1_000, { direction: 'sent', peerTaskId: 415, peerHarness: null, receipt: 'refused', reason: 'Task #415 is not in this Workspace' })]);
+
+      expect(row).toMatchObject({ detail: 'Task #415 is not in this Workspace', message: { peer: 'to #415', receipt: { label: 'refused', tone: 'fail' } } });
+    });
+  });
 });

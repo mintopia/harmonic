@@ -161,6 +161,7 @@ export type TicketTimelineKind =
   | 'verification'
   | 'guardrail'
   | 'operator-reject'
+  | 'agent-message'
   | 'fact';
 
 export interface ApiTicketTimelineEvent {

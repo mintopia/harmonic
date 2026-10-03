@@ -1,8 +1,20 @@
 import type { TicketTimelineEvent } from './types.js';
 import { exportFactRows } from './task-export-model.js';
+import { harnessLabel } from './task-detail-model.js';
 import { mergeStepRow, type MergeStepEvent } from './merge-progress-model.js';
 
-export type LifecycleTimelineTone = 'neutral' | 'running' | 'passed' | 'failed' | 'awaiting';
+export type LifecycleTimelineTone = 'neutral' | 'running' | 'passed' | 'failed' | 'awaiting' | 'sent' | 'received';
+
+export type ReceiptPillTone = 'done' | 'ready' | 'paused' | 'fail';
+
+/** What an Agent Message row adds to the plain label/detail: who the other
+ * side is, where delivery stands, a one-line preview, and the Thread link. */
+export interface AgentMessageRowView {
+  peer: string;
+  receipt: { label: string; tone: ReceiptPillTone };
+  preview: string | null;
+  href: string;
+}
 
 export interface LifecycleTimelineRow {
   id: string;
@@ -14,6 +26,8 @@ export interface LifecycleTimelineRow {
    * issue closed), RUNNING (a live Attempt), VERIFY / CRITIC (a verification
    * pass), EXPORT (an Export build or delivery) — or null. */
   tag: string | null;
+  /** Present only on Agent Message rows. */
+  message?: AgentMessageRowView;
 }
 
 type RowCore = Pick<LifecycleTimelineRow, 'label' | 'detail' | 'tone' | 'tag'>;
@@ -225,6 +239,33 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
   }
 }
 
+const RECEIPT_PILL: Record<string, { label: string; tone: ReceiptPillTone }> = {
+  delivered: { label: 'delivered', tone: 'done' },
+  queued: { label: 'queued — next turn', tone: 'ready' },
+  held: { label: 'held — next Attempt', tone: 'paused' },
+  refused: { label: 'refused', tone: 'fail' },
+};
+
+function agentMessageRow(data: Record<string, unknown> | null): Omit<LifecycleTimelineRow, 'id' | 'at'> {
+  const sent = text(data?.direction) === 'sent';
+  const peerId = num(data?.peerTaskId);
+  const harness = text(data?.peerHarness);
+  const peer = `${sent ? 'to' : 'from'} ${peerId !== null ? `#${peerId}` : 'a Task'}${harness ? ` · ${harnessLabel(harness)}` : ''}`;
+  const receipt = RECEIPT_PILL[text(data?.receipt) ?? ''] ?? { label: text(data?.receipt) ?? 'unknown', tone: 'ready' as const };
+  const workspaceId = num(data?.workspaceId);
+  const thread = text(data?.threadId);
+  const base = workspaceId !== null ? `/workspace/${workspaceId}/activity` : '/activity';
+  const reason = text(data?.reason);
+  const context = receipt.tone === 'fail' && reason ? reason : data?.isReply === true ? (sent && peerId !== null ? `Reply to #${peerId}` : 'Reply to your message') : 'New Thread';
+  return {
+    label: sent ? 'Agent Message sent' : 'Agent Message received',
+    detail: context,
+    tone: sent ? 'sent' : 'received',
+    tag: null,
+    message: { peer, receipt, preview: clip(text(data?.preview), 200), href: thread ? `${base}?thread=${encodeURIComponent(thread)}` : base },
+  };
+}
+
 /** A merge sub-step whose terminal outcome the high-level `merged`/`escalated`
  * lifecycle event already renders (and which also fires from non-merge paths):
  * drop the granular twin so the timeline shows the outcome once. */
@@ -259,6 +300,8 @@ export function lifecycleTimelineRows(events: TicketTimelineEvent[]): LifecycleT
         const n = num(data?.attempt);
         return { ...base, label: 'Operator rejected with guidance', detail: clip(text(data?.feedback)) ?? (n !== null ? `Attempt ${n}` : null), tone: 'awaiting', tag: null };
       }
+      case 'agent-message':
+        return { ...base, ...agentMessageRow(data) };
       case 'lifecycle': {
         const payload = record(data?.payload);
         if (payload !== null && text(payload.event) === 'export') {

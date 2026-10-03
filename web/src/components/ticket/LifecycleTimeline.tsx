@@ -1,4 +1,4 @@
-import { lifecycleTimelineRows, type LifecycleTimelineTone } from '../../lifecycle-timeline-model.js';
+import { lifecycleTimelineRows, type LifecycleTimelineTone, type ReceiptPillTone } from '../../lifecycle-timeline-model.js';
 import { eventCount } from '../../id-format.js';
 import type { TicketTimelineEvent } from '../../types.js';
 import { card, railSectionCount } from '../../ui.js';
@@ -12,6 +12,15 @@ const DOT: Record<LifecycleTimelineTone, string> = {
   passed: 'bg-merged-dot',
   failed: 'bg-fail-dot',
   awaiting: 'bg-await-dot',
+  sent: 'bg-accent',
+  received: 'bg-ready',
+};
+
+const PILL: Record<ReceiptPillTone, string> = {
+  done: 'bg-done-tint text-done',
+  ready: 'bg-ready-tint text-ready',
+  paused: 'bg-paused-tint text-paused',
+  fail: 'bg-fail-tint text-fail',
 };
 
 const WORD: Record<LifecycleTimelineTone, string> = {
@@ -20,6 +29,8 @@ const WORD: Record<LifecycleTimelineTone, string> = {
   passed: 'text-merged',
   failed: 'text-fail',
   awaiting: 'text-await',
+  sent: 'text-accent',
+  received: 'text-ready',
 };
 
 function clockTime(at: number): string {
@@ -81,9 +92,26 @@ export function LifecycleTimeline({
                         {row.tag}
                       </span>
                     )}
+                    {row.message && (
+                      <>
+                        <span className="rounded-[4px] bg-raised px-1.5 py-px text-[11px] font-semibold text-muted">{row.message.peer}</span>
+                        <span className={`rounded-[4px] px-1.5 py-px text-[11px] font-semibold ${PILL[row.message.receipt.tone]}`}>{row.message.receipt.label}</span>
+                      </>
+                    )}
                   </div>
-                  {row.detail && (
-                    <p className="mt-0.5 whitespace-pre-wrap break-words text-small text-muted">{row.detail}</p>
+                  {row.message?.preview && (
+                    <p className="mt-1.5 max-w-[68ch] break-words border-l-2 border-edge py-0.5 pl-2.5 text-small text-ink">{row.message.preview}</p>
+                  )}
+                  {(row.detail || row.message) && (
+                    <p className="mt-0.5 whitespace-pre-wrap break-words text-small text-muted">
+                      {row.detail}
+                      {row.detail && row.message ? ' · ' : ''}
+                      {row.message && (
+                        <a href={row.message.href} className="font-semibold text-accent no-underline hover:underline">
+                          View Thread →
+                        </a>
+                      )}
+                    </p>
                   )}
                 </div>
               </li>
