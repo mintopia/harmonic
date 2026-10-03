@@ -4,6 +4,68 @@
   "id": "5062522f-7af2-4235-8191-8c131d32689f",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
+    "agent_message_recipients": {
+      "name": "agent_message_recipients",
+      "columns": {
+        "message_id": {
+          "name": "message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "receipt": {
+          "name": "receipt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "agent_message_recipients_task_receipt_idx": {
+          "name": "agent_message_recipients_task_receipt_idx",
+          "columns": [
+            "task_id",
+            "receipt"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "agent_message_recipients_message_id_agent_messages_id_fk": {
+          "name": "agent_message_recipients_message_id_agent_messages_id_fk",
+          "tableFrom": "agent_message_recipients",
+          "tableTo": "agent_messages",
+          "columnsFrom": [
+            "message_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "agent_message_recipients_task_id_message_id_pk": {
+          "columns": [
+            "task_id",
+            "message_id"
+          ],
+          "name": "agent_message_recipients_task_id_message_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "agent_messages": {
       "name": "agent_messages",
       "columns": {

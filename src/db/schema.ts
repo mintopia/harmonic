@@ -356,6 +356,19 @@ export const agentMessages = sqliteTable(
 );
 export type AgentMessageRow = typeof agentMessages.$inferSelect;
 
+/** Index over `agent_messages.recipients` (the source of truth), kept in step by `AgentMessageStore`, so recipient lookups search an index instead of scanning `json_each`. No Task FK, like the JSON. */
+export const agentMessageRecipients = sqliteTable(
+  'agent_message_recipients',
+  {
+    messageId: text('message_id')
+      .notNull()
+      .references(() => agentMessages.id, { onDelete: 'cascade' }),
+    taskId: integer('task_id').notNull(),
+    receipt: text('receipt').$type<ReceiptState>().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.taskId, t.messageId] }), index('agent_message_recipients_task_receipt_idx').on(t.taskId, t.receipt)],
+);
+
 export const CONVERSATION_STATES = ['active', 'ended'] as const;
 export type ConversationState = (typeof CONVERSATION_STATES)[number];
 export const CONVERSATION_PERMISSION_MODES = ['ask', 'automatic'] as const;
