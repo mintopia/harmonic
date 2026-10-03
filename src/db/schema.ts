@@ -461,6 +461,17 @@ export type TaskRow = Omit<
   conflictResolveTurns: number;
 };
 
+/** A named per-Workspace credential, AES-256-GCM encrypted with the instance key; `ciphertext` carries the auth tag, both columns are base64. */
+export const secrets = sqliteTable('secrets', {
+  workspaceId: integer('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  ciphertext: text('ciphertext').notNull(),
+  nonce: text('nonce').notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (t) => [primaryKey({ columns: [t.workspaceId, t.name] })]);
+export type SecretRow = typeof secrets.$inferSelect;
+
 /** Persisted facts for tracker containers that deliberately have no Task row, currently Maps. */
 export const trackerContainers = sqliteTable('tracker_containers', {
   workspaceId: integer('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
