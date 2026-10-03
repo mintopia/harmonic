@@ -348,6 +348,40 @@ export type ResolvedTracker =
   | { ok: true; label: string; kind: string; source: TrackerSource; code: null; reason: null }
   | { ok: false; label: null; kind: null; source: null; code: string; reason: string };
 
+export interface JSONSchemaObject {
+  type?: string;
+  properties?: Record<string, JSONSchemaProperty>;
+  required?: string[];
+  [key: string]: unknown;
+}
+
+export interface JSONSchemaProperty {
+  type?: string | string[];
+  enum?: unknown[];
+  title?: string;
+  description?: string;
+  default?: unknown;
+  minimum?: number;
+  [key: string]: unknown;
+}
+
+export interface TrackerKindInfo {
+  id: string;
+  label: string;
+  secretNames: string[];
+  settingsSchema: JSONSchemaObject;
+  capabilities: Record<string, unknown>;
+}
+
+export type CodeRepositoryKind = 'github' | 'gitlab' | 'forgejo';
+
+export interface TrackerDetection {
+  detectedTracker: { name: string; kind: string | null } | null;
+  detectedCodeRepository: CodeRepositoryKind | null;
+}
+
+export type VerifyResult = { ok: true; identity: string } | { ok: false; reason: string };
+
 /** Where a Resolved Tracker's choice came from. */
 export type TrackerSource = 'configured' | 'detected' | 'code-repository';
 

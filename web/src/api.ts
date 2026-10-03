@@ -36,6 +36,9 @@ import type {
   EpicCriticOverlayEntry,
   VerifierStatus,
   Workspace,
+  TrackerKindInfo,
+  TrackerDetection,
+  VerifyResult,
   UpdateState,
   HarnessProvider,
   DiscoveredHarnessModel,
@@ -98,6 +101,16 @@ async function requestText(path: string): Promise<string> {
 }
 
 export const api = {
+  trackerKinds: () => request<{ kinds: TrackerKindInfo[] }>('GET', '/api/tracker-kinds'),
+  trackerDetection: (workspaceId: number) => request<TrackerDetection>('GET', `/api/workspaces/${workspaceId}/tracker-detection`),
+  verifyTracker: (workspaceId: number) => request<VerifyResult>('POST', `/api/workspaces/${workspaceId}/tracker/verify`),
+  verifyRepository: (workspaceId: number) => request<VerifyResult>('POST', `/api/workspaces/${workspaceId}/repository/verify`),
+  secretStatus: (workspaceId: number, name: string) =>
+    request<{ name: string; set: boolean }>('GET', `/api/workspaces/${workspaceId}/secrets/${encodeURIComponent(name)}`),
+  setSecret: (workspaceId: number, name: string, value: string) =>
+    request<unknown>('PUT', `/api/workspaces/${workspaceId}/secrets/${encodeURIComponent(name)}`, { value }),
+  clearSecret: (workspaceId: number, name: string) =>
+    request<unknown>('DELETE', `/api/workspaces/${workspaceId}/secrets/${encodeURIComponent(name)}`),
   harnessProviders: (harness: string) => request<{ providers: HarnessProvider[] }>('GET', `/api/harnesses/${encodeURIComponent(harness)}/providers`),
   harnessModels: (harness: string, provider: string) => request<{ models: DiscoveredHarnessModel[] }>('GET', `/api/harnesses/${encodeURIComponent(harness)}/models?provider=${encodeURIComponent(provider)}`),
   config: () => request<AppConfig>('GET', '/api/config'),

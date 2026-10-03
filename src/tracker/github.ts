@@ -100,6 +100,10 @@ export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): Writ
   return {
     name: 'github',
 
+    async identify() {
+      return (await run(['api', 'user', '--jq', '.login'], repoRoot)).trim();
+    },
+
     async scan() {
       const raw = await json<RawIssue[]>([
         'issue',

@@ -19,6 +19,7 @@ import type {
   Task,
   UpdateState,
   Workspace,
+  TrackerKindInfo,
 } from '../types.js';
 import type { EpicIntegrateOutcome } from '../epic-model.js';
 import type { WorktreeInventoryEntry } from '../worktree-inventory-model.js';
@@ -216,7 +217,29 @@ const channelFixtures: Channel[] = [
 
 const workspaceFixture: Workspace = f.workspaces[0] as Workspace;
 
+const trackerKindFixtures: TrackerKindInfo[] = [
+  { id: 'github', label: 'GitHub', secretNames: [], settingsSchema: { type: 'object', properties: { repo: { type: 'string', description: 'owner/name; defaults to the origin remote.' } } }, capabilities: {} },
+  {
+    id: 'forgejo',
+    label: 'Forgejo',
+    secretNames: ['forgejoToken'],
+    settingsSchema: {
+      type: 'object',
+      properties: { host: { type: 'string', title: 'Host' }, project: { type: 'string', title: 'Project' }, authMode: { type: 'string', enum: ['token', 'basic'], default: 'token' } },
+      required: ['host'],
+    },
+    capabilities: {},
+  },
+];
+
 export const api: typeof RealApi = {
+  trackerKinds: () => ok({ kinds: trackerKindFixtures }),
+  trackerDetection: (_id: number) => ok({ detectedTracker: { name: 'GitHub', kind: 'github' }, detectedCodeRepository: 'github' as const }),
+  verifyTracker: (_id: number) => ok({ ok: true as const, identity: 'octocat' }),
+  verifyRepository: (_id: number) => ok({ ok: true as const, identity: 'octocat' }),
+  secretStatus: (_id: number, name: string) => ok({ name, set: false }),
+  setSecret: (_id: number, _name: string, _value: string) => ok(null),
+  clearSecret: (_id: number, _name: string) => ok(null),
   harnessProviders: (harness: string) =>
     ok({
       providers:
