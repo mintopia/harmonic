@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
-import { NO_SERVER_FILTER, hasServerFilter, type ThreadsView } from './agent-messages-model';
+import { NO_SERVER_FILTER, THREAD_PAGE_SIZE, hasServerFilter, nextThreadLimit, type ThreadsView } from './agent-messages-model';
 import { debounce } from './debounce';
 import { useAsyncResource } from './useAsyncResource';
 import { useLiveEffect } from './useLiveEffect';
 import { subscribe } from './ws';
 
-const THREAD_LIMIT = 200;
 const POLL_MS = 5_000;
 const RELOAD_DEBOUNCE_MS = 250;
 
@@ -15,13 +14,17 @@ export function useAgentMessageThreads(workspaceId: number | null, enabled: bool
   useEffect(() => {
     setFilter(NO_SERVER_FILTER);
   }, [workspaceId]);
+  const [limit, setLimit] = useState(THREAD_PAGE_SIZE);
+  useEffect(() => {
+    setLimit(THREAD_PAGE_SIZE);
+  }, [workspaceId]);
   const filtering = hasServerFilter(filter);
   const scope = workspaceId ?? filter.workspaceId ?? undefined;
   const optionScope = workspaceId ?? undefined;
 
   const all = useAsyncResource(
-    enabled ? () => api.agentMessageThreads({ workspaceId: optionScope, limit: THREAD_LIMIT }) : null,
-    [workspaceId, enabled],
+    enabled ? () => api.agentMessageThreads({ workspaceId: optionScope, limit }) : null,
+    [workspaceId, enabled, limit],
     { pollMs: POLL_MS },
   );
   const filtered = useAsyncResource(
@@ -32,10 +35,10 @@ export function useAgentMessageThreads(workspaceId: number | null, enabled: bool
             epicId: filter.epicId ?? undefined,
             taskId: filter.taskId ?? undefined,
             live: filter.liveOnly ? true : undefined,
-            limit: THREAD_LIMIT,
+            limit,
           })
       : null,
-    [scope, enabled, filter.epicId, filter.taskId, filter.liveOnly],
+    [scope, enabled, filter.epicId, filter.taskId, filter.liveOnly, limit],
     { pollMs: POLL_MS },
   );
   const current = filtering ? filtered : all;
@@ -64,7 +67,11 @@ export function useAgentMessageThreads(workspaceId: number | null, enabled: bool
     };
   }, [workspaceId, reloadAll, reloadFiltered]);
 
+  const loadedTotal = current.data?.total ?? 0;
+  const loadMore = () => setLimit((l) => nextThreadLimit(l, loadedTotal));
+
   return {
+    loadMore,
     filter,
     setFilter,
     view,

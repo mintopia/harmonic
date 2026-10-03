@@ -388,6 +388,7 @@ export function ActivityView({ config, workspaceId = null }: { config: AppConfig
           onFilterChange={messages.setFilter}
           error={messages.error}
           onRetry={messages.retry}
+          onLoadMore={messages.loadMore}
         />
       ) : (
         <div

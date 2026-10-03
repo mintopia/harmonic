@@ -191,6 +191,12 @@ export function threadsCapHint(shown: number, total: number): string | null {
   return total > shown ? `Showing ${shown} of ${total} threads` : null;
 }
 
+export const THREAD_PAGE_SIZE = 200;
+
+export function nextThreadLimit(limit: number, total: number): number {
+  return total > limit ? limit + THREAD_PAGE_SIZE : limit;
+}
+
 /** Index to focus so Tab stays inside a modal drawer; -1 means focus is outside it. Null lets the browser move focus. */
 export function trappedFocusIndex(current: number, count: number, backwards: boolean): number | null {
   if (count === 0) return null;

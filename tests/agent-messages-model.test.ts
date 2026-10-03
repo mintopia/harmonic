@@ -15,6 +15,8 @@ import {
   resolveSelectedThread,
   segmentThread,
   threadsCapHint,
+  THREAD_PAGE_SIZE,
+  nextThreadLimit,
   trappedFocusIndex,
   taskOptions,
   threadParticipantsLine,
@@ -327,6 +329,17 @@ describe('threadsCapHint', () => {
   it('hints only when the server holds more threads than are shown', () => {
     expect(threadsCapHint(200, 350)).toBe('Showing 200 of 350 threads');
     expect(threadsCapHint(200, 200)).toBeNull();
+  });
+});
+
+describe('nextThreadLimit', () => {
+  it('grows the window by one page while the server holds more threads', () => {
+    expect(nextThreadLimit(THREAD_PAGE_SIZE, 450)).toBe(THREAD_PAGE_SIZE * 2);
+    expect(nextThreadLimit(THREAD_PAGE_SIZE * 2, 450)).toBe(THREAD_PAGE_SIZE * 3);
+  });
+  it('does not grow once everything is loaded', () => {
+    expect(nextThreadLimit(THREAD_PAGE_SIZE, THREAD_PAGE_SIZE)).toBe(THREAD_PAGE_SIZE);
+    expect(nextThreadLimit(THREAD_PAGE_SIZE, 0)).toBe(THREAD_PAGE_SIZE);
   });
 });
 
