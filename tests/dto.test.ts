@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { trackerRef } from '../src/tracker/adapter.js';
+import { epicListRowSchema, taskListRowSchema } from '../src/server/routes/tasks.js';
 import {
   summarize,
   firstLineTitle,
@@ -478,11 +479,25 @@ describe('epicToListRow', () => {
     const row = epicToListRow(ticket({ ref: trackerRef(42), title: 'The Epic', url: 'https://tracker.example/42' }), 9);
     expect(row.isEpic).toBe(true);
     expect(row.humanOnly).toBe(true);
-    expect(row.id).toBe(0);
+    expect(row).not.toHaveProperty('id');
     expect(row.trackerRef).toBe('42');
     expect(row.summary).toBe('The Epic');
     expect(row.url).toBe('https://tracker.example/42');
     expect(row.workspaceId).toBe(9);
+  });
+
+  it('gives no two Epic rows the same id', () => {
+    const rows = [epicToListRow(ticket({ ref: trackerRef(1) }), 1), epicToListRow(ticket({ ref: trackerRef(2) }), 1)];
+    const ids = rows.map((r) => (r as { id?: number }).id).filter((id) => id !== undefined);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual([]);
+  });
+
+  it('validates against epicListRowSchema, which rejects a row carrying id', () => {
+    const row = epicToListRow(ticket(), 1);
+    expect(epicListRowSchema.safeParse(row).success).toBe(true);
+    expect(epicListRowSchema.safeParse({ ...row, id: 0 }).success).toBe(false);
+    expect(taskListRowSchema.safeParse(row).success).toBe(false);
   });
 
   it('has no prompt key — it is a list row', () => {

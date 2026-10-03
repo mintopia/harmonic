@@ -422,6 +422,14 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'isolationMode' | 'prio
 /** Every {@link ApiTask} field except `prompt`; list surfaces render {@link ApiTask.summary} instead. */
 export type ApiTaskListRow = Omit<ApiTask, 'prompt'>;
 
+/** An Epic container in a Tasks list: it has no Task id, so it is keyed by `trackerRef`. */
+export type ApiEpicListRow = Omit<ApiTaskListRow, 'id' | 'trackerRef'> & { trackerRef: TrackerRef };
+
+/** A Tasks-list item: a Task row (has `id`) or an Epic row (no `id`). */
+export type ApiTaskListItem = ApiTaskListRow | ApiEpicListRow;
+
+export const isEpicListRow = (row: ApiTaskListItem): row is ApiEpicListRow => !('id' in row);
+
 const SUMMARY_MAX = 200;
 
 /** The prompt's first non-empty line, bounded to {@link SUMMARY_MAX}. */
@@ -436,10 +444,9 @@ export function toListRow({ prompt: _prompt, ...row }: ApiTask): ApiTaskListRow 
 }
 
 /** Project an Epic's container ticket into a Tasks-list row; only ref, title, url, and createdAt carry real data. */
-export function epicToListRow(ticket: Ticket, workspaceId: number): ApiTaskListRow {
+export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListRow {
   const created = Date.parse(ticket.createdAt) || 0;
   return {
-    id: 0,
     workspaceId,
     harness: '',
     model: '',

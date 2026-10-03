@@ -155,15 +155,15 @@ function filterList<T>(v: T | T[] | undefined): T[] {
  * is handled by the caller) falls back to creation, then id. */
 export function compareListRows(
   sortBy: string,
-  a: { priority: string; createdAt: number; updatedAt: number; id: number },
-  b: { priority: string; createdAt: number; updatedAt: number; id: number },
+  a: { priority: string; createdAt: number; updatedAt: number; id?: number },
+  b: { priority: string; createdAt: number; updatedAt: number; id?: number },
 ): number {
   const rank: Record<string, number> = { high: 0, normal: 1, low: 2 };
   return sortBy === 'priority'
     ? (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || a.createdAt - b.createdAt
     : sortBy === 'updatedAt'
-      ? a.updatedAt - b.updatedAt || a.id - b.id
-      : a.createdAt - b.createdAt || a.id - b.id;
+      ? a.updatedAt - b.updatedAt || (a.id ?? 0) - (b.id ?? 0)
+      : a.createdAt - b.createdAt || (a.id ?? 0) - (b.id ?? 0);
 }
 
 /** A task plus its dependency context, as the API serves it. */
