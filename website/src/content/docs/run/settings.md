@@ -110,7 +110,7 @@ choice, and required ones are marked *(required)*.
 - **Local Markdown** has one field, **Folder**, the folder in the repo that
   holds the Markdown tickets. It defaults to `.scratch`.
 - **Forgejo** needs **Base URL** and **Repository (owner/name)**. **Epic
-  source** chooses where Epics come from: labelled issues, Projects or
+  source** chooses where Epics come from: labelled issues or
   Milestones, with labelled issues as the default. **Token Secret name** is
   the Secret that holds the API token and defaults to `FORGEJO_TOKEN`.
 - **Jira** needs **Base URL**, **Auth mode** and **Project key**. Cloud signs

@@ -29,7 +29,7 @@ Workspace settings, Integrations tab, Configured Tracker = Forgejo.
 | `baseUrl` | yes | Instance root, e.g. `https://forge.example`. |
 | `repo` | yes | `owner/name`. |
 | `tokenSecret` | no | Name of the Secret holding the token. Default `FORGEJO_TOKEN`. |
-| `epicSource` | no | Where Epics come from: `label` (default), `project` or `milestone`. |
+| `epicSource` | no | Where Epics come from: `label` (default) or `milestone`. |
 
 The Workspace settings page shows a **Secret** row for `FORGEJO_TOKEN` with
 Set / Replace / Clear. The value is write-only and applies immediately, without
@@ -41,7 +41,7 @@ Create a personal access token in Forgejo (Settings, Applications) with:
 
 - `read:user` (identifies who claims issues)
 - `write:issue` (read and edit issues, labels, assignees, comments, milestones)
-- `read:repository` (read the repo and its Projects)
+- `read:repository` (read the repo and its Milestones)
 
 `write:issue` is what claim, release, close and reopen need. Without it a scan
 works but Task writes fail with HTTP 403.
@@ -56,12 +56,14 @@ the body.
 
 - **`label`** — an issue carrying the Epic Triage Label is an Epic; a
   `Part of #<n>` body line makes an issue its child.
-- **`project`** — each open repo Project is an Epic; the issues on its board are
-  its children.
 - **`milestone`** — each open Milestone is an Epic; its issues are its children.
 
-Closing a Project or Milestone Epic sets that container `closed`; reopening sets
+Closing a Milestone Epic sets that Milestone `closed`; reopening sets
 it `open`.
+
+Forgejo's API has no Projects endpoints (checked against Forgejo 16.0.5, whose
+API reports Gitea 1.22.0: `/repos/{owner}/{repo}/projects` returns 404), so
+Projects are not an Epic source.
 
 ## Writes
 

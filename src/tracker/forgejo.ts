@@ -18,11 +18,11 @@ export const forgejoSettingsSchema = z
       .regex(/^[^/\s]+\/[^/\s]+$/, 'expected owner/name')
       .meta({ title: 'Repository (owner/name)', description: 'The repository whose issues Harmonic reads, as owner/name.', example: 'owner/name' }),
     tokenSecret: z.string().min(1).default(FORGEJO_TOKEN_SECRET).meta({ title: 'Token Secret name', description: 'The name of the Secret that holds your Forgejo access token.' }),
-    /** Where Epics come from: `epic`-labelled issues, open repo Projects, or open Milestones. */
+    /** Where Epics come from: `epic`-labelled issues or open Milestones. */
     epicSource: z
-      .enum(['label', 'project', 'milestone'])
+      .enum(['label', 'milestone'])
       .default('label')
-      .meta({ title: 'Epic source', description: 'Where Epics come from: epic-labelled issues, open Projects, or open Milestones.' }),
+      .meta({ title: 'Epic source', description: 'Where Epics come from: epic-labelled issues or open Milestones.' }),
   })
   .strict();
 export type ForgejoSettings = z.infer<typeof forgejoSettingsSchema>;
@@ -63,26 +63,22 @@ const userSchema = z.object({ login: z.string() });
 
 const state = (s: string): TicketState => (s === 'closed' ? 'closed' : 'open');
 
-type ContainerKind = 'project' | 'milestone';
-const CONTAINER_REF = /^(project|milestone)-(\d+)$/;
-const containerRef = (kind: ContainerKind, id: number): TrackerRef => trackerRef(`${kind}-${id}`);
-const parseContainerRef = (ref: string): { kind: ContainerKind; id: number } | null => {
+const CONTAINER_REF = /^milestone-(\d+)$/;
+const containerRef = (id: number): TrackerRef => trackerRef(`milestone-${id}`);
+const parseContainerRef = (ref: string): { id: number } | null => {
   const m = CONTAINER_REF.exec(ref);
-  return m ? { kind: m[1] as ContainerKind, id: Number(m[2]) } : null;
+  return m ? { id: Number(m[1]) } : null;
 };
 
-const ENDPOINT: Record<ContainerKind, string> = { project: 'projects', milestone: 'milestones' };
-
-/** An open Project or Milestone with the numbers of the issues it holds. */
+/** An open Milestone with the numbers of the issues it holds. */
 interface HeldContainer {
   raw: RawContainer;
-  kind: ContainerKind;
   issues: Set<number>;
 }
 
 /**
  * The Forgejo Tracker Adapter over its REST API. Dependencies come from the native "blocked by" edges plus
- * the shared body-line parser; Epics from labelled issues, or open Projects/Milestones surfaced as `epic`
+ * the shared body-line parser; Epics from labelled issues, or open Milestones surfaced as `epic`
  * containers whose issues are their children.
  */
 export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): WritableTrackerAdapter {
@@ -121,15 +117,11 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
   /** Open containers of the configured source with the numbers of the issues they hold. */
   const containers = async (): Promise<HeldContainer[]> => {
     if (source === 'label') return [];
-    const kind: ContainerKind = source;
-    const raws = await client.paginate(`${repo}/${ENDPOINT[kind]}?state=open`, PAGE_SIZE, containerSchema);
+    const raws = await client.paginate(`${repo}/milestones?state=open`, PAGE_SIZE, containerSchema);
     const out: HeldContainer[] = [];
     await forEachYielding(raws, async (raw) => {
-      const held =
-        kind === 'project'
-          ? await client.paginate(`${repo}/projects/${raw.id}/issues`, PAGE_SIZE, issueSchema)
-          : await client.paginate(`${repo}/issues?state=all&type=issues&milestones=${raw.id}`, PAGE_SIZE, issueSchema);
-      out.push({ raw, kind, issues: new Set(held.map((i) => i.number)) });
+      const held = await client.paginate(`${repo}/issues?state=all&type=issues&milestones=${raw.id}`, PAGE_SIZE, issueSchema);
+      out.push({ raw, issues: new Set(held.map((i) => i.number)) });
     });
     return out;
   };
@@ -140,7 +132,7 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
     const held = await containers();
     const parentOf = new Map<number, TrackerRef>();
     await forEachYielding(held, (c) => {
-      for (const n of c.issues) if (!parentOf.has(n)) parentOf.set(n, containerRef(c.kind, c.raw.id));
+      for (const n of c.issues) if (!parentOf.has(n)) parentOf.set(n, containerRef(c.raw.id));
     });
 
     const native = new Map<number, TicketRef[]>();
@@ -193,7 +185,7 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
     });
     for (const c of held) {
       tickets.push({
-        number: containerRef(c.kind, c.raw.id),
+        number: containerRef(c.raw.id),
         title: c.raw.title,
         state: 'open',
         body: c.raw.description ?? '',
@@ -219,7 +211,7 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
   const setIssueState = async (ticket: TicketRef, body: string, next: TicketState): Promise<void> => {
     const container = parseContainerRef(ticket.number);
     if (container) {
-      await client.send('PATCH', `${repo}/${ENDPOINT[container.kind]}/${container.id}`, { state: next });
+      await client.send('PATCH', `${repo}/milestones/${container.id}`, { state: next });
       return;
     }
     const current = await client.request('GET', `${repo}/issues/${ticket.number}`, issueSchema);
@@ -274,7 +266,7 @@ export const forgejoKind: TrackerKind<ForgejoSettings> = {
   settings: forgejoSettingsSchema,
   secretNames: [FORGEJO_TOKEN_SECRET],
   secretsFor: (settings) => [settings.tokenSecret],
-  capabilities: { close: true, reopen: true, claim: true, transition: false, epicSources: ['epic-label', 'project', 'milestone'] },
+  capabilities: { close: true, reopen: true, claim: true, transition: false, epicSources: ['epic-label', 'milestone'] },
   fromDeclaration: async (doc, _repoRoot, origin) => {
     const baseUrl = doc.match(/^\s*Base URL:\s*(.+?)\s*$/im)?.[1];
     const repo = doc.match(/^\s*Repo:\s*(.+?)\s*$/im)?.[1];
