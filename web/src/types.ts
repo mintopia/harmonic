@@ -217,6 +217,7 @@ export interface AgentMessage {
   senderTaskId: number;
   senderDeleted: boolean;
   senderAttemptId: number;
+  senderAttemptNumber: number | null;
   workspaceId: number;
   createdAt: number;
   recipients: AgentMessageRecipient[];

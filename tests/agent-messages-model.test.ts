@@ -41,6 +41,7 @@ function message(id: string, sender: number, createdAt: number, over: Partial<Ag
     senderTaskId: sender,
     senderDeleted: false,
     senderAttemptId: 1,
+    senderAttemptNumber: 1,
     workspaceId: 1,
     createdAt,
     recipients: [{ taskId: sender === 1 ? 2 : 1, receipt: 'delivered', mode: 'mid-turn', deleted: false }],
@@ -150,6 +151,16 @@ describe('segmentThread', () => {
     const items = segmentThread(t, NOW);
     expect(items.map((i) => i.kind)).toEqual(['day', 'group', 'day', 'group', 'time', 'group']);
     expect(items.filter((i) => i.kind === 'day').map((i) => ('label' in i ? i.label : ''))).toEqual(['Yesterday', 'Today']);
+  });
+
+  it('labels each group with its sender Attempt and splits a sender group when the Attempt changes', () => {
+    const t = thread('a', { messages: [message('m1', 1, at(14, 0), { senderAttemptNumber: 1 }), message('m2', 1, at(14, 1), { senderAttemptNumber: 2 }), message('m3', 2, at(14, 2), { senderAttemptNumber: null })] });
+    expect(groups(segmentThread(t, NOW)).map((g) => g.attemptLabel)).toEqual(['Attempt 1', 'Attempt 2', null]);
+  });
+
+  it('shows a single Today divider for a one-day thread', () => {
+    const t = thread('a', { messages: [message('m1', 1, at(9, 0)), message('m2', 2, at(9, 1))] });
+    expect(segmentThread(t, NOW).filter((i) => i.kind === 'day').map((i) => ('label' in i ? i.label : ''))).toEqual(['Today']);
   });
 
   it('breaks a group at a separator even when the sender repeats', () => {

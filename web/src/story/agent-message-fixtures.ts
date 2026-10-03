@@ -29,6 +29,8 @@ const to = (taskId: number, receipt: AgentMessageRecipient['receipt'], extra: Pa
   ...extra,
 });
 
+const SENDER_ATTEMPTS: Record<number, number> = { 412: 2, 411: 3 };
+
 let seq = 0;
 const say = (threadId: string, sender: number, createdAt: number, text: string, recipients: AgentMessageRecipient[], replyTo: string | null = null, id = `m${++seq}`): AgentMessage => ({
   messageId: id,
@@ -39,6 +41,7 @@ const say = (threadId: string, sender: number, createdAt: number, text: string, 
   senderTaskId: sender,
   senderDeleted: false,
   senderAttemptId: 1,
+  senderAttemptNumber: SENDER_ATTEMPTS[sender] ?? 1,
   workspaceId: 1,
   createdAt,
   recipients,

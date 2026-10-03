@@ -31,6 +31,7 @@ function msg(id: string, sender: number, to: number, text: string, createdAt: nu
     senderTaskId: sender,
     senderDeleted: false,
     senderAttemptId: 1,
+    senderAttemptNumber: 1,
     workspaceId: 1,
     createdAt,
     recipients: [{ taskId: to, receipt: 'delivered', mode: 'mid-turn', deleted: false }],
