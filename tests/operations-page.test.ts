@@ -112,7 +112,7 @@ describe('OperationsPage', () => {
 
   it('links a live operation to its owning Epic title', () => {
     const html = renderToStaticMarkup(createElement(OperationRow, {
-      operation: operation({ 'epic.ref': 24, 'epic.title': 'Live operations refinement' }),
+      operation: operation({ 'epic.ref': '24', 'epic.title': 'Live operations refinement' }),
       now: 2_000,
       depth: 0,
       onOpenEpic: () => {},

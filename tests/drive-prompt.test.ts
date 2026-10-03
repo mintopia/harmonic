@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { driveFields, fillTemplate, skillFor, splitTitleBody } from '../src/execution/prompt-template.js';
 import { DEFAULT_DRIVE_PROMPT } from '../src/config.js';
 import type { TaskRow } from '../src/db/schema.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const task = (over: Partial<TaskRow> & { epicKind?: string | null }): TaskRow & { epicKind?: string | null } =>
   ({ id: 1, prompt: 'Title\n\nBody', harness: 'claude', wayfinderType: 'task', trackerRef: 42, mapRef: null, ...over }) as TaskRow & {
@@ -56,7 +57,7 @@ describe('splitTitleBody', () => {
 
 describe('driveFields', () => {
   it('sources the five tokens from the task and the url resolver', () => {
-    const fields = driveFields(task({ id: 7, prompt: 'Fix it\n\nDetails', trackerRef: 7 }), () => 'http://tracker/7');
+    const fields = driveFields(task({ id: 7, prompt: 'Fix it\n\nDetails', trackerRef: trackerRef(7) }), () => 'http://tracker/7');
     expect(fields).toEqual({ taskId: '7', skill: '/implement', ref: '7', url: 'http://tracker/7', title: 'Fix it', description: 'Details' });
   });
   it('falls back to empty ref/url when absent', () => {
@@ -65,7 +66,7 @@ describe('driveFields', () => {
     expect(fields.url).toBe('');
   });
   it('points a Map-Epic child at the map ref/url, not its own ticket', () => {
-    const child = task({ id: 5, trackerRef: 7, mapRef: 100, epicKind: 'map', prompt: 'Chart it\n\nwhy' });
+    const child = task({ id: 5, trackerRef: trackerRef(7), mapRef: trackerRef(100), epicKind: 'map', prompt: 'Chart it\n\nwhy' });
     const fields = driveFields(child, (t) => `http://tracker/${t.trackerRef}`);
     expect(fields).toEqual({ taskId: '5', skill: '/wayfinder', ref: '100', url: 'http://tracker/100', title: 'Chart it', description: 'why' });
   });

@@ -9,6 +9,7 @@ import { baselineConfig } from '../src/config.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 describe('WorkspaceService.delete guards (issue #61)', () => {
   let dataDir: string;
@@ -49,7 +50,7 @@ describe('WorkspaceService.delete guards (issue #61)', () => {
   it('deletes a Workspace that has a dismissal tombstone (issue #162 FK)', async () => {
     const ws = (await workspaces.list())[0]!;
     await asyncDb.write((d) =>
-      d.insert(trackerDismissals).values({ workspaceId: ws.id, trackerRef: 42, dismissedAt: Date.now() }).run(),
+      d.insert(trackerDismissals).values({ workspaceId: ws.id, trackerRef: trackerRef(42), dismissedAt: Date.now() }).run(),
     );
 
     await expect(workspaces.delete(ws.id)).resolves.toBeUndefined();

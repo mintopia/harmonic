@@ -67,7 +67,7 @@ const task = (id: number, state: TaskState, extra: Partial<Task> = {}): Task => 
 const blocked = (id: number, dependsOn: number[], extra: Partial<Task> = {}): Task =>
   task(id, 'ready', {
     origin: 'mirrored',
-    trackerRef: id,
+    trackerRef: String(id),
     dependsOn,
     openBlockerCount: dependsOn.length,
     agentWorkable: dependsOn.length === 0,
@@ -75,7 +75,7 @@ const blocked = (id: number, dependsOn: number[], extra: Partial<Task> = {}): Ta
   });
 
 const member = (ref: number, taskId: number | null, extra: Partial<EpicMember> = {}): EpicMember => ({
-  ref,
+  ref: String(ref),
   title: `member ${ref}`,
   taskId,
   state: null,
@@ -87,7 +87,7 @@ const member = (ref: number, taskId: number | null, extra: Partial<EpicMember> =
 });
 
 const epic = (ref: number, members: EpicMember[], extra: Partial<Epic> = {}): Epic => ({
-  ref,
+  ref: String(ref),
   title: `epic ${ref}`,
   kind: 'spec',
   state: 'open',
@@ -128,7 +128,7 @@ describe('boardSections — Attention / Running / Paused / Pending', () => {
     );
     expect(attentionIds(sections)).toEqual(['task:2', 'task:1']);
     expect(sections.running.map((entry) => entry.id)).toEqual([3, 4]);
-    expect(sections.pending.map((group) => group.epic?.ref)).toEqual([30]);
+    expect(sections.pending.map((group) => group.epic?.ref)).toEqual(['30']);
     expect(layout(sections.pending[0]!.columns)).toEqual([['Frontier', ['T-4']]]);
   });
 
@@ -140,7 +140,7 @@ describe('boardSections — Attention / Running / Paused / Pending', () => {
         epic(31, [member(311, 3)]),
       ],
     );
-    expect(sections.pending.map((group) => group.epic?.ref)).toEqual([30, 31]);
+    expect(sections.pending.map((group) => group.epic?.ref)).toEqual(['30', '31']);
     expect(layout(sections.pending[0]!.columns)).toEqual([['Frontier', ['T-1']]]);
     expect(layout(sections.pending[1]!.columns)).toEqual([['Frontier', ['T-3']]]);
   });
@@ -153,7 +153,7 @@ describe('boardSections — Attention / Running / Paused / Pending', () => {
     expect(isEscalatedEpic(held)).toBe(true);
     expect(isActiveEpic(held)).toBe(true);
     expect(attentionIds(sections)).toEqual(['task:7', 'epic:60']);
-    expect(sections.pending.map((group) => group.epic?.ref)).toEqual([60]);
+    expect(sections.pending.map((group) => group.epic?.ref)).toEqual(['60']);
     expect(sections.pending[0]!.columns).toEqual([]);
   });
 
@@ -215,10 +215,10 @@ describe('boardSections — Attention / Running / Paused / Pending', () => {
 
   it('groups Pending by Epic (ascending ref) with standalone last, and never renders an Epic driver ticket as a card', () => {
     const sections = boardSections(
-      [task(9, 'ready', { trackerRef: 30 }), task(1, 'ready'), task(2, 'working'), task(3, 'ready'), task(4, 'ready')],
+      [task(9, 'ready', { trackerRef: '30' }), task(1, 'ready'), task(2, 'working'), task(3, 'ready'), task(4, 'ready')],
       [epic(31, [member(311, 4)]), epic(30, [member(301, 2, { state: 'working' }), member(302, 3)])],
     );
-    expect(sections.pending.map((group) => group.epic?.ref ?? 'standalone')).toEqual([30, 31, 'standalone']);
+    expect(sections.pending.map((group) => group.epic?.ref ?? 'standalone')).toEqual(['30', '31', 'standalone']);
     expect(layout(sections.pending[0]!.columns)).toEqual([['Frontier', ['T-2', 'T-3']]]);
     expect(layout(sections.pending[1]!.columns)).toEqual([['Frontier', ['T-4']]]);
     expect(layout(sections.pending[2]!.columns)).toEqual([['Frontier', ['T-1']]]);
@@ -229,7 +229,7 @@ describe('boardSections — Attention / Running / Paused / Pending', () => {
     const folded = epic(50, [member(1, 501, { mergeStatus: 'completed', state: 'done' })]);
     const sections = boardSections([task(501, 'done')], [folded]);
     expect(isActiveEpic(folded)).toBe(true);
-    expect(sections.pending.map((group) => group.epic?.ref)).toEqual([50]);
+    expect(sections.pending.map((group) => group.epic?.ref)).toEqual(['50']);
     expect(sections.pending[0]!.columns).toEqual([]);
     expect(sections.attention).toEqual([]);
   });
@@ -243,7 +243,7 @@ describe('boardSections — Attention / Running / Paused / Pending', () => {
     expect(isActiveEpic(integrating)).toBe(true);
     expect(isEscalatedEpic(integrating)).toBe(false);
     expect(sections.attention).toEqual([]);
-    expect(sections.pending.map((group) => group.epic?.ref)).toEqual([70]);
+    expect(sections.pending.map((group) => group.epic?.ref)).toEqual(['70']);
     expect(sections.pending[0]!.columns).toEqual([]);
   });
 
@@ -258,7 +258,7 @@ describe('boardSections — Attention / Running / Paused / Pending', () => {
       [task(409, 'ready'), task(410, 'ready'), task(411, 'ready')],
       [epic(408, [member(409, 409), member(410, 410), member(411, 411)])],
     );
-    expect(sections.pending.map((group) => group.epic?.ref)).toEqual([408]);
+    expect(sections.pending.map((group) => group.epic?.ref)).toEqual(['408']);
     expect(layout(sections.pending[0]!.columns)).toEqual([['Frontier', ['T-409', 'T-410', 'T-411']]]);
     expect(sections.attention).toEqual([]);
     expect(sections.running).toEqual([]);
@@ -279,7 +279,7 @@ describe('boardSections — Attention / Running / Paused / Pending', () => {
 
 describe('epicPendingColumns', () => {
   it('hides merged members while retaining their satisfied dependency chip on a dependant', () => {
-    const merged = task(1, 'done', { origin: 'mirrored', trackerRef: 1 });
+    const merged = task(1, 'done', { origin: 'mirrored', trackerRef: '1' });
     const dependant = blocked(2, [1, 99], { openBlockerCount: 1 });
     const columns = epicPendingColumns(epic(90, [member(1, 1, { mergeStatus: 'completed' }), member(2, 2)]), [merged, dependant]);
     expect(layout(columns)).toEqual([['1 blocker', ['#2 · T-2']]]);
@@ -291,7 +291,7 @@ describe('epicPendingColumns', () => {
 
   it('keeps working members in the band (ADR-0017) and marks human-only ready work non-runnable', () => {
     const working = task(1, 'working');
-    const humanOnly = task(2, 'ready', { origin: 'mirrored', trackerRef: 2, agentWorkable: false, humanOnly: true });
+    const humanOnly = task(2, 'ready', { origin: 'mirrored', trackerRef: '2', agentWorkable: false, humanOnly: true });
     const columns = epicPendingColumns(epic(90, [member(1, 1), member(2, 2)]), [working, humanOnly]);
     expect(layout(columns)).toEqual([['Frontier', ['T-1', '#2 · T-2']]]);
     expect(columns[0]!.items[0]).toMatchObject({ label: 'T-1', state: 'working', runnable: false });

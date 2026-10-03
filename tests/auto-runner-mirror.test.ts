@@ -14,6 +14,7 @@ import type { MirrorInput } from '../src/domain/tasks.js';
 import type { TrackerFacts } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const agentFacts = (ref: number): TrackerFacts => ({
   state: 'open',
@@ -27,7 +28,7 @@ const agentFacts = (ref: number): TrackerFacts => ({
 });
 
 const mirroredAfk = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput => ({
-  trackerRef: ref,
+  trackerRef: trackerRef(ref),
   prompt: `ticket ${ref}`,
   workflow: 'implement',
   wayfinderType: null,
@@ -68,8 +69,8 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
     const assigned = await tasks.upsertMirrored(mirroredAfk(44));
     const failedClaim = await tasks.upsertMirrored(mirroredAfk(45));
 
-    const throwRefs = new Set([45]);
-    const claims: Array<{ ref: number | null; stateAtClaim: string }> = [];
+    const throwRefs = new Set(['45']);
+    const claims: Array<{ ref: string | null; stateAtClaim: string }> = [];
     const mirror: MirrorClaim = {
       advertiseClaim: async (t) => {
         claims.push({ ref: t.trackerRef, stateAtClaim: t.state });
@@ -107,7 +108,7 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
 
     expect(claims.length).toBeGreaterThan(0);
     for (const claim of claims) expect(claim.stateAtClaim).toBe('working');
-    expect(claims.map((claim) => claim.ref).sort()).toEqual([42, 44, 45]);
+    expect(claims.map((claim) => claim.ref).sort()).toEqual(['42', '44', '45']);
   });
 });
 

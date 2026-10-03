@@ -295,7 +295,6 @@ export const localMarkdownKind: TrackerKind<{ path: string }> = {
   settings: z.object({ path: z.string().min(1).default('.scratch') }).strict(),
   secretNames: [],
   capabilities: { close: true, reopen: true, claim: false, transition: false, epicSources: ['spec'] },
-  formatRef: (ref) => `#${ref}`,
   fromDeclaration: (doc) => ({ path: doc.match(/^\s*Path:\s*(.+?)\s*$/im)?.[1] }),
   create: ({ settings, repoRoot, featureIndex }) =>
     localMarkdownAdapter(isAbsolute(settings.path) ? settings.path : join(repoRoot, settings.path), {

@@ -10,6 +10,7 @@ import { AttemptStore } from '../src/domain/attempts.js';
 import { ToolCallAggregateStore, totalsForRange } from '../src/domain/tool-call-aggregates.js';
 import { baselineConfig } from '../src/config.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 describe('ToolCallAggregateStore (issue #241)', () => {
   let dir: string;
@@ -52,10 +53,10 @@ describe('ToolCallAggregateStore (issue #241)', () => {
     standaloneTaskId = standaloneTask.id;
 
     await db.write((d) =>
-      d.update(tasks).set({ mapRef: 701 }).where(eq(tasks.id, epicTaskId)).run(),
+      d.update(tasks).set({ mapRef: trackerRef(701) }).where(eq(tasks.id, epicTaskId)).run(),
     );
     await db.write((d) =>
-      d.update(tasks).set({ mapRef: 701 }).where(eq(tasks.id, siblingTaskId)).run(),
+      d.update(tasks).set({ mapRef: trackerRef(701) }).where(eq(tasks.id, siblingTaskId)).run(),
     );
 
     const otherWorkspace = await db.write((d) =>

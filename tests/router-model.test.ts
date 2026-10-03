@@ -47,7 +47,7 @@ describe('path routes', () => {
 
   it('uses nested workspace paths for task, epic, conversation, and file selections', () => {
     expect(parseRoute('/workspace/42/task/12/timeline', '')).toMatchObject({ task: 12, panel: { kind: 'timeline' } });
-    expect(parseRoute('/workspace/42/epic/7/attempt/3', '')).toMatchObject({ epic: 7, panel: { kind: 'attempt', attemptNumber: 3 } });
+    expect(parseRoute('/workspace/42/epic/7/attempt/3', '')).toMatchObject({ epic: '7', panel: { kind: 'attempt', attemptNumber: 3 } });
     expect(parseRoute('/workspace/42/conversations/8', '')).toMatchObject({ conversation: 8, view: 'conversations' });
     expect(serializeRoute({ ...workspace('files'), file: 'src/app.ts' })).toBe('/workspace/42/files/src/app.ts');
   });

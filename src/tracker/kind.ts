@@ -1,6 +1,6 @@
 import type { ZodType } from 'zod';
 import type { FeatureIndex } from './local-markdown.js';
-import type { TrackerAdapter, TrackerRef } from './adapter.js';
+import type { TrackerAdapter } from './adapter.js';
 
 /** What a kind can do beyond reading; consumers gate on this instead of probing the adapter. */
 export interface TrackerCapabilities {
@@ -38,7 +38,5 @@ export interface TrackerKind<S = unknown> {
   capabilities: TrackerCapabilities;
   /** Raw settings read from the repo's `docs/agents/issue-tracker.md` declaration; parsed against {@link settings}. */
   fromDeclaration?(doc: string, repoRoot: string): Promise<unknown> | unknown;
-  /** How a ref is shown to people (`#185`, `PROJ-185`); the only place a ref is formatted. */
-  formatRef(ref: TrackerRef): string;
   create(ctx: TrackerCreateContext<S>): TrackerAdapter;
 }

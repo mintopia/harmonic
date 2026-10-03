@@ -13,6 +13,7 @@ import { baselineConfig } from '../src/config.js';
 import { createPostMergeCheck } from '../src/verification/post-merge-check.js';
 import { EpicIntegrationRunner } from '../src/tracker/epic-integration-runner.js';
 import { executionPlumbing, allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 describe('createPostMergeCheck archive output', () => {
   let dir: string;
@@ -107,8 +108,8 @@ describe('createPostMergeCheck archive output', () => {
     const tasks = new TaskService(db, () => baselineConfig(), allWorkspaces(db, settings));
     const task = await tasks.create({ prompt: 'p' });
     const attempts = new AttemptStore(db);
-    await tasks.syncEpics(1, [{ ref: 7, kind: 'epic' }]);
-    const epicAttempt = await attempts.createForEpic({ workspaceId: 1, epicRef: 7 });
+    await tasks.syncEpics(1, [{ ref: trackerRef(7), kind: 'epic' }]);
+    const epicAttempt = await attempts.createForEpic({ workspaceId: 1, epicRef: trackerRef(7) });
     const verificationAttempts = new VerificationAttemptStore(db);
     const archive = new TaskArchive({ dataDir: dir, ensureArchiveId: (id) => tasks.ensureArchiveId(id), workspaceName: async () => null });
     const command = { id: 'epic-echo', command: process.execPath, args: ['-e', "console.log('epic-post-merge-out')"], env: {}, timeoutSeconds: 30 };
@@ -128,9 +129,9 @@ describe('createPostMergeCheck archive output', () => {
       },
     });
 
-    await runner.integrate({ repoDir: dir, epicRef: 7, defaultBranch: 'main', integrationBranch: 'epic/7' });
+    await runner.integrate({ repoDir: dir, epicRef: trackerRef(7), defaultBranch: 'main', integrationBranch: 'epic/7' });
 
-    const log = await archive.epicVerificationOutputLog(1, 7, epicAttempt.number, 'epic-echo', 'post-merge');
+    const log = await archive.epicVerificationOutputLog(1, trackerRef(7), epicAttempt.number, 'epic-echo', 'post-merge');
     expect(readFileSync(log!.path, 'utf8')).toContain('epic-post-merge-out');
     const recorded = await verificationAttempts.list(epicAttempt.id);
     expect(recorded).toHaveLength(1);

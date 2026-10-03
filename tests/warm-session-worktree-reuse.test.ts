@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, STUB_HARNESS, waitFor, type TestServer } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
@@ -53,7 +54,7 @@ describe('warm-Session reuse across reject "start now" (worktree isolation)', ()
       drive: { prompt: JSON.stringify({ mcpEscalate: { reason: 'need a human' }, usage: { inputTokens: 5000, outputTokens: 100 } }) },
     });
     const mirrored = await server.app.ctx.tasks.upsertMirrored(
-      { trackerRef: 99_001, prompt: 'warm-reuse ticket', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+      { trackerRef: trackerRef(99_001), prompt: 'warm-reuse ticket', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
       wsId,
     );
     const taskId = mirrored.id;

@@ -11,6 +11,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 describe('worktree', () => {
   const git = (dir: string, ...args: string[]) =>
@@ -357,7 +358,7 @@ describe('worktree', () => {
         isolationMode: 'worktree',
       });
       await server.app.ctx.asyncDb.write((d) =>
-        d.update(tasks).set({ mapRef: 424 }).where(eq(tasks.id, created.body.id)).run(),
+        d.update(tasks).set({ mapRef: trackerRef(424) }).where(eq(tasks.id, created.body.id)).run(),
       );
       await server.api('POST', `/api/tasks/${created.body.id}/run`);
 
@@ -395,7 +396,7 @@ describe('worktree', () => {
       await server.app.ctx.settingsStore.updateGlobal({ drive: { prompt: JSON.stringify({ writeFiles: {}, stopReason: 'end_turn' }) } });
 
       const task = await server.app.ctx.tasks.upsertMirrored({
-        trackerRef: ref++,
+        trackerRef: trackerRef(ref++),
         prompt: 'go',
         workflow: 'implement',
         wayfinderType: null,

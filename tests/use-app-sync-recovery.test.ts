@@ -25,7 +25,7 @@ const pending = () => new Promise<never>(() => undefined);
 const storage = { getItem: () => null, setItem: () => undefined };
 const navigate = () => undefined;
 const epic = (ref: number): Epic => ({
-  ref,
+  ref: String(ref),
   title: `Epic ${ref}`,
   kind: 'spec',
   state: 'open',
@@ -92,14 +92,14 @@ describe('useAppSync recovery', () => {
       await flush();
     });
     expect(current?.tasks?.map((task) => task.id)).toEqual([2]);
-    expect(current?.epics.map((item) => item.ref)).toEqual([2]);
+    expect(current?.epics.map((item) => item.ref)).toEqual(['2']);
     await act(async () => {
       taskA.resolve({ tasks: [makeTask({ id: 1, workspaceId: 1 })], total: 1 });
       epicA.resolve({ epics: epicsA, total: 1 });
       await flush();
     });
     expect(current?.tasks?.map((task) => task.id)).toEqual([2]);
-    expect(current?.epics.map((item) => item.ref)).toEqual([2]);
+    expect(current?.epics.map((item) => item.ref)).toEqual(['2']);
   });
 
   it('retries a failed first workspace load and keeps the error visible', async () => {

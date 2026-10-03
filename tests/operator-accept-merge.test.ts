@@ -7,6 +7,7 @@ import { startServer, stubHarness, waitFor, seedLocalMarkdownTicket, type TestSe
 import { verificationCommandSchema } from '../src/config.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
 import type { CriticHarnessDrive } from '../src/verification/critic.js';
+import { trackerRef as brandRef } from '../src/tracker/adapter.js';
 
 const failingCritic = () => ({
   taskPreMergeCritics: [
@@ -238,7 +239,7 @@ describe('escalated worktree Run diff snapshot', () => {
       });
 
       const mirroredAfk = (trackerRef: number): MirrorInput => ({
-        trackerRef,
+        trackerRef: brandRef(trackerRef),
         prompt: `ticket ${trackerRef}\n\nbody`,
         workflow: 'implement',
         wayfinderType: null,

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TRACKER_KINDS } from '../src/tracker/kinds.js';
 import type { CliRunner, TrackerKind } from '../src/tracker/kind.js';
-import type { TrackerAdapter } from '../src/tracker/adapter.js';
+import { type TrackerAdapter, trackerRef } from '../src/tracker/adapter.js';
 
 /** Three tickets every kind is seeded with: #1 open, #2 open and blocked by #1, #3 closed. */
 interface Harness {
@@ -133,23 +133,23 @@ describe.each(TRACKER_KINDS.map((k) => [k.id, k] as const))('tracker conformance
   it('scan returns every ticket with portable number, title and state', async () => {
     const tickets = await harness().adapter.scan();
     expect(tickets.map((t) => [t.number, t.title, t.state]).sort((a, b) => Number(a[0]) - Number(b[0]))).toEqual([
-      [1, 'Alpha', 'open'],
-      [2, 'Beta', 'open'],
-      [3, 'Gamma', 'closed'],
+      ['1', 'Alpha', 'open'],
+      ['2', 'Beta', 'open'],
+      ['3', 'Gamma', 'closed'],
     ]);
   });
 
   it('reads blocked-by relationships directionally', async () => {
     const byNumber = new Map((await harness().adapter.scan()).map((t) => [t.number, t]));
-    expect(byNumber.get(2)!.blockedBy.map((r) => r.number)).toEqual([1]);
-    expect(byNumber.get(1)!.blockedBy).toEqual([]);
-    expect(byNumber.get(1)!.blocking.map((r) => r.number)).toEqual([2]);
+    expect(byNumber.get(trackerRef(2))!.blockedBy.map((r) => r.number)).toEqual(['1']);
+    expect(byNumber.get(trackerRef(1))!.blockedBy).toEqual([]);
+    expect(byNumber.get(trackerRef(1))!.blocking.map((r) => r.number)).toEqual(['2']);
   });
 
   it('readTicket returns the same identity as scan', async () => {
     const { adapter } = harness();
-    const ticket = await adapter.readTicket({ number: 2, title: 'Beta', state: 'open' });
-    expect([ticket.number, ticket.title, ticket.blockedBy.map((r) => r.number)]).toEqual([2, 'Beta', [1]]);
+    const ticket = await adapter.readTicket({ number: trackerRef(2), title: 'Beta', state: 'open' });
+    expect([ticket.number, ticket.title, ticket.blockedBy.map((r) => r.number)]).toEqual(['2', 'Beta', ['1']]);
   });
 
   it('declares close and reopen exactly when the adapter implements them', () => {
@@ -161,18 +161,18 @@ describe.each(TRACKER_KINDS.map((k) => [k.id, k] as const))('tracker conformance
   it('close and reopen reach the backend', async () => {
     const h = harness();
     if (kind.capabilities.close) {
-      await h.adapter.close!({ number: 1, title: 'Alpha', state: 'open' }, 'done');
+      await h.adapter.close!({ number: trackerRef(1), title: 'Alpha', state: 'open' }, 'done');
       expect(h.closed()).toEqual([1]);
     }
     if (kind.capabilities.reopen) {
-      await h.adapter.reopen!({ number: 3, title: 'Gamma', state: 'closed' }, 'again');
+      await h.adapter.reopen!({ number: trackerRef(3), title: 'Gamma', state: 'closed' }, 'again');
       expect(h.reopened()).toEqual([3]);
     }
   });
 
   it('claim and release never throw', async () => {
     const { adapter } = harness();
-    const ref = { number: 1, title: 'Alpha', state: 'open' as const };
+    const ref = { number: trackerRef(1), title: 'Alpha', state: 'open' as const };
     await expect(adapter.claim(ref)).resolves.toBeUndefined();
     await expect(adapter.release(ref)).resolves.toBeUndefined();
   });

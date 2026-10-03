@@ -1,4 +1,4 @@
-import type { TrackerRef } from '../tracker/adapter.js';
+import { trackerRef, type TrackerRef } from '../tracker/adapter.js';
 import { TaskExporter } from '../archive/task-export.js';
 import { computeGitProvenance } from '../archive/git-provenance.js';
 import { Git } from '../execution/git.js';
@@ -52,7 +52,8 @@ export function registerAppExports({
         if (t.trackerRef != null) byRef.set(t.trackerRef, t);
       });
       const members: Array<{ ref: TrackerRef; task: TaskRow | null }> = [];
-      await forEachYielding(row?.memberRefs ?? [], (ref) => {
+      await forEachYielding(row?.memberRefs ?? [], (stored) => {
+        const ref = trackerRef(stored);
         members.push({ ref, task: byRef.get(ref) ?? null });
       });
       return {

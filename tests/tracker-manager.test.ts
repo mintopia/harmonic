@@ -8,7 +8,7 @@ import { TaskService } from '../src/domain/tasks.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import { TrackerPollerManager, type TrackerPollerManagerOptions } from '../src/tracker/manager.js';
 import { deriveMaps } from '../src/tracker/mirror.js';
-import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
+import { type Ticket, type TrackerAdapter, trackerRef } from '../src/tracker/adapter.js';
 import { EPIC_LABEL, TrackerResolutionError } from '../src/tracker/adapter.js';
 import { TrackerEpicService, type EpicService } from '../src/tracker/epic-service.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -20,7 +20,7 @@ import { SettingsUpdateAvailabilityStore } from '../src/upgrade/update-check.js'
 import { Scheduler } from '../src/scheduler/scheduler.js';
 
 const ticket = (number: number): Ticket => ({
-  number,
+  number: trackerRef(number),
   title: `ticket ${number}`,
   state: 'open',
   body: '',
@@ -78,7 +78,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
       return {
         name: 'stub',
         scan: async () => ticketsByRepo.get(repoRoot) ?? [],
-        readTicket: async (r) => ticket(r.number),
+        readTicket: async (r) => ticket(Number(r.number)),
         claim: async () => {},
         release: async () => {},
         close: async () => {},
@@ -115,14 +115,14 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     const inB = await tasks.list({ workspaceId: b.id });
     expect(inA).toHaveLength(1);
     expect(inB).toHaveLength(1);
-    expect(inA[0]).toMatchObject({ trackerRef: 5, workspaceId: a.id });
-    expect(inB[0]).toMatchObject({ trackerRef: 5, workspaceId: b.id });
+    expect(inA[0]).toMatchObject({ trackerRef: '5', workspaceId: a.id });
+    expect(inB[0]).toMatchObject({ trackerRef: '5', workspaceId: b.id });
     expect(inA[0]!.id).not.toBe(inB[0]!.id);
   });
 
   it('maps() stamps each rollup with its Workspace and scopes by id — colliding map refs stay distinct', async () => {
     const mapTicket = { ...ticket(19), isMap: true, title: 'Wayfinder', labels: ['wayfinder:map'] };
-    const member = (n: number): Ticket => ({ ...ticket(n), parent: 19 });
+    const member = (n: number): Ticket => ({ ...ticket(n), parent: trackerRef(19) });
     ticketsByRepo.set(repoA, [mapTicket, member(30)]);
     ticketsByRepo.set(repoB, [mapTicket, member(31)]);
     const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
@@ -136,17 +136,17 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
 
     const scopedA = await manager.maps(a.id);
     expect(scopedA).toHaveLength(1);
-    expect(scopedA[0]).toMatchObject({ workspaceId: a.id, ref: 19, taskRefs: [30] });
+    expect(scopedA[0]).toMatchObject({ workspaceId: a.id, ref: '19', taskRefs: ['30'] });
   });
 
   it('derives epics, maps, and the ready frontier from persisted facts before any post-restart poll (#234)', async () => {
     const fixture: Ticket[] = [
       { ...ticket(10), title: 'Spec epic', labels: [EPIC_LABEL] },
-      { ...ticket(11), title: 'Ready member', parent: 10 },
-      { ...ticket(12), title: 'Human member', parent: 10, labels: [] },
-      { ...ticket(13), title: 'Blocked member', parent: 10, blockedBy: [{ number: 99, title: 'Open blocker', state: 'open' }] },
+      { ...ticket(11), title: 'Ready member', parent: trackerRef(10) },
+      { ...ticket(12), title: 'Human member', parent: trackerRef(10), labels: [] },
+      { ...ticket(13), title: 'Blocked member', parent: trackerRef(10), blockedBy: [{ number: trackerRef(99), title: 'Open blocker', state: 'open' }] },
       { ...ticket(19), title: 'Delivery map', labels: ['wayfinder:map'], isMap: true },
-      { ...ticket(20), title: 'Map member', parent: 19 },
+      { ...ticket(20), title: 'Map member', parent: trackerRef(19) },
       { ...ticket(99), title: 'Open blocker', labels: [] },
     ];
     ticketsByRepo.set(repoA, fixture);
@@ -157,16 +157,16 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     const mirrored = (await tasks.list({ workspaceId: workspace.id })).filter((task) => task.origin === 'mirrored');
     const legacyMaps = deriveMaps(fixture, mirrored, workspace.id);
     const beforeRestart = await manager.listEpics(workspace.id);
-    expect((await manager.listEpicTickets(workspace.id)).map((t) => t.number).sort((a, b) => a - b)).toEqual([10, 19]);
-    expect(beforeRestart.find((epic) => epic.ref === 10)?.ready).toEqual([11]);
+    expect((await manager.listEpicTickets(workspace.id)).map((t) => t.number).sort((a, b) => Number(a) - Number(b))).toEqual(['10', '19']);
+    expect(beforeRestart.find((epic) => epic.ref === trackerRef(10))?.ready).toEqual(['11']);
     expect(beforeRestart.map((epic) => ({
       ref: epic.ref,
       title: epic.title,
       members: epic.members.map((member) => member.ref),
       ready: epic.ready,
     }))).toEqual([
-      { ref: 10, title: 'Spec epic', members: [11, 12, 13], ready: [11] },
-      { ref: 19, title: 'Delivery map', members: [20], ready: [20] },
+      { ref: '10', title: 'Spec epic', members: ['11', '12', '13'], ready: ['11'] },
+      { ref: '19', title: 'Delivery map', members: ['20'], ready: ['20'] },
     ]);
     expect(await manager.maps(workspace.id)).toEqual(legacyMaps);
 
@@ -183,14 +183,14 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     });
 
     expect(await manager.listEpics(workspace.id)).toEqual(beforeRestart);
-    expect(await manager.epicDetail(workspace.id, 10)).toEqual(beforeRestart.find((epic) => epic.ref === 10));
+    expect(await manager.epicDetail(workspace.id, trackerRef(10))).toEqual(beforeRestart.find((epic) => epic.ref === trackerRef(10)));
     expect(await manager.maps(workspace.id)).toEqual(legacyMaps);
   });
 
   it('keeps a closed-but-unintegrated Epic on the board until integration completes (#562)', async () => {
     ticketsByRepo.set(repoA, [
       { ...ticket(10), title: 'Closed epic', labels: [EPIC_LABEL] },
-      { ...ticket(11), title: 'Closed epic member', parent: 10 },
+      { ...ticket(11), title: 'Closed epic member', parent: trackerRef(10) },
     ]);
     const workspace = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
@@ -198,15 +198,15 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
 
     ticketsByRepo.set(repoA, [
       { ...ticket(10), title: 'Closed epic', state: 'closed', closedAt: '2026-08-10T00:00:00Z', labels: [EPIC_LABEL] },
-      { ...ticket(11), title: 'Closed epic member', parent: 10 },
+      { ...ticket(11), title: 'Closed epic member', parent: trackerRef(10) },
     ]);
     await manager.pollNow(workspace.id);
 
-    const beforeRestart = await manager.epicDetail(workspace.id, 10);
-    expect(beforeRestart?.ref).toBe(10);
-    expect(beforeRestart?.members.map((member) => member.ref)).toEqual([11]);
+    const beforeRestart = await manager.epicDetail(workspace.id, trackerRef(10));
+    expect(beforeRestart?.ref).toBe('10');
+    expect(beforeRestart?.members.map((member) => member.ref)).toEqual(['11']);
     const visible = await manager.listEpics(workspace.id);
-    const limbo = visible.find((epic) => epic.ref === 10);
+    const limbo = visible.find((epic) => epic.ref === trackerRef(10));
     expect(limbo).toMatchObject({ state: 'open' });
     if (!limbo) throw new Error('closed-but-unintegrated Epic must remain visible');
     expect(integrationSteps(limbo).map((step) => step.key)).toEqual(['verify', 'merge', 'check', 'retire']);
@@ -223,37 +223,37 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
       },
     });
 
-    expect(await manager.epicDetail(workspace.id, 10)).toEqual(beforeRestart);
-    expect((await manager.listEpics(workspace.id)).find((epic) => epic.ref === 10)).toMatchObject({ state: 'open' });
+    expect(await manager.epicDetail(workspace.id, trackerRef(10))).toEqual(beforeRestart);
+    expect((await manager.listEpics(workspace.id)).find((epic) => epic.ref === trackerRef(10))).toMatchObject({ state: 'open' });
 
-    await tasks.markEpicIntegrated(workspace.id, 10, { mergeCommit: 'abc123', memberRefs: [11] });
+    await tasks.markEpicIntegrated(workspace.id, trackerRef(10), { mergeCommit: 'abc123', memberRefs: [trackerRef(11)] });
     expect((await manager.listEpics(workspace.id)).map((epic) => epic.ref)).not.toContain(10);
   });
 
   it('resolves an integrated Epic the scan has aged out from its stored snapshot; it leaves the Board but stays a Tasks-list filter (#439)', async () => {
     ticketsByRepo.set(repoA, [
       { ...ticket(19), title: 'Delivery map', labels: ['wayfinder:map'], isMap: true },
-      { ...ticket(20), title: 'Map member', parent: 19 },
+      { ...ticket(20), title: 'Map member', parent: trackerRef(19) },
     ]);
     const workspace = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
     await manager.pollNow(workspace.id);
 
-    await tasks.markEpicIntegrated(workspace.id, 19, { mergeCommit: 'abc123', memberRefs: [20] });
+    await tasks.markEpicIntegrated(workspace.id, trackerRef(19), { mergeCommit: 'abc123', memberRefs: [trackerRef(20)] });
 
     ticketsByRepo.set(repoA, []);
     await manager.pollNow(workspace.id);
 
-    const detail = await manager.epicDetail(workspace.id, 19);
-    expect(detail?.ref).toBe(19);
+    const detail = await manager.epicDetail(workspace.id, trackerRef(19));
+    expect(detail?.ref).toBe('19');
     expect(detail?.kind).toBe('map');
-    expect(detail?.members.map((m) => m.ref)).toEqual([20]);
+    expect(detail?.members.map((m) => m.ref)).toEqual(['20']);
     expect(detail?.ready).toEqual([]);
     expect(detail?.title).toBe('Epic #19');
 
     expect(detail?.state).toBe('integrated');
     expect((await manager.listEpics(workspace.id)).map((e) => e.ref)).not.toContain(19);
-    expect((await manager.listEpicTickets(workspace.id)).map((t) => t.number)).toContain(19);
+    expect((await manager.listEpicTickets(workspace.id)).map((t) => t.number)).toContain('19');
 
     await manager.stopAll();
     await asyncDb.close();
@@ -266,31 +266,31 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
         throw new Error('restart query must not resolve or poll the tracker');
       },
     });
-    expect((await manager.epicDetail(workspace.id, 19))?.members.map((m) => m.ref)).toEqual([20]);
+    expect((await manager.epicDetail(workspace.id, trackerRef(19)))?.members.map((m) => m.ref)).toEqual(['20']);
   });
 
   it('narrows a stored plain-epic kind to the read-model spec when resolving from the record (#439)', async () => {
     ticketsByRepo.set(repoA, [
       { ...ticket(10), title: 'Plain epic', labels: [EPIC_LABEL] },
-      { ...ticket(11), title: 'Member', parent: 10 },
+      { ...ticket(11), title: 'Member', parent: trackerRef(10) },
     ]);
     const workspace = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
     await manager.pollNow(workspace.id);
-    await tasks.markEpicIntegrated(workspace.id, 10, { mergeCommit: null, memberRefs: [11] });
+    await tasks.markEpicIntegrated(workspace.id, trackerRef(10), { mergeCommit: null, memberRefs: [trackerRef(11)] });
 
     ticketsByRepo.set(repoA, []);
     await manager.pollNow(workspace.id);
 
-    const detail = await manager.epicDetail(workspace.id, 10);
+    const detail = await manager.epicDetail(workspace.id, trackerRef(10));
     expect(detail?.kind).toBe('spec');
-    expect(detail?.members.map((m) => m.ref)).toEqual([11]);
+    expect(detail?.members.map((m) => m.ref)).toEqual(['11']);
   });
 
   it('never resolves an open stored Epic from the record once it ages out (#439)', async () => {
     ticketsByRepo.set(repoA, [
       { ...ticket(10), title: 'Open epic', labels: [EPIC_LABEL] },
-      { ...ticket(11), parent: 10 },
+      { ...ticket(11), parent: trackerRef(10) },
     ]);
     const workspace = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
@@ -300,27 +300,27 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await manager.pollNow(workspace.id);
 
     expect((await manager.listEpics(workspace.id)).map((e) => e.ref)).toEqual([]);
-    expect(await manager.epicDetail(workspace.id, 10)).toBeNull();
-    expect(await manager.epicDetail(workspace.id, 999)).toBeNull();
+    expect(await manager.epicDetail(workspace.id, trackerRef(10))).toBeNull();
+    expect(await manager.epicDetail(workspace.id, trackerRef(999))).toBeNull();
   });
 
   it('resolves an integrated nested leaf-most Epic by ref; its bare spine parent never surfaces (#439, #443)', async () => {
     ticketsByRepo.set(repoA, [
       { ...ticket(100), title: 'Spine parent' },
-      { ...ticket(101), title: 'Leaf-most epic B', parent: 100, labels: [EPIC_LABEL] },
-      { ...ticket(102), title: 'Work C', parent: 101 },
+      { ...ticket(101), title: 'Leaf-most epic B', parent: trackerRef(100), labels: [EPIC_LABEL] },
+      { ...ticket(102), title: 'Work C', parent: trackerRef(101) },
     ]);
     const workspace = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
     await manager.pollNow(workspace.id);
 
-    await tasks.markEpicIntegrated(workspace.id, 101, { mergeCommit: 'def456', memberRefs: [102] });
+    await tasks.markEpicIntegrated(workspace.id, trackerRef(101), { mergeCommit: 'def456', memberRefs: [trackerRef(102)] });
 
     expect((await manager.listEpics(workspace.id)).map((e) => e.ref)).toEqual([]);
 
-    const detail = await manager.epicDetail(workspace.id, 101);
-    expect(detail?.ref).toBe(101);
-    expect(detail?.members.map((m) => m.ref)).toEqual([102]);
+    const detail = await manager.epicDetail(workspace.id, trackerRef(101));
+    expect(detail?.ref).toBe('101');
+    expect(detail?.members.map((m) => m.ref)).toEqual(['102']);
   });
 
   it('toggling one Workspace starts/stops just its loop; others are unaffected', async () => {
@@ -372,7 +372,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await manager.sync();
     ticketsByRepo.set(repoA, [ticket(7)]);
     await manager.pollNow(a.id);
-    expect((await tasks.list({ workspaceId: a.id })).map((t) => t.trackerRef)).toContain(7);
+    expect((await tasks.list({ workspaceId: a.id })).map((t) => t.trackerRef)).toContain('7');
 
     const off = (await workspaces.list()).find((w) => w.id !== a.id)!;
     const before = polled.length;
@@ -434,7 +434,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await manager.pollNow(a.id);
     expect(manager.resolvedTracker(a.id)).toMatchObject({ ok: true });
     expect(manager.coordinatorFor(a.id)).toBeDefined();
-    await waitFor(async () => (await tasks.list({ workspaceId: a.id })).some((t) => t.trackerRef === 9) || undefined);
+    await waitFor(async () => (await tasks.list({ workspaceId: a.id })).some((t) => t.trackerRef === trackerRef(9)) || undefined);
 
     unresolvable.add(repoA);
     await manager.pollNow(a.id);
@@ -454,7 +454,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
         return {
           name: 'stub',
           scan: async () => [],
-          readTicket: async (r) => ticket(r.number),
+          readTicket: async (r) => ticket(Number(r.number)),
           claim: async () => {},
           release: async () => {},
           close: async () => {},
@@ -504,7 +504,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
         return {
           name: 'stub',
           scan: async () => ticketsByRepo.get(repoRoot) ?? [],
-          readTicket: async (r) => ticket(r.number),
+          readTicket: async (r) => ticket(Number(r.number)),
           claim: async () => {},
           release: async () => {},
           close: async () => {},
@@ -573,7 +573,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
       return {
         name: 'stub',
         scan: async () => ticketsByRepo.get(repoRoot) ?? [],
-        readTicket: async (r) => ticket(r.number),
+        readTicket: async (r) => ticket(Number(r.number)),
         claim: async () => {},
         release: async () => {},
         close: async () => {},
@@ -617,7 +617,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
       resolveAdapter: async () => ({
         name: 'stub',
         scan: async () => { markScanStarted(); await scanGate; return [ticket(7)]; },
-        readTicket: async (r) => ticket(r.number),
+        readTicket: async (r) => ticket(Number(r.number)),
         claim: async () => {},
         release: async () => {},
         close: async () => {},
@@ -635,7 +635,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     releaseScan();
     await stopping;
 
-    expect((await tasks.list({ workspaceId: workspace.id })).map((task) => task.trackerRef)).toEqual([7]);
+    expect((await tasks.list({ workspaceId: workspace.id })).map((task) => task.trackerRef)).toEqual(['7']);
     await asyncDb.close();
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(errors).toEqual([]);
@@ -659,7 +659,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
       resolveAdapter: async (repoRoot: string) => {
         await gate; // hold both syncs inside the not-yet-registered window at once
         polled.push(repoRoot);
-        return { name: 'stub', scan: async () => [], readTicket: async (r) => ticket(r.number), claim: async () => {}, release: async () => {}, close: async () => {}, reopen: async () => {} };
+        return { name: 'stub', scan: async () => [], readTicket: async (r) => ticket(Number(r.number)), claim: async () => {}, release: async () => {}, close: async () => {}, reopen: async () => {} };
       },
       scheduler: new Scheduler(asyncDb),
     });

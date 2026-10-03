@@ -1,4 +1,5 @@
 import { describe, it, expect, afterAll, afterEach, beforeAll } from 'vitest';
+import { trackerRef } from '../src/tracker/adapter.js';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -89,8 +90,8 @@ describe('GET /api/activity snapshot (issue #51)', () => {
 
   it('lists a running Epic verification attempt', async () => {
     const [workspace] = await server.app.ctx.workspaces.list();
-    await server.app.ctx.tasks.syncEpics(workspace!.id, [{ ref: 540, kind: 'epic' }]);
-    const attempt = await server.app.ctx.attempts.createForEpic({ workspaceId: workspace!.id, epicRef: 540 });
+    await server.app.ctx.tasks.syncEpics(workspace!.id, [{ ref: trackerRef(540), kind: 'epic' }]);
+    const attempt = await server.app.ctx.attempts.createForEpic({ workspaceId: workspace!.id, epicRef: trackerRef(540) });
 
     const { body } = await server.api('GET', '/api/activity');
 
@@ -99,15 +100,15 @@ describe('GET /api/activity snapshot (issue #51)', () => {
       attemptId: attempt.id,
       taskId: null,
       title: 'Epic #540 verification',
-      trackerRef: 540,
+      trackerRef: '540',
       state: 'running',
     }));
   });
 
   it('returns Epic command output and critic transcript availability', async () => {
     const [workspace] = await server.app.ctx.workspaces.list();
-    await server.app.ctx.tasks.syncEpics(workspace!.id, [{ ref: 541, kind: 'epic' }]);
-    const attempt = await server.app.ctx.attempts.createForEpic({ workspaceId: workspace!.id, epicRef: 541 });
+    await server.app.ctx.tasks.syncEpics(workspace!.id, [{ ref: trackerRef(541), kind: 'epic' }]);
+    const attempt = await server.app.ctx.attempts.createForEpic({ workspaceId: workspace!.id, epicRef: trackerRef(541) });
     await server.app.ctx.verificationAttempts.append(attempt.id, {
       mechanism: 'command', inputOid: 'a'.repeat(40), verdict: 'fail', summary: 'command exited 1', output: 'script stdout',
     });

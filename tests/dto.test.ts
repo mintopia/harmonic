@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { trackerRef } from '../src/tracker/adapter.js';
 import {
   summarize,
   firstLineTitle,
@@ -143,7 +144,7 @@ const conversationRow = (over: Partial<ConversationRow> = {}): ConversationRow =
 });
 
 const ticket = (over: Partial<Ticket> = {}): Ticket => ({
-  number: 100,
+  number: trackerRef(100),
   title: 'A ticket',
   state: 'open',
   labels: [],
@@ -405,7 +406,7 @@ describe('taskToApiDto', () => {
   it('strips the durable tracker-fact columns', () => {
     const task = taskWithDeps({
       trackerState: 'open',
-      trackerParent: 5,
+      trackerParent: trackerRef(5),
       trackerBlockedBy: [],
       trackerLabels: ['x'],
       trackerTitle: 'raw title',
@@ -468,10 +469,11 @@ describe('taskToApiDto', () => {
 
 describe('epicToListRow', () => {
   it('projects a Ticket onto a list row with isEpic/humanOnly set and identity fields threaded', () => {
-    const row = epicToListRow(ticket({ number: 42, title: 'The Epic', url: 'https://tracker.example/42' }), 9);
+    const row = epicToListRow(ticket({ number: trackerRef(42), title: 'The Epic', url: 'https://tracker.example/42' }), 9);
     expect(row.isEpic).toBe(true);
     expect(row.humanOnly).toBe(true);
-    expect(row.id).toBe(42);
+    expect(row.id).toBe(0);
+    expect(row.trackerRef).toBe('42');
     expect(row.summary).toBe('The Epic');
     expect(row.url).toBe('https://tracker.example/42');
     expect(row.workspaceId).toBe(9);

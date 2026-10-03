@@ -224,7 +224,6 @@ export const gitlabKind: TrackerKind<{ project?: string | undefined }> = {
   settings: z.object({ project: z.string().min(1).optional() }).strict(),
   secretNames: [],
   capabilities: { close: true, reopen: true, claim: true, transition: false, epicSources: ['epic-label'] },
-  formatRef: (ref) => `#${ref}`,
   fromDeclaration: async (doc, repoRoot) => ({
     project: doc.match(/^\s*Project:\s*(.+?)\s*$/im)?.[1] ?? (await gitlabRemote(repoRoot)) ?? undefined,
   }),

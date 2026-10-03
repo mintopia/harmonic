@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AppConfig, DeepPartial } from '../src/config.js';
 import { startServer, type TestServer, waitFor } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 async function driveToDone(server: TestServer, workDir: string): Promise<number> {
   const task = await server.api('POST', '/api/tasks', { prompt: 'export on done', workingDir: workDir, isolationMode: 'direct' });
@@ -62,11 +63,11 @@ describe('Export on done (#734)', () => {
     const { ctx } = okServer.app;
     const workspaceId = (await ctx.asyncDb.read((d) => d.select().from(workspaces).get()))!.id;
     const memberId = await driveToDone(okServer, root);
-    await ctx.asyncDb.write((d) => d.update(tasks).set({ trackerRef: 31 }).where(eq(tasks.id, memberId)).run());
+    await ctx.asyncDb.write((d) => d.update(tasks).set({ trackerRef: trackerRef(31) }).where(eq(tasks.id, memberId)).run());
     await waitFor(async () => ((await exportFacts(okServer, memberId)).length > 0 ? true : undefined));
-    await ctx.asyncDb.write((d) => d.insert(epics).values({ workspaceId, trackerRef: 30, kind: 'epic', state: 'open' } as typeof epics.$inferInsert).run());
-    await ctx.tasks.markEpicIntegrated(workspaceId, 30, { mergeCommit: 'abc', memberRefs: [31] });
-    ctx.bus.emit('epic_integrated', { workspaceId, epicRef: 30 });
+    await ctx.asyncDb.write((d) => d.insert(epics).values({ workspaceId, trackerRef: trackerRef(30), kind: 'epic', state: 'open' } as typeof epics.$inferInsert).run());
+    await ctx.tasks.markEpicIntegrated(workspaceId, trackerRef(30), { mergeCommit: 'abc', memberRefs: [trackerRef(31)] });
+    ctx.bus.emit('epic_integrated', { workspaceId, epicRef: trackerRef(30) });
 
     const slugDir = join(good, readdirSync(good)[0]!);
     const tarball = await waitFor(async () => readdirSync(slugDir).find((n) => n.startsWith('epic-30-done-')));
@@ -74,9 +75,9 @@ describe('Export on done (#734)', () => {
     try {
       execFileSync('tar', ['-xzf', join(slugDir, tarball), '-C', out]);
       const manifest = JSON.parse(readFileSync(join(out, 'manifest.json'), 'utf8'));
-      expect(manifest).toMatchObject({ format: 'harmonic-epic-export', epicRef: 30 });
+      expect(manifest).toMatchObject({ format: 'harmonic-epic-export', epicRef: '30' });
       expect(manifest.members).toHaveLength(1);
-      expect(manifest.members[0]).toMatchObject({ ref: 31, taskId: memberId, status: 'done' });
+      expect(manifest.members[0]).toMatchObject({ ref: '31', taskId: memberId, status: 'done' });
       expect(manifest.members[0].export).toMatch(new RegExp(`^${memberId}-done-`));
       const stamped = JSON.parse(readFileSync(join(okServer.dataDir, 'archive', readdirSync(join(okServer.dataDir, 'archive')).find((n) => !n.startsWith('.'))!, 'epic-30', 'archive.json'), 'utf8'));
       expect(stamped.dispositions).toEqual([{ disposition: 'done', at: expect.stringMatching(/^\d{4}-/) }]);
