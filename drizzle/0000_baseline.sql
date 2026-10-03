@@ -117,6 +117,17 @@ CREATE TABLE `epics` (
 	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE TABLE `secrets` (
+	`workspace_id` integer NOT NULL,
+	`name` text NOT NULL,
+	`ciphertext` text NOT NULL,
+	`nonce` text NOT NULL,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL,
+	PRIMARY KEY(`workspace_id`, `name`),
+	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
 CREATE TABLE `epic_merge_events` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`workspace_id` integer NOT NULL,

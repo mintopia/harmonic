@@ -135,6 +135,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     scheduler,
     auth: stores.auth,
     channels: stores.channels,
+    secrets: stores.secrets,
     notifier: stores.notifier,
     notifications: stores.notifications,
     bus,

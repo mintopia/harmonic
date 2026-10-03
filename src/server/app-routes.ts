@@ -21,6 +21,7 @@ import { notificationRoutes } from './routes/notifications.js';
 import { channelRoutes } from './routes/channels.js';
 import { scheduledJobRoutes } from './routes/scheduled-jobs.js';
 import { worktreeRoutes } from './routes/worktrees.js';
+import { secretRoutes } from './routes/secrets.js';
 import { harnessRoutes } from './routes/harnesses.js';
 import { exportRoutes } from './routes/export.js';
 import { fsRoutes } from './routes/fs.js';
@@ -57,6 +58,7 @@ export async function registerRoutes(app: App, ctx: AppContext, contexts: AppCon
   await app.register((fastify) => operationRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => scheduledJobRoutes(fastify, contexts.tracking), { prefix: '/api' });
   await app.register((fastify) => worktreeRoutes(fastify, contexts.execution), { prefix: '/api' });
+  await app.register((fastify) => secretRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register(harnessRoutes, { prefix: '/api' });
   await app.register((fastify) => channelRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => notificationRoutes(fastify, contexts.persistence), { prefix: '/api' });

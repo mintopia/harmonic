@@ -13,6 +13,7 @@ import {
   trackerDismissals,
   sessions,
   scheduledJobs,
+  secrets,
   type WorkspaceRow,
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
@@ -364,6 +365,7 @@ export class WorkspaceService {
         await tx.delete(conversationEvents).where(inArray(conversationEvents.conversationId, convIds)).run();
         await tx.delete(conversations).where(inArray(conversations.id, convIds)).run();
       }
+      await tx.delete(secrets).where(eq(secrets.workspaceId, id)).run();
       await tx.delete(sessions).where(eq(sessions.workspaceId, id)).run();
       await tx.delete(scheduledJobs).where(eq(scheduledJobs.workspaceId, id)).run();
       await tx.delete(trackerDismissals).where(eq(trackerDismissals.workspaceId, id)).run();
