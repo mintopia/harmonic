@@ -2,7 +2,7 @@ import type { TrackerRef } from '../tracker/adapter.js';
 import { and, asc, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
 import type { AsyncDb, AsyncDbHandle } from '../db/async.js';
 import { taskDisplayTitle } from './task-title.js';
-import { agentMessages, attempts, tasks, type TaskState, type AgentMessageRecipient, type AgentMessageRow, type WorkspaceRow } from '../db/schema.js';
+import { agentMessageRecipients, agentMessages, attempts, tasks, type TaskState, type AgentMessageRecipient, type AgentMessageRow, type WorkspaceRow } from '../db/schema.js';
 import type { AppConfig } from '../config.js';
 import { resolveScoped } from './setting-override.js';
 
@@ -85,6 +85,13 @@ export interface ThreadQuery {
   offset?: number | undefined;
 }
 
+/** Rewrites a message's `agent_message_recipients` rows from its recipients JSON; call inside the write that changed the JSON. */
+async function indexRecipients(db: AsyncDb, messageId: string, recipients: readonly AgentMessageRecipient[]): Promise<void> {
+  await db.delete(agentMessageRecipients).where(eq(agentMessageRecipients.messageId, messageId)).run();
+  const rows = [...new Map(recipients.map((r) => [r.taskId, { messageId, taskId: r.taskId, receipt: r.receipt }])).values()];
+  if (rows.length > 0) await db.insert(agentMessageRecipients).values(rows).run();
+}
+
 export class AgentMessageStore {
   constructor(
     private readonly db: AsyncDbHandle,
@@ -128,7 +135,11 @@ export class AgentMessageStore {
         createdAt: Date.now(),
       })
       .returning()
-      .get();
+      .get()
+      .then(async (row) => {
+        await indexRecipients(db, row.id, row.recipients);
+        return row;
+      });
   }
 
   get(id: string): Promise<AgentMessageRow | undefined> {
@@ -146,7 +157,7 @@ export class AgentMessageStore {
             eq(agentMessages.workspaceId, workspaceId),
             or(
               eq(agentMessages.senderTaskId, taskId),
-              sql`exists (select 1 from json_each(${agentMessages.recipients}) where json_extract(value, '$.taskId') = ${taskId})`,
+              sql`${agentMessages.id} in (select message_id from agent_message_recipients where task_id = ${taskId})`,
             ),
           ),
         )
@@ -173,7 +184,7 @@ export class AgentMessageStore {
             eq(agentMessages.workspaceId, workspaceId),
             or(
               inArray(agentMessages.senderTaskId, [...taskIds]),
-              sql`exists (select 1 from json_each(${agentMessages.recipients}) r where json_extract(r.value, '$.taskId') in (select value from json_each(${ids})))`,
+              sql`${agentMessages.id} in (select message_id from agent_message_recipients where task_id in (select value from json_each(${ids})))`,
             ),
           ),
         )
@@ -186,10 +197,10 @@ export class AgentMessageStore {
   async listThreads(query: ThreadQuery): Promise<{ threads: AgentMessageThread[]; total: number; totalMessages: number }> {
     if (query.workspaceIds.length === 0) return { threads: [], total: 0, totalMessages: 0 };
     const participates = (cond: SQL) =>
-      sql`exists (select 1 from tasks pt where ${cond} and (pt.id = ${agentMessages.senderTaskId} or exists (select 1 from json_each(${agentMessages.recipients}) where json_extract(value, '$.taskId') = pt.id)))`;
+      sql`exists (select 1 from tasks pt where ${cond} and (pt.id = ${agentMessages.senderTaskId} or ${agentMessages.id} in (select message_id from agent_message_recipients where task_id = pt.id)))`;
     const filters: SQL[] = [];
     if (query.taskId !== undefined) {
-      filters.push(sql`(${agentMessages.senderTaskId} = ${query.taskId} or exists (select 1 from json_each(${agentMessages.recipients}) where json_extract(value, '$.taskId') = ${query.taskId}))`);
+      filters.push(sql`(${agentMessages.senderTaskId} = ${query.taskId} or ${agentMessages.id} in (select message_id from agent_message_recipients where task_id = ${query.taskId}))`);
     }
     if (query.epicId !== undefined) filters.push(participates(sql`pt.tracker_parent = ${query.epicId}`));
     if (query.live) filters.push(participates(sql`exists (select 1 from attempts pa where pa.task_id = pt.id and pa.state = 'running')`));
@@ -323,6 +334,7 @@ export class AgentMessageStore {
       if (!row) return null;
       const recipients = row.recipients.map((r) => (r.taskId === taskId ? { ...r, ...patch } : r));
       await db.update(agentMessages).set({ recipients }).where(eq(agentMessages.id, messageId)).run();
+      await indexRecipients(db, messageId, recipients);
       return row.workspaceId;
     });
     if (workspaceId !== null) this.onChanged(workspaceId);
@@ -335,7 +347,7 @@ export class AgentMessageStore {
         .select()
         .from(agentMessages)
         .where(
-          sql`exists (select 1 from json_each(${agentMessages.recipients}) where json_extract(value, '$.taskId') = ${taskId} and json_extract(value, '$.receipt') = 'held')`,
+          sql`${agentMessages.id} in (select message_id from agent_message_recipients where task_id = ${taskId} and receipt = 'held')`,
         )
         .orderBy(asc(agentMessages.createdAt), asc(sql`rowid`))
         .all(),
@@ -353,6 +365,7 @@ export class AgentMessageStore {
           r.taskId === taskId && r.receipt === 'held' ? { ...r, receipt: 'delivered' as const, mode: 'next-turn' as const, deliveredAt } : r,
         );
         await db.update(agentMessages).set({ recipients }).where(eq(agentMessages.id, id)).run();
+        await indexRecipients(db, id, recipients);
       }
     });
     for (const workspaceId of new Set(rows.map((r) => r.workspaceId))) this.onChanged(workspaceId);

@@ -113,6 +113,16 @@ export class AsyncDbHandle {
   }
 }
 
+/** Seeds `agent_message_recipients` from existing messages the first time the table is empty; the store keeps it current afterwards. */
+async function backfillAgentMessageRecipients(client: Client): Promise<void> {
+  const seeded = await client.execute('select exists (select 1 from agent_message_recipients) as n');
+  if (Number(seeded.rows[0]?.n) === 1) return;
+  await client.execute(
+    `insert or ignore into agent_message_recipients (message_id, task_id, receipt)
+     select m.id, json_extract(r.value, '$.taskId'), json_extract(r.value, '$.receipt') from agent_messages m, json_each(m.recipients) r`,
+  );
+}
+
 /** Boot the async libsql DB: WAL, foreign keys off while the schema converges onto the baseline, `foreign_key_check`, then foreign keys on. */
 export async function openAsyncDb(
   dataDir: string,
@@ -141,6 +151,7 @@ export async function openAsyncDb(
   const db = drizzle(client, { schema });
   const baseline = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'drizzle', '0000_baseline.sql');
   await syncSchema(client, readFileSync(baseline, 'utf8'), () => touchStartupProgress(dataDir));
+  await backfillAgentMessageRecipients(client);
   touchStartupProgress(dataDir);
   const violations = await client.execute('PRAGMA foreign_key_check');
   if (violations.rows.length > 0) {

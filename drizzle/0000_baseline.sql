@@ -1,3 +1,12 @@
+CREATE TABLE `agent_message_recipients` (
+	`message_id` text NOT NULL,
+	`task_id` integer NOT NULL,
+	`receipt` text NOT NULL,
+	PRIMARY KEY(`task_id`, `message_id`),
+	FOREIGN KEY (`message_id`) REFERENCES `agent_messages`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX `agent_message_recipients_task_receipt_idx` ON `agent_message_recipients` (`task_id`,`receipt`);--> statement-breakpoint
 CREATE TABLE `agent_messages` (
 	`id` text PRIMARY KEY NOT NULL,
 	`workspace_id` integer NOT NULL,
