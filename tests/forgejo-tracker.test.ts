@@ -56,9 +56,9 @@ describe('Forgejo tracker', () => {
     const { fake, adapter } = build({ issues, dependencies: { 3: [2] } });
     fake.requests.length = 0;
     const ticket = await adapter.readTicket(ref(3));
-    expect(ticket.blockedBy.map((r) => r.number)).toEqual(['2', '1']);
+    expect(ticket.blockedBy.map((r) => r.ref)).toEqual(['2', '1']);
     expect(ticket.parent).toBe('9');
-    expect((await adapter.readTicket(ref(2))).blocking.map((r) => r.number)).toEqual(['3']);
+    expect((await adapter.readTicket(ref(2))).blocking.map((r) => r.ref)).toEqual(['3']);
     expect(fake.requests.filter((r) => r.path.startsWith('/repos/owner/name/issues') && r.path !== '/repos/owner/name/issues').length).toBeLessThan(15);
     expect(fake.requests.some((r) => r.path === '/repos/owner/name/issues')).toBe(false);
     await expect(adapter.readTicket(ref(999))).rejects.toThrow('no issue 999');
