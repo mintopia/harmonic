@@ -1,6 +1,7 @@
-import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
-import { agentMessages, tasks, type AgentMessageRecipient, type AgentMessageRow } from '../db/schema.js';
+import { taskDisplayTitle } from './task-title.js';
+import { agentMessages, attempts, tasks, type AgentMessageRecipient, type AgentMessageRow } from '../db/schema.js';
 
 export interface NewAgentMessage {
   workspaceId: number;
@@ -26,12 +27,41 @@ export interface PresentedAgentMessage {
   recipients: Array<AgentMessageRecipient & { deleted: boolean }>;
 }
 
-export class AgentMessageStore {
-  constructor(private readonly db: AsyncDbHandle) {}
+export interface AgentMessageThreadParticipant {
+  taskId: number;
+  title: string | null;
+  harness: string | null;
+  epicId: number | null;
+  deleted: boolean;
+}
 
-  create(input: NewAgentMessage): Promise<AgentMessageRow> {
+export interface AgentMessageThread {
+  threadId: string;
+  workspaceId: number;
+  latestAt: number;
+  live: boolean;
+  messages: PresentedAgentMessage[];
+  participants: AgentMessageThreadParticipant[];
+}
+
+export interface ThreadQuery {
+  workspaceIds: readonly number[];
+  epicId?: number | undefined;
+  taskId?: number | undefined;
+  live?: boolean | undefined;
+  limit?: number | undefined;
+  offset?: number | undefined;
+}
+
+export class AgentMessageStore {
+  constructor(
+    private readonly db: AsyncDbHandle,
+    private readonly onChanged: (workspaceId: number) => void = () => {},
+  ) {}
+
+  async create(input: NewAgentMessage): Promise<AgentMessageRow> {
     const id = crypto.randomUUID();
-    return this.db.write((db) =>
+    const row = await this.db.write((db) =>
       db
         .insert(agentMessages)
         .values({
@@ -49,6 +79,8 @@ export class AgentMessageStore {
         .returning()
         .get(),
     );
+    this.onChanged(row.workspaceId);
+    return row;
   }
 
   get(id: string): Promise<AgentMessageRow | undefined> {
@@ -98,6 +130,93 @@ export class AgentMessageStore {
     return this.present(rows);
   }
 
+  async listThreads(query: ThreadQuery): Promise<{ threads: AgentMessageThread[]; total: number; totalMessages: number }> {
+    if (query.workspaceIds.length === 0) return { threads: [], total: 0, totalMessages: 0 };
+    const participates = (cond: SQL) =>
+      sql`exists (select 1 from tasks pt where ${cond} and (pt.id = ${agentMessages.senderTaskId} or exists (select 1 from json_each(${agentMessages.recipients}) where json_extract(value, '$.taskId') = pt.id)))`;
+    const filters: SQL[] = [];
+    if (query.taskId !== undefined) {
+      filters.push(sql`(${agentMessages.senderTaskId} = ${query.taskId} or exists (select 1 from json_each(${agentMessages.recipients}) where json_extract(value, '$.taskId') = ${query.taskId}))`);
+    }
+    if (query.epicId !== undefined) filters.push(participates(sql`pt.tracker_parent = ${query.epicId}`));
+    if (query.live) filters.push(participates(sql`exists (select 1 from attempts pa where pa.task_id = pt.id and pa.state = 'running')`));
+    const inScope = inArray(agentMessages.workspaceId, [...query.workspaceIds]);
+    const { total, totalMessages, page } = await this.db.read(async (db) => {
+      const where =
+        filters.length === 0
+          ? inScope
+          : and(inScope, inArray(agentMessages.threadId, db.select({ threadId: agentMessages.threadId }).from(agentMessages).where(and(inScope, ...filters))));
+      const count = await db
+        .select({ n: sql<number>`count(distinct ${agentMessages.threadId})` })
+        .from(agentMessages)
+        .where(where)
+        .get();
+      const messageCount = await db.select({ n: sql<number>`count(*)` }).from(agentMessages).where(where).get();
+      const latest = sql<number>`max(${agentMessages.createdAt})`;
+      const pageQuery = db
+        .select({ threadId: agentMessages.threadId })
+        .from(agentMessages)
+        .where(where)
+        .groupBy(agentMessages.threadId)
+        .orderBy(desc(latest), desc(sql`max(rowid)`));
+      const rows = await pageQuery.limit(query.limit ?? -1).offset(query.offset ?? 0).all();
+      return { total: count?.n ?? 0, totalMessages: messageCount?.n ?? 0, page: rows.map((r) => r.threadId) };
+    });
+    if (page.length === 0) return { threads: [], total, totalMessages };
+
+    const rows = await this.db.read((db) =>
+      db
+        .select()
+        .from(agentMessages)
+        .where(and(inArray(agentMessages.threadId, page), inArray(agentMessages.workspaceId, [...query.workspaceIds])))
+        .orderBy(asc(agentMessages.createdAt), asc(sql`rowid`))
+        .all(),
+    );
+    const messages = await this.present(rows);
+    const taskIds = [...new Set(rows.flatMap((r) => [r.senderTaskId, ...r.recipients.map((x) => x.taskId)]))];
+    const [taskRows, runningRows] = await this.db.read(async (db) => [
+      await db.select({ id: tasks.id, harness: tasks.harness, trackerParent: tasks.trackerParent, trackerTitle: tasks.trackerTitle, prompt: tasks.prompt }).from(tasks).where(inArray(tasks.id, taskIds)).all(),
+      await db.select({ taskId: attempts.taskId }).from(attempts).where(and(inArray(attempts.taskId, taskIds), eq(attempts.state, 'running'))).all(),
+    ] as const);
+    const taskById = new Map(taskRows.map((t) => [t.id, t]));
+    const running = new Set(runningRows.map((r) => r.taskId));
+
+    const byThread = new Map<string, PresentedAgentMessage[]>();
+    for (const m of messages) {
+      const list = byThread.get(m.threadId);
+      if (list) list.push(m);
+      else byThread.set(m.threadId, [m]);
+    }
+    const threads = page.map((threadId): AgentMessageThread => {
+      const thread = byThread.get(threadId) ?? [];
+      const seen = new Set<number>();
+      const participants: AgentMessageThreadParticipant[] = [];
+      for (const m of thread) {
+        for (const id of [m.senderTaskId, ...m.recipients.map((r) => r.taskId)]) {
+          if (seen.has(id)) continue;
+          seen.add(id);
+          const t = taskById.get(id);
+          participants.push({
+            taskId: id,
+            title: t ? taskDisplayTitle(t) : null,
+            harness: t?.harness ?? null,
+            epicId: t?.trackerParent ?? null,
+            deleted: t === undefined,
+          });
+        }
+      }
+      return {
+        threadId,
+        workspaceId: thread[0]?.workspaceId ?? 0,
+        latestAt: thread.at(-1)?.createdAt ?? 0,
+        live: participants.some((p) => running.has(p.taskId)),
+        messages: thread,
+        participants,
+      };
+    });
+    return { threads, total, totalMessages };
+  }
+
   private async present(rows: AgentMessageRow[]): Promise<PresentedAgentMessage[]> {
     const ids = [...new Set(rows.flatMap((r) => [r.senderTaskId, ...r.recipients.map((x) => x.taskId)]))];
     const live = new Set(
@@ -121,18 +240,20 @@ export class AgentMessageStore {
   }
 
   /** Patches one recipient's receipt inside a single serialised write. */
-  updateRecipient(messageId: string, taskId: number, patch: Partial<AgentMessageRecipient>): Promise<void> {
-    return this.db.write(async (db) => {
+  async updateRecipient(messageId: string, taskId: number, patch: Partial<AgentMessageRecipient>): Promise<void> {
+    const workspaceId = await this.db.write(async (db) => {
       const row = await db.select().from(agentMessages).where(eq(agentMessages.id, messageId)).get();
-      if (!row) return;
+      if (!row) return null;
       const recipients = row.recipients.map((r) => (r.taskId === taskId ? { ...r, ...patch } : r));
       await db.update(agentMessages).set({ recipients }).where(eq(agentMessages.id, messageId)).run();
+      return row.workspaceId;
     });
+    if (workspaceId !== null) this.onChanged(workspaceId);
   }
 
   /** Reads a Task's held messages in send order and marks them delivered. */
-  takeHeld(taskId: number): Promise<AgentMessageRow[]> {
-    return this.db.write(async (db) => {
+  async takeHeld(taskId: number): Promise<AgentMessageRow[]> {
+    const rows = await this.db.write(async (db) => {
       const rows = await db
         .select()
         .from(agentMessages)
@@ -150,11 +271,13 @@ export class AgentMessageStore {
       }
       return rows;
     });
+    for (const workspaceId of new Set(rows.map((r) => r.workspaceId))) this.onChanged(workspaceId);
+    return rows;
   }
 
   /** Puts messages taken for a prompt that never went out back to held. */
-  restoreHeld(rows: readonly AgentMessageRow[], taskId: number): Promise<void> {
-    return this.db.write(async (db) => {
+  async restoreHeld(rows: readonly AgentMessageRow[], taskId: number): Promise<void> {
+    await this.db.write(async (db) => {
       for (const { id } of rows) {
         const current = await db.select().from(agentMessages).where(eq(agentMessages.id, id)).get();
         if (!current) continue;
@@ -162,5 +285,6 @@ export class AgentMessageStore {
         await db.update(agentMessages).set({ recipients }).where(eq(agentMessages.id, id)).run();
       }
     });
+    for (const workspaceId of new Set(rows.map((r) => r.workspaceId))) this.onChanged(workspaceId);
   }
 }

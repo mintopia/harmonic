@@ -74,7 +74,7 @@ export async function createStores({ opts, asyncDb, bus, fireAndForget }: Create
   );
   const attempts = new AttemptStore(asyncDb);
   const taskEvents = new TaskEventStore(asyncDb);
-  const agentMessages = new AgentMessageStore(asyncDb);
+  const agentMessages = new AgentMessageStore(asyncDb, (workspaceId) => bus.emit('agent_messages_changed', { workspaceId }));
   const epicMergeEvents = new EpicMergeEventStore(asyncDb);
   const guardrailEvents = new GuardrailEventStore(asyncDb);
   const verificationAttempts = new VerificationAttemptStore(asyncDb);

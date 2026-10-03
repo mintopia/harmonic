@@ -1,6 +1,7 @@
 import type {
   Attempt,
   ActivityProcess,
+  AgentMessageThread,
   AppConfig,
   ExportDestinationTestResult,
   ConfigLayers,
@@ -145,6 +146,12 @@ export const api = {
     return request<Stats>('GET', `/api/stats?${query}`);
   },
   activity: (workspaceId?: number) => request<{ processes: ActivityProcess[]; agentMessagesEnabledInAnyWorkspace: boolean }>('GET', workspaceId === undefined ? '/api/activity' : `/api/activity?workspaceId=${workspaceId}`),
+  agentMessageThreads: (params: { workspaceId?: number; epicId?: number; taskId?: number; live?: boolean; limit?: number; offset?: number } = {}) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) if (value !== undefined) query.set(key, String(value));
+    const qs = query.toString();
+    return request<{ threads: AgentMessageThread[]; total: number; totalMessages: number }>('GET', qs ? `/api/agent-messages/threads?${qs}` : '/api/agent-messages/threads');
+  },
   timeline: (workspaceId: number | undefined, from: number, to: number) => {
     const query = new URLSearchParams({ from: String(from), to: String(to) });
     if (workspaceId !== undefined) query.set('workspaceId', String(workspaceId));

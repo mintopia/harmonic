@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 export interface TabDef {
   id: string;
   label: string;
+  count?: number;
 }
 
 export function Tabs({
@@ -49,11 +50,14 @@ export function Tabs({
               onChange(target.id);
               strip.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
             }}
-            className={`min-h-11 shrink-0 whitespace-nowrap border-b-2 focus-visible:outline-offset-[-2px] px-1 font-medium transition-colors duration-150 ${
+            className={`inline-flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap border-b-2 focus-visible:outline-offset-[-2px] px-1 font-medium transition-colors duration-150 ${
               selected ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'
             }`}
           >
             {tab.label}
+            {tab.count !== undefined && (
+              <span className="rounded-full bg-raised px-[7px] text-[11px] font-bold text-muted">{tab.count}</span>
+            )}
           </button>
         );
       })}

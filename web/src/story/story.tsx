@@ -13,6 +13,7 @@ import { Composer } from '../components/conversation/Composer';
 import { ConversationsPage } from '../components/ConversationLauncher';
 import { config as storyConfig, workspaces as storyWorkspaces } from './fixtures';
 import { Board } from '../components/Board';
+import { ActivityView } from '../components/ActivityView';
 import { FilesPage } from '../components/FilesPage';
 import { CodeViewer } from '../components/CodeViewer';
 import { GlobalDashboard } from '../components/GlobalDashboard';
@@ -235,6 +236,14 @@ function ConversationsStory() {
   );
 }
 
+function ActivityStory() {
+  return (
+    <StoryFrame style={{ padding: '28px 32px 48px' }}>
+      <ActivityView config={storyConfig} />
+    </StoryFrame>
+  );
+}
+
 function FilesStory() {
   const filesWorkspace = { ...storyWorkspaces[0]!, id: 1, name: 'harmonic-core', color: '#3AA0FA', excludedDirectories: ['node_modules'] };
   return (
@@ -385,6 +394,7 @@ const STORIES: Record<string, () => JSX.Element> = {
   'fleet-timeline': FleetTimelineStory,
   stats: StatsStory,
   conversations: ConversationsStory,
+  activity: ActivityStory,
   files: FilesStory,
   code: CodeStory,
   dashboard: DashboardStory,
