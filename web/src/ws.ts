@@ -74,6 +74,7 @@ export type ServerMessage =
   // so the merge progress follows live (Epics carry no Attempt stream).
   | { type: 'epic_changed'; workspaceId: number; epicRef: number }
   | { type: 'epic_integrated'; workspaceId: number; epicRef: number }
+  | { type: 'agent_messages_changed'; workspaceId: number }
   // Live AttemptSummary usage: the Activity view merges these deltas into its
   // rows so tokens/context/cost tick live. Sent to read keys too.
   | ({ type: 'attempt_usage' } & AttemptUsageEvent)

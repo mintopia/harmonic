@@ -193,6 +193,48 @@ export type TicketTimelineEvent = {
   [K in TicketTimelineKind]: { attemptId: number | null; ts: number; kind: K; data: unknown };
 }[TicketTimelineKind];
 
+export type AgentMessageReceipt = 'queued' | 'delivered' | 'held' | 'refused';
+
+export interface AgentMessageRecipient {
+  taskId: number;
+  receipt: AgentMessageReceipt;
+  mode?: 'mid-turn' | 'next-turn';
+  deliveredAt?: number;
+  reason?: string;
+  deleted: boolean;
+}
+
+export interface AgentMessage {
+  messageId: string;
+  role: string;
+  parts: { kind: 'text'; text: string }[];
+  replyTo: string | null;
+  threadId: string;
+  senderTaskId: number;
+  senderDeleted: boolean;
+  senderAttemptId: number;
+  workspaceId: number;
+  createdAt: number;
+  recipients: AgentMessageRecipient[];
+}
+
+export interface AgentMessageThreadParticipant {
+  taskId: number;
+  title: string | null;
+  harness: string | null;
+  epicId: number | null;
+  deleted: boolean;
+}
+
+export interface AgentMessageThread {
+  threadId: string;
+  workspaceId: number;
+  latestAt: number;
+  live: boolean;
+  messages: AgentMessage[];
+  participants: AgentMessageThreadParticipant[];
+}
+
 /** Tracker mirroring: a Task is authored here or a 1:1 projection of a tracker issue. */
 export type TaskOrigin = 'native' | 'mirrored';
 export type Workflow = 'wayfinder' | 'implement';
