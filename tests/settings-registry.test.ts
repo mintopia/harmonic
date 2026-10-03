@@ -151,8 +151,8 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
     ]);
   });
 
-  it('settingsForTab returns [] for tabs with no registry-declared fields', () => {
-    expect(settingsForTab('integrations')).toEqual([]);
+  it('settingsForTab returns only registry-declared fields per tab', () => {
+    expect(settingsForTab('integrations')).toEqual(['configuredTracker', 'codeRepository', 'triageLabels']);
     expect(settingsForTab('security')).toEqual([]);
   });
 
@@ -165,7 +165,7 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
   });
 
   it('workspaceTabs drops the tabs with no overridable field', () => {
-    expect(workspaceTabs().map((t) => t.id)).toEqual(['general', 'execution', 'verification', 'prompts', 'archive']);
+    expect(workspaceTabs().map((t) => t.id)).toEqual(['general', 'execution', 'verification', 'prompts', 'integrations', 'archive']);
   });
 
   it('a tab whose only field turns global-only drops off the Workspace surface', () => {

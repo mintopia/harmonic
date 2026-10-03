@@ -38,7 +38,7 @@ import { EpicVerificationRunner } from './epic-verification-runner.js';
 import { EpicResolutionRunner } from './epic-resolution-runner.js';
 import { EpicIntegrationRunner } from './epic-integration-runner.js';
 import type { Ticket, TrackerAdapter } from './adapter.js';
-import { resolveTrackerAdapter } from './adapter.js';
+import { resolveTrackerAdapter, workspaceTrackerSettings, type WorkspaceTrackerSettings } from './adapter.js';
 import type { FeatureIndex } from './local-markdown.js';
 import { persistedTickets } from './persisted.js';
 
@@ -91,7 +91,7 @@ export interface EpicIntegrationWiring {
 export interface TrackerEpicServiceOptions {
   /** `'lifecycle-only'` runs Epic branch lifecycle with no whole-Epic verification or integration. */
   integration: EpicIntegrationWiring | 'lifecycle-only';
-  resolveAdapter?: (repoRoot: string, featureIndex?: FeatureIndex) => Promise<TrackerAdapter>;
+  resolveAdapter?: (repoRoot: string, featureIndex?: FeatureIndex, workspace?: WorkspaceTrackerSettings) => Promise<TrackerAdapter>;
   onError?: (message: string) => void;
   operations?: EpicOperations;
   dispatchRefreshResolution?: (
@@ -115,7 +115,7 @@ export interface TrackerEpicServiceOptions {
 export class TrackerEpicService implements EpicService {
   private readonly entries = new Map<number, WorkspaceEpicEntry>();
 
-  private readonly resolveAdapter: (repoRoot: string, featureIndex?: FeatureIndex) => Promise<TrackerAdapter>;
+  private readonly resolveAdapter: (repoRoot: string, featureIndex?: FeatureIndex, workspace?: WorkspaceTrackerSettings) => Promise<TrackerAdapter>;
   private readonly onError: (message: string) => void;
   private readonly integration: TrackerEpicServiceOptions['integration'];
   private readonly operations: EpicOperations;
@@ -255,7 +255,7 @@ export class TrackerEpicService implements EpicService {
     return recordAndCloseIntegratedEpic({
       epicRef,
       settle: () => this.tasks.markEpicIntegrated(workspace.id, epicRef, { mergeCommit, memberRefs }),
-      resolveAdapter: () => this.resolveAdapter(workspace.workingDir, (slug) => this.tasks.mdFeatureIndex(workspace.id, slug)),
+      resolveAdapter: () => this.resolveAdapter(workspace.workingDir, (slug) => this.tasks.mdFeatureIndex(workspace.id, slug), workspaceTrackerSettings(workspace)),
       onError: this.onError,
     });
   }

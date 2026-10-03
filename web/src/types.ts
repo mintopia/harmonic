@@ -342,8 +342,11 @@ export interface GitStatusEntry {
  * `ok` narrows which fields are present, matching the flat JSON on the wire.
  */
 export type ResolvedTracker =
-  | { ok: true; label: string; code: null; reason: null }
-  | { ok: false; label: null; code: string; reason: string };
+  | { ok: true; label: string; kind: string; source: TrackerSource; code: null; reason: null }
+  | { ok: false; label: null; kind: null; source: null; code: string; reason: string };
+
+/** Where a Resolved Tracker's choice came from. */
+export type TrackerSource = 'configured' | 'detected' | 'code-repository';
 
 /** A Workspace: a named Working Directory, unique by absolute path. */
 export interface Workspace {
@@ -398,6 +401,9 @@ export interface Workspace {
   exportS3SecretAccessKey: string | null;
   exportRedactPatterns: { id: string; regex: string }[] | null;
   exportIncludeStates: ExportState[] | null;
+  configuredTracker: { kind: string; settings?: Record<string, unknown> } | null;
+  codeRepository: 'github' | 'gitlab' | 'forgejo' | null;
+  triageLabels: Partial<Record<'readyForAgent' | 'readyForHuman' | 'epic' | 'wayfinderMap', string>> | null;
   archiveRetentionDays: number | null;
   archiveRetentionMaxTotalMB: number | null;
   /** Tool-timeout override; `null` inherits `config.guardrails.toolTimeoutMinutes`. */

@@ -1,6 +1,8 @@
 import { type AppConfig, type MergeFate } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow, StoredEpicKind } from '../db/schema.js';
-import { resolveTrackerAdapter, type TrackerAdapter, type TicketRef } from '../tracker/adapter.js';
+import { resolveTrackerAdapter, workspaceTrackerSettings, type TrackerAdapter, type TicketRef, type WorkspaceTrackerSettings } from '../tracker/adapter.js';
+import type { FeatureIndex } from '../tracker/local-markdown.js';
+import type { RepositoryKind } from '../repository/detect.js';
 import { resolveRepositoryAdapter } from '../repository/resolve.js';
 import type { RepositoryAdapter } from '../repository/adapter.js';
 import { resolveDrive, type ResolvedDrive } from '../domain/setting-override.js';
@@ -12,7 +14,8 @@ import { logger } from '../logger.js';
 type DriveWorkspace = Pick<
   WorkspaceRow,
   'drivePrompt' | 'driveUnattendedReminder' | 'driveContinuePrompt' | 'driveMergeFate' | 'driveContinueAttempts'
->;
+> &
+  Partial<Pick<WorkspaceRow, 'configuredTracker' | 'codeRepository'>>;
 
 /**
  * The auto-drive half of afk mirrored-Task execution: the Drive Prompt the
@@ -23,7 +26,7 @@ export class AutoDrive {
   constructor(
     private readonly getConfig: () => AppConfig,
     private readonly urlFor: (task: TaskRow) => string | null,
-    private readonly resolveAdapter: (repoRoot: string) => Promise<TrackerAdapter> = resolveTrackerAdapter,
+    private readonly resolveAdapter: (repoRoot: string, featureIndex?: FeatureIndex, workspace?: WorkspaceTrackerSettings) => Promise<TrackerAdapter> = resolveTrackerAdapter,
     /** Resolves a Task's Workspace so `drive.*` inherits its per-Workspace
      * overrides; absent → every field resolves the global default. */
     private readonly getWorkspace?: (workspaceId: number | null) => Promise<DriveWorkspace | undefined>,
@@ -35,7 +38,7 @@ export class AutoDrive {
     private readonly onTicketClosed?: (task: TaskRow, commit: { oid: string; paths: string[] } | null) => void,
     /** Notified when a close attempt throws. */
     private readonly onTicketCloseFailed?: (task: TaskRow, error: unknown) => void,
-    private readonly resolveRepository: (repoRoot: string) => Promise<RepositoryAdapter | null> = resolveRepositoryAdapter,
+    private readonly resolveRepository: (repoRoot: string, override?: RepositoryKind | null) => Promise<RepositoryAdapter | null> = resolveRepositoryAdapter,
   ) {}
 
   /** The auto-driven path: a mirrored Task Harmonic runs unattended. */
@@ -112,7 +115,7 @@ export class AutoDrive {
 
     if (fate === 'open-PR') {
       if (worktree) {
-        const repository = await this.resolveRepository(task.workingDir);
+        const repository = await this.resolveRepository(task.workingDir, workspaceTrackerSettings(await this.getWorkspace?.(task.workspaceId)).codeRepository);
         if (repository) {
           const { title } = splitTitleBody(task.prompt);
           try {
@@ -154,7 +157,7 @@ export class AutoDrive {
   async closeTicket(task: TaskRow, comment = `Completed and merged by Harmonic (task ${task.id}).`): Promise<boolean> {
     if (task.trackerRef == null) return true;
     try {
-      const adapter = await this.resolveAdapter(task.workingDir);
+      const adapter = await this.resolveAdapter(task.workingDir, undefined, workspaceTrackerSettings(await this.getWorkspace?.(task.workspaceId)));
       if (!adapter.close) return true;
       const { title } = splitTitleBody(task.prompt);
       const ref = { number: task.trackerRef, title, state: 'open' as const };

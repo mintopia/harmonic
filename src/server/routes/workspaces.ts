@@ -4,7 +4,9 @@ import { z } from 'zod';
 import type { TrackingContext } from '../app.js';
 import type { WorkspaceRow } from '../../db/schema.js';
 import type { ResolvedTracker } from '../../tracker/adapter.js';
-import { createWorkspaceInputSchema, updateWorkspaceInputSchema } from '../../domain/workspaces.js';
+import { createWorkspaceInputSchema, updateWorkspaceInputSchema, codeRepositorySchema } from '../../domain/workspaces.js';
+import { configuredTrackerSchema } from '../../tracker/configured.js';
+import { triageLabelsOverrideSchema } from '../../tracker/triage-labels.js';
 import { EXPORT_STATES, redactPatternsSchema } from '../../config.js';
 import {
   verificationCommandOverrideSchema,
@@ -28,6 +30,8 @@ const resolvedTrackerSchema = z
   .object({
     ok: z.boolean().meta({ example: true }),
     label: z.string().nullable().meta({ example: 'GitHub' }),
+    kind: z.string().nullable().meta({ example: 'github' }),
+    source: z.enum(['configured', 'detected', 'code-repository']).nullable().meta({ example: 'detected' }),
     code: z.string().nullable().meta({ example: null }),
     reason: z.string().nullable().meta({ example: null }),
   })
@@ -93,6 +97,9 @@ const workspaceSchema = z
     exportS3SecretAccessKey: z.string().nullable().meta({ example: null }),
     exportRedactPatterns: redactPatternsSchema.nullable().meta({ example: null }),
     exportIncludeStates: z.array(z.enum(EXPORT_STATES)).nullable().meta({ example: null }),
+    configuredTracker: configuredTrackerSchema.nullable().meta({ example: null }),
+    codeRepository: codeRepositorySchema.nullable().meta({ example: null }),
+    triageLabels: triageLabelsOverrideSchema.nullable().meta({ example: null }),
     archiveRetentionDays: z.number().nullable().meta({ example: null }),
     archiveRetentionMaxTotalMB: z.number().nullable().meta({ example: null }),
     createdAt: z.number().meta({ example: 1784030400000 }),
@@ -109,8 +116,8 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     r === null
       ? null
       : r.ok
-        ? { ok: true, label: r.label, code: null, reason: null }
-        : { ok: false, label: null, code: r.code, reason: r.reason };
+        ? { ok: true, label: r.label, kind: r.name, source: r.source, code: null, reason: null }
+        : { ok: false, label: null, kind: null, source: null, code: r.code, reason: r.reason };
 
   /** A Workspace row plus its live Resolved Tracker; JSON-text override columns parsed back to the shape a client PATCHes. */
   const serialize = (ws: WorkspaceRow) => ({
@@ -123,6 +130,8 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     epicPreMergeCritics: ws.epicPreMergeCritics ? JSON.parse(ws.epicPreMergeCritics) : null,
     exportRedactPatterns: ws.exportRedactPatterns ? JSON.parse(ws.exportRedactPatterns) : null,
     exportIncludeStates: ws.exportIncludeStates ? JSON.parse(ws.exportIncludeStates) : null,
+    configuredTracker: ws.configuredTracker ? JSON.parse(ws.configuredTracker) : null,
+    triageLabels: ws.triageLabels ? JSON.parse(ws.triageLabels) : null,
     guardrailBudget: ws.guardrailBudget ? JSON.parse(ws.guardrailBudget) : null,
     effectiveAgentMessagesEnabled: resolveScoped('agentMessagesEnabled', ws.agentMessagesEnabled, ctx.settingsStore.getGlobal().agentMessages.enabled),
     resolvedTracker: serializeResolvedTracker(ctx.trackerManager.resolvedTracker(ws.id)),

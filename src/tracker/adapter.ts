@@ -1,9 +1,13 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { trackerKindFor, normaliseKindId, TRACKER_KINDS } from './kinds.js';
+import { trackerKindFor, TRACKER_KINDS } from './kinds.js';
 import type { TrackerHttp } from './kind.js';
 import type { FeatureIndex } from './local-markdown.js';
+import { configuredTrackerSchema, type ConfiguredTracker } from './configured.js';
+import { selectTracker, type TrackerSource } from './select.js';
+import { resolveCodeRepository } from '../repository/resolve.js';
+import type { RepositoryKind } from '../repository/detect.js';
 
 export type TicketState = 'open' | 'closed';
 
@@ -111,7 +115,7 @@ export class TrackerResolutionError extends Error {
 
 /** The Resolved Tracker of a Workspace's repo: the adapter's label on success, or a coded reason it can't resolve. */
 export type ResolvedTracker =
-  | { ok: true; name: string; label: string }
+  | { ok: true; name: string; label: string; source: TrackerSource }
   | { ok: false; code: TrackerResolveFailureCode; reason: string };
 
 /** The display label for an adapter name, falling back to the raw name. */
@@ -119,15 +123,31 @@ export function trackerLabel(name: string): string {
   return TRACKER_KINDS.find((k) => k.id === name)?.label ?? name;
 }
 
-/** A resolved adapter as a successful {@link ResolvedTracker}. */
+const adapterSources = new WeakMap<TrackerAdapter, TrackerSource>();
+
+/** A resolved adapter as a successful {@link ResolvedTracker}; an adapter not built by {@link resolveTrackerAdapter} counts as detected. */
 export function resolutionSuccess(adapter: TrackerAdapter): ResolvedTracker & { ok: true } {
-  return { ok: true, name: adapter.name, label: trackerLabel(adapter.name) };
+  return { ok: true, name: adapter.name, label: trackerLabel(adapter.name), source: adapterSources.get(adapter) ?? 'detected' };
 }
 
 /** A resolution error as a failed {@link ResolvedTracker} — a {@link TrackerResolutionError}'s code, else `misconfigured`. */
 export function resolutionFailure(err: unknown): ResolvedTracker & { ok: false } {
   const code = err instanceof TrackerResolutionError ? err.code : 'misconfigured';
   return { ok: false, code, reason: err instanceof Error ? err.message : String(err) };
+}
+
+/** The per-Workspace inputs to tracker resolution that live outside the repo. */
+export interface WorkspaceTrackerSettings {
+  configured?: ConfiguredTracker | null | undefined;
+  codeRepository?: RepositoryKind | null | undefined;
+}
+
+/** A Workspace row's tracker-related overrides, parsed from its stored form. */
+export function workspaceTrackerSettings(
+  row: { configuredTracker?: string | null; codeRepository?: RepositoryKind | null } | undefined,
+): WorkspaceTrackerSettings {
+  const configured = row?.configuredTracker ? configuredTrackerSchema.safeParse(JSON.parse(row.configuredTracker)) : undefined;
+  return { configured: configured?.success ? configured.data : null, codeRepository: row?.codeRepository ?? null };
 }
 
 /** The non-throwing sibling of {@link resolveTrackerAdapter}: a structured {@link ResolvedTracker}. */
@@ -145,27 +165,43 @@ export async function resolveTracker(
 const defaultHttp: TrackerHttp = (url, init) => fetch(url, init);
 
 /**
- * Resolve the repo's tracker from its `docs/agents/issue-tracker.md` declaration (`# Issue tracker: <name>`)
- * by looking the name up in the kinds registry; the kind reads its own settings from the declaration.
+ * Resolve a Workspace's tracker in precedence order: its Configured Tracker, else the repo's
+ * `docs/agents/issue-tracker.md` declaration (`# Issue tracker: <name>`), else the Code Repository when it is
+ * also a tracker. The chosen kind reads its settings from the Configured Tracker, the declaration, or the repo.
  */
 export async function resolveTrackerAdapter(
   repoRoot: string,
   featureIndex?: FeatureIndex,
+  workspace: WorkspaceTrackerSettings = {},
 ): Promise<TrackerAdapter> {
+  const { configured } = workspace;
   const docPath = join(repoRoot, 'docs/agents/issue-tracker.md');
-  let doc: string;
-  try {
-    doc = await readFile(docPath, 'utf8');
-  } catch {
-    throw new TrackerResolutionError('no-declaration', `No tracker declaration at ${docPath}`);
+  let doc: string | null = null;
+  if (!configured) {
+    try {
+      doc = await readFile(docPath, 'utf8');
+    } catch {
+      doc = null;
+    }
   }
-  const name = doc.match(/^#\s*Issue tracker:\s*(.+?)\s*$/m)?.[1];
-  const kind = name ? trackerKindFor(normaliseKindId(name)) : undefined;
-  if (!kind) throw new TrackerResolutionError('unsupported', `Unsupported tracker "${name ?? '(none)'}" in ${docPath}`);
+  const detectedName = doc?.match(/^#\s*Issue tracker:\s*(.+?)\s*$/m)?.[1];
+  const detectedKnown = detectedName ? selectTracker({ detectedName })?.source === 'detected' : false;
+  const codeRepository = configured || detectedKnown ? null : await resolveCodeRepository(repoRoot, workspace.codeRepository);
+  const selection = selectTracker({ configured, detectedName, codeRepository });
+  if (!selection) {
+    if (doc === null) throw new TrackerResolutionError('no-declaration', `No tracker declaration at ${docPath}`);
+    throw new TrackerResolutionError('unsupported', `Unsupported tracker "${detectedName ?? '(none)'}" in ${docPath}`);
+  }
+  const where = selection.source === 'detected' ? docPath : selection.source === 'configured' ? 'the Workspace tracker setting' : 'the Code Repository';
+  const kind = trackerKindFor(selection.kindId);
+  if (!kind) throw new TrackerResolutionError('unsupported', `Unsupported tracker "${selection.kindId}" in ${where}`);
   try {
-    const settings = kind.settings.parse(await kind.fromDeclaration?.(doc, repoRoot) ?? {});
-    return kind.create({ settings, secrets: {}, repoRoot, http: defaultHttp, ...(featureIndex && { featureIndex }) });
+    const raw = selection.source === 'configured' ? configured!.settings : await kind.fromDeclaration?.(doc ?? '', repoRoot);
+    const settings = kind.settings.parse(raw ?? {});
+    const adapter = kind.create({ settings, secrets: {}, repoRoot, http: defaultHttp, ...(featureIndex && { featureIndex }) });
+    adapterSources.set(adapter, selection.source);
+    return adapter;
   } catch (err) {
-    throw new TrackerResolutionError('misconfigured', `${err instanceof Error ? err.message : String(err)} in ${docPath}`);
+    throw new TrackerResolutionError('misconfigured', `${err instanceof Error ? err.message : String(err)} in ${where}`);
   }
 }

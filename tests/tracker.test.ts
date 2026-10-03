@@ -183,7 +183,7 @@ describe('resolveTracker (Resolved Tracker surface, issue #83)', () => {
   it('resolves to the adapter display label on success', async () => {
     const root = mkRepo('# Issue tracker: GitHub\n');
     try {
-      expect(await resolveTracker(root)).toEqual({ ok: true, name: 'github', label: 'GitHub' });
+      expect(await resolveTracker(root)).toEqual({ ok: true, name: 'github', label: 'GitHub', source: 'detected' });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
