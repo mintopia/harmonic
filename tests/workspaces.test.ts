@@ -371,6 +371,8 @@ describe('Task/Conversation binding + scoping (issue #41)', () => {
     expect(on.body.effectiveAgentMessagesEnabled).toBe(true);
     expect(on.body.agentMessagesSendCap).toBe(4);
     expect((await server.api('GET', '/api/activity')).body.agentMessagesEnabledInAnyWorkspace).toBe(true);
+    expect((await server.api('GET', `/api/activity?workspaceId=${workspaceA}`)).body.agentMessagesEnabledInAnyWorkspace).toBe(true);
+    expect((await server.api('GET', `/api/activity?workspaceId=${workspaceA + 9999}`)).body.agentMessagesEnabledInAnyWorkspace).toBe(false);
 
     await server.api('PATCH', `/api/workspaces/${workspaceA}`, { agentMessagesEnabled: null });
     await server.api('PATCH', '/api/config', { agentMessages: { enabled: true } });

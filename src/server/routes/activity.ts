@@ -46,9 +46,9 @@ export async function activityRoutes(fastify: FastifyInstance, ctx: AppContext):
       const readOnly = (token ? await ctx.auth.verifyKey(token) : null)?.scope === 'read';
       const { items, total } = paginate(await activitySnapshot(ctx, !readOnly, workspaceId), { limit, offset });
       const globalEnabled = ctx.settingsStore.getGlobal().agentMessages.enabled;
-      const agentMessagesEnabledInAnyWorkspace = globalEnabled
-        ? true
-        : (await ctx.workspaces.list()).some((ws) => resolveScoped('agentMessagesEnabled', ws.agentMessagesEnabled, globalEnabled));
+      const agentMessagesEnabledInAnyWorkspace = (await ctx.workspaces.list())
+        .filter((ws) => workspaceId === undefined || ws.id === workspaceId)
+        .some((ws) => resolveScoped('agentMessagesEnabled', ws.agentMessagesEnabled, globalEnabled));
       return { processes: items, total, agentMessagesEnabledInAnyWorkspace };
     },
   );
