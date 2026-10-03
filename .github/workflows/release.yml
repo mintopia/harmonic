@@ -20,14 +20,21 @@ name: Release
 # from main to develop, closing the Gitflow gap where main diverges every
 # release. It opens an auto-merging main -> develop PR, falling back to a direct
 # merge push only when the repo can't auto-merge.
+#
+# A maintainer can also run this workflow manually (workflow_dispatch) on
+# `develop` to publish a prerelease under the `develop` dist-tag; it never
+# moves `latest`. The develop-* jobs live here because the trusted publisher is
+# bound to this file's name.
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions: {}
 
 jobs:
   release-please:
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -87,6 +94,52 @@ jobs:
           if [[ "$VERSION" == *-* ]]; then TAG=next; else TAG=latest; fi
           echo "Publishing $VERSION to dist-tag '$TAG'"
           npm publish --tag "$TAG"
+
+  develop-test:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/develop' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  develop-publish:
+    needs: develop-test
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/develop' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC token for Trusted Publishing + provenance
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm install -g npm@11
+
+      # Next patch + a run-numbered prerelease: sorts above the current release,
+      # below the next. The version is read from package.json at runtime, not
+      # embedded in the build, so stamping after `npm ci` leaves dist/ current.
+      # The `g` prefix keeps an all-digit sha with a leading zero valid semver.
+      - name: Stamp develop prerelease version
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+          SHA: ${{ github.sha }}
+        run: |
+          BASE=$(node -p "require('./package.json').version.split('-')[0]")
+          IFS=. read -r MAJOR MINOR PATCH <<< "$BASE"
+          VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))-develop.${RUN_NUMBER}.g${SHA:0:7}"
+          npm version "$VERSION" --no-git-tag-version
+
+      - name: Publish to npm
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "Publishing $VERSION to dist-tag 'develop'"
+          npm publish --tag develop
 
   back-merge:
     needs: release-please

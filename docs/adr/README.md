@@ -32,7 +32,7 @@ Attempts without timing measurements retain the documented wall-clock fallback.
 | Configuration and harnesses | 0009 | 0022 baseline/global/workspace layering; 0025 OpenCode; 0036 unattended permission modes; 0037 verifier overlays; 0046 tracker selection, Code Repository, Secrets (amended 2026-10-03: private-host probes; generic git Code Repository) |
 | Conversations and navigation | 0006, 0011 | 0026 read-only Activity; 0029 transcript view; 0033 scoped routes; 0035 eager command discovery |
 | Persistence and evidence | 0007, 0008 | 0014 fleet Stats; 0042 managed-upgrade snapshots; 0044 Task Archives and Exports (amended 2026-10-03: `agent-messages.json` in Export bundles); 0045 Agent Messages |
-| Distribution and operation | 0010, 0012 | 0013 releases; 0024 worktree controls; 0030 updates; 0034 services; 0041 atomic installs; 0042 install modes and rollback; 0043 toolchain |
+| Distribution and operation | 0010, 0012 | 0013 releases (amended 2026-10-03: manual develop prerelease); 0024 worktree controls; 0030 updates; 0034 services; 0041 atomic installs; 0042 install modes and rollback; 0043 toolchain |
 
 ## Reset archive
 
