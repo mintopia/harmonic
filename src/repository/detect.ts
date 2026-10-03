@@ -20,9 +20,26 @@ export async function detectRepository(remoteUrl: string, probe: ForgejoProbe): 
   return (await probe(host)) ? 'forgejo' : null;
 }
 
-/** A {@link ForgejoProbe} that GETs `https://<host>/api/v1/version` and treats a 2xx JSON `version` as Forgejo. */
+/** Whether `host` is a loopback, private, link-local or otherwise non-public address that the probe must never contact. */
+export function isPrivateHost(host: string): boolean {
+  const lower = host.toLowerCase();
+  const bracketed = /^\[([^\]]*)\]/.exec(lower);
+  const h = bracketed ? bracketed[1]! : lower.split(':').length === 2 ? lower.split(':')[0]! : lower;
+  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) return true;
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(h);
+  if (v4) {
+    const a = Number(v4[1]);
+    const b = Number(v4[2]);
+    return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+  }
+  if (h.includes(':')) return h === '::1' || h === '::' || /^(fc|fd|fe[89ab])/.test(h) || h.startsWith('::ffff:');
+  return false;
+}
+
+/** A {@link ForgejoProbe} that GETs `https://<host>/api/v1/version` and treats a 2xx JSON `version` as Forgejo; never fetches github.com, gitlab.com or private hosts. */
 export function forgejoVersionProbe(fetchFn: typeof fetch = fetch, timeoutMs = 3000): ForgejoProbe {
   return async (host) => {
+    if (host === 'github.com' || host === 'gitlab.com' || isPrivateHost(host)) return false;
     try {
       const res = await fetchFn(`https://${host}/api/v1/version`, { signal: AbortSignal.timeout(timeoutMs) });
       if (!res.ok) return false;
