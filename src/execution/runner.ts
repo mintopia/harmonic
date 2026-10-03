@@ -67,6 +67,7 @@ export class Runner {
   private readonly archive: RunnerOptions['archive'];
   private readonly taskEvents: RunnerOptions['taskEvents'];
   private readonly getWorkspace: RunnerOptions['getWorkspace'];
+  private readonly agentMessages: RunnerOptions['agentMessages'];
   private readonly postMerge: RunnerOptions['postMerge'];
   private readonly criticDrive: RunnerOptions['criticDrive'];
   private readonly commandSpawn: RunnerOptions['commandSpawn'];
@@ -109,6 +110,7 @@ export class Runner {
     this.archive = options.archive;
     this.taskEvents = options.taskEvents;
     this.getWorkspace = options.getWorkspace;
+    this.agentMessages = options.agentMessages;
     this.postMerge = options.postMerge;
     this.gitBreaker = options.gitBreaker;
     this.epicBaseNotReady = options.epicBaseNotReady;
@@ -271,6 +273,7 @@ export class Runner {
       keys: this.keys,
       fireAndForget: this.fireAndForget,
       getWorkspace: this.getWorkspace,
+      agentMessages: this.agentMessages,
       postMerge: this.postMerge,
       gitBreaker: this.gitBreaker,
       onGloballyPaused: this.onGloballyPaused,
@@ -697,6 +700,11 @@ export class Runner {
 
   private async checkRunBoundary(taskId: number): Promise<RunBoundaryResult> {
     return this.runControl.checkRunBoundary(taskId);
+  }
+
+  /** @see {@link RunControl.steerWithMode} */
+  async steerWithMode(taskId: number, text: string, onDelivered?: () => void): Promise<'mid-turn' | 'next-turn' | null> {
+    return this.runControl.steerWithMode(taskId, text, onDelivered);
   }
 
   /** @see {@link RunControl.steerSettled} */

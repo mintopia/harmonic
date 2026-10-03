@@ -324,6 +324,8 @@ export type ReceiptState = (typeof RECEIPT_STATES)[number];
 export interface AgentMessageRecipient {
   taskId: number;
   receipt: ReceiptState;
+  /** Live delivery: injected mid-turn, or queued for the next turn. */
+  mode?: 'mid-turn' | 'next-turn';
   deliveredAt?: number;
   reason?: string;
 }

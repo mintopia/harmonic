@@ -415,6 +415,7 @@ export async function createRuntime(deps: {
     autoDrive,
     urlFor: (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
     getWorkspace: getWorkspaceRow,
+    agentMessages: deps.stores.agentMessages,
     archive,
   });
   runnerRef = runner;
