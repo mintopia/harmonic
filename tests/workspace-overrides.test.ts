@@ -38,6 +38,8 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(ws.priority).toBeNull();
     expect(ws.maxConcurrentAttempts).toBeNull();
     expect(ws.autoRunnerEnabled).toBeNull();
+    expect(ws.agentMessagesEnabled).toBeNull();
+    expect(ws.agentMessagesSendCap).toBeNull();
     expect(ws.taskPreMergeCommands).toBeNull();
     expect(ws.taskPreMergeCritics).toBeNull();
     expect(ws.taskPostMergeCommands).toBeNull();
@@ -139,6 +141,19 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(off.autoRunnerEnabled).toBe(false);
     const untouched = await workspaces.update(ws.id, { name: ws.name });
     expect(untouched.autoRunnerEnabled).toBe(false);
+  });
+
+  it('stores, clears, and keeps distinct the Agent Messages overrides', async () => {
+    const ws = (await workspaces.list())[0]!;
+    const on = await workspaces.update(ws.id, { agentMessagesEnabled: true, agentMessagesSendCap: 3 });
+    expect(on.agentMessagesEnabled).toBe(true);
+    expect(on.agentMessagesSendCap).toBe(3);
+    const off = await workspaces.update(ws.id, { agentMessagesEnabled: false });
+    expect(off.agentMessagesEnabled).toBe(false);
+    expect(off.agentMessagesSendCap).toBe(3);
+    const cleared = await workspaces.update(ws.id, { agentMessagesEnabled: null, agentMessagesSendCap: null });
+    expect(cleared.agentMessagesEnabled).toBeNull();
+    expect(cleared.agentMessagesSendCap).toBeNull();
   });
 
   it('sets explicit staged verifier overlays as JSON lists', async () => {
@@ -308,6 +323,8 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       conflictResolveTurns: null,
       maxConcurrentAttempts: null,
       autoRunnerEnabled: null,
+      agentMessagesEnabled: null,
+      agentMessagesSendCap: null,
       maxAttempts: null,
       contextReuseTokenLimit: null,
       taskPreMergeCommands: null,

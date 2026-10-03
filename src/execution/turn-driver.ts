@@ -27,6 +27,8 @@ import type { RunBoundaryResult } from './run-control.js';
 import type { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { logger } from '../logger.js';
 import type { SpanContext } from '@opentelemetry/api';
+import type { AgentMessageRow } from '../db/schema.js';
+import { PEER_LINE, peerMessagesSection } from './agent-message-delivery.js';
 import type { RunnerEvents, RunnerOptions, Workspace } from './runner.js';
 import { TurnListeners, TurnState } from './turn-listeners.js';
 import type { TaskArchive } from '../archive/task-archive.js';
@@ -81,6 +83,7 @@ export interface TurnDriverDeps {
   autoDrive: AutoDrive | undefined;
   keys: RunnerOptions['keys'];
   getWorkspace: RunnerOptions['getWorkspace'];
+  agentMessages: RunnerOptions['agentMessages'];
   postMerge: RunnerOptions['postMerge'];
   gitBreaker: GitCircuitBreaker | undefined;
   onGloballyPaused: ((taskId: number) => Promise<void>) | undefined;
@@ -269,7 +272,7 @@ export class TurnDriver {
         await finalize();
         return { kind: 'terminal' };
       }
-      const { promptText, operatorSeed } = await this.initializeTurn({
+      const { promptText, operatorSeed, heldMessages } = await this.initializeTurn({
         task,
         run,
         harness,
@@ -300,6 +303,9 @@ export class TurnDriver {
         // back for the resumed turn rather than lose it (ADR-0005 §6).
         if (operatorSeed !== undefined && !driven.operatorSeedDelivered) {
           this.deps.activeRuns.setPendingOperatorSeed(task.id, operatorSeed);
+        }
+        if (heldMessages.length > 0 && !driven.promptSent) {
+          await this.deps.agentMessages?.restoreHeld(heldMessages, task.id);
         }
         if ((await this.deps.taskService.get(task.id)).state === 'working') await this.deps.taskService.pause(task.id);
         const usage = await this.deps.usage.collectUsageSafe({
@@ -509,6 +515,7 @@ export class TurnDriver {
       agentFinished: false,
       escalateReason: null,
       steerQueue: [],
+      steerAcks: new Map(),
       idle: false,
       externallySettled: false,
       steerable: false,
@@ -608,7 +615,7 @@ export class TurnDriver {
      * from a manual resume/steer-continue reusing an already-open Attempt's row. */
     opensAttempt: boolean;
     record: RunEventRecorder;
-  }): Promise<{ promptText: string; operatorSeed: string | undefined }> {
+  }): Promise<{ promptText: string; operatorSeed: string | undefined; heldMessages: AgentMessageRow[] }> {
     const {
       task,
       run,
@@ -763,6 +770,8 @@ export class TurnDriver {
       const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
       condensed = src ? await this.deps.sessionContinuation.condensedContext(src.prior) : null;
     }
+    const peer = await this.peerContext(task);
+    if (peer.text) promptText = `${promptText}\n\n${peer.text}`;
     if (rebaseConflict) {
       promptText =
         `${promptText}\n\n## Rebase conflict — resolve first\n` +
@@ -773,7 +782,27 @@ export class TurnDriver {
     if (condensed) promptText = `${promptText}\n\n${condensed}`;
     if (codeIndexRepoId) promptText = `${promptText}${codeIndexRepoGuidance(codeIndexRepoId)}`;
     await this.deps.attempts.update(run.id, { prompt: promptText });
-    return { promptText, operatorSeed };
+    return { promptText, operatorSeed, heldMessages: peer.held };
+  }
+
+  /** Held peer messages from the database, plus the peer line when Agent Messages are on. */
+  private async peerContext(task: TaskRow): Promise<{ text: string; held: AgentMessageRow[] }> {
+    const store = this.deps.agentMessages;
+    if (!store) return { text: '', held: [] };
+    const held = await store.takeHeld(task.id);
+    const workspace = await this.deps.getWorkspace?.(task.workspaceId);
+    const enabled = resolveScoped('agentMessagesEnabled', workspace?.agentMessagesEnabled ?? null, this.deps.getConfig().agentMessages.enabled);
+    const parts: string[] = [];
+    if (held.length > 0) {
+      const harnesses = new Map<number, string>();
+      for (const id of new Set(held.map((m) => m.senderTaskId))) {
+        const sender = await this.deps.taskService.get(id).catch(() => null);
+        if (sender) harnesses.set(id, sender.harness);
+      }
+      parts.push(peerMessagesSection(held, (id) => harnesses.get(id) ?? 'agent'));
+    }
+    if (enabled) parts.push(PEER_LINE);
+    return { text: parts.join('\n\n'), held };
   }
 
 }

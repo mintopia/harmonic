@@ -236,6 +236,7 @@ const FIELD_SEGMENT_LABELS: Record<string, string> = {
   noIssuePrompt: 'No-issue prompt',
   maxConcurrentAttempts: 'Concurrency cap',
   maxAttempts: 'Attempt limit',
+  agentMessagesSendCap: 'Send cap',
   contextReuseTokenLimit: 'Context reuse limit',
   wallClockMinutes: 'Wall-clock (min)',
   costUsd: 'Cost cap (USD)',

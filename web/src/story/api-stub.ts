@@ -1,5 +1,6 @@
 /* eslint-disable */
 import * as f from './fixtures';
+import { agentMessageThreads } from './agent-message-fixtures';
 import { conversationDetail, conversationEventsFixture, conversationList, permissionRulesFixture } from './conversation-fixtures';
 import type { api as RealApi } from '../api';
 import type {
@@ -259,7 +260,11 @@ export const api: typeof RealApi = {
     ok({ notification: { id, severity: 'failure' as const, title: '', detail: null, workspaceId: null, taskId: null, createdAt: 0, readAt: 0, read: true } }),
   markAllNotificationsRead: (_workspaceId?: number) => ok({ updated: 0 }),
   stats: (_from: number, _to: number, _workspaceId?: number) => ok(dashboardStats),
-  activity: () => ok({ processes: activityProcesses }),
+  activity: () => ok({ processes: activityProcesses, agentMessagesEnabledInAnyWorkspace: true }),
+  agentMessageThreads: (params: { workspaceId?: number } = {}) => {
+    const threads = agentMessageThreads.filter((t) => params.workspaceId === undefined || t.workspaceId === params.workspaceId);
+    return ok({ threads, total: threads.length, totalMessages: threads.reduce((n, t) => n + t.messages.length, 0) });
+  },
   timeline: (_workspaceId: number | undefined, from: number, to: number) =>
     ok({ attempts: timelineSpans().filter((s) => s.startedAt <= to && (s.endedAt ?? Date.now()) >= from), from, to }),
   epicStats: (_epicRef: number, _workspaceId: number) => ok(f.epicStats),

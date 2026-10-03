@@ -57,6 +57,10 @@ export function registerAppExports({
       return {
         ticket: detail ?? { ref: epicRef, state: row?.state ?? null, mergeCommit: row?.mergeCommit ?? null },
         timeline: { events: detail?.timelineEvents ?? [], ...timeline },
+        agentMessages: await ctx.agentMessages.presentedForTasks(
+          workspaceId,
+          members.flatMap((m) => (m.task ? [m.task.id] : [])),
+        ),
         attemptCount: timeline.attempts.length,
         members,
       };
@@ -78,7 +82,8 @@ export function registerAppExports({
         orFallback(() => Git.symbolicBranch(task.workingDir), { op: 'export.snapshot.currentBranch', level: 'warn', context: { taskId: task.id } }, null),
         orFallback(() => ctx.attempts.listMergedFacts(attemptIds), { op: 'export.snapshot.mergedFacts', level: 'warn', context: { taskId: task.id } }, [] as unknown[]),
       ]);
-      return { ticket, timeline, attemptCount: taskAttempts.length, git: computeGitProvenance({ attempts: taskAttempts, facts, remoteUrl, taskBaseBranch: task.baseBranch, currentBranch }) };
+      const agentMessages = task.workspaceId === null ? [] : await ctx.agentMessages.presentedForTask(task.workspaceId, task.id);
+      return { ticket, timeline, agentMessages, attemptCount: taskAttempts.length, git: computeGitProvenance({ attempts: taskAttempts, facts, remoteUrl, taskBaseBranch: task.baseBranch, currentBranch }) };
     },
     recordEpicStep: async (workspaceId, epicRef, step) => {
       await epicMergeEvents.append(workspaceId, epicRef, step);

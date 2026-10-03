@@ -17,6 +17,7 @@ function baseActive(over: Partial<ActiveRun> = {}): ActiveRun {
     idle: false,
     steerable: false,
     steerQueue: [],
+    steerAcks: new Map(),
     ...over,
   } as unknown as ActiveRun;
 }

@@ -61,14 +61,14 @@ export class TurnCompletion {
     /** An operator steer accepted before this turn existed, folded into `promptText`. */
     operatorSeed?: string | undefined;
     record: RunEventRecorder;
-  }): Promise<{ result: PromptResult; connectionGone: boolean; escalating: string | null; operatorSeedDelivered: boolean }> {
+  }): Promise<{ result: PromptResult; connectionGone: boolean; escalating: string | null; operatorSeedDelivered: boolean; promptSent: boolean }> {
     const { task, driver, active, guardrails, listeners, autoDriven, record } = input;
     let promptText = input.promptText;
     let escalating: string | null = null;
     // A pause requested before this turn's first prompt: bail before promptText — including
     // input.operatorSeed — ever reaches the harness. The caller must put the seed back rather
     // than treat it as delivered (ADR-0005 §6).
-    if (active.pauseRequested) return { result: {}, connectionGone: false, escalating: null, operatorSeedDelivered: false };
+    if (active.pauseRequested) return { result: {}, connectionGone: false, escalating: null, operatorSeedDelivered: false, promptSent: false };
     const timedPromptTurn = (text: string) => this.deps.attempts.measureAgentTurn(
       active.attemptId, () => promptTurn(driver, text, record, listeners.archive),
     );
@@ -90,6 +90,7 @@ export class TurnCompletion {
       const steer = active.steerQueue.shift();
       if (steer !== undefined) {
         record('lifecycle', { event: 'steer_delivered', text: steer });
+        active.steerAcks.get(steer)?.shift()?.();
         active.idle = false;
         const turn = await timedPromptTurn(steer);
         connectionGone ||= turn.connectionGone;
@@ -116,11 +117,12 @@ export class TurnCompletion {
     while (!connectionGone && !active.externallySettled && !escalating && !listeners.stoppedShort && active.steerQueue.length > 0) {
       const steer = active.steerQueue.shift()!;
       record('lifecycle', { event: 'steer_delivered', text: steer });
+      active.steerAcks.get(steer)?.shift()?.();
       const turn = await timedPromptTurn(steer);
       connectionGone ||= turn.connectionGone;
       if (turn.result) result = turn.result;
     }
-    return { result, connectionGone, escalating, operatorSeedDelivered: input.operatorSeed !== undefined };
+    return { result, connectionGone, escalating, operatorSeedDelivered: input.operatorSeed !== undefined, promptSent: true };
   }
 
   async finishDrivenTurn(input: {
