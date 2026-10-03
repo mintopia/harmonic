@@ -28,6 +28,9 @@ export interface TrackerCreateContext<S> {
   featureIndex?: FeatureIndex;
 }
 
+/** The outcome of checking a kind's credentials against its backend. */
+export type TrackerVerifyResult = { ok: true; login: string } | { ok: false; reason: string };
+
 /** One tracker, registered once: the kinds list is the only enumeration of trackers. */
 export interface TrackerKind<S = unknown> {
   id: string;
@@ -39,4 +42,6 @@ export interface TrackerKind<S = unknown> {
   /** Raw settings read from the repo's `docs/agents/issue-tracker.md` declaration; parsed against {@link settings}. */
   fromDeclaration?(doc: string, repoRoot: string): Promise<unknown> | unknown;
   create(ctx: TrackerCreateContext<S>): TrackerAdapter;
+  /** Checks the credentials work and names the account they belong to; kinds on ambient CLI auth omit it. */
+  verify?(ctx: TrackerCreateContext<S>): Promise<TrackerVerifyResult>;
 }
