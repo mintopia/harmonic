@@ -26,7 +26,8 @@ whole instance:
 **Per workspace** — things about one repo:
 
 - its name and folder,
-- whether its tracker is on and how often it polls,
+- whether its tracker is on and how often it polls, which tracker it uses,
+  which forge hosts its code, and its [triage labels](#integrations),
 - whether the Auto-Runner is on for it,
 - whether agents may send each other messages, and how many each may send,
 - and its defaults for new tickets (harness, model,
@@ -73,6 +74,56 @@ Harmonic shows a running dollar **cost** on every agent's work, based on a
 price per model. It already knows the models the built-in harnesses use.
 If you add a model it doesn't have a price for, add that price too;
 otherwise its work shows as cost-incomplete rather than a misleading zero.
+
+## Integrations
+
+A Workspace's **Integrations** tab has three sections. Each is per
+Workspace; there is nothing to set globally.
+
+### Issue tracker
+
+Harmonic finds a Workspace's tracker in this order, and the section shows
+which one won on the **Resolved** line:
+
+1. **Configured**: the tracker you pick here.
+2. **Detected**: the one named in the repo's `docs/agents/issue-tracker.md`.
+3. **Code Repository**: the forge hosting the code, when it is also an
+   issue tracker.
+
+Leave **Configured Tracker** on *Inherit (automatic)* to use the repo's
+declaration. Otherwise pick GitHub, GitLab, Forgejo, Jira or Local Markdown;
+the fields below the picker change with the choice.
+
+- **GitHub** and **GitLab** have no credentials in Harmonic. They use the
+  `gh` / `glab` login already on the host. GitLab's one field, **Project**,
+  defaults to the `origin` remote.
+- **Forgejo** needs **Base URL** and **Repo** (`owner/name`), an **Epic
+  source** (labelled issues, Projects or Milestones), and a token. The
+  **Secret** row shows *Set* or *Not set*; use **Set** or **Replace** to enter
+  the token and **Clear** to remove it.
+- **Jira** needs **Base URL**, **Auth mode** (Cloud or Data Center),
+  **Email** (Cloud only), **Project key** and **Secret name**, plus optional
+  extra JQL and the pickup, done and reopen status names.
+
+A **Secret** is write-only. Once saved it is never shown again, it applies
+immediately without the save bar, and it belongs to that Workspace only.
+
+**Verify tracker** is disabled while you have unsaved edits.
+
+### Code repository
+
+The forge that hosts this Workspace's branches, pull requests and merges. It
+is detected from the `origin` remote and shown under **Detected**. Use
+**Override** to choose GitHub, GitLab or Forgejo yourself, and **Verify
+repository** to check it is reachable. The code repository can differ from the
+tracker, for example Jira issues with code on GitHub.
+
+### Triage labels
+
+The label names your tracker uses for each role Harmonic acts on: **Ready for
+agent**, **Ready for human**, **Epic** and **Wayfinder map**. Leave a field
+empty to inherit it from the repo's `docs/agents/triage-labels.md`, then the
+defaults shown as placeholders.
 
 ## Archive & Export
 
