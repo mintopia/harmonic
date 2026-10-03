@@ -146,18 +146,57 @@ _Avoid_: cancel (Cancel keeps the record; Delete removes it).
 The database primary key of a Task — what `finish_task` / `escalate_task` take as `taskId` and `GET /api/tasks/:id` uses. Rendered `T-<id>` in compact identifier slots (board row, graph node, table cell) and `Task <id>` in prose and dialog titles, never a bare `#`. The formatter lives in `web/src/id-format.ts`.
 
 **Tracker ref**:
-The GitHub issue number a mirrored Task resolves — e.g. `#185`. Rendered `#<ref>`, distinct from task id (issue #192). It is what `/implement <N>` takes as the argument. Where both appear on the Ticket header, both show disambiguated: `Task 174 · issue #185`.
+The opaque, tracker-scoped key of the issue a mirrored Task resolves — a GitHub, GitLab, Forgejo or Local Markdown number (`185`) or a Jira key (`PROJ-185`). Harmonic never parses or orders it; only the owning tracker adapter knows its shape and how to render it (`#185`, `PROJ-185`). Distinct from task id (issue #192). It is what `/implement <ref>` takes as the argument. Where both appear on the Ticket header, both show disambiguated: `Task 174 · issue #185`.
+_Avoid_: issue number, ticket id
 
 ### Tracker mirroring
 
+**Code Repository**:
+Where a Workspace's branches, PRs/MRs and Merges go — **GitHub**, **GitLab**,
+or **Forgejo**. Detected from the repo's `origin` remote (github.com,
+gitlab.com, otherwise a Forgejo host that answers its version endpoint) and
+overridable per Workspace. Independent of the Resolved Tracker: a Jira
+Workspace still has a Code Repository, and a Forgejo Workspace usually has the
+same host for both.
+_Avoid_: code host, git provider, remote
+
+**Configured Tracker**:
+The Workspace's explicit issue-tracker choice — a kind (**GitHub**, **GitLab**,
+**Forgejo**, **Jira**, **Local Markdown**) plus that kind's settings (host,
+project, auth mode, status transitions) — or unset. Always wins over the
+Detected Tracker when set.
+_Avoid_: tracker override, provider
+
+**Detected Tracker**:
+What the repo itself names in `docs/agents/issue-tracker.md`, read at poll
+time. Unset when the file is absent or names nothing Harmonic knows.
+_Avoid_: declared tracker, repo tracker
+
 **Resolved Tracker**:
-Which issue tracker a Workspace's repo declares — **GitHub**, **GitLab**, or
-**Local Markdown** — resolved from its `docs/agents/issue-tracker.md` at poll
-time, never auto-detected. Surfaced read-only on the Workspace so the operator
-can see what will be mirrored, or why nothing can be (no declaration, an
-unsupported name). A resolution failure stops the poll loop from starting
-rather than erroring every cycle.
-_Avoid_: detected tracker, tracker type, provider
+Which issue tracker a Workspace actually mirrors, and the settings that reach
+it. Resolved at poll time in strict precedence: Configured Tracker, else
+Detected Tracker, else the Code Repository when it is also an issue tracker
+(GitHub, GitLab, Forgejo), else none. Surfaced read-only on the Workspace
+together with which source won, so the operator can see what will be
+mirrored, or why nothing can be (nothing configured, detected, or inferable;
+an unsupported name; an unreachable host). A resolution failure stops the
+poll loop from starting rather than erroring every cycle.
+_Avoid_: tracker type, provider
+
+**Triage Labels**:
+The label strings a Resolved Tracker uses for the roles Harmonic acts on —
+agent-ready, human-only, epic, wayfinder map. Resolved per Workspace in the
+same precedence shape as the tracker: the Workspace's explicit label settings,
+else the repo's `docs/agents/triage-labels.md` role table, else the instance
+defaults (`ready-for-agent`, `ready-for-human`, `epic`, `wayfinder:map`).
+_Avoid_: hard-coded labels, label names
+
+**Secret**:
+A per-Workspace named credential (a Forgejo token, a Jira API token) stored
+encrypted at rest and never readable back through the API or UI — only
+"set" / "not set", replace, and clear. Tracker settings refer to a Secret by
+name; the Secret is what the adapter authenticates with.
+_Avoid_: token field, password, credential setting
 
 **Origin**:
 Whether a Task was authored in Harmonic (**native**) or is a 1:1 projection
@@ -179,12 +218,18 @@ Deleting a mirrored Task: the row and its Attempts/Usage/edges are removed AND a
 _Avoid_: cancel, delete (Dismiss is specifically the mirrored-Task delete that tombstones the ref).
 
 **Epic**:
-A parent tracker issue that groups typed child tickets — the unit a batch of
-related work shares. **Three kinds**: a **Map** (wayfinding children), a **Spec**
+A parent tracker container that groups typed child tickets — the unit a batch
+of related work shares. Usually an `epic`-labelled issue (GitHub, GitLab,
+Forgejo, Local Markdown) or a Jira issue of type Epic; a Forgejo Workspace may
+instead be set to treat each open repo Project or Milestone as an Epic, with the
+issues it owns as the children. "Closes the tracker issue" below then means
+closing that Project or Milestone. **Three kinds**: a **Map** (wayfinding children), a **Spec**
 (implementation children with a spec-shaped body), and a **plain Epic** (a bare
 parent/child grouping, neither Map nor Spec). Harmonic does not author Epics — it
-reads whatever parent/child structure the tracker holds (native sub-issues, or a
-body task-list / `Part of #<n>` line) and copes; setting the tickets up is the
+reads whatever parent/child structure the tracker holds — native first
+(sub-issues, Jira parent, Project or Milestone membership), then a body
+task-list / `Part of #<n>` line as a second source, on every tracker — and
+copes; setting the tickets up is the
 operator's or an agent's job. The **leaf-most** Epic — the immediate parent of
 implementation Tasks — is the unit its children are scheduled and merged as a
 group by, and it is a **first-class stored resource** (ADR-0018): a durable
