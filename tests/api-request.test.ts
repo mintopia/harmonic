@@ -14,6 +14,11 @@ describe('api request()', () => {
     await expect(api.tasks()).rejects.toThrow(/Empty response from GET \/api\/tasks/);
   });
 
+  it('shows the server error id so the operator can grep the logs', async () => {
+    vi.stubGlobal('fetch', fakeFetch(JSON.stringify({ error: { code: 'internal', message: 'internal server error', id: 'req-2a' } }), { status: 500 }));
+    await expect(api.tasks()).rejects.toMatchObject({ status: 500, message: 'internal server error (ref req-2a)', errorId: 'req-2a' });
+  });
+
   it('parses and returns a normal JSON body', async () => {
     vi.stubGlobal('fetch', fakeFetch(JSON.stringify({ tasks: [{ id: 1 }] }), { status: 200 }));
     await expect(api.tasks()).resolves.toEqual({ tasks: [{ id: 1 }] });

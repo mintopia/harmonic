@@ -31,7 +31,7 @@ describe('VerificationAttemptStore.backfillFullOutputKeys', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it('moves the legacy embedded path into the column, strips it from output, and is idempotent', async () => {
+  it('moves the legacy embedded path into the column, strips it from output, leaves a path it cannot key untouched, and is idempotent', async () => {
     const legacy = await add('command', 'head\n…[truncated 300000 chars; full output: /data/archive/1-a/attempts/2/verification/pre-merge/cmd-1/output.log]…\ntail');
     const windows = await add('command', 'h…[truncated 9 chars; full output: C:\\data\\archive\\1-a\\attempts\\2\\verification\\post-merge\\cmd-2\\output.log]…t');
     const foreign = await add('command', 'x…[truncated 1 chars; full output: /elsewhere/output.log]…y');
@@ -44,7 +44,7 @@ describe('VerificationAttemptStore.backfillFullOutputKeys', () => {
 
     expect(first[0]).toMatchObject({ output: 'head\n…[truncated 300000 chars]…\ntail', fullOutputKey: 'verification/pre-merge/cmd-1/output.log' });
     expect(first[1]).toMatchObject({ output: 'h…[truncated 9 chars]…t', fullOutputKey: 'verification/post-merge/cmd-2/output.log' });
-    expect(first[2]).toMatchObject({ output: 'x…[truncated 1 chars]…y', fullOutputKey: null });
+    expect(first[2]).toMatchObject({ output: 'x…[truncated 1 chars; full output: /elsewhere/output.log]…y', fullOutputKey: null });
     expect(first[3]).toMatchObject({ output: 'short output', fullOutputKey: null });
     expect(first[4]).toMatchObject({ output: 'review text mentioning full output: nothing', fullOutputKey: null });
 

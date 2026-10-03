@@ -3,11 +3,13 @@
 Point Harmonic at your issue tracker (GitHub, GitLab, Forgejo, Jira or local
 Markdown files) and it works through your backlog on its own. Choose the
 tracker, the code host and your triage labels per Workspace under Settings →
-Integrations; see [Settings](https://mintopia.github.io/harmonic/run/settings/#integrations). Write a spec, break it into tickets, and Harmonic runs the ready
-ones out to merged code: for each ticket it starts a coding agent,
-implements the change, runs your configured verification, and merges the branch when using worktree isolation,
-handing a ticket back only when it needs a human. You watch a board and a
-timeline of everything the fleet has run, and step in only when a ticket
+Integrations; see [Settings](https://mintopia.github.io/harmonic/run/settings/#integrations). Forgejo and Jira require a stored Secret for API access. The code
+host can be GitHub, GitLab, Forgejo, or a generic git push-only remote. Write
+a spec, break it into tickets, and Harmonic runs the ready ones out to merged
+code: for each ticket it starts a coding agent, implements the change, runs
+your configured verification, and merges the branch when using worktree
+isolation, handing a ticket back only when it needs a human. You watch a board
+and a timeline of everything the fleet has run, and step in only when a ticket
 needs you.
 
 It's built to run alongside **Matt Pocock's Skills**, which turn a spec

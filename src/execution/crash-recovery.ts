@@ -97,7 +97,10 @@ export class CrashRecoveryCoordinator {
         if (!merged) return;
 
         const taskMergeOid = await Git.taskMergeCommit(task.workingDir, run.baseBranch!, run.branch!);
-        if (!taskMergeOid) return;
+        if (!taskMergeOid) {
+          logger.warn('crash-recovery: branch is an ancestor of base but has no merge commit (fast-forward or untouched); leaving Attempt running', { taskId: task.id, attemptId: run.id, baseBranch: run.baseBranch!, branch: run.branch! });
+          return;
+        }
 
         await withBaseCheckoutLock(task.workingDir, () =>
           withRepoLock(task.workingDir, async () => {

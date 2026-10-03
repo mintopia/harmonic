@@ -33,6 +33,28 @@ describe('instance secret key', () => {
     expect(loadSecretKey(dir, {}).equals(first)).toBe(true);
   });
 
+  it.each(['EPERM', 'ENOTSUP', 'EXDEV'])('falls back to an exclusive 0600 write when hard links fail with %s', (code) => {
+    const dir = tempDir();
+    const noLinks = () => {
+      throw Object.assign(new Error('link unsupported'), { code });
+    };
+    const key = loadSecretKey(dir, {}, noLinks);
+    const path = join(dir, SECRET_KEY_FILE);
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(key).toHaveLength(32);
+    expect(readdirSync(dir)).toEqual([SECRET_KEY_FILE]);
+    expect(loadSecretKey(dir, {}, noLinks).equals(key)).toBe(true);
+  });
+
+  it('rethrows other link failures and leaves no temp file', () => {
+    const dir = tempDir();
+    const broken = () => {
+      throw Object.assign(new Error('disk'), { code: 'EIO' });
+    };
+    expect(() => loadSecretKey(dir, {}, broken)).toThrow('disk');
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
   it('uses HARMONIC_SECRET_KEY without a key file, and prefers it over an existing one', () => {
     const dir = tempDir();
     const envKey = randomBytes(32);

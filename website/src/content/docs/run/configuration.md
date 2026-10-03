@@ -32,6 +32,7 @@ shell profile:
 | --- | --- | --- |
 | `HARMONIC_DATA_DIR` | `--data-dir` | State directory. |
 | `HARMONIC_PASSWORD` | `--password` | Operator password. |
+| `HARMONIC_SECRET_KEY` | — | Encryption key for Secrets (tokens, etc.). Hex or base64, 32 bytes. Auto-created on first run and stored as `secret.key` (mode 0600) in the data directory if not set. |
 
 ## Precedence
 

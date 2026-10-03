@@ -1,7 +1,6 @@
 import { z } from 'zod';
-import { logger } from '../logger.js';
 import { forEachYielding } from '../reliability/yield.js';
-import { FORGEJO_TOKEN_SECRET, forgejoClient, parseForgejoRemote, repoPath, verifyForgejoToken } from './forgejo-client.js';
+import { FORGEJO_TOKEN_SECRET, forgejoClient, parseForgejoRemote, repoPath } from './forgejo-client.js';
 import { parseBlockedByLines, parsePartOfParent } from './relationships.js';
 import { RestError, type RestClient } from './rest-client.js';
 import type { TrackerKind } from './kind.js';
@@ -9,6 +8,24 @@ import type { Ticket, TicketRef, TicketState, WritableTrackerAdapter } from './a
 import { EPIC_LABEL, MAP_LABEL, trackerRef, type TrackerRef } from './ref.js';
 
 const PAGE_SIZE = 50;
+const DEPENDENCY_CONCURRENCY = 4;
+
+/** Runs `run`, answering `fallback` when the tracker says 404. */
+async function orOnNotFound<T>(run: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    if (err instanceof RestError && err.status === 404) return fallback;
+    throw err;
+  }
+}
+
+/** {@link forEachYielding} across `concurrency` workers draining one shared queue. */
+async function forEachConcurrently<T>(items: readonly T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
+  const queue = items[Symbol.iterator]();
+  const shared: Iterable<T> = { [Symbol.iterator]: () => queue };
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => forEachYielding(shared, fn)));
+}
 
 export const forgejoSettingsSchema = z
   .object({
@@ -105,23 +122,10 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
     };
   };
 
-  const nativeBlockedBy = async (issueNumber: number): Promise<RawIssue[]> => {
-    try {
-      return await client.paginate(`${repo}/issues/${issueNumber}/dependencies`, PAGE_SIZE, issueSchema);
-    } catch (err) {
-      if (err instanceof RestError && err.status === 404) return [];
-      throw err;
-    }
-  };
-
-  const nativeBlocks = async (issueNumber: number): Promise<RawIssue[]> => {
-    try {
-      return await client.paginate(`${repo}/issues/${issueNumber}/blocks`, PAGE_SIZE, issueSchema);
-    } catch (err) {
-      if (err instanceof RestError && err.status === 404) return [];
-      throw err;
-    }
-  };
+  const nativeEdges = (issueNumber: number, edge: 'dependencies' | 'blocks'): Promise<RawIssue[]> =>
+    orOnNotFound(() => client.paginate(`${repo}/issues/${issueNumber}/${edge}`, PAGE_SIZE, issueSchema), []);
+  const nativeBlockedBy = (issueNumber: number): Promise<RawIssue[]> => nativeEdges(issueNumber, 'dependencies');
+  const nativeBlocks = (issueNumber: number): Promise<RawIssue[]> => nativeEdges(issueNumber, 'blocks');
 
   const parentOfIssue = async (raw: RawIssue): Promise<TrackerRef | null> => {
     if (source === 'label') {
@@ -129,13 +133,9 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
       return bodyParent === null ? null : trackerRef(bodyParent);
     }
     if (!raw.milestone) return null;
-    try {
-      const m = await client.request('GET', `${repo}/milestones/${raw.milestone.id}`, containerSchema);
-      return m.state === 'open' ? containerRef(m.id) : null;
-    } catch (err) {
-      if (err instanceof RestError && err.status === 404) return null;
-      throw err;
-    }
+    const milestoneId = raw.milestone.id;
+    const m = await orOnNotFound(() => client.request('GET', `${repo}/milestones/${milestoneId}`, containerSchema), null);
+    return m?.state === 'open' ? containerRef(m.id) : null;
   };
 
   /** Open containers of the configured source with the numbers of the issues they hold. */
@@ -152,7 +152,6 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
 
   const scanAll = async (): Promise<Ticket[]> => {
     const raws = (await client.paginate(`${repo}/issues?state=all&type=issues`, PAGE_SIZE, issueSchema)).filter((i) => !i.pull_request);
-    if (raws.length >= PAGE_SIZE * 100) logger.warn('Forgejo tracker scan hit the 100-page safety valve — results may be truncated');
     const held = await containers();
     const parentOf = new Map<number, TrackerRef>();
     await forEachYielding(held, (c) => {
@@ -160,8 +159,9 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
     });
 
     const native = new Map<number, TicketRef[]>();
-    await forEachYielding(
+    await forEachConcurrently(
       raws.filter((i) => i.state !== 'closed'),
+      DEPENDENCY_CONCURRENCY,
       async (i) => {
         native.set(i.number, (await nativeBlockedBy(i.number)).map((d) => ({ ref: trackerRef(d.number), title: d.title, state: state(d.state) })));
       },
@@ -288,12 +288,8 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
         .filter((n) => !seen.has(n));
       const fromBody = await Promise.all(
         bodyRefs.map(async (n): Promise<TicketRef> => {
-          try {
-            return toRef(await client.request('GET', `${repo}/issues/${n}`, issueSchema));
-          } catch (err) {
-            if (err instanceof RestError && err.status === 404) return { ref: n, title: '', state: 'open' };
-            throw err;
-          }
+          const missing: TicketRef = { ref: n, title: '', state: 'open' };
+          return orOnNotFound(async () => toRef(await client.request('GET', `${repo}/issues/${n}`, issueSchema)), missing);
         }),
       );
       return {
@@ -328,6 +324,7 @@ export const forgejoKind: TrackerKind<ForgejoSettings> = {
   secretNames: [FORGEJO_TOKEN_SECRET],
   secretsFor: (settings) => [settings.tokenSecret],
   capabilities: { close: true, reopen: true, claim: true, transition: false, epicSources: ['epic-label', 'milestone'] },
+  formatRef: (ref) => (parseContainerRef(ref) ? ref : `#${ref}`),
   fromDeclaration: async (doc, _repoRoot, origin) => {
     const baseUrl = doc.match(/^\s*Base URL:\s*(.+?)\s*$/im)?.[1];
     const repo = doc.match(/^\s*Repo:\s*(.+?)\s*$/im)?.[1];
@@ -340,10 +337,5 @@ export const forgejoKind: TrackerKind<ForgejoSettings> = {
     const token = secrets[settings.tokenSecret];
     if (!token) throw new Error(`Forgejo tracker needs the "${settings.tokenSecret}" Secret`);
     return forgejoAdapter(settings, forgejoClient({ baseUrl: settings.baseUrl, token, http }));
-  },
-  verify: async ({ settings, secrets, http }) => {
-    const token = secrets[settings.tokenSecret];
-    if (!token) return { ok: false, reason: `The "${settings.tokenSecret}" Secret is not set` };
-    return verifyForgejoToken(forgejoClient({ baseUrl: settings.baseUrl, token, http }));
   },
 };

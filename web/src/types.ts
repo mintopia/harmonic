@@ -384,7 +384,6 @@ export interface TrackerDetection {
 
 export type VerifyResult = { ok: true; identity: string } | { ok: false; reason: string };
 
-/** Where a Resolved Tracker's choice came from. */
 export type TrackerSource = 'configured' | 'detected' | 'code-repository';
 
 /** A Workspace: a named Working Directory, unique by absolute path. */
@@ -669,6 +668,8 @@ export interface AttemptSummary {
   prompt: string | null;
   branch: string | null;
   baseBranch: string | null;
+  /** The PR/MR the open-PR Merge Fate opened for this Attempt; null when none was opened. */
+  pullRequestUrl: string | null;
   usage: {
     totals: AttemptUsageTotals | null;
     models: Record<string, ModelUsage>;

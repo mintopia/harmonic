@@ -56,6 +56,7 @@ export class ApiError extends Error {
     public status: number,
     message: string,
     public code: string | null = null,
+    public errorId: string | null = null,
   ) {
     super(message);
   }
@@ -73,8 +74,9 @@ async function send(method: string, path: string, body?: unknown): Promise<{ res
 
 function failure(method: string, path: string, res: Response, json: unknown): ApiError {
   const fallback = `${method} ${path} failed (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`;
-  const envelope = json && typeof json === 'object' && 'error' in json ? (json as { error?: { message?: string; code?: string } }).error : undefined;
-  return new ApiError(res.status, envelope?.message ?? fallback, envelope?.code ?? null);
+  const envelope = json && typeof json === 'object' && 'error' in json ? (json as { error?: { message?: string; code?: string; id?: string } }).error : undefined;
+  const message = envelope?.message ?? fallback;
+  return new ApiError(res.status, envelope?.id ? `${message} (ref ${envelope.id})` : message, envelope?.code ?? null, envelope?.id ?? null);
 }
 
 export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {

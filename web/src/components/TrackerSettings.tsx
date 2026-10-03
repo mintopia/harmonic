@@ -35,6 +35,20 @@ function useLoad<T>(load: () => Promise<T>, key: unknown): { state: Loadable<T>;
   return { state, reload };
 }
 
+const detectionInFlight = new Map<number, Promise<TrackerDetection>>();
+
+function loadDetection(workspaceId: number): Promise<TrackerDetection> {
+  const pending = detectionInFlight.get(workspaceId);
+  if (pending) return pending;
+  const request = api.trackerDetection(workspaceId).finally(() => detectionInFlight.delete(workspaceId));
+  detectionInFlight.set(workspaceId, request);
+  return request;
+}
+
+function useDetection(workspaceId: number) {
+  return useLoad(() => loadDetection(workspaceId), workspaceId);
+}
+
 function LoadFailure({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <p role="alert" className="text-small text-fail">
@@ -171,7 +185,13 @@ export function SecretField({ workspaceId, name, onChange }: { workspaceId: numb
       {state.status === 'ready' && !editing && (
         <div className="flex flex-wrap items-center gap-x-3">
           <span className={`font-medium ${isSet ? 'text-done' : 'text-muted'}`}>{isSet ? 'Set' : 'Not set'}</span>
-          <button type="button" className={btnGhost} disabled={busy} onClick={() => setEditing(true)}>
+          <button
+            type="button"
+            className={btnGhost}
+            disabled={busy}
+            aria-label={`${isSet ? 'Replace' : 'Set'} ${name}`}
+            onClick={() => setEditing(true)}
+          >
             {isSet ? 'Replace' : 'Set'}
           </button>
           {isSet && (
@@ -355,7 +375,7 @@ function SubHead({ children }: { children: ReactNode }) {
 export function IssueTrackerSection({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace, pristineWorkspace, errors } = ctx;
   const kinds = useLoad(() => api.trackerKinds().then((r) => r.kinds), 'kinds');
-  const detection = useLoad(() => api.trackerDetection(workspace.id), workspace.id);
+  const detection = useDetection(workspace.id);
   const [secretVersion, setSecretVersion] = useState(0);
   const configured = workspace.configuredTracker;
   const kindList = kinds.state.status === 'ready' ? kinds.state.value : [];
@@ -450,10 +470,14 @@ export function IssueTrackerSection({ ctx }: { ctx: WorkspaceRenderCtx }) {
   );
 }
 
+const FORGEJO_TOKEN_SECRET = 'FORGEJO_TOKEN';
+
 export function CodeRepositorySection({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace, pristineWorkspace, errors } = ctx;
-  const detection = useLoad<TrackerDetection>(() => api.trackerDetection(workspace.id), workspace.id);
+  const detection = useDetection(workspace.id);
   const detected = detection.state.status === 'ready' ? detection.state.value.detectedCodeRepository : null;
+  const [secretVersion, setSecretVersion] = useState(0);
+  const needsForgejoToken = (pristineWorkspace.codeRepository ?? detected) === 'forgejo' && pristineWorkspace.configuredTracker?.kind !== 'forgejo';
   return (
     <div className="flex flex-col gap-4 sm:max-w-xl">
       <div>
@@ -485,13 +509,19 @@ export function CodeRepositorySection({ ctx }: { ctx: WorkspaceRenderCtx }) {
         </select>
         <FieldError message={errors['codeRepository']} />
       </div>
+      {needsForgejoToken && (
+        <div className="flex flex-col gap-3">
+          <SecretField key={`${workspace.id}:${FORGEJO_TOKEN_SECRET}`} workspaceId={workspace.id} name={FORGEJO_TOKEN_SECRET} onChange={() => setSecretVersion((v) => v + 1)} />
+          <SubHead>The Forgejo API token used to open and merge pull requests. Write-only; applies immediately.</SubHead>
+        </div>
+      )}
       <VerifyControl
         run={() => api.verifyRepository(workspace.id)}
         disabled={ctx.dirty}
         disabledHint="Save changes to verify the repository."
         label="Verify repository"
         okPrefix="Reachable on"
-        resetKey={String(pristineWorkspace.codeRepository)}
+        resetKey={`${secretVersion}:${String(pristineWorkspace.codeRepository)}`}
       />
     </div>
   );

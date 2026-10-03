@@ -1,4 +1,5 @@
 import { z, type ZodType } from 'zod';
+import { logger } from '../logger.js';
 import type { TrackerHttp } from './kind.js';
 
 export class RestError extends Error {
@@ -27,7 +28,7 @@ export interface RestClientOptions {
   baseUrl: string;
   headers: Record<string, string>;
   http: TrackerHttp;
-  /** Retries after the first attempt; a bounded count so a dead host cannot spin the loop (ADR-0007, #219). Default 3. */
+  /** Retries after the first attempt; a bounded count so a dead host cannot spin the loop. Default 3. */
   retries?: number;
   /** Delay before retry `n` (0-based) in ms when the server names none. Default 250 * 2^n. */
   backoffMs?: (attempt: number) => number;
@@ -39,7 +40,7 @@ export interface RestClient {
   request<T>(method: string, path: string, schema: ZodType<T>, body?: unknown): Promise<T>;
   /** One request whose reply body is ignored. */
   send(method: string, path: string, body?: unknown): Promise<void>;
-  /** Every item of a page-numbered list endpoint, each matching `item`, stopping at the first short page. */
+  /** Every item of a page-numbered list endpoint, each matching `item`, stopping at the first short page or `maxPages` (warned once per path). */
   paginate<T>(path: string, pageSize: number, item: ZodType<T>, maxPages?: number): Promise<T[]>;
 }
 
@@ -62,6 +63,7 @@ function retryAfterMs(res: Response): number | null {
 export function createRestClient(options: RestClientOptions): RestClient {
   const { baseUrl, headers, http, retries = 3, backoffMs = (n) => 250 * 2 ** n, sleep = defaultSleep } = options;
   const root = baseUrl.replace(/\/+$/, '');
+  const truncated = new Set<string>();
 
   async function exchange(method: string, path: string, body: unknown): Promise<{ status: number; text: string }> {
     const init: RequestInit = {
@@ -117,6 +119,10 @@ export function createRestClient(options: RestClientOptions): RestClient {
       const batch = await request('GET', `${path}${sep}page=${page}&limit=${pageSize}`, z.array(item));
       items.push(...batch);
       if (batch.length < pageSize) break;
+      if (page === maxPages && !truncated.has(path)) {
+        truncated.add(path);
+        logger.warn(`${root}${path}: stopped at the ${maxPages}-page cap, results may be truncated`);
+      }
     }
     return items;
   }

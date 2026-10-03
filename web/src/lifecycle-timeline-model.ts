@@ -2,7 +2,7 @@ import type { TicketTimelineEvent } from './types.js';
 import { exportFactRows } from './task-export-model.js';
 import { harnessLabel } from './task-detail-model.js';
 import { mergeStepRow, type MergeStepEvent } from './merge-progress-model.js';
-import { issueRef } from './id-format.js';
+import { epicLabel, issueRef, taskKey, taskLabel } from './id-format.js';
 
 export type LifecycleTimelineTone = 'neutral' | 'running' | 'passed' | 'failed' | 'awaiting' | 'sent' | 'received';
 
@@ -253,7 +253,7 @@ function agentMessageRow(data: Record<string, unknown> | null): Omit<LifecycleTi
   const sent = text(data?.direction) === 'sent';
   const peerId = num(data?.peerTaskId);
   const harness = text(data?.peerHarness);
-  const peer = `${sent ? 'to' : 'from'} ${peerId !== null ? `#${peerId}` : 'a Task'}${harness ? ` · ${harnessLabel(harness)}` : ''}`;
+  const peer = `${sent ? 'to' : 'from'} ${peerId !== null ? taskKey(peerId) : 'a Task'}${harness ? ` · ${harnessLabel(harness)}` : ''}`;
   const receipt = RECEIPT_PILL[text(data?.receipt) ?? ''] ?? { label: text(data?.receipt) ?? 'unknown', tone: 'ready' as const };
   const workspaceId = num(data?.workspaceId);
   const thread = text(data?.threadId);
@@ -262,12 +262,12 @@ function agentMessageRow(data: Record<string, unknown> | null): Omit<LifecycleTi
   const replyToAt = num(data?.replyToAt);
   const sendNumber = num(data?.sendNumber);
   const sendCap = num(data?.sendCap);
-  const context = data?.isReply === true ? (sent ? `Reply to ${peerId !== null ? `#${peerId}` : 'a Task'}` : replyToAt !== null ? `Reply to your message of ${hourMinute(replyToAt)}` : 'Reply to your message') : sent ? 'New Thread' : null;
+  const context = data?.isReply === true ? (sent ? `Reply to ${peerId !== null ? taskLabel(peerId) : 'a Task'}` : replyToAt !== null ? `Reply to your message of ${hourMinute(replyToAt)}` : 'Reply to your message') : sent ? 'New Thread' : null;
   const detail =
     receipt.tone === 'fail' && reason
       ? reason
       : sent && text(data?.receipt) === 'held'
-        ? `${peerId !== null ? `#${peerId}` : 'The recipient'} is ready between Attempts`
+        ? `${peerId !== null ? taskLabel(peerId) : 'The recipient'} is ready between Attempts`
         : sent && sendNumber !== null
           ? [context, `send ${sendNumber}${sendCap !== null ? ` of ${sendCap}` : ''} this Attempt`].filter(Boolean).join(' · ')
           : context;
@@ -277,7 +277,7 @@ function agentMessageRow(data: Record<string, unknown> | null): Omit<LifecycleTi
     detail,
     tone: sent ? 'sent' : 'received',
     tag: null,
-    message: { peer, epic: epic !== null ? `Epic #${epic}` : null, receipt, preview: clip(text(data?.preview), 200), href: thread ? `${base}?thread=${encodeURIComponent(thread)}` : base },
+    message: { peer, epic: epic !== null ? epicLabel(epic) : null, receipt, preview: clip(text(data?.preview), 200), href: thread ? `${base}?thread=${encodeURIComponent(thread)}` : base },
   };
 }
 

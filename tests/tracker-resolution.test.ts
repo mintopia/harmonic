@@ -2,10 +2,10 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveTrackerAdapter, resolutionSuccess, workspaceTrackerSettings } from '../src/tracker/adapter.js';
+import { effectiveTrackerKind, formatWorkspaceTrackerRef, resolveTrackerAdapter, trackerRef, resolutionSuccess, workspaceTrackerSettings } from '../src/tracker/adapter.js';
 import { forgejoKind } from '../src/tracker/forgejo.js';
 import { jiraKind } from '../src/tracker/jira.js';
-import { trackerKindFor } from '../src/tracker/kinds.js';
+import { formatTrackerRef, trackerKindFor } from '../src/tracker/kinds.js';
 import { selectTracker } from '../src/tracker/select.js';
 import { configuredTrackerSchema } from '../src/tracker/configured.js';
 import { detectRepository, forgejoVersionProbe, remoteHost } from '../src/repository/detect.js';
@@ -84,7 +84,7 @@ describe('detectRepository', () => {
   });
   it('treats another host as Forgejo only when the probe answers', async () => {
     const seen: string[] = [];
-    expect(await detectRepository('https://code.example.org/o/r.git', async (h) => { seen.push(h); return true; })).toBe('forgejo');
+    expect(await detectRepository('https://code.example.org/o/r.git', async (t) => { seen.push(t.host); return true; })).toBe('forgejo');
     expect(seen).toEqual(['code.example.org']);
     expect(await detectRepository('git@git.example.org:o/r.git', async () => false)).toBeNull();
   });
@@ -99,9 +99,21 @@ describe('detectRepository', () => {
     const ok = forgejoVersionProbe((async () => new Response(JSON.stringify({ version: '9.0.0' }))) as typeof fetch);
     const notFound = forgejoVersionProbe((async () => new Response('', { status: 404 })) as typeof fetch);
     const down = forgejoVersionProbe((async () => { throw new Error('ECONNREFUSED'); }) as typeof fetch);
-    expect(await ok('h')).toBe(true);
-    expect(await notFound('h')).toBe(false);
-    expect(await down('h')).toBe(false);
+    expect(await ok({ host: 'h', port: null, scheme: 'https' })).toBe(true);
+    expect(await notFound({ host: 'h', port: null, scheme: 'https' })).toBe(false);
+    expect(await down({ host: 'h', port: null, scheme: 'https' })).toBe(false);
+  });
+});
+
+describe('formatTrackerRef', () => {
+  it('renders a ref as its owning kind does and leaves an unknown kind unchanged', () => {
+    expect(formatTrackerRef('github', trackerRef(185))).toBe('#185');
+    expect(formatTrackerRef('local-markdown', trackerRef(3))).toBe('#3');
+    expect(formatTrackerRef('jira', trackerRef('PROJ-185'))).toBe('PROJ-185');
+    expect(formatTrackerRef('forgejo', trackerRef(7))).toBe('#7');
+    expect(formatTrackerRef('forgejo', trackerRef('milestone-3'))).toBe('milestone-3');
+    expect(formatTrackerRef('nope', trackerRef(9))).toBe('9');
+    expect(formatTrackerRef(null, trackerRef(9))).toBe('9');
   });
 });
 
@@ -168,5 +180,24 @@ describe('Triage Labels reach the tracker', () => {
     expect(queries[0]).toContain('"agent:repo"');
     expect(queries[0]).toContain('"initiative"');
     expect(queries[0]).not.toContain('"ready-for-agent"');
+  });
+});
+
+describe('effective tracker kind and ref formatting', () => {
+  it('a Configured Jira Tracker renders PROJ-185 even over a GitHub declaration', async () => {
+    const root = mkRepo('# Issue tracker: GitHub\n');
+    const ws = { configured: { kind: 'jira', settings: {} } };
+    expect(await effectiveTrackerKind(root, ws)).toBe('jira');
+    expect(await formatWorkspaceTrackerRef(root, ws, trackerRef('PROJ-185'))).toBe('PROJ-185');
+  });
+  it('a Detected GitHub Tracker renders #185', async () => {
+    const root = mkRepo('# Issue tracker: GitHub\n');
+    expect(await effectiveTrackerKind(root, {})).toBe('github');
+    expect(await formatWorkspaceTrackerRef(root, {}, trackerRef('185'))).toBe('#185');
+  });
+  it('a Code Repository tracker renders by its kind, and no tracker leaves the ref unchanged', async () => {
+    expect(await formatWorkspaceTrackerRef(mkRepo(), { codeRepository: 'gitlab' }, trackerRef('185'))).toBe('#185');
+    expect(await effectiveTrackerKind(mkRepo(), {})).toBeNull();
+    expect(await formatWorkspaceTrackerRef(mkRepo(), {}, trackerRef('185'))).toBe('185');
   });
 });

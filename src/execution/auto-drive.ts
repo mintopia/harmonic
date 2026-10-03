@@ -1,7 +1,7 @@
 import type { TrackerRef } from '../tracker/adapter.js';
 import { type AppConfig, type MergeFate } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow, StoredEpicKind } from '../db/schema.js';
-import { resolveTrackerAdapter, workspaceTrackerSettings, type TrackerAdapter, type TicketRef, type WorkspaceTrackerSettings } from '../tracker/adapter.js';
+import { formatWorkspaceTrackerRef, resolveTrackerAdapter, workspaceTrackerSettings, type TrackerAdapter, type TicketRef, type WorkspaceTrackerSettings } from '../tracker/adapter.js';
 import type { FeatureIndex } from '../tracker/local-markdown.js';
 import { resolveRepositoryWithoutSecrets, type RepositoryResolver } from '../repository/resolve.js';
 import { resolveDrive, type ResolvedDrive } from '../domain/setting-override.js';
@@ -9,6 +9,7 @@ import { driveFields, fillTemplate, splitTitleBody } from './prompt-template.js'
 import { Git } from './git.js';
 import { withBaseCheckoutLock } from './repo-lock.js';
 import { logger } from '../logger.js';
+import { errorMessage } from '../error-handling.js';
 
 type DriveWorkspace = Pick<
   WorkspaceRow,
@@ -38,6 +39,8 @@ export class AutoDrive {
     /** Notified when a close attempt throws. */
     private readonly onTicketCloseFailed?: (task: TaskRow, error: unknown) => void,
     private readonly resolveRepository: RepositoryResolver = resolveRepositoryWithoutSecrets,
+    /** Persists the PR/MR URL the open-PR fate created onto the Attempt that opened it. */
+    private readonly recordPullRequest?: (run: AttemptRow, url: string) => Promise<void>,
   ) {}
 
   /** The auto-driven path: a mirrored Task Harmonic runs unattended. */
@@ -118,15 +121,21 @@ export class AutoDrive {
         const repository = await this.resolveRepository(task.workingDir, workspace);
         if (repository) {
           const { title } = splitTitleBody(task.prompt);
+          let pullRequestUrl: string | null;
           try {
-            await repository.openPR({
+            pullRequestUrl = await repository.openPR({
               branch: run.branch!,
               baseBranch: run.baseBranch!,
               title,
-              body: `Auto-driven by Harmonic for #${task.trackerRef}.`,
+              body: `Auto-driven by Harmonic for ${task.trackerRef == null ? `Task ${task.id}` : await formatWorkspaceTrackerRef(task.workingDir, workspace, task.trackerRef)}.`,
             });
           } catch {
             return 'escalate';
+          }
+          if (pullRequestUrl !== null) {
+            await this.recordPullRequest?.(run, pullRequestUrl).catch((err: unknown) => {
+              logger.warn(`[auto-drive] PR opened for task ${task.id} but its URL was not recorded: ${errorMessage(err)}`);
+            });
           }
           return 'completed';
         }

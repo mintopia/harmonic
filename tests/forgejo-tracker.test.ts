@@ -16,14 +16,6 @@ const build = (options: FakeForgejoOptions, settings: Record<string, unknown> = 
 const ref = (number: string | number): TicketRef => ({ ref: trackerRef(number), title: '', state: 'open' });
 
 describe('Forgejo tracker', () => {
-  it('sends the token and reads the account for verify', async () => {
-    const { fake, ctx } = build({ issues: [] }, {});
-    expect(await forgejoKind.verify!(ctx)).toEqual({ ok: true, login: 'harmonic-bot' });
-    expect(fake.requests[0]).toMatchObject({ path: '/user', auth: 'token good' });
-    expect(await forgejoKind.verify!({ ...ctx, secrets: { FORGEJO_TOKEN: 'bad' } })).toMatchObject({ ok: false });
-    expect(await forgejoKind.verify!({ ...ctx, secrets: {} })).toEqual({ ok: false, reason: 'The "FORGEJO_TOKEN" Secret is not set' });
-  });
-
   it('reads the token from the Secret named in settings', () => {
     const ctx = { settings: forgejoKind.settings.parse({ baseUrl: 'https://forge.test', repo: 'owner/name', tokenSecret: 'MY_TOKEN' }), repoRoot: '/repo', http: fakeForgejo({ issues: [] }).http };
     expect(() => forgejoKind.create({ ...ctx, secrets: { FORGEJO_TOKEN: 'good' } })).toThrow('"MY_TOKEN" Secret');
@@ -131,5 +123,29 @@ describe('Forgejo replies are validated at the boundary', () => {
 
   it('identify reports the token account', async () => {
     expect(await build({ issues: [] }).adapter.identify!()).toBe('harmonic-bot');
+  });
+
+  it('bounds concurrent dependency fetches', async () => {
+    const issues = Array.from({ length: 12 }, (_, i) => issue(i + 1, `T${i + 1}`));
+    const fake = fakeForgejo({ issues });
+    let inFlight = 0;
+    let peak = 0;
+    const http: typeof fake.http = async (url, init) => {
+      const counted = new URL(url).pathname.endsWith('/dependencies');
+      if (counted) {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      try {
+        return await fake.http(url, init);
+      } finally {
+        if (counted) inFlight -= 1;
+      }
+    };
+    const ctx = { settings: forgejoKind.settings.parse({ baseUrl: 'https://forge.test', repo: 'owner/name' }), secrets: { FORGEJO_TOKEN: 'good' }, repoRoot: '/repo', http };
+    expect(await forgejoKind.create(ctx).scan()).toHaveLength(12);
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(4);
   });
 });

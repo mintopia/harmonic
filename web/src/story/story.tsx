@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { api, ApiError } from '../api';
 import type { JSX } from 'react';
 import ReactDOM from 'react-dom/client';
 import '../index.css';
@@ -27,7 +28,7 @@ import { HintBanner } from '../components/HintBanner';
 import { SettingsPage } from '../components/SettingsPage';
 import { ExportPanel } from '../components/ticket/ExportPanel';
 import type { TaskExportStatus, Workspace } from '../types';
-import { IssueTrackerSection, CodeRepositorySection, TriageLabelsSection } from '../components/TrackerSettings';
+import { SecretField, IssueTrackerSection, CodeRepositorySection, TriageLabelsSection } from '../components/TrackerSettings';
 import { SettingsSection } from '../components/SettingsSection';
 import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline } from './fixtures';
 
@@ -400,6 +401,24 @@ function TrackerStory() {
   );
 }
 
+if (which === 'secrets' && params.get('fail') === '1') {
+  Object.assign(api, {
+    setSecret: async () => {
+      throw new ApiError(500, 'internal server error (ref req-4f2a9)', 'internal', 'req-4f2a9');
+    },
+  });
+}
+
+function SecretsStory() {
+  return (
+    <StoryFrame style={{ padding: 24 }}>
+      <div style={{ maxWidth: 520, margin: '0 auto' }}>
+        <SettingsSection title="Secrets" description="Write-only; applied immediately."><SecretField workspaceId={1} name="forgejoToken" /></SettingsSection>
+      </div>
+    </StoryFrame>
+  );
+}
+
 const STORIES: Record<string, () => JSX.Element> = {
   settings: SettingsStory,
   board: BoardStory,
@@ -424,6 +443,7 @@ const STORIES: Record<string, () => JSX.Element> = {
   'settings-page': SettingsPageStory,
   archive: ArchiveStory,
   tracker: TrackerStory,
+  secrets: SecretsStory,
 };
 
 function Story() {

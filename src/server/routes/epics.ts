@@ -1,10 +1,9 @@
-import { trackerRef } from '../../tracker/adapter.js';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { AppContext } from '../app.js';
 import { DomainError } from '../../domain/errors.js';
-import { attemptUsageSchema, costSchema, errorResponse } from '../schemas.js';
+import { attemptUsageSchema, costSchema, errorResponse, trackerRefParam } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import type { Epic } from '../../domain/epic-view.js';
 import { diffFilesResponseSchema } from './diff.js';
@@ -15,7 +14,7 @@ import { ATTEMPT_STATES } from '../../db/schema.js';
 /** Path params for a whole-Epic action: the owning Workspace and the Epic's tracker ref. */
 const epicParamsSchema = z.object({
   workspaceId: z.coerce.number().int().meta({ example: 1 }),
-  epicRef: z.string().min(1).meta({ example: '42' }),
+  epicRef: trackerRefParam('42'),
 });
 
 /** Path params for the read endpoints: the owning Workspace only (`GET …/epics`). */
@@ -251,7 +250,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
-      const epic = await ctx.trackerManager.epicDetail(req.params.workspaceId, trackerRef(req.params.epicRef));
+      const epic = await ctx.trackerManager.epicDetail(req.params.workspaceId, req.params.epicRef);
       if (!epic) {
         throw new DomainError('not_found', `no Epic ${req.params.epicRef} derived for workspace ${req.params.workspaceId}`);
       }
@@ -275,7 +274,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
-      return epicAttemptTimelineToApi(ctx, { workspaceId: req.params.workspaceId, epicRef: trackerRef(req.params.epicRef) });
+      return epicAttemptTimelineToApi(ctx, { workspaceId: req.params.workspaceId, epicRef: req.params.epicRef });
     },
   );
 
@@ -297,7 +296,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
-      const outcome = await ctx.trackerManager.rejectEpic(req.params.workspaceId, trackerRef(req.params.epicRef), req.body.guidance, req.body.continuation);
+      const outcome = await ctx.trackerManager.rejectEpic(req.params.workspaceId, req.params.epicRef, req.body.guidance, req.body.continuation);
       if (!outcome) throw new DomainError('conflict', `Epic ${req.params.epicRef} is not escalated`);
       return outcome;
     },
@@ -323,7 +322,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
-      const raw = await ctx.trackerManager.epicDiff(req.params.workspaceId, trackerRef(req.params.epicRef));
+      const raw = await ctx.trackerManager.epicDiff(req.params.workspaceId, req.params.epicRef);
       const files = parseUnifiedDiff(raw);
       const { limit, offset } = req.query;
       const { items, total } = paginate(files, { limit, offset });

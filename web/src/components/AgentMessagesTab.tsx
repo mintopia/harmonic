@@ -29,14 +29,14 @@ import {
 import { isAtLiveEdge } from '../follow-tail-model';
 import { elapsedShort } from '../relative-time';
 import type { AgentMessageThread } from '../types';
-import { panelTitle } from '../ui';
+import { panelTitle, stateChip } from '../ui';
+import { taskKey } from '../id-format';
 import { isRailLayout } from '../useRailBreakpoint';
 import { useNow } from '../useNow';
 import { EmptyState } from './EmptyState';
 import { HarnessGlyph } from './HarnessGlyph';
 import { Icon } from './Icon';
 import { LoadError } from './LoadError';
-import { StatePill } from './ticket/shared';
 import { Switch } from './Switch';
 import { panelId, tabId } from './Tabs';
 
@@ -148,7 +148,7 @@ function AgentCardView({ card, workspaceId }: { card: AgentCard; workspaceId: nu
           <span aria-hidden="true" className="grid size-6 place-items-center rounded-md bg-raised text-faint">
             <HarnessGlyph harness={null} className="size-[13px]" />
           </span>
-          <span className="font-data">#{card.taskId}</span>
+          <span className="font-data">{taskKey(card.taskId)}</span>
           <span>deleted Task</span>
         </div>
       </li>
@@ -167,7 +167,7 @@ function AgentCardView({ card, workspaceId }: { card: AgentCard; workspaceId: nu
         </span>
         <div className="min-w-0">
           <div className="text-data font-semibold leading-[1.3] [overflow-wrap:anywhere]">
-            <span className="font-data text-small font-normal text-faint">#{card.taskId}</span> {card.title}
+            <span className="font-data text-small font-normal text-faint">{taskKey(card.taskId)}</span> {card.title}
           </div>
           <div className="mt-0.5 text-muted">
             {card.harnessLabel}
@@ -183,7 +183,7 @@ function AgentCardView({ card, workspaceId }: { card: AgentCard; workspaceId: nu
         </div>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        {card.state && <StatePill state={card.state} />}
+        {card.state && <span className={stateChip(card.state)}>{card.state.replace(/-/g, ' ')}</span>}
         {card.betweenAttempts && <span className="text-faint">between Attempts</span>}
         {card.attemptLabel && <span className="text-faint">{card.attemptLabel}</span>}
       </div>
@@ -567,8 +567,10 @@ export function AgentMessagesTab({
           <div
             className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-edge bg-surface px-4 py-2.5 text-muted"
           >
-            <Icon name="eye" className="size-3.5" />
-            <span>Read-only — steer a Task to intervene</span>
+            <span className="inline-flex items-center gap-4">
+              <Icon name="eye" className="size-3.5" />
+              <span>Read-only — steer a Task to intervene</span>
+            </span>
             <span className="ml-auto text-small text-faint max-rail:ml-0">
               <b className="font-data font-normal text-muted">✓</b> queued ·{' '}
               <b className="font-data font-normal text-muted">✓✓</b> delivered ·{' '}

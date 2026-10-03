@@ -41,7 +41,7 @@ import type { WorktreeServices } from './app-worktrees.js';
 import { createPostMergeCheck } from '../verification/post-merge-check.js';
 import type { DistributionMode } from '../distribution-mode.js';
 import { touchStartupProgress } from '../reliability/startup-progress.js';
-import { createTrackerResolver } from '../tracker/adapter.js';
+import { createTrackerResolver, formatWorkspaceTrackerRef, workspaceTrackerSettings } from '../tracker/adapter.js';
 import { createRepositoryResolver } from '../repository/resolve.js';
 
 function createLifecycleTracking(
@@ -353,18 +353,20 @@ export async function createRuntime(deps: {
       }, { op: 'autoDrive.recordTicketCloseFailed', level: 'warn', context: { taskId: task.id } });
     },
     resolveRepository,
+    (run, url) => attempts.update(run.id, { pullRequestUrl: url }).then(() => undefined),
   );
   const mergeEffectsFor = (task: TaskRow, run: AttemptRow): MergeEffectExec[] => {
     const effects: MergeEffectExec[] = [];
-    if (task.trackerRef != null) {
+    const trackerRef = task.trackerRef;
+    if (trackerRef != null) {
       effects.push({
         effect: 'ticket-close',
-        idempotencyKey: `ticket-${task.trackerRef}`,
+        idempotencyKey: `ticket-${trackerRef}`,
         expected: { trackerRef: task.trackerRef },
         apply: async () =>
           (await autoDrive.closeCompleted(task))
             ? { ok: true, observed: { trackerRef: task.trackerRef } }
-            : { ok: false, detail: `ticket #${task.trackerRef} could not be closed` },
+            : { ok: false, detail: `ticket ${await formatWorkspaceTrackerRef(task.workingDir, workspaceTrackerSettings(await getWorkspaceRow(task.workspaceId)), trackerRef)} could not be closed` },
       });
     }
     if (task.isolationMode !== 'worktree') return effects;

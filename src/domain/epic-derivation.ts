@@ -1,4 +1,4 @@
-import { compareRefsForDisplay, isEpicTypeContainer, type Ticket, type TrackerRef } from '../tracker/adapter.js';
+import { isEpicTypeContainer, type Ticket, type TrackerRef } from '../tracker/adapter.js';
 import type { StoredEpicKind } from '../db/schema.js';
 
 export interface DerivedEpic {
@@ -55,8 +55,8 @@ function toDerivedEpic(
     title: epic.title,
     body: epic.body,
     url: epic.url,
-    members: members.map((c) => c.ref).sort(compareRefsForDisplay),
-    ready: members.filter((c) => isReady(c, readinessByRef)).map((c) => c.ref).sort(compareRefsForDisplay),
+    members: members.map((c) => c.ref),
+    ready: members.filter((c) => isReady(c, readinessByRef)).map((c) => c.ref),
   };
 }
 
@@ -91,8 +91,7 @@ export function deriveLeafEpics(
   opts: { includeClosed?: boolean } = {},
 ): DerivedEpic[] {
   return leafMostContainers(indexTickets(tickets), opts)
-    .map(({ container, children }) => toDerivedEpic(container, children, readinessByRef))
-    .sort((a, b) => compareRefsForDisplay(a.ref, b.ref));
+    .map(({ container, children }) => toDerivedEpic(container, children, readinessByRef));
 }
 
 /** The stored-Epic spine record the scan lazy-upserts. */
@@ -118,6 +117,5 @@ export function deriveStoredEpics(tickets: Ticket[]): StoredEpicRecord[] {
       ({ container, children }) =>
         children.length > 0 && (isEpicTypeContainer(container) || container.parent == null),
     )
-    .map(({ container }) => ({ ref: container.ref, kind: storedEpicKind(container) }))
-    .sort((a, b) => compareRefsForDisplay(a.ref, b.ref));
+    .map(({ container }) => ({ ref: container.ref, kind: storedEpicKind(container) }));
 }

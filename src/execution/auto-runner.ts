@@ -369,8 +369,13 @@ export class AutoRunner {
       });
     }
 
+    let stopped = false;
     await forEachYielding(ordered, async (task) => {
-      if (running >= ceiling) return;
+      if (stopped) return;
+      if (running >= ceiling) {
+        stopped = true;
+        return;
+      }
       if (!this.slotCandidate(task, { skip, workspacesById, runningByWorkspace, ceiling, occupied, epicGate })) return;
       const started = await this.startPicked(task, skip, tickParent);
       if (!started) return;

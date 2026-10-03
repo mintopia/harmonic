@@ -115,6 +115,8 @@ describe('parseIntegrationBranch (issue #163)', () => {
     expect(parseIntegrationBranch('epic/0')).toBe('0');
     expect(parseIntegrationBranch('epic/1000000')).toBe('1000000');
     expect(parseIntegrationBranch('epic/x')).toBe('x');
+    expect(parseIntegrationBranch('epic/PROJ-185')).toBe('PROJ-185');
+    expect(parseIntegrationBranch('epic/milestone-3')).toBe('milestone-3');
   });
 
   it('rejects anything that is not exactly epic/<non-empty ref>', () => {
@@ -122,6 +124,10 @@ describe('parseIntegrationBranch (issue #163)', () => {
     expect(parseIntegrationBranch('epic/')).toBeNull();
     expect(parseIntegrationBranch('feature/epic/1')).toBeNull();
     expect(parseIntegrationBranch('Epic/1')).toBeNull();
+    expect(parseIntegrationBranch('epic/foo/bar')).toBeNull();
+    expect(parseIntegrationBranch('epic/..')).toBeNull();
+    expect(parseIntegrationBranch('epic/.')).toBeNull();
+    expect(parseIntegrationBranch('epic/a b')).toBeNull();
   });
 
   it('treats null/undefined/empty as "not an integration branch", never throwing', () => {

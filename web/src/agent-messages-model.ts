@@ -1,5 +1,5 @@
 import type { TrackerRef } from './types.js';
-import { epicLabel } from './id-format.js';
+import { epicLabel, taskKey } from './id-format.js';
 import type {
   AgentMessage,
   AgentMessageReceipt,
@@ -54,8 +54,8 @@ export function threadTitle(thread: AgentMessageThread): string {
 }
 
 export function participantLabel(participant: AgentMessageThreadParticipant | undefined, taskId: number): string {
-  if (!participant || participant.deleted) return `#${taskId} deleted Task`;
-  return participant.title ? `#${taskId} ${participant.title}` : `#${taskId}`;
+  if (!participant || participant.deleted) return `${taskKey(taskId)} deleted Task`;
+  return participant.title ? `${taskKey(taskId)} ${participant.title}` : taskKey(taskId);
 }
 
 function harnessName(harness: string): string {
@@ -71,7 +71,7 @@ export function commonEpicId(participants: readonly AgentMessageThreadParticipan
 
 export function threadParticipantsLine(thread: AgentMessageThread): string {
   const names = thread.participants.map((p) =>
-    p.deleted ? 'deleted Task' : `#${p.taskId}${p.harness ? ` ${harnessName(p.harness)}` : ''}`,
+    p.deleted ? 'deleted Task' : `${taskKey(p.taskId)}${p.harness ? ` ${harnessName(p.harness)}` : ''}`,
   );
   const epic = commonEpicId(thread.participants);
   const epicAddressed = thread.messages.some((m) => m.recipients.length > 1);
@@ -90,7 +90,7 @@ function participatesIn(thread: AgentMessageThread, taskId: number): boolean {
 function matchesQuery(thread: AgentMessageThread, query: string): boolean {
   const haystack = [
     ...thread.messages.map(messageText),
-    ...thread.participants.flatMap((p) => [String(p.taskId), `#${p.taskId}`, p.title ?? '', p.harness ?? '']),
+    ...thread.participants.flatMap((p) => [String(p.taskId), `#${p.taskId}`, taskKey(p.taskId), p.title ?? '', p.harness ?? '']),
   ]
     .join('\n')
     .toLowerCase();
@@ -314,7 +314,7 @@ export function receiptsFor(message: AgentMessage): Receipt[] {
   const single = message.recipients.length === 1;
   return message.recipients.map((r) => ({
     taskId: r.taskId,
-    label: r.deleted ? 'deleted Task' : `#${r.taskId}`,
+    label: r.deleted ? 'deleted Task' : taskKey(r.taskId),
     showLabel: !single,
     state: r.receipt,
     tick: TICKS[r.receipt],
@@ -324,13 +324,13 @@ export function receiptsFor(message: AgentMessage): Receipt[] {
 }
 
 function addressee(message: AgentMessage, participants: readonly AgentMessageThreadParticipant[]): string {
-  if (message.recipients.length <= 1) return `#${message.recipients[0]?.taskId ?? ''}`;
+  if (message.recipients.length <= 1) return message.recipients[0] ? taskKey(message.recipients[0].taskId) : '';
   const epic = commonEpicId(participants.filter((p) => message.recipients.some((r) => r.taskId === p.taskId)));
   return epic === null ? `${message.recipients.length} Tasks` : `Epic #${epic}`;
 }
 
 function senderName(message: AgentMessage): string {
-  return message.senderDeleted ? 'deleted Task' : `#${message.senderTaskId}`;
+  return message.senderDeleted ? 'deleted Task' : taskKey(message.senderTaskId);
 }
 
 function quoteFor(message: AgentMessage, thread: AgentMessageThread): QuotedReply | null {

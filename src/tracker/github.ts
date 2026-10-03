@@ -154,5 +154,6 @@ export const githubKind: TrackerKind<Record<string, never>> = {
   settings: z.object({}).strict(),
   secretNames: [],
   capabilities: { close: true, reopen: true, claim: true, transition: false, epicSources: ['epic-label'] },
+  formatRef: (ref) => `#${ref}`,
   create: ({ repoRoot, run }) => githubAdapter(repoRoot, run),
 };

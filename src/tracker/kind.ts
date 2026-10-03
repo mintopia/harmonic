@@ -1,6 +1,7 @@
 import type { ZodType } from 'zod';
 import type { FeatureIndex } from './local-markdown.js';
 import type { TrackerAdapter } from './adapter.js';
+import type { TrackerRef } from './ref.js';
 import type { TriageLabels } from './triage-labels.js';
 
 /** What a kind can do beyond reading; consumers gate on this instead of probing the adapter. */
@@ -34,9 +35,6 @@ export interface TrackerCreateContext<S> {
 /** The repo's `origin` remote URL, read at most once per resolution; null when there is none. */
 export type OriginRemote = () => Promise<string | null>;
 
-/** The outcome of checking a kind's credentials against its backend. */
-export type TrackerVerifyResult = { ok: true; login: string } | { ok: false; reason: string };
-
 /** One tracker, registered once: the kinds list is the only enumeration of trackers. */
 export interface TrackerKind<S = unknown> {
   id: string;
@@ -50,6 +48,6 @@ export interface TrackerKind<S = unknown> {
   /** Raw settings read from the repo's `docs/agents/issue-tracker.md` declaration; parsed against {@link settings}. */
   fromDeclaration?(doc: string, repoRoot: string, origin: OriginRemote): Promise<unknown> | unknown;
   create(ctx: TrackerCreateContext<S>): TrackerAdapter;
-  /** Checks the credentials work and names the account they belong to; kinds on ambient CLI auth omit it. */
-  verify?(ctx: TrackerCreateContext<S>): Promise<TrackerVerifyResult>;
+  /** How this tracker writes one of its refs for a person (`#185`, `PROJ-185`); the only place a ref is formatted. */
+  formatRef(ref: TrackerRef): string;
 }

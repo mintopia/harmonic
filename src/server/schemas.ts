@@ -6,13 +6,18 @@ import {
   CONVERSATION_STATES,
 } from '../db/schema.js';
 import { listResponse } from './pagination.js';
+import { trackerRef } from '../tracker/adapter.js';
 
-/** The `{ error: { code, message } }` envelope every error response uses — see app.ts's error handler. */
+/** A tracker ref path param, branded at the boundary so handlers never cast. */
+export const trackerRefParam = (example: string) => z.string().min(1).transform(trackerRef).meta({ example });
+
+/** The `{ error: { code, message, id? } }` envelope every error response uses — see app.ts's error handler. */
 export const errorResponseSchema = z
   .object({
     error: z.object({
       code: z.string().meta({ example: 'not_found' }),
       message: z.string().meta({ example: 'no task with id 4821' }),
+      id: z.string().optional().describe('Present on 500 responses: a reference to grep for in the server logs.').meta({ example: 'req-2a' }),
     }),
   })
   .meta({ id: 'ErrorResponse' });

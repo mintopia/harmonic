@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
@@ -235,6 +235,8 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
       { ...ticket(19), title: 'Delivery map', labels: ['wayfinder:map'], isMap: true },
       { ...ticket(20), title: 'Map member', parent: trackerRef(19) },
     ]);
+    mkdirSync(join(repoA, 'docs/agents'), { recursive: true });
+    writeFileSync(join(repoA, 'docs/agents/issue-tracker.md'), '# Issue tracker: GitHub\n');
     const workspace = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
     await manager.pollNow(workspace.id);

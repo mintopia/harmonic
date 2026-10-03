@@ -148,7 +148,7 @@ export function fakeForgejo(options: FakeForgejoOptions): FakeForgejo {
     }
     if (method === 'POST' && path === '/repos/owner/name/pulls') {
       fake.pulls.push(body);
-      return json({ number: 1 }, 201);
+      return json({ number: 1, html_url: 'https://forge.test/owner/name/pulls/1' }, 201);
     }
     return json({ message: `unhandled ${method} ${path}` }, 500);
   };

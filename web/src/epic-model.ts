@@ -9,7 +9,6 @@ export type EpicBranchStep =
   | { step: 'branch-created'; branch: string; fromBranch: string; oid: string }
   | { step: 'branch-create-failed'; branch: string; fromBranch: string; error: string };
 
-/** One Export build or per-Destination delivery outcome. */
 export type EpicExportStep =
   | { step: 'export-built'; disposition: string; name: string; bytes: number; partial: boolean }
   | { step: 'export-delivered'; destination: 'directory' | 's3'; file: string; retry: number }

@@ -13,7 +13,6 @@ export const btnGhost =
 
 export const btnQuiet = 'inline-flex min-h-11 items-center font-medium text-muted transition-colors duration-150 hover:text-ink';
 
-/** btnQuiet at full Ink strength. */
 export const btnQuietInk = 'inline-flex min-h-11 shrink-0 items-center font-medium text-ink transition-colors duration-150';
 
 /** A ≥44×44px touch target: expand the *hit area* to the accessible

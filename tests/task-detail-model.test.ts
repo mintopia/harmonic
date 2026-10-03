@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attemptIdentityModel, attemptStepTabs, contentPanel, defaultSelection, defaultStepTab, taskLifecycle, taskStats, verificationOutputTail, type LifecycleStepKey, type LifecycleStepStatus, type StatsAttempt } from '../web/src/task-detail-model.js';
+import { pullRequestLink, attemptIdentityModel, attemptStepTabs, contentPanel, defaultSelection, defaultStepTab, taskLifecycle, taskStats, verificationOutputTail, type LifecycleStepKey, type LifecycleStepStatus, type StatsAttempt } from '../web/src/task-detail-model.js';
 import type { Attempt, AttemptSummary, Cost, ModelUsage, Step, StepState, StepType, Task } from '../web/src/types.js';
 
 const STEP_ORDER: LifecycleStepKey[] = [
@@ -505,5 +505,19 @@ describe('attemptIdentityModel', () => {
 
   it('falls back to the token-dominant model when no primary model is set', () => {
     expect(attemptIdentityModel('', [{ model: 'sonnet-4.5' }])).toBe('sonnet-4.5');
+  });
+});
+
+describe('pullRequestLink', () => {
+  it('is the newest Attempt that opened a PR/MR, or null when none did', () => {
+    expect(pullRequestLink([])).toBeNull();
+    expect(pullRequestLink([{ number: 1, pullRequestUrl: null }])).toBeNull();
+    expect(
+      pullRequestLink([
+        { number: 1, pullRequestUrl: 'https://github.com/o/r/pull/1' },
+        { number: 2, pullRequestUrl: 'https://github.com/o/r/pull/2' },
+        { number: 3, pullRequestUrl: null },
+      ]),
+    ).toBe('https://github.com/o/r/pull/2');
   });
 });

@@ -10,7 +10,6 @@ export function taskLabel(id: number): string {
   return `Task ${id}`;
 }
 
-/** An epic ref in prose or a title: `Epic #42`. */
 export function epicLabel(ref: TrackerRef): string {
   return `Epic ${issueRef(ref)}`;
 }
@@ -40,7 +39,14 @@ export function ticketIdentity(id: number, trackerRef: TrackerRef | null | undef
  * its `T-` key. Keeps every listing surface labelling a ticket the same way.
  */
 export function ticketRowId(id: number, trackerRef: TrackerRef | null | undefined): string {
-  return trackerRef != null ? `${issueRef(trackerRef)} · ${taskKey(id)}` : taskKey(id);
+  const { ref, key } = ticketRowParts(id, trackerRef);
+  return ref !== null ? `${ref}${TICKET_ROW_SEPARATOR}${key}` : key;
+}
+
+export const TICKET_ROW_SEPARATOR = ' · ';
+
+export function ticketRowParts(id: number, trackerRef: TrackerRef | null | undefined): { ref: string | null; key: string } {
+  return { ref: trackerRef != null ? issueRef(trackerRef) : null, key: taskKey(id) };
 }
 
 export function eventCount(n: number): string {

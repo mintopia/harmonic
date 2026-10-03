@@ -4,6 +4,7 @@ import type { AttemptSummary, Step } from '../web/src/types.js';
 
 function run(over: Partial<AttemptSummary> = {}): AttemptSummary {
   return {
+    pullRequestUrl: null,
     id: 1,
     taskId: 7,
     number: 1,

@@ -14,7 +14,7 @@ import type { EpicExportStep } from '../domain/epic-merge-events.js';
 import { exportOwnerKey, type ExportOwner } from './export-owner.js';
 import { hasExportDestination, type ResolvedExportSettings } from './export-settings.js';
 import { uploadToS3 } from './s3-destination.js';
-import { workspaceSlug, type ExportDestination, type ExportRecord, type TaskArchive } from './task-archive.js';
+import { safeSegment, workspaceSlug, type ExportDestination, type ExportRecord, type TaskArchive } from './task-archive.js';
 import { buildExportStatus, type ExportStatus, type PendingRetry } from './export-status.js';
 import { Redactor, type RedactionPattern } from './redact.js';
 import type { GitProvenance } from './git-provenance.js';
@@ -606,7 +606,7 @@ export class TaskExporter {
   private async rebuildSidecarPath(owner: ExportOwner): Promise<string> {
     const stagingDir = join(this.deps.dataDir, 'archive', '.staging');
     await mkdir(stagingDir, { recursive: true });
-    const stem = owner.kind === 'task' ? String(owner.task.id) : `epic-${owner.epicRef}`;
+    const stem = owner.kind === 'task' ? String(owner.task.id) : `epic-${safeSegment(owner.epicRef)}`;
     return join(stagingDir, `${stem}-${randomBytes(6).toString('hex')}${REBUILD_SUFFIX}`);
   }
 
@@ -815,7 +815,7 @@ export class TaskExporter {
     const workspace = await this.deps.workspaceName(workspaceId);
     let partial = false;
     let redactions: Record<string, number> = {};
-    const staged = await this.stageTarball(`epic-${epicRef}`, (target) =>
+    const staged = await this.stageTarball(`epic-${safeSegment(epicRef)}`, (target) =>
       this.buildTarball(target, archiveDir, snapshot, patterns, at, (result) => {
         partial = result.partial || manual?.forcePartial === true;
         redactions = { ...result.redaction.matches };
@@ -838,7 +838,7 @@ export class TaskExporter {
         };
       }),
     );
-    return this.measure(staged, workspaceSlug(workspace, workspaceId), `epic-${epicRef}-${disposition}-${exportTimestamp(at)}`, at, partial, redactions);
+    return this.measure(staged, workspaceSlug(workspace, workspaceId), `epic-${safeSegment(epicRef)}-${disposition}-${exportTimestamp(at)}`, at, partial, redactions);
   }
 
   private async stage(

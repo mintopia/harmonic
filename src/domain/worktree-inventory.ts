@@ -1,5 +1,5 @@
-import type { TrackerRef } from '../tracker/adapter.js';
 import { basename, join, resolve } from 'node:path';
+import type { TrackerRef } from '../tracker/adapter.js';
 import { forEachYielding } from '../reliability/yield.js';
 import type { TaskOrigin, TaskState } from '../db/schema.js';
 import { GitError } from './errors.js';

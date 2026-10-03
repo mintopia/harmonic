@@ -17,7 +17,6 @@ function baseActive(over: Partial<ActiveRun> = {}): ActiveRun {
     idle: false,
     steerable: false,
     steerQueue: [],
-    steerAcks: new Map(),
     ...over,
   } as unknown as ActiveRun;
 }
@@ -84,7 +83,7 @@ describe('TurnCompletion.drivePromptCycle — a pause requested before the first
     const active = baseActive();
     let turns = 0;
     const driver = { prompt: vi.fn(async () => {
-      if (++turns === 1) active.steerQueue.push('follow up');
+      if (++turns === 1) active.steerQueue.push({ text: 'follow up' });
       return { stopReason: 'end_turn' };
     }) } as unknown as AcpDriver;
     const guardrails = { checkProgressAtBoundary: vi.fn(async () => false) } as unknown as GuardrailSupervisor;
@@ -98,5 +97,23 @@ describe('TurnCompletion.drivePromptCycle — a pause requested before the first
     expect(driver.prompt).toHaveBeenCalledTimes(2);
     expect(measureAgentTurn).toHaveBeenCalledTimes(2);
     expect(measureAgentTurn.mock.calls.map(([id]) => id)).toEqual([1, 1]);
+  });
+  it('fires an entry ack only when that entry is delivered, even with identical texts', async () => {
+    const record = vi.fn();
+    let deliveredWhenAcked = -1;
+    const peerAck = () => {
+      deliveredWhenAcked = record.mock.calls.length;
+    };
+    const active = baseActive({ steerQueue: [{ text: 'same' }, { text: 'same', onDelivered: peerAck }] });
+    const driver = { prompt: vi.fn(async () => ({ stopReason: 'end_turn' })) } as unknown as AcpDriver;
+    const guardrails = { checkProgressAtBoundary: vi.fn(async () => false) } as unknown as GuardrailSupervisor;
+    const listeners = { stoppedShort: null } as unknown as TurnListeners;
+
+    await completion.drivePromptCycle({
+      task, driver, active, guardrails, listeners, autoDriven: false,
+      promptText: 'first turn', record,
+    });
+
+    expect(deliveredWhenAcked).toBe(2);
   });
 });

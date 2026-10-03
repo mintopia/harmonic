@@ -95,7 +95,7 @@ export async function bestEffort(op: () => unknown | Promise<unknown>, report: F
   return (await attempted(op, report)).ok;
 }
 
-/** Start `op` and return immediately, logging any rejection — the logged replacement for firing a promise and silently discarding its rejection. */
+/** Start `op` without awaiting it, logging any rejection. */
 export type FireAndForget = (op: () => unknown | Promise<unknown>, report: FailureReport) => void;
 
 /** One app's fire-and-forget work, drained at that app's shutdown. */

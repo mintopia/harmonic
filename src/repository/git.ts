@@ -18,6 +18,7 @@ export function gitRepository(repoRoot: string, run: CliRunner = defaultGit): Re
     async openPR({ branch }) {
       if (branch.startsWith('-')) throw new Error(`Invalid branch name: ${branch}`);
       await run(['push', 'origin', '--', branch], repoRoot);
+      return null;
     },
 
     async verify() {

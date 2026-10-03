@@ -405,7 +405,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     rmSync(dir, { recursive: true, force: true });
   });
 
-  const build = (options?: AutoRunnerOptions) => {
+  const build = (options?: AutoRunnerOptions, ceiling = 10) => {
     const started: number[] = [];
     const runner = {
       escalateUnspawned: async () => {},
@@ -419,7 +419,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
       countRunning: () => started.length,
       countRunningByWorkspace: () => new Map<number, number>(),
     } as unknown as AttemptStore;
-    const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 10 } };
+    const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: ceiling } };
     const ar = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), options);
     return { ar, started };
   };
@@ -443,6 +443,21 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     expect((await tasks.get(blocked.id)).state).toBe('ready');
     expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task ${occupant.id} (working)`);
     expect(ar.skipReasonFor(free.id)).toBeUndefined();
+  });
+
+  it('stops the fill at the ceiling: later Tasks get no Work Context skip reason', async () => {
+    const free = await directTask(freshDir(), 'first');
+    const busy = freshDir();
+    const occupant = await directTask(busy, 'occupant');
+    await tasks.setState(occupant.id, 'working');
+    const later = await directTask(busy, 'same context as occupant');
+
+    const { ar, started } = build(undefined, 1);
+    ar.poke();
+    await vi.waitFor(() => expect(started).toContain(free.id));
+    await vi.waitFor(() => expect(ar.skipReasonFor(later.id)).toBeDefined());
+
+    expect(ar.skipReasonFor(later.id)).not.toContain('Work Context');
   });
 
   it('reports only open blocker edges in a ready task dependency diagnostic', async () => {

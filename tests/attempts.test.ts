@@ -67,6 +67,13 @@ describe('AttemptStore', () => {
     expect((await attempts.get(run.id)).agentDurationMs).toBeNull();
   });
 
+  it('persists the PR/MR URL an Attempt opened, null until one is recorded', async () => {
+    const run = await attempts.create(taskId);
+    expect((await attempts.get(run.id)).pullRequestUrl).toBeNull();
+    await attempts.update(run.id, { pullRequestUrl: 'https://github.com/o/r/pull/9' });
+    expect((await attempts.get(run.id)).pullRequestUrl).toBe('https://github.com/o/r/pull/9');
+  });
+
   it('numbers and lists an Epic timeline independently of its Task attempts', async () => {
     const workspace = new WorkspaceService(db, settingsStore);
     const workspaceId = (await workspace.create({ name: 'Epic workspace', workingDir: dir, trackerEnabled: true })).id;

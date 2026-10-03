@@ -249,6 +249,8 @@ const attemptSchema = z
     /** The verified head OID and the private ref it is pinned to; null when no verified head was produced. */
     verifiedHeadOid: z.string().nullable().meta({ example: '0f758cd2200565e7605902a86c2827c65ad25ce0' }),
     verifiedRef: z.string().nullable().meta({ example: 'refs/harmonic/direct/attempt-9137' }),
+    /** The PR/MR the open-PR Merge Fate opened for this Attempt; null when none was opened (other fates, or a Code Repository that opens none). */
+    pullRequestUrl: z.string().nullable().meta({ example: 'https://github.com/mintopia/harmonic/pull/812' }),
     usage: attemptUsageSchema.nullable(),
     /** Total tool calls this Attempt's session made. */
     toolCalls: z.number().meta({ example: 63 }),

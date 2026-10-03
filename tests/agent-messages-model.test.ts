@@ -122,7 +122,7 @@ describe('thread summary', () => {
 
   it('lists participants and the Epic only when a message reached several Tasks', () => {
     const solo = thread('a', { participants: [participant(1), participant(2, { harness: 'codex' }), participant(3, { deleted: true, title: null, harness: null })] });
-    expect(threadParticipantsLine(solo)).toBe('#1 Claude · #2 Codex · deleted Task');
+    expect(threadParticipantsLine(solo)).toBe('T-1 Claude · T-2 Codex · deleted Task');
     const multi = thread('b', {
       messages: [message('m', 1, 1, { recipients: [{ taskId: 2, receipt: 'queued', deleted: false }, { taskId: 3, receipt: 'queued', deleted: false }] })],
       participants: [participant(1), participant(2), participant(3)],
@@ -176,7 +176,7 @@ describe('segmentThread', () => {
     const reply = message('r', 1, at(14, 1), { replyTo: 'p' });
     const g = groups(segmentThread(thread('a', { messages: [parent, reply] }), NOW));
     const quote = g[1]?.messages[0]?.quote;
-    expect(quote?.sender).toBe('#2');
+    expect(quote?.sender).toBe('T-2');
     expect(quote?.time).toMatch(/14.00/);
     expect(quote?.text.endsWith('…')).toBe(true);
     expect(g[0]?.messages[0]?.quote).toBeNull();
@@ -206,7 +206,7 @@ describe('segmentThread', () => {
     const m = message('m', 9, at(14, 0), { senderDeleted: true, recipients: [{ taskId: 8, receipt: 'delivered', deleted: true }] });
     const t = thread('a', { messages: [m], participants: [participant(9, { deleted: true, title: null, harness: null }), participant(8, { deleted: true, title: null })] });
     const g = groups(segmentThread(t, NOW))[0];
-    expect(g?.name).toBe('#9 deleted Task');
+    expect(g?.name).toBe('T-9 deleted Task');
     expect(g?.messages[0]?.receipts[0]?.label).toBe('deleted Task');
   });
 });

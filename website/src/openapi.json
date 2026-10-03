@@ -33,6 +33,11 @@
               "message": {
                 "type": "string",
                 "example": "no task with id 4821"
+              },
+              "id": {
+                "description": "Present on 500 responses: a reference to grep for in the server logs.",
+                "example": "req-2a",
+                "type": "string"
               }
             },
             "required": [
@@ -3237,6 +3242,17 @@
             ],
             "example": "refs/harmonic/direct/attempt-9137"
           },
+          "pullRequestUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "https://github.com/mintopia/harmonic/pull/812"
+          },
           "usage": {
             "anyOf": [
               {
@@ -3313,6 +3329,7 @@
           "baseBranch",
           "verifiedHeadOid",
           "verifiedRef",
+          "pullRequestUrl",
           "usage",
           "toolCalls",
           "startedAt",
@@ -8119,6 +8136,11 @@
               "message": {
                 "type": "string",
                 "example": "no task with id 4821"
+              },
+              "id": {
+                "description": "Present on 500 responses: a reference to grep for in the server logs.",
+                "example": "req-2a",
+                "type": "string"
               }
             },
             "required": [
@@ -11360,6 +11382,17 @@
             ],
             "example": "refs/harmonic/direct/attempt-9137"
           },
+          "pullRequestUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "https://github.com/mintopia/harmonic/pull/812"
+          },
           "usage": {
             "anyOf": [
               {
@@ -11436,6 +11469,7 @@
           "baseBranch",
           "verifiedHeadOid",
           "verifiedRef",
+          "pullRequestUrl",
           "usage",
           "toolCalls",
           "startedAt",
@@ -19686,9 +19720,9 @@
           },
           {
             "schema": {
+              "example": "42",
               "type": "string",
-              "minLength": 1,
-              "example": "42"
+              "minLength": 1
             },
             "in": "path",
             "name": "epicRef",
@@ -19745,9 +19779,9 @@
           },
           {
             "schema": {
+              "example": "42",
               "type": "string",
-              "minLength": 1,
-              "example": "42"
+              "minLength": 1
             },
             "in": "path",
             "name": "epicRef",
@@ -19816,9 +19850,9 @@
           },
           {
             "schema": {
+              "example": "42",
               "type": "string",
-              "minLength": 1,
-              "example": "42"
+              "minLength": 1
             },
             "in": "path",
             "name": "epicRef",
@@ -33008,9 +33042,9 @@
           },
           {
             "schema": {
+              "example": "410",
               "type": "string",
-              "minLength": 1,
-              "example": "410"
+              "minLength": 1
             },
             "in": "path",
             "name": "ref",
@@ -37397,9 +37431,9 @@
           },
           {
             "schema": {
+              "example": "42",
               "type": "string",
-              "minLength": 1,
-              "example": "42"
+              "minLength": 1
             },
             "in": "path",
             "name": "epicRef",
@@ -37458,9 +37492,9 @@
           },
           {
             "schema": {
+              "example": "42",
               "type": "string",
-              "minLength": 1,
-              "example": "42"
+              "minLength": 1
             },
             "in": "path",
             "name": "epicRef",
@@ -37548,9 +37582,9 @@
           },
           {
             "schema": {
+              "example": "42",
               "type": "string",
-              "minLength": 1,
-              "example": "42"
+              "minLength": 1
             },
             "in": "path",
             "name": "epicRef",
@@ -37641,9 +37675,9 @@
           },
           {
             "schema": {
+              "example": "42",
               "type": "string",
-              "minLength": 1,
-              "example": "42"
+              "minLength": 1
             },
             "in": "path",
             "name": "epicRef",
