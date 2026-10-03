@@ -231,10 +231,12 @@ export interface TranscriptGroup {
   kind: 'group';
   key: string;
   senderTaskId: number;
+  senderAttemptNumber: number | null;
   identity: Identity | null;
   name: string;
   harness: string | null;
   harnessLabel: string;
+  attemptLabel: string | null;
   time: string;
   messages: TranscriptMessage[];
 }
@@ -337,16 +339,18 @@ export function segmentThread(thread: AgentMessageThread, now: number): Transcri
       items.push({ kind: 'time', key: `time-${message.messageId}`, label: clockTime(message.createdAt) });
       broke = true;
     }
-    if (broke || current === null || current.senderTaskId !== message.senderTaskId) {
+    if (broke || current === null || current.senderTaskId !== message.senderTaskId || current.senderAttemptNumber !== message.senderAttemptNumber) {
       const sender = thread.participants.find((p) => p.taskId === message.senderTaskId);
       current = {
         kind: 'group',
         key: `group-${message.messageId}`,
         senderTaskId: message.senderTaskId,
+        senderAttemptNumber: message.senderAttemptNumber,
         identity: identityFor(thread.participants, message.senderTaskId),
         name: participantLabel(message.senderDeleted && sender ? { ...sender, deleted: true } : sender, message.senderTaskId),
         harness: sender?.harness ?? null,
         harnessLabel: sender?.harness ? harnessName(sender.harness) : '',
+        attemptLabel: message.senderAttemptNumber === null ? null : `Attempt ${message.senderAttemptNumber}`,
         time: clockTime(message.createdAt),
         messages: [],
       };

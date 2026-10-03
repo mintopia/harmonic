@@ -30,6 +30,7 @@ const messageSchema = z
     senderTaskId: z.number().int().positive().describe('Task that sent the message.'),
     senderDeleted: z.boolean().describe('True when the sender Task no longer exists.'),
     senderAttemptId: z.number().int().positive().describe('Attempt that sent the message.'),
+    senderAttemptNumber: z.number().int().nullable().describe('Number of the sending Attempt within its Task; null when the Attempt no longer exists.'),
     workspaceId: z.number().int().positive().describe('Workspace the message belongs to.'),
     createdAt: z.number().describe('Epoch ms the message was sent.'),
     recipients: z.array(recipientSchema).describe('Every recipient with its own receipt; an Epic-addressed message has one per open sibling.'),

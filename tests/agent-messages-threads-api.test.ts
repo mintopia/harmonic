@@ -72,6 +72,12 @@ describe('Agent Message Threads API', () => {
   });
   afterAll(async () => { await server.close(); });
 
+  it('carries the sender Attempt number on each message', async () => {
+    const res = await get();
+    const thread = res.body.threads.find((th: any) => th.threadId === threadA);
+    expect(thread.messages.map((m: any) => m.senderAttemptNumber)).toEqual([1, 1, 1]);
+  });
+
   it('lists Global Threads by latest activity, excluding disabled Workspaces', async () => {
     const res = await get();
     expect(res.status).toBe(200);

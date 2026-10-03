@@ -282,7 +282,9 @@ function Group({ group }: { group: TranscriptGroup }) {
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-2 leading-[1.3]">
           <span className="text-data font-bold text-[var(--id,var(--hm-ink))]">{group.name}</span>
-          {group.harnessLabel && <span className="text-small text-muted">· {group.harnessLabel}</span>}
+          {(group.harnessLabel || group.attemptLabel) && (
+            <span className="text-small text-muted">{[group.harnessLabel, group.attemptLabel].filter(Boolean).map((part) => `· ${part}`).join(' ')}</span>
+          )}
           <span className="font-data text-micro text-faint">{group.time}</span>
         </div>
         {group.messages.map((message, i) => (

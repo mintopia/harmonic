@@ -40,6 +40,7 @@ export interface PresentedAgentMessage {
   senderTaskId: number;
   senderDeleted: boolean;
   senderAttemptId: number;
+  senderAttemptNumber: number | null;
   workspaceId: number;
   createdAt: number;
   recipients: Array<AgentMessageRecipient & { deleted: boolean }>;
@@ -293,6 +294,12 @@ export class AgentMessageStore {
         ? []
         : (await this.db.read((db) => db.select({ id: tasks.id }).from(tasks).where(inArray(tasks.id, ids)).all())).map((t) => t.id),
     );
+    const attemptIds = [...new Set(rows.map((r) => r.senderAttemptId))];
+    const attemptNumbers = new Map(
+      attemptIds.length === 0
+        ? []
+        : (await this.db.read((db) => db.select({ id: attempts.id, number: attempts.number }).from(attempts).where(inArray(attempts.id, attemptIds)).all())).map((a) => [a.id, a.number]),
+    );
     return rows.map((row) => ({
       messageId: row.id,
       role: row.role,
@@ -302,6 +309,7 @@ export class AgentMessageStore {
       senderTaskId: row.senderTaskId,
       senderDeleted: !live.has(row.senderTaskId),
       senderAttemptId: row.senderAttemptId,
+      senderAttemptNumber: attemptNumbers.get(row.senderAttemptId) ?? null,
       workspaceId: row.workspaceId,
       createdAt: row.createdAt,
       recipients: row.recipients.map((r) => ({ ...r, deleted: !live.has(r.taskId) })),
