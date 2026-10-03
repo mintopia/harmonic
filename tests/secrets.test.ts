@@ -1,8 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, statSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync, readFileSync, writeFileSync, chmodSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { execFile } from 'node:child_process';
 import { createClient } from '@libsql/client';
 import { openAsyncDb } from '../src/db/async.js';
 import { loadSecretKey, SECRET_KEY_FILE, SECRET_KEY_ENV } from '../src/secrets/secret-key.js';
@@ -41,6 +42,31 @@ describe('instance secret key', () => {
     writeFileSync(join(dir, SECRET_KEY_FILE), randomBytes(32).toString('hex'));
     expect(loadSecretKey(dir, { [SECRET_KEY_ENV]: envKey.toString('base64') }).equals(envKey)).toBe(true);
   });
+
+  it('re-chmods a pre-existing group/world-readable key file to 0600 and keeps its key', () => {
+    const dir = tempDir();
+    const path = join(dir, SECRET_KEY_FILE);
+    const key = randomBytes(32);
+    writeFileSync(path, `${key.toString('hex')}\n`);
+    chmodSync(path, 0o644);
+    expect(loadSecretKey(dir, {}).equals(key)).toBe(true);
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
+  it('is race-safe: concurrent first boots in separate processes agree on one non-empty key', async () => {
+    const dir = tempDir();
+    const script = `import { loadSecretKey } from ${JSON.stringify(new URL('../src/secrets/secret-key.ts', import.meta.url).href)};
+      process.stdout.write(loadSecretKey(process.argv[1], {}).toString('hex'));`;
+    const run = () => new Promise<string>((resolve, reject) => {
+      execFile(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', script, dir], (err, out) =>
+        err ? reject(err) : resolve(out));
+    });
+    const keys = await Promise.all(Array.from({ length: 6 }, run));
+    expect(new Set(keys).size).toBe(1);
+    expect(keys[0]).toHaveLength(64);
+    expect(readFileSync(join(dir, SECRET_KEY_FILE), 'utf8').trim()).toBe(keys[0]);
+    expect(readdirSync(dir)).toEqual([SECRET_KEY_FILE]);
+  }, 60_000);
 
   it('rejects a key of the wrong length', () => {
     expect(() => loadSecretKey(tempDir(), { [SECRET_KEY_ENV]: 'short' })).toThrow(/32-byte/);
