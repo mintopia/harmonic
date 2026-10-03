@@ -225,13 +225,13 @@ _Avoid_: cancel, delete (Dismiss is specifically the mirrored-Task delete that t
 A parent tracker container that groups typed child tickets — the unit a batch
 of related work shares. Usually an `epic`-labelled issue (GitHub, GitLab,
 Forgejo, Local Markdown) or a Jira issue of type Epic; a Forgejo Workspace may
-instead be set to treat each open repo Project or Milestone as an Epic, with the
+instead be set to treat each open Milestone as an Epic, with the
 issues it owns as the children. "Closes the tracker issue" below then means
-closing that Project or Milestone. **Three kinds**: a **Map** (wayfinding children), a **Spec**
+closing that Milestone. **Three kinds**: a **Map** (wayfinding children), a **Spec**
 (implementation children with a spec-shaped body), and a **plain Epic** (a bare
 parent/child grouping, neither Map nor Spec). Harmonic does not author Epics — it
 reads whatever parent/child structure the tracker holds — native first
-(sub-issues, Jira parent, Project or Milestone membership), then a body
+(sub-issues, Jira parent, Milestone membership), then a body
 task-list / `Part of #<n>` line as a second source, on every tracker — and
 copes; setting the tickets up is the
 operator's or an agent's job. The **leaf-most** Epic — the immediate parent of

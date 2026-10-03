@@ -66,8 +66,8 @@ configured status names, else the first transition into the Done / To Do
 status category. An optional on-pickup transition is a setting.
 
 **Forgejo specifics.** Full parity with GitHub: scan, claim, release, close,
-reopen, native dependencies, PRs. Epics come from one of three configurable
-sources: `epic`-labelled issues (default), repo Projects, or Milestones.
+reopen, native dependencies, PRs. Epics come from one of two configurable
+sources: `epic`-labelled issues (default) or Milestones (see Amendment).
 
 **Relationships.** Every adapter reads native parent / blocked-by first and
 the body-line convention second, through one shared parser. GitLab's native
@@ -95,3 +95,12 @@ links are out of scope until a testable instance exists.
 
 None. Amends ADR-0004 (resolution clause) and ADR-0009 (adds schema-derived
 tracker settings and the Secrets store).
+
+## Amendment (2026-10-03): Forgejo has no Projects source
+
+The original decision allowed repo Projects as a third Forgejo Epic source,
+covered only by fixtures. A live check against Forgejo 16.0.5 (API reports
+Gitea 1.22.0) returned 404 for `/repos/{owner}/{repo}/projects`, while
+Milestones and issues respond normally. Forgejo's API has no Projects
+endpoints, so the `project` Epic source is removed. Forgejo Epics come from
+`epic`-labelled issues or Milestones only. Issue #777.

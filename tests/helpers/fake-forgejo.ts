@@ -22,7 +22,6 @@ export interface FakeForgejoOptions {
   /** issue number -> numbers of the issues that block it */
   dependencies?: Record<number, number[]>;
   milestones?: FakeContainer[];
-  projects?: FakeContainer[];
   me?: string;
   /** false answers dependency requests with 404, as a repo with the feature off does */
   dependenciesEnabled?: boolean;
@@ -32,7 +31,6 @@ export interface FakeForgejo {
   http: TrackerHttp;
   issues: FakeIssue[];
   milestones: FakeContainer[];
-  projects: FakeContainer[];
   comments: Array<{ issue: number; body: string }>;
   pulls: unknown[];
   requests: Array<{ method: string; path: string; auth: string | null }>;
@@ -58,7 +56,6 @@ export function fakeForgejo(options: FakeForgejoOptions): FakeForgejo {
     http: undefined as never,
     issues: options.issues,
     milestones: options.milestones ?? [],
-    projects: options.projects ?? [],
     comments: [],
     pulls: [],
     requests: [],
@@ -132,20 +129,14 @@ export function fakeForgejo(options: FakeForgejoOptions): FakeForgejo {
       const blockers = (options.dependencies?.[Number(m[1])] ?? []).map((n) => rawIssue(fake.issues.find((i) => i.number === n)!));
       return json(page(blockers, u.searchParams));
     }
-    for (const [kind, list] of [['milestones', fake.milestones], ['projects', fake.projects]] as const) {
-      if (method === 'GET' && path === `/repos/owner/name/${kind}`) {
-        const state = u.searchParams.get('state');
-        return json(page(list.filter((c) => !state || c.state === state).map(rawContainer), u.searchParams));
-      }
-      if (kind === 'projects' && (m = /^\/repos\/owner\/name\/projects\/(\d+)\/issues$/.exec(path))) {
-        const held = list.find((c) => c.id === Number(m![1]))?.issues ?? [];
-        return json(page(fake.issues.filter((i) => held.includes(i.number)).map(rawIssue), u.searchParams));
-      }
-      if (method === 'PATCH' && (m = new RegExp(`^/repos/owner/name/${kind}/(\\d+)$`).exec(path))) {
-        const found = list.find((c) => c.id === Number(m![1]))!;
-        found.state = body.state;
-        return json(rawContainer(found));
-      }
+    if (method === 'GET' && path === '/repos/owner/name/milestones') {
+      const state = u.searchParams.get('state');
+      return json(page(fake.milestones.filter((c) => !state || c.state === state).map(rawContainer), u.searchParams));
+    }
+    if (method === 'PATCH' && (m = /^\/repos\/owner\/name\/milestones\/(\d+)$/.exec(path))) {
+      const found = fake.milestones.find((c) => c.id === Number(m![1]))!;
+      found.state = body.state;
+      return json(rawContainer(found));
     }
     if (method === 'POST' && path === '/repos/owner/name/pulls') {
       fake.pulls.push(body);

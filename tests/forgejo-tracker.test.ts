@@ -56,28 +56,26 @@ describe('Forgejo tracker', () => {
     expect(tickets.map((t) => [t.number, t.labels, t.parent])).toEqual([['1', ['epic'], null], ['2', [], '1']]);
   });
 
-  it.each([
-    ['milestone', 'milestones', 'milestone-7'],
-    ['project', 'projects', 'project-7'],
-  ] as const)('%s source: open containers are epics, their issues are children, close closes the container', async (epicSource, key, ref7) => {
+  it('milestone source: open milestones are epics, their issues are children, close closes the milestone', async () => {
+    const ref7 = 'milestone-7';
     const container = { id: 7, title: 'Release', state: 'open' as const, issues: [1] };
     const closedContainer = { id: 8, title: 'Old', state: 'closed' as const, issues: [2] };
     const { fake, adapter } = build(
-      { issues: [issue(1, 'In', { milestone: epicSource === 'milestone' ? 7 : null }), issue(2, 'Out')], [key]: [container, closedContainer] },
-      { epicSource },
+      { issues: [issue(1, 'In', { milestone: 7 }), issue(2, 'Out')], milestones: [container, closedContainer] },
+      { epicSource: 'milestone' },
     );
     const tickets = await adapter.scan();
     const epic = tickets.find((t) => t.number === ref7)!;
     expect([epic.title, epic.labels, epic.state, epic.parent]).toEqual(['Release', ['epic'], 'open', null]);
     expect(tickets.map((t) => [t.number, t.parent])).toEqual([['1', ref7], ['2', null], [ref7, null]]);
-    expect(tickets.some((t) => t.number === 'project-8' || t.number === 'milestone-8')).toBe(false);
+    expect(tickets.some((t) => t.number === 'milestone-8')).toBe(false);
 
     await adapter.claim(ref(ref7));
     await adapter.close!(ref(ref7), 'done');
-    expect(fake[key].find((c) => c.id === 7)!.state).toBe('closed');
+    expect(fake.milestones.find((c) => c.id === 7)!.state).toBe('closed');
     expect(fake.comments).toEqual([]);
     await adapter.reopen!(ref(ref7), '');
-    expect(fake[key].find((c) => c.id === 7)!.state).toBe('open');
+    expect(fake.milestones.find((c) => c.id === 7)!.state).toBe('open');
   });
 });
 
