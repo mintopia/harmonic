@@ -13,7 +13,7 @@ export function forgejoRepository({ repo, ...connection }: ForgejoRepositoryConf
     kind: 'forgejo',
 
     async openPR({ branch, baseBranch, title, body }) {
-      await client.request('POST', `/repos/${repoPath(repo)}/pulls`, { head: branch, base: baseBranch, title, body });
+      await client.send('POST', `/repos/${repoPath(repo)}/pulls`, { head: branch, base: baseBranch, title, body });
     },
 
     async verify() {

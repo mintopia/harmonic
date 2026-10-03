@@ -61,6 +61,8 @@ export class TurnCompletion {
     /** An operator steer accepted before this turn existed, folded into `promptText`. */
     operatorSeed?: string | undefined;
     record: RunEventRecorder;
+    /** Runs once, immediately before the turn's first prompt goes to the Harness. */
+    onFirstPrompt?: (() => Promise<void>) | undefined;
   }): Promise<{ result: PromptResult; connectionGone: boolean; escalating: string | null; operatorSeedDelivered: boolean; promptSent: boolean }> {
     const { task, driver, active, guardrails, listeners, autoDriven, record } = input;
     let promptText = input.promptText;
@@ -75,6 +77,7 @@ export class TurnCompletion {
     active.steerable = true;
     let connectionGone = false;
     if (input.operatorSeed !== undefined) record('lifecycle', { event: 'steer_delivered', text: input.operatorSeed });
+    await input.onFirstPrompt?.();
     const first = await timedPromptTurn(promptText);
     connectionGone ||= first.connectionGone;
     let result: PromptResult = first.result ?? {};

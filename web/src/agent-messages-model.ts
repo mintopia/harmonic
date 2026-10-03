@@ -1,6 +1,4 @@
 import type { TrackerRef } from './types.js';
-// Explicit .js extension: this module is shared with the node-side test
-// project, whose nodenext resolution requires it (Vite maps .js → .ts).
 import type {
   AgentMessage,
   AgentMessageReceipt,
@@ -9,7 +7,6 @@ import type {
   AgentMessageThreadParticipant,
   TaskState,
 } from './types.js';
-import { elapsedShort } from './relative-time.js';
 
 export interface ThreadFilter {
   workspaceId: number | null;
@@ -179,8 +176,27 @@ export function totalMessages(threads: readonly AgentMessageThread[]): number {
   return threads.reduce((sum, thread) => sum + thread.messages.length, 0);
 }
 
+export interface ThreadsView {
+  threads: AgentMessageThread[];
+  total: number;
+  totalMessages: number;
+}
+
 export function countLine(threads: number, messages: number): string {
   return `${threads} ${threads === 1 ? 'thread' : 'threads'} · ${messages} ${messages === 1 ? 'message' : 'messages'}`;
+}
+
+export function threadsCapHint(shown: number, total: number): string | null {
+  return total > shown ? `Showing ${shown} of ${total} threads` : null;
+}
+
+/** Index to focus so Tab stays inside a modal drawer; -1 means focus is outside it. Null lets the browser move focus. */
+export function trappedFocusIndex(current: number, count: number, backwards: boolean): number | null {
+  if (count === 0) return null;
+  if (current === -1) return backwards ? count - 1 : 0;
+  if (!backwards && current === count - 1) return 0;
+  if (backwards && current === 0) return count - 1;
+  return null;
 }
 
 export function resolveSelectedThread(threads: readonly AgentMessageThread[], threadId: string | null): AgentMessageThread | null {
@@ -190,6 +206,7 @@ export function resolveSelectedThread(threads: readonly AgentMessageThread[], th
 export interface Receipt {
   taskId: number;
   label: string;
+  showLabel: boolean;
   state: AgentMessageReceipt;
   tick: string;
   describe: string;
@@ -282,6 +299,7 @@ export function receiptsFor(message: AgentMessage): Receipt[] {
   return message.recipients.map((r) => ({
     taskId: r.taskId,
     label: r.deleted ? 'deleted Task' : `#${r.taskId}`,
+    showLabel: !single,
     state: r.receipt,
     tick: TICKS[r.receipt],
     describe: describeReceipt(r),
@@ -357,6 +375,10 @@ export function bodyParts(text: string): BodyPart[] {
 
 export type ActivityTab = 'running' | 'messages';
 
+export function parseActivityTab(id: string): ActivityTab {
+  return id === 'messages' ? 'messages' : 'running';
+}
+
 export function resolveActivityTab(tab: ActivityTab, messagesEnabled: boolean): ActivityTab {
   return messagesEnabled ? tab : 'running';
 }
@@ -378,7 +400,7 @@ export interface AgentCard {
   lastMessage: string;
 }
 
-export function agentCards(thread: AgentMessageThread, now: number): AgentCard[] {
+export function agentCards(thread: AgentMessageThread): AgentCard[] {
   return thread.participants.map((p) => {
     const atCap = p.sends >= p.sendCap;
     return {
@@ -395,7 +417,7 @@ export function agentCards(thread: AgentMessageThread, now: number): AgentCard[]
       sendsCount: `${p.sends}/${p.sendCap}`,
       sendsRatio: p.sendCap > 0 ? Math.min(1, p.sends / p.sendCap) : atCap ? 1 : 0,
       atCap,
-      lastMessage: p.lastMessageAt === null ? 'none sent' : `${elapsedShort(p.lastMessageAt, now)} ago`,
+      lastMessage: p.lastMessageAt === null ? 'none sent' : clockTime(p.lastMessageAt),
     };
   });
 }

@@ -4,7 +4,7 @@ import { epicTimelineRows } from '../epic-timeline-model.js';
 import type { MergeStepTone } from '../merge-progress-model.js';
 import { card, railSectionCount } from '../ui.js';
 
-const CAPS = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
+const CAPS = 'text-label font-bold uppercase tracking-caps text-faint';
 
 const DOT: Record<MergeStepTone, string> = {
   neutral: 'bg-edge',
@@ -41,14 +41,14 @@ export function EpicTimeline({ epic }: { epic: Epic }) {
         <ol className="px-5 py-4" aria-label="Chronological epic timeline">
           {rows.map((row) => (
             <li key={row.id} className="grid grid-cols-[64px_minmax(0,1fr)] gap-x-3">
-              <time dateTime={new Date(row.at).toISOString()} className="pt-0.5 text-right font-data text-[11px] leading-[1.35] tabular-nums text-faint">
+              <time dateTime={new Date(row.at).toISOString()} className="pt-0.5 text-right font-data text-micro leading-[1.35] tabular-nums text-faint">
                 {clockTime(row.at)}
               </time>
               <div className="relative border-l border-hairline pb-5 pl-5 last:pb-1">
                 <span aria-hidden="true" className={`absolute -left-1 top-1 size-2 rounded-full ring-4 ring-surface ${DOT[row.tone]}`} />
                 <div className="flex flex-wrap items-center gap-2">
                   <span className={`text-small font-semibold ${WORD[row.tone]}`}>{row.label}</span>
-                  <span className="rounded-[4px] bg-raised px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.05em] text-muted">{row.tag}</span>
+                  <span className="rounded-lg bg-raised px-1.5 py-px text-label font-bold uppercase tracking-caps-tight text-muted">{row.tag}</span>
                 </div>
                 {row.detail && <p className="mt-0.5 whitespace-pre-wrap break-words text-small text-muted">{row.detail}</p>}
               </div>

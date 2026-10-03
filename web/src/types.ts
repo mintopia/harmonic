@@ -1,3 +1,4 @@
+import type { TrackerResolveFailureCode } from '../../src/tracker/adapter.js';
 import type { Verdict } from '../../src/verification/critic-schema.js';
 
 /** The stored Ticket states; blocked-ness and agent-workability are derived, never stored. */
@@ -346,7 +347,7 @@ export interface GitStatusEntry {
  */
 export type ResolvedTracker =
   | { ok: true; label: string; kind: string; source: TrackerSource; code: null; reason: null }
-  | { ok: false; label: null; kind: null; source: null; code: string; reason: string };
+  | { ok: false; label: null; kind: null; source: null; code: TrackerResolveFailureCode; reason: string };
 
 export interface JSONSchemaObject {
   type?: string;

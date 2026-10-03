@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { PageHeader } from './PageHeader';
-import { Tabs } from './Tabs';
+import { Tabs, panelId, tabId } from './Tabs';
 import { SettingsSection } from './SettingsSection';
 import { FloatingSaveBar } from './FloatingSaveBar';
 import { renderSection, sectionsForTab, type RenderCtx } from './settings-schema';
@@ -56,9 +56,9 @@ export function SettingsForm({
       </div>
 
       <div
-        id={`settings-panel-${tab}`}
+        id={panelId(tab)}
         role="tabpanel"
-        aria-labelledby={`settings-tab-${tab}`}
+        aria-labelledby={tabId(tab)}
         className="mt-5 grid gap-4 xl:grid-cols-2 xl:items-start"
       >
         {sections.map((section) => {

@@ -1,18 +1,22 @@
 import { useSyncExternalStore } from 'react';
 
-// Mirrors --breakpoint-rail (index.css): collapsed-only a11y attributes
-// must not leak into the mobile drawer, so JS needs the same threshold.
-const RAIL_QUERY = '(min-width: 900px)';
-
 export type MatchMediaWindow = Pick<Window, 'matchMedia'>;
+
+function railQuery(): string {
+  return `(min-width: ${getComputedStyle(document.documentElement).getPropertyValue('--breakpoint-rail').trim()})`;
+}
+
+export function isRailLayout(win: Partial<MatchMediaWindow> = window): boolean {
+  return win.matchMedia?.(railQuery()).matches ?? true;
+}
 
 export function useRailBreakpoint(win: MatchMediaWindow = window): boolean {
   return useSyncExternalStore(
     (onChange) => {
-      const mq = win.matchMedia(RAIL_QUERY);
+      const mq = win.matchMedia(railQuery());
       mq.addEventListener('change', onChange);
       return () => mq.removeEventListener('change', onChange);
     },
-    () => win.matchMedia(RAIL_QUERY).matches,
+    () => win.matchMedia(railQuery()).matches,
   );
 }

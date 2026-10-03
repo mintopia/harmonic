@@ -38,7 +38,7 @@ import { EpicVerificationRunner } from './epic-verification-runner.js';
 import { EpicResolutionRunner } from './epic-resolution-runner.js';
 import { EpicIntegrationRunner } from './epic-integration-runner.js';
 import type { Ticket, TrackerAdapter, TrackerRef } from './adapter.js';
-import { resolveTrackerAdapter, workspaceTrackerSettings, type WorkspaceTrackerSettings } from './adapter.js';
+import { compareRefsForDisplay, resolveTrackerAdapter, workspaceTrackerSettings, type WorkspaceTrackerSettings } from './adapter.js';
 import type { FeatureIndex } from './local-markdown.js';
 import { persistedTickets } from './persisted.js';
 
@@ -382,18 +382,18 @@ export class TrackerEpicService implements EpicService {
         epics.push(this.storedToDerived(row, tickets, mirrored));
       }
     }
-    return epics.sort((a, b) => compareRefs(a.ref, b.ref));
+    return epics.sort((a, b) => compareRefsForDisplay(a.ref, b.ref));
   }
   private isHistorical(row: EpicRow): boolean { return row.state === 'integrated' && row.memberRefs !== null; }
   private storedToDerived(row: EpicRow, tickets: Ticket[], mirrored: TaskRow[]): DerivedEpic {
     const ticket = tickets.find((candidate) => candidate.number === row.trackerRef);
-    return { ref: row.trackerRef, title: ticket?.title ?? mirrored.find((task) => task.trackerRef === row.trackerRef)?.trackerTitle ?? `Epic #${row.trackerRef}`, body: ticket?.body ?? '', url: ticket?.url ?? '', members: [...(row.memberRefs ?? [])].sort(compareRefs), ready: [] };
+    return { ref: row.trackerRef, title: ticket?.title ?? mirrored.find((task) => task.trackerRef === row.trackerRef)?.trackerTitle ?? `Epic #${row.trackerRef}`, body: ticket?.body ?? '', url: ticket?.url ?? '', members: [...(row.memberRefs ?? [])].sort(compareRefsForDisplay), ready: [] };
   }
   private async composeOne(workspaceId: number, epic: DerivedEpic, tickets: Ticket[], mirrored: TaskRow[], baseBranch: string | null, rows: ReadonlyMap<TrackerRef, EpicRow>, configured: boolean): Promise<Epic> {
     const titles = new Map(tickets.map((ticket) => [ticket.number, ticket.title])); const tasks = new Map<TrackerRef, TaskRow>();
     for (const task of mirrored) if (task.trackerRef !== null) tasks.set(task.trackerRef, task);
     const ticket = tickets.find((candidate) => candidate.number === epic.ref); const row = rows.get(epic.ref);
-    const meta: EpicMeta = { description: ticket?.body ?? '', createdAt: ticket ? Date.parse(ticket.createdAt) || 0 : 0, baseBranch, dependsOn: (ticket?.blockedBy ?? []).map((blocker) => blocker.number).sort(compareRefs), kind: row?.kind === 'map' ? 'map' : 'spec', state: row?.state ?? 'open' };
+    const meta: EpicMeta = { description: ticket?.body ?? '', createdAt: ticket ? Date.parse(ticket.createdAt) || 0 : 0, baseBranch, dependsOn: (ticket?.blockedBy ?? []).map((blocker) => blocker.number).sort(compareRefsForDisplay), kind: row?.kind === 'map' ? 'map' : 'spec', state: row?.state ?? 'open' };
     return composeEpicView(epic, tasks, titles, await this.epicFacts(workspaceId, epic.ref, configured), meta);
   }
   private async epicFacts(workspaceId: number, epicRef: TrackerRef, configured: boolean): Promise<EpicFacts> {
@@ -414,9 +414,6 @@ export class TrackerEpicService implements EpicService {
   private async epicBaseBranch(workspaceId: number): Promise<string | null> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return workspace ? resolveRepositoryDefaultBranch(workspace.workingDir).catch(() => null) : null; }
   private async verificationConfigured(workspaceId: number): Promise<boolean> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return !!workspace && this.integration !== 'lifecycle-only' && resolveVerifiers(workspace, this.integration.getConfig()).epic.preMerge.commands.length > 0; }
 }
-
-/** Display order only: numeric-aware so GitHub refs keep their numeric order; never a semantic ordering of refs. */
-const compareRefs = (a: TrackerRef, b: TrackerRef): number => a.localeCompare(b, undefined, { numeric: true });
 
 function historicalEpicTicket(epic: DerivedEpic): Ticket {
   return { number: epic.ref, title: epic.title, state: 'closed', labels: [], parent: null, blockedBy: [], body: '', createdAt: '', closedAt: null, assignees: [], blocking: [], comments: [], isMap: false, url: '' };

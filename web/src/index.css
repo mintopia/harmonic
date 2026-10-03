@@ -329,9 +329,18 @@
   --text-data: 0.8125rem;
   --text-data--line-height: 1.5;
 
-  --breakpoint-rail: 900px;
+  --text-micro: 0.6875rem;
+
+  --tracking-caps: 0.09em;
+  --tracking-caps-tight: 0.06em;
+
 
   --ease-out-quint: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* static: useRailBreakpoint reads this at runtime, so it must always be emitted. */
+@theme static {
+  --breakpoint-rail: 900px;
 }
 
 .bold-wash.ready { background-color: var(--hm-ready-tint); }

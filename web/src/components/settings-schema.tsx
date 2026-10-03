@@ -522,7 +522,7 @@ const agentMessagesEnabled = scalar(
     label: 'Enabled',
     switchLabel: 'Let Attempts message each other',
     get: (w) => w.agentMessagesEnabled,
-    set: (w, v) => ({ ...w, agentMessagesEnabled: v as boolean | null }),
+    set: (w, v) => ({ ...w, agentMessagesEnabled: typeof v === 'boolean' ? v : null }),
     inherited: (c) => c.agentMessages.enabled,
     format: (v) => (v ? 'On' : 'Off'),
   },
@@ -542,7 +542,7 @@ const agentMessagesSendCap = scalar(
     id: 'workspace-agent-messages-send-cap',
     errorKey: 'agentMessagesSendCap',
     get: (w) => w.agentMessagesSendCap,
-    set: (w, v) => ({ ...w, agentMessagesSendCap: v as number | null }),
+    set: (w, v) => ({ ...w, agentMessagesSendCap: typeof v === 'number' ? v : null }),
     inherited: (c) => c.agentMessages.sendCap,
     min: 1,
   },
@@ -1212,7 +1212,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   {
     tab: 'integrations',
     surfaces: ['workspace'],
-    title: 'Issue tracker',
+    title: 'Issue Tracker',
     description:
       'Mirror this Workspace’s issue tracker onto the board as Tasks. The Configured Tracker wins over the repo’s docs/agents/issue-tracker.md, which wins over the Code Repository.',
     body: (ctx) => (ctx.surface === 'workspace' ? <IssueTrackerSection ctx={ctx} /> : null),
@@ -1220,14 +1220,14 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   {
     tab: 'integrations',
     surfaces: ['workspace'],
-    title: 'Code repository',
+    title: 'Code Repository',
     description: 'The forge that hosts this Workspace’s branches, PRs/MRs and Merges. Detected from the origin remote unless overridden.',
     body: (ctx) => (ctx.surface === 'workspace' ? <CodeRepositorySection ctx={ctx} /> : null),
   },
   {
     tab: 'integrations',
     surfaces: ['workspace'],
-    title: 'Triage labels',
+    title: 'Triage Labels',
     description: 'The label names the tracker uses for each role Harmonic acts on. Empty roles use the repo’s docs/agents/triage-labels.md, then the defaults.',
     body: (ctx) => (ctx.surface === 'workspace' ? <TriageLabelsSection ctx={ctx} /> : null),
   },

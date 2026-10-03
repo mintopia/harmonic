@@ -2,11 +2,14 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveTrackerAdapter, resolutionSuccess } from '../src/tracker/adapter.js';
+import { resolveTrackerAdapter, resolutionSuccess, workspaceTrackerSettings } from '../src/tracker/adapter.js';
+import { forgejoKind } from '../src/tracker/forgejo.js';
+import { jiraKind } from '../src/tracker/jira.js';
+import { trackerKindFor } from '../src/tracker/kinds.js';
 import { selectTracker } from '../src/tracker/select.js';
 import { configuredTrackerSchema } from '../src/tracker/configured.js';
 import { detectRepository, forgejoVersionProbe, remoteHost } from '../src/repository/detect.js';
-import { DEFAULT_TRIAGE_LABELS, parseTriageLabelsDoc, resolveTriageLabels } from '../src/tracker/triage-labels.js';
+import { DEFAULT_TRIAGE_LABELS, loadTriageLabels, parseTriageLabelsDoc, resolveTriageLabels } from '../src/tracker/triage-labels.js';
 
 const roots: string[] = [];
 const mkRepo = (declaration?: string, triage?: string) => {
@@ -120,5 +123,50 @@ describe('Triage Labels', () => {
   });
   it('is all defaults with no setting and no doc', () => {
     expect(resolveTriageLabels(null, null).labels).toEqual(DEFAULT_TRIAGE_LABELS);
+  });
+});
+
+describe('stored Workspace settings are parsed at the boundary', () => {
+  it('treats a corrupt or non-conforming Configured Tracker column as none instead of throwing', () => {
+    expect(workspaceTrackerSettings({ configuredTracker: '{not json' }).configured).toBeNull();
+    expect(workspaceTrackerSettings({ configuredTracker: '{"kind":"nope"}' }).configured).toBeNull();
+    expect(workspaceTrackerSettings({ configuredTracker: '{"kind":"local-markdown"}' }).configured).toEqual({ kind: 'local-markdown' });
+  });
+  it('ignores a corrupt Triage Labels column', () => {
+    expect(workspaceTrackerSettings({ triageLabels: '[1' }).triageLabels).toBeNull();
+    expect(workspaceTrackerSettings({ triageLabels: '{"readyForAgent":"go"}' }).triageLabels).toEqual({ readyForAgent: 'go' });
+  });
+});
+
+describe('Secret names a kind reads', () => {
+  it('declares the defaults the settings UI lists', () => {
+    expect(forgejoKind.secretNames).toEqual(['FORGEJO_TOKEN']);
+    expect(jiraKind.secretNames).toEqual(['JIRA_TOKEN']);
+  });
+  it('follows a configured Forgejo tokenSecret and Jira secretName', () => {
+    const forgejo = trackerKindFor('forgejo')!;
+    const jira = trackerKindFor('jira')!;
+    expect(forgejo.secretsFor!({ baseUrl: 'https://f.test', repo: 'o/r', tokenSecret: 'MINE' })).toEqual(['MINE']);
+    expect(forgejo.secretsFor!({ baseUrl: 'https://f.test', repo: 'o/r' })).toEqual(['FORGEJO_TOKEN']);
+    expect(jira.secretsFor!({ baseUrl: 'https://j.test', authMode: 'datacenter', projectKey: 'P', secretName: 'MINE' })).toEqual(['MINE']);
+    expect(trackerKindFor('github')!.secretsFor!({})).toEqual([]);
+  });
+});
+
+describe('Triage Labels reach the tracker', () => {
+  it('a Jira scan filters on the Workspace-resolved labels, not the defaults', async () => {
+    const root = mkRepo(undefined, '| ready-for-agent | agent:repo |\n');
+    const queries: string[] = [];
+    const http = async (url: string): Promise<Response> => {
+      queries.push(new URL(url).searchParams.get('jql') ?? '');
+      return new Response(JSON.stringify({ total: 0, issues: [] }));
+    };
+    const settings = jiraKind.settings.parse({ baseUrl: 'https://jira.acme.test', authMode: 'datacenter', projectKey: 'PROJ' });
+    const triageLabels = await loadTriageLabels(root, { epic: 'initiative' });
+    const adapter = jiraKind.create({ settings, secrets: { JIRA_TOKEN: 't' }, repoRoot: root, http, triageLabels });
+    await adapter.scan();
+    expect(queries[0]).toContain('"agent:repo"');
+    expect(queries[0]).toContain('"initiative"');
+    expect(queries[0]).not.toContain('"ready-for-agent"');
   });
 });

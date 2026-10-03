@@ -5,7 +5,8 @@ import type { AttemptRow, AttemptState, TaskAttemptRow, VerificationAttemptRow, 
 import { attempts, steps, guardrailEvents, attemptEvents, isEpicAttempt, isTaskAttempt, verificationAttempts } from '../db/schema.js';
 import { and, desc, eq } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
-import { resolveScoped, resolveVerifiers } from '../domain/setting-override.js';
+import { resolveVerifiers } from '../domain/setting-override.js';
+import { resolveAgentMessages } from '../domain/agent-messages.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
 import { costOfUsages, pricesForHarness, resolveContextWindowForHarness, withCriticContribution, type Cost } from '../domain/pricing.js';
 import { DomainError } from '../domain/errors.js';
@@ -158,7 +159,7 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
     if (!peers.has(peerId)) peers.set(peerId, await ctx.tasks.get(peerId).then((t) => ({ harness: t.harness ?? null, epic: t.trackerParent ?? null }), () => ({ harness: null, epic: null })));
     return peers.get(peerId)!;
   };
-  const sendCap = resolveScoped('agentMessagesSendCap', workspace?.agentMessagesSendCap ?? null, ctx.settingsStore.getGlobal().agentMessages.sendCap);
+  const { sendCap } = resolveAgentMessages(workspace, ctx.settingsStore.getGlobal().agentMessages);
   const sendsByAttempt = new Map<number, number>();
   await forEachYielding(await ctx.agentMessages.listForTask(atRestWorkspaceId(task.workspaceId), taskId), async (message) => {
     const preview = message.parts.map((part) => part.text).join(' ');

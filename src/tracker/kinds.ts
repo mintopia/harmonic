@@ -5,10 +5,25 @@ import { jiraKind } from './jira.js';
 import { localMarkdownKind } from './local-markdown.js';
 import type { TrackerKind } from './kind.js';
 
-/** Every tracker Harmonic can talk to — the only enumeration. Adding a tracker is one module and one entry here. */
-export const TRACKER_KINDS: readonly TrackerKind<any>[] = [githubKind, gitlabKind, forgejoKind, jiraKind, localMarkdownKind];
+function eraseSettingsType<S>(kind: TrackerKind<S>): TrackerKind<unknown> {
+  const parse = (settings: unknown): S => kind.settings.parse(settings);
+  return {
+    ...kind,
+    secretsFor: (settings) => kind.secretsFor?.(parse(settings)) ?? kind.secretNames,
+    create: (ctx) => kind.create({ ...ctx, settings: parse(ctx.settings) }),
+    ...(kind.verify && { verify: (ctx) => kind.verify!({ ...ctx, settings: parse(ctx.settings) }) }),
+  };
+}
 
-export const trackerKindFor = (id: string): TrackerKind<any> | undefined => TRACKER_KINDS.find((k) => k.id === id);
+export const TRACKER_KINDS: readonly TrackerKind<unknown>[] = [
+  eraseSettingsType(githubKind),
+  eraseSettingsType(gitlabKind),
+  eraseSettingsType(forgejoKind),
+  eraseSettingsType(jiraKind),
+  eraseSettingsType(localMarkdownKind),
+];
+
+export const trackerKindFor = (id: string): TrackerKind<unknown> | undefined => TRACKER_KINDS.find((k) => k.id === id);
 
 /** A declaration's free-text name as a kind id (`Local Markdown` → `local-markdown`). */
 export const normaliseKindId = (name: string): string => name.trim().toLowerCase().replace(/[\s_]+/g, '-');

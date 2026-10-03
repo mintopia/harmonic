@@ -1,10 +1,5 @@
-import { isEpicTypeContainer, type Ticket, type TrackerRef } from '../tracker/adapter.js';
+import { compareRefsForDisplay, isEpicTypeContainer, type Ticket, type TrackerRef } from '../tracker/adapter.js';
 import type { StoredEpicKind } from '../db/schema.js';
-
-/** Refs are opaque; order them naturally for stable display only. */
-function compareRefs(a: TrackerRef, b: TrackerRef): number {
-  return a.localeCompare(b, undefined, { numeric: true });
-}
 
 export interface DerivedEpic {
   /** The Epic ticket's tracker ref (its `number`). */
@@ -60,8 +55,8 @@ function toDerivedEpic(
     title: epic.title,
     body: epic.body,
     url: epic.url,
-    members: members.map((c) => c.number).sort(compareRefs),
-    ready: members.filter((c) => isReady(c, readinessByRef)).map((c) => c.number).sort(compareRefs),
+    members: members.map((c) => c.number).sort(compareRefsForDisplay),
+    ready: members.filter((c) => isReady(c, readinessByRef)).map((c) => c.number).sort(compareRefsForDisplay),
   };
 }
 
@@ -97,7 +92,7 @@ export function deriveLeafEpics(
 ): DerivedEpic[] {
   return leafMostContainers(indexTickets(tickets), opts)
     .map(({ container, children }) => toDerivedEpic(container, children, readinessByRef))
-    .sort((a, b) => compareRefs(a.ref, b.ref));
+    .sort((a, b) => compareRefsForDisplay(a.ref, b.ref));
 }
 
 /** The stored-Epic spine record the scan lazy-upserts. */
@@ -124,5 +119,5 @@ export function deriveStoredEpics(tickets: Ticket[]): StoredEpicRecord[] {
         children.length > 0 && (isEpicTypeContainer(container) || container.parent == null),
     )
     .map(({ container }) => ({ ref: container.number, kind: storedEpicKind(container) }))
-    .sort((a, b) => compareRefs(a.ref, b.ref));
+    .sort((a, b) => compareRefsForDisplay(a.ref, b.ref));
 }

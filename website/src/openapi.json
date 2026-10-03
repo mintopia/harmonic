@@ -715,15 +715,13 @@
           "trackerRef": {
             "anyOf": [
               {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "example": 470
+            "example": "470"
           },
           "startedAt": {
             "type": "number",
@@ -986,13 +984,13 @@
           "trackerRef": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "example": 51
+            "example": "51"
           },
           "trackerUrl": {
             "anyOf": [
@@ -1278,7 +1276,7 @@
                         "const": "epic"
                       },
                       "epicRef": {
-                        "type": "number"
+                        "type": "string"
                       },
                       "title": {
                         "type": "string"
@@ -1869,7 +1867,7 @@
           "trackerRef": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -1912,7 +1910,7 @@
           "mapRef": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -2207,7 +2205,7 @@
           "trackerRef": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -2250,7 +2248,7 @@
           "mapRef": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -2724,7 +2722,7 @@
           "trackerRef": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -2767,7 +2765,7 @@
           "mapRef": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -3328,10 +3326,9 @@
         "type": "object",
         "properties": {
           "ref": {
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991,
-            "example": 4821
+            "type": "string",
+            "minLength": 1,
+            "example": "4821"
           },
           "title": {
             "type": "string",
@@ -4295,10 +4292,9 @@
         "type": "object",
         "properties": {
           "ref": {
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991,
-            "example": 42
+            "type": "string",
+            "minLength": 1,
+            "example": "42"
           },
           "title": {
             "type": "string",
@@ -4356,9 +4352,7 @@
           "dependsOn": {
             "type": "array",
             "items": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           "members": {
@@ -4370,9 +4364,7 @@
           "ready": {
             "type": "array",
             "items": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           "integration": {
@@ -4869,8 +4861,9 @@
             "example": 1
           },
           "ref": {
-            "type": "number",
-            "example": 19
+            "type": "string",
+            "minLength": 1,
+            "example": "19"
           },
           "title": {
             "type": "string",
@@ -4883,11 +4876,11 @@
           "taskRefs": {
             "type": "array",
             "items": {
-              "type": "number"
+              "type": "string"
             },
             "example": [
-              30,
-              35
+              "30",
+              "35"
             ]
           },
           "counts": {
@@ -7373,6 +7366,336 @@
           }
         }
       },
+      "AgentMessageRecipientInput": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Recipient Task id.",
+            "example": 12
+          },
+          "receipt": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "delivered",
+              "held",
+              "refused"
+            ],
+            "description": "Delivery state: queued, delivered, held, or refused.",
+            "example": "delivered"
+          },
+          "mode": {
+            "description": "How a delivered message reached the Agent; absent while held or refused.",
+            "type": "string",
+            "enum": [
+              "mid-turn",
+              "next-turn"
+            ]
+          },
+          "deliveredAt": {
+            "description": "Epoch ms the message was delivered; absent until then.",
+            "type": "number"
+          },
+          "reason": {
+            "description": "Why the message was refused; present only when refused.",
+            "type": "string"
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "True when the recipient Task no longer exists."
+          }
+        },
+        "required": [
+          "taskId",
+          "receipt",
+          "deleted"
+        ],
+        "description": "One recipient's delivery receipt for an Agent Message."
+      },
+      "AgentMessageInput": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": "Agent Message id."
+          },
+          "role": {
+            "type": "string",
+            "description": "A2A-shaped role of the sender.",
+            "example": "agent"
+          },
+          "parts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "text"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "text"
+              ]
+            },
+            "description": "Message content as A2A-shaped text Parts."
+          },
+          "replyTo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Id of the message this one replies to; null for a Thread root."
+          },
+          "threadId": {
+            "type": "string",
+            "description": "Id of the Thread (the root message id)."
+          },
+          "senderTaskId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Task that sent the message."
+          },
+          "senderDeleted": {
+            "type": "boolean",
+            "description": "True when the sender Task no longer exists."
+          },
+          "senderAttemptId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Attempt that sent the message."
+          },
+          "workspaceId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Workspace the message belongs to."
+          },
+          "createdAt": {
+            "type": "number",
+            "description": "Epoch ms the message was sent."
+          },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentMessageRecipientInput"
+            },
+            "description": "Every recipient with its own receipt; an Epic-addressed message has one per open sibling."
+          }
+        },
+        "required": [
+          "messageId",
+          "role",
+          "parts",
+          "replyTo",
+          "threadId",
+          "senderTaskId",
+          "senderDeleted",
+          "senderAttemptId",
+          "workspaceId",
+          "createdAt",
+          "recipients"
+        ],
+        "description": "An Agent Message sent between Tasks in a Workspace."
+      },
+      "AgentMessageParticipantInput": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Participant Task id."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display title of the Task; null when deleted."
+          },
+          "harness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Harness the Task runs on; null when deleted."
+          },
+          "epicId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tracker ref of the Task's Epic; null when it has none or is deleted."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "True when the Task no longer exists."
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Task's stored model; null when unset or the Task is deleted."
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "ready",
+                  "working",
+                  "paused",
+                  "escalated",
+                  "done",
+                  "cancelled"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Task's lifecycle state; null when deleted."
+          },
+          "betweenAttempts": {
+            "type": "boolean",
+            "description": "Working with no running Attempt."
+          },
+          "attemptNumber": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Number of the latest Attempt; null when none."
+          },
+          "sends": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Messages the latest Attempt has sent; render with `sendCap` as \"sends/sendCap\"."
+          },
+          "sendCap": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "The Task's Workspace Agent Messages send cap."
+          },
+          "lastMessageAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Epoch ms of the newest message this Task sent in the Thread."
+          }
+        },
+        "required": [
+          "taskId",
+          "title",
+          "harness",
+          "epicId",
+          "deleted",
+          "model",
+          "state",
+          "betweenAttempts",
+          "attemptNumber",
+          "sends",
+          "sendCap",
+          "lastMessageAt"
+        ],
+        "description": "A Task that sent or received messages in a Thread."
+      },
+      "AgentMessageThreadInput": {
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "description": "Thread id (the root message id)."
+          },
+          "workspaceId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Workspace the Thread belongs to."
+          },
+          "workspaceName": {
+            "type": "string",
+            "description": "Display name of that Workspace."
+          },
+          "latestAt": {
+            "type": "number",
+            "description": "Epoch ms of the Thread's newest message."
+          },
+          "live": {
+            "type": "boolean",
+            "description": "True while any participant Task has a running Attempt."
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentMessageInput"
+            },
+            "description": "Oldest first."
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentMessageParticipantInput"
+            },
+            "description": "Senders and recipients in first-appearance order."
+          }
+        },
+        "required": [
+          "threadId",
+          "workspaceId",
+          "workspaceName",
+          "latestAt",
+          "live",
+          "messages",
+          "participants"
+        ],
+        "description": "A root Agent Message and its replies, with the Tasks taking part."
+      },
       "NotificationInput": {
         "type": "object",
         "properties": {
@@ -7522,6 +7845,161 @@
           "config",
           "events",
           "createdAt"
+        ]
+      },
+      "TrackerVerifyResultInput": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": true
+              },
+              "identity": {
+                "type": "string",
+                "example": "octocat"
+              }
+            },
+            "required": [
+              "ok",
+              "identity"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": false
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ok",
+              "reason"
+            ]
+          }
+        ],
+        "description": "The authenticated identity (or, for a Code Repository, its kind) on success, else why verification failed. Never contains a Secret value."
+      },
+      "TrackerKindInput": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "github"
+          },
+          "label": {
+            "type": "string",
+            "example": "GitHub"
+          },
+          "secretNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "settingsSchema": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {},
+            "description": "JSON Schema of the kind settings."
+          },
+          "capabilities": {
+            "type": "object",
+            "properties": {
+              "close": {
+                "type": "boolean"
+              },
+              "reopen": {
+                "type": "boolean"
+              },
+              "claim": {
+                "type": "boolean"
+              },
+              "transition": {
+                "type": "boolean"
+              },
+              "epicSources": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "close",
+              "reopen",
+              "claim",
+              "transition",
+              "epicSources"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "secretNames",
+          "settingsSchema",
+          "capabilities"
+        ]
+      },
+      "TrackerDetectionInput": {
+        "type": "object",
+        "properties": {
+          "detectedTracker": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "kind"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detectedCodeRepository": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "github",
+                  "gitlab",
+                  "forgejo"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "detectedTracker",
+          "detectedCodeRepository"
         ]
       },
       "SecretStatusInput": {
@@ -8321,15 +8799,13 @@
           "trackerRef": {
             "anyOf": [
               {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "example": 470
+            "example": "470"
           },
           "startedAt": {
             "type": "number",
@@ -8596,13 +9072,13 @@
           "trackerRef": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "example": 51
+            "example": "51"
           },
           "trackerUrl": {
             "anyOf": [
@@ -8891,7 +9367,7 @@
                         "const": "epic"
                       },
                       "epicRef": {
-                        "type": "number"
+                        "type": "string"
                       },
                       "title": {
                         "type": "string"
@@ -9492,7 +9968,7 @@
           "trackerRef": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -9535,7 +10011,7 @@
           "mapRef": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -9832,7 +10308,7 @@
           "trackerRef": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -9875,7 +10351,7 @@
           "mapRef": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -10351,7 +10827,7 @@
           "trackerRef": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -10394,7 +10870,7 @@
           "mapRef": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -10958,10 +11434,9 @@
         "type": "object",
         "properties": {
           "ref": {
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991,
-            "example": 4821
+            "type": "string",
+            "minLength": 1,
+            "example": "4821"
           },
           "title": {
             "type": "string",
@@ -11963,10 +12438,9 @@
         "type": "object",
         "properties": {
           "ref": {
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991,
-            "example": 42
+            "type": "string",
+            "minLength": 1,
+            "example": "42"
           },
           "title": {
             "type": "string",
@@ -12024,9 +12498,7 @@
           "dependsOn": {
             "type": "array",
             "items": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           "members": {
@@ -12038,9 +12510,7 @@
           "ready": {
             "type": "array",
             "items": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           "integration": {
@@ -12548,8 +13018,9 @@
             "example": 1
           },
           "ref": {
-            "type": "number",
-            "example": 19
+            "type": "string",
+            "minLength": 1,
+            "example": "19"
           },
           "title": {
             "type": "string",
@@ -12562,11 +13033,11 @@
           "taskRefs": {
             "type": "array",
             "items": {
-              "type": "number"
+              "type": "string"
             },
             "example": [
-              30,
-              35
+              "30",
+              "35"
             ]
           },
           "counts": {
@@ -15155,6 +15626,341 @@
         },
         "additionalProperties": false
       },
+      "AgentMessageRecipient": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Recipient Task id.",
+            "example": 12
+          },
+          "receipt": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "delivered",
+              "held",
+              "refused"
+            ],
+            "description": "Delivery state: queued, delivered, held, or refused.",
+            "example": "delivered"
+          },
+          "mode": {
+            "description": "How a delivered message reached the Agent; absent while held or refused.",
+            "type": "string",
+            "enum": [
+              "mid-turn",
+              "next-turn"
+            ]
+          },
+          "deliveredAt": {
+            "description": "Epoch ms the message was delivered; absent until then.",
+            "type": "number"
+          },
+          "reason": {
+            "description": "Why the message was refused; present only when refused.",
+            "type": "string"
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "True when the recipient Task no longer exists."
+          }
+        },
+        "required": [
+          "taskId",
+          "receipt",
+          "deleted"
+        ],
+        "additionalProperties": false,
+        "description": "One recipient's delivery receipt for an Agent Message."
+      },
+      "AgentMessage": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": "Agent Message id."
+          },
+          "role": {
+            "type": "string",
+            "description": "A2A-shaped role of the sender.",
+            "example": "agent"
+          },
+          "parts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "text"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "text"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Message content as A2A-shaped text Parts."
+          },
+          "replyTo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Id of the message this one replies to; null for a Thread root."
+          },
+          "threadId": {
+            "type": "string",
+            "description": "Id of the Thread (the root message id)."
+          },
+          "senderTaskId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Task that sent the message."
+          },
+          "senderDeleted": {
+            "type": "boolean",
+            "description": "True when the sender Task no longer exists."
+          },
+          "senderAttemptId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Attempt that sent the message."
+          },
+          "workspaceId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Workspace the message belongs to."
+          },
+          "createdAt": {
+            "type": "number",
+            "description": "Epoch ms the message was sent."
+          },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentMessageRecipient"
+            },
+            "description": "Every recipient with its own receipt; an Epic-addressed message has one per open sibling."
+          }
+        },
+        "required": [
+          "messageId",
+          "role",
+          "parts",
+          "replyTo",
+          "threadId",
+          "senderTaskId",
+          "senderDeleted",
+          "senderAttemptId",
+          "workspaceId",
+          "createdAt",
+          "recipients"
+        ],
+        "additionalProperties": false,
+        "description": "An Agent Message sent between Tasks in a Workspace."
+      },
+      "AgentMessageParticipant": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Participant Task id."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display title of the Task; null when deleted."
+          },
+          "harness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Harness the Task runs on; null when deleted."
+          },
+          "epicId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tracker ref of the Task's Epic; null when it has none or is deleted."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "True when the Task no longer exists."
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Task's stored model; null when unset or the Task is deleted."
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "ready",
+                  "working",
+                  "paused",
+                  "escalated",
+                  "done",
+                  "cancelled"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Task's lifecycle state; null when deleted."
+          },
+          "betweenAttempts": {
+            "type": "boolean",
+            "description": "Working with no running Attempt."
+          },
+          "attemptNumber": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Number of the latest Attempt; null when none."
+          },
+          "sends": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Messages the latest Attempt has sent; render with `sendCap` as \"sends/sendCap\"."
+          },
+          "sendCap": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "The Task's Workspace Agent Messages send cap."
+          },
+          "lastMessageAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Epoch ms of the newest message this Task sent in the Thread."
+          }
+        },
+        "required": [
+          "taskId",
+          "title",
+          "harness",
+          "epicId",
+          "deleted",
+          "model",
+          "state",
+          "betweenAttempts",
+          "attemptNumber",
+          "sends",
+          "sendCap",
+          "lastMessageAt"
+        ],
+        "additionalProperties": false,
+        "description": "A Task that sent or received messages in a Thread."
+      },
+      "AgentMessageThread": {
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "description": "Thread id (the root message id)."
+          },
+          "workspaceId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Workspace the Thread belongs to."
+          },
+          "workspaceName": {
+            "type": "string",
+            "description": "Display name of that Workspace."
+          },
+          "latestAt": {
+            "type": "number",
+            "description": "Epoch ms of the Thread's newest message."
+          },
+          "live": {
+            "type": "boolean",
+            "description": "True while any participant Task has a running Attempt."
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentMessage"
+            },
+            "description": "Oldest first."
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentMessageParticipant"
+            },
+            "description": "Senders and recipients in first-appearance order."
+          }
+        },
+        "required": [
+          "threadId",
+          "workspaceId",
+          "workspaceName",
+          "latestAt",
+          "live",
+          "messages",
+          "participants"
+        ],
+        "additionalProperties": false,
+        "description": "A root Agent Message and its replies, with the Tasks taking part."
+      },
       "Notification": {
         "type": "object",
         "properties": {
@@ -15305,6 +16111,167 @@
           "config",
           "events",
           "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "TrackerVerifyResult": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": true
+              },
+              "identity": {
+                "type": "string",
+                "example": "octocat"
+              }
+            },
+            "required": [
+              "ok",
+              "identity"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": false
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ok",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        ],
+        "description": "The authenticated identity (or, for a Code Repository, its kind) on success, else why verification failed. Never contains a Secret value."
+      },
+      "TrackerKind": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "github"
+          },
+          "label": {
+            "type": "string",
+            "example": "GitHub"
+          },
+          "secretNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "settingsSchema": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {},
+            "description": "JSON Schema of the kind settings."
+          },
+          "capabilities": {
+            "type": "object",
+            "properties": {
+              "close": {
+                "type": "boolean"
+              },
+              "reopen": {
+                "type": "boolean"
+              },
+              "claim": {
+                "type": "boolean"
+              },
+              "transition": {
+                "type": "boolean"
+              },
+              "epicSources": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "close",
+              "reopen",
+              "claim",
+              "transition",
+              "epicSources"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "secretNames",
+          "settingsSchema",
+          "capabilities"
+        ],
+        "additionalProperties": false
+      },
+      "TrackerDetection": {
+        "type": "object",
+        "properties": {
+          "detectedTracker": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detectedCodeRepository": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "github",
+                  "gitlab",
+                  "forgejo"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "detectedTracker",
+          "detectedCodeRepository"
         ],
         "additionalProperties": false
       },
@@ -15572,9 +16539,8 @@
           {
             "schema": {
               "example": 42,
-              "type": "integer",
-              "exclusiveMinimum": 0,
-              "maximum": 9007199254740991
+              "type": "string",
+              "minLength": 1
             },
             "in": "query",
             "name": "parent",
@@ -18688,10 +19654,9 @@
           },
           {
             "schema": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991,
-              "example": 42
+              "type": "string",
+              "minLength": 1,
+              "example": "42"
             },
             "in": "path",
             "name": "epicRef",
@@ -18748,10 +19713,9 @@
           },
           {
             "schema": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991,
-              "example": 42
+              "type": "string",
+              "minLength": 1,
+              "example": "42"
             },
             "in": "path",
             "name": "epicRef",
@@ -18820,10 +19784,9 @@
           },
           {
             "schema": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991,
-              "example": 42
+              "type": "string",
+              "minLength": 1,
+              "example": "42"
             },
             "in": "path",
             "name": "epicRef",
@@ -18976,10 +19939,9 @@
           },
           {
             "schema": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991,
-              "example": 19
+              "type": "string",
+              "minLength": 1,
+              "example": "19"
             },
             "in": "path",
             "name": "ref",
@@ -32013,10 +32975,9 @@
           },
           {
             "schema": {
-              "type": "integer",
-              "exclusiveMinimum": 0,
-              "maximum": 9007199254740991,
-              "example": 410
+              "type": "string",
+              "minLength": 1,
+              "example": "410"
             },
             "in": "path",
             "name": "ref",
@@ -32789,27 +33750,29 @@
             },
             "in": "query",
             "name": "workspaceId",
-            "required": false
+            "required": false,
+            "description": "Restrict to one Workspace; omit for Global."
           },
           {
             "schema": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
+              "type": "string",
+              "minLength": 1
             },
             "in": "query",
             "name": "epicId",
-            "required": false
+            "required": false,
+            "description": "Keep Threads with a participant Task under this Epic tracker ref."
           },
           {
             "schema": {
               "type": "integer",
-              "minimum": -9007199254740991,
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             },
             "in": "query",
             "name": "taskId",
-            "required": false
+            "required": false,
+            "description": "Keep Threads this Task sent or received in."
           },
           {
             "schema": {
@@ -32821,7 +33784,8 @@
             },
             "in": "query",
             "name": "live",
-            "required": false
+            "required": false,
+            "description": "`true` keeps Threads with a participant running an Attempt."
           }
         ],
         "security": [
@@ -32843,305 +33807,7 @@
                     "threads": {
                       "type": "array",
                       "items": {
-                        "type": "object",
-                        "properties": {
-                          "threadId": {
-                            "type": "string"
-                          },
-                          "workspaceId": {
-                            "type": "integer",
-                            "minimum": -9007199254740991,
-                            "maximum": 9007199254740991
-                          },
-                          "workspaceName": {
-                            "type": "string"
-                          },
-                          "latestAt": {
-                            "type": "number",
-                            "description": "Epoch ms of the Thread's newest message."
-                          },
-                          "live": {
-                            "type": "boolean",
-                            "description": "True while any participant Task has a running Attempt."
-                          },
-                          "messages": {
-                            "type": "array",
-                            "items": {
-                              "type": "object",
-                              "properties": {
-                                "messageId": {
-                                  "type": "string"
-                                },
-                                "role": {
-                                  "type": "string",
-                                  "example": "agent"
-                                },
-                                "parts": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "object",
-                                    "properties": {
-                                      "kind": {
-                                        "type": "string",
-                                        "enum": [
-                                          "text"
-                                        ]
-                                      },
-                                      "text": {
-                                        "type": "string"
-                                      }
-                                    },
-                                    "required": [
-                                      "kind",
-                                      "text"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                },
-                                "replyTo": {
-                                  "anyOf": [
-                                    {
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                },
-                                "threadId": {
-                                  "type": "string"
-                                },
-                                "senderTaskId": {
-                                  "type": "integer",
-                                  "minimum": -9007199254740991,
-                                  "maximum": 9007199254740991
-                                },
-                                "senderDeleted": {
-                                  "type": "boolean"
-                                },
-                                "senderAttemptId": {
-                                  "type": "integer",
-                                  "minimum": -9007199254740991,
-                                  "maximum": 9007199254740991
-                                },
-                                "workspaceId": {
-                                  "type": "integer",
-                                  "minimum": -9007199254740991,
-                                  "maximum": 9007199254740991
-                                },
-                                "createdAt": {
-                                  "type": "number"
-                                },
-                                "recipients": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "object",
-                                    "properties": {
-                                      "taskId": {
-                                        "type": "integer",
-                                        "minimum": -9007199254740991,
-                                        "maximum": 9007199254740991,
-                                        "example": 12
-                                      },
-                                      "receipt": {
-                                        "type": "string",
-                                        "enum": [
-                                          "queued",
-                                          "delivered",
-                                          "held",
-                                          "refused"
-                                        ],
-                                        "example": "delivered"
-                                      },
-                                      "mode": {
-                                        "type": "string",
-                                        "enum": [
-                                          "mid-turn",
-                                          "next-turn"
-                                        ]
-                                      },
-                                      "deliveredAt": {
-                                        "type": "number"
-                                      },
-                                      "reason": {
-                                        "type": "string"
-                                      },
-                                      "deleted": {
-                                        "type": "boolean"
-                                      }
-                                    },
-                                    "required": [
-                                      "taskId",
-                                      "receipt",
-                                      "deleted"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                }
-                              },
-                              "required": [
-                                "messageId",
-                                "role",
-                                "parts",
-                                "replyTo",
-                                "threadId",
-                                "senderTaskId",
-                                "senderDeleted",
-                                "senderAttemptId",
-                                "workspaceId",
-                                "createdAt",
-                                "recipients"
-                              ],
-                              "additionalProperties": false
-                            },
-                            "description": "Oldest first."
-                          },
-                          "participants": {
-                            "type": "array",
-                            "items": {
-                              "type": "object",
-                              "properties": {
-                                "taskId": {
-                                  "type": "integer",
-                                  "minimum": -9007199254740991,
-                                  "maximum": 9007199254740991
-                                },
-                                "title": {
-                                  "anyOf": [
-                                    {
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                },
-                                "harness": {
-                                  "anyOf": [
-                                    {
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                },
-                                "epicId": {
-                                  "anyOf": [
-                                    {
-                                      "type": "integer",
-                                      "minimum": -9007199254740991,
-                                      "maximum": 9007199254740991
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                },
-                                "deleted": {
-                                  "type": "boolean"
-                                },
-                                "model": {
-                                  "anyOf": [
-                                    {
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ],
-                                  "description": "The Task's stored model; null when unset or the Task is deleted."
-                                },
-                                "state": {
-                                  "anyOf": [
-                                    {
-                                      "type": "string",
-                                      "enum": [
-                                        "draft",
-                                        "ready",
-                                        "working",
-                                        "paused",
-                                        "escalated",
-                                        "done",
-                                        "cancelled"
-                                      ]
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ],
-                                  "description": "The Task's lifecycle state; null when deleted."
-                                },
-                                "betweenAttempts": {
-                                  "type": "boolean",
-                                  "description": "Working with no running Attempt."
-                                },
-                                "attemptNumber": {
-                                  "anyOf": [
-                                    {
-                                      "type": "integer",
-                                      "minimum": -9007199254740991,
-                                      "maximum": 9007199254740991
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ],
-                                  "description": "Number of the latest Attempt; null when none."
-                                },
-                                "sends": {
-                                  "type": "integer",
-                                  "minimum": 0,
-                                  "maximum": 9007199254740991,
-                                  "description": "Messages the latest Attempt has sent."
-                                },
-                                "sendCap": {
-                                  "type": "integer",
-                                  "minimum": 0,
-                                  "maximum": 9007199254740991,
-                                  "description": "The Task's Workspace Agent Messages send cap."
-                                },
-                                "lastMessageAt": {
-                                  "anyOf": [
-                                    {
-                                      "type": "number"
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ],
-                                  "description": "Epoch ms of the newest message this Task sent in the Thread."
-                                }
-                              },
-                              "required": [
-                                "taskId",
-                                "title",
-                                "harness",
-                                "epicId",
-                                "deleted",
-                                "model",
-                                "state",
-                                "betweenAttempts",
-                                "attemptNumber",
-                                "sends",
-                                "sendCap",
-                                "lastMessageAt"
-                              ],
-                              "additionalProperties": false
-                            },
-                            "description": "Senders and recipients in first-appearance order."
-                          }
-                        },
-                        "required": [
-                          "threadId",
-                          "workspaceId",
-                          "workspaceName",
-                          "latestAt",
-                          "live",
-                          "messages",
-                          "participants"
-                        ],
-                        "additionalProperties": false
+                        "$ref": "#/components/schemas/AgentMessageThread"
                       }
                     },
                     "total": {
@@ -33967,6 +34633,200 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Workspace has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tracker-kinds": {
+      "get": {
+        "tags": [
+          "Workspaces"
+        ],
+        "description": "The tracker kinds Harmonic can talk to, with their settings JSON Schema and Secret names.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every registered tracker kind.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "kinds": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TrackerKind"
+                      }
+                    }
+                  },
+                  "required": [
+                    "kinds"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Every registered tracker kind."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{id}/tracker-detection": {
+      "get": {
+        "tags": [
+          "Workspaces"
+        ],
+        "description": "The Detected Tracker declared by the repo and the Code Repository detected from its origin remote.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What was detected from the repo; either may be null.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackerDetection"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Workspace has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{id}/tracker/verify": {
+      "post": {
+        "tags": [
+          "Workspaces"
+        ],
+        "description": "Verify the Workspace's Resolved Tracker is reachable and report the identity it acts as.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The verification outcome; a failure is still a 200 with ok false.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackerVerifyResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Workspace has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{id}/repository/verify": {
+      "post": {
+        "tags": [
+          "Workspaces"
+        ],
+        "description": "Verify the Workspace's Code Repository is reachable with the ambient credentials.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The verification outcome; a failure is still a 200 with ok false.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackerVerifyResult"
                 }
               }
             }
@@ -36504,10 +37364,9 @@
           },
           {
             "schema": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991,
-              "example": 42
+              "type": "string",
+              "minLength": 1,
+              "example": "42"
             },
             "in": "path",
             "name": "epicRef",
@@ -36566,10 +37425,9 @@
           },
           {
             "schema": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991,
-              "example": 42
+              "type": "string",
+              "minLength": 1,
+              "example": "42"
             },
             "in": "path",
             "name": "epicRef",
@@ -36657,10 +37515,9 @@
           },
           {
             "schema": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991,
-              "example": 42
+              "type": "string",
+              "minLength": 1,
+              "example": "42"
             },
             "in": "path",
             "name": "epicRef",
@@ -36751,10 +37608,9 @@
           },
           {
             "schema": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991,
-              "example": 42
+              "type": "string",
+              "minLength": 1,
+              "example": "42"
             },
             "in": "path",
             "name": "epicRef",

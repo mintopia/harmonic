@@ -4,19 +4,13 @@ import { logger } from '../logger.js';
 import { z } from 'zod';
 import { parseBlockedBySection, parsePartOfParent } from './relationships.js';
 import type { TrackerKind } from './kind.js';
-import { EPIC_LABEL, MAP_LABEL, type Ticket, type TicketRef, type TicketState, trackerRef, type WritableTrackerAdapter } from './adapter.js';
+import { type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
+import { EPIC_LABEL, MAP_LABEL, trackerRef } from './ref.js';
 
 const execFileAsync = promisify(execFile);
 
-async function gitlabRemote(repoRoot: string): Promise<string | null> {
-  let url: string;
-  try {
-    const { stdout } = await execFileAsync('git', ['-C', repoRoot, 'remote', 'get-url', 'origin']);
-    url = stdout.trim();
-  } catch {
-    return null;
-  }
-  const m = url.match(/^(?:git@|(?:https?|ssh):\/\/(?:[^@/]+@)?)[^:/]+[:/](?:\d+\/)?(.+?)(?:\.git)?$/);
+function gitlabProject(url: string | null): string | null {
+  const m = url?.match(/^(?:git@|(?:https?|ssh):\/\/(?:[^@/]+@)?)[^:/]+[:/](?:\d+\/)?(.+?)(?:\.git)?$/);
   return m ? m[1]! : null;
 }
 
@@ -225,11 +219,11 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
 export const gitlabKind: TrackerKind<{ project?: string | undefined }> = {
   id: 'gitlab',
   label: 'GitLab',
-  settings: z.object({ project: z.string().min(1).optional() }).strict(),
+  settings: z.object({ project: z.string().min(1).optional().meta({ title: 'Project', description: 'The GitLab project as group/repo; defaults to the origin remote.' }) }).strict(),
   secretNames: [],
   capabilities: { close: true, reopen: true, claim: true, transition: false, epicSources: ['epic-label'] },
-  fromDeclaration: async (doc, repoRoot) => ({
-    project: doc.match(/^\s*Project:\s*(.+?)\s*$/im)?.[1] ?? (await gitlabRemote(repoRoot)) ?? undefined,
+  fromDeclaration: async (doc, _repoRoot, origin) => ({
+    project: doc.match(/^\s*Project:\s*(.+?)\s*$/im)?.[1] ?? gitlabProject(await origin()) ?? undefined,
   }),
   create: ({ settings, repoRoot, run }) => {
     if (!settings.project) throw new Error('GitLab tracker needs a "Project: <group/repo>" line (or an origin remote)');

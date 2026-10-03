@@ -7,6 +7,7 @@ import {
   showWorkspaceBadge,
   workspaceOptions,
   type ServerThreadFilter,
+  type ThreadsView,
   bodyParts,
   countLine,
   epicOptions,
@@ -17,6 +18,8 @@ import {
   threadEpicCaption,
   threadParticipantsLine,
   threadTitle,
+  threadsCapHint,
+  trappedFocusIndex,
   type Identity,
   type Receipt,
   totalMessages,
@@ -27,6 +30,7 @@ import { isAtLiveEdge } from '../follow-tail-model';
 import { elapsedShort } from '../relative-time';
 import type { AgentMessageThread } from '../types';
 import { panelTitle } from '../ui';
+import { isRailLayout } from '../useRailBreakpoint';
 import { useNow } from '../useNow';
 import { EmptyState } from './EmptyState';
 import { HarnessGlyph } from './HarnessGlyph';
@@ -34,6 +38,7 @@ import { Icon } from './Icon';
 import { LoadError } from './LoadError';
 import { StatePill } from './ticket/shared';
 import { Switch } from './Switch';
+import { panelId, tabId } from './Tabs';
 
 const IDENTITY_CLASS: Record<Identity, string> = {
   1: '[--id:var(--hm-id-1)]',
@@ -44,9 +49,37 @@ const IDENTITY_CLASS: Record<Identity, string> = {
 const SELECT_LABEL =
   'inline-flex min-h-9 items-center gap-1.5 rounded-md border border-edge bg-field pl-2.5 text-ink focus-within:border-accent';
 const SELECT =
-  'hm-select cursor-pointer bg-transparent py-1.5 pl-0 pr-7 text-ink focus:outline-none';
+  'hm-select cursor-pointer bg-transparent py-1.5 pl-0 pr-7 text-ink focus:outline-none max-rail:flex-1';
 const SEPARATOR =
-  "my-3.5 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-faint before:flex-1 before:border-t before:border-hairline before:content-[''] after:flex-1 after:border-t after:border-hairline after:content-['']";
+  "my-3.5 flex items-center gap-3 text-micro font-semibold uppercase tracking-caps-tight text-faint before:flex-1 before:border-t before:border-hairline before:content-[''] after:flex-1 after:border-t after:border-hairline after:content-['']";
+
+function FilterSelect({
+  label,
+  value,
+  allLabel,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  allLabel: string;
+  options: readonly { value: string | number; label: string }[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className={`${SELECT_LABEL} max-rail:basis-full`}>
+      <span className="text-small font-medium text-muted">{label}</span>
+      <select className={SELECT} value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">{allLabel}</option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
 function ThreadRow({
   thread,
@@ -96,7 +129,7 @@ function ThreadRow({
         </div>
         <div className="mt-0.5 flex items-center gap-1.5 pl-3.5 text-small text-faint">
           {badge && (
-            <span className="max-w-[40%] shrink-0 truncate rounded-sm bg-raised px-1.5 text-[11px] font-semibold text-muted">
+            <span className="max-w-[40%] shrink-0 truncate rounded-sm bg-raised px-1.5 text-micro font-semibold text-muted">
               {thread.workspaceName}
             </span>
           )}
@@ -141,7 +174,7 @@ function AgentCardView({ card, workspaceId }: { card: AgentCard; workspaceId: nu
             {card.model && (
               <>
                 {' · '}
-                <code className="rounded-md border border-hairline bg-surface px-[5px] font-data text-[11px] text-syntax-title">
+                <code className="rounded-md border border-hairline bg-surface px-[5px] font-data text-micro text-syntax-title">
                   {card.model}
                 </code>
               </>
@@ -155,7 +188,7 @@ function AgentCardView({ card, workspaceId }: { card: AgentCard; workspaceId: nu
         {card.attemptLabel && <span className="text-faint">{card.attemptLabel}</span>}
       </div>
       <div className="mt-2 flex items-center gap-2 text-ink">
-        <span className={`font-data ${card.atCap ? 'text-fail' : ''}`}>{card.sendsCount}</span>
+        <span className={`min-w-[3ch] font-data text-small ${card.atCap ? 'text-fail' : ''}`}>{card.sendsCount}</span>
         <span aria-hidden="true" className="h-[5px] flex-1 overflow-hidden rounded-full bg-raised">
           <span
             className={`block h-full rounded-full ${card.atCap ? 'bg-fail' : 'bg-muted'}`}
@@ -166,7 +199,7 @@ function AgentCardView({ card, workspaceId }: { card: AgentCard; workspaceId: nu
       </div>
       <div className="mt-2 flex justify-between border-t border-hairline pt-1.5 text-muted">
         <span>Last message</span>
-        <span className="font-data text-ink">{card.lastMessage}</span>
+        <span className="font-data text-small text-ink">{card.lastMessage}</span>
       </div>
       <a
         href={`/workspace/${workspaceId}/task/${card.taskId}`}
@@ -200,7 +233,7 @@ function MessageBody({ text }: { text: string }) {
 function ReceiptMark({ receipt }: { receipt: Receipt }) {
   return (
     <span className="inline-flex items-center gap-1 whitespace-nowrap">
-      {receipt.label}
+      {receipt.showLabel && receipt.label}
       <span
         role="img"
         aria-label={receipt.describe}
@@ -216,7 +249,6 @@ function ReceiptMark({ receipt }: { receipt: Receipt }) {
 }
 
 function Message({ message, first }: { message: TranscriptMessage; first: boolean }) {
-  const single = message.receipts.length === 1;
   return (
     <div className={`relative min-w-0 ${first ? 'mt-1' : 'mt-2.5'}`}>
       {message.quote && (
@@ -230,13 +262,9 @@ function Message({ message, first }: { message: TranscriptMessage; first: boolea
       <MessageBody text={message.text} />
       <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-small text-muted">
         <span className="text-faint">to {message.to}</span>
-        {message.receipts.map((receipt) =>
-          single ? (
-            <ReceiptMark key={receipt.taskId} receipt={{ ...receipt, label: '' }} />
-          ) : (
-            <ReceiptMark key={receipt.taskId} receipt={receipt} />
-          ),
-        )}
+        {message.receipts.map((receipt) => (
+          <ReceiptMark key={receipt.taskId} receipt={receipt} />
+        ))}
       </div>
     </div>
   );
@@ -255,7 +283,7 @@ function Group({ group }: { group: TranscriptGroup }) {
         <div className="flex flex-wrap items-baseline gap-2 leading-[1.3]">
           <span className="text-data font-bold text-[var(--id,var(--hm-ink))]">{group.name}</span>
           {group.harnessLabel && <span className="text-small text-muted">· {group.harnessLabel}</span>}
-          <span className="font-data text-[11px] text-faint">{group.time}</span>
+          <span className="font-data text-micro text-faint">{group.time}</span>
         </div>
         {group.messages.map((message, i) => (
           <Message key={message.id} message={message} first={i === 0} />
@@ -302,12 +330,6 @@ function Transcript({ thread, now }: { thread: AgentMessageThread; now: number }
   );
 }
 
-export interface ThreadsView {
-  threads: AgentMessageThread[];
-  total: number;
-  totalMessages: number;
-}
-
 export function AgentMessagesTab({
   global,
   view,
@@ -331,6 +353,7 @@ export function AgentMessagesTab({
   const [drawerOpen, setDrawerOpen] = useState(true);
   const [overlayOpen, setOverlayOpen] = useState(false);
   const now = useNow(true);
+  const drawerRef = useRef<HTMLElement>(null);
 
   const all = useMemo(() => view?.threads ?? [], [view]);
   const visible = useMemo(() => filterThreads(all, { ...NO_THREAD_FILTER, query }), [all, query]);
@@ -344,14 +367,46 @@ export function AgentMessagesTab({
     () => taskOptions(optionThreads, filter.epicId, filter.workspaceId),
     [optionThreads, filter.epicId, filter.workspaceId],
   );
-  const cards = useMemo(() => (selected ? agentCards(selected, now) : []), [selected, now]);
+  const cards = useMemo(() => (selected ? agentCards(selected) : []), [selected]);
   const badge = showWorkspaceBadge(global, filter);
+  const capHint = threadsCapHint(all.length, view?.total ?? 0);
+
+  useEffect(() => {
+    if (!overlayOpen) return;
+    const drawer = drawerRef.current;
+    const opener = document.activeElement;
+    const focusable = () =>
+      Array.from(drawer?.querySelectorAll<HTMLElement>('a[href], button:not([disabled])') ?? []);
+    focusable()[0]?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOverlayOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const items = focusable();
+      const index = trappedFocusIndex(items.findIndex((el) => el === document.activeElement), items.length, event.shiftKey);
+      if (index === null) return;
+      event.preventDefault();
+      items[index]?.focus();
+    };
+    const onResize = () => {
+      if (isRailLayout()) setOverlayOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    window.addEventListener('resize', onResize);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('resize', onResize);
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+    };
+  }, [overlayOpen]);
 
   if (view === null) {
     return error ? (
       <LoadError message={error} onRetry={onRetry} />
     ) : (
-      <div className="h-24 animate-pulse rounded-lg border border-edge motion-reduce:animate-none" />
+      <div role="status" aria-label="Loading Agent Messages" className="h-24 animate-pulse rounded-lg border border-edge motion-reduce:animate-none" />
     );
   }
 
@@ -360,78 +415,50 @@ export function AgentMessagesTab({
     setShowList(false);
   };
   const toggleDrawer = () => {
-    const wide = window.matchMedia?.('(min-width: 900px)').matches ?? true;
-    if (wide) setDrawerOpen((open) => !open);
+    if (isRailLayout()) setDrawerOpen((open) => !open);
     else setOverlayOpen((open) => !open);
   };
 
   return (
-    <div id="settings-panel-messages" role="tabpanel" aria-labelledby="settings-tab-messages">
+    <div id={panelId('messages')} role="tabpanel" aria-labelledby={tabId('messages')}>
       {error && <LoadError className="mb-3.5" message={error} onRetry={onRetry} />}
       <div className="mb-3.5 flex flex-wrap items-center gap-3 max-rail:gap-2">
         {global && (
-          <label className={`${SELECT_LABEL} max-rail:basis-full`}>
-            <span className="text-small font-medium text-muted">Workspace</span>
-            <select
-              className={SELECT}
-              value={filter.workspaceId ?? ''}
-              onChange={(e) => {
-                const workspaceId = e.target.value === '' ? null : Number(e.target.value);
-                onFilterChange({ ...filter, workspaceId, epicId: null, taskId: null });
-              }}
-            >
-              <option value="">All Workspaces</option>
-              {workspaces.map((ws) => (
-                <option key={ws.id} value={ws.id}>
-                  {ws.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <FilterSelect
+            label="Workspace"
+            value={filter.workspaceId === null ? '' : String(filter.workspaceId)}
+            allLabel="All Workspaces"
+            options={workspaces.map((ws) => ({ value: ws.id, label: ws.name }))}
+            onChange={(raw) => onFilterChange({ ...filter, workspaceId: raw === '' ? null : Number(raw), epicId: null, taskId: null })}
+          />
         )}
-        <label className={`${SELECT_LABEL} max-rail:basis-full`}>
-          <span className="text-small font-medium text-muted">Epic</span>
-          <select
-            className={SELECT}
-            value={filter.epicId !== null && filter.workspaceId !== null ? epicKey(filter.workspaceId, filter.epicId) : ''}
-            onChange={(e) => {
-              const option = epics.find((o) => o.key === e.target.value);
-              onFilterChange({
-                ...filter,
-                workspaceId: option ? option.workspaceId : filter.workspaceId,
-                epicId: option ? option.epicId : null,
-                taskId: null,
-              });
-            }}
-          >
-            <option value="">All Epics</option>
-            {epics.map((option) => (
-              <option key={option.key} value={option.key}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className={`${SELECT_LABEL} max-rail:basis-full`}>
-          <span className="text-small font-medium text-muted">Task</span>
-          <select
-            className={SELECT}
-            value={filter.taskId ?? ''}
-            onChange={(e) => onFilterChange({ ...filter, taskId: e.target.value === '' ? null : Number(e.target.value) })}
-          >
-            <option value="">All Tasks</option>
-            {tasks.map((task) => (
-              <option key={task.taskId} value={task.taskId}>
-                {task.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <FilterSelect
+          label="Epic"
+          value={filter.epicId !== null && filter.workspaceId !== null ? epicKey(filter.workspaceId, filter.epicId) : ''}
+          allLabel="All Epics"
+          options={epics.map((option) => ({ value: option.key, label: option.label }))}
+          onChange={(key) => {
+            const option = epics.find((o) => o.key === key);
+            onFilterChange({
+              ...filter,
+              workspaceId: option ? option.workspaceId : filter.workspaceId,
+              epicId: option ? option.epicId : null,
+              taskId: null,
+            });
+          }}
+        />
+        <FilterSelect
+          label="Task"
+          value={filter.taskId === null ? '' : String(filter.taskId)}
+          allLabel="All Tasks"
+          options={tasks.map((task) => ({ value: task.taskId, label: task.label }))}
+          onChange={(raw) => onFilterChange({ ...filter, taskId: raw === '' ? null : Number(raw) })}
+        />
         <Switch checked={filter.liveOnly} onChange={(liveOnly) => onFilterChange({ ...filter, liveOnly })}>
           <span className="text-small font-medium">Only live</span>
         </Switch>
         <div className="flex-1 max-rail:hidden" />
-        <span role="status" className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted">
+        <span role="status" className="text-micro font-semibold uppercase tracking-caps text-muted">
           {query.trim() ? countLine(visible.length, totalMessages(visible)) : countLine(view.total, view.totalMessages)}
         </span>
       </div>
@@ -459,6 +486,7 @@ export function AgentMessagesTab({
               />
             </div>
           </div>
+          {capHint && <p className="px-4 pt-2 text-small text-faint">{capHint}</p>}
           <div className="flex-1 overflow-y-auto p-2">
             {all.length === 0 ? (
               <EmptyState className="mt-10 px-2" title="No Agent Messages yet">
@@ -500,7 +528,7 @@ export function AgentMessagesTab({
                   Threads
                 </button>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.09em] text-faint">
+                  <div className="text-micro font-bold uppercase tracking-caps text-faint">
                     {threadEpicCaption(selected)}
                   </div>
                   <h2 className="mt-0.5 text-title font-semibold leading-[1.35] max-rail:text-data">
@@ -526,7 +554,6 @@ export function AgentMessagesTab({
             </div>
           )}
           <div
-            role="status"
             className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-edge bg-surface px-4 py-2.5 text-muted"
           >
             <Icon name="eye" className="size-3.5" />
@@ -545,7 +572,10 @@ export function AgentMessagesTab({
         )}
         {selected && (
           <aside
+            ref={drawerRef}
             aria-label="Thread agents"
+            role={overlayOpen ? 'dialog' : undefined}
+            aria-modal={overlayOpen || undefined}
             className={`w-72 flex-none flex-col overflow-hidden border-l border-edge bg-shell max-rail:absolute max-rail:inset-y-0 max-rail:right-0 max-rail:z-30 max-rail:w-full max-rail:max-w-80 max-rail:shadow-float ${
               drawerOpen ? 'rail:flex' : 'rail:hidden'
             } ${overlayOpen ? 'max-rail:flex' : 'max-rail:hidden'}`}

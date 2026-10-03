@@ -1,6 +1,6 @@
 # Decision: Tracker selection, Code Repository, and Secrets
 
-Status: proposed
+Status: accepted
 Date: 2026-10-03
 
 ## Context

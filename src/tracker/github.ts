@@ -4,7 +4,8 @@ import { logger } from '../logger.js';
 import { z } from 'zod';
 import { parseBlockedByLines } from './relationships.js';
 import type { TrackerKind } from './kind.js';
-import { MAP_LABEL, type Ticket, type TicketRef, type TicketState, type TrackerRef, trackerRef, type WritableTrackerAdapter } from './adapter.js';
+import { type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
+import { MAP_LABEL, type TrackerRef, trackerRef } from './ref.js';
 
 const execFileAsync = promisify(execFile);
 

@@ -15,12 +15,15 @@ import { deriveMaps, type DerivedMap } from './mirror.js';
 import { MirrorCoordinator } from './coordinator.js';
 import { TrackerPoller } from './poller.js';
 import { persistedTickets } from './persisted.js';
+import type { RepositoryAdapter } from '../repository/adapter.js';
+import { resolveRepositoryWithoutSecrets, type RepositoryResolver } from '../repository/resolve.js';
 
 interface Entry { poller: TrackerPoller; mirror: MirrorCoordinator; sig: string; unregister?: () => void }
-const sigOf = (workspace: WorkspaceRow): string => `${workspace.workingDir}|${workspace.trackerPollIntervalSeconds * 1000}|${workspace.configuredTracker ?? ''}|${workspace.codeRepository ?? ''}`;
+const sigOf = (workspace: WorkspaceRow): string => `${workspace.workingDir}|${workspace.trackerPollIntervalSeconds * 1000}|${workspace.configuredTracker ?? ''}|${workspace.codeRepository ?? ''}|${workspace.triageLabels ?? ''}`;
 
 export interface TrackerPollerManagerOptions {
   resolveAdapter?: (repoRoot: string, featureIndex?: FeatureIndex, workspace?: WorkspaceTrackerSettings) => Promise<TrackerAdapter>;
+  resolveRepository?: RepositoryResolver;
   onError?: (message: string) => void;
   scheduler?: Scheduler;
   epicService: EpicService;
@@ -37,6 +40,7 @@ export class TrackerPollerManager {
   private readonly resolved = new Map<number, ResolvedTracker>();
   private readonly epicService: EpicService;
   private readonly resolveAdapter: (repoRoot: string, featureIndex?: FeatureIndex, workspace?: WorkspaceTrackerSettings) => Promise<TrackerAdapter>;
+  private readonly resolveRepository: RepositoryResolver;
   private readonly onError: (message: string) => void;
   private readonly scheduler: Scheduler | undefined;
   private readonly yieldOptions: YieldOptions | undefined;
@@ -49,6 +53,7 @@ export class TrackerPollerManager {
     options: TrackerPollerManagerOptions,
   ) {
     this.resolveAdapter = options.resolveAdapter ?? resolveTrackerAdapter;
+    this.resolveRepository = options.resolveRepository ?? resolveRepositoryWithoutSecrets;
     this.onError = options.onError ?? logger.error;
     this.scheduler = options.scheduler;
     this.epicService = options.epicService;
@@ -88,6 +93,8 @@ export class TrackerPollerManager {
     this.epicService.stopWorkspace(workspaceId);
     await entry.poller.stop();
   }
+  repositoryFor(workspace: WorkspaceRow): Promise<RepositoryAdapter | null> { return this.resolveRepository(workspace.workingDir, workspaceTrackerSettings(workspace)); }
+
   adapterFor(workspace: WorkspaceRow): Promise<TrackerAdapter> { return this.resolveAdapter(workspace.workingDir, undefined, workspaceTrackerSettings(workspace)); }
   resolvedTracker(workspaceId: number): ResolvedTracker | null { return this.resolved.get(workspaceId) ?? null; }
   async rejectEpic(workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null> { return this.epicService.rejectEpic(workspaceId, epicRef, guidance, continuation); }

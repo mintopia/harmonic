@@ -115,8 +115,14 @@ describe('Agent Message Threads API', () => {
     expect(a.participants[1].lastMessageAt).toBe(sentByB.at(-1).createdAt);
     expect(a.participants[1].sends).toBe(1);
     expect(a.participants[2].lastMessageAt).toBeNull();
-    expect(a.participants[2].sends).toBe(1); // attempt-wide: c's one send was in another Thread
     expect(a.participants[2].epicId).toBe('600');
+  });
+
+  it('counts sends attempt-wide across Threads', async () => {
+    const a = (await get()).body.threads.find((th: any) => th.threadId === threadA);
+    expect(a.participants[2].taskId).toBe(t.c);
+    expect(a.participants[2].lastMessageAt).toBeNull();
+    expect(a.participants[2].sends).toBe(1);
   });
 
   it('scopes to a Workspace and returns nothing for a disabled one', async () => {

@@ -29,7 +29,14 @@ describe('parseForgejoRemote', () => {
     ['https://forge.example/owner/name.git', { baseUrl: 'https://forge.example', repo: 'owner/name' }],
     ['git@forge.example:owner/name.git', { baseUrl: 'https://forge.example', repo: 'owner/name' }],
     ['ssh://git@forge.example:2222/owner/name', { baseUrl: 'https://forge.example', repo: 'owner/name' }],
+    ['https://forge.example:3000/owner/name.git', { baseUrl: 'https://forge.example:3000', repo: 'owner/name' }],
+    ['http://forge.example/owner/name.git', { baseUrl: 'http://forge.example', repo: 'owner/name' }],
+    ['http://user:pw@Forge.Example:8080/owner/name/', { baseUrl: 'http://forge.example:8080', repo: 'owner/name' }],
   ])('%s', (url, expected) => {
     expect(parseForgejoRemote(url)).toEqual(expected);
+  });
+
+  it.each(['', 'https://forge.example', 'https://forge.example/just-one'])('names no repo: %j', (url) => {
+    expect(parseForgejoRemote(url)).toBeNull();
   });
 });

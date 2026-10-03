@@ -140,6 +140,7 @@ describe('agent message delivery (stub Harness, run-control seam)', () => {
     expect(prompt.indexOf('second note')).toBeGreaterThan(prompt.indexOf('first note'));
     expect(prompt).toContain(`Message from Task #${a.id} (Claude)`);
     for (const id of [first.messageId, second.messageId]) {
+      await waitFor(async () => ((await receiptOf(id, c)).receipt === 'delivered' ? true : undefined));
       expect(await receiptOf(id, c)).toMatchObject({ receipt: 'delivered', deliveredAt: expect.any(Number) });
     }
   });
@@ -172,5 +173,56 @@ describe('agent message delivery (stub Harness, run-control seam)', () => {
     await waitFor(async () => (await server.api('GET', `/api/tasks/${on}`)).body.state === 'done');
     expect(await lastPrompt(on)).toContain('send_message');
     expect(await server.app.ctx.asyncDb.read((d) => d.select().from(agentMessages).all())).toEqual([]);
+  });
+
+  it('leaves held messages held when the prompt never goes out', async () => {
+    await boot();
+    const a = await sender();
+    const c = await readyRecipient();
+    const sent = parse(await a.client.callTool({ name: 'send_message', arguments: { to: c, text: 'do not lose me' } }));
+
+    let attempts = 0;
+    (server.app.ctx.runner as any).turnDriver.completion.drivePromptCycle = async () => {
+      attempts++;
+      throw new Error('prompt send failed');
+    };
+    await server.api('POST', `/api/tasks/${c}/run`);
+    await waitFor(async () => (attempts > 0 ? true : undefined));
+    await waitFor(async () => ((await server.api('GET', `/api/tasks/${c}`)).body.state !== 'working' ? true : undefined));
+
+    expect(await receiptOf(sent.messageId, c)).toEqual({ taskId: c, receipt: 'held' });
+  });
+
+  it('leaves held messages untouched and adds no peer line once the Workspace has Agent Messages off', async () => {
+    await boot();
+    const a = await sender();
+    const c = await readyRecipient();
+    const sent = parse(await a.client.callTool({ name: 'send_message', arguments: { to: c, text: 'queued while on' } }));
+    const workspaceId = (await server.app.ctx.tasks.get(c)).workspaceId!;
+    await server.app.ctx.workspaces.update(workspaceId, { agentMessagesEnabled: false });
+
+    await server.api('POST', `/api/tasks/${c}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${c}`)).body.state === 'done');
+
+    const prompt = await lastPrompt(c);
+    expect(prompt).not.toContain('Messages from peers');
+    expect(prompt).not.toContain('queued while on');
+    expect(prompt).not.toContain('send_message');
+    expect(await receiptOf(sent.messageId, c)).toEqual({ taskId: c, receipt: 'held' });
+  });
+
+  it('holds, rather than steers, a message for a paused recipient', async () => {
+    await boot();
+    const b = await liveRecipient();
+    const a = await sender();
+    await server.api('POST', `/api/tasks/${b}/pause`);
+    await waitFor(async () => ((await server.api('GET', `/api/tasks/${b}`)).body.state === 'paused' ? true : undefined));
+
+    const sent = parse(await a.client.callTool({ name: 'send_message', arguments: { to: b, text: 'while you are paused' } }));
+
+    expect(sent.recipients).toEqual([{ taskId: b, receipt: 'held' }]);
+    const mentionsMessage = (p: Record<string, unknown>) => String(p.text).includes('while you are paused');
+    expect((await lifecycle(b, 'steer_injected')).filter(mentionsMessage)).toEqual([]);
+    expect((await lifecycle(b, 'steer_queued')).filter(mentionsMessage)).toEqual([]);
   });
 });

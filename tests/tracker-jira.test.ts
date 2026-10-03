@@ -127,7 +127,7 @@ describe('jira auth and errors', () => {
     const f = fake();
     await make(cloudSettings, f).scan();
     expect(f.calls[0]!.headers.Authorization).toBe(`Basic ${Buffer.from('me@acme.test:tok').toString('base64')}`);
-    expect(f.calls[0]!.headers.Accept).toBe('application/json');
+    expect(f.calls[0]!.headers.accept).toBe('application/json');
   });
   it('datacenter sends a Bearer PAT', async () => {
     const f = fake();
@@ -332,17 +332,17 @@ describe('jira close and reopen', () => {
   ];
 
   const open = [issue('PROJ-1', { status: status('In Progress', 'indeterminate') })];
-  it('close transitions after commenting, using the configured doneStatus (case-insensitive)', async () => {
+  it('close transitions first, then comments, using the configured doneStatus (case-insensitive)', async () => {
     const f = fake({ transitions, issues: open });
     await make({ ...dcSettings, doneStatus: 'resolved' }, f).close(ref('PROJ-1'), 'shipped');
     expect(f.calls.map((c) => `${c.method} ${c.pathname}`)).toEqual([
       'GET /issue/PROJ-1',
       'GET /issue/PROJ-1/transitions',
-      'POST /issue/PROJ-1/comment',
       'POST /issue/PROJ-1/transitions',
+      'POST /issue/PROJ-1/comment',
     ]);
-    expect(f.calls[2]!.body).toEqual({ body: 'shipped' });
-    expect(f.calls[3]!.body).toEqual({ transition: { id: '22' } });
+    expect(f.calls[2]!.body).toEqual({ transition: { id: '22' } });
+    expect(f.calls[3]!.body).toEqual({ body: 'shipped' });
   });
   it('close falls back to the first done-category transition', async () => {
     const f = fake({ transitions, issues: open });
@@ -405,5 +405,27 @@ describe('relationship parsers with Jira keys', () => {
   it('keeps the numeric default', () => {
     expect(parseBlockedByLines('Blocked by #1, #2')).toEqual([1, 2]);
     expect(parsePartOfParent('Part of #7')).toBe(7);
+  });
+});
+
+describe('jira lifecycle writes are idempotent', () => {
+  const transitions = [{ id: '22', name: 'Finish', to: status('Resolved', 'done') }];
+
+  it('close on an already-done issue neither transitions nor comments', async () => {
+    const done = [issue('PROJ-1', { status: status('Resolved', 'done') })];
+    const f = fake({ transitions, issues: done });
+    await make(dcSettings, f).close!(ref('PROJ-1'), 'shipped');
+    expect(f.calls.map((c) => `${c.method} ${c.pathname}`)).toEqual(['GET /issue/PROJ-1']);
+  });
+
+  it('a failed transition posts no comment', async () => {
+    const f = fake({ transitions, issues: [issue('PROJ-1', { status: status('In Progress', 'indeterminate') })], failTransition: true });
+    await expect(make(dcSettings, f).close!(ref('PROJ-1'), 'shipped')).rejects.toThrow();
+    expect(f.of('/issue/PROJ-1/comment', 'POST')).toEqual([]);
+  });
+
+  it('identify names the account', async () => {
+    expect(await make(cloudSettings, fake()).identify!()).toBe('J Smith');
+    expect(await make(dcSettings, fake()).identify!()).toBe('J Smith');
   });
 });

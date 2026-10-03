@@ -80,3 +80,44 @@ describe('Forgejo tracker', () => {
     expect(fake[key].find((c) => c.id === 7)!.state).toBe('open');
   });
 });
+
+describe('Forgejo lifecycle writes are idempotent', () => {
+  it('close transitions once and comments after the state change; a retry does neither again', async () => {
+    const { fake, adapter } = build({ issues: [issue(1, 'A')] });
+    await adapter.close!(ref(1), 'shipped');
+    await adapter.close!(ref(1), 'shipped');
+    expect(fake.issues[0]!.state).toBe('closed');
+    expect(fake.comments).toEqual([{ issue: 1, body: 'shipped' }]);
+    const writes = fake.requests.filter((r) => r.method !== 'GET').map((r) => `${r.method} ${r.path}`);
+    expect(writes).toEqual(['PATCH /repos/owner/name/issues/1', 'POST /repos/owner/name/issues/1/comments']);
+  });
+
+  it('a failed transition leaves no comment behind to duplicate on retry', async () => {
+    const { fake, adapter } = build({ issues: [issue(1, 'A')] });
+    const http = fake.http;
+    fake.http = async (url, init) => (init?.method === 'PATCH' ? new Response('boom', { status: 400 }) : http(url, init));
+    const failing = forgejoKind.create({ settings: forgejoKind.settings.parse({ baseUrl: 'https://forge.test', repo: 'owner/name' }), secrets: { FORGEJO_TOKEN: 'good' }, repoRoot: '/repo', http: fake.http });
+    await expect(failing.close!(ref(1), 'shipped')).rejects.toThrow();
+    expect(fake.comments).toEqual([]);
+    await adapter.close!(ref(1), 'shipped');
+    expect(fake.comments).toHaveLength(1);
+  });
+
+  it('reopen is a no-op on an open issue', async () => {
+    const { fake, adapter } = build({ issues: [issue(1, 'A')] });
+    await adapter.reopen!(ref(1), 'again');
+    expect(fake.comments).toEqual([]);
+  });
+});
+
+describe('Forgejo replies are validated at the boundary', () => {
+  it('rejects an issue list that is not shaped like issues', async () => {
+    const http = async () => new Response(JSON.stringify([{ number: 'one' }]));
+    const adapter = forgejoKind.create({ settings: forgejoKind.settings.parse({ baseUrl: 'https://forge.test', repo: 'owner/name' }), secrets: { FORGEJO_TOKEN: 'good' }, repoRoot: '/repo', http });
+    await expect(adapter.scan()).rejects.toMatchObject({ name: 'RestError', message: expect.stringContaining('unexpected shape') });
+  });
+
+  it('identify reports the token account', async () => {
+    expect(await build({ issues: [] }).adapter.identify!()).toBe('harmonic-bot');
+  });
+});

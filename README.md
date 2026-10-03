@@ -1,8 +1,9 @@
 # Harmonic
 
 Point Harmonic at your issue tracker (GitHub, GitLab, Forgejo, Jira or local
-Markdown files) and it works through your backlog on
-its own. Write a spec, break it into tickets, and Harmonic runs the ready
+Markdown files) and it works through your backlog on its own. Choose the
+tracker, the code host and your triage labels per Workspace under Settings →
+Integrations; see [Settings](https://mintopia.github.io/harmonic/run/settings/#integrations). Write a spec, break it into tickets, and Harmonic runs the ready
 ones out to merged code: for each ticket it starts a coding agent,
 implements the change, runs your configured verification, and merges the branch when using worktree isolation,
 handing a ticket back only when it needs a human. You watch a board and a
@@ -15,13 +16,15 @@ them. It drives agent harnesses (Claude Code, Codex, Copilot, OpenCode)
 over [ACP](https://agentclientprotocol.com), so they're interchangeable
 with no vendor lock-in. You can also queue a one-off task by hand. Tasks
 finish automatically after configured verification; work that needs a human
-is escalated for you to resolve.
+is escalated for you to resolve. Agents working in the same Workspace can
+also message each other, which you can read but not join; see
+[Agent Messages](https://mintopia.github.io/harmonic/work/agent-messages/).
 
 **Full documentation:** https://mintopia.github.io/harmonic
 
 ## Run
 
-Needs Node.js 22+ and git — 2.38+ recommended so Harmonic can reconcile a
+Needs Node.js 22 or later (22, 24 and 26 are tested) and git — 2.38+ recommended so Harmonic can reconcile a
 moved base branch without rebuilding the merge; an older git still works, it
 just rebuilds on every base advance instead.
 

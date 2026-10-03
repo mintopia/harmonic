@@ -41,7 +41,7 @@ import { ChangedFilesNav, changedFileKind } from './ticket/ChangedFilesNav';
 import { Fact } from './Fact';
 import { CriticSessions } from './ticket/Verification';
 import { ExportPanel } from './ticket/ExportPanel';
-import { epicExportTarget } from './useExport';
+import { epicExportTarget } from '../export-targets';
 import { EpicTimeline } from './EpicTimeline';
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';

@@ -12,11 +12,6 @@ import { wrapAsync } from './tool-result.js';
 
 const taskId = { taskId: z.number().int().positive().describe('Task id') };
 
-export type CallerToolRegistrar = (server: McpServer, ctx: AppContext, caller: McpCaller) => void;
-
-/** Registrars run per request after the base tools; each decides from the caller whether to register its tools. */
-export const callerToolRegistrars: CallerToolRegistrar[] = [registerAgentMessageTools];
-
 /**
  * The agent-facing MCP surface: task CRUD, dependencies, queue/cancel, and
  * read access to Attempts and Attempt events. Built per request (stateless
@@ -195,7 +190,7 @@ export function buildMcpServer(ctx: AppContext, caller: McpCaller): McpServer {
     }),
   );
 
-  for (const register of callerToolRegistrars) register(server, ctx, caller);
+  registerAgentMessageTools(server, ctx, caller);
 
   return server;
 }

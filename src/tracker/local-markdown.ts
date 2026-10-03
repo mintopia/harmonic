@@ -4,7 +4,8 @@ import { basename, isAbsolute, join } from 'node:path';
 import { z } from 'zod';
 import { parseBlockedByField } from './relationships.js';
 import type { TrackerKind } from './kind.js';
-import { type Ticket, type TicketRef, type TicketState, type TrackerRef, trackerRef, type WritableTrackerAdapter } from './adapter.js';
+import { type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
+import { type TrackerRef, trackerRef } from './ref.js';
 
 /** A `**Status:**` word that means the ticket is done. */
 const CLOSED_STATUS = /\b(done|closed|complete|completed|merged|shipped)\b/i;
@@ -296,7 +297,7 @@ function synthesise(files: Parsed[]): Ticket[] {
 export const localMarkdownKind: TrackerKind<{ path: string }> = {
   id: 'local-markdown',
   label: 'Local Markdown',
-  settings: z.object({ path: z.string().min(1).default('.scratch') }).strict(),
+  settings: z.object({ path: z.string().min(1).default('.scratch').meta({ title: 'Folder', description: 'The folder in the repository that holds the Markdown tickets.' }) }).strict(),
   secretNames: [],
   capabilities: { close: true, reopen: true, claim: false, transition: false, epicSources: ['spec'] },
   fromDeclaration: (doc) => ({ path: doc.match(/^\s*Path:\s*(.+?)\s*$/im)?.[1] }),

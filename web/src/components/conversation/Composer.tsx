@@ -19,7 +19,7 @@ const saveDraft = (key: string, value: string) => {
   try {
     if (value) sessionStorage.setItem(key, value);
     else sessionStorage.removeItem(key);
-  } catch { /* Storage may be unavailable. */ }
+  } catch {}
 };
 
 export function ContextMeter({ conversation, onOpen }: { conversation: Conversation; onOpen?: () => void }) {

@@ -1,10 +1,12 @@
 import type { AgentMessageRecipient, AgentMessageRow, TaskRow } from '../db/schema.js';
 import type { AgentMessageStore } from '../domain/agent-messages.js';
+import { messageText } from '../domain/agent-messages.js';
 import { logger } from '../logger.js';
+import type { RunControl } from './run-control.js';
 
 export interface AgentMessageRunner {
   hasLiveAgent(taskId: number): boolean;
-  steerWithMode(taskId: number, text: string, onDelivered?: () => void): Promise<'mid-turn' | 'next-turn' | null>;
+  runControl: Pick<RunControl, 'steerWithMode'>;
 }
 
 const harnessLabel = (harness: string): string => harness.charAt(0).toUpperCase() + harness.slice(1);
@@ -17,7 +19,7 @@ export function peerFrame(sender: Pick<TaskRow, 'id' | 'harness'>, text: string)
 /** Held messages as a prompt section, in send order. */
 export function peerMessagesSection(rows: readonly AgentMessageRow[], senderHarness: (taskId: number) => string): string {
   const entries = rows.map((row) => {
-    const text = row.parts.map((p) => p.text).join('\n');
+    const text = messageText(row);
     return `### Message from Task #${row.senderTaskId} (${harnessLabel(senderHarness(row.senderTaskId))})\n\n${text}`;
   });
   return `## Messages from peers\n\nThese came from peer Tasks, not from the operator.\n\n${entries.join('\n\n')}`;
@@ -33,19 +35,18 @@ export async function deliverAgentMessage(
   row: AgentMessageRow,
   sender: Pick<TaskRow, 'id' | 'harness'>,
 ): Promise<AgentMessageRecipient[]> {
-  const text = peerFrame(sender, row.parts.map((p) => p.text).join('\n'));
+  const text = peerFrame(sender, messageText(row));
   const receipts: AgentMessageRecipient[] = [];
   for (const { taskId } of row.recipients) {
     let receipt: AgentMessageRecipient = { taskId, receipt: 'held' };
     let acked = false;
-    let finalWritten = false;
-    const ackWrites: Promise<void>[] = [];
+    let written: Promise<void> | undefined;
     const markDelivered = () => {
       acked = true;
-      if (finalWritten) ackWrites.push(recordDelivered(deps.store, row.id, taskId));
+      void written?.then(() => recordDelivered(deps.store, row.id, taskId));
     };
     if (deps.runner.hasLiveAgent(taskId)) {
-      const mode = await deps.runner.steerWithMode(taskId, text, markDelivered).catch((err: unknown) => {
+      const mode = await deps.runner.runControl.steerWithMode(taskId, text, markDelivered).catch((err: unknown) => {
         logger.warn('Agent Message live delivery failed; holding', { messageId: row.id, taskId, err: String(err) });
         return null;
       });
@@ -53,9 +54,7 @@ export async function deliverAgentMessage(
       else if (mode === 'next-turn') receipt = { taskId, receipt: acked ? 'delivered' : 'queued', mode, ...(acked ? { deliveredAt: Date.now() } : {}) };
     }
     const { taskId: _id, ...patch } = receipt;
-    // Enqueued before `finalWritten` flips so a later ack write lands after it.
-    const written = deps.store.updateRecipient(row.id, taskId, patch);
-    finalWritten = true;
+    written = deps.store.updateRecipient(row.id, taskId, patch);
     await written;
     receipts.push(receipt);
   }

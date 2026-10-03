@@ -21,6 +21,7 @@ import type { AttemptStore } from '../domain/attempts.js';
 import type { SettleProjection, DispositionKind } from '../domain/attempt-settle.js';
 import type { TaskService } from '../domain/tasks.js';
 import { resolveScoped, resolveTaskPrompt } from '../domain/setting-override.js';
+import { resolveAgentMessages } from '../domain/agent-messages.js';
 import { SessionContinuation, type PersistSessionContext } from './session-continuation.js';
 import { MergeCoordinator, BaseBranchUnresolved, EpicBaseNotReady } from './merge-coordinator.js';
 import type { RunBoundaryResult } from './run-control.js';
@@ -288,8 +289,10 @@ export class TurnDriver {
         opensAttempt,
         record,
       });
+      const messageStore = this.deps.agentMessages;
       const driven = await this.completion.drivePromptCycle({
         task, driver, active, guardrails, listeners, autoDriven, promptText, operatorSeed, record,
+        onFirstPrompt: messageStore && heldMessages.length > 0 ? () => messageStore.markDelivered(heldMessages, task.id) : undefined,
       });
       escalating = driven.escalating;
       if (active.externallySettled) {
@@ -303,9 +306,6 @@ export class TurnDriver {
         // back for the resumed turn rather than lose it (ADR-0005 §6).
         if (operatorSeed !== undefined && !driven.operatorSeedDelivered) {
           this.deps.activeRuns.setPendingOperatorSeed(task.id, operatorSeed);
-        }
-        if (heldMessages.length > 0 && !driven.promptSent) {
-          await this.deps.agentMessages?.restoreHeld(heldMessages, task.id);
         }
         if ((await this.deps.taskService.get(task.id)).state === 'working') await this.deps.taskService.pause(task.id);
         const usage = await this.deps.usage.collectUsageSafe({
@@ -785,13 +785,14 @@ export class TurnDriver {
     return { promptText, operatorSeed, heldMessages: peer.held };
   }
 
-  /** Held peer messages from the database, plus the peer line when Agent Messages are on. */
+  /** Held peer messages from the database (left held until the prompt is sent), plus the peer line, when Agent Messages are on. */
   private async peerContext(task: TaskRow): Promise<{ text: string; held: AgentMessageRow[] }> {
     const store = this.deps.agentMessages;
     if (!store) return { text: '', held: [] };
-    const held = await store.takeHeld(task.id);
     const workspace = await this.deps.getWorkspace?.(task.workspaceId);
-    const enabled = resolveScoped('agentMessagesEnabled', workspace?.agentMessagesEnabled ?? null, this.deps.getConfig().agentMessages.enabled);
+    const { enabled } = resolveAgentMessages(workspace, this.deps.getConfig().agentMessages);
+    if (!enabled) return { text: '', held: [] };
+    const held = await store.listHeld(task.id);
     const parts: string[] = [];
     if (held.length > 0) {
       const harnesses = new Map<number, string>();
@@ -801,7 +802,7 @@ export class TurnDriver {
       }
       parts.push(peerMessagesSection(held, (id) => harnesses.get(id) ?? 'agent'));
     }
-    if (enabled) parts.push(PEER_LINE);
+    parts.push(PEER_LINE);
     return { text: parts.join('\n\n'), held };
   }
 

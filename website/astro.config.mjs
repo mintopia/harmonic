@@ -51,6 +51,7 @@ export default defineConfig({
             { label: 'Epics', link: '/work/epics/' },
             { label: 'Browsing & editing files', link: '/work/files/' },
             { label: 'Conversations', link: '/work/conversations/' },
+            { label: 'Agent Messages', link: '/work/agent-messages/' },
             { label: 'Archive & export', link: '/work/archive-and-export/' },
             { label: 'Notifications', link: '/work/notifications/' },
           ],

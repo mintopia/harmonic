@@ -77,53 +77,90 @@ otherwise its work shows as cost-incomplete rather than a misleading zero.
 
 ## Integrations
 
-A Workspace's **Integrations** tab has three sections. Each is per
-Workspace; there is nothing to set globally.
+A Workspace's **Integrations** tab has three sections: **Issue Tracker**,
+**Code Repository** and **Triage Labels**. Each is per Workspace; there is
+nothing to set globally.
 
-### Issue tracker
+### Issue Tracker
 
-Harmonic finds a Workspace's tracker in this order, and the section shows
-which one won on the **Resolved** line:
+The section starts with an **Enabled** switch (*Mirror tracker issues onto the
+board*) and a **Poll interval (seconds)**, which can't go below 5.
+
+Harmonic finds a Workspace's tracker in this order, and the **Resolved** line
+at the bottom shows which one won, for example *Resolved: Jira via
+Configured*:
 
 1. **Configured**: the tracker you pick here.
 2. **Detected**: the one named in the repo's `docs/agents/issue-tracker.md`.
 3. **Code Repository**: the forge hosting the code, when it is also an
    issue tracker.
 
-Leave **Configured Tracker** on *Inherit (automatic)* to use the repo's
-declaration. Otherwise pick GitHub, GitLab, Forgejo, Jira or Local Markdown;
-the fields below the picker change with the choice.
+If none of these gives a usable tracker, the line reads *No Tracker declared*,
+*Unsupported Tracker* or *Tracker misconfigured*. While Enabled is off it
+reads *Enable mirroring to resolve the tracker*.
 
-- **GitHub** and **GitLab** have no credentials in Harmonic. They use the
-  `gh` / `glab` login already on the host. GitLab's one field, **Project**,
-  defaults to the `origin` remote.
-- **Forgejo** needs **Base URL** and **Repo** (`owner/name`), an **Epic
-  source** (labelled issues, Projects or Milestones), and a token. The
-  **Secret** row shows *Set* or *Not set*; use **Set** or **Replace** to enter
-  the token and **Clear** to remove it.
-- **Jira** needs **Base URL**, **Auth mode** (Cloud or Data Center),
-  **Email** (Cloud only), **Project key** and **Secret name**, plus optional
-  extra JQL and the pickup, done and reopen status names.
+**Configured Tracker** starts on *Inherit (automatic)*, which uses the repo's
+declaration and says which tracker it found. Otherwise pick GitHub, GitLab,
+Forgejo, Jira or Local Markdown. The fields below the picker change with the
+choice, and required ones are marked *(required)*.
 
-A **Secret** is write-only. Once saved it is never shown again, it applies
-immediately without the save bar, and it belongs to that Workspace only.
+- **GitHub** has no fields. It uses the `gh` login already on the host.
+- **GitLab** has one optional field, **Project**, which defaults to the
+  repo's `origin` remote. It uses the `glab` login on the host.
+- **Local Markdown** has one field, **Folder**, the folder in the repo that
+  holds the Markdown tickets. It defaults to `.scratch`.
+- **Forgejo** needs **Base URL** and **Repository (owner/name)**. **Epic
+  source** chooses where Epics come from: labelled issues, Projects or
+  Milestones, with labelled issues as the default. **Token Secret name** is
+  the Secret that holds the API token and defaults to `FORGEJO_TOKEN`.
+- **Jira** needs **Base URL**, **Auth mode** and **Project key**. Cloud signs
+  in with an email and API token, so Cloud also needs **Email**. Data Center
+  uses a personal access token. The optional fields are **Extra JQL**,
+  **Pickup status**, **Done status** and **Reopen status**. **Token Secret
+  name** is the Secret that holds the token and defaults to `JIRA_TOKEN`.
 
-**Verify tracker** is disabled while you have unsaved edits.
+Forgejo and Jira show a **Secret** row for their token. It reads **Set** or
+**Not set**. Use **Set** (or **Replace** when one exists) to type the value
+and **Save**, or **Clear** to remove it. A Secret is write-only, so Harmonic
+never shows it again after you save it. It takes effect at once, without the
+settings save bar, and belongs to that Workspace only.
 
-### Code repository
+**Verify tracker** checks the connection and reports *Verified as* the
+account it signed in as, or the error. It is disabled while you have unsaved
+edits, so save first.
 
-The forge that hosts this Workspace's branches, pull requests and merges. It
-is detected from the `origin` remote and shown under **Detected**. Use
-**Override** to choose GitHub, GitLab or Forgejo yourself, and **Verify
-repository** to check it is reachable. The code repository can differ from the
-tracker, for example Jira issues with code on GitHub.
+### Code Repository
 
-### Triage labels
+The forge that hosts this Workspace's branches, pull requests and merges.
+**Detected** shows what Harmonic found from the `origin` remote, or *None
+detected from the origin remote*. **Override** starts on *Automatic*; pick
+GitHub, GitLab or Forgejo to choose yourself. **Verify repository** reports
+*Reachable on* the forge, or the error, and is also disabled while you have
+unsaved edits.
+
+The Code Repository can differ from the tracker, for example Jira issues with
+code on GitHub.
+
+### Triage Labels
 
 The label names your tracker uses for each role Harmonic acts on: **Ready for
 agent**, **Ready for human**, **Epic** and **Wayfinder map**. Leave a field
 empty to inherit it from the repo's `docs/agents/triage-labels.md`, then the
 defaults shown as placeholders.
+
+## Agent Messages
+
+Agents working Tasks in the same Workspace can message each other. It is off
+by default. You turn it on, and cap how much an agent can send, on the
+**Execution** tab in an **Agent Messages** section.
+
+- **Let Attempts message each other**: the on/off switch.
+- **Send cap**: how many Agent Messages one Attempt may send. The default is
+  10, and the minimum is 1.
+
+Set both globally, then override either per Workspace. A Workspace shows the
+global value until you override it. For what operators see once it is on, see
+[Agent Messages](/harmonic/work/agent-messages/).
 
 ## Archive & Export
 
@@ -198,4 +235,5 @@ Redaction only applies to Exports. The Archive on disk stays raw.
 
 - [Feeding it work](/harmonic/work/feeding-it-work/)
 - [Notifications](/harmonic/work/notifications/)
+- [Agent Messages](/harmonic/work/agent-messages/)
 - [Archive & export](/harmonic/work/archive-and-export/)

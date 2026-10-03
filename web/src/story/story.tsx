@@ -26,7 +26,9 @@ import type { MergeStepEvent } from '../merge-progress-model';
 import { HintBanner } from '../components/HintBanner';
 import { SettingsPage } from '../components/SettingsPage';
 import { ExportPanel } from '../components/ticket/ExportPanel';
-import type { TaskExportStatus } from '../types';
+import type { TaskExportStatus, Workspace } from '../types';
+import { IssueTrackerSection, CodeRepositorySection, TriageLabelsSection } from '../components/TrackerSettings';
+import { SettingsSection } from '../components/SettingsSection';
 import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline } from './fixtures';
 
 const mergedSteps: MergeStepEvent[] = [
@@ -383,6 +385,21 @@ function TicketStory() {
   );
 }
 
+function TrackerStory() {
+  const base: Workspace = { ...storyWorkspaces[0]!, configuredTracker: { kind: 'forgejo', settings: { host: 'git.example.net' } } };
+  const [workspace, setWorkspace] = useState<Workspace>(base);
+  const ctx = { surface: 'workspace' as const, config: storyConfig, workspace, pristineWorkspace: base, setWorkspace, errors: {}, blockedByRunningTask: false, onRequestDelete: () => {}, dirty: workspace !== base };
+  return (
+    <StoryFrame style={{ padding: 24 }}>
+      <div style={{ maxWidth: 760, margin: '0 auto', display: 'grid', gap: 16 }}>
+        <SettingsSection title="Issue Tracker" description="Where this Workspace's issues live."><IssueTrackerSection ctx={ctx} /></SettingsSection>
+        <SettingsSection title="Code Repository" description="Where branches and pull requests live."><CodeRepositorySection ctx={ctx} /></SettingsSection>
+        <SettingsSection title="Triage Labels" description="Label names for each role."><TriageLabelsSection ctx={ctx} /></SettingsSection>
+      </div>
+    </StoryFrame>
+  );
+}
+
 const STORIES: Record<string, () => JSX.Element> = {
   settings: SettingsStory,
   board: BoardStory,
@@ -406,6 +423,7 @@ const STORIES: Record<string, () => JSX.Element> = {
   'settings-error': SettingsPageStory,
   'settings-page': SettingsPageStory,
   archive: ArchiveStory,
+  tracker: TrackerStory,
 };
 
 function Story() {

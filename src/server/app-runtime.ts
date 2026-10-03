@@ -41,6 +41,8 @@ import type { WorktreeServices } from './app-worktrees.js';
 import { createPostMergeCheck } from '../verification/post-merge-check.js';
 import type { DistributionMode } from '../distribution-mode.js';
 import { touchStartupProgress } from '../reliability/startup-progress.js';
+import { createTrackerResolver } from '../tracker/adapter.js';
+import { createRepositoryResolver } from '../repository/resolve.js';
 
 function createLifecycleTracking(
   bus: EventBus,
@@ -215,7 +217,9 @@ export async function createRuntime(deps: {
   fireAndForget: FireAndForget;
 }): Promise<Runtime> {
   const { opts, bus, scheduler, asyncDb, worktreesDir, managedWorktreesRoot, distributionMode, runningVersion, fireAndForget } = deps;
-  const { tasks, attempts, taskEvents, settingsStore, workspaces, conversations, permissionRules, auth, notifier, epicMergeEvents, verificationAttempts, sessions: sessionStore } = deps.stores;
+  const { tasks, attempts, taskEvents, settingsStore, workspaces, conversations, permissionRules, auth, notifier, epicMergeEvents, verificationAttempts, sessions: sessionStore, secrets } = deps.stores;
+  const resolveTracker = createTrackerResolver(secrets);
+  const resolveRepository = createRepositoryResolver(secrets);
 
   const spawnProcessGroup = await new ProcessGroupJournal(asyncDb, fireAndForget).reapOrphans();
   const criticDrive = opts.criticDrive ?? createAcpCriticDrive(spawnProcessGroup);
@@ -321,7 +325,7 @@ export async function createRuntime(deps: {
   const autoDrive = new AutoDrive(
     () => settingsStore.getGlobal(),
     (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
-    undefined,
+    resolveTracker,
     getWorkspaceRow,
     (workspaceId, ref) => tasks.epicKind(workspaceId, ref),
     (task, commit) => {
@@ -348,6 +352,7 @@ export async function createRuntime(deps: {
         else recordTaskEventBestEffort(task, payload);
       }, { op: 'autoDrive.recordTicketCloseFailed', level: 'warn', context: { taskId: task.id } });
     },
+    resolveRepository,
   );
   const mergeEffectsFor = (task: TaskRow, run: AttemptRow): MergeEffectExec[] => {
     const effects: MergeEffectExec[] = [];
@@ -489,11 +494,14 @@ export async function createRuntime(deps: {
       verificationAttemptStore: verificationAttempts,
       fireAndForget,
       archive,
+      resolveAdapter: resolveTracker,
     },
   );
   epicServiceRef = epicService;
   const trackerManager = new TrackerPollerManager(tasks, () => workspaces.list(), {
     epicService,
+    resolveAdapter: resolveTracker,
+    resolveRepository,
     scheduler,
     workStartAllowed: () => upgrade.workStartAllowed(),
   });

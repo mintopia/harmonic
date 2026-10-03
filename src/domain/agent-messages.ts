@@ -1,8 +1,25 @@
 import type { TrackerRef } from '../tracker/adapter.js';
 import { and, asc, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
-import type { AsyncDbHandle } from '../db/async.js';
+import type { AsyncDb, AsyncDbHandle } from '../db/async.js';
 import { taskDisplayTitle } from './task-title.js';
-import { agentMessages, attempts, tasks, type TaskState, type AgentMessageRecipient, type AgentMessageRow } from '../db/schema.js';
+import { agentMessages, attempts, tasks, type TaskState, type AgentMessageRecipient, type AgentMessageRow, type WorkspaceRow } from '../db/schema.js';
+import type { AppConfig } from '../config.js';
+import { resolveScoped } from './setting-override.js';
+
+/** Whether Agent Messages are on for a Workspace, and its per-Attempt send cap, after Workspace-over-Global resolution. */
+export function resolveAgentMessages(
+  workspace: Partial<Pick<WorkspaceRow, 'agentMessagesEnabled' | 'agentMessagesSendCap'>> | null | undefined,
+  global: AppConfig['agentMessages'],
+): { enabled: boolean; sendCap: number } {
+  return {
+    enabled: resolveScoped('agentMessagesEnabled', workspace?.agentMessagesEnabled, global.enabled),
+    sendCap: resolveScoped('agentMessagesSendCap', workspace?.agentMessagesSendCap, global.sendCap),
+  };
+}
+
+export const messageText = (row: Pick<AgentMessageRow, 'parts'>): string => row.parts.map((p) => p.text).join('\n');
+
+export type CappedCreate = { kind: 'created'; row: AgentMessageRow; sent: number } | { kind: 'capped' };
 
 export interface NewAgentMessage {
   workspaceId: number;
@@ -73,40 +90,48 @@ export class AgentMessageStore {
     private readonly onChanged: (workspaceId: number) => void = () => {},
   ) {}
 
+  /** Counts the Attempt's stored sends and inserts in one serialised write, so concurrent sends cannot exceed `cap`. */
+  async createWithinCap(input: NewAgentMessage, cap: number): Promise<CappedCreate> {
+    const result = await this.db.write(async (db): Promise<CappedCreate> => {
+      const counted = await db.select({ n: sql<number>`count(*)` }).from(agentMessages).where(eq(agentMessages.senderAttemptId, input.senderAttemptId)).get();
+      const before = counted?.n ?? 0;
+      if (before >= cap) return { kind: 'capped' };
+      const row = await this.insert(db, input);
+      return { kind: 'created', row, sent: before + 1 };
+    });
+    if (result.kind === 'created') this.onChanged(result.row.workspaceId);
+    return result;
+  }
+
+  /** Inserts with no send-cap check: seeding and fixtures. Agent sends go through {@link createWithinCap}. */
   async create(input: NewAgentMessage): Promise<AgentMessageRow> {
-    const id = crypto.randomUUID();
-    const row = await this.db.write((db) =>
-      db
-        .insert(agentMessages)
-        .values({
-          id,
-          workspaceId: input.workspaceId,
-          role: 'agent',
-          parts: [{ kind: 'text', text: input.text }],
-          replyTo: input.replyTo,
-          threadId: input.threadId ?? id,
-          senderTaskId: input.senderTaskId,
-          senderAttemptId: input.senderAttemptId,
-          recipients: input.recipients,
-          createdAt: Date.now(),
-        })
-        .returning()
-        .get(),
-    );
+    const row = await this.db.write((db) => this.insert(db, input));
     this.onChanged(row.workspaceId);
     return row;
   }
 
-  get(id: string): Promise<AgentMessageRow | undefined> {
-    return this.db.read((db) => db.select().from(agentMessages).where(eq(agentMessages.id, id)).get());
+  private insert(db: AsyncDb, input: NewAgentMessage): Promise<AgentMessageRow> {
+    const id = crypto.randomUUID();
+    return db
+      .insert(agentMessages)
+      .values({
+        id,
+        workspaceId: input.workspaceId,
+        role: 'agent',
+        parts: [{ kind: 'text', text: input.text }],
+        replyTo: input.replyTo,
+        threadId: input.threadId ?? id,
+        senderTaskId: input.senderTaskId,
+        senderAttemptId: input.senderAttemptId,
+        recipients: input.recipients,
+        createdAt: Date.now(),
+      })
+      .returning()
+      .get();
   }
 
-  /** The send count is derived from stored rows, never a counter. */
-  async countForAttempt(attemptId: number): Promise<number> {
-    const row = await this.db.read((db) =>
-      db.select({ n: sql<number>`count(*)` }).from(agentMessages).where(eq(agentMessages.senderAttemptId, attemptId)).get(),
-    );
-    return row?.n ?? 0;
+  get(id: string): Promise<AgentMessageRow | undefined> {
+    return this.db.read((db) => db.select().from(agentMessages).where(eq(agentMessages.id, id)).get());
   }
 
   /** Messages a Task sent or received in a Workspace, oldest first. */
@@ -134,13 +159,26 @@ export class AgentMessageStore {
     return this.present(await this.listForTask(workspaceId, taskId));
   }
 
-  /** Messages any of the given Tasks sent or received, de-duplicated and oldest first. */
+  /** Messages any of the given Tasks sent or received, oldest first, in one query. */
   async presentedForTasks(workspaceId: number, taskIds: readonly number[]): Promise<PresentedAgentMessage[]> {
-    const byId = new Map<string, AgentMessageRow>();
-    for (const taskId of taskIds) {
-      for (const row of await this.listForTask(workspaceId, taskId)) byId.set(row.id, row);
-    }
-    const rows = [...byId.values()].sort((a, b) => a.createdAt - b.createdAt);
+    if (taskIds.length === 0) return [];
+    const ids = JSON.stringify(taskIds);
+    const rows = await this.db.read((db) =>
+      db
+        .select()
+        .from(agentMessages)
+        .where(
+          and(
+            eq(agentMessages.workspaceId, workspaceId),
+            or(
+              inArray(agentMessages.senderTaskId, [...taskIds]),
+              sql`exists (select 1 from json_each(${agentMessages.recipients}) r where json_extract(r.value, '$.taskId') in (select value from json_each(${ids})))`,
+            ),
+          ),
+        )
+        .orderBy(asc(agentMessages.createdAt), asc(sql`rowid`))
+        .all(),
+    );
     return this.present(rows);
   }
 
@@ -282,37 +320,30 @@ export class AgentMessageStore {
     if (workspaceId !== null) this.onChanged(workspaceId);
   }
 
-  /** Reads a Task's held messages in send order and marks them delivered. */
-  async takeHeld(taskId: number): Promise<AgentMessageRow[]> {
-    const rows = await this.db.write(async (db) => {
-      const rows = await db
+  /** A Task's held messages in send order; read-only so an unsent prompt leaves them held. */
+  listHeld(taskId: number): Promise<AgentMessageRow[]> {
+    return this.db.read((db) =>
+      db
         .select()
         .from(agentMessages)
         .where(
           sql`exists (select 1 from json_each(${agentMessages.recipients}) where json_extract(value, '$.taskId') = ${taskId} and json_extract(value, '$.receipt') = 'held')`,
         )
         .orderBy(asc(agentMessages.createdAt), asc(sql`rowid`))
-        .all();
-      const deliveredAt = Date.now();
-      for (const row of rows) {
-        const recipients = row.recipients.map((r) =>
-          r.taskId === taskId && r.receipt === 'held' ? { ...r, receipt: 'delivered' as const, mode: 'next-turn' as const, deliveredAt } : r,
-        );
-        await db.update(agentMessages).set({ recipients }).where(eq(agentMessages.id, row.id)).run();
-      }
-      return rows;
-    });
-    for (const workspaceId of new Set(rows.map((r) => r.workspaceId))) this.onChanged(workspaceId);
-    return rows;
+        .all(),
+    );
   }
 
-  /** Puts messages taken for a prompt that never went out back to held. */
-  async restoreHeld(rows: readonly AgentMessageRow[], taskId: number): Promise<void> {
+  /** Marks the Task's still-held receipts on these messages delivered, once the prompt carrying them was sent. */
+  async markDelivered(rows: readonly AgentMessageRow[], taskId: number): Promise<void> {
+    const deliveredAt = Date.now();
     await this.db.write(async (db) => {
       for (const { id } of rows) {
         const current = await db.select().from(agentMessages).where(eq(agentMessages.id, id)).get();
         if (!current) continue;
-        const recipients = current.recipients.map((r) => (r.taskId === taskId ? { taskId, receipt: 'held' as const } : r));
+        const recipients = current.recipients.map((r) =>
+          r.taskId === taskId && r.receipt === 'held' ? { ...r, receipt: 'delivered' as const, mode: 'next-turn' as const, deliveredAt } : r,
+        );
         await db.update(agentMessages).set({ recipients }).where(eq(agentMessages.id, id)).run();
       }
     });

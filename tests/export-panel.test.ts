@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ExportPanel } from '../web/src/components/ticket/ExportPanel.js';
-import { epicExportTarget, taskExportTarget, type ExportTarget } from '../web/src/components/useExport.js';
+import { epicExportTarget, taskExportTarget, type ExportTarget } from '../web/src/export-targets.js';
 import type { ExportSummary, TaskExportStatus } from '../web/src/types.js';
 import { cleanup, flush, mountComponent } from './component-smoke-harness.js';
 

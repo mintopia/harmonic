@@ -7,7 +7,8 @@ import type { TrackingContext } from '../app.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { declaredTrackerName } from '../../tracker/adapter.js';
 import { normaliseKindId, trackerKindFor, TRACKER_KINDS } from '../../tracker/kinds.js';
-import { resolveCodeRepository, resolveRepositoryAdapter } from '../../repository/resolve.js';
+import { resolveCodeRepository } from '../../repository/resolve.js';
+import { safeErrorReason } from '../../tracker/rest-client.js';
 
 const verifyResponseSchema = z
   .union([z.object({ ok: z.literal(true), identity: z.string().meta({ example: 'octocat' }) }), z.object({ ok: z.literal(false), reason: z.string() })])
@@ -36,7 +37,7 @@ const detectionSchema = z
   })
   .meta({ id: 'TrackerDetection' });
 
-const failure = (err: unknown) => ({ ok: false as const, reason: err instanceof Error ? err.message : String(err) });
+const failure = (err: unknown) => ({ ok: false as const, reason: safeErrorReason(err) });
 
 export async function trackerSettingsRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces' | 'trackerManager'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
@@ -123,7 +124,7 @@ export async function trackerSettingsRoutes(fastify: FastifyInstance, ctx: Pick<
     async (req) => {
       const ws = await ctx.workspaces.get(req.params.id);
       try {
-        const adapter = await resolveRepositoryAdapter(ws.workingDir, ws.codeRepository);
+        const adapter = await ctx.trackerManager.repositoryFor(ws);
         if (!adapter) return { ok: false as const, reason: 'No Code Repository adapter for this Workspace' };
         const result = await adapter.verify();
         return result.ok ? { ok: true as const, identity: adapter.kind } : result;

@@ -102,6 +102,13 @@ The Export hook hangs off the Task's terminal transition
 (`attempt-settle.ts`) and the Delete path, not `postMerge`, which has five
 call sites and does not see cancellation.
 
+## Amendment (2026-10-03): Agent Messages in Export bundles
+
+Task and Epic Export bundles also contain `agent-messages.json`: the Agent
+Messages the Task (or the Epic's Members) sent or received, with recipients
+and receipts (ADR-0045). It has its own row in the bundle's `README.md` file
+table and is redacted like every other file in the Export.
+
 ## Consequences
 
 - Disk usage grows with work; the retention cap is the operator's lever.

@@ -4,7 +4,9 @@ import type { TicketTimelineEvent } from '../../types.js';
 import { card, railSectionCount } from '../../ui.js';
 import { FollowTail } from './FollowTail';
 
-const CAPS = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
+const CAPS = 'text-label font-bold uppercase tracking-caps text-faint';
+const TAG = 'rounded-lg bg-raised px-1.5 py-px text-label font-bold uppercase tracking-caps-tight text-muted';
+const PILL_SHAPE = 'whitespace-nowrap rounded-full px-2 py-0.5 text-label font-semibold uppercase leading-[1.2] tracking-caps-tight';
 
 const DOT: Record<LifecycleTimelineTone, string> = {
   neutral: 'bg-edge',
@@ -75,7 +77,7 @@ export function LifecycleTimeline({
               <li key={row.id} className="grid grid-cols-[64px_minmax(0,1fr)] gap-x-3">
                 <time
                   dateTime={new Date(row.at).toISOString()}
-                  className="pt-0.5 text-right font-data text-[11px] leading-[1.35] tabular-nums text-faint"
+                  className="pt-0.5 text-right font-data text-micro leading-[1.35] tabular-nums text-faint"
                 >
                   {clockTime(row.at)}
                 </time>
@@ -88,17 +90,15 @@ export function LifecycleTimeline({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={`text-small font-semibold ${WORD[row.tone]}`}>{row.label}</span>
                     {row.tag && (
-                      <span className="rounded-[4px] bg-raised px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.05em] text-muted">
-                        {row.tag}
-                      </span>
+                      <span className={TAG}>{row.tag}</span>
                     )}
                     {row.message && (
                       <>
-                        <span className="rounded-[4px] bg-raised px-1.5 py-px text-[11px] font-semibold text-muted">{row.message.peer}</span>
+                        <span className={`${PILL_SHAPE} bg-accent-tint text-accent`}>{row.message.peer}</span>
                         {row.message.epic && (
-                          <span className="rounded-[4px] bg-await-tint px-1.5 py-px text-[11px] font-semibold text-await">{row.message.epic}</span>
+                          <span className={`${PILL_SHAPE} bg-await-tint text-await`}>{row.message.epic}</span>
                         )}
-                        <span className={`rounded-[4px] px-1.5 py-px text-[11px] font-semibold ${PILL[row.message.receipt.tone]}`}>{row.message.receipt.label}</span>
+                        <span className={`${PILL_SHAPE} ${PILL[row.message.receipt.tone]}`}>{row.message.receipt.label}</span>
                       </>
                     )}
                   </div>

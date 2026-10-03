@@ -1,14 +1,14 @@
+import { parseRemote } from './remote.js';
+
 /** The hosts a Code Repository can live on. */
 export type RepositoryKind = 'github' | 'gitlab' | 'forgejo';
 
 /** Whether `host` answers a Forgejo `/api/v1/version` request. */
 export type ForgejoProbe = (host: string) => Promise<boolean>;
 
-const REMOTE_HOST = /^(?:[a-z][a-z0-9+.-]*:\/\/)?(?:[^@/\s]+@)?([^:/\s]+)/i;
-
 /** The hostname of a git remote URL (`https://`, `ssh://` or scp-style `git@host:path`), lowercased. */
 export function remoteHost(remoteUrl: string): string | null {
-  return REMOTE_HOST.exec(remoteUrl.trim())?.[1]?.toLowerCase() ?? null;
+  return parseRemote(remoteUrl)?.host ?? null;
 }
 
 /** Detect the Code Repository kind from an `origin` remote URL: github.com, gitlab.com, else Forgejo when the host answers the probe. */
@@ -31,5 +31,17 @@ export function forgejoVersionProbe(fetchFn: typeof fetch = fetch, timeoutMs = 3
     } catch {
       return false;
     }
+  };
+}
+
+/** Remembers each host's probe answer for `ttlMs`, so repeated resolution never re-hits the network. */
+export function cachedProbe(probe: ForgejoProbe, ttlMs = 5 * 60_000, now: () => number = Date.now): ForgejoProbe {
+  const answers = new Map<string, { at: number; result: boolean }>();
+  return async (host) => {
+    const hit = answers.get(host);
+    if (hit && now() - hit.at < ttlMs) return hit.result;
+    const result = await probe(host);
+    answers.set(host, { at: now(), result });
+    return result;
   };
 }

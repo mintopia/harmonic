@@ -1,6 +1,6 @@
 # Decision: Agent Messages travel over Harmonic's MCP server with A2A-shaped payloads
 
-Status: proposed
+Status: accepted
 Date: 2026-10-02
 
 ## Context

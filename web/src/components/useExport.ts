@@ -1,35 +1,8 @@
-import type { TrackerRef } from '../types.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '../api';
 import { exportAgainFeedback, type ExportFeedback } from '../task-export-model';
 import { useAsyncResource } from '../useAsyncResource';
-import type { TaskExportAgainResult, TaskExportStatus } from '../types';
-
-/** What an Export panel reads and acts on: a Task or an Epic, with its own endpoints. */
-export type ExportTarget = {
-  /** Stable identity; a change resets the panel's per-target state. */
-  key: string;
-  noun: 'Task' | 'Epic';
-  load: () => Promise<TaskExportStatus>;
-  exportAgain: () => Promise<TaskExportAgainResult>;
-  downloadUrl: string;
-};
-
-export const taskExportTarget = (taskId: number): ExportTarget => ({
-  key: `task:${taskId}`,
-  noun: 'Task',
-  load: () => api.taskExport(taskId),
-  exportAgain: () => api.exportTaskAgain(taskId),
-  downloadUrl: api.taskExportDownloadUrl(taskId),
-});
-
-export const epicExportTarget = (workspaceId: number, epicRef: TrackerRef): ExportTarget => ({
-  key: `epic:${workspaceId}:${epicRef}`,
-  noun: 'Epic',
-  load: () => api.epicExport(workspaceId, epicRef),
-  exportAgain: () => api.exportEpicAgain(workspaceId, epicRef),
-  downloadUrl: api.epicExportDownloadUrl(workspaceId, epicRef),
-});
+import type { ExportTarget } from '../export-targets';
+import type { TaskExportStatus } from '../types';
 
 export type ExportState = {
   status: TaskExportStatus | null;

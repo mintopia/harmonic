@@ -35,6 +35,7 @@ import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { orderEligibleWorkYielding } from './work-ordering.js';
 import { mirroredAgentEligible } from './agent-workable.js';
+import { DEFAULT_TRIAGE_LABELS, loadTriageLabels, storedTriageLabels, type TriageLabels } from '../tracker/triage-labels.js';
 import { withTaskLock } from './task-lock.js';
 import type { StoredEpicRecord } from './epic-derivation.js';
 import { TaskBlockerGraph } from './task-blocker-graph.js';
@@ -244,6 +245,8 @@ function trackerFactColumns(facts: TrackerFacts) {
   };
 }
 
+type TriageLabelsByWorkspace = ReadonlyMap<number, TriageLabels>;
+
 export class TaskService {
   private readonly blockerGraph: TaskBlockerGraph;
   private readonly mirror: TaskMirror;
@@ -314,13 +317,23 @@ export class TaskService {
     };
   }
 
-  private agentWorkable(task: TaskRow, openBlockerCount: number, containerRefs: ReadonlySet<string>): boolean {
-    return openBlockerCount === 0 && !this.humanOnly(task, containerRefs);
+  private agentWorkable(task: TaskRow, openBlockerCount: number, containerRefs: ReadonlySet<string>, triage: TriageLabelsByWorkspace): boolean {
+    return openBlockerCount === 0 && !this.humanOnly(task, containerRefs, triage);
   }
 
-  private humanOnly(task: TaskRow, containerRefs: ReadonlySet<string>): boolean {
+  private humanOnly(task: TaskRow, containerRefs: ReadonlySet<string>, triage: TriageLabelsByWorkspace): boolean {
     if (task.origin !== 'mirrored') return false;
-    return !mirroredAgentEligible(task.trackerLabels ?? [], task.wayfinderType, this.isContainer(task, containerRefs));
+    const labels = (task.workspaceId == null ? undefined : triage.get(task.workspaceId)) ?? DEFAULT_TRIAGE_LABELS;
+    return !mirroredAgentEligible(task.trackerLabels ?? [], task.wayfinderType, this.isContainer(task, containerRefs), labels);
+  }
+
+  private async triageLabels(workspaceId?: number): Promise<TriageLabelsByWorkspace> {
+    const byWorkspace = new Map<number, TriageLabels>();
+    await forEachYielding(await this.getWorkspaces(), async (workspace) => {
+      if (workspaceId !== undefined && workspace.id !== workspaceId) return;
+      byWorkspace.set(workspace.id, await loadTriageLabels(workspace.workingDir, storedTriageLabels(workspace.triageLabels)));
+    });
+    return byWorkspace;
   }
 
   private isContainer(task: TaskRow, containerRefs: ReadonlySet<string>): boolean {
@@ -663,10 +676,11 @@ export class TaskService {
       completedIds.add(task.id);
     });
     const containerRefs = await this.containerRefs(workspaceId);
+    const triage = await this.triageLabels(workspaceId);
     const nodes: OrderedEligibleTask[] = [];
     await forEachYielding(candidates, (task) => {
       const blockedBy = (blockersByTaskId.get(task.id) ?? []).filter((id) => !completedIds.has(id));
-      if (!this.agentWorkable(task, blockedBy.length, containerRefs)) return;
+      if (!this.agentWorkable(task, blockedBy.length, containerRefs, triage)) return;
       nodes.push({
         ...task,
         blockedBy,
@@ -1060,14 +1074,15 @@ export class TaskService {
     const depStates = await Promise.all(dependsOn.map(async (depId) => (await this.get(depId)).state));
     const openBlockerCount = depStates.filter((state) => state !== 'done').length;
     const containerRefs = await this.containerRefs(task.workspaceId ?? undefined);
+    const triage = await this.triageLabels(task.workspaceId ?? undefined);
     return {
       ...task,
       dependsOn,
       dependents: await this.dependents(task.id),
       blockedOnFailed: task.state === 'ready' && depStates.some((s) => s === 'escalated' || s === 'cancelled'),
       openBlockerCount,
-      agentWorkable: this.agentWorkable(task, openBlockerCount, containerRefs),
-      humanOnly: this.humanOnly(task, containerRefs),
+      agentWorkable: this.agentWorkable(task, openBlockerCount, containerRefs, triage),
+      humanOnly: this.humanOnly(task, containerRefs, triage),
       isEpic: this.isEpic(task, containerRefs),
       overrides: this.overridesOf(await this.getRaw(task.id)),
     };
@@ -1143,14 +1158,15 @@ export class TaskService {
     }
     for (const edge of dependentRows) dependents.get(edge.dependsOnId)?.push(edge.taskId);
     const containerRefs = await this.containerRefs(query.workspaceId);
+    const triage = await this.triageLabels(query.workspaceId);
     return listed.map((task) => ({
       ...task,
       dependsOn: dependsOn.get(task.id) ?? [],
       dependents: dependents.get(task.id) ?? [],
       blockedOnFailed: task.state === 'ready' && failedDependencies.has(task.id),
       openBlockerCount: openBlockerCounts.get(task.id) ?? 0,
-      agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0, containerRefs),
-      humanOnly: this.humanOnly(task, containerRefs),
+      agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0, containerRefs, triage),
+      humanOnly: this.humanOnly(task, containerRefs, triage),
       isEpic: this.isEpic(task, containerRefs),
       overrides: this.overridesOf(rawById.get(task.id) ?? task),
     }));

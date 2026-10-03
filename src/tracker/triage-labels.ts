@@ -1,24 +1,10 @@
-import { z } from 'zod';
+import { readFile, stat } from 'node:fs/promises';
+import { join } from 'node:path';
+import { parseStoredJson } from './stored-json.js';
 
-/** The label strings a Resolved Tracker uses for the roles Harmonic acts on. */
-export const triageLabelsSchema = z.object({
-  readyForAgent: z.string().min(1),
-  readyForHuman: z.string().min(1),
-  epic: z.string().min(1),
-  wayfinderMap: z.string().min(1),
-});
-export type TriageLabels = z.infer<typeof triageLabelsSchema>;
+import { DEFAULT_TRIAGE_LABELS, triageLabelsOverrideSchema, type TriageLabels, type TriageLabelsOverride } from './triage-defaults.js';
 
-/** A Workspace's explicit Triage Labels setting: any subset of the roles. */
-export const triageLabelsOverrideSchema = triageLabelsSchema.partial().strict();
-export type TriageLabelsOverride = z.infer<typeof triageLabelsOverrideSchema>;
-
-export const DEFAULT_TRIAGE_LABELS: TriageLabels = {
-  readyForAgent: 'ready-for-agent',
-  readyForHuman: 'ready-for-human',
-  epic: 'epic',
-  wayfinderMap: 'wayfinder:map',
-};
+export { DEFAULT_TRIAGE_LABELS, triageLabelsSchema, triageLabelsOverrideSchema, type TriageLabels, type TriageLabelsOverride } from './triage-defaults.js';
 
 const ROLE_BY_CANONICAL_LABEL: Readonly<Record<string, keyof TriageLabels>> = {
   'ready-for-agent': 'readyForAgent',
@@ -65,4 +51,36 @@ export function resolveTriageLabels(
     else if (fromRepo) { labels[role] = fromRepo; sources[role] = 'repo'; }
   }
   return { labels, sources };
+}
+
+interface CachedDoc {
+  mtimeMs: number;
+  size: number;
+  text: string;
+}
+const docCache = new Map<string, CachedDoc>();
+
+/** The repo's `docs/agents/triage-labels.md`, re-read only when its mtime or size changes; null when absent. */
+async function readTriageLabelsDoc(repoRoot: string): Promise<string | null> {
+  const path = join(repoRoot, 'docs/agents/triage-labels.md');
+  try {
+    const { mtimeMs, size } = await stat(path);
+    const cached = docCache.get(path);
+    if (cached && cached.mtimeMs === mtimeMs && cached.size === size) return cached.text;
+    const text = await readFile(path, 'utf8');
+    docCache.set(path, { mtimeMs, size, text });
+    return text;
+  } catch {
+    docCache.delete(path);
+    return null;
+  }
+}
+
+/** A Workspace row's stored Triage Labels override, or null when unset or unreadable. */
+export const storedTriageLabels = (text: string | null | undefined): TriageLabelsOverride | null =>
+  parseStoredJson(triageLabelsOverrideSchema, text, 'Triage Labels setting');
+
+/** The Triage Labels in force for a Workspace: its override, else the repo's role table, else the defaults. */
+export async function loadTriageLabels(repoRoot: string, override: TriageLabelsOverride | null | undefined): Promise<TriageLabels> {
+  return resolveTriageLabels(override, await readTriageLabelsDoc(repoRoot)).labels;
 }

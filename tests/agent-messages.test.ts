@@ -112,6 +112,68 @@ describe('agent messages over MCP', () => {
     expect(parse(await b.client.callTool({ name: 'send_message', arguments: { to: a.id, text: 'still has budget' } })).sendsRemaining).toBe(1);
   });
 
+  it('addresses a Jira-style Epic ref exactly as list_peers returned it', async () => {
+    const c = await runToDone('jira sender');
+    const d = await runToDone('jira peer');
+    for (const t of [c, d]) {
+      await server.app.ctx.asyncDb.write((db) => db.update(tasks).set({ state: 'working', trackerParent: trackerRef('ABC-1') }).where(eq(tasks.id, t.id)).run());
+    }
+    const peers = parse(await c.client.callTool({ name: 'list_peers', arguments: {} }));
+    expect(peers.epic).toBe('epic:ABC-1');
+    const sent = parse(await c.client.callTool({ name: 'send_message', arguments: { to: peers.epic, text: 'jira hello' } }));
+    expect(sent.recipients.map((r: any) => r.taskId)).toEqual([d.id]);
+
+    const wrong = await c.client.callTool({ name: 'send_message', arguments: { to: 'epic:abc-1', text: 'wrong case' } });
+    expect(wrong.isError).toBe(true);
+    expect(text(wrong)).toMatch(/not your Epic/);
+    await c.client.close();
+    await d.client.close();
+  });
+
+  it('never stores more sends than the cap under concurrent send_message calls', async () => {
+    const c = await runToDone('burst sender');
+    const d = await runToDone('burst peer');
+    for (const t of [c, d]) {
+      await server.app.ctx.asyncDb.write((db) => db.update(tasks).set({ state: 'working', trackerParent: trackerRef('BURST-1') }).where(eq(tasks.id, t.id)).run());
+    }
+    const results = await Promise.all(
+      Array.from({ length: 5 }, (_, i) => c.client.callTool({ name: 'send_message', arguments: { to: d.id, text: `burst ${i}` } })),
+    );
+    expect(results.filter((r) => !r.isError)).toHaveLength(3);
+    expect(results.filter((r) => r.isError).every((r) => /cap of 3/.test(text(r)))).toBe(true);
+    const stored = await server.app.ctx.asyncDb.read((db) => db.select().from(agentMessages).where(eq(agentMessages.senderAttemptId, c.attemptId)).all());
+    expect(stored).toHaveLength(3);
+    await c.client.close();
+    await d.client.close();
+  });
+
+  it('rejects a message longer than the text bound without storing it', async () => {
+    const before = await messageCount();
+    const res = await b.client.callTool({ name: 'send_message', arguments: { to: a.id, text: 'x'.repeat(4001) } }).catch((e) => e);
+    expect(res instanceof Error || (res as any).isError).toBe(true);
+    expect(await messageCount()).toBe(before);
+    const tool = (await b.client.listTools()).tools.find((t) => t.name === 'send_message');
+    expect(tool?.description).toMatch(/4000/);
+  });
+
+  it('offers no Agent Message tools to Conversation, Epic Attempt or full-scope callers', async () => {
+    const names = (c: Client) => c.listTools().then((r) => r.tools.map((t) => t.name));
+    await server.app.ctx.tasks.syncEpics(workspaceId, [{ ref: trackerRef(EPIC), kind: 'epic' }]);
+    const epicAttempt = await server.app.ctx.attempts.createForEpic({ workspaceId, epicRef: trackerRef(EPIC) });
+    const keys = [
+      await server.app.ctx.auth.createKey('am-conversation', { scope: 'conversation' }),
+      await server.app.ctx.auth.createKey('am-epic', { scope: 'attempt', attemptId: epicAttempt.id }),
+      await server.app.ctx.auth.createKey('am-full-scope', { scope: 'full' }),
+    ];
+    for (const { token } of keys) {
+      const client = await mcpClient(server, token);
+      expect(await names(client)).not.toEqual(expect.arrayContaining(['send_message']));
+      expect(await names(client)).not.toContain('read_messages');
+      expect(await names(client)).not.toContain('list_peers');
+      await client.close();
+    }
+  });
+
   it('offers the tools only to enabled Task Attempts', async () => {
     const names = (c: Client) => c.listTools().then((r) => r.tools.map((t) => t.name));
     expect(await names(a.client)).toEqual(expect.arrayContaining(['send_message', 'read_messages', 'list_peers']));

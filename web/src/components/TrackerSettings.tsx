@@ -1,17 +1,17 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { useAsyncResource } from '../useAsyncResource';
-import type {
-  CodeRepositoryKind,
-  JSONSchemaProperty,
-  TrackerDetection,
-  TrackerKindInfo,
-  TrackerSource,
-  VerifyResult,
-  Workspace,
-} from '../types';
+import type { JSONSchemaProperty, TrackerDetection, TrackerKindInfo, TrackerSource, VerifyResult, Workspace } from '../types';
+import {
+  REPOSITORY_KINDS,
+  REPOSITORY_LABEL,
+  RESOLVE_FAILURE_LABEL,
+  applyTrackerSetting,
+  applyTriageLabel,
+  parseCodeRepositoryOverride,
+} from '../tracker-settings-model';
 import { btnGhost, field, selectField } from '../ui';
-import { DEFAULT_TRIAGE_LABELS } from '../../../src/tracker/triage-labels.js';
+import { DEFAULT_TRIAGE_LABELS, type TriageLabels } from '../../../src/tracker/triage-defaults.js';
 import { FieldError, fieldLabel } from './SettingsSection';
 import { Switch } from './Switch';
 import type { WorkspaceRenderCtx } from './settings-schema';
@@ -20,18 +20,6 @@ const SOURCE_LABEL: Record<TrackerSource, string> = {
   configured: 'Configured',
   detected: 'Detected',
   'code-repository': 'Code Repository',
-};
-
-const REPOSITORY_LABEL: Record<CodeRepositoryKind, string> = {
-  github: 'GitHub',
-  gitlab: 'GitLab',
-  forgejo: 'Forgejo',
-};
-
-const RESOLVE_FAILURE_LABEL: Record<string, string> = {
-  'no-declaration': 'No tracker declared',
-  unsupported: 'Unsupported tracker',
-  misconfigured: 'Tracker misconfigured',
 };
 
 function errorMessage(error: unknown): string {
@@ -75,20 +63,28 @@ function VerifyControl({
 }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<VerifyResult | null>(null);
-  useEffect(() => setResult(null), [resetKey]);
+  const requestId = useRef(0);
+  useEffect(() => {
+    requestId.current += 1;
+    setBusy(false);
+    setResult(null);
+  }, [resetKey]);
+  useEffect(
+    () => () => {
+      requestId.current += 1;
+    },
+    [],
+  );
   const verify = () => {
+    const mine = ++requestId.current;
+    const settle = (next: VerifyResult) => {
+      if (mine !== requestId.current) return;
+      setResult(next);
+      setBusy(false);
+    };
     setBusy(true);
     setResult(null);
-    run().then(
-      (r) => {
-        setResult(r);
-        setBusy(false);
-      },
-      (error: unknown) => {
-        setResult({ ok: false, reason: errorMessage(error) });
-        setBusy(false);
-      },
-    );
+    run().then(settle, (error: unknown) => settle({ ok: false, reason: errorMessage(error) }));
   };
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -96,13 +92,13 @@ function VerifyControl({
         {busy ? 'Verifying…' : label}
       </button>
       <div role="status" aria-live="polite" className="min-w-0 text-small">
-        {result?.ok === true && (
+        {result?.ok === true && !disabled && (
           <span className="text-done">
             {okPrefix} <span className="font-medium">{result.identity}</span>
           </span>
         )}
-        {result?.ok === false && <span className="text-fail">{result.reason}</span>}
-        {!result && disabled && disabledHint && <span className="text-muted">{disabledHint}</span>}
+        {result?.ok === false && !disabled && <span className="text-fail">{result.reason}</span>}
+        {disabled && disabledHint && <span className="text-muted">{disabledHint}</span>}
       </div>
     </div>
   );
@@ -125,7 +121,7 @@ function ResolvedTrackerLine({ workspace }: { workspace: Workspace }) {
       </p>
     );
   }
-  const friendly = (resolved.code && RESOLVE_FAILURE_LABEL[resolved.code]) ?? 'Cannot resolve tracker';
+  const friendly = RESOLVE_FAILURE_LABEL[resolved.code];
   return (
     <p className="text-fail" title={resolved.reason ?? undefined}>
       <span className="text-muted">Resolved:</span> {friendly}
@@ -156,6 +152,12 @@ export function SecretField({ workspaceId, name, onChange }: { workspaceId: numb
         setError(errorMessage(e));
       },
     );
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setValue('');
+    setError(null);
   };
 
   const isSet = state.status === 'ready' && state.value.set;
@@ -208,6 +210,9 @@ export function SecretField({ workspaceId, name, onChange }: { workspaceId: numb
             className={`${field} w-64 max-w-full`}
             value={value}
             onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' && !busy) cancelEdit();
+            }}
             autoFocus
           />
           <button type="submit" className={btnGhost} disabled={busy || !value}>
@@ -217,11 +222,7 @@ export function SecretField({ workspaceId, name, onChange }: { workspaceId: numb
             type="button"
             className={btnGhost}
             disabled={busy}
-            onClick={() => {
-              setEditing(false);
-              setValue('');
-              setError(null);
-            }}
+            onClick={cancelEdit}
           >
             Cancel
           </button>
@@ -230,6 +231,11 @@ export function SecretField({ workspaceId, name, onChange }: { workspaceId: numb
       <FieldError message={error ?? undefined} />
     </div>
   );
+}
+
+function humanizeKey(key: string): string {
+  const words = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 function SchemaField({
@@ -247,7 +253,7 @@ function SchemaField({
   value: unknown;
   onChange: (next: unknown) => void;
 }) {
-  const label = property.title ?? name;
+  const label = property.title ?? humanizeKey(name);
   const types = Array.isArray(property.type) ? property.type : property.type ? [property.type] : [];
   const description = property.description ? <p className="mt-1 text-small text-muted">{property.description}</p> : null;
   const labelNode = (
@@ -317,15 +323,8 @@ function KindSettings({ kind, ctx }: { kind: TrackerKindInfo; ctx: WorkspaceRend
   const settings = configured?.settings ?? {};
   const properties = Object.entries(kind.settingsSchema.properties ?? {});
   if (properties.length === 0) return null;
-  const setSetting = (key: string, next: unknown) => {
-    const merged = { ...settings };
-    if (next === undefined) delete merged[key];
-    else merged[key] = next;
-    ctx.setWorkspace({
-      ...workspace,
-      configuredTracker: { kind: kind.id, ...(Object.keys(merged).length > 0 ? { settings: merged } : {}) },
-    });
-  };
+  const setSetting = (key: string, next: unknown) =>
+    ctx.setWorkspace({ ...workspace, configuredTracker: applyTrackerSetting(kind.id, configured?.settings, key, next) });
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       {properties.map(([key, property]) => (
@@ -344,7 +343,7 @@ function KindSettings({ kind, ctx }: { kind: TrackerKindInfo; ctx: WorkspaceRend
 }
 
 function SubHead({ children }: { children: ReactNode }) {
-  return <p className="text-small text-muted">{children}</p>;
+  return <p className="mt-1 text-small text-muted">{children}</p>;
 }
 
 export function IssueTrackerSection({ ctx }: { ctx: WorkspaceRenderCtx }) {
@@ -445,8 +444,6 @@ export function IssueTrackerSection({ ctx }: { ctx: WorkspaceRenderCtx }) {
   );
 }
 
-const REPOSITORY_KINDS: CodeRepositoryKind[] = ['github', 'gitlab', 'forgejo'];
-
 export function CodeRepositorySection({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace, pristineWorkspace, errors } = ctx;
   const detection = useLoad<TrackerDetection>(() => api.trackerDetection(workspace.id), workspace.id);
@@ -470,7 +467,7 @@ export function CodeRepositorySection({ ctx }: { ctx: WorkspaceRenderCtx }) {
           className={`${selectField} w-full`}
           value={workspace.codeRepository ?? ''}
           onChange={(e) =>
-            ctx.setWorkspace({ ...workspace, codeRepository: (e.target.value || null) as CodeRepositoryKind | null })
+            ctx.setWorkspace({ ...workspace, codeRepository: parseCodeRepositoryOverride(e.target.value) })
           }
         >
           <option value="">Automatic</option>
@@ -494,7 +491,7 @@ export function CodeRepositorySection({ ctx }: { ctx: WorkspaceRenderCtx }) {
   );
 }
 
-const TRIAGE_ROLES: { key: keyof typeof DEFAULT_TRIAGE_LABELS; label: string }[] = [
+const TRIAGE_ROLES: { key: keyof TriageLabels; label: string }[] = [
   { key: 'readyForAgent', label: 'Ready for agent' },
   { key: 'readyForHuman', label: 'Ready for human' },
   { key: 'epic', label: 'Epic' },
@@ -504,11 +501,8 @@ const TRIAGE_ROLES: { key: keyof typeof DEFAULT_TRIAGE_LABELS; label: string }[]
 export function TriageLabelsSection({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace, errors } = ctx;
   const labels = workspace.triageLabels ?? {};
-  const setLabel = (key: string, raw: string) => {
-    const next = { ...labels, [key]: raw };
-    for (const k of Object.keys(next) as (keyof typeof next)[]) if (!next[k]) delete next[k];
-    ctx.setWorkspace({ ...workspace, triageLabels: Object.keys(next).length > 0 ? next : null });
-  };
+  const setLabel = (role: (typeof TRIAGE_ROLES)[number]['key'], raw: string) =>
+    ctx.setWorkspace({ ...workspace, triageLabels: applyTriageLabel(workspace.triageLabels, role, raw) });
   return (
     <div>
       <div className="grid gap-4 sm:grid-cols-2">

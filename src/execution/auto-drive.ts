@@ -3,9 +3,7 @@ import { type AppConfig, type MergeFate } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow, StoredEpicKind } from '../db/schema.js';
 import { resolveTrackerAdapter, workspaceTrackerSettings, type TrackerAdapter, type TicketRef, type WorkspaceTrackerSettings } from '../tracker/adapter.js';
 import type { FeatureIndex } from '../tracker/local-markdown.js';
-import type { RepositoryKind } from '../repository/detect.js';
-import { resolveRepositoryAdapter } from '../repository/resolve.js';
-import type { RepositoryAdapter } from '../repository/adapter.js';
+import { resolveRepositoryWithoutSecrets, type RepositoryResolver } from '../repository/resolve.js';
 import { resolveDrive, type ResolvedDrive } from '../domain/setting-override.js';
 import { driveFields, fillTemplate, splitTitleBody } from './prompt-template.js';
 import { Git } from './git.js';
@@ -39,7 +37,7 @@ export class AutoDrive {
     private readonly onTicketClosed?: (task: TaskRow, commit: { oid: string; paths: string[] } | null) => void,
     /** Notified when a close attempt throws. */
     private readonly onTicketCloseFailed?: (task: TaskRow, error: unknown) => void,
-    private readonly resolveRepository: (repoRoot: string, override?: RepositoryKind | null) => Promise<RepositoryAdapter | null> = resolveRepositoryAdapter,
+    private readonly resolveRepository: RepositoryResolver = resolveRepositoryWithoutSecrets,
   ) {}
 
   /** The auto-driven path: a mirrored Task Harmonic runs unattended. */
@@ -116,7 +114,8 @@ export class AutoDrive {
 
     if (fate === 'open-PR') {
       if (worktree) {
-        const repository = await this.resolveRepository(task.workingDir, workspaceTrackerSettings(await this.getWorkspace?.(task.workspaceId)).codeRepository);
+        const workspace = workspaceTrackerSettings(await this.getWorkspace?.(task.workspaceId));
+        const repository = await this.resolveRepository(task.workingDir, workspace);
         if (repository) {
           const { title } = splitTitleBody(task.prompt);
           try {

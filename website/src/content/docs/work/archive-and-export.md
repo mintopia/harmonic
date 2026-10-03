@@ -112,7 +112,7 @@ Unpacked, it contains:
 | `ticket.json` | The task as Harmonic showed it at export time |
 | `timeline.json` | The task's Timeline: Attempts, verification, merge and other events |
 | `operator-inputs.json` | Everything you did to the task |
-| `agent-messages.json` | Messages the task's agent sent to or received from other tasks |
+| `agent-messages.json` | [Agent Messages](/harmonic/work/agent-messages/) the task's agent sent to or received from other tasks |
 | `manifest.json` | Export details: Harmonic version, disposition, file counts, redaction counts, whether it is partial, and git details |
 | `archive.json` | The Archive's identity and its Export history |
 | `attempts/` | One folder per Attempt: prompts, agent transcripts, harness logs, verify output and Critic runs |
@@ -137,7 +137,8 @@ Redaction only applies to Exports. The Archive on disk stays raw.
 When an Epic merges, Harmonic writes an Epic Export too, named
 `epic-<ref>-done-<timestamp>.tar.gz`. It holds the Epic's own verification
 and Critic runs and its Timeline, and lists its Members rather than copying
-their Exports.
+their Exports. It also holds an `agent-messages.json` with the
+[Agent Messages](/harmonic/work/agent-messages/) its Members sent or received.
 
 Epic Exports go to the same Destinations as task Exports, with the same
 retries and failure notifications. Once an Epic has merged, its page shows the

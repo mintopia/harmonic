@@ -201,6 +201,9 @@ export const criticLog = [
 export const timeline = [
   { attemptId: null, ts: T0, kind: 'fact', data: { type: 'task-created', trackerRef: '185', workspace: 'harmonic-core' } },
   { attemptId: 501, ts: T0 + min(0), kind: 'attempt-started', data: { attempt: 1 } },
+  { attemptId: 501, ts: T0 + min(4), kind: 'agent-message', data: { direction: 'received', peerTaskId: 412, peerHarness: 'claude', epic: 400, receipt: 'delivered', threadId: 't1', workspaceId: 1, preview: 'I renamed SessionStore.retire() to retireSession() and moved it to src/domain/sessions.ts.' } },
+  { attemptId: 501, ts: T0 + min(6), kind: 'agent-message', data: { direction: 'sent', peerTaskId: 414, peerHarness: 'copilot', receipt: 'queued', threadId: 't1', workspaceId: 1, sendNumber: 3, sendCap: 10, preview: 'Are you editing src/execution/merge.ts?' } },
+  { attemptId: 501, ts: T0 + min(8), kind: 'agent-message', data: { direction: 'sent', peerTaskId: 411, peerHarness: 'codex', receipt: 'refused', reason: 'Task done', threadId: 't1', workspaceId: 1, preview: 'Does session.idleTtl still need a migration?' } },
   { attemptId: 501, ts: T0 + min(18), kind: 'attempt-finished', data: { attempt: 1, state: 'failed' } },
   { attemptId: 502, ts: T0 + min(20), kind: 'attempt-started', data: { attempt: 2 } },
   { attemptId: 502, ts: T0 + min(29), kind: 'attempt-finished', data: { attempt: 2, state: 'failed' } },
@@ -278,7 +281,7 @@ export const boardEpic = {
   members: [
     boardMember({ ref: '431', title: 'Wire the ready frontier', taskId: 431, state: 'ready', ready: true }),
     boardMember({ ref: '432', title: 'Waiting on a sibling', taskId: 432, state: 'ready' }),
-    boardMember({ ref: '433', title: 'Escalated to the operator', taskId: 433, state: 'escalated', escalated: true }), // escalated → indigo pip
+    boardMember({ ref: '433', title: 'Escalated to the operator', taskId: 433, state: 'escalated', escalated: true }),
     boardMember({ ref: '434', title: 'Blocked on a failed dep', taskId: 434, state: 'ready', mergeStatus: 'blocked' }),
     boardMember({ ref: '435', title: 'Running right now', taskId: 435, state: 'running' }),
     boardMember({ ref: '436', title: 'Wire the read endpoint', taskId: 436, mergeStatus: 'completed' }),

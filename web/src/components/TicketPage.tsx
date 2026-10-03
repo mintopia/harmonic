@@ -26,7 +26,7 @@ import { Description } from './ticket/Description';
 import { Metrics, Properties } from './ticket/Metrics';
 import { TaskProgressBar } from './ticket/TaskProgressBar';
 import { ExportPanel } from './ticket/ExportPanel';
-import { taskExportTarget } from './useExport';
+import { taskExportTarget } from '../export-targets';
 import { ChangesPane, NoRunsYet } from './ticket/ChangesPane';
 import { AttemptsNav, PanelNav } from './ticket/AttemptsNav';
 import { AttemptPanel } from './ticket/AttemptPanel';

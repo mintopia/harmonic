@@ -3,6 +3,12 @@ import { join } from 'node:path';
 
 import { trackerKindFor, TRACKER_KINDS } from './kinds.js';
 import type { TrackerHttp } from './kind.js';
+import { EPIC_LABEL, MAP_LABEL, type TrackerRef } from './ref.js';
+import { parseStoredJson } from './stored-json.js';
+import { loadTriageLabels, storedTriageLabels, type TriageLabels, type TriageLabelsOverride } from './triage-labels.js';
+import { forEachYielding } from '../reliability/yield.js';
+import type { SecretService } from '../secrets/secret-service.js';
+import { originRemote } from '../repository/remote.js';
 import type { FeatureIndex } from './local-markdown.js';
 import { configuredTrackerSchema, type ConfiguredTracker } from './configured.js';
 import { selectTracker, type TrackerSource } from './select.js';
@@ -11,21 +17,7 @@ import type { RepositoryKind } from '../repository/detect.js';
 
 export type TicketState = 'open' | 'closed';
 
-/** An opaque tracker ticket ref (`185`, `PROJ-185`): Harmonic never parses, orders, or formats it; the owning kind renders it. */
-export type TrackerRef = string & { readonly __trackerRef: unique symbol };
-
-/** Brands a string read from a tracker, a CLI argument, or a DB row as a {@link TrackerRef}. */
-export function trackerRef(value: string | number): TrackerRef {
-  return String(value) as TrackerRef;
-}
-
-/** The label that marks a wayfinder Map — convention on every tracker; `isMap` hides which. */
-export const MAP_LABEL = 'wayfinder:map';
-
-/** The label that marks a spec Epic — a container ticket, never mirrored as a work Task. */
-export const EPIC_LABEL = 'epic';
-
-export { READY_FOR_AGENT_LABEL, READY_FOR_HUMAN_LABEL } from '../domain/agent-workable.js';
+export { EPIC_LABEL, MAP_LABEL, compareRefsForDisplay, trackerRef, type TrackerRef } from './ref.js';
 
 /** A directional edge target: the referenced ticket's portable identity + surface state. */
 export interface TicketRef {
@@ -152,18 +144,25 @@ export function resolutionFailure(err: unknown): ResolvedTracker & { ok: false }
 
 /** The per-Workspace inputs to tracker resolution that live outside the repo. */
 export interface WorkspaceTrackerSettings {
+  /** Whose Secrets the chosen kind reads; absent ⇒ none are revealed. */
+  workspaceId?: number | undefined;
   configured?: ConfiguredTracker | null | undefined;
   codeRepository?: RepositoryKind | null | undefined;
-  /** Secret values by name, for kinds that read credentials from `secretName` settings. */
+  triageLabels?: TriageLabelsOverride | null | undefined;
+  /** Secret values by name, used as given and taking precedence over the Workspace's stored Secrets. */
   secrets?: Readonly<Record<string, string>> | undefined;
 }
 
 /** A Workspace row's tracker-related overrides, parsed from its stored form. */
 export function workspaceTrackerSettings(
-  row: { configuredTracker?: string | null; codeRepository?: RepositoryKind | null } | undefined,
+  row: { id?: number; configuredTracker?: string | null; codeRepository?: RepositoryKind | null; triageLabels?: string | null } | undefined,
 ): WorkspaceTrackerSettings {
-  const configured = row?.configuredTracker ? configuredTrackerSchema.safeParse(JSON.parse(row.configuredTracker)) : undefined;
-  return { configured: configured?.success ? configured.data : null, codeRepository: row?.codeRepository ?? null };
+  return {
+    workspaceId: row?.id,
+    configured: parseStoredJson(configuredTrackerSchema, row?.configuredTracker, 'Configured Tracker'),
+    codeRepository: row?.codeRepository ?? null,
+    triageLabels: storedTriageLabels(row?.triageLabels),
+  };
 }
 
 /** The non-throwing sibling of {@link resolveTrackerAdapter}: a structured {@link ResolvedTracker}. */
@@ -191,8 +190,10 @@ export async function resolveTrackerAdapter(
   repoRoot: string,
   featureIndex?: FeatureIndex,
   workspace: WorkspaceTrackerSettings = {},
+  secretStore?: Pick<SecretService, 'reveal'>,
 ): Promise<TrackerAdapter> {
   const { configured } = workspace;
+  const origin = originRemote(repoRoot);
   const docPath = join(repoRoot, 'docs/agents/issue-tracker.md');
   let doc: string | null = null;
   if (!configured) {
@@ -204,7 +205,7 @@ export async function resolveTrackerAdapter(
   }
   const detectedName = doc ? declaredTrackerName(doc) : undefined;
   const detectedKnown = detectedName ? selectTracker({ detectedName })?.source === 'detected' : false;
-  const codeRepository = configured || detectedKnown ? null : await resolveCodeRepository(repoRoot, workspace.codeRepository);
+  const codeRepository = configured || detectedKnown ? null : await resolveCodeRepository(repoRoot, workspace.codeRepository, undefined, origin);
   const selection = selectTracker({ configured, detectedName, codeRepository });
   if (!selection) {
     if (doc === null) throw new TrackerResolutionError('no-declaration', `No tracker declaration at ${docPath}`);
@@ -214,12 +215,59 @@ export async function resolveTrackerAdapter(
   const kind = trackerKindFor(selection.kindId);
   if (!kind) throw new TrackerResolutionError('unsupported', `Unsupported tracker "${selection.kindId}" in ${where}`);
   try {
-    const raw = selection.source === 'configured' ? configured!.settings : await kind.fromDeclaration?.(doc ?? '', repoRoot);
+    const raw = selection.source === 'configured' ? configured!.settings : await kind.fromDeclaration?.(doc ?? '', repoRoot, origin);
     const settings = kind.settings.parse(raw ?? {});
-    const adapter = kind.create({ settings, secrets: workspace.secrets ?? {}, repoRoot, http: defaultHttp, ...(featureIndex && { featureIndex }) });
+    const secrets = { ...(await revealSecrets(secretStore, workspace.workspaceId, kind.secretsFor?.(settings) ?? kind.secretNames)), ...workspace.secrets };
+    const triageLabels = await loadTriageLabels(repoRoot, workspace.triageLabels);
+    const created = kind.create({ settings, secrets, repoRoot, http: defaultHttp, triageLabels, ...(featureIndex && { featureIndex }) });
+    const adapter = withTriageRoles(created, triageLabels);
     adapterSources.set(adapter, selection.source);
     return adapter;
   } catch (err) {
     throw new TrackerResolutionError('misconfigured', `${err instanceof Error ? err.message : String(err)} in ${where}`);
   }
+}
+
+async function revealSecrets(
+  store: Pick<SecretService, 'reveal'> | undefined,
+  workspaceId: number | undefined,
+  names: readonly string[],
+): Promise<Record<string, string>> {
+  const revealed: Record<string, string> = {};
+  if (!store || workspaceId === undefined) return revealed;
+  for (const name of names) {
+    const value = await store.reveal(workspaceId, name);
+    if (value !== null) revealed[name] = value;
+  }
+  return revealed;
+}
+
+export type TrackerResolver = (repoRoot: string, featureIndex?: FeatureIndex, workspace?: WorkspaceTrackerSettings) => Promise<TrackerAdapter>;
+
+/** A {@link TrackerResolver} that reveals the Workspace's own Secrets for the chosen kind. */
+export function createTrackerResolver(secretStore: Pick<SecretService, 'reveal'>): TrackerResolver {
+  return (repoRoot, featureIndex, workspace) => resolveTrackerAdapter(repoRoot, featureIndex, workspace, secretStore);
+}
+
+/** Reads the Workspace's `epic` and `wayfinderMap` Triage Labels into the canonical roles every consumer checks, so an override takes effect wherever those labels are read. */
+function withTriageRoles(adapter: TrackerAdapter, triage: TriageLabels): TrackerAdapter {
+  if (triage.epic === EPIC_LABEL && triage.wayfinderMap === MAP_LABEL) return adapter;
+  const canonical = (ticket: Ticket): Ticket => ({
+    ...ticket,
+    isMap: ticket.isMap || ticket.labels.includes(triage.wayfinderMap),
+    labels: ticket.labels.map((label) => (label === triage.epic ? EPIC_LABEL : label === triage.wayfinderMap ? MAP_LABEL : label)),
+  });
+  return {
+    ...adapter,
+    async scan() {
+      const tickets: Ticket[] = [];
+      await forEachYielding(await adapter.scan(), (ticket) => {
+        tickets.push(canonical(ticket));
+      });
+      return tickets;
+    },
+    async readTicket(ref) {
+      return canonical(await adapter.readTicket(ref));
+    },
+  };
 }

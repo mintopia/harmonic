@@ -169,7 +169,7 @@ with no working tree.
 
 ## Amendment (2026-10-03): tracker resolution precedence and Code Repository
 
-Status: proposed — amends the "declared by the repo, never auto-detected"
+Status: accepted — amends the "declared by the repo, never auto-detected"
 resolution clause above. See ADR-0046.
 
 - The Resolved Tracker is chosen by precedence: Configured Tracker (Workspace

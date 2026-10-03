@@ -1,14 +1,17 @@
 import { z } from 'zod';
-import type { AgentMessageRecipient, TaskRow } from '../db/schema.js';
+import type { AgentMessageRecipient, TaskRow, TaskState } from '../db/schema.js';
+import { resolveAgentMessages } from '../domain/agent-messages.js';
 import { DomainError } from '../domain/errors.js';
-import { resolveScoped } from '../domain/setting-override.js';
 import { deliverAgentMessage } from '../execution/agent-message-delivery.js';
 import type { AppContext } from '../server/app.js';
 import type { McpCaller } from './caller.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { wrapAsync } from './tool-result.js';
 
-const OPEN_STATES: readonly string[] = ['ready', 'working', 'paused', 'escalated'];
+const OPEN_STATES: readonly TaskState[] = ['ready', 'working', 'paused', 'escalated'];
+
+const EPIC_PREFIX = /^epic:/i;
+const MAX_MESSAGE_CHARS = 4000;
 
 const epicAddress = (task: TaskRow): string | null => (task.trackerParent == null ? null : `epic:${task.trackerParent}`);
 
@@ -21,8 +24,10 @@ async function openSiblings(ctx: AppContext, task: TaskRow): Promise<TaskRow[]> 
 /** Resolves a recipient address ("epic:<n>", "task:<n>", "#<n>" or a bare number) to the open Tasks it reaches, or refuses with a reason. */
 async function resolveRecipients(ctx: AppContext, sender: TaskRow, to: string): Promise<number[]> {
   const address = to.trim();
-  if (/^epic:/i.test(address)) {
-    if (address.toLowerCase() !== epicAddress(sender)) throw new DomainError('forbidden', `${address} is not your Epic`);
+  if (EPIC_PREFIX.test(address)) {
+    if (sender.trackerParent == null || address.replace(EPIC_PREFIX, '').trim() !== sender.trackerParent) {
+      throw new DomainError('forbidden', `${address} is not your Epic`);
+    }
     const siblings = await openSiblings(ctx, sender);
     if (siblings.length === 0) throw new DomainError('invalid_state', 'your Epic has no open sibling Tasks');
     return siblings.map((t) => t.id);
@@ -43,27 +48,23 @@ async function resolveRecipients(ctx: AppContext, sender: TaskRow, to: string): 
 export function registerAgentMessageTools(server: McpServer, ctx: AppContext, caller: McpCaller): void {
   const { attempt, task, workspace } = caller;
   if (caller.scope !== 'attempt' || !attempt || !task || !workspace) return;
-  const global = ctx.settingsStore.getGlobal().agentMessages;
-  if (!resolveScoped('agentMessagesEnabled', workspace.agentMessagesEnabled, global.enabled)) return;
-  const sendCap = resolveScoped('agentMessagesSendCap', workspace.agentMessagesSendCap, global.sendCap);
+  const { enabled, sendCap } = resolveAgentMessages(workspace, ctx.settingsStore.getGlobal().agentMessages);
+  if (!enabled) return;
 
   server.registerTool(
     'send_message',
     {
       description:
         'Send a message to a peer Task in this Workspace, or to every open sibling in your Epic. `to` is a Task id ' +
-        'or the Epic address from list_peers. Set `replyTo` to a message id to reply in its Thread.',
+        'or the Epic address from list_peers. Set `replyTo` to a message id to reply in its Thread. ' +
+        `\`text\` is at most ${MAX_MESSAGE_CHARS} characters.`,
       inputSchema: {
         to: z.union([z.string().min(1), z.number().int().positive()]).describe('Task id or Epic address'),
-        text: z.string().min(1),
+        text: z.string().min(1).max(MAX_MESSAGE_CHARS).describe(`Message body, 1 to ${MAX_MESSAGE_CHARS} characters`),
         replyTo: z.string().optional().describe('Id of the message being replied to'),
       },
     },
     wrapAsync(async ({ to, text, replyTo }) => {
-      const sent = await ctx.agentMessages.countForAttempt(attempt.id);
-      if (sent >= sendCap) {
-        throw new DomainError('forbidden', `send cap of ${sendCap} messages per Attempt reached`);
-      }
       const recipientIds = await resolveRecipients(ctx, task, String(to));
       let threadId: string | null = null;
       if (replyTo !== undefined) {
@@ -73,17 +74,22 @@ export function registerAgentMessageTools(server: McpServer, ctx: AppContext, ca
         threadId = parent.threadId;
       }
       const recipients: AgentMessageRecipient[] = recipientIds.map((taskId) => ({ taskId, receipt: 'queued' }));
-      const row = await ctx.agentMessages.create({
-        workspaceId: workspace.id,
-        text,
-        replyTo: replyTo ?? null,
-        threadId,
-        senderTaskId: task.id,
-        senderAttemptId: attempt.id,
-        recipients,
-      });
+      const created = await ctx.agentMessages.createWithinCap(
+        {
+          workspaceId: workspace.id,
+          text,
+          replyTo: replyTo ?? null,
+          threadId,
+          senderTaskId: task.id,
+          senderAttemptId: attempt.id,
+          recipients,
+        },
+        sendCap,
+      );
+      if (created.kind === 'capped') throw new DomainError('forbidden', `send cap of ${sendCap} messages per Attempt reached`);
+      const { row, sent } = created;
       const receipts = await deliverAgentMessage({ store: ctx.agentMessages, runner: ctx.runner }, row, task);
-      return { messageId: row.id, threadId: row.threadId, recipients: receipts, sendsRemaining: sendCap - sent - 1 };
+      return { messageId: row.id, threadId: row.threadId, recipients: receipts, sendsRemaining: sendCap - sent };
     }),
   );
 

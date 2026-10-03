@@ -42,19 +42,12 @@ export function registerAppExports({
         epicAttemptTimelineToApi(ctx, { workspaceId, epicRef }),
         ctx.tasks.list({ workspaceId }),
       ]);
-      const matching: (typeof stored)[number][] = [];
-      await forEachYielding(stored, (candidate) => {
-        if (matching.length === 0 && candidate.trackerRef === epicRef) matching.push(candidate);
-      });
-      const row = matching[0];
+      const row = stored.find((candidate) => candidate.trackerRef === epicRef);
       const byRef = new Map<TrackerRef, TaskRow>();
-      await forEachYielding(workspaceTasks, (t) => {
-        if (t.trackerRef != null) byRef.set(t.trackerRef, t);
-      });
-      const members: Array<{ ref: TrackerRef; task: TaskRow | null }> = [];
-      await forEachYielding(row?.memberRefs ?? [], (stored) => {
-        const ref = trackerRef(stored);
-        members.push({ ref, task: byRef.get(ref) ?? null });
+      for (const t of workspaceTasks) if (t.trackerRef != null) byRef.set(t.trackerRef, t);
+      const members = (row?.memberRefs ?? []).map((memberRef) => {
+        const ref = trackerRef(memberRef);
+        return { ref, task: byRef.get(ref) ?? null };
       });
       return {
         ticket: detail ?? { ref: epicRef, state: row?.state ?? null, mergeCommit: row?.mergeCommit ?? null },
@@ -75,14 +68,11 @@ export function registerAppExports({
         ticketTimelineToApi(ctx, task.id),
         ctx.attempts.listForTask(task.id),
       ]);
-      const attemptIds: number[] = [];
-      await forEachYielding(taskAttempts, (attempt) => {
-        attemptIds.push(attempt.id);
-      });
+      const attemptIds = taskAttempts.map((attempt) => attempt.id);
       const [remoteUrl, currentBranch, facts] = await Promise.all([
         orFallback(() => Git.originUrl(task.workingDir), { op: 'export.snapshot.originUrl', level: 'warn', context: { taskId: task.id } }, null),
         orFallback(() => Git.symbolicBranch(task.workingDir), { op: 'export.snapshot.currentBranch', level: 'warn', context: { taskId: task.id } }, null),
-        orFallback(() => ctx.attempts.listMergedFacts(attemptIds), { op: 'export.snapshot.mergedFacts', level: 'warn', context: { taskId: task.id } }, [] as unknown[]),
+        orFallback(() => ctx.attempts.listMergedFacts(attemptIds), { op: 'export.snapshot.mergedFacts', level: 'warn', context: { taskId: task.id } }, []),
       ]);
       const agentMessages = task.workspaceId === null ? [] : await ctx.agentMessages.presentedForTask(task.workspaceId, task.id);
       return { ticket, timeline, agentMessages, attemptCount: taskAttempts.length, git: computeGitProvenance({ attempts: taskAttempts, facts, remoteUrl, taskBaseBranch: task.baseBranch, currentBranch }) };
@@ -106,7 +96,7 @@ export function registerAppExports({
             workspaceId,
             export: { ...(epicRef === undefined ? {} : { epicRef }), destination, disposition, error, retry, nextRetryAt },
           }),
-        { op: 'export.notifyFailure', level: 'warn', context: task ? { taskId: task.id } : { epicRef: epicRef! } },
+        { op: 'export.notifyFailure', level: 'warn', context: owner.kind === 'task' ? { taskId: owner.task.id } : { epicRef: owner.epicRef } },
       );
     },
   });

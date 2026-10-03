@@ -47,7 +47,7 @@ describe('agent_messages_changed notification', () => {
     await store.updateRecipient(row.id, b.id, { receipt: 'held' });
     expect(changed).toEqual([workspaceId, workspaceId]);
 
-    await store.takeHeld(b.id);
+    await store.markDelivered(await store.listHeld(b.id), b.id);
     expect(changed).toHaveLength(3);
 
     await store.updateRecipient('missing', b.id, { receipt: 'held' });

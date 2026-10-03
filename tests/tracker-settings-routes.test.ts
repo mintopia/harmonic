@@ -37,10 +37,12 @@ describe('GET /tracker-kinds', () => {
     server = await startServer();
     const { status, body } = await server.api('GET', '/api/tracker-kinds');
     expect(status).toBe(200);
-    expect(body.kinds.map((k: { id: string }) => k.id)).toEqual(['github', 'gitlab', 'local-markdown']);
+    expect(body.kinds.map((k: { id: string }) => k.id)).toEqual(['github', 'gitlab', 'forgejo', 'jira', 'local-markdown']);
     const gitlab = body.kinds.find((k: { id: string }) => k.id === 'gitlab');
     expect(gitlab).toMatchObject({ label: expect.any(String), secretNames: expect.any(Array), capabilities: { close: true } });
     expect(gitlab.settingsSchema.type).toBe('object');
+    const secretNames = Object.fromEntries(body.kinds.map((k: { id: string; secretNames: string[] }) => [k.id, k.secretNames]));
+    expect(secretNames).toMatchObject({ forgejo: ['FORGEJO_TOKEN'], jira: ['JIRA_TOKEN'] });
     expect((await server.anonApi('GET', '/api/tracker-kinds')).status).toBe(401);
   });
 });
@@ -53,12 +55,12 @@ describe('GET /workspaces/:id/tracker-detection', () => {
   });
 
   it('keeps an unregistered declared name with a null kind, and detects the origin host', async () => {
-    const dir = repo('# Issue tracker: Jira\n');
+    const dir = repo('# Issue tracker: Linear\n');
     execFileSync('git', ['init', '-q', dir]);
     execFileSync('git', ['-C', dir, 'remote', 'add', 'origin', 'git@github.com:acme/widgets.git']);
     const { s, id } = await start(dir);
     const { body } = await s.api('GET', `/api/workspaces/${id}/tracker-detection`);
-    expect(body).toEqual({ detectedTracker: { name: 'Jira', kind: null }, detectedCodeRepository: 'github' });
+    expect(body).toEqual({ detectedTracker: { name: 'Linear', kind: null }, detectedCodeRepository: 'github' });
   });
 
   it('reports no detected tracker without a declaration, and 404s an unknown Workspace', async () => {

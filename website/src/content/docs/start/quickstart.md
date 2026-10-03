@@ -42,8 +42,9 @@ Harmonic pulls work from your issue tracker, which you set up with
 [Matt Pocock's Skills](/harmonic/start/spec-driven-development/). Run his
 `/setup-matt-pocock-skills` command in your repo once: it installs the
 Skills and configures the tracker (GitHub, GitLab, or local Markdown) that
-Harmonic reads. Then turn on the Workspace's tracker in Harmonic and let it
-poll.
+Harmonic reads. For Forgejo or Jira, pick the tracker under Settings →
+Integrations instead. Then turn on the Workspace's tracker in Harmonic and
+let it poll.
 
 Every open issue shows up on the board within a poll or two. You're not
 managing a second copy of anything, the tracker stays the source of

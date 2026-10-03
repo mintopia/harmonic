@@ -93,7 +93,7 @@ export class Runner {
   private readonly turnDriver: TurnDriver;
   private readonly epicRefreshResolver: EpicRefreshResolver;
   private readonly workspaceProvisioner: WorkspaceProvisioner;
-  private readonly runControl: RunControl;
+  readonly runControl: RunControl;
   private readonly usageBackfiller: UsageBackfiller;
   /** The MCP endpoint agents should call back to; set once the server listens. */
   mcpUrl: string | null = null;
@@ -701,11 +701,6 @@ export class Runner {
 
   private async checkRunBoundary(taskId: number): Promise<RunBoundaryResult> {
     return this.runControl.checkRunBoundary(taskId);
-  }
-
-  /** @see {@link RunControl.steerWithMode} */
-  async steerWithMode(taskId: number, text: string, onDelivered?: () => void): Promise<'mid-turn' | 'next-turn' | null> {
-    return this.runControl.steerWithMode(taskId, text, onDelivered);
   }
 
   /** @see {@link RunControl.steerSettled} */

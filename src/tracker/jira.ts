@@ -1,76 +1,87 @@
 import { z } from 'zod';
 import { logger } from '../logger.js';
+import { forEachYielding } from '../reliability/yield.js';
 import { parseBlockedByLines, parseBlockedBySection, parsePartOfParent } from './relationships.js';
 import type { TrackerHttp, TrackerKind } from './kind.js';
-import { DEFAULT_TRIAGE_LABELS } from './triage-labels.js';
-import {
-  EPIC_LABEL,
-  MAP_LABEL,
-  type Ticket,
-  type TicketRef,
-  type TicketState,
-  trackerRef,
-  type TrackerVerifyResult,
-  type WritableTrackerAdapter,
-} from './adapter.js';
+import { createRestClient, safeErrorReason, type RestClient } from './rest-client.js';
+import { DEFAULT_TRIAGE_LABELS, type TriageLabels } from './triage-labels.js';
+import type { Ticket, TicketRef, TicketState, TrackerVerifyResult, WritableTrackerAdapter } from './adapter.js';
+import { EPIC_LABEL, MAP_LABEL, trackerRef } from './ref.js';
 
 const SCAN_SAFETY_VALVE_PAGES = 100;
 const PAGE_SIZE = 100;
 const FIELDS = 'summary,status,description,created,resolutiondate,labels,assignee,issuetype,parent,issuelinks';
+const DEFAULT_TOKEN_SECRET = 'JIRA_TOKEN';
 
-export interface JiraSettings {
-  baseUrl: string;
-  authMode: 'cloud' | 'datacenter';
-  email?: string | undefined;
-  projectKey: string;
-  extraJql?: string | undefined;
-  pickupStatus?: string | undefined;
-  doneStatus?: string | undefined;
-  reopenStatus?: string | undefined;
-  secretName: string;
-}
+const settingsSchema = z
+  .object({
+    baseUrl: z
+      .url()
+      .transform((u) => u.replace(/\/+$/, ''))
+      .meta({ title: 'Base URL', description: 'The address of your Jira site, such as https://acme.atlassian.net.' }),
+    authMode: z.enum(['cloud', 'datacenter']).meta({ title: 'Auth mode', description: 'Cloud signs in with an email and API token; Data Center uses a personal access token.' }),
+    email: z.string().min(1).optional().meta({ title: 'Email', description: 'The account email for the API token; required for Jira Cloud.' }),
+    projectKey: z
+      .string()
+      .regex(/^[A-Za-z][A-Za-z0-9_]*$/, 'projectKey must be a Jira project key like PROJ')
+      .meta({ title: 'Project key', description: 'The Jira project key whose issues Harmonic reads, such as PROJ.' }),
+    extraJql: z.string().min(1).optional().meta({ title: 'Extra JQL', description: 'An optional JQL filter added to every search.' }),
+    pickupStatus: z.string().min(1).optional().meta({ title: 'Pickup status', description: 'The status to move an issue to when Harmonic claims it.' }),
+    doneStatus: z.string().min(1).optional().meta({ title: 'Done status', description: 'The status to move an issue to when Harmonic closes it.' }),
+    reopenStatus: z.string().min(1).optional().meta({ title: 'Reopen status', description: 'The status to move an issue to when Harmonic reopens it.' }),
+    secretName: z.string().min(1).default(DEFAULT_TOKEN_SECRET).meta({ title: 'Token Secret name', description: 'The name of the Secret that holds your Jira API token or personal access token.' }),
+  })
+  .strict()
+  .refine((s) => s.authMode !== 'cloud' || !!s.email, { path: ['email'], message: 'email is required for Jira Cloud' });
+export type JiraSettings = z.infer<typeof settingsSchema>;
 
 export interface JiraConfig extends JiraSettings {
   token: string;
 }
 
-interface RawStatus {
-  name: string;
-  statusCategory?: { key: string };
-}
-interface RawUser {
-  accountId?: string;
-  name?: string;
-  displayName?: string;
-}
-interface RawLinkedIssue {
-  key: string;
-  fields?: { summary?: string; status?: RawStatus };
-}
-interface RawIssue {
-  key: string;
-  fields: {
-    summary: string;
-    status: RawStatus;
-    description?: string | null;
-    created: string;
-    resolutiondate?: string | null;
-    labels?: string[];
-    assignee?: RawUser | null;
-    issuetype?: { name: string };
-    parent?: { key: string };
-    issuelinks?: Array<{
-      type: { name?: string; inward: string; outward: string };
-      inwardIssue?: RawLinkedIssue;
-      outwardIssue?: RawLinkedIssue;
-    }>;
-  };
-}
-interface RawTransition {
-  id: string;
-  name: string;
-  to: RawStatus;
-}
+const statusSchema = z.object({ name: z.string(), statusCategory: z.object({ key: z.string() }).optional() });
+const userSchema = z.object({ accountId: z.string().optional(), name: z.string().optional(), displayName: z.string().optional() });
+const linkedIssueSchema = z.object({
+  key: z.string(),
+  fields: z.object({ summary: z.string().optional(), status: statusSchema.optional() }).optional(),
+});
+const issueSchema = z.object({
+  key: z.string(),
+  fields: z.object({
+    summary: z.string(),
+    status: statusSchema,
+    description: z.string().nullish(),
+    created: z.string(),
+    resolutiondate: z.string().nullish(),
+    labels: z.array(z.string()).optional(),
+    assignee: userSchema.nullish(),
+    issuetype: z.object({ name: z.string() }).optional(),
+    parent: z.object({ key: z.string() }).optional(),
+    issuelinks: z
+      .array(
+        z.object({
+          type: z.object({ name: z.string().optional(), inward: z.string(), outward: z.string() }),
+          inwardIssue: linkedIssueSchema.optional(),
+          outwardIssue: linkedIssueSchema.optional(),
+        }),
+      )
+      .optional(),
+  }),
+});
+const transitionSchema = z.object({ id: z.string(), name: z.string(), to: statusSchema });
+const transitionsSchema = z.object({ transitions: z.array(transitionSchema).optional() });
+const statusOnlySchema = z.object({ fields: z.object({ status: statusSchema }) });
+const assigneeOnlySchema = z.object({ fields: z.object({ assignee: userSchema.nullish() }) });
+const searchSchema = z.object({ issues: z.array(issueSchema), total: z.number().optional(), nextPageToken: z.string().nullish() });
+const commentsSchema = z.object({
+  comments: z.array(z.object({ author: userSchema.optional(), body: z.string(), created: z.string() })).optional(),
+});
+
+type RawStatus = z.infer<typeof statusSchema>;
+type RawUser = z.infer<typeof userSchema>;
+type RawLinkedIssue = z.infer<typeof linkedIssueSchema>;
+type RawIssue = z.infer<typeof issueSchema>;
+type RawTransition = z.infer<typeof transitionSchema>;
 
 const stateOf = (s: RawStatus): TicketState => (s.statusCategory?.key === 'done' ? 'closed' : 'open');
 const sameName = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
@@ -82,31 +93,24 @@ const refOf = (i: RawLinkedIssue): TicketRef => ({
   state: i.fields?.status ? stateOf(i.fields.status) : 'open',
 });
 
-/** The Jira Tracker Adapter over REST v2: plain-text bodies, the issue key is the portable `number`. */
-export function jiraAdapter(config: JiraConfig, http: TrackerHttp): WritableTrackerAdapter {
-  const api = `${config.baseUrl}/rest/api/2`;
+/** The Jira REST client for one instance: bearer or basic auth over the shared retrying client. */
+export function jiraClient(config: JiraConfig, http: TrackerHttp): RestClient {
   const cloud = config.authMode === 'cloud';
-  const headers: Record<string, string> = {
-    Authorization: cloud
-      ? `Basic ${Buffer.from(`${config.email ?? ''}:${config.token}`).toString('base64')}`
-      : `Bearer ${config.token}`,
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-  };
+  return createRestClient({
+    baseUrl: `${config.baseUrl}/rest/api/2`,
+    headers: {
+      Authorization: cloud ? `Basic ${Buffer.from(`${config.email ?? ''}:${config.token}`).toString('base64')}` : `Bearer ${config.token}`,
+    },
+    http,
+  });
+}
+
+/** The Jira Tracker Adapter over REST v2: plain-text bodies, the issue key is the portable `number`. */
+export function jiraAdapter(config: JiraConfig, client: RestClient, triageLabels: TriageLabels = DEFAULT_TRIAGE_LABELS): WritableTrackerAdapter {
+  const cloud = config.authMode === 'cloud';
   let me: RawUser | undefined;
 
-  const request = async <T>(path: string, method = 'GET', body?: unknown): Promise<T> => {
-    const res = await http(`${api}${path}`, {
-      method,
-      headers,
-      ...(body !== undefined && { body: JSON.stringify(body) }),
-    });
-    const text = await res.text().catch(() => '');
-    if (!res.ok) throw new Error(`Jira ${method} ${path} failed: ${res.status} ${text.slice(0, 200)}`);
-    return (text.trim() ? JSON.parse(text) : undefined) as T;
-  };
-
-  const ensureMe = async (): Promise<RawUser> => (me ??= await request<RawUser>('/myself'));
+  const ensureMe = async (): Promise<RawUser> => (me ??= await client.request('GET', '/myself', userSchema));
   const idOf = (u: RawUser): string | undefined => (cloud ? u.accountId : u.name);
   const assigneeBody = (id: string | null) => (cloud ? { accountId: id } : { name: id });
 
@@ -157,7 +161,7 @@ export function jiraAdapter(config: JiraConfig, http: TrackerHttp): WritableTrac
   };
 
   const jql = (): string => {
-    const labels = Object.values(DEFAULT_TRIAGE_LABELS).map(jqlQuote).join(', ');
+    const labels = Object.values(triageLabels).map(jqlQuote).join(', ');
     const base = `project = ${config.projectKey} AND labels in (${labels})`;
     if (!config.extraJql) return base;
     const [filter = '', ...order] = config.extraJql.split(/\border\s+by\b/i);
@@ -166,14 +170,14 @@ export function jiraAdapter(config: JiraConfig, http: TrackerHttp): WritableTrac
   };
 
   const transitionsOf = async (key: string): Promise<RawTransition[]> =>
-    (await request<{ transitions: RawTransition[] }>(`/issue/${key}/transitions`)).transitions ?? [];
+    (await client.request('GET', `/issue/${key}/transitions`, transitionsSchema)).transitions ?? [];
 
   const doTransition = async (key: string, id: string): Promise<void> => {
-    await request(`/issue/${key}/transitions`, 'POST', { transition: { id } });
+    await client.send('POST', `/issue/${key}/transitions`, { transition: { id } });
   };
 
   const lifecycle = async (ticket: TicketRef, comment: string, target: string | undefined, categoryKey: 'done' | 'new', verb: string) => {
-    const current = await request<Pick<RawIssue, 'fields'>>(`/issue/${ticket.number}?fields=status`);
+    const current = await client.request('GET', `/issue/${ticket.number}?fields=status`, statusOnlySchema);
     if (current.fields.status.statusCategory?.key === categoryKey) return;
     const available = await transitionsOf(ticket.number);
     const chosen =
@@ -183,15 +187,15 @@ export function jiraAdapter(config: JiraConfig, http: TrackerHttp): WritableTrac
       const list = available.map((t) => `${t.name} -> ${t.to.name}`).join(', ') || 'none';
       throw new Error(`Jira: no transition to ${verb} ${ticket.number}; available transitions: ${list}`);
     }
-    if (comment) await request(`/issue/${ticket.number}/comment`, 'POST', { body: comment });
     await doTransition(ticket.number, chosen.id);
+    if (comment) await client.send('POST', `/issue/${ticket.number}/comment`, { body: comment });
   };
 
   const pickup = async (key: string): Promise<void> => {
     const target = config.pickupStatus;
     if (!target) return;
     try {
-      const issue = await request<Pick<RawIssue, 'fields'>>(`/issue/${key}?fields=status`);
+      const issue = await client.request('GET', `/issue/${key}?fields=status`, statusOnlySchema);
       if (sameName(issue.fields.status.name, target)) return;
       const chosen = (await transitionsOf(key)).find((t) => sameName(t.to.name, target));
       if (chosen) await doTransition(key, chosen.id);
@@ -213,11 +217,9 @@ export function jiraAdapter(config: JiraConfig, http: TrackerHttp): WritableTrac
       } else {
         params.set('startAt', String(raws.length));
       }
-      const res = await request<{ issues: RawIssue[]; total?: number; nextPageToken?: string }>(
-        `${cloud ? '/search/jql' : '/search'}?${params}`,
-      );
+      const res = await client.request('GET', `${cloud ? '/search/jql' : '/search'}?${params}`, searchSchema);
       raws.push(...res.issues);
-      nextPageToken = res.nextPageToken;
+      nextPageToken = res.nextPageToken ?? undefined;
       if (res.issues.length === 0) break;
       if (cloud ? !nextPageToken : res.total !== undefined && raws.length >= res.total) break;
     }
@@ -232,17 +234,27 @@ export function jiraAdapter(config: JiraConfig, http: TrackerHttp): WritableTrac
 
     async scan() {
       const raws = await searchAll();
-      const known = new Map<string, TicketRef>(
-        raws.map((r) => [r.key, { number: trackerRef(r.key), title: r.fields.summary, state: stateOf(r.fields.status) }]),
-      );
-      return raws.map((r) => normalise(r, known));
+      const known = new Map<string, TicketRef>();
+      await forEachYielding(raws, (r) => {
+        known.set(r.key, { number: trackerRef(r.key), title: r.fields.summary, state: stateOf(r.fields.status) });
+      });
+      const tickets: Ticket[] = [];
+      await forEachYielding(raws, (r) => {
+        tickets.push(normalise(r, known));
+      });
+      return tickets;
+    },
+
+    identify: async () => {
+      const user = await ensureMe();
+      const name = user.displayName ?? idOf(user);
+      if (!name) throw new Error('Jira: /myself returned no user');
+      return name;
     },
 
     async readTicket(ref: TicketRef) {
-      const raw = await request<RawIssue>(`/issue/${ref.number}?fields=${FIELDS}`);
-      const res = await request<{
-        comments: Array<{ author?: RawUser; body: string; created: string }>;
-      }>(`/issue/${ref.number}/comment`);
+      const raw = await client.request('GET', `/issue/${ref.number}?fields=${FIELDS}`, issueSchema);
+      const res = await client.request('GET', `/issue/${ref.number}/comment`, commentsSchema);
       return {
         ...normalise(raw, new Map()),
         comments: (res.comments ?? [])
@@ -254,16 +266,16 @@ export function jiraAdapter(config: JiraConfig, http: TrackerHttp): WritableTrac
     async claim(ticket: TicketRef) {
       const id = idOf(await ensureMe());
       if (!id) throw new Error('Jira: /myself returned no user id');
-      await request(`/issue/${ticket.number}/assignee`, 'PUT', assigneeBody(id));
+      await client.send('PUT', `/issue/${ticket.number}/assignee`, assigneeBody(id));
       await pickup(ticket.number);
     },
 
     async release(ticket: TicketRef) {
       const id = idOf(await ensureMe());
-      const issue = await request<Pick<RawIssue, 'fields'>>(`/issue/${ticket.number}?fields=assignee`);
+      const issue = await client.request('GET', `/issue/${ticket.number}?fields=assignee`, assigneeOnlySchema);
       const current = issue.fields.assignee;
       if (!id || !current || idOf(current) !== id) return;
-      await request(`/issue/${ticket.number}/assignee`, 'PUT', assigneeBody(null));
+      await client.send('PUT', `/issue/${ticket.number}/assignee`, assigneeBody(null));
     },
 
     close: (ticket, comment) => lifecycle(ticket, comment, config.doneStatus, 'done', 'close'),
@@ -271,39 +283,26 @@ export function jiraAdapter(config: JiraConfig, http: TrackerHttp): WritableTrac
 
     async verify(): Promise<TrackerVerifyResult> {
       try {
-        await request('/myself');
+        await ensureMe();
         return { ok: true };
       } catch (err) {
-        return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+        return { ok: false, reason: safeErrorReason(err) };
       }
     },
   };
 }
 
-const settingsSchema = z
-  .object({
-    baseUrl: z.url().transform((u) => u.replace(/\/+$/, '')),
-    authMode: z.enum(['cloud', 'datacenter']),
-    email: z.string().min(1).optional(),
-    projectKey: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/, 'projectKey must be a Jira project key like PROJ'),
-    extraJql: z.string().min(1).optional(),
-    pickupStatus: z.string().min(1).optional(),
-    doneStatus: z.string().min(1).optional(),
-    reopenStatus: z.string().min(1).optional(),
-    secretName: z.string().min(1),
-  })
-  .strict()
-  .refine((s) => s.authMode !== 'cloud' || !!s.email, { path: ['email'], message: 'email is required for Jira Cloud' });
-
 export const jiraKind: TrackerKind<JiraSettings> = {
   id: 'jira',
   label: 'Jira',
-  settings: settingsSchema as unknown as TrackerKind<JiraSettings>['settings'],
-  secretNames: [],
+  settings: settingsSchema,
+  secretNames: [DEFAULT_TOKEN_SECRET],
+  secretsFor: (settings) => [settings.secretName],
   capabilities: { close: true, reopen: true, claim: true, transition: true, epicSources: ['issue-type'] },
-  create: ({ settings, secrets, http }) => {
+  create: ({ settings, secrets, http, triageLabels }) => {
     const token = secrets[settings.secretName];
     if (!token) throw new Error(`Jira tracker: secret "${settings.secretName}" is not set`);
-    return jiraAdapter({ ...settings, token }, http);
+    const config = { ...settings, token };
+    return jiraAdapter(config, jiraClient(config, http), triageLabels);
   },
 };

@@ -14,6 +14,8 @@ import {
   receiptsFor,
   resolveSelectedThread,
   segmentThread,
+  threadsCapHint,
+  trappedFocusIndex,
   taskOptions,
   threadParticipantsLine,
   threadTitle,
@@ -220,6 +222,8 @@ describe('receiptsFor', () => {
       ],
     });
     expect(receiptsFor(m).map((r) => r.tail)).toEqual(['', 'refused: Task done']);
+    expect(receiptsFor(m).map((r) => r.showLabel)).toEqual([true, true]);
+    expect(receiptsFor(recipient({ receipt: 'queued' }))[0]?.showLabel).toBe(false);
   });
 });
 
@@ -284,7 +288,7 @@ describe('resolveActivityTab', () => {
 describe('agentCards', () => {
   it('marks the cap rose only at sends >= cap and carries the meter ratio', () => {
     const t = thread('x', { participants: [participant(1, { sends: 7, sendCap: 10 }), participant(2, { sends: 10, sendCap: 10 }), participant(3, { sends: 12, sendCap: 10 })] });
-    const [under, at_cap, over] = agentCards(t, NOW);
+    const [under, at_cap, over] = agentCards(t);
     expect([under!.sendsCount, under!.sendsRatio, under!.atCap]).toEqual(['7/10', 0.7, false]);
     expect([at_cap!.sendsRatio, at_cap!.atCap]).toEqual([1, true]);
     expect([over!.sendsRatio, over!.atCap]).toEqual([1, true]);
@@ -297,13 +301,34 @@ describe('agentCards', () => {
         participant(2, { state: 'done' }),
       ],
     });
-    const [a, b] = agentCards(t, NOW);
-    expect(a).toMatchObject({ state: 'working', betweenAttempts: true, attemptLabel: 'Attempt 3', model: 'sonnet-5.5', lastMessage: '5m ago', identity: 1, harnessLabel: 'Claude' });
+    const [a, b] = agentCards(t);
+    expect(a).toMatchObject({ state: 'working', betweenAttempts: true, attemptLabel: 'Attempt 3', model: 'sonnet-5.5', lastMessage: '14:55', identity: 1, harnessLabel: 'Claude' });
     expect(b).toMatchObject({ state: 'done', betweenAttempts: false, lastMessage: 'none sent', identity: 2 });
   });
 
   it('keeps a deleted participant as a muted card', () => {
     const t = thread('x', { participants: [participant(9, { deleted: true, title: null, harness: null, state: null, attemptNumber: null })] });
-    expect(agentCards(t, NOW)[0]).toMatchObject({ deleted: true, title: 'deleted Task', state: null, attemptLabel: null });
+    expect(agentCards(t)[0]).toMatchObject({ deleted: true, title: 'deleted Task', state: null, attemptLabel: null });
+  });
+});
+
+describe('threadsCapHint', () => {
+  it('hints only when the server holds more threads than are shown', () => {
+    expect(threadsCapHint(200, 350)).toBe('Showing 200 of 350 threads');
+    expect(threadsCapHint(200, 200)).toBeNull();
+  });
+});
+
+describe('trappedFocusIndex', () => {
+  it('wraps at both ends and pulls stray focus back in', () => {
+    expect(trappedFocusIndex(2, 3, false)).toBe(0);
+    expect(trappedFocusIndex(0, 3, true)).toBe(2);
+    expect(trappedFocusIndex(-1, 3, false)).toBe(0);
+    expect(trappedFocusIndex(-1, 3, true)).toBe(2);
+  });
+  it('lets the browser move focus inside the drawer and when nothing is focusable', () => {
+    expect(trappedFocusIndex(1, 3, false)).toBeNull();
+    expect(trappedFocusIndex(1, 3, true)).toBeNull();
+    expect(trappedFocusIndex(-1, 0, false)).toBeNull();
   });
 });

@@ -6,6 +6,9 @@ export interface TabDef {
   count?: number;
 }
 
+export const tabId = (id: string): string => `settings-tab-${id}`;
+export const panelId = (id: string): string => `settings-panel-${id}`;
+
 export function Tabs({
   tabs,
   active,
@@ -32,10 +35,10 @@ export function Tabs({
             key={tab.id}
             type="button"
             role="tab"
-            id={`settings-tab-${tab.id}`}
+            id={tabId(tab.id)}
             tabIndex={selected ? 0 : -1}
             aria-selected={selected}
-            aria-controls={`settings-panel-${tab.id}`}
+            aria-controls={panelId(tab.id)}
             onClick={() => onChange(tab.id)}
             onKeyDown={(event) => {
               let next = index;
@@ -56,7 +59,7 @@ export function Tabs({
           >
             {tab.label}
             {tab.count !== undefined && (
-              <span className="rounded-full bg-raised px-[7px] text-[11px] font-bold text-muted">{tab.count}</span>
+              <span className="rounded-full bg-raised px-[7px] text-micro font-bold text-muted">{tab.count}</span>
             )}
           </button>
         );
