@@ -36,7 +36,7 @@ export function isPrivateHost(host: string): boolean {
   return false;
 }
 
-/** A {@link ForgejoProbe} that GETs `https://<host>/api/v1/version` and treats a 2xx JSON `version` as Forgejo; never fetches github.com, gitlab.com or private hosts. */
+/** A {@link ForgejoProbe} that GETs `https://<host>/api/v1/version` and treats a 2xx JSON `version` as Forgejo. */
 export function forgejoVersionProbe(fetchFn: typeof fetch = fetch, timeoutMs = 3000): ForgejoProbe {
   return async (host) => {
     if (host === 'github.com' || host === 'gitlab.com' || isPrivateHost(host)) return false;
