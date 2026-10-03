@@ -2,7 +2,9 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { RepositoryAdapter } from './adapter.js';
 import { detectRepository, forgejoVersionProbe, type ForgejoProbe, type RepositoryKind } from './detect.js';
+import { forgejoRepository } from './forgejo.js';
 import { githubRepository } from './github.js';
+import { parseForgejoRemote, type ForgejoConnection } from '../tracker/forgejo-client.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -22,8 +24,23 @@ export async function resolveCodeRepository(
   return detectRepository(url, probe);
 }
 
-/** The repo's Code Repository adapter; null when its kind has no adapter yet (only GitHub does). */
-export async function resolveRepositoryAdapter(repoRoot: string, override?: RepositoryKind | null): Promise<RepositoryAdapter | null> {
+/** Forgejo needs a token (a Secret), so its adapter is built only when the caller supplies one. */
+export type ForgejoCredentials = Pick<ForgejoConnection, 'token' | 'http'>;
+
+/** The repo's Code Repository adapter; null when its kind is unresolved or has no adapter (GitLab). */
+export async function resolveRepositoryAdapter(
+  repoRoot: string,
+  override?: RepositoryKind | null,
+  forgejo?: ForgejoCredentials,
+): Promise<RepositoryAdapter | null> {
   const kind = await resolveCodeRepository(repoRoot, override, async () => false);
-  return kind === 'github' ? githubRepository(repoRoot) : null;
+  if (kind === 'github') return githubRepository(repoRoot);
+  if (kind === 'forgejo' && forgejo) {
+    const remote = await execFileAsync('git', ['-C', repoRoot, 'remote', 'get-url', 'origin']).then(
+      (r) => parseForgejoRemote(r.stdout),
+      () => null,
+    );
+    return remote ? forgejoRepository({ ...remote, ...forgejo }) : null;
+  }
+  return null;
 }

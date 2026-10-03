@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { TRACKER_KINDS } from '../src/tracker/kinds.js';
 import type { CliRunner, TrackerKind } from '../src/tracker/kind.js';
 import { type TrackerAdapter, trackerRef } from '../src/tracker/adapter.js';
+import { fakeForgejo, issue } from './helpers/fake-forgejo.js';
 
 /** Three tickets every kind is seeded with: #1 open, #2 open and blocked by #1, #3 closed. */
 interface Harness {
@@ -83,6 +84,24 @@ function gitlabHarness(kind: TrackerKind<any>): Harness {
   return { adapter, closed: () => closed, reopened: () => reopened };
 }
 
+function forgejoHarness(kind: TrackerKind<any>): Harness {
+  const fake = fakeForgejo({
+    issues: [issue(1, 'Alpha'), issue(2, 'Beta', { body: 'Blocked by: #1' }), issue(3, 'Gamma', { state: 'closed' })],
+  });
+  const adapter = kind.create({
+    settings: kind.settings.parse({ baseUrl: 'https://forge.test', repo: 'owner/name' }),
+    secrets: { FORGEJO_TOKEN: 'good' },
+    repoRoot: '/repo',
+    http: fake.http,
+  });
+  const initiallyClosed = new Set([3]);
+  return {
+    adapter,
+    closed: () => fake.issues.filter((i) => i.state === 'closed' && !initiallyClosed.has(i.number)).map((i) => i.number),
+    reopened: () => fake.issues.filter((i) => i.state === 'open' && initiallyClosed.has(i.number)).map((i) => i.number),
+  };
+}
+
 const roots: string[] = [];
 afterEach(() => {
   for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true });
@@ -113,6 +132,7 @@ function localMarkdownHarness(kind: TrackerKind<any>): Harness {
 const HARNESSES: Record<string, (kind: TrackerKind<any>) => Harness> = {
   github: githubHarness,
   gitlab: gitlabHarness,
+  forgejo: forgejoHarness,
   'local-markdown': localMarkdownHarness,
 };
 
