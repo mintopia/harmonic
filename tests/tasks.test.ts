@@ -400,7 +400,7 @@ describe('task list parent filter — Epic children (ADR-0011, #411)', () => {
   let server: TestServer;
 
   const childOf = (num: number, parentNum: number, title: string): Ticket => ({
-    number: trackerRef(num),
+    ref: trackerRef(num),
     title,
     state: 'open',
     body: '',

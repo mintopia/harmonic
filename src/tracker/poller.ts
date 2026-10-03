@@ -78,9 +78,9 @@ export class TrackerPoller {
     this.titleByRef = new Map();
     const closedRefs = new Set<TrackerRef>();
     await forEachYielding(tickets, (ticket) => {
-      this.urlByRef.set(ticket.number, ticket.url);
-      this.titleByRef.set(ticket.number, ticket.title);
-      if (ticket.state === 'closed') closedRefs.add(ticket.number);
+      this.urlByRef.set(ticket.ref, ticket.url);
+      this.titleByRef.set(ticket.ref, ticket.title);
+      if (ticket.state === 'closed') closedRefs.add(ticket.ref);
     }, this.opts.yieldOptions);
     await this.mirror?.observe(adapter);
     const mirrored = await mirrorScan(this.tasks, tickets, this.workspaceId, {

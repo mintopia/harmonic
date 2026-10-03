@@ -320,7 +320,7 @@ export class TrackerEpicService implements EpicService {
 
   async listEpicTickets(workspaceId: number): Promise<Ticket[]> {
     const { mirrored, tickets, rows } = await this.epicData(workspaceId);
-    const byRef = new Map(tickets.map((ticket) => [ticket.number, ticket]));
+    const byRef = new Map(tickets.map((ticket) => [ticket.ref, ticket]));
     return this.surfacedEpics(rows, tickets, mirrored, true).map((epic) => byRef.get(epic.ref) ?? historicalEpicTicket(epic));
   }
 
@@ -373,7 +373,7 @@ export class TrackerEpicService implements EpicService {
     return new Map(deriveLeafEpics(tickets, readiness, { includeClosed: true }).map((epic) => [epic.ref, epic] as const));
   }
   private surfacedEpics(rows: EpicRow[], tickets: Ticket[], mirrored: TaskWithDeps[], includeHistorical: boolean): DerivedEpic[] {
-    const live = this.liveEpics(tickets, mirrored); const ticketByRef = new Map(tickets.map((ticket) => [ticket.number, ticket])); const epics: DerivedEpic[] = [];
+    const live = this.liveEpics(tickets, mirrored); const ticketByRef = new Map(tickets.map((ticket) => [ticket.ref, ticket])); const epics: DerivedEpic[] = [];
     for (const row of rows) {
       if (this.isHistorical(row)) { if (includeHistorical) epics.push(this.storedToDerived(row, tickets, mirrored)); }
       else if (row.state !== 'integrated' && ticketByRef.get(row.trackerRef)?.state === 'open') {
@@ -386,14 +386,14 @@ export class TrackerEpicService implements EpicService {
   }
   private isHistorical(row: EpicRow): boolean { return row.state === 'integrated' && row.memberRefs !== null; }
   private storedToDerived(row: EpicRow, tickets: Ticket[], mirrored: TaskRow[]): DerivedEpic {
-    const ticket = tickets.find((candidate) => candidate.number === row.trackerRef);
+    const ticket = tickets.find((candidate) => candidate.ref === row.trackerRef);
     return { ref: row.trackerRef, title: ticket?.title ?? mirrored.find((task) => task.trackerRef === row.trackerRef)?.trackerTitle ?? `Epic #${row.trackerRef}`, body: ticket?.body ?? '', url: ticket?.url ?? '', members: [...(row.memberRefs ?? [])].sort(compareRefsForDisplay), ready: [] };
   }
   private async composeOne(workspaceId: number, epic: DerivedEpic, tickets: Ticket[], mirrored: TaskRow[], baseBranch: string | null, rows: ReadonlyMap<TrackerRef, EpicRow>, configured: boolean): Promise<Epic> {
-    const titles = new Map(tickets.map((ticket) => [ticket.number, ticket.title])); const tasks = new Map<TrackerRef, TaskRow>();
+    const titles = new Map(tickets.map((ticket) => [ticket.ref, ticket.title])); const tasks = new Map<TrackerRef, TaskRow>();
     for (const task of mirrored) if (task.trackerRef !== null) tasks.set(task.trackerRef, task);
-    const ticket = tickets.find((candidate) => candidate.number === epic.ref); const row = rows.get(epic.ref);
-    const meta: EpicMeta = { description: ticket?.body ?? '', createdAt: ticket ? Date.parse(ticket.createdAt) || 0 : 0, baseBranch, dependsOn: (ticket?.blockedBy ?? []).map((blocker) => blocker.number).sort(compareRefsForDisplay), kind: row?.kind === 'map' ? 'map' : 'spec', state: row?.state ?? 'open' };
+    const ticket = tickets.find((candidate) => candidate.ref === epic.ref); const row = rows.get(epic.ref);
+    const meta: EpicMeta = { description: ticket?.body ?? '', createdAt: ticket ? Date.parse(ticket.createdAt) || 0 : 0, baseBranch, dependsOn: (ticket?.blockedBy ?? []).map((blocker) => blocker.ref).sort(compareRefsForDisplay), kind: row?.kind === 'map' ? 'map' : 'spec', state: row?.state ?? 'open' };
     return composeEpicView(epic, tasks, titles, await this.epicFacts(workspaceId, epic.ref, configured), meta);
   }
   private async epicFacts(workspaceId: number, epicRef: TrackerRef, configured: boolean): Promise<EpicFacts> {
@@ -416,5 +416,5 @@ export class TrackerEpicService implements EpicService {
 }
 
 function historicalEpicTicket(epic: DerivedEpic): Ticket {
-  return { number: epic.ref, title: epic.title, state: 'closed', labels: [], parent: null, blockedBy: [], body: '', createdAt: '', closedAt: null, assignees: [], blocking: [], comments: [], isMap: false, url: '' };
+  return { ref: epic.ref, title: epic.title, state: 'closed', labels: [], parent: null, blockedBy: [], body: '', createdAt: '', closedAt: null, assignees: [], blocking: [], comments: [], isMap: false, url: '' };
 }

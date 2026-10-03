@@ -12,7 +12,7 @@ import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
-  number: trackerRef(100),
+  ref: trackerRef(100),
   title: 'A ticket',
   state: 'open',
   body: 'the body',
@@ -62,7 +62,7 @@ describe('requeue feedback — origin-aware placement', () => {
   });
 
   it('keeps a mirrored Task’s prompt pristine and carries feedback in the column', async () => {
-    const [mirrored] = await mirrorScan(tasks, [ticket({ number: trackerRef(100) })], wsId);
+    const [mirrored] = await mirrorScan(tasks, [ticket({ ref: trackerRef(100) })], wsId);
     const derivedPrompt = mirrored!.prompt;
     await tasks.setState(mirrored!.id, 'working');
     await tasks.setState(mirrored!.id, 'escalated');
@@ -74,12 +74,12 @@ describe('requeue feedback — origin-aware placement', () => {
   });
 
   it('mirrored feedback survives a re-poll (upsertMirrored never clears the column)', async () => {
-    const [mirrored] = await mirrorScan(tasks, [ticket({ number: trackerRef(100) })], wsId);
+    const [mirrored] = await mirrorScan(tasks, [ticket({ ref: trackerRef(100) })], wsId);
     await tasks.setState(mirrored!.id, 'working');
     await tasks.setState(mirrored!.id, 'escalated');
     await tasks.requeue(mirrored!.id, 'try harder');
 
-    const [repolled] = await mirrorScan(tasks, [ticket({ number: trackerRef(100) })], wsId);
+    const [repolled] = await mirrorScan(tasks, [ticket({ ref: trackerRef(100) })], wsId);
     expect(repolled!.state).toBe('ready');
     expect(repolled!.feedback).toBe('try harder');
   });

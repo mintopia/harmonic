@@ -94,7 +94,7 @@ describe('the epic and wayfinderMap Triage Labels', () => {
       secrets: { FORGEJO_TOKEN: 'good' },
       triageLabels,
     });
-    return new Map((await adapter.scan()).map((t) => [t.number, t]));
+    return new Map((await adapter.scan()).map((t) => [t.ref, t]));
   };
 
   it('an overridden epic label marks a ticket as an Epic container', async () => {

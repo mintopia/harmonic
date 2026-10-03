@@ -78,18 +78,18 @@ export function localMarkdownAdapter(
     },
 
     async readTicket(ref: TicketRef) {
-      const found = (await synthesise(await parseAll(dir, opts.featureIndex))).find((t) => t.number === ref.number);
-      if (!found) throw new Error(`local-markdown: no ticket #${ref.number} under ${dir}`);
+      const found = (await synthesise(await parseAll(dir, opts.featureIndex))).find((t) => t.ref === ref.ref);
+      if (!found) throw new Error(`local-markdown: no ticket #${ref.ref} under ${dir}`);
       return found;
     },
 
     async claim() {},
     async release() {},
     async close(ticket) {
-      return { changedPaths: [await writeStatus(dir, ticket.number, 'closed', opts.featureIndex)] };
+      return { changedPaths: [await writeStatus(dir, ticket.ref, 'closed', opts.featureIndex)] };
     },
     async reopen(ticket) {
-      return { changedPaths: [await writeStatus(dir, ticket.number, 'open', opts.featureIndex)] };
+      return { changedPaths: [await writeStatus(dir, ticket.ref, 'open', opts.featureIndex)] };
     },
 
   };
@@ -267,7 +267,7 @@ function synthesise(files: Parsed[]): Ticket[] {
   const byId = new Map(files.map((f) => [f.id, f]));
   const ref = (id: number): TicketRef | null => {
     const f = byId.get(id);
-    return f ? { number: trackerRef(f.id), title: f.title, state: f.state } : null;
+    return f ? { ref: trackerRef(f.id), title: f.title, state: f.state } : null;
   };
   const blockedBy = new Map<number, Set<number>>(
     files.map((f) => [f.id, new Set(f.blockedBy.filter((b) => byId.has(b)))]),
@@ -277,7 +277,7 @@ function synthesise(files: Parsed[]): Ticket[] {
   const refs = (ids: Set<number>): TicketRef[] => [...ids].map(ref).filter((r): r is TicketRef => r !== null);
 
   return files.map((f) => ({
-    number: trackerRef(f.id),
+    ref: trackerRef(f.id),
     title: f.title,
     state: f.state,
     body: f.body,

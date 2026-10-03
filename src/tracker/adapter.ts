@@ -21,7 +21,7 @@ export { EPIC_LABEL, MAP_LABEL, compareRefsForDisplay, trackerRef, type TrackerR
 
 /** A directional edge target: the referenced ticket's portable identity + surface state. */
 export interface TicketRef {
-  number: TrackerRef;
+  ref: TrackerRef;
   title: string;
   state: TicketState;
 }
@@ -34,7 +34,7 @@ export interface TicketComment {
 
 /** The tracker-identity fields every tracker record carries; {@link Ticket} and the stored Epic are siblings over this base. */
 export interface TrackerIdentity {
-  number: TrackerRef;
+  ref: TrackerRef;
   title: string;
   state: TicketState;
   labels: string[];
@@ -42,7 +42,7 @@ export interface TrackerIdentity {
   blockedBy: TicketRef[];
 }
 
-/** The tracker-agnostic issue shape; `number` is the portable identity. `parent`/`blockedBy`/`blocking` are always populated and directional. */
+/** The tracker-agnostic issue shape; `ref` is the portable identity. `parent`/`blockedBy`/`blocking` are always populated and directional. */
 export interface Ticket extends TrackerIdentity {
   body: string;
   createdAt: string;

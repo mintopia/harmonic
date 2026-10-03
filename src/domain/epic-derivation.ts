@@ -23,7 +23,7 @@ export interface EpicMemberReadiness {
 }
 
 function isReady(child: Ticket, readinessByRef: ReadonlyMap<TrackerRef, EpicMemberReadiness>): boolean {
-  return child.state === 'open' && readinessByRef.get(child.number)?.agentWorkable === true;
+  return child.state === 'open' && readinessByRef.get(child.ref)?.agentWorkable === true;
 }
 
 interface TicketIndex {
@@ -33,7 +33,7 @@ interface TicketIndex {
 }
 
 function indexTickets(tickets: Ticket[]): TicketIndex {
-  const byRef = new Map(tickets.map((t) => [t.number, t]));
+  const byRef = new Map(tickets.map((t) => [t.ref, t]));
   const containerRefs = new Set(tickets.map((t) => t.parent).filter((p): p is TrackerRef => p != null));
   const childrenOf = new Map<TrackerRef, Ticket[]>();
   for (const t of tickets) {
@@ -51,12 +51,12 @@ function toDerivedEpic(
   readinessByRef: ReadonlyMap<TrackerRef, EpicMemberReadiness>,
 ): DerivedEpic {
   return {
-    ref: epic.number,
+    ref: epic.ref,
     title: epic.title,
     body: epic.body,
     url: epic.url,
-    members: members.map((c) => c.number).sort(compareRefsForDisplay),
-    ready: members.filter((c) => isReady(c, readinessByRef)).map((c) => c.number).sort(compareRefsForDisplay),
+    members: members.map((c) => c.ref).sort(compareRefsForDisplay),
+    ready: members.filter((c) => isReady(c, readinessByRef)).map((c) => c.ref).sort(compareRefsForDisplay),
   };
 }
 
@@ -72,7 +72,7 @@ function leafMostContainers(
     if (!opts.includeClosed && container.state !== 'open') continue;
 
     const children = childrenOf.get(ref) ?? [];
-    if (children.some((c) => containerRefs.has(c.number))) continue;
+    if (children.some((c) => containerRefs.has(c.ref))) continue;
 
     out.push({ container, children });
   }
@@ -118,6 +118,6 @@ export function deriveStoredEpics(tickets: Ticket[]): StoredEpicRecord[] {
       ({ container, children }) =>
         children.length > 0 && (isEpicTypeContainer(container) || container.parent == null),
     )
-    .map(({ container }) => ({ ref: container.number, kind: storedEpicKind(container) }))
+    .map(({ container }) => ({ ref: container.ref, kind: storedEpicKind(container) }))
     .sort((a, b) => compareRefsForDisplay(a.ref, b.ref));
 }

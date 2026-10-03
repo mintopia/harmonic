@@ -93,7 +93,7 @@ const dcSettings = { baseUrl: 'https://jira.acme.test', authMode: 'datacenter', 
 function make(settings: Record<string, unknown>, f: ReturnType<typeof fake>) {
   return jiraKind.create({ settings: jiraKind.settings.parse(settings), secrets: { JIRA_TOKEN: 'tok' }, repoRoot: '/repo', http: f.http }) as WritableTrackerAdapter;
 }
-const ref = (key: string): TicketRef => ({ number: trackerRef(key), title: key, state: 'open' });
+const ref = (key: string): TicketRef => ({ ref: trackerRef(key), title: key, state: 'open' });
 
 describe('jira settings', () => {
   it('cloud requires an email', () => {
@@ -173,7 +173,7 @@ describe('jira scan', () => {
     const [a, b] = await make(cloudSettings, f).scan();
     expect(f.calls).toHaveLength(1);
     expect(a).toMatchObject({
-      number: 'PROJ-1',
+      ref: 'PROJ-1',
       state: 'open',
       body: 'hello',
       assignees: ['J Smith'],
@@ -202,7 +202,7 @@ describe('jira scan', () => {
   it('ignores body tokens that look like keys outside the project', async () => {
     const f = fake({ issues: [issue('PROJ-2', { description: 'Depends on UTF-8 handling and PROJ-1' })] });
     const [t] = await make(dcSettings, f).scan();
-    expect(t!.blockedBy.map((b) => b.number)).toEqual(['PROJ-1']);
+    expect(t!.blockedBy.map((b) => b.ref)).toEqual(['PROJ-1']);
   });
   it('maps native parent, blockedBy and blocking', async () => {
     const f = fake({
@@ -219,8 +219,8 @@ describe('jira scan', () => {
     });
     const [t] = await make(cloudSettings, f).scan();
     expect(t!.parent).toBe('PROJ-1');
-    expect(t!.blockedBy).toEqual([{ number: 'PROJ-3', title: 'three', state: 'closed' }]);
-    expect(t!.blocking).toEqual([{ number: 'PROJ-4', title: 'four', state: 'open' }]);
+    expect(t!.blockedBy).toEqual([{ ref: 'PROJ-3', title: 'three', state: 'closed' }]);
+    expect(t!.blocking).toEqual([{ ref: 'PROJ-4', title: 'four', state: 'open' }]);
   });
   it('adds the epic label for Epic issue types', async () => {
     const f = fake({ issues: [issue('PROJ-1', { issuetype: { name: 'epic' } }), issue('PROJ-2', { issuetype: { name: 'Epic' }, labels: ['epic'] })] });
@@ -240,7 +240,7 @@ describe('jira scan', () => {
     });
     const [, t] = await make(cloudSettings, f).scan();
     expect(t!.parent).toBe('PROJ-1');
-    expect(t!.blockedBy.map((r) => r.number)).toEqual(['PROJ-7', 'PROJ-1', 'PROJ-5']);
+    expect(t!.blockedBy.map((r) => r.ref)).toEqual(['PROJ-7', 'PROJ-1', 'PROJ-5']);
     expect(t!.blockedBy[1]).toMatchObject({ title: 'one', state: 'open' });
   });
 });
@@ -255,7 +255,7 @@ describe('jira readTicket', () => {
       ],
     });
     const t = await make(cloudSettings, f).readTicket(ref('PROJ-1'));
-    expect(t.number).toBe('PROJ-1');
+    expect(t.ref).toBe('PROJ-1');
     expect(t.comments).toEqual([
       { author: 'Ann', body: 'first', createdAt: '2026-01-02T00:00:00Z' },
       { author: 'bob', body: 'second', createdAt: '2026-01-03T00:00:00Z' },

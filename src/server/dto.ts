@@ -451,7 +451,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiTaskListR
     feedback: null,
     continuationChoice: null,
     origin: 'mirrored',
-    trackerRef: ticket.number,
+    trackerRef: ticket.ref,
     workflow: null,
     wayfinderType: null,
     mapRef: null,

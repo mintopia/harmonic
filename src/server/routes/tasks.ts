@@ -415,7 +415,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       const taskRows = await tasksToApi(ctx, await ctx.tasks.listWithDeps(query));
       const needle = query.q?.trim().toLowerCase();
       const epicTickets = query.workspaceId == null ? [] : await ctx.trackerManager.listEpicTickets(query.workspaceId);
-      const epicRefs = new Set(epicTickets.map((ticket) => ticket.number));
+      const epicRefs = new Set(epicTickets.map((ticket) => ticket.ref));
       const nonDriverTaskRows = taskRows.filter((task) => task.trackerRef == null || !epicRefs.has(task.trackerRef));
       const wantEpics =
         epics === 'true' && query.workspaceId != null && filterEmpty(query.state) && filterEmpty(query.harness) && filterEmpty(query.priority);

@@ -160,7 +160,7 @@ export class AutoDrive {
       const adapter = await this.resolveAdapter(task.workingDir, undefined, workspaceTrackerSettings(await this.getWorkspace?.(task.workspaceId)));
       if (!adapter.close) return true;
       const { title } = splitTitleBody(task.prompt);
-      const ref = { number: task.trackerRef, title, state: 'open' as const };
+      const ref = { ref: task.trackerRef, title, state: 'open' as const };
       // Closing an already-closed issue errors on some trackers (`gh issue close`).
       if ((await adapter.readTicket(ref)).state === 'closed') return true;
       let commit: { oid: string; paths: string[] } | null = null;
@@ -197,7 +197,7 @@ export class AutoDrive {
       const oid = await Git.commitPaths(task.workingDir, paths, message);
       if (oid === null) return null;
       logger.info('tracker: committed lifecycle change to base', {
-        'tracker.ref': ref.number,
+        'tracker.ref': ref.ref,
         'tracker.paths': paths.length,
         'repo.dir': task.workingDir,
       });

@@ -21,7 +21,7 @@ import { executionPlumbing, allWorkspaces, makeSettingsStore, waitFor, seedWorks
 const fakeGit = { revParse: async () => 'develop-tip' };
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
-  number: trackerRef(100),
+  ref: trackerRef(100),
   title: 'A ticket',
   state: 'open',
   body: '',
@@ -229,8 +229,8 @@ describe('epic refresh corrective turn (issue #315)', () => {
   }
 
   const epicTickets = (): Ticket[] => [
-    ticket({ number: trackerRef(5), title: 'Resolver epic' }),
-    ticket({ number: trackerRef(6), parent: trackerRef(5) }),
+    ticket({ ref: trackerRef(5), title: 'Resolver epic' }),
+    ticket({ ref: trackerRef(6), parent: trackerRef(5) }),
   ];
 
   /** Mirrors a done, worktree-mode member for Epic 5 onto `workspaceId`, so the

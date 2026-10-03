@@ -77,7 +77,7 @@ function normaliseBase(raw: RawIssue): Omit<Ticket, 'parent' | 'blockedBy' | 'bl
   const labels =
     EPIC_TITLE.test(raw.title) && !rawLabels.includes(EPIC_LABEL) ? [...rawLabels, EPIC_LABEL] : rawLabels;
   return {
-    number: trackerRef(raw.iid), // portable identity = the project-scoped iid, never the global id
+    ref: trackerRef(raw.iid), // portable identity = the project-scoped iid, never the global id
     title: raw.title,
     state: state(raw.state),
     body: raw.description ?? '',
@@ -98,7 +98,7 @@ function synthesise(raws: RawIssue[]): Ticket[] {
   const byId = new Map(parsed.map((p) => [p.raw.iid, p]));
   const mkRef = (iid: number): TicketRef | null => {
     const p = byId.get(iid);
-    return p ? { number: trackerRef(iid), title: p.raw.title, state: state(p.raw.state) } : null;
+    return p ? { ref: trackerRef(iid), title: p.raw.title, state: state(p.raw.state) } : null;
   };
   const blockedBy = new Map<number, Set<number>>(parsed.map((p) => [p.raw.iid, new Set(p.blockedBy)]));
   const blocking = new Map<number, Set<number>>(parsed.map((p) => [p.raw.iid, new Set<number>()]));
@@ -179,9 +179,9 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
     scan: scanAll,
 
     async readTicket(ref: TicketRef) {
-      const found = (await scanAll()).find((t) => t.number === ref.number);
-      if (!found) throw new Error(`GitLab: no issue #${ref.number} in ${config.project}`);
-      const notes = await api<RawNote[]>(`${proj}/issues/${ref.number}/notes?per_page=100&sort=asc`);
+      const found = (await scanAll()).find((t) => t.ref === ref.ref);
+      if (!found) throw new Error(`GitLab: no issue #${ref.ref} in ${config.project}`);
+      const notes = await api<RawNote[]>(`${proj}/issues/${ref.ref}/notes?per_page=100&sort=asc`);
       return {
         ...found,
         comments: notes
@@ -192,26 +192,26 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
 
     async claim(ticket: TicketRef) {
       const uid = (await ensureMe()).id;
-      await reassign(Number(ticket.number), (ids) => ids.add(uid));
+      await reassign(Number(ticket.ref), (ids) => ids.add(uid));
     },
 
     async release(ticket: TicketRef) {
       const uid = (await ensureMe()).id;
-      await reassign(Number(ticket.number), (ids) => ids.delete(uid));
+      await reassign(Number(ticket.ref), (ids) => ids.delete(uid));
     },
 
     async close(ticket: TicketRef, comment: string) {
       if (comment) {
-        await api(`${proj}/issues/${ticket.number}/notes?body=${encodeURIComponent(comment)}`, 'POST');
+        await api(`${proj}/issues/${ticket.ref}/notes?body=${encodeURIComponent(comment)}`, 'POST');
       }
-      await api(`${proj}/issues/${ticket.number}?state_event=close`, 'PUT');
+      await api(`${proj}/issues/${ticket.ref}?state_event=close`, 'PUT');
     },
 
     async reopen(ticket: TicketRef, comment: string) {
       if (comment) {
-        await api(`${proj}/issues/${ticket.number}/notes?body=${encodeURIComponent(comment)}`, 'POST');
+        await api(`${proj}/issues/${ticket.ref}/notes?body=${encodeURIComponent(comment)}`, 'POST');
       }
-      await api(`${proj}/issues/${ticket.number}?state_event=reopen`, 'PUT');
+      await api(`${proj}/issues/${ticket.ref}?state_event=reopen`, 'PUT');
     },
   };
 }

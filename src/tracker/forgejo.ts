@@ -91,7 +91,7 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
   const toBase = (raw: RawIssue): Omit<Ticket, 'parent' | 'blockedBy' | 'blocking'> => {
     const labels = (raw.labels ?? []).map((l) => l.name);
     return {
-      number: trackerRef(raw.number),
+      ref: trackerRef(raw.number),
       title: raw.title,
       state: state(raw.state),
       body: raw.body ?? '',
@@ -163,7 +163,7 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
     await forEachYielding(
       raws.filter((i) => i.state !== 'closed'),
       async (i) => {
-        native.set(i.number, (await nativeBlockedBy(i.number)).map((d) => ({ number: trackerRef(d.number), title: d.title, state: state(d.state) })));
+        native.set(i.number, (await nativeBlockedBy(i.number)).map((d) => ({ ref: trackerRef(d.number), title: d.title, state: state(d.state) })));
       },
     );
 
@@ -173,13 +173,13 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
     });
     const refOf = (n: TrackerRef): TicketRef => {
       const found = byNumber.get(n);
-      return { number: n, title: found?.title ?? '', state: found ? state(found.state) : 'open' };
+      return { ref: n, title: found?.title ?? '', state: found ? state(found.state) : 'open' };
     };
     const blockedByMap = new Map<TrackerRef, TicketRef[]>();
     await forEachYielding(raws, (i) => {
       const self = trackerRef(i.number);
-      const nativeRefs = (native.get(i.number) ?? []).map((r) => refOf(r.number));
-      const seen = new Set(nativeRefs.map((r) => r.number));
+      const nativeRefs = (native.get(i.number) ?? []).map((r) => refOf(r.ref));
+      const seen = new Set(nativeRefs.map((r) => r.ref));
       const fromBody = parseBlockedByLines(i.body ?? '')
         .map(trackerRef)
         .filter((n) => n !== self && !seen.has(n))
@@ -189,10 +189,10 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
     const blockingMap = new Map<TrackerRef, TicketRef[]>();
     await forEachYielding(raws, (i) => {
       const self = refOf(trackerRef(i.number));
-      for (const b of blockedByMap.get(self.number) ?? []) {
-        const list = blockingMap.get(b.number) ?? [];
+      for (const b of blockedByMap.get(self.ref) ?? []) {
+        const list = blockingMap.get(b.ref) ?? [];
         list.push(self);
-        blockingMap.set(b.number, list);
+        blockingMap.set(b.ref, list);
       }
     });
 
@@ -209,7 +209,7 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
     });
     for (const c of held) {
       tickets.push({
-        number: containerRef(c.raw.id),
+        ref: containerRef(c.raw.id),
         title: c.raw.title,
         state: 'open',
         body: c.raw.description ?? '',
@@ -233,24 +233,24 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
   };
 
   const setIssueState = async (ticket: TicketRef, body: string, next: TicketState): Promise<void> => {
-    const container = parseContainerRef(ticket.number);
+    const container = parseContainerRef(ticket.ref);
     if (container) {
       await client.send('PATCH', `${repo}/milestones/${container.id}`, { state: next });
       return;
     }
-    const current = await client.request('GET', `${repo}/issues/${ticket.number}`, issueSchema);
+    const current = await client.request('GET', `${repo}/issues/${ticket.ref}`, issueSchema);
     if (state(current.state) === next) return;
-    await client.send('PATCH', `${repo}/issues/${ticket.number}`, { state: next });
-    await comment(ticket.number, body);
+    await client.send('PATCH', `${repo}/issues/${ticket.ref}`, { state: next });
+    await comment(ticket.ref, body);
   };
 
   const reassign = async (ticket: TicketRef, mutate: (logins: Set<string>, me: string) => void): Promise<void> => {
-    if (parseContainerRef(ticket.number)) return;
+    if (parseContainerRef(ticket.ref)) return;
     const login = await ensureMe();
-    const current = await client.request('GET', `${repo}/issues/${ticket.number}`, issueSchema);
+    const current = await client.request('GET', `${repo}/issues/${ticket.ref}`, issueSchema);
     const logins = new Set((current.assignees ?? []).map((a) => a.login));
     mutate(logins, login);
-    await client.send('PATCH', `${repo}/issues/${ticket.number}`, { assignees: [...logins] });
+    await client.send('PATCH', `${repo}/issues/${ticket.ref}`, { assignees: [...logins] });
   };
 
   return {
@@ -261,21 +261,21 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
     identify: ensureMe,
 
     async readTicket(ref: TicketRef) {
-      if (parseContainerRef(ref.number)) {
-        const found = (await scanAll()).find((t) => t.number === ref.number);
-        if (!found) throw new Error(`Forgejo: no issue ${ref.number} in ${settings.repo}`);
+      if (parseContainerRef(ref.ref)) {
+        const found = (await scanAll()).find((t) => t.ref === ref.ref);
+        if (!found) throw new Error(`Forgejo: no issue ${ref.ref} in ${settings.repo}`);
         return found;
       }
       let raw: RawIssue;
       try {
-        raw = await client.request('GET', `${repo}/issues/${ref.number}`, issueSchema);
+        raw = await client.request('GET', `${repo}/issues/${ref.ref}`, issueSchema);
       } catch (err) {
-        if (err instanceof RestError && err.status === 404) throw new Error(`Forgejo: no issue ${ref.number} in ${settings.repo}`);
+        if (err instanceof RestError && err.status === 404) throw new Error(`Forgejo: no issue ${ref.ref} in ${settings.repo}`);
         throw err;
       }
       const self = trackerRef(raw.number);
       const open = raw.state !== 'closed';
-      const toRef = (d: RawIssue): TicketRef => ({ number: trackerRef(d.number), title: d.title, state: state(d.state) });
+      const toRef = (d: RawIssue): TicketRef => ({ ref: trackerRef(d.number), title: d.title, state: state(d.state) });
       const [nativeBlockers, nativeBlocking, notes, parent] = await Promise.all([
         open ? nativeBlockedBy(raw.number) : [],
         open ? nativeBlocks(raw.number) : [],
@@ -291,7 +291,7 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
           try {
             return toRef(await client.request('GET', `${repo}/issues/${n}`, issueSchema));
           } catch (err) {
-            if (err instanceof RestError && err.status === 404) return { number: n, title: '', state: 'open' };
+            if (err instanceof RestError && err.status === 404) return { ref: n, title: '', state: 'open' };
             throw err;
           }
         }),

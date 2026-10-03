@@ -616,8 +616,8 @@ describe('epic-routes', () => {
   });
 
   describe('epic-close', () => {
-    const ticket = (over: Partial<Ticket> & Pick<Ticket, 'number'>): Ticket => ({
-      title: `epic ${over.number}`,
+    const ticket = (over: Partial<Ticket> & Pick<Ticket, 'ref'>): Ticket => ({
+      title: `epic ${over.ref}`,
       state: 'open',
       body: '',
       createdAt: '2026-09-01T00:00:00Z',
@@ -629,12 +629,12 @@ describe('epic-routes', () => {
       blocking: [],
       comments: [],
       isMap: false,
-      url: `https://x/${over.number}`,
+      url: `https://x/${over.ref}`,
       ...over,
     });
 
     const writable = (state: Ticket['state'] = 'open') => {
-      const readTicket = vi.fn(async (r: TicketRef) => ticket({ number: r.number, state }));
+      const readTicket = vi.fn(async (r: TicketRef) => ticket({ ref: r.ref, state }));
       const close = vi.fn(async (_r: TicketRef, _comment: string) => {});
       const adapter = { name: 'stub', readTicket, close } as unknown as TrackerAdapter;
       return { adapter, readTicket, close };
@@ -645,7 +645,7 @@ describe('epic-routes', () => {
         const { adapter, close } = writable('open');
         await closeIntegratedEpic(adapter, trackerRef(42));
         expect(close).toHaveBeenCalledTimes(1);
-        expect(close).toHaveBeenCalledWith({ number: '42', title: '', state: 'open' }, expect.any(String));
+        expect(close).toHaveBeenCalledWith({ ref: '42', title: '', state: 'open' }, expect.any(String));
       });
 
       it('is idempotent: an already-closed issue is not re-closed', async () => {
@@ -656,7 +656,7 @@ describe('epic-routes', () => {
       });
 
       it('is a best-effort no-op on an inbound-only tracker (no close capability)', async () => {
-        const readTicket = vi.fn(async (r: TicketRef) => ticket({ number: r.number }));
+        const readTicket = vi.fn(async (r: TicketRef) => ticket({ ref: r.ref }));
         const adapter = { name: 'freeform', readTicket } as unknown as TrackerAdapter;
         await expect(closeIntegratedEpic(adapter, trackerRef(42))).resolves.toBeUndefined();
         expect(readTicket).not.toHaveBeenCalled();
