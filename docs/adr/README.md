@@ -29,7 +29,7 @@ Attempts without timing measurements retain the documented wall-clock fallback.
 | Merge placement and publication | 0001 | 0039 administrative worktrees and base synchronization; 0040 reconciliation and atomic publication |
 | Epics | 0004, 0015, 0016 | 0017 summary page; 0018 stored identity; 0023 structural roots; 0028 Epic Attempts; 0039 all-direct completion |
 | Verification | 0003 | 0028 stage lists; 0031 ordering; 0037 additive overlays; 0038 Step overrides; 0039 post-merge checkout |
-| Configuration and harnesses | 0009 | 0022 baseline/global/workspace layering; 0025 OpenCode; 0036 unattended permission modes; 0037 verifier overlays |
+| Configuration and harnesses | 0009 | 0022 baseline/global/workspace layering; 0025 OpenCode; 0036 unattended permission modes; 0037 verifier overlays; 0046 tracker selection, Code Repository, Secrets |
 | Conversations and navigation | 0006, 0011 | 0026 read-only Activity; 0029 transcript view; 0033 scoped routes; 0035 eager command discovery |
 | Persistence and evidence | 0007, 0008 | 0014 fleet Stats; 0042 managed-upgrade snapshots; 0044 Task Archives and Exports |
 | Distribution and operation | 0010, 0012 | 0013 releases; 0024 worktree controls; 0030 updates; 0034 services; 0041 atomic installs; 0042 install modes and rollback; 0043 toolchain |
@@ -92,6 +92,7 @@ is historical and retains the terminology used at the reset.
 | 0043 | [Supported Node and npm versions](0043-supported-node-and-npm-versions.md) |
 | 0044 | [Every Task keeps a file Archive, exported on terminal disposition](0044-task-archive-and-export.md) |
 | 0045 | [Agent Messages travel over Harmonic's MCP server with A2A-shaped payloads](0045-agent-messages-over-mcp-with-a2a-shaped-payloads.md) (proposed) |
+| 0046 | [Tracker selection, Code Repository, and Secrets](0046-tracker-selection-code-repository-and-secrets.md) (proposed) |
 
 ## Where every pre-reset ADR went
 

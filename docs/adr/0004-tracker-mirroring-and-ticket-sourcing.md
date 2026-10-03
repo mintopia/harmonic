@@ -167,6 +167,18 @@ with no working tree.
   lifecycle pushes remain output side effects. The administrative-checkout
   and base-sync rules in ADR-0039/0040 apply to this path too.
 
+## Amendment (2026-10-03): tracker resolution precedence and Code Repository
+
+Status: proposed — amends the "declared by the repo, never auto-detected"
+resolution clause above. See ADR-0046.
+
+- The Resolved Tracker is chosen by precedence: Configured Tracker (Workspace
+  setting) → Detected Tracker (`docs/agents/issue-tracker.md`) → the Code
+  Repository when it is also an issue tracker → none.
+- Opening a PR is a Code Repository operation, not a tracker operation.
+- Tracker refs are opaque tracker-scoped strings; capability gating reads the
+  kind's declared capability set rather than optional methods.
+
 ## Absorbed at the reset
 
 Pre-reset 0030 in full (derivation, claim, scheduling, priority, status,
