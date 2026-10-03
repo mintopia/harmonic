@@ -436,7 +436,6 @@ export function toListRow({ prompt: _prompt, ...row }: ApiTask): ApiTaskListRow 
 export function epicToListRow(ticket: Ticket, workspaceId: number): ApiTaskListRow {
   const created = Date.parse(ticket.createdAt) || 0;
   return {
-    // An Epic row has no Task id; the opaque tracker ref is carried in trackerRef.
     id: 0,
     workspaceId,
     harness: '',
