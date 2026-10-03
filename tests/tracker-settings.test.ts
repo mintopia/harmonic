@@ -25,6 +25,13 @@ const kinds: TrackerKindInfo[] = [
     },
     capabilities: {},
   },
+  {
+    id: 'jira',
+    label: 'Jira',
+    secretNames: ['JIRA_TOKEN'],
+    settingsSchema: { type: 'object', properties: { baseUrl: { type: 'string', title: 'Base URL' } }, required: ['baseUrl'] },
+    capabilities: {},
+  },
 ];
 
 function stubApi(opts: { secretSet?: boolean; verify?: VerifyResult } = {}) {
@@ -101,6 +108,17 @@ describe('Issue tracker section', () => {
     expect(host.querySelector<HTMLInputElement>('#workspace-tracker-setting-host')!.value).toBe('https://git.example.com');
     expect(host.querySelector('#workspace-tracker-setting-authMode')).not.toBeNull();
     expect(host.textContent).toContain('Resolved: Forgejo via Configured');
+  });
+
+  it('warns, without blocking, when a tracker base URL is not HTTPS', async () => {
+    stubApi();
+    const jira = (baseUrl: string) =>
+      makeWorkspace({ id: 3, trackerEnabled: true, configuredTracker: { kind: 'jira', settings: { baseUrl } } });
+    const insecure = await mountComponent(createElement(Harness, { initial: jira('http://jira.internal'), Section: IssueTrackerSection }));
+    expect(insecure.querySelector('[role=alert]')?.textContent).toContain('not HTTPS');
+    await cleanup();
+    const secure = await mountComponent(createElement(Harness, { initial: jira('https://jira.example.com'), Section: IssueTrackerSection }));
+    expect(secure.querySelector('[role=alert]')).toBeNull();
   });
 
   it('selecting Inherit clears the Configured Tracker', async () => {

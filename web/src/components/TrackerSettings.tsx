@@ -256,6 +256,7 @@ function SchemaField({
   const label = property.title ?? humanizeKey(name);
   const types = Array.isArray(property.type) ? property.type : property.type ? [property.type] : [];
   const description = property.description ? <p className="mt-1 text-small text-muted">{property.description}</p> : null;
+  const cleartext = name === 'baseUrl' && typeof value === 'string' && /^http:\/\//i.test(value.trim());
   const labelNode = (
     <label className={fieldLabel} htmlFor={id}>
       {label}
@@ -312,6 +313,11 @@ function SchemaField({
           onChange(raw === '' ? undefined : numeric ? Number(raw) : raw);
         }}
       />
+      {cleartext && (
+        <p role="alert" className="mt-1 text-small text-amber">
+          This address is not HTTPS, so your token and requests travel unencrypted. Use it only on a network you trust.
+        </p>
+      )}
       {description}
     </div>
   );
