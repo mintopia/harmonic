@@ -179,7 +179,9 @@ Detected Tracker, else the Code Repository when it is also an issue tracker
 (GitHub, GitLab, Forgejo), else none. Surfaced read-only on the Workspace
 together with which source won, so the operator can see what will be
 mirrored, or why nothing can be (nothing configured, detected, or inferable;
-an unsupported name; an unreachable host). A resolution failure stops the
+an unsupported name; an unreachable host). The API's `resolvedTracker` reports
+the kind and the winning source (`configured`, `detected`, or
+`code-repository`). A resolution failure stops the
 poll loop from starting rather than erroring every cycle.
 _Avoid_: tracker type, provider
 
@@ -187,8 +189,10 @@ _Avoid_: tracker type, provider
 The label strings a Resolved Tracker uses for the roles Harmonic acts on —
 agent-ready, human-only, epic, wayfinder map. Resolved per Workspace in the
 same precedence shape as the tracker: the Workspace's explicit label settings,
-else the repo's `docs/agents/triage-labels.md` role table, else the instance
-defaults (`ready-for-agent`, `ready-for-human`, `epic`, `wayfinder:map`).
+else the repo's `docs/agents/triage-labels.md` role table (canonical label in
+column one, this tracker's label in column two), else the instance defaults
+(`ready-for-agent`, `ready-for-human`, `epic`, `wayfinder:map`). Each role
+resolves independently.
 _Avoid_: hard-coded labels, label names
 
 **Secret**:

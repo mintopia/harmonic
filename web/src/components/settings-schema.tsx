@@ -855,7 +855,7 @@ function ResolvedTrackerValue({ workspace }: { workspace: Workspace }) {
     );
   }
   if (resolved.ok) {
-    return <p className="pt-1 font-medium text-ink">{resolved.label}</p>;
+    return <p className="pt-1 font-medium text-ink">{resolved.label} <span className="font-normal text-muted">({resolved.source})</span></p>;
   }
   const friendly = (resolved.code && RESOLVE_FAILURE_LABEL[resolved.code]) ?? 'Cannot resolve tracker';
   return (

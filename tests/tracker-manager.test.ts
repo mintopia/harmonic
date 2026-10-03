@@ -397,7 +397,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   it('caches the Resolved Tracker for a tracker-enabled Workspace (issue #83)', async () => {
     const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
-    expect(manager.resolvedTracker(a.id)).toEqual({ ok: true, name: 'stub', label: 'stub' });
+    expect(manager.resolvedTracker(a.id)).toEqual({ ok: true, name: 'stub', label: 'stub', source: 'detected' });
     const off = (await workspaces.list()).find((w) => w.id !== a.id)!;
     expect(manager.resolvedTracker(off.id)).toBeNull();
   });

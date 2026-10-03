@@ -354,6 +354,9 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       exportS3SecretAccessKey: null,
       exportRedactPatterns: null,
       exportIncludeStates: null,
+      configuredTracker: null,
+      codeRepository: null,
+      triageLabels: null,
       archiveRetentionDays: null,
       archiveRetentionMaxTotalMB: null,
     });

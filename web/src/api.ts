@@ -244,6 +244,9 @@ export const api = {
       exportS3SecretAccessKey?: string | null;
       exportRedactPatterns?: { id: string; regex: string }[] | null;
       exportIncludeStates?: ExportState[] | null;
+      configuredTracker?: Workspace['configuredTracker'];
+      codeRepository?: Workspace['codeRepository'];
+      triageLabels?: Workspace['triageLabels'];
       archiveRetentionDays?: number | null;
       archiveRetentionMaxTotalMB?: number | null;
       toolTimeoutMinutes?: number | null;

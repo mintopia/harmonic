@@ -289,6 +289,27 @@ export const settingsRegistry = {
     label: 'Dispositions to export',
     help: 'Which terminal dispositions (done, cancelled, deleted) trigger an Export; inherits the global list when unset.',
   },
+  configuredTracker: {
+    scope: 'overridable',
+    control: 'json',
+    tab: 'integrations',
+    label: 'Configured Tracker',
+    help: 'Explicit issue tracker as { kind, settings }; wins over the repo\'s issue-tracker declaration. Unset uses the declaration, then the code repository.',
+  },
+  codeRepository: {
+    scope: 'overridable',
+    control: 'select',
+    tab: 'integrations',
+    label: 'Code Repository',
+    help: 'The forge hosting this Workspace\'s code (github, gitlab or forgejo); unset detects it from the git remote.',
+  },
+  triageLabels: {
+    scope: 'overridable',
+    control: 'json',
+    tab: 'integrations',
+    label: 'Triage Labels',
+    help: 'Label names per role (readyForAgent, readyForHuman, epic, wayfinderMap); unset roles use the repo\'s role table, then the defaults.',
+  },
   archiveRetentionDays: {
     scope: 'overridable',
     control: 'number',

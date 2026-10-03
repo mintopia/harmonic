@@ -128,8 +128,25 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     expect(declared.status).toBe(201);
     expect(declared.body.resolvedTracker).toMatchObject({ ok: true, label: 'GitHub' });
 
+    expect(declared.body.resolvedTracker).toMatchObject({ kind: 'github', source: 'detected' });
+
     const fetched = await server.api('GET', `/api/workspaces/${declared.body.id}`);
-    expect(fetched.body.resolvedTracker).toMatchObject({ ok: true, label: 'GitHub' });
+    expect(fetched.body.resolvedTracker).toMatchObject({ ok: true, label: 'GitHub', kind: 'github', source: 'detected' });
+    expect(undeclared.body.resolvedTracker).toMatchObject({ kind: null, source: null });
+
+    const configured = await server.api('PATCH', `/api/workspaces/${declared.body.id}`, { configuredTracker: { kind: 'github' } });
+    expect(configured.status).toBe(200);
+    expect(configured.body.configuredTracker).toEqual({ kind: 'github' });
+    expect(configured.body.resolvedTracker).toMatchObject({ ok: true, kind: 'github', source: 'configured' });
+
+    const bad = await server.api('PATCH', `/api/workspaces/${declared.body.id}`, { configuredTracker: { kind: 'nope' } });
+    expect(bad.status).toBe(400);
+    const badRepo = await server.api('PATCH', `/api/workspaces/${declared.body.id}`, { codeRepository: 'bitbucket' });
+    expect(badRepo.status).toBe(400);
+
+    const cleared = await server.api('PATCH', `/api/workspaces/${declared.body.id}`, { configuredTracker: null });
+    expect(cleared.body.configuredTracker).toBeNull();
+    expect(cleared.body.resolvedTracker).toMatchObject({ source: 'detected' });
 
     rmSync(bare, { recursive: true, force: true });
     rmSync(repo, { recursive: true, force: true });

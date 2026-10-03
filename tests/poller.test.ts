@@ -184,7 +184,7 @@ describe('TrackerPoller.poll', () => {
     );
 
     await poller.poll();
-    expect(reported.at(-1)).toEqual({ ok: true, name: 'stub', label: 'stub' });
+    expect(reported.at(-1)).toEqual({ ok: true, name: 'stub', label: 'stub', source: 'detected' });
 
     broken = true;
     await expect(poller.poll()).rejects.toThrow(/declaration vanished/);
