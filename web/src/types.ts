@@ -224,11 +224,19 @@ export interface AgentMessageThreadParticipant {
   harness: string | null;
   epicId: number | null;
   deleted: boolean;
+  model: string | null;
+  state: TaskState | null;
+  betweenAttempts: boolean;
+  attemptNumber: number | null;
+  sends: number;
+  sendCap: number;
+  lastMessageAt: number | null;
 }
 
 export interface AgentMessageThread {
   threadId: string;
   workspaceId: number;
+  workspaceName: string;
   latestAt: number;
   live: boolean;
   messages: AgentMessage[];

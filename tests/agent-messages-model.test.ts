@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   NO_THREAD_FILTER,
+  agentCards,
+  epicKey,
+  resolveActivityTab,
+  showWorkspaceBadge,
+  workspaceOptions,
   bodyParts,
   countLine,
   epicOptions,
@@ -20,7 +25,7 @@ const NOW = new Date(2026, 9, 3, 15, 0, 0).getTime();
 const at = (h: number, m: number, s = 0, day = 3) => new Date(2026, 9, day, h, m, s).getTime();
 
 function participant(taskId: number, over: Partial<AgentMessageThreadParticipant> = {}): AgentMessageThreadParticipant {
-  return { taskId, title: `Task ${taskId}`, harness: 'claude', epicId: 400, deleted: false, ...over };
+  return { taskId, title: `Task ${taskId}`, harness: 'claude', epicId: 400, deleted: false, model: null, state: 'working', betweenAttempts: false, attemptNumber: 1, sends: 0, sendCap: 10, lastMessageAt: null, ...over };
 }
 
 function message(id: string, sender: number, createdAt: number, over: Partial<AgentMessage> = {}): AgentMessage {
@@ -45,6 +50,7 @@ function thread(id: string, over: Partial<AgentMessageThread> = {}): AgentMessag
   return {
     threadId: id,
     workspaceId: 1,
+    workspaceName: 'Harmonic',
     latestAt: messages.at(-1)?.createdAt ?? 0,
     live: false,
     messages,
@@ -81,11 +87,11 @@ describe('filterThreads', () => {
   });
 
   it('combines filters', () => {
-    expect(filterThreads(all, { epicId: 400, taskId: 2, liveOnly: true, query: 'text' }).map((t) => t.threadId)).toEqual(['a']);
+    expect(filterThreads(all, { workspaceId: null, epicId: 400, taskId: 2, liveOnly: true, query: 'text' }).map((t) => t.threadId)).toEqual(['a']);
   });
 
   it('derives Epic and Task options', () => {
-    expect(epicOptions(all)).toEqual([400, 500]);
+    expect(epicOptions(all).map((o) => o.epicId)).toEqual([400, 500]);
     expect(taskOptions(all, 500).map((t) => t.taskId)).toEqual([3, 4]);
     expect(taskOptions([thread('d', { participants: [participant(1), participant(9, { deleted: true, title: null })] })], null).map((t) => t.taskId)).toEqual([1]);
   });
@@ -224,5 +230,79 @@ describe('bodyParts', () => {
       { code: false, value: ' now' },
     ]);
     expect(bodyParts('no code ` here')).toEqual([{ code: false, value: 'no code ` here' }]);
+  });
+});
+
+describe('Global scope', () => {
+  const harmonic = thread('h', { latestAt: 300, participants: [participant(1, { epicId: 400 }), participant(2, { epicId: 400 })] });
+  const other = thread('o', { workspaceId: 2, workspaceName: 'Atlas', latestAt: 200, participants: [participant(1, { epicId: 400 }), participant(7, { epicId: 9 })] });
+  const both = [harmonic, other];
+
+  it('aggregates Threads from both Workspaces newest first', () => {
+    expect(filterThreads(both, NO_THREAD_FILTER).map((t) => [t.threadId, t.workspaceName])).toEqual([
+      ['h', 'Harmonic'],
+      ['o', 'Atlas'],
+    ]);
+  });
+
+  it('lists Workspaces by name and badges rows only at Global with All Workspaces', () => {
+    expect(workspaceOptions(both)).toEqual([
+      { id: 2, name: 'Atlas' },
+      { id: 1, name: 'Harmonic' },
+    ]);
+    expect(showWorkspaceBadge(true, { workspaceId: null })).toBe(true);
+    expect(showWorkspaceBadge(true, { workspaceId: 2 })).toBe(false);
+    expect(showWorkspaceBadge(false, { workspaceId: null })).toBe(false);
+  });
+
+  it('a Workspace filter hides the other Workspace Threads', () => {
+    expect(filterThreads(both, { ...NO_THREAD_FILTER, workspaceId: 2 }).map((t) => t.threadId)).toEqual(['o']);
+    expect(filterThreads(both, { ...NO_THREAD_FILTER, workspaceId: 1 }).map((t) => t.threadId)).toEqual(['h']);
+  });
+
+  it('keys Epic options by Workspace, prefixing the name only when asked', () => {
+    expect(epicOptions(both, null, true).map((o) => [o.key, o.label])).toEqual([
+      [epicKey(2, 9), 'Atlas · Epic #9'],
+      [epicKey(2, 400), 'Atlas · Epic #400'],
+      [epicKey(1, 400), 'Harmonic · Epic #400'],
+    ]);
+    expect(epicOptions(both, 2).map((o) => o.label)).toEqual(['Epic #9', 'Epic #400']);
+    expect(taskOptions(both, null, 2).map((t) => t.taskId)).toEqual([1, 7]);
+    expect(taskOptions(both, null, 1).map((t) => t.taskId)).toEqual([1, 2]);
+  });
+});
+
+describe('resolveActivityTab', () => {
+  it('only offers the messages tab where Agent Messages are on', () => {
+    expect(resolveActivityTab('messages', true)).toBe('messages');
+    expect(resolveActivityTab('messages', false)).toBe('running');
+    expect(resolveActivityTab('running', false)).toBe('running');
+  });
+});
+
+describe('agentCards', () => {
+  it('marks the cap rose only at sends >= cap and carries the meter ratio', () => {
+    const t = thread('x', { participants: [participant(1, { sends: 7, sendCap: 10 }), participant(2, { sends: 10, sendCap: 10 }), participant(3, { sends: 12, sendCap: 10 })] });
+    const [under, at_cap, over] = agentCards(t, NOW);
+    expect([under!.sendsCount, under!.sendsRatio, under!.atCap]).toEqual(['7/10', 0.7, false]);
+    expect([at_cap!.sendsRatio, at_cap!.atCap]).toEqual([1, true]);
+    expect([over!.sendsRatio, over!.atCap]).toEqual([1, true]);
+  });
+
+  it('describes state, between Attempts, Attempt number and last message', () => {
+    const t = thread('x', {
+      participants: [
+        participant(1, { model: 'sonnet-5.5', betweenAttempts: true, attemptNumber: 3, lastMessageAt: NOW - 5 * 60_000 }),
+        participant(2, { state: 'done' }),
+      ],
+    });
+    const [a, b] = agentCards(t, NOW);
+    expect(a).toMatchObject({ state: 'working', betweenAttempts: true, attemptLabel: 'Attempt 3', model: 'sonnet-5.5', lastMessage: '5m ago', identity: 1, harnessLabel: 'Claude' });
+    expect(b).toMatchObject({ state: 'done', betweenAttempts: false, lastMessage: 'none sent', identity: 2 });
+  });
+
+  it('keeps a deleted participant as a muted card', () => {
+    const t = thread('x', { participants: [participant(9, { deleted: true, title: null, harness: null, state: null, attemptNumber: null })] });
+    expect(agentCards(t, NOW)[0]).toMatchObject({ deleted: true, title: 'deleted Task', state: null, attemptLabel: null });
   });
 });

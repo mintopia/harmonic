@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { taskDisplayTitle } from './task-title.js';
-import { agentMessages, attempts, tasks, type AgentMessageRecipient, type AgentMessageRow } from '../db/schema.js';
+import { agentMessages, attempts, tasks, type TaskState, type AgentMessageRecipient, type AgentMessageRow } from '../db/schema.js';
 
 export interface NewAgentMessage {
   workspaceId: number;
@@ -33,11 +33,22 @@ export interface AgentMessageThreadParticipant {
   harness: string | null;
   epicId: number | null;
   deleted: boolean;
+  model: string | null;
+  state: TaskState | null;
+  /** Working with no running Attempt (a muted sub-label of Working). */
+  betweenAttempts: boolean;
+  attemptNumber: number | null;
+  /** Messages the latest Attempt has sent, derived like `countForAttempt`. */
+  sends: number;
+  sendCap: number;
+  /** Newest message this Task sent in the Thread. */
+  lastMessageAt: number | null;
 }
 
 export interface AgentMessageThread {
   threadId: string;
   workspaceId: number;
+  workspaceName: string;
   latestAt: number;
   live: boolean;
   messages: PresentedAgentMessage[];
@@ -46,6 +57,8 @@ export interface AgentMessageThread {
 
 export interface ThreadQuery {
   workspaceIds: readonly number[];
+  /** Display name and resolved send cap per Workspace id. */
+  workspaceInfo: ReadonlyMap<number, { name: string; sendCap: number }>;
   epicId?: number | undefined;
   taskId?: number | undefined;
   live?: boolean | undefined;
@@ -174,10 +187,18 @@ export class AgentMessageStore {
     );
     const messages = await this.present(rows);
     const taskIds = [...new Set(rows.flatMap((r) => [r.senderTaskId, ...r.recipients.map((x) => x.taskId)]))];
-    const [taskRows, runningRows] = await this.db.read(async (db) => [
-      await db.select({ id: tasks.id, harness: tasks.harness, trackerParent: tasks.trackerParent, trackerTitle: tasks.trackerTitle, prompt: tasks.prompt }).from(tasks).where(inArray(tasks.id, taskIds)).all(),
+    const [taskRows, runningRows, attemptRows] = await this.db.read(async (db) => [
+      await db.select({ id: tasks.id, model: tasks.model, state: tasks.state, workspaceId: tasks.workspaceId, harness: tasks.harness, trackerParent: tasks.trackerParent, trackerTitle: tasks.trackerTitle, prompt: tasks.prompt }).from(tasks).where(inArray(tasks.id, taskIds)).all(),
       await db.select({ taskId: attempts.taskId }).from(attempts).where(and(inArray(attempts.taskId, taskIds), eq(attempts.state, 'running'))).all(),
+      await db
+        .select({ id: attempts.id, taskId: attempts.taskId, number: attempts.number, sends: sql<number>`(select count(*) from agent_messages am where am.sender_attempt_id = attempts.id)` })
+        .from(attempts)
+        .where(and(inArray(attempts.taskId, taskIds), sql`attempts.number = (select max(la.number) from attempts la where la.task_id = attempts.task_id)`))
+        .all(),
     ] as const);
+    const latestAttempt = new Map(attemptRows.map((a) => [a.taskId, a]));
+    const lastSent = new Map<string, number>();
+    for (const r of rows) lastSent.set(`${r.threadId}:${r.senderTaskId}`, r.createdAt);
     const taskById = new Map(taskRows.map((t) => [t.id, t]));
     const running = new Set(runningRows.map((r) => r.taskId));
 
@@ -190,6 +211,7 @@ export class AgentMessageStore {
     const threads = page.map((threadId): AgentMessageThread => {
       const thread = byThread.get(threadId) ?? [];
       const seen = new Set<number>();
+      const threadWorkspace = thread[0]?.workspaceId ?? 0;
       const participants: AgentMessageThreadParticipant[] = [];
       for (const m of thread) {
         for (const id of [m.senderTaskId, ...m.recipients.map((r) => r.taskId)]) {
@@ -202,12 +224,20 @@ export class AgentMessageStore {
             harness: t?.harness ?? null,
             epicId: t?.trackerParent ?? null,
             deleted: t === undefined,
+            model: t?.model ?? null,
+            state: t?.state ?? null,
+            betweenAttempts: t !== undefined && t.state === 'working' && !running.has(id),
+            attemptNumber: latestAttempt.get(id)?.number ?? null,
+            sends: latestAttempt.get(id)?.sends ?? 0,
+            sendCap: query.workspaceInfo.get(t?.workspaceId ?? threadWorkspace)?.sendCap ?? 0,
+            lastMessageAt: lastSent.get(`${threadId}:${id}`) ?? null,
           });
         }
       }
       return {
         threadId,
-        workspaceId: thread[0]?.workspaceId ?? 0,
+        workspaceId: threadWorkspace,
+        workspaceName: query.workspaceInfo.get(threadWorkspace)?.name ?? '',
         latestAt: thread.at(-1)?.createdAt ?? 0,
         live: participants.some((p) => running.has(p.taskId)),
         messages: thread,

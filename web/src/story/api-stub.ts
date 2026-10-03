@@ -261,7 +261,10 @@ export const api: typeof RealApi = {
   markAllNotificationsRead: (_workspaceId?: number) => ok({ updated: 0 }),
   stats: (_from: number, _to: number, _workspaceId?: number) => ok(dashboardStats),
   activity: () => ok({ processes: activityProcesses, agentMessagesEnabledInAnyWorkspace: true }),
-  agentMessageThreads: () => ok({ threads: agentMessageThreads, total: agentMessageThreads.length, totalMessages: agentMessageThreads.reduce((n, t) => n + t.messages.length, 0) }),
+  agentMessageThreads: (params: { workspaceId?: number } = {}) => {
+    const threads = agentMessageThreads.filter((t) => params.workspaceId === undefined || t.workspaceId === params.workspaceId);
+    return ok({ threads, total: threads.length, totalMessages: threads.reduce((n, t) => n + t.messages.length, 0) });
+  },
   timeline: (_workspaceId: number | undefined, from: number, to: number) =>
     ok({ attempts: timelineSpans().filter((s) => s.startedAt <= to && (s.endedAt ?? Date.now()) >= from), from, to }),
   epicStats: (_epicRef: number, _workspaceId: number) => ok(f.epicStats),

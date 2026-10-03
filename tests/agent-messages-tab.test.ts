@@ -42,15 +42,18 @@ function threadWith(messages: AgentMessage[]): AgentMessageThread {
   return {
     threadId: 't1',
     workspaceId: 1,
+    workspaceName: 'Harmonic',
     latestAt: messages.at(-1)?.createdAt ?? 0,
     live: true,
     messages,
     participants: [
-      { taskId: 412, title: 'Session refactor', harness: 'claude', epicId: 400, deleted: false },
-      { taskId: 413, title: 'Merge policy', harness: 'codex', epicId: 400, deleted: false },
+      { taskId: 412, title: 'Session refactor', harness: 'claude', epicId: 400, deleted: false, ...EXTRA },
+      { taskId: 413, title: 'Merge policy', harness: 'codex', epicId: 400, deleted: false, ...EXTRA },
     ],
   };
 }
+
+const EXTRA = { model: null, state: 'working' as const, betweenAttempts: false, attemptNumber: 1, sends: 0, sendCap: 10, lastMessageAt: null };
 
 const first = msg('m1', 412, 413, 'I renamed `retire()` to `retireSession()`.', base);
 
@@ -145,15 +148,32 @@ describe('Activity Agent Messages tab', () => {
       (host.querySelectorAll('[role="tab"]')[1] as HTMLElement).click();
       await flush();
     });
-    const select = host.querySelector('select') as HTMLSelectElement;
+    const select = host.querySelectorAll('select')[1] as HTMLSelectElement;
     await act(async () => {
-      select.value = '400';
+      select.value = '1:400';
       select.dispatchEvent(new Event('change', { bubbles: true }));
       await flush();
     });
     expect(agentMessageThreads).toHaveBeenCalledWith(expect.objectContaining({ epicId: 400, limit: 200 }));
     expect(host.textContent).toContain('0 threads · 0 messages');
-    expect([...host.querySelectorAll('select')[0]!.options].map((o) => o.textContent)).toEqual(['All Epics', 'Epic #400']);
+    expect([...host.querySelectorAll('select')[1]!.options].map((o) => o.textContent)).toEqual(['All Epics', 'Epic #400']);
     expect(host.querySelectorAll('[role="tab"]')[1]?.textContent).toBe('Agent Messages1');
+  });
+
+  it('shows the Workspace filter, row badges and the Agents drawer at Global scope', async () => {
+    activity.mockResolvedValue({ processes: [], agentMessagesEnabledInAnyWorkspace: true });
+    agentMessageThreads.mockResolvedValue({ threads: [threadWith([first])], total: 1, totalMessages: 1 });
+    const host = await mount();
+    await act(async () => {
+      (host.querySelectorAll('[role="tab"]')[1] as HTMLElement).click();
+      await flush();
+    });
+    expect([...host.querySelectorAll('select')[0]!.options].map((o) => o.textContent)).toEqual(['All Workspaces', 'Harmonic']);
+    expect(host.querySelector('[role="button"][aria-current="true"]')?.textContent).toContain('Harmonic');
+    const drawer = host.querySelector('[aria-label="Thread agents"]') as HTMLElement;
+    expect(drawer.textContent).toContain('Open Task →');
+    expect(drawer.querySelector('a')?.getAttribute('href')).toMatch(/^\/workspace\/\d+\/task\/\d+$/);
+    expect(drawer.textContent).toMatch(/\d+\/\d+/);
+    expect(drawer.textContent).not.toMatch(/steer/i);
   });
 });
