@@ -2,7 +2,7 @@ import type { TrackerRef } from '../tracker/adapter.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from './git.js';
-import { bestEffort, errorMessage, type FireAndForget } from '../error-handling.js';
+import { bestEffort, errorMessage, type FailureReport, type FireAndForget } from '../error-handling.js';
 import type { GitCircuitBreaker } from './git-failure.js';
 import type { AttemptUsageSnapshot } from './usage.js';
 import { LiveUsageTailer } from './live-usage-tailer.js';
@@ -325,6 +325,10 @@ export class Runner {
       usage: this.usage,
       worktreePathForTask: (task) => this.workspaceProvisioner.worktreePathForTask(task),
     };
+  }
+
+  trackBackground(op: () => Promise<unknown>, report: FailureReport): void {
+    this.fireAndForget(op, report);
   }
 
   hasLiveAgent(taskId: number): boolean {

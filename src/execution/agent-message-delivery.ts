@@ -2,10 +2,12 @@ import type { AgentMessageRecipient, AgentMessageRow, TaskRow } from '../db/sche
 import type { AgentMessageStore } from '../domain/agent-messages.js';
 import { messageText } from '../domain/agent-messages.js';
 import { logger } from '../logger.js';
+import type { FailureReport } from '../error-handling.js';
 import type { RunControl } from './run-control.js';
 
 export interface AgentMessageRunner {
   hasLiveAgent(taskId: number): boolean;
+  trackBackground(op: () => Promise<unknown>, report: FailureReport): void;
   runControl: Pick<RunControl, 'steerWithMode'>;
 }
 
@@ -43,7 +45,8 @@ export async function deliverAgentMessage(
     let written: Promise<void> | undefined;
     const markDelivered = () => {
       acked = true;
-      void written?.then(() => recordDelivered(deps.store, row.id, taskId));
+      const ack = written;
+      if (ack) deps.runner.trackBackground(() => ack.then(() => recordDelivered(deps.store, row.id, taskId)), { op: 'agentMessages.recordDelivered', level: 'warn', context: { taskId } });
     };
     if (deps.runner.hasLiveAgent(taskId)) {
       const mode = await deps.runner.runControl.steerWithMode(taskId, text, markDelivered).catch((err: unknown) => {
