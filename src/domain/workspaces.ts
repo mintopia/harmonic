@@ -31,7 +31,7 @@ import {
 import { configuredTrackerSchema } from '../tracker/configured.js';
 import { triageLabelsOverrideSchema } from '../tracker/triage-labels.js';
 
-export const codeRepositorySchema = z.enum(['github', 'gitlab', 'forgejo']);
+export const codeRepositorySchema = z.enum(['github', 'gitlab', 'forgejo', 'git']);
 
 export const DEFAULT_EXCLUDED_DIRECTORIES = ['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.turbo', 'out', 'target'] as const;
 export { WORKSPACE_COLORS, WORKSPACE_BADGE_INK };

@@ -55,4 +55,7 @@ Premium and above; the adapter ignores them.
 `claim` / `release` add or remove the `glab` user in the issue's assignees
 (GitLab replaces the whole list, so the adapter re-reads first). `close` posts
 the accept comment as a note, then sets the issue `closed`. Opening MRs is the
-Code Repository's job, not the tracker's.
+Code Repository's job, not the tracker's. Choose GitLab (or Plain git, for a
+host with no hosting API, which only pushes the branch) as the Workspace's Code
+Repository in the Integrations settings; gitlab.com is detected automatically,
+self-hosted GitLab needs the override.

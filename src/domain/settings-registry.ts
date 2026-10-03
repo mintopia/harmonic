@@ -301,7 +301,7 @@ export const settingsRegistry = {
     control: 'select',
     tab: 'integrations',
     label: 'Code Repository',
-    help: 'The forge hosting this Workspace\'s code (github, gitlab or forgejo); unset detects it from the git remote.',
+    help: 'The forge hosting this Workspace\'s code (github, gitlab, forgejo or plain git); unset detects it from the git remote.',
   },
   triageLabels: {
     scope: 'overridable',

@@ -14,6 +14,7 @@ export const REPOSITORY_LABEL: Record<CodeRepositoryKind, string> = {
   github: 'GitHub',
   gitlab: 'GitLab',
   forgejo: 'Forgejo',
+  git: 'Plain git',
 };
 
 export const REPOSITORY_KINDS: readonly CodeRepositoryKind[] = Object.keys(REPOSITORY_LABEL).filter(isCodeRepositoryKind);

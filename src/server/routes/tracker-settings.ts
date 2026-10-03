@@ -33,7 +33,7 @@ const trackerKindSchema = z
 const detectionSchema = z
   .object({
     detectedTracker: z.object({ name: z.string(), kind: z.string().nullable() }).nullable(),
-    detectedCodeRepository: z.enum(['github', 'gitlab', 'forgejo']).nullable(),
+    detectedCodeRepository: z.enum(['github', 'gitlab', 'forgejo', 'git']).nullable(),
   })
   .meta({ id: 'TrackerDetection' });
 
