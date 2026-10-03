@@ -185,6 +185,7 @@ export type TicketTimelineKind =
   | 'verification'
   | 'guardrail'
   | 'operator-reject'
+  | 'agent-message'
   | 'fact';
 
 /** One chronological audit record from the ticket-wide lifecycle projection. */
