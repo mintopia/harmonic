@@ -6,7 +6,9 @@ import type { TrackerHttp } from '../tracker/kind.js';
 import type { RepositoryAdapter } from './adapter.js';
 import { cachedProbe, detectRepository, forgejoVersionProbe, type ForgejoProbe, type RepositoryKind } from './detect.js';
 import { forgejoRepository } from './forgejo.js';
+import { gitRepository } from './git.js';
 import { githubRepository } from './github.js';
+import { gitlabRepository } from './gitlab.js';
 import { originRemote } from './remote.js';
 
 const defaultProbe = cachedProbe(forgejoVersionProbe());
@@ -27,7 +29,7 @@ export async function resolveCodeRepository(
 /** Forgejo needs a token (a Secret), so its adapter is built only when the caller supplies one. */
 export type ForgejoCredentials = Pick<ForgejoConnection, 'token' | 'http'>;
 
-/** The repo's Code Repository adapter; null when its kind is unresolved, has no adapter (GitLab), or Forgejo has no token. */
+/** The repo's Code Repository adapter; null when its kind is unresolved, or Forgejo has no token. */
 export async function resolveRepositoryAdapter(
   repoRoot: string,
   override?: RepositoryKind | null,
@@ -37,6 +39,8 @@ export async function resolveRepositoryAdapter(
   const origin = originRemote(repoRoot);
   const kind = await resolveCodeRepository(repoRoot, override, probe, origin);
   if (kind === 'github') return githubRepository(repoRoot);
+  if (kind === 'gitlab') return gitlabRepository(repoRoot);
+  if (kind === 'git') return gitRepository(repoRoot);
   if (kind !== 'forgejo' || !forgejoCredentials) return null;
   const url = await origin();
   const remote = url ? parseForgejoRemote(url) : null;
@@ -46,7 +50,7 @@ export async function resolveRepositoryAdapter(
 
 export type RepositoryResolver = (repoRoot: string, workspace: WorkspaceTrackerSettings) => Promise<RepositoryAdapter | null>;
 
-/** A {@link RepositoryResolver} with no Secret store: GitHub only, Forgejo never resolves. */
+/** A {@link RepositoryResolver} with no Secret store: Forgejo never resolves. */
 export const resolveRepositoryWithoutSecrets: RepositoryResolver = (repoRoot, workspace) =>
   resolveRepositoryAdapter(repoRoot, workspace.codeRepository);
 

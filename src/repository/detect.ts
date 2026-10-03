@@ -1,7 +1,7 @@
 import { parseRemote } from './remote.js';
 
 /** The hosts a Code Repository can live on. */
-export type RepositoryKind = 'github' | 'gitlab' | 'forgejo';
+export type RepositoryKind = 'github' | 'gitlab' | 'forgejo' | 'git';
 
 /** Whether `host` answers a Forgejo `/api/v1/version` request. */
 export type ForgejoProbe = (host: string) => Promise<boolean>;

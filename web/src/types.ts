@@ -375,7 +375,7 @@ export interface TrackerKindInfo {
   capabilities: Record<string, unknown>;
 }
 
-export type CodeRepositoryKind = 'github' | 'gitlab' | 'forgejo';
+export type CodeRepositoryKind = 'github' | 'gitlab' | 'forgejo' | 'git';
 
 export interface TrackerDetection {
   detectedTracker: { name: string; kind: string | null } | null;
@@ -441,7 +441,7 @@ export interface Workspace {
   exportRedactPatterns: { id: string; regex: string }[] | null;
   exportIncludeStates: ExportState[] | null;
   configuredTracker: { kind: string; settings?: Record<string, unknown> } | null;
-  codeRepository: 'github' | 'gitlab' | 'forgejo' | null;
+  codeRepository: 'github' | 'gitlab' | 'forgejo' | 'git' | null;
   triageLabels: Partial<Record<'readyForAgent' | 'readyForHuman' | 'epic' | 'wayfinderMap', string>> | null;
   archiveRetentionDays: number | null;
   archiveRetentionMaxTotalMB: number | null;
