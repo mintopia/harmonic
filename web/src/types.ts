@@ -538,6 +538,14 @@ export interface BudgetGuardrail {
   costUsd: number | null;
 }
 
+/** An Epic container in the Tasks table: no Task id, keyed by `trackerRef`. */
+export type EpicListRow = Omit<Task, 'id' | 'prompt' | 'trackerRef'> & { trackerRef: TrackerRef };
+
+/** A Tasks-table item: a Task row (has `id`) or an Epic row (no `id`). */
+export type TaskListItem = Task | EpicListRow;
+
+export const isEpicListRow = (row: TaskListItem): row is EpicListRow => !('id' in row);
+
 export interface Task {
   id: number;
   /** The full prompt is served only on the item GET (`GET /api/tasks/:id`) and

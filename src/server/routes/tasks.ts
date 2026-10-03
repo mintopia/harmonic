@@ -27,7 +27,7 @@ import { readTranscriptLog, withOperatorMessages, type OperatorMessage, type Tra
 import { adapterFor } from '../../execution/harness/registry.js';
 import { attemptTimelineToApi, attemptToApi, taskToApi, tasksToApi, ticketTimelineToApi, verifierStatusesToApi } from '../serialize.js';
 import { atRestWorkspaceId, costOfAttempts, epicToListRow, verificationAttemptToApi } from '../dto.js';
-import type { ApiTaskListRow } from '../dto.js';
+import type { ApiTaskListItem } from '../dto.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, attemptUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import { diffFilesResponseSchema } from './diff.js';
@@ -223,9 +223,16 @@ const taskSchema = taskWithDepsSchema
   .meta({ id: 'Task' });
 
 /** The full task shape minus `prompt`; list surfaces render `summary` instead. */
-const taskListRowSchema = taskSchema.omit({ prompt: true }).meta({ id: 'TaskListRow' });
+export const taskListRowSchema = taskSchema.omit({ prompt: true }).meta({ id: 'TaskListRow' });
 
-const tasksListResponseSchema = listResponse('tasks', taskListRowSchema);
+/** An Epic container row on the unfiltered list (`epics=true`): no Task id, keyed by `trackerRef`; a row carrying `id` is rejected. */
+export const epicListRowSchema = taskListRowSchema
+  .omit({ id: true, trackerRef: true })
+  .extend({ trackerRef: z.string().meta({ example: '42' }) })
+  .strict()
+  .meta({ id: 'EpicListRow' });
+
+const tasksListResponseSchema = listResponse('tasks', z.union([taskListRowSchema, epicListRowSchema]));
 
 /** An Attempt as the REST API and WebSocket both serve it (serialize.ts `ApiAttempt`). */
 const attemptSchema = z
@@ -360,7 +367,7 @@ const diffResponseSchema = z.object({
 const filterEmpty = (value: string | readonly unknown[] | undefined): boolean =>
   value === undefined || (Array.isArray(value) && value.length === 0);
 
-function sortListRows(rows: ApiTaskListRow[], sortBy: string | undefined, order: string | undefined): ApiTaskListRow[] {
+function sortListRows(rows: ApiTaskListItem[], sortBy: string | undefined, order: string | undefined): ApiTaskListItem[] {
   if (!sortBy) return rows;
   const dir = order === 'desc' ? -1 : 1;
   return rows.sort((a, b) => {
