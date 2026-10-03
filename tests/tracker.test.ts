@@ -162,9 +162,9 @@ describe('resolveTrackerAdapter', () => {
   });
 
   it('rejects an unknown tracker and a missing declaration', async () => {
-    const root = mkRepo('# Issue tracker: Jira\n');
+    const root = mkRepo('# Issue tracker: Linear\n');
     try {
-      await expect(resolveTrackerAdapter(root)).rejects.toThrow(/Jira/);
+      await expect(resolveTrackerAdapter(root)).rejects.toThrow(/Linear/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -203,11 +203,11 @@ describe('resolveTracker (Resolved Tracker surface, issue #83)', () => {
   });
 
   it('reports "unsupported" for a declared name no adapter serves', async () => {
-    const root = mkRepo('# Issue tracker: Jira\n');
+    const root = mkRepo('# Issue tracker: Linear\n');
     try {
       const res = await resolveTracker(root);
       expect(res).toMatchObject({ ok: false, code: 'unsupported' });
-      if (!res.ok) expect(res.reason).toMatch(/Jira/);
+      if (!res.ok) expect(res.reason).toMatch(/Linear/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
