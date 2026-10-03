@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../types.js';
 import { epicLabel } from '../id-format.js';
 import { createElement, useCallback, useState } from 'react';
 import { api } from '../api.js';
@@ -42,7 +43,7 @@ function changesCell(worktree: WorktreeInventoryEntry) {
 }
 
 function WorktreeRow({ worktree, busy, onOpenTask, onOpenEpic, onClean, onForceCleanup }: {
-  worktree: WorktreeInventoryEntry; busy: boolean; onOpenTask?: (taskId: number) => void; onOpenEpic?: (epicRef: number) => void;
+  worktree: WorktreeInventoryEntry; busy: boolean; onOpenTask?: (taskId: number) => void; onOpenEpic?: (epicRef: TrackerRef) => void;
   onClean: (worktree: WorktreeInventoryEntry) => void; onForceCleanup: (worktree: WorktreeInventoryEntry) => void;
 }) {
   const subject = worktree.subject;
@@ -64,7 +65,7 @@ function WorktreeRow({ worktree, busy, onOpenTask, onOpenEpic, onClean, onForceC
 }
 
 export function WorktreesTable({ worktrees, busyId, onOpenTask, onOpenEpic, onClean, onForceCleanup }: {
-  worktrees: WorktreeInventoryEntry[]; busyId: string | null; onOpenTask?: (taskId: number) => void; onOpenEpic?: (epicRef: number) => void;
+  worktrees: WorktreeInventoryEntry[]; busyId: string | null; onOpenTask?: (taskId: number) => void; onOpenEpic?: (epicRef: TrackerRef) => void;
   onClean: (worktree: WorktreeInventoryEntry) => void; onForceCleanup: (worktree: WorktreeInventoryEntry) => void;
 }) {
   return createElement('div', { role: 'table', 'aria-label': 'Worktrees', className: tableShell },

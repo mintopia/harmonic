@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import type { TaskRow } from '../db/schema.js';
 import type { MergeStepEvent } from '../execution/merge-policy.js';
 import type { EpicTimelineStep } from './epic-merge-events.js';
@@ -9,7 +10,7 @@ export type MemberMergeStatus = MemberMergeState;
 
 export interface EpicMember {
   /** Member ticket ref. */
-  ref: number;
+  ref: TrackerRef;
   /** Member title (from ticket/task); `''` if unknown. */
   title: string;
   /** Mirrored Harmonic Task id for a TaskDetail deep-link; `null` if unmirrored. */
@@ -57,7 +58,7 @@ export interface EpicTimelineEvent {
 }
 
 export interface Epic {
-  ref: number;
+  ref: TrackerRef;
   title: string;
   kind: 'map' | 'spec';
   /** Lifecycle from the stored record. */
@@ -72,11 +73,11 @@ export interface Epic {
    * (git-derived); `null` when it can't be resolved. */
   baseBranch: string | null;
   /** The Epic container ticket's own blocker refs (its `Blocked by`), ascending. */
-  dependsOn: number[];
+  dependsOn: TrackerRef[];
   /** Ascending by ref. */
   members: EpicMember[];
   /** Ready-frontier refs, ascending. */
-  ready: number[];
+  ready: TrackerRef[];
   integration: EpicIntegration;
   verification: EpicVerification;
   integrate: EpicIntegrateState;
@@ -97,7 +98,7 @@ export interface EpicMeta {
   createdAt: number;
   /** Repo default branch (git-derived by the impure half); `null` if unresolved. */
   baseBranch: string | null;
-  dependsOn: number[];
+  dependsOn: TrackerRef[];
   kind: 'map' | 'spec';
   state: 'open' | 'integrating' | 'integrated';
 }
@@ -119,8 +120,8 @@ export interface EpicFacts {
  */
 export function composeEpicView(
   derived: DerivedEpic,
-  memberTasks: ReadonlyMap<number, TaskRow>,
-  titleByRef: ReadonlyMap<number, string>,
+  memberTasks: ReadonlyMap<TrackerRef, TaskRow>,
+  titleByRef: ReadonlyMap<TrackerRef, string>,
   facts: EpicFacts,
   meta: EpicMeta,
 ): Epic {

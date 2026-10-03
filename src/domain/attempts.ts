@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { and, asc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import {
@@ -33,7 +34,7 @@ export interface AttemptGuardrailSnapshot {
 /** The durable identity of an Epic that owns an Attempt. */
 export interface EpicAttemptOwner {
   workspaceId: number;
-  epicRef: number;
+  epicRef: TrackerRef;
 }
 
 export interface StepInput {

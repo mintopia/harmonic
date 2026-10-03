@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../types.js';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { Attempt, Task } from '../types';
@@ -48,11 +49,11 @@ export function TicketPage({
   onClose: () => void;
   onOpenTask: (taskId: number) => void;
   /** Open this Ticket's parent Epic's summary page, from the title's Epic link. */
-  onOpenEpic?: (ref: number) => void;
+  onOpenEpic?: (ref: TrackerRef) => void;
   /** The Epic this Ticket belongs to, resolved by the caller from the derived
    * Epic model (rolls up nested containers to the top-level Epic); null when it
    * has none or its Epic isn't currently derived. */
-  parentEpicRef?: number | null;
+  parentEpicRef?: TrackerRef | null;
   error?: string | null;
   /** The rail selection — owned by the route so a refresh restores the panel. */
   selection: ContentSelection;

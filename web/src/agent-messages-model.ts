@@ -1,3 +1,4 @@
+import type { TrackerRef } from './types.js';
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
 import type {
@@ -12,7 +13,7 @@ import { elapsedShort } from './relative-time.js';
 
 export interface ThreadFilter {
   workspaceId: number | null;
-  epicId: number | null;
+  epicId: TrackerRef | null;
   taskId: number | null;
   liveOnly: boolean;
   query: string;
@@ -64,7 +65,7 @@ function harnessName(harness: string): string {
 }
 
 /** The Epic every non-deleted participant belongs to, or null when they differ. */
-export function commonEpicId(participants: readonly AgentMessageThreadParticipant[]): number | null {
+export function commonEpicId(participants: readonly AgentMessageThreadParticipant[]): TrackerRef | null {
   const epics = participants.filter((p) => !p.deleted).map((p) => p.epicId);
   const first = epics[0];
   return first != null && epics.every((e) => e === first) ? first : null;
@@ -130,11 +131,11 @@ export function showWorkspaceBadge(global: boolean, filter: Pick<ServerThreadFil
 export interface EpicOption {
   key: string;
   workspaceId: number;
-  epicId: number;
+  epicId: TrackerRef;
   label: string;
 }
 
-export function epicKey(workspaceId: number, epicId: number): string {
+export function epicKey(workspaceId: number, epicId: TrackerRef): string {
   return `${workspaceId}:${epicId}`;
 }
 
@@ -152,7 +153,7 @@ export function epicOptions(threads: readonly AgentMessageThread[], workspaceId:
     }
   }
   return [...byKey.values()]
-    .sort((a, b) => a.workspaceName.localeCompare(b.workspaceName) || a.workspaceId - b.workspaceId || a.epicId - b.epicId)
+    .sort((a, b) => a.workspaceName.localeCompare(b.workspaceName) || a.workspaceId - b.workspaceId || a.epicId.localeCompare(b.epicId, undefined, { numeric: true }))
     .map(({ workspaceName: _name, ...option }) => option);
 }
 
@@ -161,7 +162,7 @@ export interface TaskOption {
   label: string;
 }
 
-export function taskOptions(threads: readonly AgentMessageThread[], epicId: number | null, workspaceId: number | null = null): TaskOption[] {
+export function taskOptions(threads: readonly AgentMessageThread[], epicId: TrackerRef | null, workspaceId: number | null = null): TaskOption[] {
   const byId = new Map<number, TaskOption>();
   for (const thread of threads) {
     if (workspaceId !== null && thread.workspaceId !== workspaceId) continue;

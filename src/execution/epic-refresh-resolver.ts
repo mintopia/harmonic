@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Git } from './git.js';
@@ -36,7 +37,7 @@ export class EpicRefreshResolver {
   async enqueueEpicRefreshResolution(
     target: EpicRefreshTarget,
     detail: string,
-    escalate: (epicRef: number, reason: string) => void | Promise<void>,
+    escalate: (epicRef: TrackerRef, reason: string) => void | Promise<void>,
     retry: () => Promise<unknown>,
   ): Promise<EpicRefreshResolveDispatchOutcome> {
     const branch = integrationBranchName(target.ref);

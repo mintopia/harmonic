@@ -1,4 +1,4 @@
-import { TASK_STATES, type TaskState } from './types.js';
+import { TASK_STATES, type TaskState, type TrackerRef } from './types.js';
 import { GLOBAL_RAIL_VIEWS, WORKSPACE_RAIL_VIEWS, type View } from './rail-model.js';
 
 export const SORT_KEYS = ['createdAt', 'updatedAt', 'priority', 'cost'] as const;
@@ -11,7 +11,7 @@ export type RailSelection = { kind: 'none' } | { kind: 'stats' } | { kind: 'atte
 export const NO_SELECTION: RailSelection = { kind: 'none' };
 export type Scope = { kind: 'global' } | { kind: 'workspace'; workspaceId: number };
 export interface Route {
-  scope: Scope; view: View; task: number | null; epic: number | null; conversation: number | null;
+  scope: Scope; view: View; task: number | null; epic: TrackerRef | null; conversation: number | null;
   peeked: TaskState[]; table: TableFilters; panel: RailSelection; file: string | null;
 }
 export const DEFAULT_ROUTE: Route = { scope: { kind: 'global' }, view: 'board', task: null, epic: null, conversation: null, peeked: [], table: DEFAULT_TABLE_FILTERS, panel: NO_SELECTION, file: null };
@@ -38,7 +38,7 @@ function parseDetail(parts: string[]): Pick<Route, 'task' | 'epic' | 'conversati
   const id = positiveId(rawId);
   const panel: RailSelection = panelKind === 'attempt' && positiveId(panelValue) !== null ? { kind: 'attempt', attemptNumber: positiveId(panelValue)! } : panelKind === 'stats' || panelKind === 'timeline' || panelKind === 'changes' ? { kind: panelKind } : NO_SELECTION;
   if (kind === 'task' && id !== null) return { task: id, epic: null, conversation: null, panel, file: null };
-  if (kind === 'epic' && id !== null) return { task: null, epic: id, conversation: null, panel, file: null };
+  if (kind === 'epic' && rawId) return { task: null, epic: decodeURIComponent(rawId), conversation: null, panel, file: null };
   if (kind === 'conversations' && id !== null) return { task: null, epic: null, conversation: id, panel: NO_SELECTION, file: null };
   return { task: null, epic: null, conversation: null, panel: NO_SELECTION, file: null };
 }
@@ -58,7 +58,7 @@ export function parseRoute(pathname: string, search: string): Route {
 function detailPath(route: Route): string | null {
   const panel = route.panel.kind === 'none' ? '' : route.panel.kind === 'attempt' ? `/attempt/${route.panel.attemptNumber}` : `/${route.panel.kind}`;
   if (route.task !== null) return `task/${route.task}${panel}`;
-  if (route.epic !== null) return `epic/${route.epic}${panel}`;
+  if (route.epic !== null) return `epic/${encodeURIComponent(route.epic)}${panel}`;
   if (route.conversation !== null) return `conversations/${route.conversation}`;
   return null;
 }

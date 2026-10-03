@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { TaskExporter } from '../archive/task-export.js';
 import { computeGitProvenance } from '../archive/git-provenance.js';
 import { Git } from '../execution/git.js';
@@ -46,11 +47,11 @@ export function registerAppExports({
         if (matching.length === 0 && candidate.trackerRef === epicRef) matching.push(candidate);
       });
       const row = matching[0];
-      const byRef = new Map<number, TaskRow>();
+      const byRef = new Map<TrackerRef, TaskRow>();
       await forEachYielding(workspaceTasks, (t) => {
         if (t.trackerRef != null) byRef.set(t.trackerRef, t);
       });
-      const members: Array<{ ref: number; task: TaskRow | null }> = [];
+      const members: Array<{ ref: TrackerRef; task: TaskRow | null }> = [];
       await forEachYielding(row?.memberRefs ?? [], (ref) => {
         members.push({ ref, task: byRef.get(ref) ?? null });
       });

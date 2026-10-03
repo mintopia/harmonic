@@ -150,13 +150,13 @@ const taskWithDepsSchema = z
     /** 'native' (authored here) | 'mirrored' (1:1 tracker projection). */
     origin: z.enum(TASK_ORIGINS).meta({ example: 'native' }),
     /** The mirrored issue's number; null on native Tasks. */
-    trackerRef: z.number().nullable().meta({ example: null }),
+    trackerRef: z.string().nullable().meta({ example: null }),
     /** 'wayfinder' | 'implement'; null on native Tasks. */
     workflow: z.enum(WORKFLOWS).nullable().meta({ example: null }),
     /** 'research'|'prototype'|'grilling'|'task'; null for implement and native. */
     wayfinderType: z.enum(WAYFINDER_TYPES).nullable().meta({ example: null }),
     /** The parent Map issue's number (query-time Map rollup); null off-Map or native. */
-    mapRef: z.number().nullable().meta({ example: null }),
+    mapRef: z.string().nullable().meta({ example: null }),
     createdAt: z.number().meta({ example: 1784030400000 }),
     updatedAt: z.number().meta({ example: 1784032260000 }),
     dependsOn: z.array(z.number()).meta({ example: [4818] }),

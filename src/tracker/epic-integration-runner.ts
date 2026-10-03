@@ -1,3 +1,4 @@
+import type { TrackerRef } from './adapter.js';
 import type { WorkspaceRow } from '../db/schema.js';
 import type { EpicLifecycle } from '../execution/epic-coordinator.js';
 import type { EpicWorktreePool } from '../execution/epic-worktree-pool.js';
@@ -28,7 +29,7 @@ export class EpicIntegrationRunner {
 
   async integrate({ repoDir, epicRef, defaultBranch, integrationBranch }: {
     repoDir: string;
-    epicRef: number;
+    epicRef: TrackerRef;
     defaultBranch: string;
     integrationBranch: string;
   }): Promise<MergePolicyOutcome> {
@@ -46,12 +47,12 @@ export class EpicIntegrationRunner {
     }
   }
 
-  async retire(epicRef: number): Promise<void> {
+  async retire(epicRef: TrackerRef): Promise<void> {
     await this.deps.worktrees.release(this.deps.workspace.workingDir, epicRef);
     await this.deps.epics.retireIntegrationBranch(epicRef);
   }
 
-  private async runPostMergeCheck(epicRef: number, mergeOid: string, baseDir: string): Promise<PostMergeCheckResult> {
+  private async runPostMergeCheck(epicRef: TrackerRef, mergeOid: string, baseDir: string): Promise<PostMergeCheckResult> {
     const { workspace, epicAttempts, verificationAttemptStore, archive } = this.deps;
     const attempt = (await epicAttempts?.listForEpic({ workspaceId: workspace.id, epicRef }))?.at(-1);
     return runPostMergeCommands({

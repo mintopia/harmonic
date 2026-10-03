@@ -1,3 +1,4 @@
+import { trackerRef } from '../../tracker/adapter.js';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -14,7 +15,7 @@ import { ATTEMPT_STATES } from '../../db/schema.js';
 /** Path params for a whole-Epic action: the owning Workspace and the Epic's tracker ref. */
 const epicParamsSchema = z.object({
   workspaceId: z.coerce.number().int().meta({ example: 1 }),
-  epicRef: z.coerce.number().int().meta({ example: 42 }),
+  epicRef: z.string().min(1).meta({ example: '42' }),
 });
 
 /** Path params for the read endpoints: the owning Workspace only (`GET …/epics`). */
@@ -40,7 +41,7 @@ const epicListQuerySchema = paginationQuerySchema.extend({
  */
 const epicMemberSchema = z
   .object({
-    ref: z.number().int().meta({ example: 4821 }),
+    ref: z.string().min(1).meta({ example: '4821' }),
     title: z.string().meta({ example: 'Wire the peek modal' }),
     taskId: z.number().int().nullable().meta({ example: 12 }),
     state: z.string().nullable().meta({ example: 'working' }),
@@ -109,7 +110,7 @@ const epicTimelineEventSchema = z
 
 const epicSchema = z
   .object({
-    ref: z.number().int().meta({ example: 42 }),
+    ref: z.string().min(1).meta({ example: '42' }),
     title: z.string().meta({ example: 'Parallel Epic operator UI' }),
     kind: z.enum(['map', 'spec']),
     state: z.enum(['open', 'integrating', 'integrated']),
@@ -117,9 +118,9 @@ const epicSchema = z
     createdAt: z.number().int().meta({ example: 1_756_000_000_000 }),
     updatedAt: z.number().int().nullable().meta({ example: 1_756_100_000_000 }),
     baseBranch: z.string().nullable().meta({ example: 'develop' }),
-    dependsOn: z.array(z.number().int()),
+    dependsOn: z.array(z.string()),
     members: z.array(epicMemberSchema),
-    ready: z.array(z.number().int()),
+    ready: z.array(z.string()),
     integration: epicIntegrationSchema,
     verification: epicVerificationSchema,
     integrate: epicIntegrateStateSchema,
@@ -250,7 +251,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
-      const epic = await ctx.trackerManager.epicDetail(req.params.workspaceId, req.params.epicRef);
+      const epic = await ctx.trackerManager.epicDetail(req.params.workspaceId, trackerRef(req.params.epicRef));
       if (!epic) {
         throw new DomainError('not_found', `no Epic ${req.params.epicRef} derived for workspace ${req.params.workspaceId}`);
       }
@@ -274,7 +275,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
-      return epicAttemptTimelineToApi(ctx, req.params);
+      return epicAttemptTimelineToApi(ctx, { workspaceId: req.params.workspaceId, epicRef: trackerRef(req.params.epicRef) });
     },
   );
 
@@ -296,7 +297,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
-      const outcome = await ctx.trackerManager.rejectEpic(req.params.workspaceId, req.params.epicRef, req.body.guidance, req.body.continuation);
+      const outcome = await ctx.trackerManager.rejectEpic(req.params.workspaceId, trackerRef(req.params.epicRef), req.body.guidance, req.body.continuation);
       if (!outcome) throw new DomainError('conflict', `Epic ${req.params.epicRef} is not escalated`);
       return outcome;
     },
@@ -322,7 +323,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
-      const raw = await ctx.trackerManager.epicDiff(req.params.workspaceId, req.params.epicRef);
+      const raw = await ctx.trackerManager.epicDiff(req.params.workspaceId, trackerRef(req.params.epicRef));
       const files = parseUnifiedDiff(raw);
       const { limit, offset } = req.query;
       const { items, total } = paginate(files, { limit, offset });

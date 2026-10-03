@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { EventEmitter } from 'node:events';
 import type { ConversationRow, AttemptRow, TaskRow } from '../db/schema.js';
 import type { PersistedAttemptEvent } from '../domain/attempts.js';
@@ -33,9 +34,9 @@ export interface BusEvents {
   task_removed: (payload: { id: number }) => void;
   /** An Epic's integration merge advanced a step; a live board refreshes its
    * merge progress (Epics have no Attempt row, so `attempt_event` never covers this). */
-  epic_changed: (payload: { workspaceId: number; epicRef: number }) => void;
+  epic_changed: (payload: { workspaceId: number; epicRef: TrackerRef }) => void;
   agent_messages_changed: (payload: { workspaceId: number }) => void;
-  epic_integrated: (payload: { workspaceId: number; epicRef: number }) => void;
+  epic_integrated: (payload: { workspaceId: number; epicRef: TrackerRef }) => void;
   conversation_event: (event: PersistedConversationEvent) => void;
   conversation_changed: (conversation: ConversationRow) => void;
   conversation_commands: (payload: { conversationId: number; commands: AdvertisedCommand[] }) => void;
@@ -52,9 +53,9 @@ export interface BusEvents {
   export_failed: (payload: {
     /** Null for an Epic Export. */
     taskId: number | null;
-    epicRef: number | null;
+    epicRef: TrackerRef | null;
     workspaceId: number | null;
-    trackerRef: number | null;
+    trackerRef: TrackerRef | null;
     destination: string;
     disposition: string;
     error: string;

@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { basename, join, resolve } from 'node:path';
 import { forEachYielding } from '../reliability/yield.js';
 import type { TaskOrigin, TaskState } from '../db/schema.js';
@@ -9,7 +10,7 @@ export type WorktreeState = 'Active' | 'Stale' | 'Dirty' | 'Unreadable' | 'Orpha
 
 export type WorktreeSubject =
   | { kind: 'task'; taskId: number; title: string }
-  | { kind: 'epic'; epicRef: number; title: string };
+  | { kind: 'epic'; epicRef: TrackerRef; title: string };
 
 export interface WorktreeInventoryEntry {
   workspaceId: number;
@@ -37,8 +38,8 @@ interface InventoryTask {
   origin: TaskOrigin;
   state: TaskState;
   trackerTitle: string | null;
-  trackerParent: number | null;
-  trackerRef?: number | null;
+  trackerParent: TrackerRef | null;
+  trackerRef?: TrackerRef | null;
 }
 
 export interface WorktreeInventoryRepository {
@@ -64,7 +65,7 @@ function titleFor(task: InventoryTask): string {
   return task.trackerTitle ?? `Task ${task.id}`;
 }
 
-function subjectFor(task: InventoryTask, byTrackerRef: ReadonlyMap<number, InventoryTask>): WorktreeSubject {
+function subjectFor(task: InventoryTask, byTrackerRef: ReadonlyMap<TrackerRef, InventoryTask>): WorktreeSubject {
   if (task.trackerParent === null) return { kind: 'task', taskId: task.id, title: titleFor(task) };
   const parent = byTrackerRef.get(task.trackerParent);
   return { kind: 'epic', epicRef: task.trackerParent, title: parent ? titleFor(parent) : `Epic ${task.trackerParent}` };
@@ -84,7 +85,7 @@ export class WorktreeInventory {
 
   async snapshot(): Promise<WorktreeInventoryEntry[]> {
     const byWorkspace = new Map<number, InventoryTask[]>();
-    const byTrackerRef = new Map<number, InventoryTask>();
+    const byTrackerRef = new Map<TrackerRef, InventoryTask>();
     await forEachYielding(await this.tasks(), (task) => {
       if (task.origin !== 'mirrored' || task.workspaceId === null) return;
       const tasks = byWorkspace.get(task.workspaceId) ?? [];
@@ -137,7 +138,7 @@ export class WorktreeInventory {
     workspace: InventoryWorkspace,
     worktree: WorktreeRecord,
     task: InventoryTask | undefined,
-    byTrackerRef: ReadonlyMap<number, InventoryTask>,
+    byTrackerRef: ReadonlyMap<TrackerRef, InventoryTask>,
   ): Promise<WorktreeInventoryEntry> {
     const path = worktree.path;
     const subject = task ? subjectFor(task, byTrackerRef) : null;

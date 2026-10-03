@@ -4,7 +4,7 @@ import { logger } from '../logger.js';
 import { z } from 'zod';
 import { parseBlockedBySection, parsePartOfParent } from './relationships.js';
 import type { TrackerKind } from './kind.js';
-import { EPIC_LABEL, MAP_LABEL, type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
+import { EPIC_LABEL, MAP_LABEL, type Ticket, type TicketRef, type TicketState, trackerRef, type WritableTrackerAdapter } from './adapter.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -83,7 +83,7 @@ function normaliseBase(raw: RawIssue): Omit<Ticket, 'parent' | 'blockedBy' | 'bl
   const labels =
     EPIC_TITLE.test(raw.title) && !rawLabels.includes(EPIC_LABEL) ? [...rawLabels, EPIC_LABEL] : rawLabels;
   return {
-    number: raw.iid, // portable identity = the project-scoped iid, never the global id
+    number: trackerRef(raw.iid), // portable identity = the project-scoped iid, never the global id
     title: raw.title,
     state: state(raw.state),
     body: raw.description ?? '',
@@ -104,7 +104,7 @@ function synthesise(raws: RawIssue[]): Ticket[] {
   const byId = new Map(parsed.map((p) => [p.raw.iid, p]));
   const mkRef = (iid: number): TicketRef | null => {
     const p = byId.get(iid);
-    return p ? { number: iid, title: p.raw.title, state: state(p.raw.state) } : null;
+    return p ? { number: trackerRef(iid), title: p.raw.title, state: state(p.raw.state) } : null;
   };
   const blockedBy = new Map<number, Set<number>>(parsed.map((p) => [p.raw.iid, new Set(p.blockedBy)]));
   const blocking = new Map<number, Set<number>>(parsed.map((p) => [p.raw.iid, new Set<number>()]));
@@ -114,7 +114,7 @@ function synthesise(raws: RawIssue[]): Ticket[] {
 
   return parsed.map((p) => ({
     ...normaliseBase(p.raw),
-    parent: p.parent,
+    parent: p.parent === null ? null : trackerRef(p.parent),
     blockedBy: refs(blockedBy.get(p.raw.iid)!),
     blocking: refs(blocking.get(p.raw.iid)!),
     comments: [], // ponytail: scan skips per-issue notes (N+1, no scan consumer reads them); readTicket fills them.
@@ -194,12 +194,12 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
 
     async claim(ticket: TicketRef) {
       const uid = (await ensureMe()).id;
-      await reassign(ticket.number, (ids) => ids.add(uid));
+      await reassign(Number(ticket.number), (ids) => ids.add(uid));
     },
 
     async release(ticket: TicketRef) {
       const uid = (await ensureMe()).id;
-      await reassign(ticket.number, (ids) => ids.delete(uid));
+      await reassign(Number(ticket.number), (ids) => ids.delete(uid));
     },
 
     async close(ticket: TicketRef, comment: string) {
@@ -224,6 +224,7 @@ export const gitlabKind: TrackerKind<{ project?: string | undefined }> = {
   settings: z.object({ project: z.string().min(1).optional() }).strict(),
   secretNames: [],
   capabilities: { close: true, reopen: true, claim: true, transition: false, epicSources: ['epic-label'] },
+  formatRef: (ref) => `#${ref}`,
   fromDeclaration: async (doc, repoRoot) => ({
     project: doc.match(/^\s*Project:\s*(.+?)\s*$/im)?.[1] ?? (await gitlabRemote(repoRoot)) ?? undefined,
   }),

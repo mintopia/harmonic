@@ -9,7 +9,7 @@ import type { ResolvedTracker, TrackerAdapter } from './adapter.js';
 import { resolveTracker, resolveTrackerAdapter } from './adapter.js';
 import { type EpicIntegrateOutcome, type EpicService } from './epic-service.js';
 import type { Epic } from '../domain/epic-view.js';
-import type { Ticket } from './adapter.js';
+import type { Ticket, TrackerRef } from './adapter.js';
 import type { FeatureIndex } from './local-markdown.js';
 import { deriveMaps, type DerivedMap } from './mirror.js';
 import { MirrorCoordinator } from './coordinator.js';
@@ -89,13 +89,13 @@ export class TrackerPollerManager {
     await entry.poller.stop();
   }
   resolvedTracker(workspaceId: number): ResolvedTracker | null { return this.resolved.get(workspaceId) ?? null; }
-  async rejectEpic(workspaceId: number, epicRef: number, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null> { return this.epicService.rejectEpic(workspaceId, epicRef, guidance, continuation); }
+  async rejectEpic(workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null> { return this.epicService.rejectEpic(workspaceId, epicRef, guidance, continuation); }
   async epicBaseNotReady(task: TaskRow): Promise<boolean> { return this.epicService.epicBaseNotReady(task); }
   async refreshAfterDefaultBranchAdvance(workingDir: string, defaultBranch: string): Promise<void> { await this.epicService.refreshAfterDefaultBranchAdvance(workingDir, defaultBranch); }
   async listEpics(workspaceId: number): Promise<Epic[]> { return this.epicService.listEpics(workspaceId); }
   async listEpicTickets(workspaceId: number): Promise<Ticket[]> { return this.epicService.listEpicTickets(workspaceId); }
-  async epicDetail(workspaceId: number, epicRef: number): Promise<Epic | null> { return this.epicService.epicDetail(workspaceId, epicRef); }
-  async epicDiff(workspaceId: number, epicRef: number): Promise<string> { return this.epicService.epicDiff(workspaceId, epicRef); }
+  async epicDetail(workspaceId: number, epicRef: TrackerRef): Promise<Epic | null> { return this.epicService.epicDetail(workspaceId, epicRef); }
+  async epicDiff(workspaceId: number, epicRef: TrackerRef): Promise<string> { return this.epicService.epicDiff(workspaceId, epicRef); }
   coordinatorFor(workspaceId: number | null): MirrorCoordinator | undefined { return workspaceId === null ? undefined : this.entries.get(workspaceId)?.mirror; }
 
   async maps(workspaceId?: number): Promise<DerivedMap[]> {
@@ -110,8 +110,8 @@ export class TrackerPollerManager {
     return maps;
   }
 
-  urlFor(workspaceId: number | null, ref: number | null): string | null { return workspaceId === null ? null : this.entries.get(workspaceId)?.poller.urlFor(ref) ?? null; }
-  titleForMap(workspaceId: number | null, ref: number | null): string | null { return workspaceId === null ? null : this.entries.get(workspaceId)?.poller.titleForMap(ref) ?? null; }
+  urlFor(workspaceId: number | null, ref: TrackerRef | null): string | null { return workspaceId === null ? null : this.entries.get(workspaceId)?.poller.urlFor(ref) ?? null; }
+  titleForMap(workspaceId: number | null, ref: TrackerRef | null): string | null { return workspaceId === null ? null : this.entries.get(workspaceId)?.poller.titleForMap(ref) ?? null; }
   async pollNow(workspaceId: number): Promise<void> {
     const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); if (!workspace || !workspace.trackerEnabled) return;
     const resolved = await resolveTracker(workspace.workingDir, this.resolveAdapter); this.resolved.set(workspace.id, resolved); const entry = this.entries.get(workspace.id);

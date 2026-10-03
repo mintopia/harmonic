@@ -4,7 +4,7 @@ import { logger } from '../logger.js';
 import { z } from 'zod';
 import { parseBlockedByLines } from './relationships.js';
 import type { TrackerKind } from './kind.js';
-import { MAP_LABEL, type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
+import { MAP_LABEL, type Ticket, type TicketRef, type TicketState, type TrackerRef, trackerRef, type WritableTrackerAdapter } from './adapter.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -59,20 +59,20 @@ interface RawIssue {
 }
 
 const state = (s: string): TicketState => (s.toUpperCase() === 'CLOSED' ? 'closed' : 'open');
-const ref = (r: RawRef): TicketRef => ({ number: r.number, title: r.title, state: state(r.state) });
+const ref = (r: RawRef): TicketRef => ({ number: trackerRef(r.number), title: r.title, state: state(r.state) });
 
 function normalise(raw: RawIssue): Ticket {
   const labels = (raw.labels ?? []).map((l) => l.name);
   const nativeBlockedBy = (raw.blockedBy?.nodes ?? []).map(ref);
-  const seen = new Set(nativeBlockedBy.map((r) => r.number));
+  const seen = new Set<TrackerRef>(nativeBlockedBy.map((r) => r.number));
   const blockedBy = [
     ...nativeBlockedBy,
     ...parseBlockedByLines(raw.body ?? '')
-      .filter((n) => n !== raw.number && !seen.has(n))
-      .map((n): TicketRef => ({ number: n, title: '', state: 'open' })),
+      .filter((n) => n !== raw.number && !seen.has(trackerRef(n)))
+      .map((n): TicketRef => ({ number: trackerRef(n), title: '', state: 'open' })),
   ];
   return {
-    number: raw.number,
+    number: trackerRef(raw.number),
     title: raw.title,
     state: state(raw.state),
     body: raw.body ?? '',
@@ -80,7 +80,7 @@ function normalise(raw: RawIssue): Ticket {
     closedAt: raw.closedAt ?? null,
     labels,
     assignees: (raw.assignees ?? []).map((a) => a.login),
-    parent: raw.parent?.number ?? null,
+    parent: raw.parent ? trackerRef(raw.parent.number) : null,
     blockedBy,
     blocking: (raw.blocking?.nodes ?? []).map(ref),
     comments: (raw.comments ?? []).map((c) => ({
@@ -149,5 +149,6 @@ export const githubKind: TrackerKind<Record<string, never>> = {
   settings: z.object({}).strict(),
   secretNames: [],
   capabilities: { close: true, reopen: true, claim: true, transition: false, epicSources: ['epic-label'] },
+  formatRef: (ref) => `#${ref}`,
   create: ({ repoRoot, run }) => githubAdapter(repoRoot, run),
 };

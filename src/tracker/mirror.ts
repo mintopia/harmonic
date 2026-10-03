@@ -1,5 +1,5 @@
 import type { SpanContext } from '@opentelemetry/api';
-import { isEpicTypeContainer, type Ticket } from './adapter.js';
+import { isEpicTypeContainer, type Ticket, type TrackerRef } from './adapter.js';
 import type { MirrorInput, TaskService } from '../domain/tasks.js';
 import { deriveStoredEpics } from '../domain/epic-derivation.js';
 import { WAYFINDER_TYPES, type TaskRow, type TrackerFacts, type WayfinderType, type Workflow } from '../db/schema.js';
@@ -64,7 +64,7 @@ export async function mirrorScan(
   } = {},
 ): Promise<TaskRow[]> {
   const issues: Ticket[] = [];
-  const containers: Array<{ trackerRef: number; facts: TrackerFacts }> = [];
+  const containers: Array<{ trackerRef: TrackerRef; facts: TrackerFacts }> = [];
   const storedEpics = deriveStoredEpics(tickets);
   const storedEpicRefs = new Set(storedEpics.map((epic) => epic.ref));
   await forEachYielding(tickets, async (ticket) => {
@@ -75,7 +75,7 @@ export async function mirrorScan(
   });
   await tasks.syncTrackerContainers(workspaceId, containers);
   await tasks.syncEpics(workspaceId, storedEpics);
-  const parentRefs = new Set<number>();
+  const parentRefs = new Set<TrackerRef>();
   await forEachYielding(tickets, (ticket) => {
     if (ticket.parent !== null) parentRefs.add(ticket.parent);
   });
@@ -98,7 +98,7 @@ export async function mirrorScan(
       throw error;
     }
   });
-  const idByRef = new Map<number, number>();
+  const idByRef = new Map<TrackerRef, number>();
   await forEachYielding(rows, (row) => {
     if (row.trackerRef !== null) idByRef.set(row.trackerRef, row.id);
   });
@@ -119,10 +119,10 @@ export async function mirrorScan(
 export interface DerivedMap {
   /** The owning Workspace; disambiguates Map refs that collide across repos. */
   workspaceId: number;
-  ref: number;
+  ref: TrackerRef;
   title: string;
   url: string;
-  taskRefs: number[];
+  taskRefs: TrackerRef[];
   counts: Record<string, number>;
 }
 

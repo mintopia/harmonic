@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { type AppConfig, type MergeFate } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow, StoredEpicKind } from '../db/schema.js';
 import { resolveTrackerAdapter, type TrackerAdapter, type TicketRef } from '../tracker/adapter.js';
@@ -29,7 +30,7 @@ export class AutoDrive {
     private readonly getWorkspace?: (workspaceId: number | null) => Promise<DriveWorkspace | undefined>,
     /** Resolves the stored `kind` of a Task's parent Epic (its `mapRef`); a Map
      * child drives `/wayfinder {mapRef}`. Absent → every child keeps its own drive. */
-    private readonly getEpicKind?: (workspaceId: number, ref: number) => Promise<StoredEpicKind | null>,
+    private readonly getEpicKind?: (workspaceId: number, ref: TrackerRef) => Promise<StoredEpicKind | null>,
     /** Notified on a genuine tracker close (not the no-op paths). `commit` is
      * the base-checkout commit for a file-backed tracker, else `null`. */
     private readonly onTicketClosed?: (task: TaskRow, commit: { oid: string; paths: string[] } | null) => void,

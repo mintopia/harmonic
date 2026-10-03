@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../types.js';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, ApiError } from '../api';
 import { subscribe } from '../ws';
@@ -81,7 +82,7 @@ function Description({ text }: { text: string }) {
   );
 }
 
-function DependsOn({ refs }: { refs: number[] }) {
+function DependsOn({ refs }: { refs: TrackerRef[] }) {
   if (refs.length === 0) return <span className="text-faint">—</span>;
   return (
     <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-data">
@@ -584,7 +585,7 @@ export function EpicPage({
   selection,
   onSelect,
 }: {
-  epicRef: number;
+  epicRef: TrackerRef;
   workspaceId: number;
   onClose: () => void;
   onOpenTask: (taskId: number) => void;

@@ -1,6 +1,6 @@
 import type { TaskService } from '../domain/tasks.js';
 import type { TaskRow } from '../db/schema.js';
-import type { ResolvedTracker, Ticket, TrackerAdapter } from './adapter.js';
+import type { ResolvedTracker, Ticket, TrackerAdapter, TrackerRef } from './adapter.js';
 import { resolutionFailure, resolutionSuccess, resolveTrackerAdapter } from './adapter.js';
 import { mirrorScan } from './mirror.js';
 import { singleFlight } from '../reliability/single-flight.js';
@@ -24,8 +24,8 @@ export interface EpicIntegrationSync {
 /** One Workspace's tracker mirroring poll loop; its lifecycle is owned by {@link TrackerPollerManager}. */
 export class TrackerPoller {
   private timer: NodeJS.Timeout | undefined;
-  private urlByRef = new Map<number, string>();
-  private titleByRef = new Map<number, string>();
+  private urlByRef = new Map<TrackerRef, string>();
+  private titleByRef = new Map<TrackerRef, string>();
 
   constructor(
     private readonly tasks: TaskService,
@@ -76,7 +76,7 @@ export class TrackerPoller {
     poll.update({ 'tracker.ticket.count': tickets.length });
     this.urlByRef = new Map();
     this.titleByRef = new Map();
-    const closedRefs = new Set<number>();
+    const closedRefs = new Set<TrackerRef>();
     await forEachYielding(tickets, (ticket) => {
       this.urlByRef.set(ticket.number, ticket.url);
       this.titleByRef.set(ticket.number, ticket.title);
@@ -107,12 +107,12 @@ export class TrackerPoller {
   }
 
   /** The tracker URL for a mirrored Task's ref, from the last scan; null for native Tasks or before a poll. */
-  urlFor(ref: number | null): string | null {
+  urlFor(ref: TrackerRef | null): string | null {
     return ref === null ? null : (this.urlByRef.get(ref) ?? null);
   }
 
   /** The Map ticket's title for a mirrored Task's mapRef, from the last scan; null when unmapped or before a poll. */
-  titleForMap(ref: number | null): string | null {
+  titleForMap(ref: TrackerRef | null): string | null {
     return ref === null ? null : (this.titleByRef.get(ref) ?? null);
   }
 

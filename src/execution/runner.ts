@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from './git.js';
@@ -788,7 +789,7 @@ export class Runner {
   async enqueueEpicRefreshResolution(
     target: EpicRefreshTarget,
     detail: string,
-    escalate: (epicRef: number, reason: string) => void | Promise<void>,
+    escalate: (epicRef: TrackerRef, reason: string) => void | Promise<void>,
     retry: () => Promise<unknown>,
   ): Promise<EpicRefreshResolveDispatchOutcome> {
     return this.epicRefreshResolver.enqueueEpicRefreshResolution(target, detail, escalate, retry);

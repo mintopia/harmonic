@@ -203,7 +203,7 @@ export function epicPendingColumns(epic: Epic, tasks: Task[]): BlockerColumn[] {
 
 export function boardSections(tasks: Task[], epics: Epic[]): BoardSections {
   const tasksById = new Map(tasks.map((task) => [task.id, task]));
-  const activeEpics = epics.filter(isActiveEpic).sort((a, b) => a.ref - b.ref);
+  const activeEpics = epics.filter(isActiveEpic).sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }));
   const driverRefs = epicDriverRefs(epics);
   const isDriver = (t: Task): boolean => isEpicDriver(t, driverRefs);
   const activeMemberIds = new Set<number>();

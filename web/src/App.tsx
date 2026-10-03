@@ -1,3 +1,4 @@
+import type { TrackerRef } from './types.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import { formatCost } from './cost';
@@ -136,7 +137,7 @@ export function App() {
   // An Epic's click target (ADR-0017): the Tasks-list Epic row, the Board band
   // header, and a Ticket's parent-Epic link all open the Epic summary page
   // at /epic/:ref, clearing any focused Ticket.
-  const openEpicByRef = (ref: number) => navigate({ ...route, epic: ref, task: null, panel: NO_SELECTION });
+  const openEpicByRef = (ref: TrackerRef) => navigate({ ...route, epic: ref, task: null, panel: NO_SELECTION });
   const pickConversation = useCallback(
     (conversationId: number | null) => navigate({ ...route, conversation: conversationId }),
     [navigate, route],
