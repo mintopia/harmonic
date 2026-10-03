@@ -34,6 +34,8 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
     'priority',
     'maxConcurrentAttempts',
     'autoRunnerEnabled',
+    'agentMessagesEnabled',
+    'agentMessagesSendCap',
     'maxAttempts',
     'contextReuseTokenLimit',
     'taskPreMergeCommands',
@@ -192,6 +194,14 @@ describe('resolveScoped — the scoped resolver reads scope from the registry', 
   it('treats a falsy-but-set overridable value as an override, not inherit', () => {
     expect(resolveScoped('maxAttempts', 0, 5)).toBe(0);
     expect(resolveScoped('autoRunnerEnabled', false, true)).toBe(false);
+  });
+
+  it('resolves Agent Messages Baseline → Global → Workspace: Global off + Workspace on is on, null inherits Global', () => {
+    expect(resolveScoped('agentMessagesEnabled', true, false)).toBe(true);
+    expect(resolveScoped('agentMessagesEnabled', false, true)).toBe(false);
+    expect(resolveScoped('agentMessagesEnabled', null, false)).toBe(false);
+    expect(resolveScoped('agentMessagesSendCap', 3, 10)).toBe(3);
+    expect(resolveScoped('agentMessagesSendCap', null, 10)).toBe(10);
   });
 
   it('a now-overridable setting lets the Workspace value win (toolTimeoutMinutes, #339)', () => {

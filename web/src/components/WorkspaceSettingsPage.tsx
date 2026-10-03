@@ -80,6 +80,8 @@ export function WorkspaceSettingsPage({
         conflictResolveTurns: w.conflictResolveTurns,
         maxConcurrentAttempts: w.maxConcurrentAttempts,
         autoRunnerEnabled: w.autoRunnerEnabled,
+        agentMessagesEnabled: w.agentMessagesEnabled,
+        agentMessagesSendCap: w.agentMessagesSendCap,
         maxAttempts: w.maxAttempts,
         contextReuseTokenLimit: w.contextReuseTokenLimit,
         taskPreMergeCommands: w.taskPreMergeCommands,

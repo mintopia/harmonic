@@ -15,6 +15,7 @@ import { wsRoutes } from './ws.js';
 import { authRoutes } from './routes/auth.js';
 import { statsRoutes } from './routes/stats.js';
 import { activityRoutes } from './routes/activity.js';
+import { agentMessageRoutes } from './routes/agent-messages.js';
 import { timelineRoutes } from './routes/timeline.js';
 import { operationRoutes } from './routes/operations.js';
 import { notificationRoutes } from './routes/notifications.js';
@@ -27,6 +28,7 @@ import { exportRoutes } from './routes/export.js';
 import { fsRoutes } from './routes/fs.js';
 import { openapiRoutes } from './routes/openapi.js';
 import { buildMcpServer } from '../mcp/server.js';
+import { resolveMcpCaller } from '../mcp/caller.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { updateRoutes } from './routes/update.js';
 import type { App, AppContext, AppContexts } from './app-context.js';
@@ -54,6 +56,7 @@ export async function registerRoutes(app: App, ctx: AppContext, contexts: AppCon
   await app.register((fastify) => authRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => statsRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => activityRoutes(fastify, ctx), { prefix: '/api' });
+  await app.register((fastify) => agentMessageRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => timelineRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => operationRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => scheduledJobRoutes(fastify, contexts.tracking), { prefix: '/api' });
@@ -68,7 +71,7 @@ export async function registerRoutes(app: App, ctx: AppContext, contexts: AppCon
   await app.register(openapiRoutes, { prefix: '/api' });
 
   app.post('/mcp', { schema: { hide: true } }, async (req, reply) => {
-    const mcp = buildMcpServer(ctx);
+    const mcp = buildMcpServer(ctx, await resolveMcpCaller(ctx, req));
     // MCP SDK option/interface types don't satisfy this project's exactOptionalPropertyTypes; both casts erase that mismatch, not our types.
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined } as any);
     reply.hijack();

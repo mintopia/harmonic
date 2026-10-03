@@ -52,6 +52,7 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   harness: string | null; model: string | null; chatHarness: string | null; chatModel: string | null;
   isolationMode: string | null; priority: string | null;
   conflictResolveTurns: number | null; maxConcurrentAttempts: number | null; autoRunnerEnabled: boolean | null;
+  agentMessagesEnabled: boolean | null; agentMessagesSendCap: number | null;
   maxAttempts: number | null; contextReuseTokenLimit: number | null;
   taskPreMergeCommands: string | null; taskPreMergeCritics: string | null;
   taskPostMergeCommands: string | null; taskPostMergeCritics: string | null;
@@ -315,6 +316,44 @@ export const taskEvents = sqliteTable(
   (t) => [index('task_events_task_id_idx').on(t.taskId)],
 );
 export type TaskEventRow = typeof taskEvents.$inferSelect;
+
+export const RECEIPT_STATES = ['queued', 'delivered', 'held', 'refused'] as const;
+export type ReceiptState = (typeof RECEIPT_STATES)[number];
+
+/** One recipient of an Agent Message and where its delivery stands. */
+export interface AgentMessageRecipient {
+  taskId: number;
+  receipt: ReceiptState;
+  /** Live delivery: injected mid-turn, or queued for the next turn. */
+  mode?: 'mid-turn' | 'next-turn';
+  deliveredAt?: number;
+  reason?: string;
+}
+
+/** An A2A-shaped message between two Task Attempts in one Workspace. Sender and recipient Task ids carry no FK so a Thread survives a participant's deletion; Workspace deletion cascades. `threadId` is the root message id, denormalised so Thread reads need no recursion. */
+export const agentMessages = sqliteTable(
+  'agent_messages',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: integer('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    role: text('role').$type<'agent'>().notNull(),
+    parts: text('parts', { mode: 'json' }).$type<{ kind: 'text'; text: string }[]>().notNull(),
+    replyTo: text('reply_to'),
+    threadId: text('thread_id').notNull(),
+    senderTaskId: integer('sender_task_id').notNull(),
+    senderAttemptId: integer('sender_attempt_id').notNull(),
+    recipients: text('recipients', { mode: 'json' }).$type<AgentMessageRecipient[]>().notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [
+    index('agent_messages_sender_attempt_idx').on(t.senderAttemptId),
+    index('agent_messages_thread_idx').on(t.threadId),
+    index('agent_messages_workspace_idx').on(t.workspaceId),
+  ],
+);
+export type AgentMessageRow = typeof agentMessages.$inferSelect;
 
 export const CONVERSATION_STATES = ['active', 'ended'] as const;
 export type ConversationState = (typeof CONVERSATION_STATES)[number];

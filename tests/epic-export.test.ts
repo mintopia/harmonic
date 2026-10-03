@@ -47,7 +47,7 @@ describe('Epic Export (#739)', () => {
   const snapshot = (): EpicExportSnapshot => ({
     ticket: { title: 'Epic title', ref: EPIC },
     timeline: { events: [{ kind: 'integrated' }], attempts: [{ number: 1 }] },
-    attemptCount: 1,
+    agentMessages: [], attemptCount: 1,
     members: [...members.map((task) => ({ ref: task.trackerRef!, task })), { ref: 999, task: null }],
   });
 
@@ -61,7 +61,7 @@ describe('Epic Export (#739)', () => {
       epicSettings: async () => resolveExportSettings(config(dest, enabled), undefined),
       epicSnapshot: async () => snapshot(),
       workspaceName: async () => 'My Workspace',
-      snapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, git: emptyGitProvenance() }),
+      snapshot: async () => ({ ticket: {}, timeline: {}, agentMessages: [], attemptCount: 0, git: emptyGitProvenance() }),
       recordEpicStep: async () => undefined,
       recordFact: async () => undefined,
       ...overrides,
@@ -120,6 +120,7 @@ describe('Epic Export (#739)', () => {
     try {
       expect(listAll(out)).toEqual([
         'README.md',
+        'agent-messages.json',
         'archive.json',
         'attempts/1/verification/pre-merge/5/prompt.md',
         'attempts/1/verification/pre-merge/cmd-test/output.log',
@@ -195,7 +196,7 @@ describe('Epic Export (#739)', () => {
     const ex = exporter({
       snapshot: async () => {
         await gate;
-        return { ticket: {}, timeline: {}, attemptCount: 0, git: emptyGitProvenance() };
+        return { ticket: {}, timeline: {}, agentMessages: [], attemptCount: 0, git: emptyGitProvenance() };
       },
     });
     ex.trigger(member, 'done');

@@ -24,6 +24,7 @@ export type ExportDisposition = ExportState;
 export interface ExportSnapshot {
   ticket: unknown;
   timeline: unknown;
+  agentMessages: unknown;
   attemptCount: number;
   git: GitProvenance;
 }
@@ -265,6 +266,7 @@ function readme(args: {
     '| `ticket.json` | The Task as shown in Harmonic when it was exported |',
     '| `timeline.json` | The Task timeline (Attempts, verification, merge, Facts) |',
     '| `operator-inputs.json` | Guidance and answers the operator gave during the Task |',
+    '| `agent-messages.json` | Agent Messages the Task sent or received, with recipients and receipts |',
     '| `archive.json` | The Archive identity and its Export history |',
     '| `attempts/<n>/implementation/` | Prompt, ACP updates and native transcripts for Attempt n |',
     '',
@@ -308,6 +310,7 @@ function epicReadme(args: { epicRef: number; ticket: unknown; workspace: string 
     '| `ticket.json` | The Epic as shown in Harmonic when it was exported |',
     '| `timeline.json` | The Epic timeline and Epic Attempts |',
     '| `operator-inputs.json` | Guidance and answers the operator gave during the Epic |',
+    '| `agent-messages.json` | Agent Messages the Epic Members sent or received, with recipients and receipts |',
     '| `archive.json` | The Epic Archive identity and its Export history |',
     '| `attempts/<n>/verification/` | Verification command output and Critic transcripts for Epic Attempt n |',
     '',
@@ -924,6 +927,7 @@ export class TaskExporter {
       await writer.addBuffer('ticket.json', redactor.redactText(json(snapshot.ticket)), at);
       await writer.addBuffer('timeline.json', redactor.redactText(json(snapshot.timeline)), at);
       await writer.addBuffer('operator-inputs.json', redactor.redactText(json(await readOperatorInputs(archiveDir))), at);
+      await writer.addBuffer('agent-messages.json', redactor.redactText(json(snapshot.agentMessages)), at);
       for (const entry of entries) {
         if (entry.isFile() && entry.name !== OPERATOR_INPUTS_FILE && !entry.name.endsWith('.tmp')) {
           await writer.addFile(entry.name, join(archiveDir, entry.name), redacted);

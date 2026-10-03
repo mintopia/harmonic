@@ -185,12 +185,63 @@ export type TicketTimelineKind =
   | 'verification'
   | 'guardrail'
   | 'operator-reject'
+  | 'agent-message'
   | 'fact';
 
 /** One chronological audit record from the ticket-wide lifecycle projection. */
 export type TicketTimelineEvent = {
   [K in TicketTimelineKind]: { attemptId: number | null; ts: number; kind: K; data: unknown };
 }[TicketTimelineKind];
+
+export type AgentMessageReceipt = 'queued' | 'delivered' | 'held' | 'refused';
+
+export interface AgentMessageRecipient {
+  taskId: number;
+  receipt: AgentMessageReceipt;
+  mode?: 'mid-turn' | 'next-turn';
+  deliveredAt?: number;
+  reason?: string;
+  deleted: boolean;
+}
+
+export interface AgentMessage {
+  messageId: string;
+  role: string;
+  parts: { kind: 'text'; text: string }[];
+  replyTo: string | null;
+  threadId: string;
+  senderTaskId: number;
+  senderDeleted: boolean;
+  senderAttemptId: number;
+  workspaceId: number;
+  createdAt: number;
+  recipients: AgentMessageRecipient[];
+}
+
+export interface AgentMessageThreadParticipant {
+  taskId: number;
+  title: string | null;
+  harness: string | null;
+  epicId: number | null;
+  deleted: boolean;
+  model: string | null;
+  state: TaskState | null;
+  betweenAttempts: boolean;
+  attemptNumber: number | null;
+  sends: number;
+  sendCap: number;
+  lastMessageAt: number | null;
+}
+
+export interface AgentMessageThread {
+  threadId: string;
+  workspaceId: number;
+  workspaceName: string;
+  latestAt: number;
+  live: boolean;
+  messages: AgentMessage[];
+  participants: AgentMessageThreadParticipant[];
+}
 
 /** Tracker mirroring: a Task is authored here or a 1:1 projection of a tracker issue. */
 export type TaskOrigin = 'native' | 'mirrored';
@@ -318,6 +369,10 @@ export interface Workspace {
   conflictResolveTurns: number | null;
   maxConcurrentAttempts: number | null;
   autoRunnerEnabled: boolean | null;
+  agentMessagesEnabled: boolean | null;
+  agentMessagesSendCap: number | null;
+  /** Agent Messages on for this Workspace after Baseline → Global → Workspace resolution. */
+  effectiveAgentMessagesEnabled: boolean;
   /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: number | null;
   contextReuseTokenLimit: number | null;
@@ -1032,6 +1087,7 @@ export interface AppConfig {
     model: string;
   };
   autoRunner: { enabled: boolean; maxConcurrentAttempts: number };
+  agentMessages: { enabled: boolean; sendCap: number };
   /** Per-stage command and critic verifier lists. */
   verify: {
     task: { preMerge: TaskVerificationStage; postMerge: TaskVerificationStage };

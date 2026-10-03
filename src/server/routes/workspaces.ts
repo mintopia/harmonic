@@ -17,6 +17,7 @@ import {
 import { forEachYielding } from '../../reliability/yield.js';
 import { requestActor } from '../operator-inputs.js';
 import type { AppContext } from '../app.js';
+import { resolveScoped } from '../../domain/setting-override.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
@@ -55,6 +56,10 @@ const workspaceSchema = z
     conflictResolveTurns: z.number().nullable().meta({ example: null }),
     maxConcurrentAttempts: z.number().nullable().meta({ example: null }),
     autoRunnerEnabled: z.boolean().nullable().meta({ example: null }),
+    agentMessagesEnabled: z.boolean().nullable().meta({ example: null }),
+    agentMessagesSendCap: z.number().nullable().meta({ example: null }),
+    /** Whether Agent Messages are on for this Workspace after Baseline → Global → Workspace resolution. */
+    effectiveAgentMessagesEnabled: z.boolean().meta({ example: false }),
     /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
     maxAttempts: z.number().nullable().meta({ example: null }),
     contextReuseTokenLimit: z.number().nullable().meta({ example: null }),
@@ -119,6 +124,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     exportRedactPatterns: ws.exportRedactPatterns ? JSON.parse(ws.exportRedactPatterns) : null,
     exportIncludeStates: ws.exportIncludeStates ? JSON.parse(ws.exportIncludeStates) : null,
     guardrailBudget: ws.guardrailBudget ? JSON.parse(ws.guardrailBudget) : null,
+    effectiveAgentMessagesEnabled: resolveScoped('agentMessagesEnabled', ws.agentMessagesEnabled, ctx.settingsStore.getGlobal().agentMessages.enabled),
     resolvedTracker: serializeResolvedTracker(ctx.trackerManager.resolvedTracker(ws.id)),
   });
 

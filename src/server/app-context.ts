@@ -5,6 +5,7 @@ import { SettingsStore } from './settings-store.js';
 import { TaskService } from '../domain/tasks.js';
 import { AttemptStore } from '../domain/attempts.js';
 import { TaskEventStore } from '../domain/task-events.js';
+import type { AgentMessageStore } from '../domain/agent-messages.js';
 import { ConversationStore } from '../domain/conversations.js';
 import { WorkspaceService } from '../domain/workspaces.js';
 import { PermissionRuleStore } from '../domain/permission-rules.js';
@@ -87,6 +88,7 @@ export interface AppContext {
   tasks: TaskService;
   attempts: AttemptStore;
   taskEvents: TaskEventStore;
+  agentMessages: AgentMessageStore;
   sessions: SessionStore;
   runner: Runner;
   conversations: ConversationStore;

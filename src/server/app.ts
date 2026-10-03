@@ -120,6 +120,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     tasks: stores.tasks,
     attempts: stores.attempts,
     taskEvents: stores.taskEvents,
+    agentMessages: stores.agentMessages,
     sessions: stores.sessions,
     runner: runtime.runner,
     conversations: stores.conversations,

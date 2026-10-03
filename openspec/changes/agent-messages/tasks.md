@@ -43,9 +43,9 @@ Blocked by: 3, 4.
 
 ## 7. (#765) Activity tab: Agents drawer, Global scope, hiding, mobile
 Blocked by: 2, 6.
-- [ ] Agents drawer (Harness/model, state, Attempt, sends meter, Open Task)
-- [ ] Global aggregation, Workspace filter and row badges
-- [ ] Tab hidden where off (Global: off everywhere); 390px overlay layout
+- [x] Agents drawer (Harness/model, state, Attempt, sends meter, Open Task)
+- [x] Global aggregation, Workspace filter and row badges
+- [x] Tab hidden where off (Global: off everywhere); 390px overlay layout
 - [ ] Model tests; screenshot vs v5 mock (mobile drawer and list)
 
 ## 8. (#763) Archive/Export and deletion

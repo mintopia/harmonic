@@ -19,6 +19,8 @@ export interface ActiveRun {
   agentFinished: boolean;
   escalateReason: string | null;
   steerQueue: string[];
+  /** Fired per text when a queued steer is sent as a turn. */
+  steerAcks: Map<string, Array<() => void>>;
   idle: boolean;
   externallySettled: boolean;
   steerable: boolean;

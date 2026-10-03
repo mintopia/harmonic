@@ -4,6 +4,7 @@ import { SettingsStore } from './settings-store.js';
 import { TaskService } from '../domain/tasks.js';
 import { AttemptStore } from '../domain/attempts.js';
 import { TaskEventStore } from '../domain/task-events.js';
+import { AgentMessageStore } from '../domain/agent-messages.js';
 import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { ConversationStore } from '../domain/conversations.js';
 import { WorkspaceService } from '../domain/workspaces.js';
@@ -31,6 +32,7 @@ export interface Stores {
   tasks: TaskService;
   attempts: AttemptStore;
   taskEvents: TaskEventStore;
+  agentMessages: AgentMessageStore;
   epicMergeEvents: EpicMergeEventStore;
   guardrailEvents: GuardrailEventStore;
   verificationAttempts: VerificationAttemptStore;
@@ -76,6 +78,7 @@ export async function createStores({ opts, asyncDb, bus, fireAndForget }: Create
   );
   const attempts = new AttemptStore(asyncDb);
   const taskEvents = new TaskEventStore(asyncDb);
+  const agentMessages = new AgentMessageStore(asyncDb, (workspaceId) => bus.emit('agent_messages_changed', { workspaceId }));
   const epicMergeEvents = new EpicMergeEventStore(asyncDb);
   const guardrailEvents = new GuardrailEventStore(asyncDb);
   const verificationAttempts = new VerificationAttemptStore(asyncDb);
@@ -98,6 +101,7 @@ export async function createStores({ opts, asyncDb, bus, fireAndForget }: Create
     tasks,
     attempts,
     taskEvents,
+    agentMessages,
     epicMergeEvents,
     guardrailEvents,
     verificationAttempts,
