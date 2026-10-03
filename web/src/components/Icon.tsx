@@ -44,6 +44,7 @@ export type IconName =
   | 'folder-plus'
   | 'save'
   | 'eye'
+  | 'agents'
   | 'undo'
   | 'github'
   | 'book'
@@ -128,6 +129,13 @@ const PATHS: Record<IconName, JSX.Element> = {
     <>
       <path d="M1.75 8s2.25-4 6.25-4 6.25 4 6.25 4-2.25 4-6.25 4-6.25-4-6.25-4z" />
       <circle cx="8" cy="8" r="1.75" />
+    </>
+  ),
+  agents: (
+    <>
+      <circle cx="6" cy="6" r="2.5" />
+      <circle cx="11.5" cy="9" r="2" />
+      <path d="M1.5 13.5c.6-2.4 2.3-3.5 4.5-3.5s3.9 1.1 4.5 3.5" />
     </>
   ),
   undo: (

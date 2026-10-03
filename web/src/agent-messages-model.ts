@@ -6,9 +6,12 @@ import type {
   AgentMessageRecipient,
   AgentMessageThread,
   AgentMessageThreadParticipant,
+  TaskState,
 } from './types.js';
+import { elapsedShort } from './relative-time.js';
 
 export interface ThreadFilter {
+  workspaceId: number | null;
   epicId: number | null;
   taskId: number | null;
   liveOnly: boolean;
@@ -17,13 +20,13 @@ export interface ThreadFilter {
 
 export type ServerThreadFilter = Omit<ThreadFilter, 'query'>;
 
-export const NO_SERVER_FILTER: ServerThreadFilter = { epicId: null, taskId: null, liveOnly: false };
+export const NO_SERVER_FILTER: ServerThreadFilter = { workspaceId: null, epicId: null, taskId: null, liveOnly: false };
 
 export function hasServerFilter(filter: ServerThreadFilter): boolean {
-  return filter.epicId !== null || filter.taskId !== null || filter.liveOnly;
+  return filter.workspaceId !== null || filter.epicId !== null || filter.taskId !== null || filter.liveOnly;
 }
 
-export const NO_THREAD_FILTER: ThreadFilter = { epicId: null, taskId: null, liveOnly: false, query: '' };
+export const NO_THREAD_FILTER: ThreadFilter = { workspaceId: null, epicId: null, taskId: null, liveOnly: false, query: '' };
 
 export const TIME_SEPARATOR_GAP_MS = 3 * 60_000;
 const IDENTITY_COUNT = 3;
@@ -101,6 +104,7 @@ export function filterThreads(threads: readonly AgentMessageThread[], filter: Th
   return threads
     .filter((thread) => {
       if (filter.liveOnly && !thread.live) return false;
+      if (filter.workspaceId !== null && thread.workspaceId !== filter.workspaceId) return false;
       if (filter.epicId !== null && !thread.participants.some((p) => p.epicId === filter.epicId)) return false;
       if (filter.taskId !== null && !participatesIn(thread, filter.taskId)) return false;
       return query === '' || matchesQuery(thread, query);
@@ -108,10 +112,48 @@ export function filterThreads(threads: readonly AgentMessageThread[], filter: Th
     .sort((a, b) => b.latestAt - a.latestAt || (a.threadId < b.threadId ? 1 : -1));
 }
 
-export function epicOptions(threads: readonly AgentMessageThread[]): number[] {
-  const epics = new Set<number>();
-  for (const thread of threads) for (const p of thread.participants) if (p.epicId != null) epics.add(p.epicId);
-  return [...epics].sort((a, b) => a - b);
+export interface WorkspaceOption {
+  id: number;
+  name: string;
+}
+
+export function workspaceOptions(threads: readonly AgentMessageThread[]): WorkspaceOption[] {
+  const byId = new Map<number, string>();
+  for (const thread of threads) if (!byId.has(thread.workspaceId)) byId.set(thread.workspaceId, thread.workspaceName);
+  return [...byId].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
+}
+
+export function showWorkspaceBadge(global: boolean, filter: Pick<ServerThreadFilter, 'workspaceId'>): boolean {
+  return global && filter.workspaceId === null;
+}
+
+export interface EpicOption {
+  key: string;
+  workspaceId: number;
+  epicId: number;
+  label: string;
+}
+
+export function epicKey(workspaceId: number, epicId: number): string {
+  return `${workspaceId}:${epicId}`;
+}
+
+/** Epic ids are per Workspace, so options are keyed by both; `prefixed` adds the Workspace name. */
+export function epicOptions(threads: readonly AgentMessageThread[], workspaceId: number | null = null, prefixed = false): EpicOption[] {
+  const byKey = new Map<string, EpicOption & { workspaceName: string }>();
+  for (const thread of threads) {
+    if (workspaceId !== null && thread.workspaceId !== workspaceId) continue;
+    for (const p of thread.participants) {
+      if (p.epicId == null) continue;
+      const key = epicKey(thread.workspaceId, p.epicId);
+      if (byKey.has(key)) continue;
+      const label = `${prefixed ? `${thread.workspaceName} · ` : ''}Epic #${p.epicId}`;
+      byKey.set(key, { key, workspaceId: thread.workspaceId, epicId: p.epicId, label, workspaceName: thread.workspaceName });
+    }
+  }
+  return [...byKey.values()]
+    .sort((a, b) => a.workspaceName.localeCompare(b.workspaceName) || a.workspaceId - b.workspaceId || a.epicId - b.epicId)
+    .map(({ workspaceName: _name, ...option }) => option);
 }
 
 export interface TaskOption {
@@ -119,9 +161,10 @@ export interface TaskOption {
   label: string;
 }
 
-export function taskOptions(threads: readonly AgentMessageThread[], epicId: number | null): TaskOption[] {
+export function taskOptions(threads: readonly AgentMessageThread[], epicId: number | null, workspaceId: number | null = null): TaskOption[] {
   const byId = new Map<number, TaskOption>();
   for (const thread of threads) {
+    if (workspaceId !== null && thread.workspaceId !== workspaceId) continue;
     for (const p of thread.participants) {
       if (p.deleted || byId.has(p.taskId)) continue;
       if (epicId !== null && p.epicId !== epicId) continue;
@@ -309,4 +352,49 @@ export function bodyParts(text: string): BodyPart[] {
     .split(/(`[^`\n]+`)/)
     .filter((value) => value !== '')
     .map((value) => (value.length > 2 && value.startsWith('`') && value.endsWith('`') ? { code: true, value: value.slice(1, -1) } : { code: false, value }));
+}
+
+export type ActivityTab = 'running' | 'messages';
+
+export function resolveActivityTab(tab: ActivityTab, messagesEnabled: boolean): ActivityTab {
+  return messagesEnabled ? tab : 'running';
+}
+
+export interface AgentCard {
+  taskId: number;
+  identity: Identity | null;
+  deleted: boolean;
+  harness: string | null;
+  harnessLabel: string;
+  title: string;
+  model: string | null;
+  state: TaskState | null;
+  betweenAttempts: boolean;
+  attemptLabel: string | null;
+  sendsCount: string;
+  sendsRatio: number;
+  atCap: boolean;
+  lastMessage: string;
+}
+
+export function agentCards(thread: AgentMessageThread, now: number): AgentCard[] {
+  return thread.participants.map((p) => {
+    const atCap = p.sends >= p.sendCap;
+    return {
+      taskId: p.taskId,
+      identity: identityFor(thread.participants, p.taskId),
+      deleted: p.deleted,
+      harness: p.harness,
+      harnessLabel: p.harness ? harnessName(p.harness) : '',
+      title: p.deleted ? 'deleted Task' : (p.title ?? ''),
+      model: p.model,
+      state: p.state,
+      betweenAttempts: p.betweenAttempts,
+      attemptLabel: p.attemptNumber === null ? null : `Attempt ${p.attemptNumber}`,
+      sendsCount: `${p.sends}/${p.sendCap}`,
+      sendsRatio: p.sendCap > 0 ? Math.min(1, p.sends / p.sendCap) : atCap ? 1 : 0,
+      atCap,
+      lastMessage: p.lastMessageAt === null ? 'none sent' : `${elapsedShort(p.lastMessageAt, now)} ago`,
+    };
+  });
 }

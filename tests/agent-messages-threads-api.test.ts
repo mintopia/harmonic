@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { attempts, tasks } from '../src/db/schema.js';
 import { startServer, stubHarness, type TestServer } from './helpers.js';
 
@@ -91,10 +91,30 @@ describe('Agent Message Threads API', () => {
     ]);
   });
 
+  it('reports model, state, betweenAttempts, latest Attempt and the per-Workspace cap', async () => {
+    await ctx().workspaces.update(ws2, { agentMessagesSendCap: 7 });
+    await ctx().asyncDb.write((d) => d.update(tasks).set({ state: 'working', model: 'opus' }).where(eq(tasks.id, t.x!)).run());
+    await ctx().asyncDb.write((d) => d.update(tasks).set({ state: 'working' }).where(eq(tasks.id, t.y!)).run());
+    const second = (await ctx().attempts.create(t.y!)).id;
+    const c = (await get()).body.threads.find((th: any) => th.threadId === threadC);
+    const [x, y] = c.participants;
+    expect(x).toEqual(expect.objectContaining({ taskId: t.x, model: 'opus', state: 'working', betweenAttempts: true, sendCap: 7, sends: 1 }));
+    expect(y).toEqual(expect.objectContaining({ taskId: t.y, betweenAttempts: false, attemptNumber: 2, sends: 0, sendCap: 7, lastMessageAt: null }));
+    expect(c.workspaceName).toBe('Second');
+    await setAttemptState(second, 'failed');
+    await ctx().asyncDb.write((d) => d.update(tasks).set({ state: 'draft' }).where(inArray(tasks.id, [t.x!, t.y!])).run());
+  });
+
   it('orders de-duplicated participants by first appearance with Task facts', async () => {
     const a = (await get()).body.threads.find((th: any) => th.threadId === threadA);
     expect(a.participants.map((p: any) => p.taskId)).toEqual([t.a, t.b, t.c]);
-    expect(a.participants[0]).toEqual({ taskId: t.a, title: expect.any(String), harness: 'claude', epicId: 500, deleted: false });
+    expect(a.participants[0]).toEqual({ taskId: t.a, title: expect.any(String), harness: 'claude', epicId: 500, deleted: false, model: null, state: 'draft', betweenAttempts: false, attemptNumber: 1, sends: 2, sendCap: expect.any(Number), lastMessageAt: expect.any(Number) });
+    expect(a.workspaceName).toBe((await ctx().workspaces.list()).find((w) => w.id === ws1)!.name);
+    const sentByB = a.messages.filter((m: any) => m.senderTaskId === t.b);
+    expect(a.participants[1].lastMessageAt).toBe(sentByB.at(-1).createdAt);
+    expect(a.participants[1].sends).toBe(1);
+    expect(a.participants[2].lastMessageAt).toBeNull();
+    expect(a.participants[2].sends).toBe(1); // attempt-wide: c's one send was in another Thread
     expect(a.participants[2].epicId).toBe(600);
   });
 
@@ -140,7 +160,7 @@ describe('Agent Message Threads API', () => {
   it('flags a deleted participant and nulls its facts', async () => {
     expect((await server.api('DELETE', `/api/tasks/${t.y}`)).status).toBe(200);
     const c = (await get(`?workspaceId=${ws2}`)).body.threads[0];
-    expect(c.participants[1]).toEqual({ taskId: t.y, title: null, harness: null, epicId: null, deleted: true });
+    expect(c.participants[1]).toEqual({ taskId: t.y, title: null, harness: null, epicId: null, deleted: true, model: null, state: null, betweenAttempts: false, attemptNumber: null, sends: 0, sendCap: 7, lastMessageAt: null });
     expect(c.messages[0].recipients[0].deleted).toBe(true);
   });
 

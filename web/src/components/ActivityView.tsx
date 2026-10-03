@@ -16,7 +16,7 @@ import { EmptyState } from "./EmptyState";
 import { LoadError } from "./LoadError";
 import { PageHeader } from "./PageHeader";
 import { Tabs } from "./Tabs";
-import { NO_SERVER_FILTER, hasServerFilter } from "../agent-messages-model";
+import { NO_SERVER_FILTER, hasServerFilter, resolveActivityTab } from "../agent-messages-model";
 import { debounce } from "../debounce";
 import {
   activitySummary,
@@ -293,12 +293,17 @@ export function ActivityView({ config, workspaceId = null }: { config: AppConfig
   }, [workspaceId]);
   const reloadActivity = activity.reload;
   const messagesEnabled = activity.data?.agentMessagesEnabledInAnyWorkspace === true;
-  const [tab, setTab] = useState<"running" | "messages">("running");
+  const [selectedTab, setTab] = useState<"running" | "messages">("running");
+  const tab = resolveActivityTab(selectedTab, messagesEnabled);
   const [messageFilter, setMessageFilter] = useState(NO_SERVER_FILTER);
+  useEffect(() => {
+    setMessageFilter(NO_SERVER_FILTER);
+  }, [workspaceId]);
   const filtering = hasServerFilter(messageFilter);
-  const scope = workspaceId ?? undefined;
+  const scope = workspaceId ?? messageFilter.workspaceId ?? undefined;
+  const optionScope = workspaceId ?? undefined;
   const allThreads = useAsyncResource(
-    messagesEnabled ? () => api.agentMessageThreads({ workspaceId: scope, limit: 200 }) : null,
+    messagesEnabled ? () => api.agentMessageThreads({ workspaceId: optionScope, limit: 200 }) : null,
     [workspaceId, messagesEnabled],
     { pollMs: 5_000 },
   );
@@ -313,7 +318,7 @@ export function ActivityView({ config, workspaceId = null }: { config: AppConfig
             limit: 200,
           })
       : null,
-    [workspaceId, messagesEnabled, messageFilter.epicId, messageFilter.taskId, messageFilter.liveOnly],
+    [scope, messagesEnabled, messageFilter.epicId, messageFilter.taskId, messageFilter.liveOnly],
     { pollMs: 5_000 },
   );
   const threads = filtering ? filteredThreads : allThreads;
@@ -420,6 +425,7 @@ export function ActivityView({ config, workspaceId = null }: { config: AppConfig
       )}
       {messagesEnabled && tab === "messages" ? (
         <AgentMessagesTab
+          global={workspaceId === null}
           view={view}
           optionThreads={allThreads.data?.threads ?? []}
           filter={messageFilter}

@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { AppContext } from '../app.js';
-import { RECEIPT_STATES } from '../../db/schema.js';
+import { RECEIPT_STATES, TASK_STATES } from '../../db/schema.js';
 import { resolveScoped } from '../../domain/setting-override.js';
 import { MAX_LIMIT, listResponse, paginationQuerySchema } from '../pagination.js';
 
@@ -37,11 +37,19 @@ const participantSchema = z.object({
   harness: z.string().nullable(),
   epicId: z.number().int().nullable(),
   deleted: z.boolean(),
+  model: z.string().nullable().meta({ description: "The Task's stored model; null when unset or the Task is deleted." }),
+  state: z.enum(TASK_STATES).nullable().meta({ description: "The Task's lifecycle state; null when deleted." }),
+  betweenAttempts: z.boolean().meta({ description: 'Working with no running Attempt.' }),
+  attemptNumber: z.number().int().nullable().meta({ description: 'Number of the latest Attempt; null when none.' }),
+  sends: z.number().int().nonnegative().meta({ description: 'Messages the latest Attempt has sent.' }),
+  sendCap: z.number().int().nonnegative().meta({ description: "The Task's Workspace Agent Messages send cap." }),
+  lastMessageAt: z.number().nullable().meta({ description: 'Epoch ms of the newest message this Task sent in the Thread.' }),
 });
 
 const threadSchema = z.object({
   threadId: z.string(),
   workspaceId: z.number().int(),
+  workspaceName: z.string(),
   latestAt: z.number().meta({ description: 'Epoch ms of the Thread\'s newest message.' }),
   live: z.boolean().meta({ description: 'True while any participant Task has a running Attempt.' }),
   messages: z.array(messageSchema).meta({ description: 'Oldest first.' }),
@@ -78,10 +86,13 @@ export async function agentMessageRoutes(fastify: FastifyInstance, ctx: AppConte
     async (req) => {
       const { limit, offset, workspaceId, epicId, taskId, live } = req.query;
       const globalEnabled = ctx.settingsStore.getGlobal().agentMessages.enabled;
-      const workspaceIds = (await ctx.workspaces.list())
+      const globalCap = ctx.settingsStore.getGlobal().agentMessages.sendCap;
+      const all = await ctx.workspaces.list();
+      const workspaceInfo = new Map(all.map((ws) => [ws.id, { name: ws.name, sendCap: resolveScoped('agentMessagesSendCap', ws.agentMessagesSendCap, globalCap) }]));
+      const workspaceIds = all
         .filter((ws) => (workspaceId === undefined || ws.id === workspaceId) && resolveScoped('agentMessagesEnabled', ws.agentMessagesEnabled, globalEnabled))
         .map((ws) => ws.id);
-      return ctx.agentMessages.listThreads({ workspaceIds, epicId, taskId, live: live === 'true', limit, offset });
+      return ctx.agentMessages.listThreads({ workspaceIds, workspaceInfo, epicId, taskId, live: live === 'true', limit, offset });
     },
   );
 }
