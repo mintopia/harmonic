@@ -1,4 +1,5 @@
 import type { TaskArchive } from '../archive/task-archive.js';
+import type { AgentMessageStore } from '../domain/agent-messages.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { TailerCadence } from './live-usage-tailer.js';
 import type { GitCircuitBreaker } from './git-failure.js';
@@ -44,6 +45,8 @@ export interface TaskEventAppender {
 }
 
 export interface RunnerOptions {
+  /** Held Agent Messages injected at Attempt start. */
+  agentMessages?: AgentMessageStore;
   archive?: TaskArchive;
   isGloballyPaused?: () => boolean;
   onGloballyPaused?: (taskId: number) => Promise<void>;
@@ -84,6 +87,7 @@ export interface RunnerOptions {
         | 'contextReuseTokenLimit'
         | 'taskPrompt'
         | 'pauseMessage'
+        | 'agentMessagesEnabled'
       > &
         Partial<Pick<WorkspaceRow, 'workingDir'>>)
     | undefined

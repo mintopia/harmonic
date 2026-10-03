@@ -119,4 +119,48 @@ export class AgentMessageStore {
       recipients: row.recipients.map((r) => ({ ...r, deleted: !live.has(r.taskId) })),
     }));
   }
+
+  /** Patches one recipient's receipt inside a single serialised write. */
+  updateRecipient(messageId: string, taskId: number, patch: Partial<AgentMessageRecipient>): Promise<void> {
+    return this.db.write(async (db) => {
+      const row = await db.select().from(agentMessages).where(eq(agentMessages.id, messageId)).get();
+      if (!row) return;
+      const recipients = row.recipients.map((r) => (r.taskId === taskId ? { ...r, ...patch } : r));
+      await db.update(agentMessages).set({ recipients }).where(eq(agentMessages.id, messageId)).run();
+    });
+  }
+
+  /** Reads a Task's held messages in send order and marks them delivered. */
+  takeHeld(taskId: number): Promise<AgentMessageRow[]> {
+    return this.db.write(async (db) => {
+      const rows = await db
+        .select()
+        .from(agentMessages)
+        .where(
+          sql`exists (select 1 from json_each(${agentMessages.recipients}) where json_extract(value, '$.taskId') = ${taskId} and json_extract(value, '$.receipt') = 'held')`,
+        )
+        .orderBy(asc(agentMessages.createdAt), asc(sql`rowid`))
+        .all();
+      const deliveredAt = Date.now();
+      for (const row of rows) {
+        const recipients = row.recipients.map((r) =>
+          r.taskId === taskId && r.receipt === 'held' ? { ...r, receipt: 'delivered' as const, mode: 'next-turn' as const, deliveredAt } : r,
+        );
+        await db.update(agentMessages).set({ recipients }).where(eq(agentMessages.id, row.id)).run();
+      }
+      return rows;
+    });
+  }
+
+  /** Puts messages taken for a prompt that never went out back to held. */
+  restoreHeld(rows: readonly AgentMessageRow[], taskId: number): Promise<void> {
+    return this.db.write(async (db) => {
+      for (const { id } of rows) {
+        const current = await db.select().from(agentMessages).where(eq(agentMessages.id, id)).get();
+        if (!current) continue;
+        const recipients = current.recipients.map((r) => (r.taskId === taskId ? { taskId, receipt: 'held' as const } : r));
+        await db.update(agentMessages).set({ recipients }).where(eq(agentMessages.id, id)).run();
+      }
+    });
+  }
 }

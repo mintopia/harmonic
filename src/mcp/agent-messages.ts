@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { AgentMessageRecipient, TaskRow } from '../db/schema.js';
 import { DomainError } from '../domain/errors.js';
 import { resolveScoped } from '../domain/setting-override.js';
+import { deliverAgentMessage } from '../execution/agent-message-delivery.js';
 import type { AppContext } from '../server/app.js';
 import type { McpCaller } from './caller.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -81,7 +82,8 @@ export function registerAgentMessageTools(server: McpServer, ctx: AppContext, ca
         senderAttemptId: attempt.id,
         recipients,
       });
-      return { messageId: row.id, threadId: row.threadId, recipients: row.recipients, sendsRemaining: sendCap - sent - 1 };
+      const receipts = await deliverAgentMessage({ store: ctx.agentMessages, runner: ctx.runner }, row, task);
+      return { messageId: row.id, threadId: row.threadId, recipients: receipts, sendsRemaining: sendCap - sent - 1 };
     }),
   );
 

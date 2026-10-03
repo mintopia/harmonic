@@ -88,7 +88,7 @@ describe('agent messages over MCP', () => {
 
   it('exchanges messages between two Attempt Keys, threads replies, and counts the cap per Attempt', async () => {
     const sent = parse(await a.client.callTool({ name: 'send_message', arguments: { to: b.id, text: 'ping' } }));
-    expect(sent.recipients).toEqual([{ taskId: b.id, receipt: 'queued' }]);
+    expect(sent.recipients).toEqual([{ taskId: b.id, receipt: 'held' }]);
 
     const reply = parse(await b.client.callTool({ name: 'send_message', arguments: { to: a.id, text: 'pong', replyTo: sent.messageId } }));
     expect(reply.threadId).toBe(sent.messageId);
