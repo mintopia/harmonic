@@ -1,6 +1,8 @@
 import { type AppConfig, type MergeFate } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow, StoredEpicKind } from '../db/schema.js';
 import { resolveTrackerAdapter, type TrackerAdapter, type TicketRef } from '../tracker/adapter.js';
+import { resolveRepositoryAdapter } from '../repository/resolve.js';
+import type { RepositoryAdapter } from '../repository/adapter.js';
 import { resolveDrive, type ResolvedDrive } from '../domain/setting-override.js';
 import { driveFields, fillTemplate, splitTitleBody } from './prompt-template.js';
 import { Git } from './git.js';
@@ -33,6 +35,7 @@ export class AutoDrive {
     private readonly onTicketClosed?: (task: TaskRow, commit: { oid: string; paths: string[] } | null) => void,
     /** Notified when a close attempt throws. */
     private readonly onTicketCloseFailed?: (task: TaskRow, error: unknown) => void,
+    private readonly resolveRepository: (repoRoot: string) => Promise<RepositoryAdapter | null> = resolveRepositoryAdapter,
   ) {}
 
   /** The auto-driven path: a mirrored Task Harmonic runs unattended. */
@@ -96,8 +99,8 @@ export class AutoDrive {
    * - **auto-merge** — the Runner has already merged the verified branch, so
    *   Harmonic closes the ticket. A close that fails Escalates.
    * - **open-PR** — open a PR and leave the ticket **open**; the PR's own merge
-   *   closes the issue later. A PR that can't be created Escalates. A tracker
-   *   with no PR support degrades to artifact.
+   *   closes the issue later. A PR that can't be created Escalates. A repo
+   *   with no Code Repository adapter degrades to artifact.
    * - **artifact** (incl. research) — leave the branch and the ticket untouched.
    *
    * Returns `'completed'` once the fate has merged, or `'escalate'` when it
@@ -109,11 +112,11 @@ export class AutoDrive {
 
     if (fate === 'open-PR') {
       if (worktree) {
-        const adapter = await this.resolveAdapter(task.workingDir);
-        if (adapter.openPR) {
+        const repository = await this.resolveRepository(task.workingDir);
+        if (repository) {
           const { title } = splitTitleBody(task.prompt);
           try {
-            await adapter.openPR({
+            await repository.openPR({
               branch: run.branch!,
               baseBranch: run.baseBranch!,
               title,
