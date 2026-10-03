@@ -1,7 +1,7 @@
 import type { TrackerRef } from '../types.js';
 import { useEffect, useState } from 'react';
 import { formatCost } from '../cost';
-import type { Task, Workspace } from '../types';
+import { isEpicListRow, type EpicListRow, type Task, type TaskListItem, type Workspace } from '../types';
 import { TASK_STATES } from '../types';
 import { TABLE_HARNESSES, TABLE_PRIORITIES, type TableFilters, type SortKey } from '../router-model';
 import {
@@ -58,7 +58,7 @@ export function TableView({
   onFiltersChange: (next: TableFilters) => void;
   onNewTask: () => void;
 }) {
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<TaskListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -192,19 +192,19 @@ export function TableView({
     );
   };
 
-  const renderEpicRow = (task: Task) => (
+  const renderEpicRow = (task: EpicListRow) => (
     <div
-      key={`epic-${task.trackerRef ?? String(task.id)}`}
+      key={`epic-${task.trackerRef}`}
       role="row"
       className={`${GRID} min-h-11 cursor-pointer py-2 transition-colors duration-150 hover:bg-raised/50 max-md:py-3`}
-      onClick={() => onOpenEpic(task.trackerRef ?? String(task.id))}
+      onClick={() => onOpenEpic(task.trackerRef)}
     >
       <div role="cell" className="flex items-center justify-end gap-1.5 whitespace-nowrap tabular-nums text-muted max-md:col-start-1 max-md:row-start-1 max-md:justify-start">
         <span className={`${chip} shrink-0 bg-accent-tint text-accent`}>
           <span className="sr-only">Epic: </span>epic
         </span>
         <span className="sr-only">Issue: </span>
-        {issueRef(task.trackerRef ?? String(task.id))}
+        {issueRef(task.trackerRef)}
       </div>
       <div role="cell" className="flex min-w-0 items-center gap-2 pr-2 max-md:col-span-2 max-md:row-start-2 max-md:pr-0">
         <div className="min-w-0 flex-1">
@@ -214,7 +214,7 @@ export function TableView({
             className="block w-full cursor-pointer truncate text-left text-ink max-md:whitespace-normal max-md:overflow-visible max-md:font-medium"
             onClick={(e) => {
               e.stopPropagation();
-              onOpenEpic(task.trackerRef ?? String(task.id));
+              onOpenEpic(task.trackerRef);
             }}
           >
             {task.summary}
@@ -358,7 +358,7 @@ export function TableView({
         </div>
 
         <div role="rowgroup" className="divide-y divide-hairline">
-          {pageTasks.map((t) => (t.isEpic ? renderEpicRow(t) : renderRow(t)))}
+          {pageTasks.map((t) => (isEpicListRow(t) ? renderEpicRow(t) : renderRow(t)))}
         </div>
 
         {!loading && total === 0 && (
