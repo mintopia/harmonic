@@ -303,8 +303,9 @@ describe('TaskExporter (#734)', () => {
     expect(() => failing.trigger(task, 'done')).not.toThrow();
 
     exporter().trigger(task, 'done');
-    for (let i = 0; i < 200 && tarballs().length === 0; i++) await new Promise((r) => setTimeout(r, 25));
+    for (let i = 0; i < 200 && facts.length === 0; i++) await new Promise((r) => setTimeout(r, 25));
     expect(tarballs()).toHaveLength(1);
+    expect(facts).toHaveLength(1);
   });
 
   it('exports nothing and records no Fact when the settings lookup rejects', async () => {
