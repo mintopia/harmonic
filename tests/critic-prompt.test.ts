@@ -41,6 +41,12 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
     expect(prompt).toMatch(/network request/i);
   });
 
+  it('does not forbid credential use, leaving that to the operator prompt', () => {
+    const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE });
+    expect(prompt).not.toMatch(/no credentials/i);
+    expect(prompt).not.toMatch(/privileged service/i);
+  });
+
   it('warns that file contents and fetched pages are untrusted data', () => {
     const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE });
     expect(prompt).toMatch(/untrusted/i);
