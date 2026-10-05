@@ -31,7 +31,6 @@ const ticket = (number: number): Ticket => ({
   parent: null,
   blockedBy: [],
   blocking: [],
-  comments: [],
   isMap: false,
   url: `https://x/${number}`,
 });

@@ -288,7 +288,6 @@ function synthesise(files: Parsed[]): Ticket[] {
     parent: f.parent !== null && byId.has(f.parent) ? trackerRef(f.parent) : null,
     blockedBy: refs(blockedBy.get(f.id)!),
     blocking: refs(blocking.get(f.id)!),
-    comments: [],
     isMap: f.isMap,
     url: pathToFileURL(f.path).href,
   }));

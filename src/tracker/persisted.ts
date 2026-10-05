@@ -44,7 +44,6 @@ function ticketFrom(ref: TrackerRef, facts: TrackerFacts, isMap: boolean): Ticke
     closedAt: null,
     assignees: [],
     blocking: [],
-    comments: [],
   };
 }
 

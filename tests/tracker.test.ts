@@ -19,7 +19,6 @@ const issue29 = {
   closedAt: null,
   labels: [{ name: 'ready-for-agent' }, { name: 'wayfinder:map' }],
   assignees: [],
-  comments: [{ author: { login: 'mintopia' }, body: 'first', createdAt: '2026-08-06T12:00:00Z' }],
   parent: { number: 19, title: 'Wayfinder', state: 'OPEN' },
   blockedBy: { nodes: [], totalCount: 0 },
   blocking: {
@@ -55,7 +54,6 @@ describe('github tracker adapter', () => {
     });
     expect(t.blocking).toEqual([{ ref: '30', title: 'Mirror tracker issues', state: 'open' }]);
     expect(t.blockedBy).toEqual([]);
-    expect(t.comments).toEqual([{ author: 'mintopia', body: 'first', createdAt: '2026-08-06T12:00:00Z' }]);
   });
 
   it('readTicket reads one fresh issue by number', async () => {
@@ -63,6 +61,20 @@ describe('github tracker adapter', () => {
     const t = await githubAdapter('/repo', run).readTicket({ ref: trackerRef(29), title: '', state: 'open' });
     expect(t.ref).toBe('29');
     expect(calls).toContainEqual(['issue', 'view', '29', '--json', expect.any(String)]);
+  });
+
+  it('never requests comments, and readState asks gh for number,state only', async () => {
+    const { run, calls } = fakeGh();
+    const adapter = githubAdapter('/repo', run);
+    await adapter.scan();
+    await adapter.readTicket({ ref: trackerRef(29), title: '', state: 'open' });
+    for (const c of calls) {
+      const i = c.indexOf('--json');
+      if (i >= 0) expect(c[i + 1]!.split(',')).not.toContain('comments');
+    }
+    calls.length = 0;
+    expect(await adapter.readState!({ ref: trackerRef(29), title: '', state: 'open' })).toBe('open');
+    expect(calls).toEqual([['issue', 'view', '29', '--json', 'number,state']]);
   });
 
   it('claim assigns the ambient user; close comments then closes', async () => {
@@ -276,7 +288,6 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
         assignees: [],
         parent: '0',
         isMap: false,
-        comments: [],
       });
       expect(t1.body).toContain('**What to build:**');
       expect(t1.body).not.toMatch(/^# 01/);
@@ -542,11 +553,10 @@ describe('gitlab tracker adapter', () => {
     expect(t22.assignees).toEqual(['mintopia']);
   });
 
-  it('readTicket adds non-system comments to the synthesised ticket', async () => {
+  it('readTicket returns the scanned ticket', async () => {
     const { run } = fakeGlab();
     const t = await gitlabAdapter(cfg, run).readTicket({ ref: trackerRef(36), title: '', state: 'open' });
     expect(t.ref).toBe('36');
-    expect(t.comments).toEqual([{ author: 'mintopia', body: 'first', createdAt: '2026-08-08T12:00:00Z' }]);
   });
 
   it('claim unions our id onto the current assignees; close comments then closes', async () => {

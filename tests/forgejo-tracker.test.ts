@@ -31,7 +31,7 @@ describe('Forgejo tracker', () => {
     expect(off.find((t) => t.ref === '3')!.blockedBy.map((r) => r.ref)).toEqual(['1']);
   });
 
-  it('claim assigns the token account and release removes only it; comments come with readTicket', async () => {
+  it('claim assigns the token account and release removes only it', async () => {
     const { fake, adapter } = build({ issues: [issue(1, 'A', { assignees: ['someone'] })] });
     await adapter.claim(ref(1));
     expect(fake.issues[0]!.assignees).toEqual(['someone', 'harmonic-bot']);
@@ -39,7 +39,7 @@ describe('Forgejo tracker', () => {
     expect(fake.issues[0]!.assignees).toEqual(['someone']);
     await adapter.close!(ref(1), 'done');
     const ticket = await adapter.readTicket(ref(1));
-    expect([ticket.state, ticket.comments.map((c) => c.body)]).toEqual(['closed', ['done']]);
+    expect(ticket.state).toBe('closed');
   });
 
   it('readTicket costs O(1) requests however many issues are open, and still reads edges and parent', async () => {
