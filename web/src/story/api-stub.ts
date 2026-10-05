@@ -398,7 +398,7 @@ export const api: typeof RealApi = {
   deleteChannel: (_id: number) => ok(undefined),
   epics: (_workspaceId: number, _opts?: { limit?: number; offset?: number; q?: string }) => ok({ epics: [f.epic], total: 1 }),
   epic: (_workspaceId: number, _epicRef: TrackerRef) => ok(epicIntegrated ? f.epicIntegrated : f.epic),
-  epicAttempts: (_workspaceId: number, _epicRef: TrackerRef) => ok({ attempts: [] }),
+  epicAttempts: (_workspaceId: number, _epicRef: TrackerRef) => ok({ attempts: storyName === 'epic-critic-prompt' ? f.epicAttempts : [] }),
   epicDiffFiles: (_workspaceId: number, _epicRef: TrackerRef) => ok({ files: f.diffFiles, total: f.diffFiles.length }),
   maps: (_opts?: { workspaceId?: number; limit?: number; offset?: number; q?: string }) => ok({ maps: [], total: 0 }),
 };
