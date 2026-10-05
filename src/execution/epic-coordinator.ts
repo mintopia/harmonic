@@ -546,6 +546,11 @@ export interface EpicRefreshTarget {
   defaultBranch: string;
 }
 
+/** A refresh target as dispatched to the corrective resolver, which archives its prompt under the owning Workspace. */
+export interface EpicRefreshResolveTarget extends EpicRefreshTarget {
+  workspaceId: number;
+}
+
 export type EpicRefreshOutcome =
   | { status: 'refreshed'; oid: string }
   | { status: 'resolving'; detail: string }

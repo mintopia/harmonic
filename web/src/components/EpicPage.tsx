@@ -775,7 +775,7 @@ export function EpicPage({
                     )}
                   </section>
 
-                  {epic && <div className="mb-6"><EpicTimeline epic={epic} /></div>}
+                  {epic && <div className="mb-6"><EpicTimeline epic={epic} workspaceId={workspaceId} /></div>}
 
                   {epic && <ExportPanel target={epicExportTarget(workspaceId, epicRef)} finished={epic.state === 'integrated'} refreshKey={refreshKey} />}
 

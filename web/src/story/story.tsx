@@ -6,6 +6,7 @@ import '../index.css';
 import { GlobalVerificationSettings } from '../components/VerificationSettings';
 import { TicketPage } from '../components/TicketPage';
 import { ChatTranscript } from '../components/ticket/ChatTranscript';
+import { PromptSent } from '../components/ticket/Description';
 import type { AttemptLogEvent, VerifierStatus } from '../types';
 import { EpicPage } from '../components/EpicPage';
 import { StatsPage } from '../components/StatsPage';
@@ -169,6 +170,30 @@ function TranscriptStory() {
   return (
     <StoryFrame style={{ padding: 30, maxWidth: 760, margin: '0 auto' }}>
       <ChatTranscript events={codexEvents} unavailable={false} model="gpt-5.6-sol" agent="Codex" stepLabel="Implement" />
+    </StoryFrame>
+  );
+}
+
+function MultiTurnStory() {
+  const ev = (i: number, payload: AttemptLogEvent['payload'], type = 'session_update'): AttemptLogEvent => ({ id: i, seq: i, ts: 1_756_000_000_000 + i * 1000, type: type as 'session_update', payload });
+  const events: AttemptLogEvent[] = [
+    ev(1, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Implemented the change; tests still to run.' } }),
+    ev(2, { sessionUpdate: 'tool_call', toolCallId: 'a', title: 'Edit src/widget.ts', status: 'completed' }),
+    ev(3, { sessionUpdate: '', event: 'finished', stopReason: 'end_turn' }, 'lifecycle'),
+    ev(4, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Ran the tests and committed.' } }),
+    ev(5, { sessionUpdate: '', event: 'finished', stopReason: 'end_turn' }, 'lifecycle'),
+  ];
+  return (
+    <StoryFrame style={{ padding: 30, maxWidth: 760, margin: '0 auto' }}>
+      <PromptSent prompt="Implement #801: render each turn's Resolved Prompt inline." />
+      <ChatTranscript
+        events={events}
+        unavailable={false}
+        model="claude-sonnet-4-6"
+        agent="Claude"
+        stepLabel="Implementation"
+        turnPrompts={['Continue: the work is not committed yet. Run the tests, then commit.']}
+      />
     </StoryFrame>
   );
 }
@@ -424,6 +449,7 @@ const STORIES: Record<string, () => JSX.Element> = {
   board: BoardStory,
   'critic-running': CriticRunningStory,
   transcript: TranscriptStory,
+  'multi-turn': MultiTurnStory,
   timeline: TimelineStory,
   merge: MergeStory,
   compose: ComposeStory,

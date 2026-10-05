@@ -1,13 +1,15 @@
 import type { TrackerRef } from '../tracker/adapter.js';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { Git } from './git.js';
 import { bestEffort, reportFailure, type FireAndForget } from '../error-handling.js';
-import { integrationBranchName, type EpicRefreshResolveDispatchOutcome, type EpicRefreshTarget } from './epic-coordinator.js';
+import { integrationBranchName, type EpicRefreshResolveDispatchOutcome, type EpicRefreshResolveTarget } from './epic-coordinator.js';
 import { RESOLVE_TURN_TIMEOUT_MS } from './merge-coordinator.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { TaskService } from '../domain/tasks.js';
 import type { RunnerOptions } from './runner.js';
+import type { TaskArchive } from '../archive/task-archive.js';
 
 export interface EpicRefreshResolverDeps {
   taskService: TaskService;
@@ -15,6 +17,7 @@ export interface EpicRefreshResolverDeps {
   worktreesDir: string;
   criticDrive: RunnerOptions['criticDrive'];
   fireAndForget: FireAndForget;
+  archive?: TaskArchive | undefined;
 }
 
 export class EpicRefreshResolver {
@@ -35,7 +38,7 @@ export class EpicRefreshResolver {
    * `epic/<ref>` and is re-attempted later.
    */
   async enqueueEpicRefreshResolution(
-    target: EpicRefreshTarget,
+    target: EpicRefreshResolveTarget,
     detail: string,
     escalate: (epicRef: TrackerRef, reason: string) => void | Promise<void>,
     retry: () => Promise<unknown>,
@@ -93,7 +96,7 @@ export class EpicRefreshResolver {
   }
 
   private async runEpicRefreshResolveTurn(args: {
-    target: EpicRefreshTarget;
+    target: EpicRefreshResolveTarget;
     branch: string;
     worktreePath: string;
     conflicted: boolean;
@@ -112,6 +115,13 @@ export class EpicRefreshResolver {
           `Resolve the conflicts so the result keeps both \`${args.branch}\`'s work and \`${args.target.defaultBranch}\`'s changes, ` +
           `then complete the merge (\`git add -A\` and \`git commit --no-edit\`). ` +
           `Do not create or switch branches, do not push, and do not change anything beyond what resolving this merge requires.`;
+        try {
+          const step = this.deps.archive?.epicRefreshStep(args.target.workspaceId, args.target.ref, `${Date.now()}-${randomBytes(3).toString('hex')}`);
+          step?.appendPrompt(prompt);
+          void step?.close().catch((err) => reportFailure(err, { op: 'runner.epicRefreshResolveTurn.archivePrompt', level: 'warn', context: { epicRef: args.target.ref } }));
+        } catch (err) {
+          reportFailure(err, { op: 'runner.epicRefreshResolveTurn.archivePrompt', level: 'warn', context: { epicRef: args.target.ref } });
+        }
         await drive.run({
           harness: args.harness,
           harnessId: args.harnessId,

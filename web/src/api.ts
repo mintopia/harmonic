@@ -437,6 +437,12 @@ export const api = {
   },
   epic: (workspaceId: number, epicRef: TrackerRef) =>
     request<Epic>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}`),
+  epicRefreshPrompts: (workspaceId: number, epicRef: TrackerRef) =>
+    request<{ prompts: { locator: string; at: string }[] }>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/refresh-prompts`),
+  epicRefreshPrompt: (workspaceId: number, epicRef: TrackerRef, locator: string) =>
+    requestText(`/api/workspaces/${workspaceId}/epics/${epicRef}/refresh-prompt?locator=${encodeURIComponent(locator)}`),
+  attemptResolvedPrompt: (attemptId: number, locator: string) =>
+    requestText(`/api/attempts/${attemptId}/resolved-prompt?locator=${encodeURIComponent(locator)}`),
   epicAttempts: (workspaceId: number, epicRef: TrackerRef) =>
     request<{ attempts: EpicAttempt[] }>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/attempts`),
   epicDiffFiles: (workspaceId: number, epicRef: TrackerRef) =>

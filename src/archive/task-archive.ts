@@ -364,6 +364,11 @@ export class TaskArchive {
     return this.stepWriter(dir, { workspaceId, epicRef, attemptNumber, stepId });
   }
 
+  epicRefreshStep(workspaceId: number, epicRef: TrackerRef, runId: string): StepArchiveWriter {
+    const dir = this.ensureEpic(workspaceId, epicRef).then((root) => this.makeDir(join(root, 'refresh', safeSegment(runId))));
+    return this.stepWriter(dir, { workspaceId, epicRef, runId });
+  }
+
   ensureEpic(workspaceId: number, epicRef: TrackerRef): Promise<string> {
     const key = `epic:${workspaceId}:${epicRef}`;
     const inflight = this.ensuring.get(key);
@@ -411,9 +416,54 @@ export class TaskArchive {
     try {
       const root = await this.existingOwnerDir(owner);
       if (!root) return null;
-      const attemptDir = join(root, 'attempts', String(attemptNumber));
-      const file = resolve(attemptDir, locator);
-      if (!file.startsWith(attemptDir + sep) || basename(file) !== 'prompt.md') return null;
+      return await this.readPromptFile(join(root, 'attempts', String(attemptNumber)), locator, yieldNow);
+    } catch (err) {
+      warn('archive: resolved prompt read failed', err, { attemptNumber, locator });
+      return null;
+    }
+  }
+
+  /** Read an Epic refresh-resolver prompt by its `refresh/<runId>/prompt.md` locator; null when absent or not a prompt file under the Epic's `refresh` directory. */
+  async readArchivedEpicRefreshPrompt(
+    workspaceId: number,
+    epicRef: TrackerRef,
+    locator: string,
+    yieldNow: () => Promise<void> = yieldToEventLoop,
+  ): Promise<string | null> {
+    try {
+      const root = await this.existingOwnerDir({ workspaceId, epicRef });
+      if (!root) return null;
+      return await this.readPromptFile(join(root, 'refresh'), locator.replace(/^refresh\//, ''), yieldNow);
+    } catch (err) {
+      warn('archive: epic refresh prompt read failed', err, { workspaceId, epicRef, locator });
+      return null;
+    }
+  }
+
+  /** Locators of the archived refresh-resolver prompts for an Epic, oldest first. */
+  async listEpicRefreshPrompts(workspaceId: number, epicRef: TrackerRef): Promise<{ locator: string; at: string }[]> {
+    try {
+      const root = await this.existingOwnerDir({ workspaceId, epicRef });
+      if (!root) return [];
+      const refreshDir = join(root, 'refresh');
+      const found: { locator: string; at: string; ms: number }[] = [];
+      for (const entry of await readdir(refreshDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const info = await stat(join(refreshDir, entry.name, 'prompt.md')).catch(() => null);
+        if (info) found.push({ locator: `refresh/${entry.name}/prompt.md`, at: info.birthtime.toISOString(), ms: info.birthtimeMs });
+        await yieldToEventLoop();
+      }
+      return found.sort((a, b) => a.ms - b.ms).map(({ locator, at }) => ({ locator, at }));
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') warn('archive: epic refresh prompt listing failed', err, { workspaceId, epicRef });
+      return [];
+    }
+  }
+
+  private async readPromptFile(baseDir: string, locator: string, yieldNow: () => Promise<void>): Promise<string | null> {
+    const file = resolve(baseDir, locator);
+    if (!file.startsWith(baseDir + sep) || basename(file) !== 'prompt.md') return null;
+    try {
       const handle = await open(file, 'r');
       try {
         const chunks: Buffer[] = [];
@@ -429,10 +479,8 @@ export class TaskArchive {
         await handle.close();
       }
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT' && (err as NodeJS.ErrnoException).code !== 'EISDIR') {
-        warn('archive: resolved prompt read failed', err, { attemptNumber, locator });
-      }
-      return null;
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT' || (err as NodeJS.ErrnoException).code === 'EISDIR') return null;
+      throw err;
     }
   }
 
