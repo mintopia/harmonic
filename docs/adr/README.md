@@ -93,6 +93,7 @@ is historical and retains the terminology used at the reset.
 | 0044 | [Every Task keeps a file Archive, exported on terminal disposition](0044-task-archive-and-export.md) |
 | 0045 | [Agent Messages travel over Harmonic's MCP server with A2A-shaped payloads](0045-agent-messages-over-mcp-with-a2a-shaped-payloads.md) |
 | 0046 | [Tracker selection, Code Repository, and Secrets](0046-tracker-selection-code-repository-and-secrets.md) |
+| 0047 | [Prompt Fragments are operator-editable and Resolved Prompts are visible](0047-prompt-fragments-are-editable-and-resolved-prompts-are-visible.md) |
 
 ## Where every pre-reset ADR went
 
