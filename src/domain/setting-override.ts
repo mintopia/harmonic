@@ -229,6 +229,7 @@ export function resolvePromptFragments(
   config: Pick<AppConfig, 'promptFragments'>,
 ): AppConfig['promptFragments'] {
   return {
+    ...config.promptFragments,
     readOnlyRestraint: resolveScoped(
       'promptFragmentReadOnlyRestraint',
       ws?.promptFragmentReadOnlyRestraint,

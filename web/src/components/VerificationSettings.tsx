@@ -9,6 +9,7 @@ import type {
 import { EPIC_RESOLVE_PLACEHOLDERS, compileEpicResolvePreview } from "../prompt-preview-model";
 import { CommandListEditor, CommandOverlayEditor } from "./CommandListEditor";
 import {
+  PromptFragmentsContext,
   EpicCriticListEditor,
   EpicCriticOverlayEditor,
   TaskCriticListEditor,
@@ -184,7 +185,8 @@ export function GlobalVerificationSettings({
     });
 
   return (
-    <div>
+    <PromptFragmentsContext.Provider value={config.promptFragments}>
+      <div>
       <Tabs
         tabs={SCOPE_TABS}
         active={scope}
@@ -291,7 +293,8 @@ export function GlobalVerificationSettings({
           </>
         )}
       </div>
-    </div>
+      </div>
+    </PromptFragmentsContext.Provider>
   );
 }
 
@@ -387,7 +390,8 @@ export function WorkspaceVerificationSettings({
 }) {
   const [scope, setScope] = useState<"task" | "epic">("task");
   return (
-    <div>
+    <PromptFragmentsContext.Provider value={{ ...config.promptFragments, readOnlyRestraint: workspace.promptFragmentReadOnlyRestraint ?? config.promptFragments.readOnlyRestraint }}>
+      <div>
       <Tabs
         tabs={SCOPE_TABS}
         active={scope}
@@ -437,6 +441,7 @@ export function WorkspaceVerificationSettings({
           </StageBlock>
         )}
       </div>
-    </div>
+      </div>
+    </PromptFragmentsContext.Provider>
   );
 }

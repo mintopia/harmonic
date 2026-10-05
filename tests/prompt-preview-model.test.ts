@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_PROMPT_FRAGMENTS } from '../src/config.js';
 import {
   CRITIC_NO_ISSUE_PLACEHOLDERS,
   EPIC_RESOLVE_PLACEHOLDERS,
@@ -47,7 +48,7 @@ describe('prompt-preview-model (settings compiled preview)', () => {
     const [mirrored, native] = compileCriticPreview({
       issuePrompt: 'Review issue {ref}: {title}.',
       noIssuePrompt: 'Review task {taskId} — {title} via {skill}.',
-    });
+    }, DEFAULT_PROMPT_FRAGMENTS);
     if (!mirrored || !native) throw new Error('expected two compiled variants');
 
     expect(mirrored.label).toMatch(/mirrored/i);
@@ -69,7 +70,7 @@ describe('prompt-preview-model (settings compiled preview)', () => {
   });
 
   it('compiles an Epic critic against its ticket context', () => {
-    const out = compileEpicCriticPreview('Review Epic {ref}: {title}.');
+    const out = compileEpicCriticPreview('Review Epic {ref}: {title}.', DEFAULT_PROMPT_FRAGMENTS);
 
     expect(out).toContain(`Review Epic ${SAMPLE_DRIVE_FIELDS.ref}: ${SAMPLE_DRIVE_FIELDS.title}.`);
     expect(out).toContain('the referenced ticket');

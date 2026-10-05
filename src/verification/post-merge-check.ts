@@ -3,7 +3,7 @@ import type { AppConfig } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import { DomainError } from '../domain/errors.js';
-import { resolveVerifiers } from '../domain/setting-override.js';
+import { resolvePromptFragments, resolveVerifiers } from '../domain/setting-override.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import type { FireAndForget } from '../error-handling.js';
 import { indexWorktree } from '../execution/code-index.js';
@@ -16,7 +16,7 @@ import { runPostMergeCommands } from './post-merge-commands.js';
 import { criticAttemptToInput, runCritic, type CriticHarnessDrive } from './critic.js';
 
 type VerifierWorkspace = Pick<WorkspaceRow,
-  'taskPreMergeCommands' | 'taskPreMergeCritics' | 'taskPostMergeCommands' | 'taskPostMergeCritics' | 'epicPreMergeCommands' | 'epicPreMergeCritics'>;
+  'taskPreMergeCommands' | 'taskPreMergeCritics' | 'taskPostMergeCommands' | 'taskPostMergeCritics' | 'epicPreMergeCommands' | 'epicPreMergeCritics' | 'promptFragmentReadOnlyRestraint'>;
 
 type PostMergeInput = {
   task: TaskRow;
@@ -56,7 +56,7 @@ export function createPostMergeCheck(deps: {
     const ws = await getWorkspace(task.workspaceId);
     const config = getConfig();
     const { task: resolvedTask } = resolveVerifiers(
-      ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null },
+      ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null, promptFragmentReadOnlyRestraint: null },
       config,
     );
     const { commands, critics } = resolvedTask.postMerge;
@@ -92,6 +92,7 @@ export function createPostMergeCheck(deps: {
         verifiedHeadOid: mergeOid,
         ...(baseOid ? { baseOid } : {}),
         critic,
+        fragments: resolvePromptFragments(ws, config),
         timeoutMs: configuredCritic.timeoutSeconds * 1000,
         fields: driveFields(task, urlFor),
         harness,

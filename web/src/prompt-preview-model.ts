@@ -105,13 +105,17 @@ export function compileTaskIdPreview(template: string): string {
  * operator prompt compiles differently per Task kind, so both variants are shown:
  * a mirrored Task judged against its ticket, and a native Task judged against the
  * instructions alone. */
-export function compileCriticPreview(prompts: { issuePrompt: string; noIssuePrompt: string }): LabeledPreview[] {
+export function compileCriticPreview(
+  prompts: { issuePrompt: string; noIssuePrompt: string },
+  fragments: AppConfig['promptFragments'],
+): LabeledPreview[] {
   const compile = (operatorPrompt: string, fields: DriveFields) =>
     buildCriticPrompt({
       operatorPrompt,
       fields,
       verifiedHeadOid: SAMPLE_VERIFIED_HEAD_OID,
       baseOid: SAMPLE_BASE_OID,
+      fragments,
     });
   return [
     { label: 'Mirrored task (has ticket)', text: compile(prompts.issuePrompt, SAMPLE_DRIVE_FIELDS) },
@@ -119,12 +123,33 @@ export function compileCriticPreview(prompts: { issuePrompt: string; noIssueProm
   ];
 }
 
-export function compileEpicCriticPreview(prompt: string): string {
+export const CRITIC_REVISION_PLACEHOLDERS: Placeholder[] = [
+  { token: '{ticketFirst}', desc: 'tells the critic to read the ticket, or to judge by the review instructions', core: true },
+  { token: '{spec}', desc: '"the referenced ticket" or "the review instructions above"' },
+  { token: '{head}', desc: 'candidate revision' },
+  { token: '{base}', desc: 'base revision' },
+  { token: '{workingTreeNote}', desc: 'uncommitted-changes note, empty when the worktree is clean' },
+];
+
+export type CriticRevisionVariant = 'diff' | 'identical' | 'alone';
+
+export function compileCriticFragmentPreview(fragments: AppConfig['promptFragments'], variant: CriticRevisionVariant): string {
+  return buildCriticPrompt({
+    operatorPrompt: '(the operator review prompt)',
+    fields: SAMPLE_DRIVE_FIELDS,
+    verifiedHeadOid: SAMPLE_VERIFIED_HEAD_OID,
+    ...(variant === 'alone' ? {} : { baseOid: variant === 'identical' ? SAMPLE_VERIFIED_HEAD_OID : SAMPLE_BASE_OID }),
+    fragments,
+  });
+}
+
+export function compileEpicCriticPreview(prompt: string, fragments: AppConfig['promptFragments']): string {
   return buildCriticPrompt({
     operatorPrompt: prompt,
     fields: SAMPLE_DRIVE_FIELDS,
     verifiedHeadOid: SAMPLE_VERIFIED_HEAD_OID,
     baseOid: SAMPLE_BASE_OID,
+    fragments,
   });
 }
 

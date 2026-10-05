@@ -7,6 +7,8 @@ import {
   DRIVE_PLACEHOLDERS,
   TASK_ID_PLACEHOLDER,
   TASK_PLACEHOLDERS,
+  CRITIC_REVISION_PLACEHOLDERS,
+  compileCriticFragmentPreview,
   compileDrivePreview,
   compileTaskIdPreview,
   compileTaskPreview,
@@ -719,6 +721,61 @@ const readOnlyRestraintField = prompt(
   },
 );
 
+type CriticFragmentName = 'criticRevisionIdentical' | 'criticRevisionDiff' | 'criticRevisionAlone' | 'criticVerdictContract';
+
+function criticFragmentField(
+  name: CriticFragmentName,
+  label: string,
+  description: string,
+  variant: 'diff' | 'identical' | 'alone',
+  placeholders: Placeholder[],
+) {
+  return prompt(
+    `fragment-${name}`,
+    {
+      id: `settings-fragment-${name}`,
+      label,
+      description,
+      errorKey: `promptFragments.${name}`,
+      get: (c) => c.promptFragments[name],
+      set: (c, v) => ({ ...c, promptFragments: { ...c.promptFragments, [name]: v } }),
+      placeholders,
+      compile: (_text, c) => compileCriticFragmentPreview(c.promptFragments, variant),
+      textareaClass: `${field} min-h-24`,
+    },
+    null,
+  );
+}
+
+const criticRevisionDiffField = criticFragmentField(
+  'criticRevisionDiff',
+  'Critic revision block',
+  'Tells the critic which revision to review and how to find the change, when the candidate differs from the base.',
+  'diff',
+  CRITIC_REVISION_PLACEHOLDERS,
+);
+const criticRevisionIdenticalField = criticFragmentField(
+  'criticRevisionIdentical',
+  'Critic revision block (no change)',
+  'Used when the candidate is identical to the base: the builder made no code change.',
+  'identical',
+  CRITIC_REVISION_PLACEHOLDERS,
+);
+const criticRevisionAloneField = criticFragmentField(
+  'criticRevisionAlone',
+  'Critic revision block (no base)',
+  'Used when the base revision is unknown, so the candidate is reviewed on its own.',
+  'alone',
+  CRITIC_REVISION_PLACEHOLDERS,
+);
+const criticVerdictContractField = criticFragmentField(
+  'criticVerdictContract',
+  'Critic verdict contract',
+  'The reply format demanded of the critic. It must keep the "verdict" and "summary" keys the verdict parser reads; a malformed reply is recorded as inconclusive.',
+  'diff',
+  [],
+);
+
 const guardrailScalarFields: OverridableDescriptor[] = [
   {
     key: 'guardrailProgress',
@@ -1246,7 +1303,15 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
       workspace:
         'Named pieces of prompt text shared across prompts. Each inherits the global fragment until overridden.',
     },
-    body: (ctx) => renderField(readOnlyRestraintField, ctx),
+    body: (ctx) => (
+      <>
+        {renderField(readOnlyRestraintField, ctx)}
+        {renderField(criticRevisionDiffField, ctx)}
+        {renderField(criticRevisionIdenticalField, ctx)}
+        {renderField(criticRevisionAloneField, ctx)}
+        {renderField(criticVerdictContractField, ctx)}
+      </>
+    ),
   },
 
   {

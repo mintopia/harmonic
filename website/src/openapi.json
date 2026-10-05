@@ -7345,7 +7345,27 @@
               "readOnlyRestraint": {
                 "type": "string",
                 "minLength": 1,
-                "example": "You are acting in a READ-ONLY role…"
+                "example": "You MAY read any file, but you MUST NOT edit…"
+              },
+              "criticRevisionIdentical": {
+                "type": "string",
+                "minLength": 1,
+                "example": "{ticketFirst} The candidate revision {head} is IDENTICAL…"
+              },
+              "criticRevisionDiff": {
+                "type": "string",
+                "minLength": 1,
+                "example": "{ticketFirst} Then review the candidate revision {head}…"
+              },
+              "criticRevisionAlone": {
+                "type": "string",
+                "minLength": 1,
+                "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+              },
+              "criticVerdictContract": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
               }
             }
           },
@@ -16125,7 +16145,27 @@
               "readOnlyRestraint": {
                 "type": "string",
                 "minLength": 1,
-                "example": "You are acting in a READ-ONLY role…"
+                "example": "You MAY read any file, but you MUST NOT edit…"
+              },
+              "criticRevisionIdentical": {
+                "type": "string",
+                "minLength": 1,
+                "example": "{ticketFirst} The candidate revision {head} is IDENTICAL…"
+              },
+              "criticRevisionDiff": {
+                "type": "string",
+                "minLength": 1,
+                "example": "{ticketFirst} Then review the candidate revision {head}…"
+              },
+              "criticRevisionAlone": {
+                "type": "string",
+                "minLength": 1,
+                "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+              },
+              "criticVerdictContract": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
               }
             },
             "additionalProperties": false
@@ -24252,11 +24292,35 @@
                         "readOnlyRestraint": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                          "example": "You MAY read any file, but you MUST NOT edit, create, or delete any file."
+                        },
+                        "criticRevisionIdentical": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                        },
+                        "criticRevisionDiff": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                        },
+                        "criticRevisionAlone": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                        },
+                        "criticVerdictContract": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
                         }
                       },
                       "required": [
-                        "readOnlyRestraint"
+                        "readOnlyRestraint",
+                        "criticRevisionIdentical",
+                        "criticRevisionDiff",
+                        "criticRevisionAlone",
+                        "criticVerdictContract"
                       ],
                       "additionalProperties": false
                     },
@@ -25402,11 +25466,35 @@
                         "readOnlyRestraint": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                          "example": "You MAY read any file, but you MUST NOT edit, create, or delete any file."
+                        },
+                        "criticRevisionIdentical": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                        },
+                        "criticRevisionDiff": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                        },
+                        "criticRevisionAlone": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                        },
+                        "criticVerdictContract": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
                         }
                       },
                       "required": [
-                        "readOnlyRestraint"
+                        "readOnlyRestraint",
+                        "criticRevisionIdentical",
+                        "criticRevisionDiff",
+                        "criticRevisionAlone",
+                        "criticVerdictContract"
                       ],
                       "additionalProperties": false
                     },
@@ -26524,11 +26612,35 @@
                       "readOnlyRestraint": {
                         "type": "string",
                         "minLength": 1,
-                        "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                        "example": "You MAY read any file, but you MUST NOT edit, create, or delete any file."
+                      },
+                      "criticRevisionIdentical": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                      },
+                      "criticRevisionDiff": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                      },
+                      "criticRevisionAlone": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                      },
+                      "criticVerdictContract": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
                       }
                     },
                     "required": [
-                      "readOnlyRestraint"
+                      "readOnlyRestraint",
+                      "criticRevisionIdentical",
+                      "criticRevisionDiff",
+                      "criticRevisionAlone",
+                      "criticVerdictContract"
                     ]
                   },
                   "conversationIdleTimeoutMinutes": {
@@ -27606,11 +27718,35 @@
                         "readOnlyRestraint": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                          "example": "You MAY read any file, but you MUST NOT edit, create, or delete any file."
+                        },
+                        "criticRevisionIdentical": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                        },
+                        "criticRevisionDiff": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                        },
+                        "criticRevisionAlone": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                        },
+                        "criticVerdictContract": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
                         }
                       },
                       "required": [
-                        "readOnlyRestraint"
+                        "readOnlyRestraint",
+                        "criticRevisionIdentical",
+                        "criticRevisionDiff",
+                        "criticRevisionAlone",
+                        "criticVerdictContract"
                       ],
                       "additionalProperties": false
                     },
@@ -28751,11 +28887,35 @@
                             "readOnlyRestraint": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                              "example": "You MAY read any file, but you MUST NOT edit, create, or delete any file."
+                            },
+                            "criticRevisionIdentical": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                            },
+                            "criticRevisionDiff": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                            },
+                            "criticRevisionAlone": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                            },
+                            "criticVerdictContract": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
                             }
                           },
                           "required": [
-                            "readOnlyRestraint"
+                            "readOnlyRestraint",
+                            "criticRevisionIdentical",
+                            "criticRevisionDiff",
+                            "criticRevisionAlone",
+                            "criticVerdictContract"
                           ],
                           "additionalProperties": false
                         },
@@ -29867,11 +30027,35 @@
                             "readOnlyRestraint": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                              "example": "You MAY read any file, but you MUST NOT edit, create, or delete any file."
+                            },
+                            "criticRevisionIdentical": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                            },
+                            "criticRevisionDiff": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                            },
+                            "criticRevisionAlone": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                            },
+                            "criticVerdictContract": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
                             }
                           },
                           "required": [
-                            "readOnlyRestraint"
+                            "readOnlyRestraint",
+                            "criticRevisionIdentical",
+                            "criticRevisionDiff",
+                            "criticRevisionAlone",
+                            "criticVerdictContract"
                           ],
                           "additionalProperties": false
                         },
@@ -31045,11 +31229,35 @@
                         "readOnlyRestraint": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                          "example": "You MAY read any file, but you MUST NOT edit, create, or delete any file."
+                        },
+                        "criticRevisionIdentical": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                        },
+                        "criticRevisionDiff": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                        },
+                        "criticRevisionAlone": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                        },
+                        "criticVerdictContract": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
                         }
                       },
                       "required": [
-                        "readOnlyRestraint"
+                        "readOnlyRestraint",
+                        "criticRevisionIdentical",
+                        "criticRevisionDiff",
+                        "criticRevisionAlone",
+                        "criticVerdictContract"
                       ],
                       "additionalProperties": false
                     },

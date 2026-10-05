@@ -250,6 +250,10 @@ const FIELD_SEGMENT_LABELS: Record<string, string> = {
   taskPrompt: 'Task prompt',
   pauseMessage: 'Pause message',
   readOnlyRestraint: 'Read-only restraint',
+  criticRevisionDiff: 'Critic revision block',
+  criticRevisionIdentical: 'Critic revision block (no change)',
+  criticRevisionAlone: 'Critic revision block (no base)',
+  criticVerdictContract: 'Critic verdict contract',
   promptFragmentReadOnlyRestraint: 'Read-only restraint',
 };
 

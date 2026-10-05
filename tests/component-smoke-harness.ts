@@ -50,7 +50,7 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     contextReuseTokenLimit: 100_000,
     editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
-    promptFragments: { readOnlyRestraint: '' },
+    promptFragments: { readOnlyRestraint: '', criticRevisionIdentical: '', criticRevisionDiff: '', criticRevisionAlone: '', criticVerdictContract: '' },
     archive: { retain: { days: null, maxTotalMB: null } },
     export: {
       enabled: false,
