@@ -147,6 +147,7 @@ export const task = {
   mapRef: '166',
   url: null,
   mapTitle: null,
+  trackerLabel: null,
   branch: 'harmonic/task-172',
   stat: [
     ' src/config.ts                    | 54 ++++++++++------',
@@ -349,6 +350,7 @@ const boardTask = (id: number, state: Task['state'], extra: Partial<Task> = {}):
   mapRef: '421',
   url: null,
   mapTitle: 'Parallel Epic — board band demo',
+  trackerLabel: null,
   branch: `harmonic/task-${id}`,
   stat: null,
   runStartedAt: state === 'working' ? Date.now() - min(9) - 33_000 : null,
@@ -498,7 +500,7 @@ export const epicChildren: Task[] = [
     state: 'done', escalationReason: null, mergeStatus: null, ticketClosePending: false, feedback: null, createdAt: E0 + emin(5), updatedAt: E0 + emin(80), dependsOn: [], dependents: [142, 143],
     blockedOnFailed: false, openBlockerCount: 0, agentWorkable: false, humanOnly: false, isEpic: false,
     cost: { totalUsd: 12.4, byModel: { 'opus-4.8': 12.4 }, incomplete: false }, origin: 'mirrored', trackerRef: '140', workflow: 'implement',
-    wayfinderType: null, mapRef: '166', url: null, mapTitle: null, branch: 'harmonic/task-501', stat: null, runStartedAt: null, toolCount: null,
+    wayfinderType: null, mapRef: '166', url: null, mapTitle: null, trackerLabel: null, branch: 'harmonic/task-501', stat: null, runStartedAt: null, toolCount: null,
     attemptId: null, currentStep: null, contextTokens: null, contextWindow: null, verifiedRef: 'aa11bb2', hasCandidate: true, wallClockDeadline: null, skipReason: null,
   },
   {
@@ -508,7 +510,7 @@ export const epicChildren: Task[] = [
     state: 'done', escalationReason: null, mergeStatus: null, ticketClosePending: false, feedback: null, createdAt: E0 + emin(10), updatedAt: E0 + emin(95), dependsOn: [140], dependents: [],
     blockedOnFailed: false, openBlockerCount: 0, agentWorkable: false, humanOnly: false, isEpic: false,
     cost: { totalUsd: 4.62, byModel: { 'sonnet-4.5': 4.62 }, incomplete: false }, origin: 'mirrored', trackerRef: '141', workflow: 'implement',
-    wayfinderType: null, mapRef: '166', url: null, mapTitle: null, branch: 'harmonic/task-502', stat: null, runStartedAt: null, toolCount: null,
+    wayfinderType: null, mapRef: '166', url: null, mapTitle: null, trackerLabel: null, branch: 'harmonic/task-502', stat: null, runStartedAt: null, toolCount: null,
     attemptId: null, currentStep: null, contextTokens: null, contextWindow: null, verifiedRef: 'bb22cc3', hasCandidate: true, wallClockDeadline: null, skipReason: null,
   },
   {
@@ -518,7 +520,7 @@ export const epicChildren: Task[] = [
     state: 'working', escalationReason: null, mergeStatus: null, ticketClosePending: false, feedback: null, createdAt: E0 + emin(20), updatedAt: E0 + emin(230), dependsOn: [140], dependents: [],
     blockedOnFailed: false, openBlockerCount: 0, agentWorkable: true, humanOnly: false, isEpic: false,
     cost: { totalUsd: 18.9, byModel: { 'gpt-5.1': 18.9 }, incomplete: false }, origin: 'mirrored', trackerRef: '142', workflow: 'implement',
-    wayfinderType: null, mapRef: '166', url: null, mapTitle: null, branch: 'harmonic/task-503', stat: null, runStartedAt: E0 + emin(210), toolCount: 44,
+    wayfinderType: null, mapRef: '166', url: null, mapTitle: null, trackerLabel: null, branch: 'harmonic/task-503', stat: null, runStartedAt: E0 + emin(210), toolCount: 44,
     attemptId: 9001, currentStep: 'implementation', contextTokens: 120_000, contextWindow: 400_000, verifiedRef: null, hasCandidate: false, wallClockDeadline: null, skipReason: null,
   },
   {
@@ -529,7 +531,7 @@ export const epicChildren: Task[] = [
     createdAt: E0 + emin(30), updatedAt: E0 + emin(220), dependsOn: [140, 141], dependents: [],
     blockedOnFailed: false, openBlockerCount: 0, agentWorkable: false, humanOnly: false, isEpic: false,
     cost: { totalUsd: 6.26, byModel: { 'opus-4.8': 6.26 }, incomplete: false }, origin: 'mirrored', trackerRef: 'PROJ-143', workflow: 'implement',
-    wayfinderType: null, mapRef: '166', url: 'https://example.atlassian.net/browse/PROJ-143', mapTitle: null, branch: 'harmonic/task-504', stat: null, runStartedAt: null, toolCount: null,
+    wayfinderType: null, mapRef: '166', url: 'https://example.atlassian.net/browse/PROJ-143', mapTitle: null, trackerLabel: 'Jira', branch: 'harmonic/task-504', stat: null, runStartedAt: null, toolCount: null,
     attemptId: null, currentStep: null, contextTokens: null, contextWindow: null, verifiedRef: 'cc33dd4', hasCandidate: true, wallClockDeadline: null, skipReason: null,
   },
 ];

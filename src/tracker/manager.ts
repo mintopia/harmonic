@@ -121,6 +121,7 @@ export class TrackerPollerManager {
     return maps;
   }
 
+  trackerLabelFor(workspaceId: number | null): string | null { const resolved = workspaceId === null ? null : this.resolved.get(workspaceId); return resolved?.ok ? resolved.label : null; }
   urlFor(workspaceId: number | null, ref: TrackerRef | null): string | null { return workspaceId === null ? null : this.entries.get(workspaceId)?.poller.urlFor(ref) ?? null; }
   titleForMap(workspaceId: number | null, ref: TrackerRef | null): string | null { return workspaceId === null ? null : this.entries.get(workspaceId)?.poller.titleForMap(ref) ?? null; }
   async pollNow(workspaceId: number): Promise<void> {

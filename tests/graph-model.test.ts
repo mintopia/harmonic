@@ -55,6 +55,7 @@ const task = (
   mapRef: null,
   url: null,
   mapTitle: null,
+  trackerLabel: null,
   branch: null,
   stat: null,
   runStartedAt: null,
