@@ -16,10 +16,20 @@ export type EpicExportStep =
   | { step: 'export-delivered'; destination: 'directory' | 's3'; file: string; retry: number }
   | { step: 'export-failed'; destination: 'directory' | 's3'; error: string; retry: number; nextRetryAt: string | null };
 
-export type EpicTimelineStep = MergeStepEvent | EpicBranchStep | EpicExportStep;
+/** A resolver prompt archived while the Epic had no Attempt row to record it on (archived under `attempt`). */
+export interface EpicResolverPromptStep {
+  step: 'resolver-prompt';
+  kind: 'merge-conflict' | 'refresh';
+  turn?: number;
+  attempt: number;
+  locator: string;
+  promptIndex: number;
+}
+
+export type EpicTimelineStep = MergeStepEvent | EpicBranchStep | EpicExportStep | EpicResolverPromptStep;
 
 export function isMergeStep(step: EpicTimelineStep): step is MergeStepEvent {
-  return !step.step.startsWith('branch-') && !step.step.startsWith('export-');
+  return !step.step.startsWith('branch-') && !step.step.startsWith('export-') && step.step !== 'resolver-prompt';
 }
 
 export interface PersistedEpicMergeEvent {

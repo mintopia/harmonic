@@ -5,7 +5,16 @@ import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 import { z } from 'zod';
+import { verdictContractSchema } from './verification/critic-schema.js';
 import { isModelPriced, pricesForHarness } from './domain/pricing.js';
+import {
+  PROMPT_FRAGMENT_NAMES,
+  PROMPT_FRAGMENTS,
+  missingPromptFragmentTokens,
+  promptFragmentOverrideKey,
+  type PromptFragmentName,
+  type PromptFragmentOverrideKey,
+} from './domain/prompt-fragments.js';
 
 export const HARNESS_IDS = ['claude', 'codex', 'copilot', 'opencode'] as const;
 export type HarnessId = (typeof HARNESS_IDS)[number];
@@ -18,6 +27,33 @@ export type Priority = (typeof PRIORITIES)[number];
 
 export const MERGE_FATES = ['auto-merge', 'open-PR', 'artifact'] as const;
 export type MergeFate = (typeof MERGE_FATES)[number];
+
+export function promptFragmentSchema(name: PromptFragmentName): z.ZodString {
+  const required = PROMPT_FRAGMENTS[name].required;
+  return z
+    .string()
+    .min(1)
+    .refine((text) => missingPromptFragmentTokens(name, text).length === 0, {
+      message: `must contain ${required.map((token) => `{${token}}`).join(' ')}`,
+    })
+    .meta({ example: PROMPT_FRAGMENTS[name].label });
+}
+
+export const promptFragmentsShape = Object.fromEntries(
+  PROMPT_FRAGMENT_NAMES.map((name) => [name, promptFragmentSchema(name)]),
+) as Record<PromptFragmentName, z.ZodString>;
+
+export const globalPromptFragmentsShape = {
+  ...promptFragmentsShape,
+  criticRevisionIdentical: z.string().min(1).meta({ example: '{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…' }),
+  criticRevisionDiff: z.string().min(1).meta({ example: '{ticketFirst} Then review the candidate revision {head}, which branched from {base}…' }),
+  criticRevisionAlone: z.string().min(1).meta({ example: '{ticketFirst} Then review the candidate revision {head} on its own merits…' }),
+  criticVerdictContract: verdictContractSchema.meta({ example: 'Your reply: respond with ONLY {"verdict":"pass|fail|inconclusive","summary":"…"}' }),
+};
+
+export const promptFragmentOverrideShape = Object.fromEntries(
+  PROMPT_FRAGMENT_NAMES.map((name) => [promptFragmentOverrideKey(name), promptFragmentSchema(name).nullable().optional()]),
+) as Record<PromptFragmentOverrideKey, z.ZodOptional<z.ZodNullable<z.ZodString>>>;
 
 export const modelPriceSchema = z.object({
   input: z.number().nonnegative().meta({ example: 3 }),
@@ -286,10 +322,13 @@ export const appConfigSchema = z.object({
     continuePrompt: z.string().meta({ example: 'Continue Task {taskId}.' }),
     mergeFate: z.enum(MERGE_FATES).meta({ example: 'auto-merge' }),
     continueAttempts: z.number().int().min(0).meta({ example: 10 }),
+    commitNudge: z.string().min(1).meta({ example: 'Commit the completed work now, then finish.' }),
   }),
   /** Operator-editable wrapper around a native Task's prompt (`{prompt}`, `{id}`, `{workingDir}`, `{harness}`, `{model}`); defaults to bare `{prompt}`. */
   taskPrompt: z.string().meta({ example: 'Work on {prompt}.' }),
   pauseMessage: z.string().min(1).meta({ example: 'Please finish the current turn, then pause and wait for further instructions.' }),
+  /** Named pieces of prompt text defined once and referenced from prompts as `{fragment.<name>}`. */
+  promptFragments: z.object(globalPromptFragmentsShape),
   /** End a Conversation with no Turn for this many minutes; 0 disables. Fractional values are allowed. */
   conversationIdleTimeoutMinutes: z.number().nonnegative().meta({ example: 30 }),
   /** Trailing debounce for Working Directory watcher events. */
@@ -297,11 +336,14 @@ export const appConfigSchema = z.object({
   /** Ordered verifier lists for each Task and Epic verification stage. */
   verify: z.object({
     task: z.object({ preMerge: taskVerificationStageSchema, postMerge: taskVerificationStageSchema }),
-    epic: z.object({ preMerge: epicVerificationStageSchema, resolvePrompt: z.string().min(1) }),
+    epic: z.object({ preMerge: epicVerificationStageSchema, resolvePrompt: z.string().min(1), resolveSuffix: z.string().min(1).meta({ example: 'Work in the checked-out integration branch `{branch}`.' }) }),
   }),
-  /** `postMergeCheck` runs the verification commands on the merged base tip; the off-switch for slow suites. */
+  /** `postMergeCheck` runs the verification commands on the merged base tip; the off-switch for slow suites. `conflictPrompt`/`epicConflictPrompt` open a conflict-resolution turn (`{turn}`, `{taskBranch}`, `{baseBranch}`, `{paths}`, `{fragment.conflictResolution}`). */
   merge: z.object({
     postMergeCheck: z.boolean(),
+    conflictPrompt: z.string().min(1).meta({ example: '## Merge conflict resolution (turn {turn})\n{paths}' }),
+    epicRefreshPrompt: z.string().min(1).meta({ example: '## Epic integration refresh\nMerging {defaultBranch} into {branch} conflicted:\n{detail}' }),
+    epicConflictPrompt: z.string().min(1).meta({ example: '## Epic integration merge conflict resolution (turn {turn})\n{paths}' }),
   }),
   /**
    * `budget` = the wall-clock/token/cost caps; `progress` toggles the stall/loop detector;
@@ -420,6 +462,7 @@ export const UNATTENDED_REMINDER = baseline.drive.unattendedReminder;
 export const DEFAULT_CONTINUE_PROMPT = baseline.drive.continuePrompt;
 export const DEFAULT_TASK_PROMPT = baseline.taskPrompt;
 export const DEFAULT_PAUSE_MESSAGE = baseline.pauseMessage;
+export const DEFAULT_PROMPT_FRAGMENTS = baseline.promptFragments;
 
 export function baselineConfig(): AppConfig {
   return structuredClone(baseline);

@@ -157,6 +157,35 @@ describe('agent message delivery (stub Harness, run-control seam)', () => {
     expect(byTask.get(idle)).toMatchObject({ receipt: 'held' });
   });
 
+  it('uses edited peer Prompt Fragments for the live frame and the held-message prompt', async () => {
+    await boot();
+    const b = await liveRecipient();
+    const a = await sender();
+    const c = await readyRecipient();
+    const workspaceId = (await server.app.ctx.tasks.get(a.id)).workspaceId!;
+    await server.app.ctx.workspaces.update(workspaceId, {
+      promptFragmentPeerLiveMessage: 'LIVE from #{taskId} ({harness}) :: {text}',
+      promptFragmentPeerMessages: 'INBOX\n{messages}',
+      promptFragmentPeerMessage: '* #{taskId}/{harness}: {text}',
+      promptFragmentPeerLine: 'Peers can be reached.',
+    });
+
+    await a.client.callTool({ name: 'send_message', arguments: { to: b, text: 'live note' } });
+    const injected = await waitFor(async () => {
+      const found = await lifecycle(b, 'steer_injected');
+      return found.length > 0 ? found : undefined;
+    });
+    expect(String(injected[0]!.text)).toBe(`LIVE from #${a.id} (Claude) :: live note`);
+
+    await a.client.callTool({ name: 'send_message', arguments: { to: c, text: 'held note' } });
+    await server.api('POST', `/api/tasks/${c}/run`);
+    await waitFor(async () => ((await server.api('GET', `/api/tasks/${c}`)).body.state === 'done' ? true : undefined));
+    const prompt = await lastPrompt(c);
+    expect(prompt).toContain(`INBOX\n* #${a.id}/Claude: held note\n\nPeers can be reached.`);
+    expect(prompt).not.toContain('## Messages from peers');
+    expect(prompt).not.toContain('send_message');
+  });
+
   it('puts the peer line in an enabled Workspace Attempt prompt and none in a disabled one', async () => {
     await boot();
     const workspaceId = (await server.app.ctx.tasks.get((await server.api('POST', '/api/tasks', { prompt: 'probe' })).body.id)).workspaceId!;

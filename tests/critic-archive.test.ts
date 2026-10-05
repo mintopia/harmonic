@@ -1,3 +1,4 @@
+import { DEFAULT_PROMPT_FRAGMENTS } from '../src/config.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -70,6 +71,7 @@ describe('runCritic archive capture', () => {
     }, 150);
 
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: dir,
       verifiedHeadOid: 'abc',
       critic: { prompt: 'review it', model: 'stub-model' },
@@ -96,6 +98,7 @@ describe('runCritic archive capture', () => {
     const task = await tasks.create({ prompt: 'p' });
     const writer = archiveFor().criticStep(task, 1, 'post-merge', 'critic-2');
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: dir,
       verifiedHeadOid: 'abc',
       critic: { prompt: 'review it', model: 'stub-model' },

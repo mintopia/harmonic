@@ -12,6 +12,12 @@ import {
   type BudgetGuardrail,
   type MergeFate,
 } from '../config.js';
+import {
+  PROMPT_FRAGMENT_NAMES,
+  promptFragmentOverrideKey,
+  type PromptFragmentOverrides,
+  type PromptFragments,
+} from './prompt-fragments.js';
 import { isOverridable, type SettingKey } from './settings-registry.js';
 
 /**
@@ -221,4 +227,40 @@ export function resolvePauseMessage(
   config: Pick<AppConfig, 'pauseMessage'>,
 ): string {
   return resolveScoped('pauseMessage', ws?.pauseMessage, config.pauseMessage);
+}
+
+/** Resolve the nudge sent when an Attempt ends its turn with uncommitted changes. */
+export function resolveCommitNudge(
+  ws: Pick<WorkspaceRow, 'driveCommitNudge'> | null | undefined,
+  config: Pick<AppConfig, 'drive'>,
+): string {
+  return resolveScoped('driveCommitNudge', ws?.driveCommitNudge, config.drive.commitNudge);
+}
+
+/** Resolve the Prompt Fragments a Workspace's prompts reference, each `workspace ?? global`. */
+export function resolvePromptFragments(
+  ws: Partial<PromptFragmentOverrides> | null | undefined,
+  config: Pick<AppConfig, 'promptFragments'>,
+): AppConfig['promptFragments'] {
+  return {
+    ...config.promptFragments,
+    ...(Object.fromEntries(
+      PROMPT_FRAGMENT_NAMES.map((name) => {
+        const key = promptFragmentOverrideKey(name);
+        return [name, resolveScoped(key, ws?.[key], config.promptFragments[name])];
+      }),
+    ) as PromptFragments),
+  };
+}
+
+/** Resolve the merge-conflict resolution prompts and their shared fragment for a Workspace, each `workspace ?? global`. */
+export function resolveMergePrompts(
+  ws: Pick<WorkspaceRow, 'promptFragmentReadOnlyRestraint' | 'promptFragmentConflictResolution' | 'mergeConflictPrompt' | 'mergeEpicConflictPrompt'> | null | undefined,
+  config: Pick<AppConfig, 'merge' | 'promptFragments'>,
+): { conflictPrompt: string; epicConflictPrompt: string; fragments: AppConfig['promptFragments'] } {
+  return {
+    conflictPrompt: resolveScoped('mergeConflictPrompt', ws?.mergeConflictPrompt, config.merge.conflictPrompt),
+    epicConflictPrompt: resolveScoped('mergeEpicConflictPrompt', ws?.mergeEpicConflictPrompt, config.merge.epicConflictPrompt),
+    fragments: resolvePromptFragments(ws, config),
+  };
 }

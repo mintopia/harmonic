@@ -1,6 +1,8 @@
 import { act, type ReactElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { vi } from 'vitest';
+import { blankPromptFragments } from './prompt-fragment-fixtures.js';
+import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../src/domain/prompt-fragments.js';
 import type { AppConfig, Task, Workspace } from '../web/src/types.js';
 
 class IdleWebSocket {
@@ -43,13 +45,15 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     chat: { harness: 'claude', model: 'claude-sonnet-4-6' },
     autoRunner: { enabled: false, maxConcurrentAttempts: 2 },
     agentMessages: { enabled: false, sendCap: 10 },
-    verify: { task: { preMerge: { commands: [], critics: [] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.' } },
+    verify: { task: { preMerge: { commands: [], critics: [] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.', resolveSuffix: '' } },
     guardrails: { budget: { wallClockMinutes: 60, tokens: null, costUsd: null }, progress: false, toolTimeoutMinutes: 10 },
-    drive: { prompt: '', unattendedReminder: '', continuePrompt: '', mergeFate: 'auto-merge', continueAttempts: 0 },
+    drive: { prompt: '', unattendedReminder: '', continuePrompt: '', commitNudge: '', mergeFate: 'auto-merge', continueAttempts: 0 },
     maxAttempts: 3,
     contextReuseTokenLimit: 100_000,
     editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
+    promptFragments: blankPromptFragments(),
+    merge: { postMergeCheck: true, conflictPrompt: '', epicConflictPrompt: '', epicRefreshPrompt: '' },
     archive: { retain: { days: null, maxTotalMB: null } },
     export: {
       enabled: false,
@@ -116,6 +120,10 @@ export function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     driveMergeFate: null,
     driveContinueAttempts: null,
     taskPrompt: null,
+    ...NO_PROMPT_FRAGMENT_OVERRIDES,
+    mergeConflictPrompt: null,
+    mergeEpicConflictPrompt: null,
+    driveCommitNudge: null,
     createdAt: 0,
     updatedAt: 0,
     ...overrides,

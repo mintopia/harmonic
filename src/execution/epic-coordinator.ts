@@ -542,8 +542,14 @@ export class EpicCoordinator {
 /** A live integration branch that must follow one observed default-branch advance. */
 export interface EpicRefreshTarget {
   ref: TrackerRef;
+  workspaceId?: number | undefined;
   repoDir: string;
   defaultBranch: string;
+}
+
+/** A refresh target as dispatched to the corrective resolver, which archives its prompt under the owning Workspace. */
+export interface EpicRefreshResolveTarget extends EpicRefreshTarget {
+  workspaceId: number;
 }
 
 export type EpicRefreshOutcome =
@@ -693,7 +699,7 @@ export class EpicLifecycle {
       if (!(await this.git.branchExists(this.workingDir, branch))) continue;
       if (await this.git.isAncestor(this.workingDir, defaultBranch, branch)) continue;
       try {
-        const outcome = await this.epicRefresh.refresh({ ref: epic.ref, repoDir: this.workingDir, defaultBranch });
+        const outcome = await this.epicRefresh.refresh({ ref: epic.ref, workspaceId: this.workspaceId ?? undefined, repoDir: this.workingDir, defaultBranch });
         if (outcome.status !== 'refreshed') {
           const why = 'reason' in outcome ? outcome.reason : outcome.detail;
           logger.warn(`epic ${epic.ref} still behind ${defaultBranch} after refresh: ${outcome.status} (${why})`);

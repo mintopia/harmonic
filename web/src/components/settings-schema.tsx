@@ -7,9 +7,19 @@ import {
   DRIVE_PLACEHOLDERS,
   TASK_ID_PLACEHOLDER,
   TASK_PLACEHOLDERS,
+  CRITIC_REVISION_PLACEHOLDERS,
+  compileCriticFragmentPreview,
   compileDrivePreview,
+  compileFragmentPreview,
+  compileConflictPreview,
+  compileMergeConflictPreview,
+  COMMIT_NUDGE_PLACEHOLDERS,
+  MERGE_CONFLICT_PLACEHOLDERS,
+  EPIC_REFRESH_PLACEHOLDERS,
+  EPIC_RESOLVE_SUFFIX_PLACEHOLDERS,
   compileTaskIdPreview,
   compileTaskPreview,
+  fragmentPlaceholders,
   type LabeledPreview,
   type Placeholder,
 } from '../prompt-preview-model';
@@ -26,6 +36,7 @@ import { PermissionRules } from './PermissionRules';
 import { SecuritySection } from './SecuritySection';
 import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection } from './ArchiveExportSettings';
 import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './VerificationSettings';
+import { PROMPT_FRAGMENTS, PROMPT_FRAGMENT_NAMES, promptFragmentOverrideKey } from '../../../src/domain/prompt-fragments.js';
 import { settingsRegistry, type SettingKey, type SettingTab } from '../../../src/domain/settings-registry.js';
 import { WORKSPACE_COLORS } from '../../../src/domain/workspace-colors.js';
 
@@ -692,6 +703,212 @@ const continuePromptField = prompt(
 );
 
 
+const kebab = (name: string): string => name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+
+const promptFragmentFields = PROMPT_FRAGMENT_NAMES.map((name) => {
+  const spec = PROMPT_FRAGMENTS[name];
+  const required = spec.required.map((token) => `{${token}}`).join(' ');
+  const description = `${spec.help}${required ? ` Must keep ${required}.` : ''}`;
+  const key = promptFragmentOverrideKey(name);
+  const placeholders = fragmentPlaceholders(name);
+  const compile = compileFragmentPreview(name);
+  const textareaClass = `${field} min-h-24`;
+  return prompt(
+    `fragment-${kebab(name)}`,
+    {
+      id: `settings-fragment-${kebab(name)}`,
+      label: spec.label,
+      description,
+      errorKey: `promptFragments.${name}`,
+      get: (c) => c.promptFragments[name],
+      set: (c, v) => ({ ...c, promptFragments: { ...c.promptFragments, [name]: v } }),
+      placeholders,
+      compile,
+      textareaClass,
+    },
+    {
+      key,
+      id: `workspace-fragment-${kebab(name)}`,
+      errorKey: key,
+      description,
+      get: (w) => w[key],
+      set: (w, v) => ({ ...w, [key]: v }),
+      inherited: (c) => c.promptFragments[name],
+      placeholders,
+      compile,
+      textareaClass,
+    },
+  );
+});
+
+type CriticFragmentName = 'criticRevisionIdentical' | 'criticRevisionDiff' | 'criticRevisionAlone' | 'criticVerdictContract';
+
+function criticFragmentField(
+  name: CriticFragmentName,
+  label: string,
+  description: string,
+  variant: 'diff' | 'identical' | 'alone',
+  placeholders: Placeholder[],
+) {
+  return prompt(
+    `fragment-${name}`,
+    {
+      id: `settings-fragment-${name}`,
+      label,
+      description,
+      errorKey: `promptFragments.${name}`,
+      get: (c) => c.promptFragments[name],
+      set: (c, v) => ({ ...c, promptFragments: { ...c.promptFragments, [name]: v } }),
+      placeholders,
+      compile: (_text, c) => compileCriticFragmentPreview(c.promptFragments, variant),
+      textareaClass: `${field} min-h-24`,
+    },
+    null,
+  );
+}
+
+const criticRevisionDiffField = criticFragmentField(
+  'criticRevisionDiff',
+  'Critic revision block',
+  'Tells the critic which revision to review and how to find the change, when the candidate differs from the base.',
+  'diff',
+  CRITIC_REVISION_PLACEHOLDERS,
+);
+const criticRevisionIdenticalField = criticFragmentField(
+  'criticRevisionIdentical',
+  'Critic revision block (no change)',
+  'Used when the candidate is identical to the base: the builder made no code change.',
+  'identical',
+  CRITIC_REVISION_PLACEHOLDERS,
+);
+const criticRevisionAloneField = criticFragmentField(
+  'criticRevisionAlone',
+  'Critic revision block (no base)',
+  'Used when the base revision is unknown, so the candidate is reviewed on its own.',
+  'alone',
+  CRITIC_REVISION_PLACEHOLDERS,
+);
+const criticVerdictContractField = criticFragmentField(
+  'criticVerdictContract',
+  'Critic verdict contract',
+  'The reply format demanded of the critic. It must keep the "verdict" and "summary" keys the verdict parser reads; a malformed reply is recorded as inconclusive.',
+  'diff',
+  [],
+);
+
+const commitNudgeField = prompt(
+  'commit-nudge',
+  {
+    id: 'settings-commit-nudge',
+    label: 'Commit nudge',
+    description: 'Sent when an Attempt finishes its turn with uncommitted changes. No placeholders.',
+    errorKey: 'drive.commitNudge',
+    get: (c) => c.drive.commitNudge,
+    set: (c, v) => ({ ...c, drive: { ...c.drive, commitNudge: v } }),
+    placeholders: COMMIT_NUDGE_PLACEHOLDERS,
+    compile: (text) => text,
+    textareaClass: `${field} min-h-24`,
+  },
+  {
+    key: 'driveCommitNudge',
+    id: 'workspace-commit-nudge',
+    errorKey: 'driveCommitNudge',
+    description: 'Sent when an Attempt finishes its turn with uncommitted changes. No placeholders.',
+    get: (w) => w.driveCommitNudge,
+    set: (w, v) => ({ ...w, driveCommitNudge: v }),
+    inherited: (c) => c.drive.commitNudge,
+    placeholders: COMMIT_NUDGE_PLACEHOLDERS,
+    compile: (text) => text,
+    textareaClass: `${field} min-h-24`,
+  },
+);
+
+const mergeConflictPromptField = prompt(
+  'merge-conflict-prompt',
+  {
+    id: 'settings-merge-conflict-prompt',
+    label: 'Merge conflict resolver',
+    description: 'Opens each turn of the agent that resolves a Task merge conflict.',
+    errorKey: 'merge.conflictPrompt',
+    get: (c) => c.merge.conflictPrompt,
+    set: (c, v) => ({ ...c, merge: { ...c.merge, conflictPrompt: v } }),
+    placeholders: MERGE_CONFLICT_PLACEHOLDERS,
+    compile: compileMergeConflictPreview,
+    textareaClass: `${field} min-h-36`,
+  },
+  {
+    key: 'mergeConflictPrompt',
+    id: 'workspace-merge-conflict-prompt',
+    errorKey: 'mergeConflictPrompt',
+    description: 'Opens each turn of the agent that resolves a Task merge conflict.',
+    get: (w) => w.mergeConflictPrompt,
+    set: (w, v) => ({ ...w, mergeConflictPrompt: v }),
+    inherited: (c) => c.merge.conflictPrompt,
+    placeholders: MERGE_CONFLICT_PLACEHOLDERS,
+    compile: compileMergeConflictPreview,
+    textareaClass: `${field} min-h-36`,
+  },
+);
+
+const epicConflictPromptField = prompt(
+  'epic-conflict-prompt',
+  {
+    id: 'settings-epic-conflict-prompt',
+    label: 'Epic merge conflict resolver',
+    description: 'Opens each turn of the agent that resolves an Epic integration merge conflict.',
+    errorKey: 'merge.epicConflictPrompt',
+    get: (c) => c.merge.epicConflictPrompt,
+    set: (c, v) => ({ ...c, merge: { ...c.merge, epicConflictPrompt: v } }),
+    placeholders: MERGE_CONFLICT_PLACEHOLDERS,
+    compile: compileMergeConflictPreview,
+    textareaClass: `${field} min-h-36`,
+  },
+  {
+    key: 'mergeEpicConflictPrompt',
+    id: 'workspace-epic-conflict-prompt',
+    errorKey: 'mergeEpicConflictPrompt',
+    description: 'Opens each turn of the agent that resolves an Epic integration merge conflict.',
+    get: (w) => w.mergeEpicConflictPrompt,
+    set: (w, v) => ({ ...w, mergeEpicConflictPrompt: v }),
+    inherited: (c) => c.merge.epicConflictPrompt,
+    placeholders: MERGE_CONFLICT_PLACEHOLDERS,
+    compile: compileMergeConflictPreview,
+    textareaClass: `${field} min-h-36`,
+  },
+);
+
+const epicRefreshPromptField = prompt(
+  'epic-refresh-prompt',
+  {
+    id: 'settings-epic-refresh-prompt',
+    label: 'Epic refresh resolver',
+    description: 'Sent to the agent that resolves a conflict when the Epic integration branch is refreshed from the default branch.',
+    errorKey: 'merge.epicRefreshPrompt',
+    get: (c) => c.merge.epicRefreshPrompt,
+    set: (c, v) => ({ ...c, merge: { ...c.merge, epicRefreshPrompt: v } }),
+    placeholders: EPIC_REFRESH_PLACEHOLDERS,
+    compile: compileConflictPreview,
+    textareaClass: `${field} min-h-36`,
+  },
+  null,
+);
+
+const epicResolveSuffixField = prompt(
+  'epic-resolve-suffix',
+  {
+    id: 'settings-epic-resolve-suffix',
+    label: 'Epic verification resolver suffix',
+    description: 'Appended to the Epic resolve prompt (set on the Verification tab) when the agent fixes a failing Epic verification.',
+    errorKey: 'verify.epic.resolveSuffix',
+    get: (c) => c.verify.epic.resolveSuffix,
+    set: (c, v) => ({ ...c, verify: { ...c.verify, epic: { ...c.verify.epic, resolveSuffix: v } } }),
+    placeholders: EPIC_RESOLVE_SUFFIX_PLACEHOLDERS,
+    compile: compileConflictPreview,
+    textareaClass: `${field} min-h-24`,
+  },
+  null,
+);
+
 const guardrailScalarFields: OverridableDescriptor[] = [
   {
     key: 'guardrailProgress',
@@ -1203,8 +1420,46 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     },
     body: (ctx) => (
       <div className="flex flex-col gap-4">
-        {[drivePromptField, unattendedReminderField, continuePromptField].map((p) => renderField(p, ctx))}
+        {[drivePromptField, unattendedReminderField, continuePromptField, commitNudgeField].map((p) => renderField(p, ctx))}
         {grid('flex flex-wrap items-start gap-x-8 gap-y-4', [driveMergeFate, driveContinueAttempts], ctx)}
+      </div>
+    ),
+  },
+
+  {
+    tab: 'prompts',
+    surfaces: BOTH,
+    title: 'Prompt fragments',
+    description: {
+      global:
+        'Named pieces of prompt text defined once and referenced from prompts as {fragment.<name>}. Edit a fragment here and every prompt that references it changes.',
+      workspace:
+        'Named pieces of prompt text shared across prompts. Each inherits the global fragment until overridden.',
+    },
+    body: (ctx) => (
+      <div className="flex flex-col gap-4">
+        {promptFragmentFields.map((f) => renderField(f, ctx))}
+        {renderField(criticRevisionDiffField, ctx)}
+        {renderField(criticRevisionIdenticalField, ctx)}
+        {renderField(criticRevisionAloneField, ctx)}
+        {renderField(criticVerdictContractField, ctx)}
+      </div>
+    ),
+  },
+
+  {
+    tab: 'prompts',
+    surfaces: BOTH,
+    title: 'Merge and Epic resolver prompts',
+    description: {
+      global:
+        'What Harmonic sends to the agents that resolve merge conflicts and Epic verification failures. Edits apply to the next resolver turn.',
+      workspace:
+        'What Harmonic sends to merge conflict resolvers here. Each field inherits the global default until overridden.',
+    },
+    body: (ctx) => (
+      <div className="flex flex-col gap-4">
+        {[mergeConflictPromptField, epicConflictPromptField, epicRefreshPromptField, epicResolveSuffixField].map((p) => renderField(p, ctx))}
       </div>
     ),
   },

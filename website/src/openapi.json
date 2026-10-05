@@ -4840,6 +4840,47 @@
               "retry",
               "nextRetryAt"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "resolver-prompt"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "merge-conflict",
+                  "refresh"
+                ]
+              },
+              "turn": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "attempt": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "locator": {
+                "type": "string"
+              },
+              "promptIndex": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "step",
+              "kind",
+              "attempt",
+              "locator",
+              "promptIndex"
+            ]
           }
         ]
       },
@@ -5255,7 +5296,7 @@
                 "output": {
                   "type": "string"
                 },
-                "prompt": {
+                "promptLocator": {
                   "anyOf": [
                     {
                       "type": "string"
@@ -5292,10 +5333,45 @@
                 "verdict",
                 "summary",
                 "output",
-                "prompt",
+                "promptLocator",
                 "harness",
                 "hasTranscript",
                 "outputTruncated"
+              ]
+            }
+          },
+          "resolverPrompts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "merge-conflict",
+                    "verification",
+                    "refresh"
+                  ]
+                },
+                "locator": {
+                  "type": "string"
+                },
+                "promptIndex": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "ts": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "kind",
+                "locator",
+                "promptIndex",
+                "ts"
               ]
             }
           }
@@ -5313,7 +5389,8 @@
           "startedAt",
           "endedAt",
           "steps",
-          "verificationAttempts"
+          "verificationAttempts",
+          "resolverPrompts"
         ]
       },
       "EpicAttemptTimelineResponseInput": {
@@ -6525,6 +6602,160 @@
             ],
             "example": null
           },
+          "promptFragmentReadOnlyRestraint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentConflictResolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentOperatorMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentSelfHeal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPeerMessages": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPeerMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPeerLine": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPeerLiveMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentRebaseConflict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPriorSession": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCodeIndexGuidance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "driveCommitNudge": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "mergeConflictPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "mergeEpicConflictPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "exportEnabled": {
             "anyOf": [
               {
@@ -6819,6 +7050,20 @@
           "driveMergeFate",
           "driveContinueAttempts",
           "taskPrompt",
+          "promptFragmentReadOnlyRestraint",
+          "promptFragmentConflictResolution",
+          "promptFragmentOperatorMessage",
+          "promptFragmentSelfHeal",
+          "promptFragmentPeerMessages",
+          "promptFragmentPeerMessage",
+          "promptFragmentPeerLine",
+          "promptFragmentPeerLiveMessage",
+          "promptFragmentRebaseConflict",
+          "promptFragmentPriorSession",
+          "promptFragmentCodeIndexGuidance",
+          "driveCommitNudge",
+          "mergeConflictPrompt",
+          "mergeEpicConflictPrompt",
           "exportEnabled",
           "exportDirectoryPath",
           "exportS3Endpoint",
@@ -7380,6 +7625,114 @@
                 "minimum": 0,
                 "maximum": 9007199254740991,
                 "example": 1
+              },
+              "commitNudge": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Commit the completed work now, then finish."
+              }
+            }
+          },
+          "promptFragments": {
+            "type": "object",
+            "properties": {
+              "readOnlyRestraint": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Read-only restraint"
+              },
+              "conflictResolution": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Conflict resolution"
+              },
+              "operatorMessage": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Operator message"
+              },
+              "selfHeal": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Self-heal"
+              },
+              "peerMessages": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Peer messages section"
+              },
+              "peerMessage": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Peer message entry"
+              },
+              "peerLine": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Peer line"
+              },
+              "peerLiveMessage": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Live peer message"
+              },
+              "rebaseConflict": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Rebase conflict"
+              },
+              "priorSession": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Prior session"
+              },
+              "codeIndexGuidance": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Code index guidance"
+              },
+              "criticRevisionIdentical": {
+                "type": "string",
+                "minLength": 1,
+                "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+              },
+              "criticRevisionDiff": {
+                "type": "string",
+                "minLength": 1,
+                "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+              },
+              "criticRevisionAlone": {
+                "type": "string",
+                "minLength": 1,
+                "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+              },
+              "criticVerdictContract": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
+              }
+            }
+          },
+          "merge": {
+            "type": "object",
+            "properties": {
+              "postMergeCheck": {
+                "type": "boolean"
+              },
+              "conflictPrompt": {
+                "type": "string",
+                "minLength": 1,
+                "example": "## Merge conflict resolution (turn {turn})\n{paths}"
+              },
+              "epicRefreshPrompt": {
+                "type": "string",
+                "minLength": 1,
+                "example": "## Epic integration refresh\nMerging {defaultBranch} into {branch} conflicted:\n{detail}"
+              },
+              "epicConflictPrompt": {
+                "type": "string",
+                "minLength": 1,
+                "example": "## Epic integration merge conflict resolution (turn {turn})\n{paths}"
               }
             }
           },
@@ -7754,6 +8107,11 @@
                   "resolvePrompt": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "resolveSuffix": {
+                    "type": "string",
+                    "minLength": 1,
+                    "example": "Work in the checked-out integration branch `{branch}`."
                   }
                 }
               }
@@ -13580,6 +13938,48 @@
               "nextRetryAt"
             ],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "resolver-prompt"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "merge-conflict",
+                  "refresh"
+                ]
+              },
+              "turn": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "attempt": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "locator": {
+                "type": "string"
+              },
+              "promptIndex": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "step",
+              "kind",
+              "attempt",
+              "locator",
+              "promptIndex"
+            ],
+            "additionalProperties": false
           }
         ]
       },
@@ -13998,7 +14398,7 @@
                 "output": {
                   "type": "string"
                 },
-                "prompt": {
+                "promptLocator": {
                   "anyOf": [
                     {
                       "type": "string"
@@ -14035,10 +14435,46 @@
                 "verdict",
                 "summary",
                 "output",
-                "prompt",
+                "promptLocator",
                 "harness",
                 "hasTranscript",
                 "outputTruncated"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "resolverPrompts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "merge-conflict",
+                    "verification",
+                    "refresh"
+                  ]
+                },
+                "locator": {
+                  "type": "string"
+                },
+                "promptIndex": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "ts": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "kind",
+                "locator",
+                "promptIndex",
+                "ts"
               ],
               "additionalProperties": false
             }
@@ -14057,7 +14493,8 @@
           "startedAt",
           "endedAt",
           "steps",
-          "verificationAttempts"
+          "verificationAttempts",
+          "resolverPrompts"
         ],
         "additionalProperties": false
       },
@@ -15324,6 +15761,160 @@
             ],
             "example": null
           },
+          "promptFragmentReadOnlyRestraint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentConflictResolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentOperatorMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentSelfHeal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPeerMessages": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPeerMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPeerLine": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPeerLiveMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentRebaseConflict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPriorSession": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCodeIndexGuidance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "driveCommitNudge": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "mergeConflictPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "mergeEpicConflictPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "exportEnabled": {
             "anyOf": [
               {
@@ -15619,6 +16210,20 @@
           "driveMergeFate",
           "driveContinueAttempts",
           "taskPrompt",
+          "promptFragmentReadOnlyRestraint",
+          "promptFragmentConflictResolution",
+          "promptFragmentOperatorMessage",
+          "promptFragmentSelfHeal",
+          "promptFragmentPeerMessages",
+          "promptFragmentPeerMessage",
+          "promptFragmentPeerLine",
+          "promptFragmentPeerLiveMessage",
+          "promptFragmentRebaseConflict",
+          "promptFragmentPriorSession",
+          "promptFragmentCodeIndexGuidance",
+          "driveCommitNudge",
+          "mergeConflictPrompt",
+          "mergeEpicConflictPrompt",
           "exportEnabled",
           "exportDirectoryPath",
           "exportS3Endpoint",
@@ -16193,6 +16798,116 @@
                 "minimum": 0,
                 "maximum": 9007199254740991,
                 "example": 1
+              },
+              "commitNudge": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Commit the completed work now, then finish."
+              }
+            },
+            "additionalProperties": false
+          },
+          "promptFragments": {
+            "type": "object",
+            "properties": {
+              "readOnlyRestraint": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Read-only restraint"
+              },
+              "conflictResolution": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Conflict resolution"
+              },
+              "operatorMessage": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Operator message"
+              },
+              "selfHeal": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Self-heal"
+              },
+              "peerMessages": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Peer messages section"
+              },
+              "peerMessage": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Peer message entry"
+              },
+              "peerLine": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Peer line"
+              },
+              "peerLiveMessage": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Live peer message"
+              },
+              "rebaseConflict": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Rebase conflict"
+              },
+              "priorSession": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Prior session"
+              },
+              "codeIndexGuidance": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Code index guidance"
+              },
+              "criticRevisionIdentical": {
+                "type": "string",
+                "minLength": 1,
+                "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+              },
+              "criticRevisionDiff": {
+                "type": "string",
+                "minLength": 1,
+                "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+              },
+              "criticRevisionAlone": {
+                "type": "string",
+                "minLength": 1,
+                "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+              },
+              "criticVerdictContract": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
+              }
+            },
+            "additionalProperties": false
+          },
+          "merge": {
+            "type": "object",
+            "properties": {
+              "postMergeCheck": {
+                "type": "boolean"
+              },
+              "conflictPrompt": {
+                "type": "string",
+                "minLength": 1,
+                "example": "## Merge conflict resolution (turn {turn})\n{paths}"
+              },
+              "epicRefreshPrompt": {
+                "type": "string",
+                "minLength": 1,
+                "example": "## Epic integration refresh\nMerging {defaultBranch} into {branch} conflicted:\n{detail}"
+              },
+              "epicConflictPrompt": {
+                "type": "string",
+                "minLength": 1,
+                "example": "## Epic integration merge conflict resolution (turn {turn})\n{paths}"
               }
             },
             "additionalProperties": false
@@ -16599,6 +17314,11 @@
                   "resolvePrompt": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "resolveSuffix": {
+                    "type": "string",
+                    "minLength": 1,
+                    "example": "Work in the checked-out integration branch `{branch}`."
                   }
                 },
                 "additionalProperties": false
@@ -19918,7 +20638,7 @@
                             "type": "string",
                             "example": ""
                           },
-                          "prompt": {
+                          "promptLocator": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -19927,7 +20647,7 @@
                                 "type": "null"
                               }
                             ],
-                            "example": null
+                            "example": "verification/pre-merge/12/prompt.md"
                           },
                           "harness": {
                             "anyOf": [
@@ -19959,7 +20679,7 @@
                           "verdict",
                           "summary",
                           "output",
-                          "prompt",
+                          "promptLocator",
                           "harness",
                           "hasTranscript",
                           "outputTruncated"
@@ -20087,6 +20807,83 @@
           },
           "404": {
             "description": "No such verification attempt, or no archived full output.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/attempts/{id}/resolved-prompt": {
+      "get": {
+        "tags": [
+          "Attempts"
+        ],
+        "description": "Read a Resolved Prompt from the Task Archive by its Attempt-relative locator (e.g. `verification/pre-merge/<stepId>/prompt.md` or `implementation/prompt.md`), as text/plain. The file is read on demand off the event loop; nothing is stored in the database. With `segments=true` it returns JSON `{ prompts }`, one string per turn, sliced from the step's offset index so prompts containing horizontal rules stay whole (archives written before the index existed fall back to splitting on the separator). 404 when the Attempt or the archived prompt is absent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "query",
+            "name": "locator",
+            "required": true,
+            "description": "Archive locator of the prompt file, relative to the Attempt directory."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "segments",
+            "required": false,
+            "description": "When `true`, return the prompts of the step as a JSON array instead of the joined text."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "index",
+            "required": false,
+            "description": "0-based index of one prompt within the file; omit to return the whole file."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Plain text: the archived prompt exactly as sent (only the `index`-th prompt when `index` is given); multiple prompts joined by a horizontal rule. With `segments=true`: JSON `{ prompts: string[] }`, one entry per prompt sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Plain text: the archived prompt exactly as sent (only the `index`-th prompt when `index` is given); multiple prompts joined by a horizontal rule. With `segments=true`: JSON `{ prompts: string[] }`, one entry per prompt sent."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such Attempt, or no archived Resolved Prompt at the locator.",
             "content": {
               "application/json": {
                 "schema": {
@@ -22383,6 +23180,171 @@
                       }
                     ]
                   },
+                  "promptFragmentReadOnlyRestraint": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Read-only restraint"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentConflictResolution": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Conflict resolution"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentOperatorMessage": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Operator message"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentSelfHeal": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Self-heal"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentPeerMessages": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Peer messages section"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentPeerMessage": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Peer message entry"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentPeerLine": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Peer line"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentPeerLiveMessage": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Live peer message"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentRebaseConflict": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Rebase conflict"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentPriorSession": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Prior session"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentCodeIndexGuidance": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Code index guidance"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "driveCommitNudge": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "mergeConflictPrompt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "mergeEpicConflictPrompt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "exportEnabled": {
                     "anyOf": [
                       {
@@ -24282,6 +25244,11 @@
                           "minimum": 0,
                           "maximum": 9007199254740991,
                           "example": 10
+                        },
+                        "commitNudge": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Commit the completed work now, then finish."
                         }
                       },
                       "required": [
@@ -24289,7 +25256,8 @@
                         "unattendedReminder",
                         "continuePrompt",
                         "mergeFate",
-                        "continueAttempts"
+                        "continueAttempts",
+                        "commitNudge"
                       ],
                       "additionalProperties": false
                     },
@@ -24301,6 +25269,104 @@
                       "type": "string",
                       "minLength": 1,
                       "example": "Please finish the current turn, then pause and wait for further instructions."
+                    },
+                    "promptFragments": {
+                      "type": "object",
+                      "properties": {
+                        "readOnlyRestraint": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Read-only restraint"
+                        },
+                        "conflictResolution": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Conflict resolution"
+                        },
+                        "operatorMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Operator message"
+                        },
+                        "selfHeal": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Self-heal"
+                        },
+                        "peerMessages": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer messages section"
+                        },
+                        "peerMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer message entry"
+                        },
+                        "peerLine": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer line"
+                        },
+                        "peerLiveMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Live peer message"
+                        },
+                        "rebaseConflict": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Rebase conflict"
+                        },
+                        "priorSession": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Prior session"
+                        },
+                        "codeIndexGuidance": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Code index guidance"
+                        },
+                        "criticRevisionIdentical": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                        },
+                        "criticRevisionDiff": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                        },
+                        "criticRevisionAlone": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                        },
+                        "criticVerdictContract": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
+                        }
+                      },
+                      "required": [
+                        "readOnlyRestraint",
+                        "conflictResolution",
+                        "operatorMessage",
+                        "selfHeal",
+                        "peerMessages",
+                        "peerMessage",
+                        "peerLine",
+                        "peerLiveMessage",
+                        "rebaseConflict",
+                        "priorSession",
+                        "codeIndexGuidance",
+                        "criticRevisionIdentical",
+                        "criticRevisionDiff",
+                        "criticRevisionAlone",
+                        "criticVerdictContract"
+                      ],
+                      "additionalProperties": false
                     },
                     "conversationIdleTimeoutMinutes": {
                       "type": "number",
@@ -24719,11 +25785,17 @@
                             "resolvePrompt": {
                               "type": "string",
                               "minLength": 1
+                            },
+                            "resolveSuffix": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Work in the checked-out integration branch `{branch}`."
                             }
                           },
                           "required": [
                             "preMerge",
-                            "resolvePrompt"
+                            "resolvePrompt",
+                            "resolveSuffix"
                           ],
                           "additionalProperties": false
                         }
@@ -24739,10 +25811,28 @@
                       "properties": {
                         "postMergeCheck": {
                           "type": "boolean"
+                        },
+                        "conflictPrompt": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "## Merge conflict resolution (turn {turn})\n{paths}"
+                        },
+                        "epicRefreshPrompt": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "## Epic integration refresh\nMerging {defaultBranch} into {branch} conflicted:\n{detail}"
+                        },
+                        "epicConflictPrompt": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "## Epic integration merge conflict resolution (turn {turn})\n{paths}"
                         }
                       },
                       "required": [
-                        "postMergeCheck"
+                        "postMergeCheck",
+                        "conflictPrompt",
+                        "epicRefreshPrompt",
+                        "epicConflictPrompt"
                       ],
                       "additionalProperties": false
                     },
@@ -25044,6 +26134,7 @@
                     "drive",
                     "taskPrompt",
                     "pauseMessage",
+                    "promptFragments",
                     "conversationIdleTimeoutMinutes",
                     "fileWatcherDebounceMs",
                     "verify",
@@ -25417,6 +26508,11 @@
                           "minimum": 0,
                           "maximum": 9007199254740991,
                           "example": 10
+                        },
+                        "commitNudge": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Commit the completed work now, then finish."
                         }
                       },
                       "required": [
@@ -25424,7 +26520,8 @@
                         "unattendedReminder",
                         "continuePrompt",
                         "mergeFate",
-                        "continueAttempts"
+                        "continueAttempts",
+                        "commitNudge"
                       ],
                       "additionalProperties": false
                     },
@@ -25436,6 +26533,104 @@
                       "type": "string",
                       "minLength": 1,
                       "example": "Please finish the current turn, then pause and wait for further instructions."
+                    },
+                    "promptFragments": {
+                      "type": "object",
+                      "properties": {
+                        "readOnlyRestraint": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Read-only restraint"
+                        },
+                        "conflictResolution": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Conflict resolution"
+                        },
+                        "operatorMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Operator message"
+                        },
+                        "selfHeal": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Self-heal"
+                        },
+                        "peerMessages": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer messages section"
+                        },
+                        "peerMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer message entry"
+                        },
+                        "peerLine": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer line"
+                        },
+                        "peerLiveMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Live peer message"
+                        },
+                        "rebaseConflict": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Rebase conflict"
+                        },
+                        "priorSession": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Prior session"
+                        },
+                        "codeIndexGuidance": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Code index guidance"
+                        },
+                        "criticRevisionIdentical": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                        },
+                        "criticRevisionDiff": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                        },
+                        "criticRevisionAlone": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                        },
+                        "criticVerdictContract": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
+                        }
+                      },
+                      "required": [
+                        "readOnlyRestraint",
+                        "conflictResolution",
+                        "operatorMessage",
+                        "selfHeal",
+                        "peerMessages",
+                        "peerMessage",
+                        "peerLine",
+                        "peerLiveMessage",
+                        "rebaseConflict",
+                        "priorSession",
+                        "codeIndexGuidance",
+                        "criticRevisionIdentical",
+                        "criticRevisionDiff",
+                        "criticRevisionAlone",
+                        "criticVerdictContract"
+                      ],
+                      "additionalProperties": false
                     },
                     "conversationIdleTimeoutMinutes": {
                       "type": "number",
@@ -25854,11 +27049,17 @@
                             "resolvePrompt": {
                               "type": "string",
                               "minLength": 1
+                            },
+                            "resolveSuffix": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Work in the checked-out integration branch `{branch}`."
                             }
                           },
                           "required": [
                             "preMerge",
-                            "resolvePrompt"
+                            "resolvePrompt",
+                            "resolveSuffix"
                           ],
                           "additionalProperties": false
                         }
@@ -25874,10 +27075,28 @@
                       "properties": {
                         "postMergeCheck": {
                           "type": "boolean"
+                        },
+                        "conflictPrompt": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "## Merge conflict resolution (turn {turn})\n{paths}"
+                        },
+                        "epicRefreshPrompt": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "## Epic integration refresh\nMerging {defaultBranch} into {branch} conflicted:\n{detail}"
+                        },
+                        "epicConflictPrompt": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "## Epic integration merge conflict resolution (turn {turn})\n{paths}"
                         }
                       },
                       "required": [
-                        "postMergeCheck"
+                        "postMergeCheck",
+                        "conflictPrompt",
+                        "epicRefreshPrompt",
+                        "epicConflictPrompt"
                       ],
                       "additionalProperties": false
                     },
@@ -26179,6 +27398,7 @@
                     "drive",
                     "taskPrompt",
                     "pauseMessage",
+                    "promptFragments",
                     "conversationIdleTimeoutMinutes",
                     "fileWatcherDebounceMs",
                     "verify",
@@ -26525,6 +27745,11 @@
                         "minimum": 0,
                         "maximum": 9007199254740991,
                         "example": 10
+                      },
+                      "commitNudge": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Commit the completed work now, then finish."
                       }
                     },
                     "required": [
@@ -26532,7 +27757,8 @@
                       "unattendedReminder",
                       "continuePrompt",
                       "mergeFate",
-                      "continueAttempts"
+                      "continueAttempts",
+                      "commitNudge"
                     ]
                   },
                   "taskPrompt": {
@@ -26543,6 +27769,103 @@
                     "type": "string",
                     "minLength": 1,
                     "example": "Please finish the current turn, then pause and wait for further instructions."
+                  },
+                  "promptFragments": {
+                    "type": "object",
+                    "properties": {
+                      "readOnlyRestraint": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Read-only restraint"
+                      },
+                      "conflictResolution": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Conflict resolution"
+                      },
+                      "operatorMessage": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Operator message"
+                      },
+                      "selfHeal": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Self-heal"
+                      },
+                      "peerMessages": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Peer messages section"
+                      },
+                      "peerMessage": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Peer message entry"
+                      },
+                      "peerLine": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Peer line"
+                      },
+                      "peerLiveMessage": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Live peer message"
+                      },
+                      "rebaseConflict": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Rebase conflict"
+                      },
+                      "priorSession": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Prior session"
+                      },
+                      "codeIndexGuidance": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Code index guidance"
+                      },
+                      "criticRevisionIdentical": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                      },
+                      "criticRevisionDiff": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                      },
+                      "criticRevisionAlone": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                      },
+                      "criticVerdictContract": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
+                      }
+                    },
+                    "required": [
+                      "readOnlyRestraint",
+                      "conflictResolution",
+                      "operatorMessage",
+                      "selfHeal",
+                      "peerMessages",
+                      "peerMessage",
+                      "peerLine",
+                      "peerLiveMessage",
+                      "rebaseConflict",
+                      "priorSession",
+                      "codeIndexGuidance",
+                      "criticRevisionIdentical",
+                      "criticRevisionDiff",
+                      "criticRevisionAlone",
+                      "criticVerdictContract"
+                    ]
                   },
                   "conversationIdleTimeoutMinutes": {
                     "type": "number",
@@ -26930,11 +28253,17 @@
                           "resolvePrompt": {
                             "type": "string",
                             "minLength": 1
+                          },
+                          "resolveSuffix": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "Work in the checked-out integration branch `{branch}`."
                           }
                         },
                         "required": [
                           "preMerge",
-                          "resolvePrompt"
+                          "resolvePrompt",
+                          "resolveSuffix"
                         ]
                       }
                     },
@@ -26948,10 +28277,28 @@
                     "properties": {
                       "postMergeCheck": {
                         "type": "boolean"
+                      },
+                      "conflictPrompt": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "## Merge conflict resolution (turn {turn})\n{paths}"
+                      },
+                      "epicRefreshPrompt": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "## Epic integration refresh\nMerging {defaultBranch} into {branch} conflicted:\n{detail}"
+                      },
+                      "epicConflictPrompt": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "## Epic integration merge conflict resolution (turn {turn})\n{paths}"
                       }
                     },
                     "required": [
-                      "postMergeCheck"
+                      "postMergeCheck",
+                      "conflictPrompt",
+                      "epicRefreshPrompt",
+                      "epicConflictPrompt"
                     ]
                   },
                   "guardrails": {
@@ -27238,6 +28585,7 @@
                   "drive",
                   "taskPrompt",
                   "pauseMessage",
+                  "promptFragments",
                   "conversationIdleTimeoutMinutes",
                   "fileWatcherDebounceMs",
                   "verify",
@@ -27592,6 +28940,11 @@
                           "minimum": 0,
                           "maximum": 9007199254740991,
                           "example": 10
+                        },
+                        "commitNudge": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Commit the completed work now, then finish."
                         }
                       },
                       "required": [
@@ -27599,7 +28952,8 @@
                         "unattendedReminder",
                         "continuePrompt",
                         "mergeFate",
-                        "continueAttempts"
+                        "continueAttempts",
+                        "commitNudge"
                       ],
                       "additionalProperties": false
                     },
@@ -27611,6 +28965,104 @@
                       "type": "string",
                       "minLength": 1,
                       "example": "Please finish the current turn, then pause and wait for further instructions."
+                    },
+                    "promptFragments": {
+                      "type": "object",
+                      "properties": {
+                        "readOnlyRestraint": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Read-only restraint"
+                        },
+                        "conflictResolution": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Conflict resolution"
+                        },
+                        "operatorMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Operator message"
+                        },
+                        "selfHeal": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Self-heal"
+                        },
+                        "peerMessages": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer messages section"
+                        },
+                        "peerMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer message entry"
+                        },
+                        "peerLine": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer line"
+                        },
+                        "peerLiveMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Live peer message"
+                        },
+                        "rebaseConflict": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Rebase conflict"
+                        },
+                        "priorSession": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Prior session"
+                        },
+                        "codeIndexGuidance": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Code index guidance"
+                        },
+                        "criticRevisionIdentical": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                        },
+                        "criticRevisionDiff": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                        },
+                        "criticRevisionAlone": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                        },
+                        "criticVerdictContract": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
+                        }
+                      },
+                      "required": [
+                        "readOnlyRestraint",
+                        "conflictResolution",
+                        "operatorMessage",
+                        "selfHeal",
+                        "peerMessages",
+                        "peerMessage",
+                        "peerLine",
+                        "peerLiveMessage",
+                        "rebaseConflict",
+                        "priorSession",
+                        "codeIndexGuidance",
+                        "criticRevisionIdentical",
+                        "criticRevisionDiff",
+                        "criticRevisionAlone",
+                        "criticVerdictContract"
+                      ],
+                      "additionalProperties": false
                     },
                     "conversationIdleTimeoutMinutes": {
                       "type": "number",
@@ -28029,11 +29481,17 @@
                             "resolvePrompt": {
                               "type": "string",
                               "minLength": 1
+                            },
+                            "resolveSuffix": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Work in the checked-out integration branch `{branch}`."
                             }
                           },
                           "required": [
                             "preMerge",
-                            "resolvePrompt"
+                            "resolvePrompt",
+                            "resolveSuffix"
                           ],
                           "additionalProperties": false
                         }
@@ -28049,10 +29507,28 @@
                       "properties": {
                         "postMergeCheck": {
                           "type": "boolean"
+                        },
+                        "conflictPrompt": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "## Merge conflict resolution (turn {turn})\n{paths}"
+                        },
+                        "epicRefreshPrompt": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "## Epic integration refresh\nMerging {defaultBranch} into {branch} conflicted:\n{detail}"
+                        },
+                        "epicConflictPrompt": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "## Epic integration merge conflict resolution (turn {turn})\n{paths}"
                         }
                       },
                       "required": [
-                        "postMergeCheck"
+                        "postMergeCheck",
+                        "conflictPrompt",
+                        "epicRefreshPrompt",
+                        "epicConflictPrompt"
                       ],
                       "additionalProperties": false
                     },
@@ -28354,6 +29830,7 @@
                     "drive",
                     "taskPrompt",
                     "pauseMessage",
+                    "promptFragments",
                     "conversationIdleTimeoutMinutes",
                     "fileWatcherDebounceMs",
                     "verify",
@@ -28722,6 +30199,11 @@
                               "minimum": 0,
                               "maximum": 9007199254740991,
                               "example": 10
+                            },
+                            "commitNudge": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Commit the completed work now, then finish."
                             }
                           },
                           "required": [
@@ -28729,7 +30211,8 @@
                             "unattendedReminder",
                             "continuePrompt",
                             "mergeFate",
-                            "continueAttempts"
+                            "continueAttempts",
+                            "commitNudge"
                           ],
                           "additionalProperties": false
                         },
@@ -28741,6 +30224,104 @@
                           "type": "string",
                           "minLength": 1,
                           "example": "Please finish the current turn, then pause and wait for further instructions."
+                        },
+                        "promptFragments": {
+                          "type": "object",
+                          "properties": {
+                            "readOnlyRestraint": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Read-only restraint"
+                            },
+                            "conflictResolution": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Conflict resolution"
+                            },
+                            "operatorMessage": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Operator message"
+                            },
+                            "selfHeal": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Self-heal"
+                            },
+                            "peerMessages": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Peer messages section"
+                            },
+                            "peerMessage": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Peer message entry"
+                            },
+                            "peerLine": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Peer line"
+                            },
+                            "peerLiveMessage": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Live peer message"
+                            },
+                            "rebaseConflict": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Rebase conflict"
+                            },
+                            "priorSession": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Prior session"
+                            },
+                            "codeIndexGuidance": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Code index guidance"
+                            },
+                            "criticRevisionIdentical": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                            },
+                            "criticRevisionDiff": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                            },
+                            "criticRevisionAlone": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                            },
+                            "criticVerdictContract": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
+                            }
+                          },
+                          "required": [
+                            "readOnlyRestraint",
+                            "conflictResolution",
+                            "operatorMessage",
+                            "selfHeal",
+                            "peerMessages",
+                            "peerMessage",
+                            "peerLine",
+                            "peerLiveMessage",
+                            "rebaseConflict",
+                            "priorSession",
+                            "codeIndexGuidance",
+                            "criticRevisionIdentical",
+                            "criticRevisionDiff",
+                            "criticRevisionAlone",
+                            "criticVerdictContract"
+                          ],
+                          "additionalProperties": false
                         },
                         "conversationIdleTimeoutMinutes": {
                           "type": "number",
@@ -29159,11 +30740,17 @@
                                 "resolvePrompt": {
                                   "type": "string",
                                   "minLength": 1
+                                },
+                                "resolveSuffix": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "example": "Work in the checked-out integration branch `{branch}`."
                                 }
                               },
                               "required": [
                                 "preMerge",
-                                "resolvePrompt"
+                                "resolvePrompt",
+                                "resolveSuffix"
                               ],
                               "additionalProperties": false
                             }
@@ -29179,10 +30766,28 @@
                           "properties": {
                             "postMergeCheck": {
                               "type": "boolean"
+                            },
+                            "conflictPrompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "## Merge conflict resolution (turn {turn})\n{paths}"
+                            },
+                            "epicRefreshPrompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "## Epic integration refresh\nMerging {defaultBranch} into {branch} conflicted:\n{detail}"
+                            },
+                            "epicConflictPrompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "## Epic integration merge conflict resolution (turn {turn})\n{paths}"
                             }
                           },
                           "required": [
-                            "postMergeCheck"
+                            "postMergeCheck",
+                            "conflictPrompt",
+                            "epicRefreshPrompt",
+                            "epicConflictPrompt"
                           ],
                           "additionalProperties": false
                         },
@@ -29484,6 +31089,7 @@
                         "drive",
                         "taskPrompt",
                         "pauseMessage",
+                        "promptFragments",
                         "conversationIdleTimeoutMinutes",
                         "fileWatcherDebounceMs",
                         "verify",
@@ -29823,6 +31429,11 @@
                               "minimum": 0,
                               "maximum": 9007199254740991,
                               "example": 10
+                            },
+                            "commitNudge": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Commit the completed work now, then finish."
                             }
                           },
                           "required": [
@@ -29830,7 +31441,8 @@
                             "unattendedReminder",
                             "continuePrompt",
                             "mergeFate",
-                            "continueAttempts"
+                            "continueAttempts",
+                            "commitNudge"
                           ],
                           "additionalProperties": false
                         },
@@ -29842,6 +31454,104 @@
                           "type": "string",
                           "minLength": 1,
                           "example": "Please finish the current turn, then pause and wait for further instructions."
+                        },
+                        "promptFragments": {
+                          "type": "object",
+                          "properties": {
+                            "readOnlyRestraint": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Read-only restraint"
+                            },
+                            "conflictResolution": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Conflict resolution"
+                            },
+                            "operatorMessage": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Operator message"
+                            },
+                            "selfHeal": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Self-heal"
+                            },
+                            "peerMessages": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Peer messages section"
+                            },
+                            "peerMessage": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Peer message entry"
+                            },
+                            "peerLine": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Peer line"
+                            },
+                            "peerLiveMessage": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Live peer message"
+                            },
+                            "rebaseConflict": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Rebase conflict"
+                            },
+                            "priorSession": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Prior session"
+                            },
+                            "codeIndexGuidance": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Code index guidance"
+                            },
+                            "criticRevisionIdentical": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                            },
+                            "criticRevisionDiff": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                            },
+                            "criticRevisionAlone": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                            },
+                            "criticVerdictContract": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
+                            }
+                          },
+                          "required": [
+                            "readOnlyRestraint",
+                            "conflictResolution",
+                            "operatorMessage",
+                            "selfHeal",
+                            "peerMessages",
+                            "peerMessage",
+                            "peerLine",
+                            "peerLiveMessage",
+                            "rebaseConflict",
+                            "priorSession",
+                            "codeIndexGuidance",
+                            "criticRevisionIdentical",
+                            "criticRevisionDiff",
+                            "criticRevisionAlone",
+                            "criticVerdictContract"
+                          ],
+                          "additionalProperties": false
                         },
                         "conversationIdleTimeoutMinutes": {
                           "type": "number",
@@ -30260,11 +31970,17 @@
                                 "resolvePrompt": {
                                   "type": "string",
                                   "minLength": 1
+                                },
+                                "resolveSuffix": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "example": "Work in the checked-out integration branch `{branch}`."
                                 }
                               },
                               "required": [
                                 "preMerge",
-                                "resolvePrompt"
+                                "resolvePrompt",
+                                "resolveSuffix"
                               ],
                               "additionalProperties": false
                             }
@@ -30280,10 +31996,28 @@
                           "properties": {
                             "postMergeCheck": {
                               "type": "boolean"
+                            },
+                            "conflictPrompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "## Merge conflict resolution (turn {turn})\n{paths}"
+                            },
+                            "epicRefreshPrompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "## Epic integration refresh\nMerging {defaultBranch} into {branch} conflicted:\n{detail}"
+                            },
+                            "epicConflictPrompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "## Epic integration merge conflict resolution (turn {turn})\n{paths}"
                             }
                           },
                           "required": [
-                            "postMergeCheck"
+                            "postMergeCheck",
+                            "conflictPrompt",
+                            "epicRefreshPrompt",
+                            "epicConflictPrompt"
                           ],
                           "additionalProperties": false
                         },
@@ -30585,6 +32319,7 @@
                         "drive",
                         "taskPrompt",
                         "pauseMessage",
+                        "promptFragments",
                         "conversationIdleTimeoutMinutes",
                         "fileWatcherDebounceMs",
                         "verify",
@@ -30986,6 +32721,11 @@
                           "minimum": 0,
                           "maximum": 9007199254740991,
                           "example": 10
+                        },
+                        "commitNudge": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Commit the completed work now, then finish."
                         }
                       },
                       "required": [
@@ -30993,7 +32733,8 @@
                         "unattendedReminder",
                         "continuePrompt",
                         "mergeFate",
-                        "continueAttempts"
+                        "continueAttempts",
+                        "commitNudge"
                       ],
                       "additionalProperties": false
                     },
@@ -31005,6 +32746,104 @@
                       "type": "string",
                       "minLength": 1,
                       "example": "Please finish the current turn, then pause and wait for further instructions."
+                    },
+                    "promptFragments": {
+                      "type": "object",
+                      "properties": {
+                        "readOnlyRestraint": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Read-only restraint"
+                        },
+                        "conflictResolution": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Conflict resolution"
+                        },
+                        "operatorMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Operator message"
+                        },
+                        "selfHeal": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Self-heal"
+                        },
+                        "peerMessages": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer messages section"
+                        },
+                        "peerMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer message entry"
+                        },
+                        "peerLine": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer line"
+                        },
+                        "peerLiveMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Live peer message"
+                        },
+                        "rebaseConflict": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Rebase conflict"
+                        },
+                        "priorSession": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Prior session"
+                        },
+                        "codeIndexGuidance": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Code index guidance"
+                        },
+                        "criticRevisionIdentical": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                        },
+                        "criticRevisionDiff": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                        },
+                        "criticRevisionAlone": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                        },
+                        "criticVerdictContract": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
+                        }
+                      },
+                      "required": [
+                        "readOnlyRestraint",
+                        "conflictResolution",
+                        "operatorMessage",
+                        "selfHeal",
+                        "peerMessages",
+                        "peerMessage",
+                        "peerLine",
+                        "peerLiveMessage",
+                        "rebaseConflict",
+                        "priorSession",
+                        "codeIndexGuidance",
+                        "criticRevisionIdentical",
+                        "criticRevisionDiff",
+                        "criticRevisionAlone",
+                        "criticVerdictContract"
+                      ],
+                      "additionalProperties": false
                     },
                     "conversationIdleTimeoutMinutes": {
                       "type": "number",
@@ -31423,11 +33262,17 @@
                             "resolvePrompt": {
                               "type": "string",
                               "minLength": 1
+                            },
+                            "resolveSuffix": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Work in the checked-out integration branch `{branch}`."
                             }
                           },
                           "required": [
                             "preMerge",
-                            "resolvePrompt"
+                            "resolvePrompt",
+                            "resolveSuffix"
                           ],
                           "additionalProperties": false
                         }
@@ -31443,10 +33288,28 @@
                       "properties": {
                         "postMergeCheck": {
                           "type": "boolean"
+                        },
+                        "conflictPrompt": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "## Merge conflict resolution (turn {turn})\n{paths}"
+                        },
+                        "epicRefreshPrompt": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "## Epic integration refresh\nMerging {defaultBranch} into {branch} conflicted:\n{detail}"
+                        },
+                        "epicConflictPrompt": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "## Epic integration merge conflict resolution (turn {turn})\n{paths}"
                         }
                       },
                       "required": [
-                        "postMergeCheck"
+                        "postMergeCheck",
+                        "conflictPrompt",
+                        "epicRefreshPrompt",
+                        "epicConflictPrompt"
                       ],
                       "additionalProperties": false
                     },
@@ -31748,6 +33611,7 @@
                     "drive",
                     "taskPrompt",
                     "pauseMessage",
+                    "promptFragments",
                     "conversationIdleTimeoutMinutes",
                     "fileWatcherDebounceMs",
                     "verify",
@@ -38652,6 +40516,99 @@
           },
           "404": {
             "description": "No Workspace has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspaceId}/epics/{epicRef}/resolved-prompt": {
+      "get": {
+        "tags": [
+          "Epics"
+        ],
+        "description": "Read an Epic's Resolved Prompt from the Task Archive by Attempt number and Attempt-relative locator, as text/plain. Serves prompts archived before the Epic had an Attempt row (under Attempt 1). 404 when the archived prompt is absent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "attempt",
+            "required": true,
+            "description": "Epic-local Attempt number the prompt was archived under."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "query",
+            "name": "locator",
+            "required": true,
+            "description": "Archive locator of the prompt file, relative to the Attempt directory."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "index",
+            "required": false,
+            "description": "0-based index of one prompt within the file; omit to return the whole file."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 1
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "example": "42",
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "epicRef",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The archived prompt text exactly as sent, or only the `index`-th prompt when `index` is given.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The archived prompt text exactly as sent, or only the `index`-th prompt when `index` is given."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Workspace has that id, or no archived Resolved Prompt at the locator.",
             "content": {
               "application/json": {
                 "schema": {

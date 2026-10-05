@@ -6,6 +6,8 @@ import {
   type WorkspaceRenderCtx,
   type Surface,
 } from '../web/src/components/settings-schema.js';
+import { blankPromptFragments } from './prompt-fragment-fixtures.js';
+import { NO_PROMPT_FRAGMENT_OVERRIDES, PROMPT_FRAGMENT_NAMES } from '../src/domain/prompt-fragments.js';
 import type { AppConfig, Workspace } from '../web/src/types.js';
 
 function makeConfig(): AppConfig {
@@ -18,13 +20,15 @@ function makeConfig(): AppConfig {
     chat: { harness: 'claude', model: 'claude-sonnet-4-6' },
     autoRunner: { enabled: false, maxConcurrentAttempts: 2 },
     agentMessages: { enabled: false, sendCap: 10 },
-    verify: { task: { preMerge: { commands: [], critics: [] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.' } },
+    verify: { task: { preMerge: { commands: [], critics: [] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.', resolveSuffix: '' } },
     guardrails: { budget: { wallClockMinutes: 60, tokens: null, costUsd: null }, progress: false, toolTimeoutMinutes: 10 },
-    drive: { prompt: '', unattendedReminder: '', continuePrompt: '', mergeFate: 'auto-merge', continueAttempts: 0 },
+    drive: { prompt: '', unattendedReminder: '', continuePrompt: '', commitNudge: '', mergeFate: 'auto-merge', continueAttempts: 0 },
     maxAttempts: 3,
     contextReuseTokenLimit: 100_000,
     editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
+    promptFragments: blankPromptFragments(),
+    merge: { postMergeCheck: true, conflictPrompt: '', epicConflictPrompt: '', epicRefreshPrompt: '' },
     archive: { retain: { days: null, maxTotalMB: null } },
     export: {
       enabled: false,
@@ -91,6 +95,10 @@ function makeWorkspace(): Workspace {
     driveMergeFate: null,
     driveContinueAttempts: null,
     taskPrompt: null,
+    ...NO_PROMPT_FRAGMENT_OVERRIDES,
+    mergeConflictPrompt: null,
+    mergeEpicConflictPrompt: null,
+    driveCommitNudge: null,
     createdAt: 0,
     updatedAt: 0,
   };
@@ -166,5 +174,35 @@ describe('Settings schema field ids are unique (issue #472)', () => {
     const ids = fieldIdsForSurface('workspace');
     expect(ids.length).toBeGreaterThan(0);
     expect(duplicates(ids)).toEqual([]);
+  });
+
+  it('declares the Prompt Fragments section on both surfaces', () => {
+    const section = SETTINGS_SCHEMA.find((s) => s.title === 'Prompt fragments');
+    expect(section?.tab).toBe('prompts');
+    expect(section?.surfaces).toEqual(expect.arrayContaining(['global', 'workspace']));
+  });
+
+  it('renders an editable field for every Prompt Fragment on both surfaces', () => {
+    const section = SETTINGS_SCHEMA.find((s) => s.title === 'Prompt fragments')!;
+    const config = makeConfig();
+    const workspace = makeWorkspace();
+    const globalCtx: GlobalRenderCtx = {
+      surface: 'global', config, baseline: config, setConfig: () => {}, errors: {}, harnessPermissionModes: {},
+      channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
+    };
+    const workspaceCtx: WorkspaceRenderCtx = {
+      surface: 'workspace', config, workspace, pristineWorkspace: workspace, setWorkspace: () => {}, errors: {},
+      blockedByRunningTask: false, onRequestDelete: () => {},
+    };
+    for (const ctx of [globalCtx, workspaceCtx]) {
+      const fields = (renderSection(section, ctx).body as { props: { children: unknown[] } }).props.children.flat().filter(Boolean) as { key: string }[];
+      const kebab = (name: string) => name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+      expect(fields.map((f) => f.key)).toEqual([
+        ...PROMPT_FRAGMENT_NAMES.map((name) => `fragment-${kebab(name)}`),
+        ...(ctx.surface === 'global'
+          ? ['fragment-criticRevisionDiff', 'fragment-criticRevisionIdentical', 'fragment-criticRevisionAlone', 'fragment-criticVerdictContract']
+          : []),
+      ]);
+    }
   });
 });

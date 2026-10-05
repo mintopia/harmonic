@@ -9,6 +9,8 @@ import { tasks as tasksTable, workspaces } from '../src/db/schema.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { readTranscriptLog } from '../src/execution/transcript-log.js';
 import { TaskArchive } from '../src/archive/task-archive.js';
+import { promptTurn } from '../src/execution/turn-completion.js';
+import type { AcpDriver } from '../src/acp/driver.js';
 import { baselineConfig } from '../src/config.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -114,6 +116,49 @@ describe('TaskArchive', () => {
     expect(typeof lines[0].ts).toBe('number');
   });
 
+  it('reports each prompt\'s 0-based index, continuing across a reopened writer', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const first = archiveFor().implementationStep(task, 1);
+    expect(first.promptLocator).toBe('implementation/prompt.md');
+    expect([await first.appendPrompt('a'), await first.appendPrompt('b')]).toEqual([0, 1]);
+    await first.close();
+    const reopened = archiveFor().implementationStep(task, 1);
+    expect(await reopened.appendPrompt('c')).toBe(2);
+    await reopened.close();
+    expect(await reopened.appendPrompt('d')).toBeNull();
+    const read = (index: number) => archiveFor().readResolvedPrompt(task, 1, 'implementation/prompt.md', index);
+    expect(await Promise.all([0, 1, 2, 3].map(read))).toEqual(['a', 'b', 'c', null]);
+  });
+
+  it('reads each prompt back by index even when an earlier prompt contains the separator or multibyte text', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const prompts = ['ticket body\n\n---\n\nwith a rule — é', 'second', '\n\n---\n\n', 'last'];
+    const writer = archiveFor().implementationStep(task, 1);
+    const indexes = [];
+    for (const text of prompts) indexes.push(await writer.appendPrompt(text));
+    await writer.close();
+    expect(indexes).toEqual([0, 1, 2, 3]);
+    const reopened = archiveFor().implementationStep(task, 1);
+    expect(await reopened.appendPrompt('after reopen')).toBe(4);
+    await reopened.close();
+    const read = (index: number) => archiveFor().readResolvedPrompt(task, 1, 'implementation/prompt.md', index);
+    expect(await Promise.all([0, 1, 2, 3, 4, 5].map(read))).toEqual([...prompts, 'after reopen', null]);
+  });
+
+  it('appends a resolution prompt under the Attempt for a Task owner and an Epic owner', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const archive = archiveFor();
+    expect(await archive.appendResolutionPrompt(task, 2, 'task-conflict', 1, 'task resolver prompt')).toEqual({
+      locator: 'resolution/task-conflict-1/prompt.md',
+      promptIndex: 0,
+    });
+    expect(readFileSync(join(await archive.ensure(task), 'attempts', '2', 'resolution', 'task-conflict-1', 'prompt.md'), 'utf8')).toBe('task resolver prompt');
+    const owner = { workspaceId: 1, epicRef: trackerRef(9) };
+    await archive.appendResolutionPrompt(owner, 3, 'epic-resolve', 1, 'one');
+    expect(await archive.appendResolutionPrompt(owner, 3, 'epic-resolve', 1, 'two')).toEqual({ locator: 'resolution/epic-resolve-1/prompt.md', promptIndex: 1 });
+    expect(await archive.readArchivedPrompt(owner, 3, 'resolution/epic-resolve-1/prompt.md')).toBe('one\n\n---\n\ntwo');
+  });
+
   it('appends a later turn of the same Attempt to the existing prompt.md and acp.jsonl', async () => {
     const task = await tasks.create({ prompt: 'p' });
     const archive = archiveFor();
@@ -129,6 +174,35 @@ describe('TaskArchive', () => {
     expect(readFileSync(join(stepDir, 'prompt.md'), 'utf8')).toBe('first\n\n---\n\nsecond');
     const lines = readFileSync(join(stepDir, 'acp.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     expect(lines.map((l) => l.update.n)).toEqual([1, 2]);
+  });
+
+  it('archives every implementation prompt of a multi-turn Attempt (first, steer, continue, commit nudge) in order', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const archive = archiveFor();
+    const driver = { prompt: async () => ({ stopReason: 'end_turn' }) } as unknown as AcpDriver;
+    const turns = ['first prompt', 'steer: use the cache', 'continue the work', 'commit your changes'];
+    for (const text of turns) {
+      const step = archive.implementationStep(task, 1);
+      await promptTurn(driver, text, () => {}, step);
+      await step.close();
+    }
+    const prompt = await archive.readArchivedPrompt(task, 1, 'implementation/prompt.md');
+    expect(prompt).toBe(turns.join('\n\n---\n\n'));
+  });
+
+  it('records one prompt_sent marker per archived prompt, and none without an archive', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const archive = archiveFor();
+    const driver = { prompt: async () => ({ stopReason: 'end_turn' }) } as unknown as AcpDriver;
+    const recorded: unknown[] = [];
+    const step = archive.implementationStep(task, 1);
+    await promptTurn(driver, 'one', (_type, payload) => recorded.push(payload), step);
+    await promptTurn(driver, 'two', (_type, payload) => recorded.push(payload), step);
+    await step.close();
+    expect(recorded).toEqual([{ event: 'prompt_sent' }, { event: 'prompt_sent' }]);
+    const bare: unknown[] = [];
+    await promptTurn(driver, 'three', (_type, payload) => bare.push(payload));
+    expect(bare).toEqual([]);
   });
 
   it('copies the native transcript and subagent files', async () => {

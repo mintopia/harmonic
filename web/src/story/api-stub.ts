@@ -3,7 +3,7 @@ import type { TrackerRef } from '../types.js';
 import * as f from './fixtures';
 import { agentMessageThreads } from './agent-message-fixtures';
 import { conversationDetail, conversationEventsFixture, conversationList, permissionRulesFixture } from './conversation-fixtures';
-import type { api as RealApi } from '../api';
+import type { api as RealApi, ResolvedPromptOwner } from '../api';
 import type {
   ActivityProcess,
   AppConfig,
@@ -24,10 +24,12 @@ import type {
 import type { EpicIntegrateOutcome } from '../epic-model.js';
 import type { WorktreeInventoryEntry } from '../worktree-inventory-model.js';
 
-export { ApiError } from '../api';
+import { ApiError } from '../api';
+export { ApiError };
 
 const storyName = new URLSearchParams(window.location.search).get('story');
 const epicIntegrated = storyName === 'epic-done';
+const epicResolver = storyName === 'epic-resolver';
 
 const ok = <T>(v: T) => Promise.resolve(v);
 
@@ -232,6 +234,25 @@ const trackerKindFixtures: TrackerKindInfo[] = [
   },
 ];
 
+const storyResolvedPrompts = [
+  'Your implementation left uncommitted changes. Commit the completed work now, then finish.',
+  [
+    '## Merge conflict resolution (turn 1)',
+    'Merging `harmonic/task-686` into `develop` conflicted in:',
+    '- src/execution/runner.ts',
+    '- web/src/components/ticket/ChatTranscript.tsx',
+    ...Array.from({ length: 12 }, (_, i) => `Resolve hunk ${i + 1}: keep both sides where they do not overlap.`),
+    'Then `git add` the resolved paths and finish.',
+  ].join('\n'),
+  [
+    'Refreshing `epic/166` from `develop` conflicted in:',
+    '- src/domain/guardrails.ts',
+    ...Array.from({ length: 12 }, (_, i) => `Reconcile hunk ${i + 1}: keep the Epic branch's intent and take develop's renames.`),
+    'Commit the resolved merge on `epic/166`, then finish.',
+  ].join('\n'),
+  'Whole-Epic verification failed: `npm test` regressed in tests/guardrails.test.ts. Fix the failure on `epic/166` and commit.',
+];
+
 export const api: typeof RealApi = {
   trackerKinds: () => ok({ kinds: trackerKindFixtures }),
   trackerDetection: (_id: number) => ok({ detectedTracker: { name: 'GitHub', kind: 'github' }, detectedCodeRepository: 'github' as const }),
@@ -360,6 +381,12 @@ export const api: typeof RealApi = {
   exportEpicAgain: (_workspaceId: number, _epicRef: TrackerRef) => ok({ outcomes: [], export: { exportable: true, latest: null, earlier: [] } }),
   epicExportDownloadUrl: (workspaceId: number, epicRef: TrackerRef) => `/api/workspaces/${workspaceId}/epics/${epicRef}/export/download`,
   verificationOutputUrl: (id: number) => `/api/verification-attempts/${id}/output`,
+  resolvedPrompt: (_owner: ResolvedPromptOwner, locator: string, index?: number) =>
+    index === undefined
+      ? ok(f.criticPrompts[locator] ?? '')
+      : index === 9
+        ? Promise.reject(new ApiError(404, 'not archived'))
+        : ok(storyResolvedPrompts[index] ?? 'Sample resolved prompt.'),
   verificationFullOutput: (id: number) => ok(`full output of verification ${id}`),
   taskUsage: (id: number) =>
     ok(f.epicChildUsage[id] ?? { models: {}, agents: {}, toolCalls: {}, totals: null, source: null, cost: null, attemptCount: 0 }),
@@ -396,8 +423,10 @@ export const api: typeof RealApi = {
     ok({ ...(channelFixtures.find((c) => c.id === id) ?? channelFixtures[0]!), events: patch.events }),
   deleteChannel: (_id: number) => ok(undefined),
   epics: (_workspaceId: number, _opts?: { limit?: number; offset?: number; q?: string }) => ok({ epics: [f.epic], total: 1 }),
-  epic: (_workspaceId: number, _epicRef: TrackerRef) => ok(epicIntegrated ? f.epicIntegrated : f.epic),
-  epicAttempts: (_workspaceId: number, _epicRef: TrackerRef) => ok({ attempts: [] }),
+  epic: (_workspaceId: number, _epicRef: TrackerRef) => ok(epicIntegrated ? f.epicIntegrated : epicResolver ? f.epicResolver : f.epic),
+  attemptResolvedPrompt: (_attemptId: number, _locator: string) => ok(''),
+  attemptResolvedPrompts: (_attemptId: number, _locator: string) => ok([] as string[]),
+  epicAttempts: (_workspaceId: number, _epicRef: TrackerRef) => ok({ attempts: storyName === 'epic-critic-prompt' ? f.epicAttempts : epicResolver ? f.epicResolverAttempts : [] }),
   epicDiffFiles: (_workspaceId: number, _epicRef: TrackerRef) => ok({ files: f.diffFiles, total: f.diffFiles.length }),
   maps: (_opts?: { workspaceId?: number; limit?: number; offset?: number; q?: string }) => ok({ maps: [], total: 0 }),
 };

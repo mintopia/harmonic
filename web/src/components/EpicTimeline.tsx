@@ -3,6 +3,7 @@ import { eventCount } from '../id-format.js';
 import { epicTimelineRows } from '../epic-timeline-model.js';
 import type { MergeStepTone } from '../merge-progress-model.js';
 import { card, railSectionCount } from '../ui.js';
+import { ResolvedPromptInline } from './ticket/ResolvedPromptInline';
 
 const CAPS = 'text-label font-bold uppercase tracking-caps text-faint';
 
@@ -26,7 +27,7 @@ function clockTime(at: number): string {
   return new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 }
 
-export function EpicTimeline({ epic }: { epic: Epic }) {
+export function EpicTimeline({ epic, workspaceId }: { epic: Epic; workspaceId: number }) {
   const rows = epicTimelineRows(epic);
   return (
     <section aria-labelledby="epic-timeline-heading" className="py-5">
@@ -51,6 +52,15 @@ export function EpicTimeline({ epic }: { epic: Epic }) {
                   <span className="rounded-lg bg-raised px-1.5 py-px text-label font-bold uppercase tracking-caps-tight text-muted">{row.tag}</span>
                 </div>
                 {row.detail && <p className="mt-0.5 whitespace-pre-wrap break-words text-small text-muted">{row.detail}</p>}
+                {row.prompt && (
+                  <ResolvedPromptInline
+                    owner={{ workspaceId, epicRef: epic.ref, attempt: row.prompt.attempt }}
+                    locator={row.prompt.locator}
+                    index={row.prompt.index}
+                    label={row.label.replace(/ prompt sent$/, '')}
+                    className="mt-2"
+                  />
+                )}
               </div>
             </li>
           ))}

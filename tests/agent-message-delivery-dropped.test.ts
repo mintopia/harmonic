@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { DEFAULT_PROMPT_FRAGMENTS } from '../src/config.js';
 import { deliverAgentMessage, type AgentMessageRunner } from '../src/execution/agent-message-delivery.js';
 import type { AgentMessageStore } from '../src/domain/agent-messages.js';
 import type { AgentMessageRecipient, AgentMessageRow } from '../src/db/schema.js';
@@ -21,7 +22,7 @@ describe('deliverAgentMessage — a next-turn steer dropped when the run ends', 
     };
     const row = { id: 'm1', senderTaskId: 1, recipients: [{ taskId: 2, receipt: 'held' }], parts: [{ text: 'hi' }] } as unknown as AgentMessageRow;
 
-    await deliverAgentMessage({ store: store as unknown as AgentMessageStore, runner }, row, { id: 1, harness: 'claude' });
+    await deliverAgentMessage({ store: store as unknown as AgentMessageStore, runner, fragments: { ...DEFAULT_PROMPT_FRAGMENTS } }, row, { id: 1, harness: 'claude' });
     expect(receipts.at(-1)).toMatchObject({ receipt: 'queued' });
 
     drop!();

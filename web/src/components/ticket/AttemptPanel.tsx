@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type {
   Attempt,
   AttemptSummary,
@@ -16,7 +16,6 @@ import {
   attemptIdentityModel,
   attemptStepTabs,
   defaultStepTab,
-  latestCriticPrompt,
   verificationOutputTail,
   type StepTab,
   type TaskStats,
@@ -28,6 +27,8 @@ import { AttemptStats, AttemptSummaryCard } from './StatsPanel';
 import { StatePill, NAV_DOT, NAV_WORD } from './shared';
 import { GuardrailAlert } from './ChangesPane';
 import { PromptSent } from './Description';
+import { promptSentCount } from '../../resolved-prompt-model';
+import { useTurnPrompts } from './useTurnPrompts';
 
 function attemptPillState(run: AttemptSummary, steps: readonly Step[]): string {
   if (run.state === 'completed') return 'passed';
@@ -151,6 +152,9 @@ export function AttemptPanel({
   const active = picked && tabs.some((tab) => tab.id === picked) ? picked : defaultStepTab(tabs);
   const activeTab = tabs.find((tab) => tab.id === active);
 
+  const turnPrompts = useTurnPrompts(run.id, promptSentCount(events));
+  const laterPrompts = useMemo(() => turnPrompts.slice(1), [turnPrompts]);
+  const firstPrompt = turnPrompts[0] ?? run.prompt;
   const topModel = attemptIdentityModel(primaryModel, stats.byModel);
   const chat = (
     <ChatTranscript
@@ -158,6 +162,7 @@ export function AttemptPanel({
       unavailable={logUnavailable}
       fromArchive={fromArchive}
       pendingSteers={pendingSteers}
+      turnPrompts={laterPrompts}
       following={following}
       onToggleFollow={onToggleFollow}
       steer={run.state === 'running' ? (
@@ -170,9 +175,9 @@ export function AttemptPanel({
       model={topModel}
       agent={agent}
       stepLabel="Implementation"
+      attemptId={run.id}
     />
   );
-  const reviewPrompt = latestCriticPrompt(verificationAttempts);
   const tabContent =
     activeTab && active ? (
       activeTab.pending ? (
@@ -182,7 +187,7 @@ export function AttemptPanel({
       ) : activeTab.type === 'implementation' ? (
         <>
           <GuardrailAlert events={guardrailEvents} />
-          {run.prompt && <PromptSent prompt={run.prompt} />}
+          {firstPrompt && <PromptSent prompt={firstPrompt} />}
           {chat}
         </>
       ) : activeTab.type === 'verification' ? (
@@ -191,7 +196,6 @@ export function AttemptPanel({
         </div>
       ) : (
         <div className="mt-4">
-          {reviewPrompt && <PromptSent prompt={reviewPrompt} label="Review prompt sent" />}
           <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="critic" verifier={`critic:${steps.filter((step) => step.type === 'review').findIndex((step) => `review:${step.id}` === activeTab.id)}`} steps={steps} />
           <CriticSessions attempts={verificationAttempts} run={run} />
         </div>

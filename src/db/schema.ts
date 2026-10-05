@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, check, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { Verdict } from '../verification/critic-schema.js';
+import type { PromptFragmentOverrides } from '../domain/prompt-fragments.js';
 import type { TicketRef, TicketState, TrackerRef } from '../tracker/adapter.js';
 
 /** A Task is either authored here or a 1:1 projection of a tracker issue. */
@@ -60,12 +61,13 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   guardrailBudget: string | null; guardrailProgress: boolean | null; toolTimeoutMinutes: number | null;
   drivePrompt: string | null; driveUnattendedReminder: string | null; driveContinuePrompt: string | null;
   driveMergeFate: string | null; driveContinueAttempts: number | null; taskPrompt: string | null; pauseMessage: string | null;
+  driveCommitNudge: string | null; mergeConflictPrompt: string | null; mergeEpicConflictPrompt: string | null;
   exportEnabled: boolean | null; exportDirectoryPath: string | null; exportRedactPatterns: string | null;
   exportS3Endpoint: string | null; exportS3Region: string | null; exportS3Bucket: string | null; exportS3Prefix: string | null;
   exportS3ForcePathStyle: boolean | null; exportS3AccessKeyId: string | null; exportS3SecretAccessKey: string | null;
   exportIncludeStates: string | null;
   configuredTracker: string | null; codeRepository: 'github' | 'gitlab' | 'forgejo' | 'git' | null; triageLabels: string | null; archiveRetentionDays: number | null; archiveRetentionMaxTotalMB: number | null;
-};
+} & PromptFragmentOverrides;
 
 /** `jobKey` is the job name plus optional Workspace id, so SQLite's NULL-distinct unique semantics can't duplicate global job rows. */
 export const scheduledJobs = sqliteTable('scheduled_jobs', {
@@ -602,10 +604,8 @@ export const verificationAttempts = sqliteTable('verification_attempts', {
   output: text('output').notNull(),
   /** Archive-relative key (under the Attempt's archive directory) of the complete, uncapped command output; null when `output` was not truncated, the log was not saved, or for a critic. */
   fullOutputKey: text('full_output_key'),
-  /** The exact prompt sent to the critic for this attempt (`buildCriticPrompt`);
-   * null for the command verifier and pre-feature rows. Persisted so Task
-   * detail's Review tab shows what actually went to the reviewer. */
-  prompt: text('prompt'),
+  /** Archive locator (relative to the Attempt's archive directory) of the critic's Resolved Prompt `prompt.md`; null for the command verifier, a critic run without an Archive, and pre-locator rows. The prompt text lives only in the Archive. */
+  promptKey: text('prompt_key'),
   /** Locator for the critic's native harness transcript; null for the command verifier or a harness with no native JSONL. Server-only. */
   transcriptPath: text('transcript_path'),
   /** The critic harness id that produced {@link transcriptPath}; may differ from the builder's. */

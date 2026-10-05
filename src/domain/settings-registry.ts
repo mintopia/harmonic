@@ -1,3 +1,5 @@
+import { PROMPT_FRAGMENT_NAMES, PROMPT_FRAGMENTS, promptFragmentOverrideKey, type PromptFragmentOverrideKey } from './prompt-fragments.js';
+
 /** Whether a setting can be overridden per Workspace, or is instance-wide only. */
 export type SettingScope = 'global-only' | 'overridable';
 
@@ -14,6 +16,19 @@ export interface SettingSpec {
   readonly label: string;
   readonly help: string;
 }
+
+const promptFragmentSettings = Object.fromEntries(
+  PROMPT_FRAGMENT_NAMES.map((name) => [
+    promptFragmentOverrideKey(name),
+    {
+      scope: 'overridable',
+      control: 'text',
+      tab: 'prompts',
+      label: PROMPT_FRAGMENTS[name].label,
+      help: `${PROMPT_FRAGMENTS[name].help} Inherits the global fragment when unset.`,
+    },
+  ]),
+) as Record<PromptFragmentOverrideKey, SettingSpec & { readonly scope: 'overridable' }>;
 
 export const settingsRegistry = {
   harness: {
@@ -218,6 +233,28 @@ export const settingsRegistry = {
     tab: 'prompts',
     label: 'Pause message',
     help: 'Message injected before a running Task pauses; inherits the global message unless overridden.',
+  },
+  ...promptFragmentSettings,
+  driveCommitNudge: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'prompts',
+    label: 'Commit nudge',
+    help: 'Sent when an Attempt ends its turn with uncommitted changes, asking the agent to commit; inherits the global default when unset.',
+  },
+  mergeConflictPrompt: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'prompts',
+    label: 'Merge conflict prompt',
+    help: 'Opens a Task merge-conflict resolution turn ({turn}, {taskBranch}, {baseBranch}, {paths}, {fragment.conflictResolution}); inherits the global default when unset.',
+  },
+  mergeEpicConflictPrompt: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'prompts',
+    label: 'Epic merge conflict prompt',
+    help: 'Opens an Epic integration merge-conflict resolution turn ({turn}, {taskBranch}, {baseBranch}, {paths}, {fragment.conflictResolution}); inherits the global default when unset.',
   },
   exportEnabled: {
     scope: 'overridable',

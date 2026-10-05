@@ -4,27 +4,32 @@ import { reportFailure } from '../error-handling.js';
 import type { AppConfig } from '../config.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
-import type { EpicMergeEventStore } from '../domain/epic-merge-events.js';
+import type { EpicMergeEventStore, EpicTimelineStep } from '../domain/epic-merge-events.js';
 import { runTimedCriticDrive } from '../verification/critic.js';
 import type { createPostMergeCheck } from '../verification/post-merge-check.js';
 import { integrationBranchName } from './epic-coordinator.js';
 import { logger } from '../logger.js';
 import { startOperation } from '../telemetry/operations.js';
-import { runMergePolicy, type MergePolicyDeps, type MergePolicyOutcome, type MergeStepEvent, type PostMergeCheckResult } from './merge-policy.js';
+import { runMergePolicy, type MergePolicyDeps, type MergePolicyOutcome, type PostMergeCheckResult } from './merge-policy.js';
 import type { RunnerOptions } from './runner.js';
+import type { RunnerEvents } from './runner-options.js';
+import type { TaskArchive } from '../archive/task-archive.js';
+import { resolveMergePrompts } from '../domain/setting-override.js';
+import { expandFragments, fillTemplate } from './prompt-template.js';
 
 export const RESOLVE_TURN_TIMEOUT_MS = 10 * 60 * 1000;
 
-/** The shared body of a conflict-resolution turn prompt: the unmerged-paths list plus resolution instructions, appended after a caller-supplied intro. */
-function conflictResolutionPrompt(intro: string, ctx: { baseBranch: string; taskBranch: string; unmergedPaths: string[]; baseDir: string }): string {
-  return (
-    intro +
-    ctx.unmergedPaths.map((path) => `- ${path}`).join('\n') +
-    `\n\nThis checkout (\`${ctx.baseDir}\`) has \`${ctx.baseBranch}\` checked out with that merge in progress — conflict ` +
-    `markers are present in the listed paths. Resolve the conflicts so the result keeps both \`${ctx.baseBranch}\`'s and ` +
-    `\`${ctx.taskBranch}\`'s work, then \`git add\` the resolved paths. Do not run \`git commit\`, do not create or switch ` +
-    `branches, do not push, and do not change anything beyond what resolving this merge requires.`
-  );
+type ConflictCtx = { turn: number; baseBranch: string; taskBranch: string; unmergedPaths: string[]; baseDir: string };
+
+/** Render a conflict-resolution turn prompt from its configured template, expanding Prompt Fragments and filling the merge placeholders. */
+export function renderConflictPrompt(template: string, fragments: Record<string, string>, ctx: ConflictCtx): string {
+  return fillTemplate(expandFragments(template, fragments), {
+    turn: ctx.turn,
+    taskBranch: ctx.taskBranch,
+    baseBranch: ctx.baseBranch,
+    baseDir: ctx.baseDir,
+    paths: ctx.unmergedPaths.map((path) => `- ${path}`).join('\n'),
+  });
 }
 
 /**
@@ -67,6 +72,9 @@ export interface MergeCoordinatorDeps {
   attempts: AttemptStore;
   epicMergeEvents: EpicMergeEventStore;
   criticDrive: RunnerOptions['criticDrive'];
+  archive?: TaskArchive | undefined;
+  onAttemptEvent?: RunnerEvents['onAttemptEvent'];
+  getWorkspace?: RunnerOptions['getWorkspace'];
   postMergeCheck: ReturnType<typeof createPostMergeCheck>;
   postMerge: RunnerOptions['postMerge'];
   urlFor: (task: TaskRow) => string | null;
@@ -202,11 +210,11 @@ export class MergeCoordinator {
         try {
           if (!harness) return;
           const drive = this.deps.criticDrive;
-          const prompt = conflictResolutionPrompt(
-            `## Epic integration merge conflict resolution (turn ${ctx.turn})\n` +
-              `Merging the Epic integration branch \`${ctx.taskBranch}\` into \`${ctx.baseBranch}\` conflicted in:\n`,
-            ctx,
-          );
+          const merge = resolveMergePrompts(await this.deps.getWorkspace?.(input.workspaceId), config);
+          const prompt = renderConflictPrompt(merge.epicConflictPrompt, merge.fragments, ctx);
+          const archived = await this.deps.archive?.appendResolutionPrompt({ workspaceId: input.workspaceId, epicRef: input.epicRef }, epicAttempt?.number ?? 1, 'epic-conflict', ctx.turn, prompt);
+          if (epicAttempt) await this.recordEpicEvent(epicAttempt.id, { event: 'merge-conflict-resolve', turn: ctx.turn, ...archived });
+          else if (archived) persistStep({ step: 'resolver-prompt', kind: 'merge-conflict', turn: ctx.turn, attempt: 1, ...archived });
           const request = {
             harness,
             harnessId,
@@ -242,7 +250,7 @@ export class MergeCoordinator {
       onStep: (step) => persistStep(step),
     };
     let persistChain: Promise<unknown> = Promise.resolve();
-    const persistStep = (step: MergeStepEvent): void => {
+    const persistStep = (step: EpicTimelineStep): void => {
       persistChain = persistChain
         .then(async () => {
           await this.deps.epicMergeEvents.append(input.workspaceId, input.epicRef, step);
@@ -267,6 +275,14 @@ export class MergeCoordinator {
     return outcome;
   }
 
+  private async recordEpicEvent(attemptId: number, payload: Record<string, unknown>): Promise<void> {
+    try {
+      this.deps.onAttemptEvent?.(await this.deps.attempts.appendEvent(attemptId, { type: 'lifecycle', payload }));
+    } catch (err) {
+      logger.warn('epic attempt event failed', { attemptId, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   mergePolicyDeps(
     task: TaskRow,
     run: AttemptRow,
@@ -283,11 +299,10 @@ export class MergeCoordinator {
           const harness = config.harnesses[harnessId as keyof typeof config.harnesses];
           if (!harness) return;
           const drive = this.deps.criticDrive;
-          const prompt = conflictResolutionPrompt(
-            `## Merge conflict resolution (turn ${ctx.turn})\n` +
-              `Merging \`${ctx.taskBranch}\` into \`${ctx.baseBranch}\` conflicted in:\n`,
-            ctx,
-          );
+          const merge = resolveMergePrompts(await this.deps.getWorkspace?.(task.workspaceId), config);
+          const prompt = renderConflictPrompt(merge.conflictPrompt, merge.fragments, ctx);
+          const archived = await this.deps.archive?.appendResolutionPrompt(task, run.number, 'task-conflict', ctx.turn, prompt);
+          record('lifecycle', { event: 'merge-conflict-resolve', turn: ctx.turn, ...archived });
           await runTimedCriticDrive(drive, {
             harness,
             harnessId,

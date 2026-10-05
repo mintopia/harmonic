@@ -6,6 +6,7 @@ import '../index.css';
 import { GlobalVerificationSettings } from '../components/VerificationSettings';
 import { TicketPage } from '../components/TicketPage';
 import { ChatTranscript } from '../components/ticket/ChatTranscript';
+import { PromptSent } from '../components/ticket/Description';
 import type { AttemptLogEvent, VerifierStatus } from '../types';
 import { EpicPage } from '../components/EpicPage';
 import { StatsPage } from '../components/StatsPage';
@@ -19,7 +20,7 @@ import { FilesPage } from '../components/FilesPage';
 import { CodeViewer } from '../components/CodeViewer';
 import { GlobalDashboard } from '../components/GlobalDashboard';
 import { ExtendGuardrailDialog } from '../components/ExtendGuardrailDialog';
-import { Verification } from '../components/ticket/Verification';
+import { CriticSessions, Verification } from '../components/ticket/Verification';
 import { LifecycleTimeline } from '../components/ticket/LifecycleTimeline';
 import { MergeProgress } from '../components/MergeProgress';
 import { EpicIntegrationBar } from '../components/EpicIntegrationBar';
@@ -30,7 +31,7 @@ import { ExportPanel } from '../components/ticket/ExportPanel';
 import type { TaskExportStatus, Workspace } from '../types';
 import { SecretField, IssueTrackerSection, CodeRepositorySection, TriageLabelsSection } from '../components/TrackerSettings';
 import { SettingsSection } from '../components/SettingsSection';
-import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline } from './fixtures';
+import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline, verificationAttempts as storyVerificationAttempts, verifierStatuses } from './fixtures';
 
 const mergedSteps: MergeStepEvent[] = [
   { step: 'started', baseBranch: 'develop', taskBranch: 'task/handoff-10-merge-visibility' },
@@ -153,6 +154,32 @@ function CriticRunningStory() {
   );
 }
 
+function CriticPromptsStory() {
+  return (
+    <StoryFrame style={{ padding: 30, maxWidth: 900 }}>
+      <Verification attempts={storyVerificationAttempts} statuses={verifierStatuses} run={runs[2]!} only="critic" />
+      <CriticSessions attempts={storyVerificationAttempts} run={runs[2]!} />
+    </StoryFrame>
+  );
+}
+
+function ResolvedPromptsStory() {
+  const ev = (i: number, payload: AttemptLogEvent['payload']): AttemptLogEvent => ({ id: i, seq: i, ts: 1_756_000_000_000 + i * 1000, type: 'session_update', payload });
+  const lifecycle = (i: number, payload: Record<string, unknown>) => ({ ...ev(i, { sessionUpdate: '' }), type: 'lifecycle', payload }) as unknown as AttemptLogEvent;
+  const events: AttemptLogEvent[] = [
+    ev(1, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Implemented the change; finishing now.' } }),
+    lifecycle(2, { event: 'commit-nudge', locator: 'attempt-1', promptIndex: 0 }),
+    ev(3, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Committed. Merging into develop.' } }),
+    lifecycle(4, { event: 'merge-conflict-resolve', locator: 'attempt-1', promptIndex: 1 }),
+    lifecycle(5, { event: 'continue', locator: 'attempt-1', promptIndex: 9 }),
+  ];
+  return (
+    <StoryFrame style={{ padding: 30, maxWidth: 760, margin: '0 auto' }}>
+      <ChatTranscript events={events} unavailable={false} model="claude-sonnet-5-5" agent="Claude" stepLabel="Implementation" attemptId={1} />
+    </StoryFrame>
+  );
+}
+
 function TranscriptStory() {
   const ev = (i: number, payload: AttemptLogEvent['payload']): AttemptLogEvent => ({ id: i, seq: i, ts: 1_756_000_000_000 + i * 1000, type: 'session_update', payload });
   const codexEvents: AttemptLogEvent[] = [
@@ -169,6 +196,44 @@ function TranscriptStory() {
   return (
     <StoryFrame style={{ padding: 30, maxWidth: 760, margin: '0 auto' }}>
       <ChatTranscript events={codexEvents} unavailable={false} model="gpt-5.6-sol" agent="Codex" stepLabel="Implement" />
+    </StoryFrame>
+  );
+}
+
+function MultiTurnStory() {
+  const ev = (i: number, payload: AttemptLogEvent['payload'], type = 'session_update'): AttemptLogEvent => ({ id: i, seq: i, ts: 1_756_000_000_000 + i * 1000, type: type as 'session_update', payload });
+  const lifecycle = (i: number, event: string, extra: Record<string, unknown> = {}) => ev(i, { sessionUpdate: '', event, ...extra } as AttemptLogEvent['payload'], 'lifecycle');
+  const say = (i: number, text: string) => ev(i, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } });
+  const events: AttemptLogEvent[] = [
+    lifecycle(1, 'prompt_sent'),
+    say(2, 'Implemented the change; tests still to run.'),
+    ev(3, { sessionUpdate: 'tool_call', toolCallId: 'a', title: 'Edit src/widget.ts', status: 'completed' }),
+    lifecycle(4, 'steer_delivered', { text: 'Use the existing cache helper.' }),
+    lifecycle(5, 'prompt_sent'),
+    say(6, 'Switched to the cache helper.'),
+    lifecycle(7, 'continue', { attempt: 1 }),
+    lifecycle(8, 'prompt_sent'),
+    say(9, 'Ran the tests; they pass. Changes are not committed yet.'),
+    lifecycle(10, 'finished', { stopReason: 'end_turn' }),
+    lifecycle(11, 'commit-nudge'),
+    lifecycle(12, 'prompt_sent'),
+    say(13, 'Committed the work.'),
+  ];
+  return (
+    <StoryFrame style={{ padding: 30, maxWidth: 760, margin: '0 auto' }}>
+      <PromptSent prompt={"Implement #801: render each turn's Resolved Prompt inline.\n\n---\n\nAcceptance: every turn's prompt renders whole, even when the ticket body contains a rule."} />
+      <ChatTranscript
+        events={events}
+        unavailable={false}
+        model="claude-sonnet-4-6"
+        agent="Claude"
+        stepLabel="Implementation"
+        turnPrompts={[
+          'Use the existing cache helper.',
+          'Continue: run the tests, then commit.',
+          'Your implementation left uncommitted changes. Commit the completed work now, then finish.',
+        ]}
+      />
     </StoryFrame>
   );
 }
@@ -423,7 +488,11 @@ const STORIES: Record<string, () => JSX.Element> = {
   settings: SettingsStory,
   board: BoardStory,
   'critic-running': CriticRunningStory,
+  'critic-prompts': CriticPromptsStory,
+  'epic-critic-prompt': EpicStory,
   transcript: TranscriptStory,
+  'multi-turn': MultiTurnStory,
+  'resolved-prompts': ResolvedPromptsStory,
   timeline: TimelineStory,
   merge: MergeStory,
   compose: ComposeStory,
@@ -437,6 +506,7 @@ const STORIES: Record<string, () => JSX.Element> = {
   guardrail: GuardrailStory,
   epic: EpicStory,
   'epic-done': EpicStory,
+  'epic-resolver': EpicStory,
   export: ExportStory,
   hints: HintsStory,
   'settings-error': SettingsPageStory,

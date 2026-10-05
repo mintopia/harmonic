@@ -340,8 +340,8 @@ const verificationAttemptSchema = z.object({
   summary: z.string().meta({ example: 'all checks passed' }),
   /** Raw verifier output, capped to a head and tail with the elided middle marked. The full text, when kept, is reported by `outputTruncated`. */
   output: z.string().meta({ example: '' }),
-  /** The exact prompt sent to the critic; null for a command verifier. */
-  prompt: z.string().nullable().meta({ example: null }),
+  /** Archive locator of the critic's Resolved Prompt, read with `GET /api/attempts/:attemptId/resolved-prompt?locator=`; null for a command verifier or an older row. */
+  promptLocator: z.string().nullable().meta({ example: 'verification/pre-merge/12/prompt.md' }),
   /** The critic harness that produced the transcript; null for a command verifier or an older row. */
   harness: z.string().nullable().meta({ example: 'claude' }),
   /** Whether a critic transcript is available; fetch the parsed log from `GET /api/verification-attempts/:id/log`. */
@@ -1145,6 +1145,39 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       const stream = createReadStream(file);
       reply.raw.once('close', () => stream.destroy());
       return reply.header('content-type', 'text/plain; charset=utf-8').send(stream);
+    },
+  );
+
+  app.get(
+    '/attempts/:id/resolved-prompt',
+    {
+      schema: {
+        tags: ['Attempts'],
+        description:
+          "Read a Resolved Prompt from the Task Archive by its Attempt-relative locator (e.g. `verification/pre-merge/<stepId>/prompt.md` or `implementation/prompt.md`), as text/plain. The file is read on demand off the event loop; nothing is stored in the database. With `segments=true` it returns JSON `{ prompts }`, one string per turn, sliced from the step's offset index so prompts containing horizontal rules stay whole (archives written before the index existed fall back to splitting on the separator). 404 when the Attempt or the archived prompt is absent.",
+        params: idParamsSchema,
+        querystring: z.object({
+          locator: z.string().min(1).describe('Archive locator of the prompt file, relative to the Attempt directory.'),
+          segments: z.enum(['true', 'false']).optional().describe('When `true`, return the prompts of the step as a JSON array instead of the joined text.'),
+          index: z.coerce.number().int().min(0).optional().describe('0-based index of one prompt within the file; omit to return the whole file.'),
+        }),
+        response: {
+          200: z.any().describe('Plain text: the archived prompt exactly as sent (only the `index`-th prompt when `index` is given); multiple prompts joined by a horizontal rule. With `segments=true`: JSON `{ prompts: string[] }`, one entry per prompt sent.'),
+          404: errorResponse('No such Attempt, or no archived Resolved Prompt at the locator.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const run = await ctx.attempts.get(req.params.id).catch(() => null);
+      const owner = run ? await archiveOwner(run) : null;
+      if (req.query.segments === 'true') {
+        const prompts = run && owner ? await ctx.archive.readArchivedPromptSegments(owner, run.number, req.query.locator) : null;
+        if (prompts === null) throw new DomainError('not_found', `no archived resolved prompt for attempt ${req.params.id} at that locator`);
+        return { prompts };
+      }
+      const text = run && owner ? await ctx.archive.readResolvedPrompt(owner, run.number, req.query.locator, req.query.index) : null;
+      if (text === null) throw new DomainError('not_found', `no archived resolved prompt for attempt ${req.params.id} at that locator/index`);
+      return reply.header('content-type', 'text/plain; charset=utf-8').send(text);
     },
   );
 

@@ -1,4 +1,5 @@
 import type { TrackerRef } from './types.js';
+import type { PromptFragmentOverrides } from '../../src/domain/prompt-fragments.js';
 import type {
   Attempt,
   ActivityProcess,
@@ -51,6 +52,9 @@ import type { Epic, EpicIntegrateOutcome } from './epic-model.js';
 import type { Stats } from './stats-model.js';
 import type { WorktreeInventoryEntry } from './worktree-inventory-model.js';
 
+/** Where a Resolved Prompt is archived: an Attempt by id, or an Epic's Attempt by number (an Epic may have no Attempt row). */
+export type ResolvedPromptOwner = { attemptId: number } | { workspaceId: number; epicRef: TrackerRef; attempt: number };
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -96,9 +100,9 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   return json as T;
 }
 
-async function requestText(path: string): Promise<string> {
+async function requestText(path: string, unavailable = 'Full output unavailable'): Promise<string> {
   const { res, text } = await send('GET', path);
-  if (!res.ok) throw new ApiError(res.status, `Full output unavailable (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`);
+  if (!res.ok) throw new ApiError(res.status, `${unavailable} (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`);
   return text;
 }
 
@@ -272,7 +276,7 @@ export const api = {
       driveMergeFate?: 'auto-merge' | 'open-PR' | 'artifact' | null;
       driveContinueAttempts?: number | null;
       taskPrompt?: string | null;
-    },
+    } & Partial<PromptFragmentOverrides>,
   ) => request<Workspace>('PATCH', `/api/workspaces/${id}`, patch),
   // Deletes the Workspace and cascades its board; the server 204s (empty body,
   // handled by request's 204 branch). Deleting the last Workspace is allowed
@@ -357,6 +361,15 @@ export const api = {
   verificationAttempt: (id: number) =>
     request<{ output: string; summary: string; hasTranscript: boolean }>('GET', `/api/verification-attempts/${id}`),
   verificationOutputUrl: (id: number) => `/api/verification-attempts/${id}/output`,
+  resolvedPrompt: (owner: ResolvedPromptOwner, locator: string, index?: number) => {
+    const at = `locator=${encodeURIComponent(locator)}${index === undefined ? '' : `&index=${index}`}`;
+    return requestText(
+      'attemptId' in owner
+        ? `/api/attempts/${owner.attemptId}/resolved-prompt?${at}`
+        : `/api/workspaces/${owner.workspaceId}/epics/${owner.epicRef}/resolved-prompt?attempt=${owner.attempt}&${at}`,
+      'Sent prompt unavailable',
+    );
+  },
   verificationFullOutput: (id: number) => requestText(`/api/verification-attempts/${id}/output`),
   criticLog: (attemptId: number) =>
     request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number; fromArchive?: boolean } | { status: 'unavailable'; liveCursor: number }>(
@@ -436,6 +449,10 @@ export const api = {
   },
   epic: (workspaceId: number, epicRef: TrackerRef) =>
     request<Epic>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}`),
+  attemptResolvedPrompt: (attemptId: number, locator: string) =>
+    requestText(`/api/attempts/${attemptId}/resolved-prompt?locator=${encodeURIComponent(locator)}`),
+  attemptResolvedPrompts: (attemptId: number, locator: string) =>
+    request<{ prompts: string[] }>('GET', `/api/attempts/${attemptId}/resolved-prompt?locator=${encodeURIComponent(locator)}&segments=true`).then((r) => r.prompts),
   epicAttempts: (workspaceId: number, epicRef: TrackerRef) =>
     request<{ attempts: EpicAttempt[] }>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/attempts`),
   epicDiffFiles: (workspaceId: number, epicRef: TrackerRef) =>

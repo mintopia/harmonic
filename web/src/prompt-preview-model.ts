@@ -1,4 +1,5 @@
-import { fillTemplate, type DriveFields } from '../../src/execution/prompt-template.js';
+import { expandFragments, fillTemplate, type DriveFields } from '../../src/execution/prompt-template.js';
+import { PROMPT_FRAGMENTS, type PromptFragmentName } from '../../src/domain/prompt-fragments.js';
 import { buildCriticPrompt } from '../../src/verification/critic-prompt.js';
 import type { AppConfig } from './types';
 
@@ -75,6 +76,19 @@ export const TASK_PLACEHOLDERS: Placeholder[] = [
   { token: '{model}', desc: 'model id' },
 ];
 
+export function fragmentPlaceholders(name: PromptFragmentName): Placeholder[] {
+  const spec = PROMPT_FRAGMENTS[name];
+  const required: readonly string[] = spec.required;
+  return Object.entries<string>(spec.fields).map(([token, desc]) => ({ token: `{${token}}`, desc, core: required.includes(token) }));
+}
+
+export function compileFragmentPreview(name: PromptFragmentName): (template: string, config: Pick<AppConfig, 'promptFragments'>) => string {
+  const samples = Object.fromEntries(
+    Object.entries<string>(PROMPT_FRAGMENTS[name].fields).map(([token, desc]) => [token, token === 'taskId' ? '123' : `[${desc}]`]),
+  );
+  return (template, config) => fillTemplate(expandFragments(template, config.promptFragments), samples);
+}
+
 /** Fill the five Drive tokens with the sample values. */
 export function compileDrivePreview(template: string): string {
   return fillTemplate(template, SAMPLE_DRIVE_FIELDS);
@@ -105,13 +119,17 @@ export function compileTaskIdPreview(template: string): string {
  * operator prompt compiles differently per Task kind, so both variants are shown:
  * a mirrored Task judged against its ticket, and a native Task judged against the
  * instructions alone. */
-export function compileCriticPreview(prompts: { issuePrompt: string; noIssuePrompt: string }): LabeledPreview[] {
+export function compileCriticPreview(
+  prompts: { issuePrompt: string; noIssuePrompt: string },
+  fragments: AppConfig['promptFragments'],
+): LabeledPreview[] {
   const compile = (operatorPrompt: string, fields: DriveFields) =>
     buildCriticPrompt({
       operatorPrompt,
       fields,
       verifiedHeadOid: SAMPLE_VERIFIED_HEAD_OID,
       baseOid: SAMPLE_BASE_OID,
+      fragments,
     });
   return [
     { label: 'Mirrored task (has ticket)', text: compile(prompts.issuePrompt, SAMPLE_DRIVE_FIELDS) },
@@ -119,16 +137,37 @@ export function compileCriticPreview(prompts: { issuePrompt: string; noIssueProm
   ];
 }
 
-export function compileEpicCriticPreview(prompt: string): string {
+export const CRITIC_REVISION_PLACEHOLDERS: Placeholder[] = [
+  { token: '{ticketFirst}', desc: 'tells the critic to read the ticket, or to judge by the review instructions', core: true },
+  { token: '{spec}', desc: '"the referenced ticket" or "the review instructions above"' },
+  { token: '{head}', desc: 'candidate revision' },
+  { token: '{base}', desc: 'base revision' },
+  { token: '{workingTreeNote}', desc: 'uncommitted-changes note, empty when the worktree is clean' },
+];
+
+export type CriticRevisionVariant = 'diff' | 'identical' | 'alone';
+
+export function compileCriticFragmentPreview(fragments: AppConfig['promptFragments'], variant: CriticRevisionVariant): string {
+  return buildCriticPrompt({
+    operatorPrompt: '(the operator review prompt)',
+    fields: SAMPLE_DRIVE_FIELDS,
+    verifiedHeadOid: SAMPLE_VERIFIED_HEAD_OID,
+    ...(variant === 'alone' ? {} : { baseOid: variant === 'identical' ? SAMPLE_VERIFIED_HEAD_OID : SAMPLE_BASE_OID }),
+    fragments,
+  });
+}
+
+export function compileEpicCriticPreview(prompt: string, fragments: AppConfig['promptFragments']): string {
   return buildCriticPrompt({
     operatorPrompt: prompt,
     fields: SAMPLE_DRIVE_FIELDS,
     verifiedHeadOid: SAMPLE_VERIFIED_HEAD_OID,
     baseOid: SAMPLE_BASE_OID,
+    fragments,
   });
 }
 
-export function compileEpicResolvePreview(template: string): string {
+export function compileEpicResolvePreview(template: string, suffix: string): string {
   const prompt = template
     .replaceAll('{ref}', SAMPLE_DRIVE_FIELDS.ref)
     .replaceAll('{title}', SAMPLE_DRIVE_FIELDS.title)
@@ -140,6 +179,43 @@ export function compileEpicResolvePreview(template: string): string {
     '## Failing Epic verification',
     'Example verifier feedback.',
     '',
-    `Work in the checked-out integration branch \`epic/${SAMPLE_DRIVE_FIELDS.ref}\`. Fix the failure and commit the result. Do not create or switch branches, and do not push.`,
+    suffix.replaceAll('{branch}', `epic/${SAMPLE_DRIVE_FIELDS.ref}`),
   ].join('\n');
+}
+
+export const COMMIT_NUDGE_PLACEHOLDERS: Placeholder[] = [];
+
+export const MERGE_CONFLICT_PLACEHOLDERS: Placeholder[] = [
+  { token: '{turn}', desc: 'resolution turn number' },
+  { token: '{taskBranch}', desc: 'branch being merged' },
+  { token: '{baseBranch}', desc: 'branch being merged into' },
+  { token: '{paths}', desc: 'conflicted paths' },
+  { token: '{fragment.conflictResolution}', desc: 'the Conflict resolution fragment' },
+];
+
+export const EPIC_REFRESH_PLACEHOLDERS: Placeholder[] = [
+  { token: '{defaultBranch}', desc: 'Default branch merged into the Epic' },
+  { token: '{branch}', desc: 'Epic integration branch' },
+  { token: '{detail}', desc: 'Conflict detail from the merge attempt' },
+];
+
+export const EPIC_RESOLVE_SUFFIX_PLACEHOLDERS: Placeholder[] = [{ token: '{branch}', desc: 'Epic integration branch' }];
+
+const SAMPLE_CONFLICT_VALUES: Record<string, string> = {
+  baseDir: '/repo',
+  baseBranch: 'develop',
+  taskBranch: 'harmonic/task-123',
+  turn: '1',
+  paths: '- src/app.ts',
+  branch: 'epic/example',
+};
+
+/** Fill sample values into any `{token}` the sample set knows; unknown tokens stay literal. */
+export function compileConflictPreview(template: string): string {
+  return template.replace(/\{(\w+)\}/g, (match, name: string) => SAMPLE_CONFLICT_VALUES[name] ?? match);
+}
+
+/** Preview a merge prompt with `{fragment.conflictResolution}` expanded from the configured fragment. */
+export function compileMergeConflictPreview(template: string, config: Pick<AppConfig, 'promptFragments'>): string {
+  return compileConflictPreview(template.replace(/\{fragment\.conflictResolution\}/g, config.promptFragments.conflictResolution));
 }

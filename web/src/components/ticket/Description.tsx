@@ -36,11 +36,11 @@ export function Description({ prompt }: { prompt: string }) {
  * to the harness, or the review prompt sent to the critic — verbatim and
  * monospaced, clamped when long. Distinct from {@link Description} (the ticket's
  * own body): this is what actually went to the agent. */
-export function PromptSent({ prompt, label = 'Prompt sent' }: { prompt: string; label?: string }) {
+export function PromptSent({ prompt, label = 'Prompt sent', className = 'mt-4' }: { prompt: string; label?: string; className?: string }) {
   const [expanded, setExpanded] = useState(false);
   const clampable = prompt.length > 320;
   return (
-    <div className="mt-4 rounded-lg border border-hairline bg-surface p-4 shadow-card">
+    <div className={`${className} rounded-lg border border-hairline bg-surface p-4 shadow-card`}>
       <div className={`mb-2 ${sectionCaps}`}>{label}</div>
       <pre className={`overflow-x-auto whitespace-pre-wrap break-words font-data text-[12.5px] leading-[1.55] text-muted ${clampable && !expanded ? 'line-clamp-[8]' : ''}`}>
         {prompt}

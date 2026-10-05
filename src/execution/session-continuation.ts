@@ -2,6 +2,7 @@ import type { AcpInitializeResult } from '../acp/driver.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { AttemptRow, SessionRow, TaskRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
+import type { PromptFragments } from '../domain/prompt-fragments.js';
 import { resolveScoped } from '../domain/setting-override.js';
 import {
   decideAttemptContinuation,
@@ -13,6 +14,7 @@ import {
 import { assessResumeEligibility, sessionFacts, type ResumeEnvironment } from '../domain/session-resume.js';
 import type { SessionStore } from '../domain/sessions.js';
 import { bestEffort, orFallback, reportFailure, type FireAndForget } from '../error-handling.js';
+import { renderFragment } from './prompt-template.js';
 import { adapterFor, adapterVersion } from './harness/registry.js';
 import { repoKey } from './repo-lock.js';
 import type { TranscriptCapture } from './transcript-capture.js';
@@ -143,7 +145,7 @@ export class SessionContinuation {
     });
   }
 
-  async condensedContext(run: AttemptRow): Promise<string | null> {
+  async condensedContext(run: AttemptRow, fragments: PromptFragments): Promise<string | null> {
     const sessionRowId = run.sessionRowId;
     if (sessionRowId === null) return null;
     const session = await orFallback(() => this.sessionStore.get(sessionRowId), {
@@ -154,13 +156,13 @@ export class SessionContinuation {
     if (!session) return null;
     const current = await this.attempts.get(run.id);
     const events = await this.attempts.listEvents(run.id);
-    return [
-      '## Prior session (condensed)',
-      'This attempt starts a fresh Session under the deterministic continuation rule.',
-      `Prior Session: ${session.harness} / ${session.model} / ${session.harnessSessionId}`,
-      `Verified head: ${current.verifiedHeadOid ?? '(none produced)'}`,
-      `Attempt events: ${events.length}.`,
-    ].join('\n');
+    return renderFragment('priorSession', fragments, {
+      harness: session.harness,
+      model: session.model,
+      sessionId: session.harnessSessionId,
+      head: current.verifiedHeadOid ?? '(none produced)',
+      events: events.length,
+    });
   }
 
   async persistSession(harnessSessionId: string, ctx: PersistSessionContext): Promise<void> {

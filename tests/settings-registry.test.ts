@@ -148,6 +148,20 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
       'driveContinuePrompt',
       'taskPrompt',
       'pauseMessage',
+      'promptFragmentReadOnlyRestraint',
+      'promptFragmentConflictResolution',
+      'promptFragmentOperatorMessage',
+      'promptFragmentSelfHeal',
+      'promptFragmentPeerMessages',
+      'promptFragmentPeerMessage',
+      'promptFragmentPeerLine',
+      'promptFragmentPeerLiveMessage',
+      'promptFragmentRebaseConflict',
+      'promptFragmentPriorSession',
+      'promptFragmentCodeIndexGuidance',
+      'driveCommitNudge',
+      'mergeConflictPrompt',
+      'mergeEpicConflictPrompt',
     ]);
   });
 
@@ -254,7 +268,7 @@ describe('scope changes control live resolution (registry is the single authorit
   it('resolveVerifiers: a Workspace overlay is additive (local + globals); global-only ignores it (ADR-0037)', () => {
     const globalCommand = { id: 'g1', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
     const localCommand = { id: 'l1', command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
-    const config = { verify: { task: { preMerge: { commands: [globalCommand], critics: [] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve it.' } } } as never;
+    const config = { verify: { task: { preMerge: { commands: [globalCommand], critics: [] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve it.', resolveSuffix: 'Branch {branch}.' } } } as never;
     const ws = {
       // Overlay: one local verifier added; the global is unnamed, so it is appended enabled.
       taskPreMergeCommands: JSON.stringify([{ kind: 'local', enabled: true, command: localCommand }]),

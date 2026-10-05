@@ -15,7 +15,15 @@ export type ChatRow =
   | { kind: 'message'; author: 'assistant' | 'operator'; text: string; at: number; key: number | string; pending?: true }
   | { kind: 'thought'; text: string; key: number }
   | { kind: 'tool'; toolCallId: string | null; verb: string; target: string | null; status: ChatToolStatus; subagent: boolean; output: string | null; diffs: ToolDiff[] | null; at: number; key: number }
-  | { kind: 'note'; label: string; text: string | null; key: number };
+  | { kind: 'note'; label: string; text: string | null; key: number }
+  | { kind: 'resolved-prompt'; label: string; locator: string; index: number; key: number };
+
+const RESOLVED_PROMPT_LABEL: Record<string, string> = {
+  continue: 'Continue nudge',
+  'commit-nudge': 'Commit nudge',
+  'merge-conflict-resolve': 'Merge conflict resolver',
+  'epic-resolve': 'Epic resolver',
+};
 
 /** A tool card's outcome badge — settled ok / failed, or still in flight. */
 export type ChatToolStatus = 'pending' | 'ok' | 'failed';
@@ -41,7 +49,16 @@ function eventRow(item: Extract<StreamItem<AttemptLogEvent>, { kind: 'event' }>)
   if (isInterrupted(item.event.payload)) {
     return { kind: 'note', label: 'Interrupted', text: null, key: item.key };
   }
-  const payload = item.event.payload as { event?: unknown; text?: unknown } | null;
+  const payload = item.event.payload as { event?: unknown; text?: unknown; locator?: unknown; promptIndex?: unknown } | null;
+  if (payload?.event === 'prompt_sent') return null;
+  const kind = (item.event.payload as { kind?: unknown } | null)?.kind;
+  const promptLabel =
+    payload?.event === 'epic-resolve'
+      ? kind === 'refresh' ? 'Epic refresh resolver' : 'Epic verification resolver'
+      : typeof payload?.event === 'string' ? RESOLVED_PROMPT_LABEL[payload.event] : undefined;
+  if (promptLabel && typeof payload?.locator === 'string' && typeof payload.promptIndex === 'number') {
+    return { kind: 'resolved-prompt', label: promptLabel, locator: payload.locator, index: payload.promptIndex, key: item.key };
+  }
   const label = typeof payload?.event === 'string' ? payload.event : item.event.type;
   const text = typeof payload?.text === 'string' && payload.text.trim() ? payload.text : null;
   if (!text && label === item.event.type) return null;

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { DEFAULT_EXCLUDED_DIRECTORIES, workspaceOverridesSchema, WorkspaceService } from '../src/domain/workspaces.js';
 import { verificationCommandSchema, taskVerificationCriticSchema, budgetGuardrailSchema } from '../src/config.js';
+import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../src/domain/prompt-fragments.js';
 import { resolveVerifiers, resolveDrive } from '../src/domain/setting-override.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { makeSettingsStore, seedWorkspace } from './helpers.js';
@@ -189,7 +190,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     const resolved = resolveVerifiers(updated, {
       verify: {
         task: { preMerge: { commands: [], critics: [{ id: 'critic-global', name: 'Test critic', issuePrompt: 'global issue review', noIssuePrompt: 'global Task review', model: 'claude-opus-5' }] }, postMerge: { commands: [], critics: [] } },
-        epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.' },
+        epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.', resolveSuffix: 'Branch {branch}.' },
       },
     } as any);
     expect(resolved.task.preMerge.critics).toEqual([]);
@@ -342,6 +343,10 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       driveMergeFate: null,
       driveContinueAttempts: null,
       taskPrompt: null,
+      ...NO_PROMPT_FRAGMENT_OVERRIDES,
+      driveCommitNudge: null,
+      mergeConflictPrompt: null,
+      mergeEpicConflictPrompt: null,
       pauseMessage: null,
       exportEnabled: null,
       exportDirectoryPath: null,

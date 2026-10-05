@@ -28,7 +28,7 @@ const attempt = (
   output: '',
   hasTranscript: false,
   outputTruncated: false,
-  prompt: null,
+  promptLocator: null,
   harness: null,
   ...overrides,
 });

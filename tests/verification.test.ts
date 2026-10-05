@@ -294,6 +294,24 @@ describe('verification-selfheal', () => {
       expect(attemptsAfter[1]!.prompt).toContain('watch the whitespace');
     });
 
+    it('an edited self-heal Prompt Fragment reaches the retry prompt', async () => {
+      await server.app.ctx.workspaces.update(workspaceId, {
+        taskPreMergeCommands: localCommands(markerCommand('ok')),
+        promptFragmentSelfHeal: '## Previous attempt failed — REWORK (self-heal {attempt}) because {reason}. Output follows.\n{output}',
+      });
+      try {
+        const { taskId } = await runWorktreeTask({
+          turns: [{ writeFiles: { 'marker.txt': 'bad\n' } }, { writeFiles: { 'marker.txt': 'ok\n' } }],
+        });
+        await waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done' ? true : undefined));
+        const retry = (await ticketAttempts(taskId))[1]!;
+        expect(retry.prompt).toContain('REWORK (self-heal 1) because verifier command failed');
+        expect(retry.prompt).not.toContain('fix required');
+      } finally {
+        await server.app.ctx.workspaces.update(workspaceId, { promptFragmentSelfHeal: null });
+      }
+    });
+
     async function implementationSession(attemptId: number) {
       const steps = await new AttemptStore(server.app.ctx.asyncDb).listSteps(attemptId);
       const locator = steps.find((step) => step.type === 'implementation')?.logLocator ?? '';

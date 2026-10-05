@@ -2,13 +2,14 @@ import type { TrackerRef } from '../tracker/adapter.js';
 import { Git } from './git.js';
 import { adapterFor, adapterVersion } from './harness/registry.js';
 import { collectUsage, toolCallName } from './usage.js';
-import { driveFields } from './prompt-template.js';
+import { driveFields, fillTemplate } from './prompt-template.js';
+import { logger } from '../logger.js';
 import { indexWorktree } from './code-index.js';
 import { integrationBranchName } from './epic-coordinator.js';
 import { LIVE_RUN_LOG_EVENT_ID_OFFSET } from './live-events.js';
 import type { RunnerEvents } from './runner.js';
 import type { ActiveRuns } from './active-runs.js';
-import type { TaskArchive } from '../archive/task-archive.js';
+import { criticPromptKey, type TaskArchive } from '../archive/task-archive.js';
 import type { TranscriptCapture } from './transcript-capture.js';
 import type { AppConfig, HarnessConfig, TaskVerificationCritic, VerificationCommand } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow, StepRow, VerificationAttemptRow } from '../db/schema.js';
@@ -17,7 +18,7 @@ import type { AttemptStore } from '../domain/attempts.js';
 import type { SessionStore } from '../domain/sessions.js';
 import type { TaskService } from '../domain/tasks.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
-import { resolveVerifiers, type ResolvedVerifiers } from '../domain/setting-override.js';
+import { resolvePromptFragments, resolveVerifiers, type ResolvedVerifiers } from '../domain/setting-override.js';
 import { pricesForHarness } from '../domain/pricing.js';
 import { runCommandVerifier, commandAttemptToInput, type CommandSpawn } from '../verification/command-verifier.js';
 import { runCritic, runTimedCriticDrive, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
@@ -48,13 +49,14 @@ export interface EpicVerificationResolutionInput {
 
 export type LifecycleRecorder = (type: 'lifecycle', payload: unknown) => void;
 
-export type VerificationEvents = Pick<RunnerEvents, 'onAttemptLogEvent' | 'onCriticLogEvent'>;
+export type VerificationEvents = Pick<RunnerEvents, 'onAttemptEvent' | 'onAttemptLogEvent' | 'onCriticLogEvent'>;
 
 type VerifierWorkspace = Pick<
   WorkspaceRow,
   | 'taskPreMergeCommands' | 'taskPreMergeCritics'
   | 'taskPostMergeCommands' | 'taskPostMergeCritics'
   | 'epicPreMergeCommands' | 'epicPreMergeCritics'
+  | 'promptFragmentReadOnlyRestraint'
 >;
 
 export interface VerificationCoordinatorDeps {
@@ -88,17 +90,18 @@ const DEFAULT_VERIFIER_WORKSPACE: VerifierWorkspace = {
   taskPostMergeCritics: null,
   epicPreMergeCommands: null,
   epicPreMergeCritics: null,
+  promptFragmentReadOnlyRestraint: null,
 };
 
 export class VerificationCoordinator {
   constructor(private readonly deps: VerificationCoordinatorDeps) {}
 
   /** A task's effective verifiers, with the Workspace's own overrides applied over the global defaults. */
-  private async resolveTaskVerifiers(task: TaskRow): Promise<{ config: AppConfig; resolvedTask: ResolvedVerifiers['task'] }> {
+  private async resolveTaskVerifiers(task: TaskRow): Promise<{ config: AppConfig; resolvedTask: ResolvedVerifiers['task']; fragments: AppConfig['promptFragments'] }> {
     const config = this.deps.getConfig();
     const ws = await this.deps.getWorkspace?.(task.workspaceId);
     const { task: resolvedTask } = resolveVerifiers(ws ?? DEFAULT_VERIFIER_WORKSPACE, config);
-    return { config, resolvedTask };
+    return { config, resolvedTask, fragments: resolvePromptFragments(ws ?? DEFAULT_VERIFIER_WORKSPACE, config) };
   }
 
   private buildCriticInput(task: TaskRow, configuredCritic: TaskVerificationCritic): { prompt: string; model: string; harness?: string } {
@@ -241,7 +244,7 @@ export class VerificationCoordinator {
     startAt: 'commands' | 'critics' = 'commands',
   ): Promise<{ decision: VerificationDecision; ran: boolean }> {
     run = await this.deps.attempts.get(run.id);
-    const { config, resolvedTask } = await this.resolveTaskVerifiers(task);
+    const { config, resolvedTask, fragments } = await this.resolveTaskVerifiers(task);
     const { commands, critics } = resolvedTask.preMerge;
 
     const verdicts: VerifierVerdict[] = [];
@@ -305,12 +308,14 @@ export class VerificationCoordinator {
         await this.deps.updateStep(task.id, timelineStep.id, { state: 'running', startedAt: Date.now() });
         record('lifecycle', { event: 'verification-started', mechanism: 'critic', model: critic.model });
         const archive = this.deps.archive?.criticStep(task, timelineAttempt.number, 'pre-merge', String(timelineStep.id));
+        const promptKey = archive ? criticPromptKey('pre-merge', String(timelineStep.id)) : null;
         const attempt = await runCritic({
           cwd: criticCwd,
           verifiedHeadOid: oid,
           ...(baseOid ? { baseOid } : {}),
           ...(dirty ? { dirty } : {}),
           critic,
+          fragments,
           timeoutMs: configuredCritic.timeoutSeconds * 1000,
           fields: driveFields(task, this.deps.urlFor),
           harness: criticHarness,
@@ -322,7 +327,7 @@ export class VerificationCoordinator {
           onUpdate: this.relayCriticUpdateAsBuilderEvent(run.id),
           onAgentDurationMs: (ms) => this.deps.attempts.addAgentDuration(run.id, ms),
         });
-        const persisted = await this.deps.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
+        const persisted = await this.deps.verificationAttempts.append(timelineAttempt.id, { ...criticAttemptToInput(attempt), promptKey });
         this.captureCriticArtifacts({
           persisted,
           sessionId: attempt.sessionId,
@@ -405,8 +410,12 @@ export class VerificationCoordinator {
       '## Failing Epic verification',
       input.verificationReason,
       '',
-      `Work in the checked-out integration branch \`${branch}\`. Fix the failure and commit the result. Do not create or switch branches, and do not push.`,
+      fillTemplate(config.verify.epic.resolveSuffix, { branch }),
     ].join('\n');
+    const archived = await this.deps.archive?.appendResolutionPrompt({ workspaceId: input.workspaceId, epicRef: input.epicRef }, input.attempt.number, 'epic-resolve', 1, prompt);
+    await this.deps.attempts.appendEvent(input.attempt.id, { type: 'lifecycle', payload: { event: 'epic-resolve', kind: 'verification', ...archived } }).then((event) => this.deps.events.onAttemptEvent?.(event)).catch((err: unknown) => {
+      logger.warn('epic-resolve event failed', { attemptId: input.attempt.id, error: err instanceof Error ? err.message : String(err) });
+    });
     const toolCalls = this.deps.activeRuns.getToolCallTotals(input.attempt.id) ?? await this.deps.attempts.listToolCalls(input.attempt.id);
     this.deps.activeRuns.setToolCallTotals(input.attempt.id, toolCalls);
     const onUpdate = (update: { sessionUpdate: string; [key: string]: unknown }): void => {

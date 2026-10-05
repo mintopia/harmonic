@@ -38,7 +38,7 @@ import { pricesForHarness } from '../domain/pricing.js';
 import { isForeignKeyViolation } from '../db/errors.js';
 import { logger } from '../logger.js';
 import type { MergePolicyOutcome } from './merge-policy.js';
-import type { EpicRefreshResolveDispatchOutcome, EpicRefreshTarget } from './epic-coordinator.js';
+import type { EpicRefreshResolveDispatchOutcome, EpicRefreshResolveTarget } from './epic-coordinator.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import type { SpanContext } from '@opentelemetry/api';
 import { startOperation } from '../telemetry/operations.js';
@@ -186,6 +186,9 @@ export class Runner {
       attempts: this.attempts,
       epicMergeEvents: new EpicMergeEventStore(this.asyncDb),
       criticDrive: this.criticDrive,
+      archive: this.archive,
+      onAttemptEvent: (event) => this.events.onAttemptEvent?.(event),
+      getWorkspace: this.getWorkspace,
       postMergeCheck: createPostMergeCheck({
         commandSpawn: this.commandSpawn,
         fireAndForget: this.fireAndForget,
@@ -212,6 +215,10 @@ export class Runner {
   private epicRefreshResolverDeps(): EpicRefreshResolverDeps {
     return {
       taskService: this.taskService,
+      attempts: this.attempts,
+      archive: this.archive,
+      epicMergeEvents: new EpicMergeEventStore(this.asyncDb),
+      onAttemptEvent: (event) => this.events.onAttemptEvent?.(event),
       getConfig: this.getConfig,
       worktreesDir: this.worktreesDir,
       criticDrive: this.criticDrive,
@@ -786,7 +793,7 @@ export class Runner {
 
   /** @see {@link EpicRefreshResolver.enqueueEpicRefreshResolution} */
   async enqueueEpicRefreshResolution(
-    target: EpicRefreshTarget,
+    target: EpicRefreshResolveTarget,
     detail: string,
     escalate: (epicRef: TrackerRef, reason: string) => void | Promise<void>,
     retry: () => Promise<unknown>,

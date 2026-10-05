@@ -1,11 +1,11 @@
 import type { TrackerRef } from './adapter.js';
-import type { TaskArchive } from '../archive/task-archive.js';
+import { criticPromptKey, type TaskArchive } from '../archive/task-archive.js';
 import type { AppConfig } from '../config.js';
 import { isEpicAttempt, type AttemptRow, type EpicAttemptRow, type WorkspaceRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { pricesForHarness, withCriticContribution } from '../domain/pricing.js';
-import { resolveVerifiers } from '../domain/setting-override.js';
+import { resolvePromptFragments, resolveVerifiers } from '../domain/setting-override.js';
 import { resolveRepositoryDefaultBranch } from '../execution/branch-merge.js';
 import { integrationBranchName } from '../execution/epic-coordinator.js';
 import type { EpicWorktreePool } from '../execution/epic-worktree-pool.js';
@@ -20,7 +20,7 @@ import type { VerificationDecision, VerifierVerdict } from '../verification/comb
 export interface EpicVerificationRunnerDeps {
   workspace: WorkspaceRow;
   getWorkspaces: () => Promise<WorkspaceRow[]>;
-  getConfig: () => Pick<AppConfig, 'verify' | 'maxAttempts' | 'defaults' | 'harnesses'>;
+  getConfig: () => Pick<AppConfig, 'verify' | 'maxAttempts' | 'defaults' | 'harnesses' | 'promptFragments'>;
   worktrees: EpicWorktreePool;
   epicAttempts?: AttemptStore | undefined;
   verificationAttemptStore?: VerificationAttemptStore | undefined;
@@ -165,6 +165,7 @@ export class EpicVerificationRunner {
         verifiedHeadOid: criticHeadOid,
         ...(baseOid ? { baseOid } : {}),
         critic: { prompt: critic.prompt, model: critic.model, ...(critic.harness ? { harness: critic.harness } : {}) },
+        fragments: resolvePromptFragments(this.deps.workspace, config),
         timeoutMs: critic.timeoutSeconds * 1000,
         fields: { taskId: '', skill: '/implement', ref: String(epicRef), url: '', title: `Epic #${epicRef}`, description: '' },
         harness,
@@ -185,6 +186,7 @@ export class EpicVerificationRunner {
       if (tracked && step) {
         const persisted = await tracked.verificationAttemptStore.append(tracked.attempt.id, {
           ...criticAttemptToInput(criticAttempt),
+          ...(archive ? { promptKey: criticPromptKey('pre-merge', String(step.id)) } : {}),
           ...(usage ? { usage: JSON.stringify(usage) } : {}),
         });
         await tracked.epicAttempts.updateStep(step.id, {

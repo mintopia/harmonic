@@ -1,4 +1,5 @@
 import type { TrackerResolveFailureCode } from '../../src/tracker/adapter.js';
+import type { CriticFragments, PromptFragmentOverrides, PromptFragments } from '../../src/domain/prompt-fragments.js';
 import type { Verdict } from '../../src/verification/critic-schema.js';
 
 /** The stored Ticket states; blocked-ness and agent-workability are derived, never stored. */
@@ -134,9 +135,10 @@ export interface VerificationAttempt {
   verdict: Verdict;
   summary: string;
   output: string;
-  /** The exact prompt sent to the critic for this attempt; null for a command
-   * verifier (which sends no prompt) and pre-feature rows. */
-  prompt: string | null;
+  /** Archive locator of the critic's Resolved Prompt — read it with
+   * `api.resolvedPrompt(attemptId, promptLocator)`; null for a command verifier
+   * and for rows with no archived prompt. */
+  promptLocator: string | null;
   /** The critic harness that drove this attempt (may differ from the builder's);
    * null for a command verifier or a pre-feature row. */
   harness: string | null;
@@ -387,7 +389,7 @@ export type VerifyResult = { ok: true; identity: string } | { ok: false; reason:
 export type TrackerSource = 'configured' | 'detected' | 'code-repository';
 
 /** A Workspace: a named Working Directory, unique by absolute path. */
-export interface Workspace {
+export interface Workspace extends PromptFragmentOverrides {
   id: number;
   name: string;
   workingDir: string;
@@ -451,10 +453,13 @@ export interface Workspace {
   drivePrompt: string | null;
   driveUnattendedReminder: string | null;
   driveContinuePrompt: string | null;
+  driveCommitNudge: string | null;
   driveMergeFate: 'auto-merge' | 'open-PR' | 'artifact' | null;
   driveContinueAttempts: number | null;
   /** Task Prompt override; `null` inherits `config.taskPrompt`. */
   taskPrompt: string | null;
+  mergeConflictPrompt: string | null;
+  mergeEpicConflictPrompt: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -725,6 +730,15 @@ export interface EpicAttempt {
   steps: Step[];
   /** Every command and critic record from this whole-Epic verification. */
   verificationAttempts: VerificationAttempt[];
+  /** Resolved Prompts this Attempt sent to Epic resolvers, oldest first. */
+  resolverPrompts: EpicResolverPrompt[];
+}
+
+export interface EpicResolverPrompt {
+  kind: 'merge-conflict' | 'verification' | 'refresh';
+  locator: string;
+  promptIndex: number;
+  ts: number;
 }
 
 /** A Task's continuation preview, as `GET
@@ -1149,7 +1163,7 @@ export interface AppConfig {
   /** Per-stage command and critic verifier lists. */
   verify: {
     task: { preMerge: TaskVerificationStage; postMerge: TaskVerificationStage };
-    epic: { preMerge: EpicVerificationStage; resolvePrompt: string };
+    epic: { preMerge: EpicVerificationStage; resolvePrompt: string; resolveSuffix: string };
   };
   /** Attempt Guardrails: the global-default budget bounds, progress
    * toggle, and tool-timeout a Workspace inherits until it overrides them. */
@@ -1162,10 +1176,14 @@ export interface AppConfig {
     unattendedReminder: string;
     /** The re-prompt nudge sent when a turn ends without finish/escalate, with {taskId} placeholder. */
     continuePrompt: string;
+    /** Sent when an Attempt ends its turn with uncommitted changes. No placeholders. */
+    commitNudge: string;
     mergeFate: 'auto-merge' | 'open-PR' | 'artifact';
     /** How many times an Attempt that ended its turn without finish/escalate is re-prompted to continue before it is treated as unresolved and verified. 0 keeps single-turn behaviour. */
     continueAttempts: number;
   };
+  /** Merge-conflict resolver prompts, with {turn}/{taskBranch}/{baseBranch}/{paths}/{fragment.conflictResolution} placeholders. */
+  merge: { postMergeCheck: boolean; conflictPrompt: string; epicConflictPrompt: string; epicRefreshPrompt: string };
   /** Maximum implementation attempts before the ticket is escalated. */
   maxAttempts: number;
   /** Reuse a warm Session into the next attempt while its context occupancy stays
@@ -1176,6 +1194,8 @@ export interface AppConfig {
   };
   /** The Task Prompt template for native Attempts, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
   taskPrompt: string;
+  /** Shared Prompt Fragments, referenced from prompts as `{fragment.<name>}`. */
+  promptFragments: PromptFragments & CriticFragments;
   archive: { retain: { days: number | null; maxTotalMB: number | null } };
   /** S3 credentials arrive masked (`********`) when set; writing the mask back keeps the stored value. */
   export: {

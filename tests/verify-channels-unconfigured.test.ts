@@ -3,7 +3,7 @@ import { verifyChannelsUnconfigured, type AppConfig } from '../src/config.js';
 
 const verify = (): AppConfig['verify'] => ({
   task: { preMerge: { commands: [], critics: [] }, postMerge: { commands: [], critics: [] } },
-  epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.' },
+  epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.', resolveSuffix: 'Branch {branch}.' },
 });
 
 describe('verifyChannelsUnconfigured', () => {
