@@ -39,6 +39,43 @@ describe('settings layout (issue #554)', () => {
 });
 
 
+describe('settings prompts layout (issue #808)', () => {
+  it('packs prompt sections as masonry columns with full-width fragments last', async () => {
+    const config = makeConfig();
+    const host = await mountComponent(
+      createElement(SettingsForm, {
+        title: 'Settings',
+        intro: 'Configure Harmonic.',
+        tabs: [{ id: 'prompts', label: 'Prompts' }],
+        tab: 'prompts',
+        onTab: () => {},
+        ctx: {
+          surface: 'global',
+          config,
+          baseline: config,
+          setConfig: () => {},
+          errors: {},
+          harnessPermissionModes: {},
+          channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
+        },
+        dirty: false,
+        saving: false,
+        error: null,
+        onSave: () => {},
+        onDiscard: () => {},
+      }),
+    );
+
+    expect(host.querySelector('[role="tabpanel"]')?.className).toContain('xl:columns-2');
+    const sections = [...host.querySelectorAll('section')];
+    const titles = sections.map((s) => s.querySelector('h2')?.textContent);
+    expect(titles).toEqual(['Task prompt', 'Drive prompt', 'Merge and Epic resolver prompts', 'Prompt fragments']);
+    expect(sections.slice(0, 3).every((s) => s.className.includes('xl:break-inside-avoid'))).toBe(true);
+    expect(sections[3]?.className).toContain('xl:[column-span:all]');
+  });
+});
+
+
 describe('settings tab keyboard navigation', () => {
   it('keeps one tab in the tab order and activates focused arrow and endpoint destinations', async () => {
     function TabExample() {

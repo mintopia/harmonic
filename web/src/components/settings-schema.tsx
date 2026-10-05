@@ -1429,27 +1429,6 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   {
     tab: 'prompts',
     surfaces: BOTH,
-    title: 'Prompt fragments',
-    description: {
-      global:
-        'Named pieces of prompt text defined once and referenced from prompts as {fragment.<name>}. Edit a fragment here and every prompt that references it changes.',
-      workspace:
-        'Named pieces of prompt text shared across prompts. Each inherits the global fragment until overridden.',
-    },
-    body: (ctx) => (
-      <div className="flex flex-col gap-4">
-        {promptFragmentFields.map((f) => renderField(f, ctx))}
-        {renderField(criticRevisionDiffField, ctx)}
-        {renderField(criticRevisionIdenticalField, ctx)}
-        {renderField(criticRevisionAloneField, ctx)}
-        {renderField(criticVerdictContractField, ctx)}
-      </div>
-    ),
-  },
-
-  {
-    tab: 'prompts',
-    surfaces: BOTH,
     title: 'Merge and Epic resolver prompts',
     description: {
       global:
@@ -1460,6 +1439,28 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     body: (ctx) => (
       <div className="flex flex-col gap-4">
         {[mergeConflictPromptField, epicConflictPromptField, epicRefreshPromptField, epicResolveSuffixField].map((p) => renderField(p, ctx))}
+      </div>
+    ),
+  },
+
+  {
+    tab: 'prompts',
+    surfaces: BOTH,
+    wide: true,
+    title: 'Prompt fragments',
+    description: {
+      global:
+        'Named pieces of prompt text defined once and referenced from prompts as {fragment.<name>}. Edit a fragment here and every prompt that references it changes.',
+      workspace:
+        'Named pieces of prompt text shared across prompts. Each inherits the global fragment until overridden.',
+    },
+    body: (ctx) => (
+      <div className="grid items-start gap-4 xl:grid-cols-2">
+        {promptFragmentFields.map((f) => renderField(f, ctx))}
+        {renderField(criticRevisionDiffField, ctx)}
+        {renderField(criticRevisionIdenticalField, ctx)}
+        {renderField(criticRevisionAloneField, ctx)}
+        {renderField(criticVerdictContractField, ctx)}
       </div>
     ),
   },
