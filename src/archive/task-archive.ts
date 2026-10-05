@@ -58,6 +58,7 @@ export interface OperatorInput {
 }
 
 const PROMPT_SEPARATOR = '\n\n---\n\n';
+const PROMPT_INDEX_FILE = 'prompt.index.jsonl';
 const PROMPT_READ_CHUNK_BYTES = 64 * 1024;
 
 
@@ -87,34 +88,57 @@ async function pathExists(path: string): Promise<boolean> {
   return await access(path).then(() => true, () => false);
 }
 
+function parsePromptIndex(text: string, bodyBytes: number): { start: number; length: number }[] | null {
+  const spans: { start: number; length: number }[] = [];
+  for (const line of text.split('\n')) {
+    if (line === '') continue;
+    try {
+      const { start, length } = JSON.parse(line) as { start: unknown; length: unknown };
+      if (!Number.isInteger(start) || !Number.isInteger(length) || (start as number) < 0 || (length as number) < 0 || (start as number) + (length as number) > bodyBytes) return null;
+      spans.push({ start: start as number, length: length as number });
+    } catch {
+      return null;
+    }
+  }
+  return spans.length > 0 ? spans : null;
+}
+
 class AppendFile {
   private stream: WriteStream | null = null;
   private chain: Promise<void> = Promise.resolve();
   private closed = false;
   private hasContent = false;
+  private size = 0;
 
   constructor(private readonly dir: Promise<string>, private readonly name: string) {}
 
-  write(data: string, separator = ''): void {
+  /** `onWritten` receives the byte offset and length of `data` itself (excluding the separator). */
+  write(data: string, separator = '', onWritten?: (start: number, length: number) => void): void {
     if (this.closed) return;
     this.chain = this.chain.then(async () => {
       try {
         if (!this.stream) {
           const path = join(await this.dir, this.name);
-          this.hasContent = await stat(path).then((s) => s.size > 0, () => false);
+          this.size = await stat(path).then((s) => s.size, () => 0);
+          this.hasContent = this.size > 0;
           this.stream = createWriteStream(path, { flags: 'a' });
           this.stream.on('error', (err) => warn('archive: append stream failed', err, { file: this.name }));
         }
         const stream = this.stream;
         if (stream.destroyed) return;
+        const lead = this.hasContent ? Buffer.byteLength(separator) : 0;
+        const start = this.size + lead;
+        const length = Buffer.byteLength(data);
         if (this.hasContent) data = `${separator}${data}`;
         this.hasContent = true;
+        this.size += lead + length;
         await new Promise<void>((resolve, reject) => {
           stream.write(data, (err) => {
             if (err) reject(err);
             else resolve();
           });
         });
+        onWritten?.(start, length);
       } catch (err) {
         warn('archive: append failed', err, { file: this.name });
       }
@@ -423,6 +447,29 @@ export class TaskArchive {
     }
   }
 
+  /** Each prompt of a step's `prompt.md` as a separate string, sliced by the byte-offset sidecar; archives without one (legacy) are split on the separator, which is ambiguous when a prompt contains a rule. */
+  async readArchivedPromptSegments(
+    owner: TaskRow | { workspaceId: number; epicRef: TrackerRef },
+    attemptNumber: number,
+    locator: string,
+    yieldNow: () => Promise<void> = yieldToEventLoop,
+  ): Promise<string[] | null> {
+    try {
+      const root = await this.existingOwnerDir(owner);
+      if (!root) return null;
+      const attemptDir = join(root, 'attempts', String(attemptNumber));
+      const body = await this.readPromptFile(attemptDir, locator, yieldNow, true);
+      if (!body) return null;
+      const index = await this.readPromptFile(attemptDir, join(dirname(locator), PROMPT_INDEX_FILE), yieldNow, true, PROMPT_INDEX_FILE);
+      const spans = index ? parsePromptIndex(index.toString('utf8'), body.length) : null;
+      if (!spans) return body.toString('utf8').split(PROMPT_SEPARATOR).filter((p) => p.trim() !== '');
+      return spans.map(({ start, length }) => body.subarray(start, start + length).toString('utf8'));
+    } catch (err) {
+      warn('archive: resolved prompt segments read failed', err, { attemptNumber, locator });
+      return null;
+    }
+  }
+
   /** Read an Epic refresh-resolver prompt by its `refresh/<runId>/prompt.md` locator; null when absent or not a prompt file under the Epic's `refresh` directory. */
   async readArchivedEpicRefreshPrompt(
     workspaceId: number,
@@ -460,9 +507,11 @@ export class TaskArchive {
     }
   }
 
-  private async readPromptFile(baseDir: string, locator: string, yieldNow: () => Promise<void>): Promise<string | null> {
+  private async readPromptFile(baseDir: string, locator: string, yieldNow: () => Promise<void>): Promise<string | null>;
+  private async readPromptFile(baseDir: string, locator: string, yieldNow: () => Promise<void>, raw: true, name?: string): Promise<Buffer | null>;
+  private async readPromptFile(baseDir: string, locator: string, yieldNow: () => Promise<void>, raw = false, name = 'prompt.md'): Promise<string | Buffer | null> {
     const file = resolve(baseDir, locator);
-    if (!file.startsWith(baseDir + sep) || basename(file) !== 'prompt.md') return null;
+    if (!file.startsWith(baseDir + sep) || basename(file) !== name) return null;
     try {
       const handle = await open(file, 'r');
       try {
@@ -474,7 +523,8 @@ export class TaskArchive {
           chunks.push(buffer.subarray(0, bytesRead));
           await yieldNow();
         }
-        return Buffer.concat(chunks).toString('utf8');
+        const all = Buffer.concat(chunks);
+        return raw ? all : all.toString('utf8');
       } finally {
         await handle.close();
       }
@@ -542,13 +592,14 @@ export class TaskArchive {
   private stepWriter(dir: Promise<string>, fields: Record<string, unknown>): StepArchiveWriter {
     dir.catch((err) => warn('archive: step directory failed', err, fields));
     const prompts = new AppendFile(dir, 'prompt.md');
+    const promptIndex = new AppendFile(dir, PROMPT_INDEX_FILE);
     const updates = new AppendFile(dir, 'acp.jsonl');
     let closing: Promise<void> | null = null;
     let natives: Promise<void> = Promise.resolve();
     return {
       dir,
       appendPrompt: (text) => {
-        prompts.write(text, PROMPT_SEPARATOR);
+        prompts.write(text, PROMPT_SEPARATOR, (start, length) => promptIndex.write(`${JSON.stringify({ start, length })}\n`));
       },
       appendUpdate: (update) => {
         let line: string;
@@ -564,7 +615,7 @@ export class TaskArchive {
         natives = natives.then(() => this.copyNativeInto(() => dir, harness, transcriptPath, fields));
         return natives;
       },
-      close: () => (closing ??= Promise.all([prompts.close(), updates.close(), natives]).then(() => undefined)),
+      close: () => (closing ??= Promise.all([prompts.close().then(() => promptIndex.close()), updates.close(), natives]).then(() => undefined)),
     };
   }
 

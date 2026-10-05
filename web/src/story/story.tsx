@@ -195,7 +195,7 @@ function MultiTurnStory() {
   ];
   return (
     <StoryFrame style={{ padding: 30, maxWidth: 760, margin: '0 auto' }}>
-      <PromptSent prompt="Implement #801: render each turn's Resolved Prompt inline." />
+      <PromptSent prompt={"Implement #801: render each turn's Resolved Prompt inline.\n\n---\n\nAcceptance: every turn's prompt renders whole, even when the ticket body contains a rule."} />
       <ChatTranscript
         events={events}
         unavailable={false}

@@ -1,6 +1,3 @@
-// Must match the Archive's step prompt separator (src/archive/task-archive.ts).
-export const PROMPT_SEPARATOR = '\n\n---\n\n';
-
 export const IMPLEMENTATION_PROMPT_LOCATOR = 'implementation/prompt.md';
 
 export interface TurnPrompt {
@@ -17,11 +14,6 @@ interface BoundaryEvent {
 
 function isPromptSent(event: BoundaryEvent): boolean {
   return event.type === 'lifecycle' && event.payload.event === 'prompt_sent';
-}
-
-/** One entry per turn, in send order. The text is split on the exact separator only, never trimmed or annotated. */
-export function splitTurnPrompts(text: string): string[] {
-  return text.split(PROMPT_SEPARATOR).filter((prompt) => prompt.trim() !== '');
 }
 
 /** How many prompts have been sent — a change means a new prompt was archived. */

@@ -400,6 +400,7 @@ export const api: typeof RealApi = {
   epicRefreshPrompts: (_workspaceId: number, _epicRef: TrackerRef) => ok({ prompts: [] }),
   epicRefreshPrompt: (_workspaceId: number, _epicRef: TrackerRef, _locator: string) => ok(''),
   attemptResolvedPrompt: (_attemptId: number, _locator: string) => ok(''),
+  attemptResolvedPrompts: (_attemptId: number, _locator: string) => ok([] as string[]),
   epicAttempts: (_workspaceId: number, _epicRef: TrackerRef) => ok({ attempts: [] }),
   epicDiffFiles: (_workspaceId: number, _epicRef: TrackerRef) => ok({ files: f.diffFiles, total: f.diffFiles.length }),
   maps: (_opts?: { workspaceId?: number; limit?: number; offset?: number; q?: string }) => ok({ maps: [], total: 0 }),

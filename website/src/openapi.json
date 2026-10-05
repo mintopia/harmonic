@@ -20382,7 +20382,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "Read a Resolved Prompt from the Task Archive by its Attempt-relative locator (e.g. `verification/pre-merge/<stepId>/prompt.md` or `implementation/prompt.md`), as text/plain. The file is read on demand off the event loop; nothing is stored in the database. 404 when the Attempt or the archived prompt is absent.",
+        "description": "Read a Resolved Prompt from the Task Archive by its Attempt-relative locator (e.g. `verification/pre-merge/<stepId>/prompt.md` or `implementation/prompt.md`), as text/plain. The file is read on demand off the event loop; nothing is stored in the database. With `segments=true` it returns JSON `{ prompts }`, one string per turn, sliced from the step's offset index so prompts containing horizontal rules stay whole (archives written before the index existed fall back to splitting on the separator). 404 when the Attempt or the archived prompt is absent.",
         "parameters": [
           {
             "schema": {
@@ -20393,6 +20393,19 @@
             "name": "locator",
             "required": true,
             "description": "Archive locator of the prompt file, relative to the Attempt directory."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "segments",
+            "required": false,
+            "description": "When `true`, return the prompts of the step as a JSON array instead of the joined text."
           },
           {
             "schema": {
@@ -20408,11 +20421,11 @@
         ],
         "responses": {
           "200": {
-            "description": "The archived prompt text exactly as sent (multiple prompts in one step are separated by a horizontal rule).",
+            "description": "Plain text: the archived prompt exactly as sent, multiple prompts joined by a horizontal rule. With `segments=true`: JSON `{ prompts: string[] }`, one entry per prompt sent.",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "The archived prompt text exactly as sent (multiple prompts in one step are separated by a horizontal rule)."
+                  "description": "Plain text: the archived prompt exactly as sent, multiple prompts joined by a horizontal rule. With `segments=true`: JSON `{ prompts: string[] }`, one entry per prompt sent."
                 }
               }
             }

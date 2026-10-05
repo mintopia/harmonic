@@ -3,24 +3,11 @@ import {
   placeTurnPrompts,
   promptSentAnchors,
   promptSentCount,
-  splitTurnPrompts,
 } from '../web/src/resolved-prompt-model.js';
 
 const msg = (id: number) => ({ id, type: 'session_update', payload: { sessionUpdate: 'agent_message_chunk' } });
 const finished = (id: number) => ({ id, type: 'lifecycle', payload: { event: 'finished' } });
 const sent = (id: number) => ({ id, type: 'lifecycle', payload: { event: 'prompt_sent' } });
-
-describe('splitTurnPrompts', () => {
-  it('splits on the exact separator and leaves each prompt untouched', () => {
-    expect(splitTurnPrompts('first\n  body\n\n---\n\nsecond\n')).toEqual(['first\n  body', 'second\n']);
-  });
-  it('does not split on a markdown rule inside a prompt', () => {
-    expect(splitTurnPrompts('a\n---\nb')).toEqual(['a\n---\nb']);
-  });
-  it('yields nothing for empty text', () => {
-    expect(splitTurnPrompts('')).toEqual([]);
-  });
-});
 
 describe('promptSentAnchors', () => {
   it('anchors turn 2+ on their prompt_sent markers, ignoring finished', () => {

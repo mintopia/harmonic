@@ -443,6 +443,8 @@ export const api = {
     requestText(`/api/workspaces/${workspaceId}/epics/${epicRef}/refresh-prompt?locator=${encodeURIComponent(locator)}`),
   attemptResolvedPrompt: (attemptId: number, locator: string) =>
     requestText(`/api/attempts/${attemptId}/resolved-prompt?locator=${encodeURIComponent(locator)}`),
+  attemptResolvedPrompts: (attemptId: number, locator: string) =>
+    request<{ prompts: string[] }>('GET', `/api/attempts/${attemptId}/resolved-prompt?locator=${encodeURIComponent(locator)}&segments=true`).then((r) => r.prompts),
   epicAttempts: (workspaceId: number, epicRef: TrackerRef) =>
     request<{ attempts: EpicAttempt[] }>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/attempts`),
   epicDiffFiles: (workspaceId: number, epicRef: TrackerRef) =>

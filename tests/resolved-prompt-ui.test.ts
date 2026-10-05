@@ -2,16 +2,18 @@
 import { createElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChatTranscript } from '../web/src/components/ticket/ChatTranscript.js';
+import { useTurnPrompts } from '../web/src/components/ticket/useTurnPrompts.js';
 import { EpicTimeline } from '../web/src/components/EpicTimeline.js';
 import type { Epic } from '../web/src/epic-model.js';
 import type { AttemptLogEvent } from '../web/src/types.js';
 import { cleanup, flush, mountComponent } from './component-smoke-harness.js';
 
-const { epicRefreshPrompts, epicRefreshPrompt } = vi.hoisted(() => ({
+const { epicRefreshPrompts, epicRefreshPrompt, attemptResolvedPrompts } = vi.hoisted(() => ({
+  attemptResolvedPrompts: vi.fn(),
   epicRefreshPrompts: vi.fn(),
   epicRefreshPrompt: vi.fn(),
 }));
-vi.mock('../web/src/api.js', () => ({ api: { epicRefreshPrompts, epicRefreshPrompt } }));
+vi.mock('../web/src/api.js', () => ({ api: { epicRefreshPrompts, epicRefreshPrompt, attemptResolvedPrompts } }));
 
 const ev = (id: number, payload: Record<string, unknown>, type = 'session_update'): AttemptLogEvent => ({
   id,
@@ -58,6 +60,18 @@ describe('per-turn Resolved Prompts in the transcript', () => {
   it('shows no prompt block when none were archived', async () => {
     const host = await mountComponent(chat([sent(1), say(2, 'reply'), finished(3), say(4, 'more')], []));
     expect(host.textContent).not.toContain('Prompt sent');
+  });
+});
+
+describe('useTurnPrompts', () => {
+  it('keeps a first prompt containing a rule whole and the later prompts in place', async () => {
+    const first = 'Ticket body\n\n---\n\nmore body';
+    attemptResolvedPrompts.mockResolvedValue([first, 'second']);
+    const Probe = () => createElement('pre', null, JSON.stringify(useTurnPrompts(9, 1)));
+    const host = await mountComponent(createElement(Probe));
+    await flush();
+    expect(attemptResolvedPrompts).toHaveBeenCalledWith(9, 'implementation/prompt.md');
+    expect(JSON.parse(host.textContent ?? '[]')).toEqual([first, 'second']);
   });
 });
 
