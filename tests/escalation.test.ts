@@ -331,13 +331,20 @@ describe('escalation-service', () => {
         let merged = false;
         effects = [
           { effect: 'target-ref', idempotencyKey: 'main<-branch', expected: {}, apply: async () => { merged = true; return { ok: true, observed: {} }; } },
-          ticketCloseEffect('1', async () => false),
+          ticketCloseEffect('1', async () => false, async () => { await tasks.setTicketClosePending(task.id, true); }),
         ];
 
         const accepted = await service.accept(task.id);
 
         expect(merged).toBe(true);
-        expect(accepted).toMatchObject({ state: 'done' });
+        expect(accepted).toMatchObject({ state: 'done', ticketClosePending: true });
+      });
+
+      it('a successful ticket close leaves ticketClosePending false', async () => {
+        const { task } = await escalated();
+        effects = [ticketCloseEffect('1', async () => true, async () => { await tasks.setTicketClosePending(task.id, true); })];
+
+        expect(await service.accept(task.id)).toMatchObject({ state: 'done', ticketClosePending: false });
       });
 
       it('a failed merging effect surfaces its detail and leaves the ticket escalated with nothing further applied', async () => {

@@ -16,14 +16,14 @@ export interface MergeEffectExec {
   apply: () => Promise<MergeEffectOutcome>;
 }
 
-/** The ticket-close effect. Best-effort (ADR-0048): a failed close is flagged pending and retried by reconcile, so it never fails the merge fate. */
-export function ticketCloseEffect(trackerRef: string, close: () => Promise<unknown>): MergeEffectExec {
+/** The ticket-close effect. Best-effort (ADR-0048): a failed close flags the Task pending for reconcile to retry, and never fails the merge fate. */
+export function ticketCloseEffect(trackerRef: string, close: () => Promise<boolean>, markPending: () => Promise<unknown>): MergeEffectExec {
   return {
     effect: 'ticket-close',
     idempotencyKey: `ticket-${trackerRef}`,
     expected: { trackerRef },
     apply: async () => {
-      await close();
+      if (!(await close())) await markPending();
       return { ok: true, observed: { trackerRef } };
     },
   };

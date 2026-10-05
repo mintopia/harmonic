@@ -359,7 +359,7 @@ export async function createRuntime(deps: {
     const effects: MergeEffectExec[] = [];
     const trackerRef = task.trackerRef;
     if (trackerRef != null) {
-      effects.push(ticketCloseEffect(trackerRef, () => autoDrive.closeCompleted(task)));
+      effects.push(ticketCloseEffect(trackerRef, () => autoDrive.closeCompleted(task), () => tasks.setTicketClosePending(task.id, true)));
     }
     if (task.isolationMode !== 'worktree') return effects;
     if (!run.branch || !run.baseBranch || !run.verifiedHeadOid) return effects;
