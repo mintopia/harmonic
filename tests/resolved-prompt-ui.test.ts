@@ -22,6 +22,7 @@ const ev = (id: number, payload: Record<string, unknown>, type = 'session_update
 });
 const say = (id: number, text: string) => ev(id, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } });
 const finished = (id: number) => ev(id, { event: 'finished' }, 'lifecycle');
+const sent = (id: number) => ev(id, { event: 'prompt_sent' }, 'lifecycle');
 
 afterEach(cleanup);
 
@@ -30,14 +31,20 @@ function chat(events: AttemptLogEvent[], turnPrompts: string[]) {
 }
 
 describe('per-turn Resolved Prompts in the transcript', () => {
-  it('renders each later turn prompt verbatim between the turns it separates', async () => {
+  it('renders each later prompt before the reply it triggered, several per cycle before one finished', async () => {
     const host = await mountComponent(
-      chat([say(1, 'turn one reply'), finished(2), say(3, 'turn two reply')], ['Continue: commit the work.']),
+      chat(
+        [sent(1), say(2, 'reply one'), sent(3), say(4, 'reply two'), sent(5), say(6, 'reply three'), finished(7), sent(8), say(9, 'reply nudge'), finished(10)],
+        ['steer: use the cache', 'continue the work', 'commit your changes'],
+      ),
     );
     const text = host.textContent ?? '';
-    expect(text).toContain('Prompt sent · turn 2');
-    expect(text.indexOf('turn one reply')).toBeLessThan(text.indexOf('Continue: commit the work.'));
-    expect(text.indexOf('Continue: commit the work.')).toBeLessThan(text.indexOf('turn two reply'));
+    const order = ['reply one', 'steer: use the cache', 'reply two', 'continue the work', 'reply three', 'commit your changes', 'reply nudge'];
+    const positions = order.map((part) => text.indexOf(part));
+    expect(positions.every((p) => p >= 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+    expect(text).toContain('Prompt sent · turn 4');
+    expect(text).not.toContain('prompt_sent');
   });
 
   it('lists prompts in order at the end when the stream has no turn boundaries', async () => {
@@ -49,7 +56,7 @@ describe('per-turn Resolved Prompts in the transcript', () => {
   });
 
   it('shows no prompt block when none were archived', async () => {
-    const host = await mountComponent(chat([say(1, 'reply'), finished(2), say(3, 'more')], []));
+    const host = await mountComponent(chat([sent(1), say(2, 'reply'), finished(3), say(4, 'more')], []));
     expect(host.textContent).not.toContain('Prompt sent');
   });
 });

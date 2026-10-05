@@ -28,7 +28,7 @@ import { AttemptStats, AttemptSummaryCard } from './StatsPanel';
 import { StatePill, NAV_DOT, NAV_WORD } from './shared';
 import { GuardrailAlert } from './ChangesPane';
 import { PromptSent } from './Description';
-import { finishedTurnCount } from '../../resolved-prompt-model';
+import { promptSentCount } from '../../resolved-prompt-model';
 import { useTurnPrompts } from './useTurnPrompts';
 
 function attemptPillState(run: AttemptSummary, steps: readonly Step[]): string {
@@ -153,7 +153,7 @@ export function AttemptPanel({
   const active = picked && tabs.some((tab) => tab.id === picked) ? picked : defaultStepTab(tabs);
   const activeTab = tabs.find((tab) => tab.id === active);
 
-  const turnPrompts = useTurnPrompts(run.id, finishedTurnCount(events));
+  const turnPrompts = useTurnPrompts(run.id, promptSentCount(events));
   const laterPrompts = useMemo(() => turnPrompts.slice(1), [turnPrompts]);
   const firstPrompt = turnPrompts[0] ?? run.prompt;
   const topModel = attemptIdentityModel(primaryModel, stats.byModel);

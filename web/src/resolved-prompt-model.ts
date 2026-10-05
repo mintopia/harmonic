@@ -15,8 +15,8 @@ interface BoundaryEvent {
   payload: { [key: string]: unknown };
 }
 
-function isFinished(event: BoundaryEvent): boolean {
-  return event.type === 'lifecycle' && event.payload.event === 'finished';
+function isPromptSent(event: BoundaryEvent): boolean {
+  return event.type === 'lifecycle' && event.payload.event === 'prompt_sent';
 }
 
 /** One entry per turn, in send order. The text is split on the exact separator only, never trimmed or annotated. */
@@ -24,26 +24,17 @@ export function splitTurnPrompts(text: string): string[] {
   return text.split(PROMPT_SEPARATOR).filter((prompt) => prompt.trim() !== '');
 }
 
-/** How many turns have ended — a change means a new prompt may have been archived. */
-export function finishedTurnCount(events: readonly BoundaryEvent[]): number {
-  return events.filter(isFinished).length;
+/** How many prompts have been sent — a change means a new prompt was archived. */
+export function promptSentCount(events: readonly BoundaryEvent[]): number {
+  return events.filter(isPromptSent).length;
 }
 
-/** The id of the first event after each `finished`: the anchor for the next turn's prompt, in turn order. */
-export function turnBoundaryAnchors(events: readonly BoundaryEvent[]): number[] {
-  const anchors: number[] = [];
-  let afterFinish = false;
-  for (const event of events) {
-    if (afterFinish) {
-      anchors.push(event.id);
-      afterFinish = false;
-    }
-    if (isFinished(event)) afterFinish = true;
-  }
-  return anchors;
+/** Event ids of the 2nd, 3rd, ... `prompt_sent` markers: the anchors for turn 2+ prompts, in send order. */
+export function promptSentAnchors(events: readonly BoundaryEvent[]): number[] {
+  return events.filter(isPromptSent).slice(1).map((event) => event.id);
 }
 
-// Prompts with no boundary to align to go in `trailing`; ones whose boundary is in the hidden tail are dropped.
+// Prompts with no marker to align to go in `trailing`; ones whose marker is in the hidden tail are dropped.
 export function placeTurnPrompts(
   later: readonly string[],
   anchors: readonly number[],

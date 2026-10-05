@@ -411,7 +411,10 @@ export async function promptTurn(
   record: (type: 'permission_request' | 'lifecycle', payload: unknown) => void,
   archive?: StepArchiveWriter,
 ): Promise<{ result: PromptResult | null; connectionGone: boolean }> {
-  archive?.appendPrompt(text);
+  if (archive) {
+    record('lifecycle', { event: 'prompt_sent' });
+    archive.appendPrompt(text);
+  }
   try {
     return { result: await driver.prompt([{ type: 'text', text }]), connectionGone: false };
   } catch (err) {

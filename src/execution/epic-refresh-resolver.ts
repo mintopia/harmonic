@@ -118,7 +118,7 @@ export class EpicRefreshResolver {
         try {
           const step = this.deps.archive?.epicRefreshStep(args.target.workspaceId, args.target.ref, `${Date.now()}-${randomBytes(3).toString('hex')}`);
           step?.appendPrompt(prompt);
-          void step?.close().catch((err) => reportFailure(err, { op: 'runner.epicRefreshResolveTurn.archivePrompt', level: 'warn', context: { epicRef: args.target.ref } }));
+          await step?.close();
         } catch (err) {
           reportFailure(err, { op: 'runner.epicRefreshResolveTurn.archivePrompt', level: 'warn', context: { epicRef: args.target.ref } });
         }

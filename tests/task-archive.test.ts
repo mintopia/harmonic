@@ -147,6 +147,21 @@ describe('TaskArchive', () => {
     expect(prompt).toBe(turns.join('\n\n---\n\n'));
   });
 
+  it('records one prompt_sent marker per archived prompt, and none without an archive', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const archive = archiveFor();
+    const driver = { prompt: async () => ({ stopReason: 'end_turn' }) } as unknown as AcpDriver;
+    const recorded: unknown[] = [];
+    const step = archive.implementationStep(task, 1);
+    await promptTurn(driver, 'one', (_type, payload) => recorded.push(payload), step);
+    await promptTurn(driver, 'two', (_type, payload) => recorded.push(payload), step);
+    await step.close();
+    expect(recorded).toEqual([{ event: 'prompt_sent' }, { event: 'prompt_sent' }]);
+    const bare: unknown[] = [];
+    await promptTurn(driver, 'three', (_type, payload) => bare.push(payload));
+    expect(bare).toEqual([]);
+  });
+
   it('copies the native transcript and subagent files', async () => {
     const task = await tasks.create({ prompt: 'p' });
     const src = join(dir, 'src-projects');

@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  finishedTurnCount,
   placeTurnPrompts,
+  promptSentAnchors,
+  promptSentCount,
   splitTurnPrompts,
-  turnBoundaryAnchors,
 } from '../web/src/resolved-prompt-model.js';
 
 const msg = (id: number) => ({ id, type: 'session_update', payload: { sessionUpdate: 'agent_message_chunk' } });
 const finished = (id: number) => ({ id, type: 'lifecycle', payload: { event: 'finished' } });
+const sent = (id: number) => ({ id, type: 'lifecycle', payload: { event: 'prompt_sent' } });
 
 describe('splitTurnPrompts', () => {
   it('splits on the exact separator and leaves each prompt untouched', () => {
@@ -21,14 +22,16 @@ describe('splitTurnPrompts', () => {
   });
 });
 
-describe('turnBoundaryAnchors', () => {
-  it('anchors on the first event after each finished turn, skipping a trailing finish', () => {
-    const events = [msg(1), finished(2), msg(3), msg(4), finished(5), msg(6), finished(7)];
-    expect(turnBoundaryAnchors(events)).toEqual([3, 6]);
-    expect(finishedTurnCount(events)).toBe(3);
+describe('promptSentAnchors', () => {
+  it('anchors turn 2+ on their prompt_sent markers, ignoring finished', () => {
+    const events = [sent(1), msg(2), sent(3), msg(4), sent(5), msg(6), finished(7), sent(8), msg(9), finished(10)];
+    expect(promptSentAnchors(events)).toEqual([3, 5, 8]);
+    expect(promptSentCount(events)).toBe(4);
   });
-  it('has no anchors without turn boundaries', () => {
-    expect(turnBoundaryAnchors([msg(1), msg(2)])).toEqual([]);
+  it('has no anchors without markers or with a single prompt', () => {
+    expect(promptSentAnchors([msg(1), finished(2)])).toEqual([]);
+    expect(promptSentAnchors([sent(1), msg(2)])).toEqual([]);
+    expect(promptSentCount([msg(1)])).toBe(0);
   });
 });
 

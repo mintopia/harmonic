@@ -2,7 +2,7 @@ import { useMemo, type ReactNode } from 'react';
 import { eventCount } from '../../id-format';
 import { coalesceEvents, coalesceTail } from '../../event-stream-model';
 import { transcriptLanes } from '../../transcript-timeline-model';
-import { placeTurnPrompts, turnBoundaryAnchors } from '../../resolved-prompt-model';
+import { placeTurnPrompts, promptSentAnchors } from '../../resolved-prompt-model';
 import { chatRows, type ChatRow, type ChatToolStatus } from '../../attempt-chat-model';
 import type { AttemptLogEvent } from '../../types';
 import { railSectionCount } from '../../ui';
@@ -209,7 +209,7 @@ export function ChatTranscript({
       .map((steer): ChatRow => ({ kind: 'message', author: 'operator', text: steer.text, at: steer.at, key: `pending-${steer.id}`, pending: true }));
     const prompts = placeTurnPrompts(
       turnPrompts,
-      turnBoundaryAnchors(main?.events ?? []),
+      promptSentAnchors(main?.events ?? []),
       rows.map((row) => row.key),
     );
     return { rows: [...rows, ...pending], hidden, lanes, prompts };

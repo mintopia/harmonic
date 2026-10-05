@@ -3,7 +3,7 @@ import { api } from '../../api';
 import { IMPLEMENTATION_PROMPT_LOCATOR, splitTurnPrompts } from '../../resolved-prompt-model';
 
 // A failed read keeps the last good list; the transcript just shows fewer prompts.
-export function useTurnPrompts(attemptId: number, turnsDone: number): string[] {
+export function useTurnPrompts(attemptId: number, promptsSent: number): string[] {
   const [state, setState] = useState<{ attemptId: number; prompts: string[] }>({ attemptId, prompts: [] });
   useEffect(() => {
     let live = true;
@@ -14,6 +14,6 @@ export function useTurnPrompts(attemptId: number, turnsDone: number): string[] {
     return () => {
       live = false;
     };
-  }, [attemptId, turnsDone]);
+  }, [attemptId, promptsSent]);
   return state.attemptId === attemptId ? state.prompts : [];
 }
