@@ -624,7 +624,7 @@ export class TaskArchive {
       appendPrompt: (text) => {
         const appended = promptChain.then(async () => {
           count ??= await this.archivedPromptCount(dir);
-          if (!(await prompts.write(text, PROMPT_SEPARATOR, (start, length) => void promptIndex.write(`${JSON.stringify({ start, length })}\n`)))) return null;
+          if (!(await prompts.write(text, PROMPT_SEPARATOR, (start, length) => { promptIndex.write(`${JSON.stringify({ start, length })}\n`); }))) return null;
           return count++;
         });
         promptChain = appended;
