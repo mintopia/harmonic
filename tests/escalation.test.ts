@@ -6,7 +6,7 @@ import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { DomainError } from '../src/domain/errors.js';
 import { EscalationService } from '../src/domain/escalation.js';
-import { type MergeEffectExec } from '../src/domain/merge.js';
+import { type MergeEffectExec, ticketCloseEffect } from '../src/domain/merge.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import { type SettingsStore } from '../src/server/settings-store.js';
@@ -324,6 +324,20 @@ describe('escalation-service', () => {
         expect((err as DomainError).message).toContain('no candidate to accept');
         expect((await tasks.get(task.id)).state).toBe('escalated');
         expect(resumed).toEqual([]);
+      });
+
+      it('a failed ticket close after a successful merge still settles the ticket done (ADR-0048)', async () => {
+        const { task } = await escalated();
+        let merged = false;
+        effects = [
+          { effect: 'target-ref', idempotencyKey: 'main<-branch', expected: {}, apply: async () => { merged = true; return { ok: true, observed: {} }; } },
+          ticketCloseEffect('1', async () => false),
+        ];
+
+        const accepted = await service.accept(task.id);
+
+        expect(merged).toBe(true);
+        expect(accepted).toMatchObject({ state: 'done' });
       });
 
       it('a failed merging effect surfaces its detail and leaves the ticket escalated with nothing further applied', async () => {
