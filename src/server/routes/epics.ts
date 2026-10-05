@@ -224,7 +224,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         description:
           "Every open Epic for a Workspace (issue #167, ADR-0018) — an integrated Epic leaves this list and resolves by ref only — each folded with its " +
           'member merge state, integration-branch tip, and whole-Epic integrate/verification state. Searched (`q`, ' +
-          'case-insensitive substring over the Epic title) and paginated (`limit`/`offset`, with a `total`). Operator only.',
+          'case-insensitive substring over the Epic title) and paginated (`limit`/`offset`, with a `total`). Not reachable with an attempt-scoped key; readable with a read-scoped key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: epicListParamsSchema,
         querystring: epicListQuerySchema,
@@ -252,7 +252,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         tags: ['Epics'],
         description:
           "One derived Epic by its tracker ref, from the Workspace's last poll scan (issue #167). " +
-          '404s when the scan derives no leaf-most Epic with that ref. Operator only.',
+          '404s when the scan derives no leaf-most Epic with that ref. Not reachable with an attempt-scoped key; readable with a read-scoped key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: epicParamsSchema,
         response: {

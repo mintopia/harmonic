@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, captureRunEnv, cancelRunningTasks, connectFirehose, type TestServer } from './helpers.js';
+import { WS_HEARTBEAT_INTERVAL_MS } from '../src/server/ws.js';
 
 describe('attempt-scoped key restrictions', () => {
   let server: TestServer;
@@ -93,6 +94,14 @@ describe('read-scoped key (issue #35)', () => {
     expect(await asRead('GET', '/api/maps')).toBe(200);
   });
 
+  it('allows GET Workspaces and their Epics but not Epic mutations', async () => {
+    expect(await asRead('GET', '/api/workspaces')).toBe(200);
+    expect(await asRead('GET', '/api/workspaces/1/epics')).toBe(200);
+    expect(await asRead('POST', '/api/workspaces', { name: 'x' })).toBe(403);
+    expect(await asRead('POST', '/api/workspaces/1/epics/a/reject')).toBe(403);
+    expect(await asRead('GET', '/api/workspaces/1/epics/a/diff/files')).toBe(403);
+  });
+
   it('blocks every mutation and the operator surface', async () => {
     expect(await asRead('POST', '/api/tasks', { prompt: 'nope' })).toBe(403);
     expect(await asRead('PATCH', '/api/tasks/1', { prompt: 'edit' })).toBe(403);
@@ -135,6 +144,61 @@ describe('read-scoped key (issue #35)', () => {
 
     readWs.close();
     opWs.close();
+  });
+
+  it('delivers attempt_timeline_changed to a Read Key', async () => {
+    const readWs = await connectFirehose(server, readToken);
+    server.app.ctx.bus.emit('step_changed', { taskId: 1 } as any);
+    await waitFor(async () => readWs.messages.some((m) => m.type === 'attempt_timeline_changed'));
+    readWs.close();
+  });
+});
+
+describe('websocket heartbeat', () => {
+  let server: TestServer;
+  beforeAll(async () => {
+    server = await startServer(stubHarness());
+  });
+  afterAll(async () => {
+    vi.useRealTimers();
+    await server.close();
+  });
+
+  it('sends a heartbeat message every interval', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const ws = await connectFirehose(server);
+    vi.advanceTimersByTime(WS_HEARTBEAT_INTERVAL_MS);
+    const beat = await waitFor(async () => ws.messages.find((m) => m.type === 'heartbeat'));
+    expect(beat).toMatchObject({ intervalMs: WS_HEARTBEAT_INTERVAL_MS });
+    ws.close();
+  });
+});
+
+describe('CORS allow-list', () => {
+  let server: TestServer;
+  beforeAll(async () => {
+    server = await startServer(stubHarness(), { corsOrigins: ['https://viz.example'] });
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+
+  it('answers a preflight from an allowed origin without credentials', async () => {
+    const res = await fetch(`${server.baseUrl}/api/tasks`, {
+      method: 'OPTIONS',
+      headers: { origin: 'https://viz.example', 'access-control-request-method': 'GET', 'access-control-request-headers': 'authorization' },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://viz.example');
+    expect(res.headers.get('access-control-allow-headers')).toBe('authorization');
+  });
+
+  it('adds the origin header to authenticated responses and omits it for other origins', async () => {
+    const headers = { authorization: `Bearer ${server.sessionToken}` };
+    const allowed = await fetch(`${server.baseUrl}/api/tasks`, { headers: { ...headers, origin: 'https://viz.example' } });
+    expect(allowed.headers.get('access-control-allow-origin')).toBe('https://viz.example');
+    const other = await fetch(`${server.baseUrl}/api/tasks`, { headers: { ...headers, origin: 'https://evil.example' } });
+    expect(other.headers.get('access-control-allow-origin')).toBeNull();
   });
 });
 

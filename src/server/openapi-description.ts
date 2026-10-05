@@ -36,15 +36,22 @@ operator permission decision in a Conversation (ADR-0007), answered via
 session token or an API key as the sole WebSocket subprotocol
 (\`new WebSocket(url, [token])\`) — never as a query parameter, which leaks
 into logs and browser history. A browser client authenticated by session
-cookie needs no subprotocol. A \`read\`-scoped key gets a filtered firehose — only
-\`task_changed\`, \`task_removed\`, \`attempt_changed\`, \`attempt_event\`, \`attempt_usage\`, and
-\`operations\` — with the Conversation and permission traffic dropped.
+cookie needs no subprotocol. A \`read\`-scoped key gets the firehose minus the Conversation and permission
+traffic (\`conversation_event\`, \`conversation_changed\`, \`conversation_commands\`,
+\`permission_request\`, \`elicitation_request\`); everything else, including
+\`attempt_timeline_changed\` and the \`epic_*\` events, is delivered. The server
+sends a protocol ping and a \`{ type: 'heartbeat', intervalMs, ts }\` message every
+30 seconds (browsers cannot see protocol pings); a client that sees nothing for
+two intervals can treat the connection as dead and reconnect. A connection that
+misses a pong is terminated. Cross-origin REST calls are allowed for origins
+listed in \`HARMONIC_CORS_ORIGINS\` (comma-separated, \`*\` for any); credentials
+are never allowed, so authenticate with a bearer key.
 
 ## Read scope
 
 A \`read\`-scoped API key (created via \`POST /api/keys\` with
 \`{ "scope": "read" }\`) is a viz-client credential: it may \`GET\` tasks,
-attempts, maps, Operations (\`/api/operations\`), and the instance-wide Activity snapshot (\`/api/activity\`,
+attempts, maps, Workspaces and their Epics (\`/api/workspaces\`, \`/api/workspaces/:id/epics[/:ref]\`), Operations (\`/api/operations\`), and the instance-wide Activity snapshot (\`/api/activity\`,
 filtered to Attempts only for a read key), and open the WebSocket (filtered as
 above). Every mutation and the whole operator surface (keys, config,
 channels, Conversations) is blocked. There is no \`map_changed\` event — a

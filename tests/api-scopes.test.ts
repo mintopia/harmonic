@@ -115,9 +115,12 @@ describe('readScopeAllowed', () => {
     expect(scopedKeyAllowed('/api/notifications')).toBe(false);
   });
 
-  it('blocks the Epic surface, listed or by id', () => {
-    expect(readScopeAllowed('/api/workspaces/1/epics', 'GET')).toBe(false);
-    expect(readScopeAllowed('/api/workspaces/1/epics/2', 'GET')).toBe(false);
+  it('allows GET on Workspaces and the Epic list/detail, but not other Epic routes or mutations', () => {
+    expect(readScopeAllowed('/api/workspaces', 'GET')).toBe(true);
+    expect(readScopeAllowed('/api/workspaces/1/epics', 'GET')).toBe(true);
+    expect(readScopeAllowed('/api/workspaces/1/epics/2', 'GET')).toBe(true);
+    expect(readScopeAllowed('/api/workspaces/1/epics/2/diff/files', 'GET')).toBe(false);
+    expect(readScopeAllowed('/api/workspaces/1/epics', 'POST')).toBe(false);
   });
 
   it('blocks Task channels', () => {
