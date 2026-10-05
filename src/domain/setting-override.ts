@@ -222,3 +222,17 @@ export function resolvePauseMessage(
 ): string {
   return resolveScoped('pauseMessage', ws?.pauseMessage, config.pauseMessage);
 }
+
+/** Resolve the Prompt Fragments a Workspace's prompts reference, each `workspace ?? global`. */
+export function resolvePromptFragments(
+  ws: Pick<WorkspaceRow, 'promptFragmentReadOnlyRestraint'> | null | undefined,
+  config: Pick<AppConfig, 'promptFragments'>,
+): AppConfig['promptFragments'] {
+  return {
+    readOnlyRestraint: resolveScoped(
+      'promptFragmentReadOnlyRestraint',
+      ws?.promptFragmentReadOnlyRestraint,
+      config.promptFragments.readOnlyRestraint,
+    ),
+  };
+}

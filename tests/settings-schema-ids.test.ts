@@ -25,6 +25,7 @@ function makeConfig(): AppConfig {
     contextReuseTokenLimit: 100_000,
     editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
+    promptFragments: { readOnlyRestraint: '' },
     archive: { retain: { days: null, maxTotalMB: null } },
     export: {
       enabled: false,
@@ -91,6 +92,7 @@ function makeWorkspace(): Workspace {
     driveMergeFate: null,
     driveContinueAttempts: null,
     taskPrompt: null,
+    promptFragmentReadOnlyRestraint: null,
     createdAt: 0,
     updatedAt: 0,
   };
@@ -166,5 +168,11 @@ describe('Settings schema field ids are unique (issue #472)', () => {
     const ids = fieldIdsForSurface('workspace');
     expect(ids.length).toBeGreaterThan(0);
     expect(duplicates(ids)).toEqual([]);
+  });
+
+  it('declares the Prompt Fragments section on both surfaces', () => {
+    const section = SETTINGS_SCHEMA.find((s) => s.title === 'Prompt fragments');
+    expect(section?.tab).toBe('prompts');
+    expect(section?.surfaces).toEqual(expect.arrayContaining(['global', 'workspace']));
   });
 });

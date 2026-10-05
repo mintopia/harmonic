@@ -272,6 +272,7 @@ export const api = {
       driveMergeFate?: 'auto-merge' | 'open-PR' | 'artifact' | null;
       driveContinueAttempts?: number | null;
       taskPrompt?: string | null;
+      promptFragmentReadOnlyRestraint?: string | null;
     },
   ) => request<Workspace>('PATCH', `/api/workspaces/${id}`, patch),
   // Deletes the Workspace and cascades its board; the server 204s (empty body,

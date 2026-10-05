@@ -105,6 +105,7 @@ const workspace = {
   driveMergeFate: null,
   driveContinueAttempts: null,
   taskPrompt: null,
+  promptFragmentReadOnlyRestraint: null,
   createdAt: T0 - 30 * 24 * 3600_000,
   updatedAt: T0,
 } satisfies Workspace;

@@ -290,6 +290,10 @@ export const appConfigSchema = z.object({
   /** Operator-editable wrapper around a native Task's prompt (`{prompt}`, `{id}`, `{workingDir}`, `{harness}`, `{model}`); defaults to bare `{prompt}`. */
   taskPrompt: z.string().meta({ example: 'Work on {prompt}.' }),
   pauseMessage: z.string().min(1).meta({ example: 'Please finish the current turn, then pause and wait for further instructions.' }),
+  /** Named pieces of prompt text defined once and referenced from prompts as `{fragment.<name>}`. */
+  promptFragments: z.object({
+    readOnlyRestraint: z.string().min(1).meta({ example: 'You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file.' }),
+  }),
   /** End a Conversation with no Turn for this many minutes; 0 disables. Fractional values are allowed. */
   conversationIdleTimeoutMinutes: z.number().nonnegative().meta({ example: 30 }),
   /** Trailing debounce for Working Directory watcher events. */
@@ -420,6 +424,7 @@ export const UNATTENDED_REMINDER = baseline.drive.unattendedReminder;
 export const DEFAULT_CONTINUE_PROMPT = baseline.drive.continuePrompt;
 export const DEFAULT_TASK_PROMPT = baseline.taskPrompt;
 export const DEFAULT_PAUSE_MESSAGE = baseline.pauseMessage;
+export const DEFAULT_PROMPT_FRAGMENTS = baseline.promptFragments;
 
 export function baselineConfig(): AppConfig {
   return structuredClone(baseline);

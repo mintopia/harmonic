@@ -6469,6 +6469,17 @@
             ],
             "example": null
           },
+          "promptFragmentReadOnlyRestraint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "exportEnabled": {
             "anyOf": [
               {
@@ -6763,6 +6774,7 @@
           "driveMergeFate",
           "driveContinueAttempts",
           "taskPrompt",
+          "promptFragmentReadOnlyRestraint",
           "exportEnabled",
           "exportDirectoryPath",
           "exportS3Endpoint",
@@ -7324,6 +7336,16 @@
                 "minimum": 0,
                 "maximum": 9007199254740991,
                 "example": 1
+              }
+            }
+          },
+          "promptFragments": {
+            "type": "object",
+            "properties": {
+              "readOnlyRestraint": {
+                "type": "string",
+                "minLength": 1,
+                "example": "You are acting in a READ-ONLY role…"
               }
             }
           },
@@ -15212,6 +15234,17 @@
             ],
             "example": null
           },
+          "promptFragmentReadOnlyRestraint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "exportEnabled": {
             "anyOf": [
               {
@@ -15507,6 +15540,7 @@
           "driveMergeFate",
           "driveContinueAttempts",
           "taskPrompt",
+          "promptFragmentReadOnlyRestraint",
           "exportEnabled",
           "exportDirectoryPath",
           "exportS3Endpoint",
@@ -16081,6 +16115,17 @@
                 "minimum": 0,
                 "maximum": 9007199254740991,
                 "example": 1
+              }
+            },
+            "additionalProperties": false
+          },
+          "promptFragments": {
+            "type": "object",
+            "properties": {
+              "readOnlyRestraint": {
+                "type": "string",
+                "minLength": 1,
+                "example": "You are acting in a READ-ONLY role…"
               }
             },
             "additionalProperties": false
@@ -22271,6 +22316,17 @@
                       }
                     ]
                   },
+                  "promptFragmentReadOnlyRestraint": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "exportEnabled": {
                     "anyOf": [
                       {
@@ -24190,6 +24246,20 @@
                       "minLength": 1,
                       "example": "Please finish the current turn, then pause and wait for further instructions."
                     },
+                    "promptFragments": {
+                      "type": "object",
+                      "properties": {
+                        "readOnlyRestraint": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                        }
+                      },
+                      "required": [
+                        "readOnlyRestraint"
+                      ],
+                      "additionalProperties": false
+                    },
                     "conversationIdleTimeoutMinutes": {
                       "type": "number",
                       "minimum": 0,
@@ -24932,6 +25002,7 @@
                     "drive",
                     "taskPrompt",
                     "pauseMessage",
+                    "promptFragments",
                     "conversationIdleTimeoutMinutes",
                     "fileWatcherDebounceMs",
                     "verify",
@@ -25325,6 +25396,20 @@
                       "minLength": 1,
                       "example": "Please finish the current turn, then pause and wait for further instructions."
                     },
+                    "promptFragments": {
+                      "type": "object",
+                      "properties": {
+                        "readOnlyRestraint": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                        }
+                      },
+                      "required": [
+                        "readOnlyRestraint"
+                      ],
+                      "additionalProperties": false
+                    },
                     "conversationIdleTimeoutMinutes": {
                       "type": "number",
                       "minimum": 0,
@@ -26067,6 +26152,7 @@
                     "drive",
                     "taskPrompt",
                     "pauseMessage",
+                    "promptFragments",
                     "conversationIdleTimeoutMinutes",
                     "fileWatcherDebounceMs",
                     "verify",
@@ -26431,6 +26517,19 @@
                     "type": "string",
                     "minLength": 1,
                     "example": "Please finish the current turn, then pause and wait for further instructions."
+                  },
+                  "promptFragments": {
+                    "type": "object",
+                    "properties": {
+                      "readOnlyRestraint": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                      }
+                    },
+                    "required": [
+                      "readOnlyRestraint"
+                    ]
                   },
                   "conversationIdleTimeoutMinutes": {
                     "type": "number",
@@ -27126,6 +27225,7 @@
                   "drive",
                   "taskPrompt",
                   "pauseMessage",
+                  "promptFragments",
                   "conversationIdleTimeoutMinutes",
                   "fileWatcherDebounceMs",
                   "verify",
@@ -27499,6 +27599,20 @@
                       "type": "string",
                       "minLength": 1,
                       "example": "Please finish the current turn, then pause and wait for further instructions."
+                    },
+                    "promptFragments": {
+                      "type": "object",
+                      "properties": {
+                        "readOnlyRestraint": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                        }
+                      },
+                      "required": [
+                        "readOnlyRestraint"
+                      ],
+                      "additionalProperties": false
                     },
                     "conversationIdleTimeoutMinutes": {
                       "type": "number",
@@ -28242,6 +28356,7 @@
                     "drive",
                     "taskPrompt",
                     "pauseMessage",
+                    "promptFragments",
                     "conversationIdleTimeoutMinutes",
                     "fileWatcherDebounceMs",
                     "verify",
@@ -28630,6 +28745,20 @@
                           "minLength": 1,
                           "example": "Please finish the current turn, then pause and wait for further instructions."
                         },
+                        "promptFragments": {
+                          "type": "object",
+                          "properties": {
+                            "readOnlyRestraint": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                            }
+                          },
+                          "required": [
+                            "readOnlyRestraint"
+                          ],
+                          "additionalProperties": false
+                        },
                         "conversationIdleTimeoutMinutes": {
                           "type": "number",
                           "minimum": 0,
@@ -29372,6 +29501,7 @@
                         "drive",
                         "taskPrompt",
                         "pauseMessage",
+                        "promptFragments",
                         "conversationIdleTimeoutMinutes",
                         "fileWatcherDebounceMs",
                         "verify",
@@ -29731,6 +29861,20 @@
                           "minLength": 1,
                           "example": "Please finish the current turn, then pause and wait for further instructions."
                         },
+                        "promptFragments": {
+                          "type": "object",
+                          "properties": {
+                            "readOnlyRestraint": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                            }
+                          },
+                          "required": [
+                            "readOnlyRestraint"
+                          ],
+                          "additionalProperties": false
+                        },
                         "conversationIdleTimeoutMinutes": {
                           "type": "number",
                           "minimum": 0,
@@ -30473,6 +30617,7 @@
                         "drive",
                         "taskPrompt",
                         "pauseMessage",
+                        "promptFragments",
                         "conversationIdleTimeoutMinutes",
                         "fileWatcherDebounceMs",
                         "verify",
@@ -30894,6 +31039,20 @@
                       "minLength": 1,
                       "example": "Please finish the current turn, then pause and wait for further instructions."
                     },
+                    "promptFragments": {
+                      "type": "object",
+                      "properties": {
+                        "readOnlyRestraint": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                        }
+                      },
+                      "required": [
+                        "readOnlyRestraint"
+                      ],
+                      "additionalProperties": false
+                    },
                     "conversationIdleTimeoutMinutes": {
                       "type": "number",
                       "minimum": 0,
@@ -31636,6 +31795,7 @@
                     "drive",
                     "taskPrompt",
                     "pauseMessage",
+                    "promptFragments",
                     "conversationIdleTimeoutMinutes",
                     "fileWatcherDebounceMs",
                     "verify",

@@ -342,6 +342,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       driveMergeFate: null,
       driveContinueAttempts: null,
       taskPrompt: null,
+      promptFragmentReadOnlyRestraint: null,
       pauseMessage: null,
       exportEnabled: null,
       exportDirectoryPath: null,

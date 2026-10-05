@@ -85,6 +85,8 @@ const workspaceSchema = z
     driveContinueAttempts: z.number().nullable().meta({ example: null }),
     /** Task Prompt override; null inherits `config.taskPrompt`. */
     taskPrompt: z.string().nullable().meta({ example: null }),
+    /** Read-only restraint Prompt Fragment override; null inherits `config.promptFragments.readOnlyRestraint`. */
+    promptFragmentReadOnlyRestraint: z.string().nullable().meta({ example: null }),
     exportEnabled: z.boolean().nullable().meta({ example: null }),
     exportDirectoryPath: z.string().nullable().meta({ example: null }),
     exportS3Endpoint: z.string().nullable().meta({ example: null }),

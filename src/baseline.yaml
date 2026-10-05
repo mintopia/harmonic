@@ -96,6 +96,8 @@ drive:
   continueAttempts: 10
 taskPrompt: "{prompt}"
 pauseMessage: "Please finish the current turn, then pause and wait for further instructions."
+promptFragments:
+  readOnlyRestraint: "You are acting in a READ-ONLY role. You MAY read any file and MAY make network requests, but you MUST NOT edit, create, or delete any file, MUST NOT commit, and MUST NOT run any command or call any tool that could mutate the working tree, the repository, or any external system."
 conversationIdleTimeoutMinutes: 30
 fileWatcherDebounceMs: 250
 verify:

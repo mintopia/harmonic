@@ -48,6 +48,7 @@ function makeConfig(): AppConfig {
     contextReuseTokenLimit: 100_000,
     editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
+    promptFragments: { readOnlyRestraint: '' },
     archive: { retain: { days: null, maxTotalMB: null } },
     export: {
       enabled: false,
@@ -113,6 +114,7 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     driveMergeFate: null,
     driveContinueAttempts: null,
     taskPrompt: null,
+    promptFragmentReadOnlyRestraint: null,
     createdAt: 0,
     updatedAt: 0,
     ...overrides,
