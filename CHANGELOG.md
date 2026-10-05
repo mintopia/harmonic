@@ -1,5 +1,55 @@
 # Changelog
 
+## [2.24.0](https://github.com/mintopia/harmonic/compare/v2.23.0...v2.24.0) (2026-10-05)
+
+
+### Features
+
+* Activity "Agent Messages" tab with Thread list, read-only transcript and Threads API ([d27d418](https://github.com/mintopia/harmonic/commit/d27d418a04e2ff854521092d5e5f1bbdec6347c6))
+* add agentMessagesEnabled and agentMessagesSendCap Setting Overrides ([7dbbe97](https://github.com/mintopia/harmonic/commit/7dbbe973a2fd2126530427dd3a36cd02afadddc5))
+* Agent Message rows on both Tasks' Lifecycle timelines ([7dd7c4f](https://github.com/mintopia/harmonic/commit/7dd7c4f925576171d0fc656bb17086c6018a1406))
+* Agent Messages Agents drawer, Global Workspace filter and badges, mobile overlay ([b50b943](https://github.com/mintopia/harmonic/commit/b50b9436d98e069bf784b1791296bbf6030c584e))
+* **api:** serve archived Resolved Prompts by locator, read off the event loop ([9c107a0](https://github.com/mintopia/harmonic/commit/9c107a0a78048a6780be7456d022f7ee5fe1381c))
+* archive and show every turn's Resolved Prompt, plus the epic refresh resolver's ([4c8e9c4](https://github.com/mintopia/harmonic/commit/4c8e9c425d845db8028a2e8a1a27ced710592117))
+* **critic:** editable Prompt Fragments and verdict-contract save gate ([#798](https://github.com/mintopia/harmonic/issues/798)) ([415d1a2](https://github.com/mintopia/harmonic/commit/415d1a2ea566f7906616c3abafd6f51a169332f5))
+* **critic:** show every critic attempt's Resolved Prompt inline, task and epic ([#799](https://github.com/mintopia/harmonic/issues/799)) ([dabe1c1](https://github.com/mintopia/harmonic/commit/dabe1c15ba02d7052b22fabe01880cb3ab358ffe))
+* deliver Agent Messages over the steer channel, hold for next Attempt, record receipts ([95523f1](https://github.com/mintopia/harmonic/commit/95523f1bc5fbcb5c06b90f9daa3e46e811e42031))
+* export Agent Messages in Task and Epic bundles; mark deleted participants ([cc101de](https://github.com/mintopia/harmonic/commit/cc101de8ac87c1faaeda504012803bafdf49b036))
+* MCP server resolves the caller's Attempt Key and registers tools per caller ([ac42ed5](https://github.com/mintopia/harmonic/commit/ac42ed5620a7922009617994fd4f829e4d980aa6)), closes [#758](https://github.com/mintopia/harmonic/issues/758)
+* **prompts:** editable, archived, visible nudges and conflict resolvers ([#802](https://github.com/mintopia/harmonic/issues/802)) ([a99670b](https://github.com/mintopia/harmonic/commit/a99670b85315f7bfac93dc562afdddb453cf542d))
+* **prompts:** main-Attempt prompt fragments editable and wired ([#800](https://github.com/mintopia/harmonic/issues/800)) ([f7b58c5](https://github.com/mintopia/harmonic/commit/f7b58c56c0b6fc0e8ce2e14faf362d1c315157f5))
+* **secrets:** encrypted per-Workspace Secrets store ([#768](https://github.com/mintopia/harmonic/issues/768)) ([2c204be](https://github.com/mintopia/harmonic/commit/2c204be3c722876ab95e4dcd888974cf46eb31e2))
+* send_message, read_messages and list_peers with Agent Message storage ([d3fb003](https://github.com/mintopia/harmonic/commit/d3fb003411a9b12249d2721c99e7df0742cdaa2a))
+* **settings:** Prompt Fragment primitive with shared read-only restraint ([#796](https://github.com/mintopia/harmonic/issues/796)) ([8ab992f](https://github.com/mintopia/harmonic/commit/8ab992f172791d59bba865ec7d2845246fd0b5d7))
+* show tracker name and link on mirrored ticket detail page ([13504b9](https://github.com/mintopia/harmonic/commit/13504b97da3ed5c2fdff0fdad750fee43b59c4f3))
+* **tracker:** tracker kind registry, shared relationship parser, Code Repository seam ([#774](https://github.com/mintopia/harmonic/issues/774)) ([7d097a5](https://github.com/mintopia/harmonic/commit/7d097a55c9af630037cc87b35f5d9458efa31014))
+
+
+### Bug Fixes
+
+* Accept ticket-close failure sets ticketClosePending and drop stale comment ([4f86b3b](https://github.com/mintopia/harmonic/commit/4f86b3b91789de0c60ec892b9287a614ef837f8e)), closes [#805](https://github.com/mintopia/harmonic/issues/805)
+* align verification and stats with current architecture ([998aa5f](https://github.com/mintopia/harmonic/commit/998aa5f1af3a5bb03b4ea059564bde39537d0a1d))
+* anchor per-turn Resolved Prompts on exact prompt_sent markers ([75253a7](https://github.com/mintopia/harmonic/commit/75253a79c6626d754150021b94fd52fe0c04bd06))
+* **archive:** keep prompt-index write off the void allowlist ([2745794](https://github.com/mintopia/harmonic/commit/274579411f6193c574e31cdc7b1ffa992cfdcbb7))
+* **critic:** remove false no-credentials claim from critic prompt ([da0935d](https://github.com/mintopia/harmonic/commit/da0935d1724ad6ce2dd7de17c2ebd09a0d1e931b))
+* hide the Agent Messages tab per Workspace when the feature is off there ([e90a565](https://github.com/mintopia/harmonic/commit/e90a565c54fb09cd54ae371cb475a72a34b58459))
+* improve operator actions and developer onboarding ([b24269b](https://github.com/mintopia/harmonic/commit/b24269b6b43b56ca6fa8b26de98c915ec3fae76f))
+* match Agent Message timeline rows to the mockup copy ([a2ebc9a](https://github.com/mintopia/harmonic/commit/a2ebc9a72e5ffd344278332dce4f6efa44a87fa2))
+* operator Accept ticket-close is best-effort so a failed close cannot re-strand merged work ([c0ddca7](https://github.com/mintopia/harmonic/commit/c0ddca7f7900aef79c8fa993689190583e77d1d7)), closes [#805](https://github.com/mintopia/harmonic/issues/805)
+* resolve browser review usability and state issues ([13d6dc8](https://github.com/mintopia/harmonic/commit/13d6dc85c0eb3bbd4e18b9b2d33d88c1c8f80382))
+* resolve overall review reliability and UX findings ([55961d7](https://github.com/mintopia/harmonic/commit/55961d7ed583d1b05a18ecbfddac04d83a7eb9df))
+* resolve pre-release review findings for 2.23 ([f939a95](https://github.com/mintopia/harmonic/commit/f939a954305533110ff5fbc95ded9337fcdeffe1))
+* segment archived prompts by sidecar offsets, not a text separator ([671adc1](https://github.com/mintopia/harmonic/commit/671adc1512ba559d7a4a932d4b0bc2f996dec551))
+* **settings:** pack Prompts tab as masonry with full-width fragments ([#808](https://github.com/mintopia/harmonic/issues/808)) ([348d567](https://github.com/mintopia/harmonic/commit/348d567b251b6ec7c06a02a53fc3cfc36a110a7c))
+* ticket-close failure after a successful merge settles done and is retried ([f8dbb28](https://github.com/mintopia/harmonic/commit/f8dbb28d8117ba86e5784e9f71c019351a543413)), closes [#803](https://github.com/mintopia/harmonic/issues/803)
+* **tracker:** drop unused Ticket.comments and use a state-only read before ticket close ([980e7a9](https://github.com/mintopia/harmonic/commit/980e7a9ef08ef9b419ddfc543d5286754875a990))
+* **tracker:** keep structural Epics derivable when all members are closed ([d9d54f7](https://github.com/mintopia/harmonic/commit/d9d54f7777cf14634ee8b23c673e1109966dc927))
+
+
+### Performance Improvements
+
+* **tracker:** scan open GitHub issues only, resolve closed refs on demand ([e8850c4](https://github.com/mintopia/harmonic/commit/e8850c487f029bc5a1058b2434ac4f9fdf4bf066))
+
 ## [2.23.0](https://github.com/mintopia/harmonic/compare/v2.22.0...v2.23.0) (2026-10-01)
 
 
