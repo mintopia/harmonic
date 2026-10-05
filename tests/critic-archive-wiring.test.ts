@@ -194,6 +194,10 @@ describe('Critic Step archive wiring (#730)', () => {
       expect(readdirSync(postMerge).sort()).toEqual(['critic-1', 'critic-2']);
       expectStepTrio(join(postMerge, 'critic-1'), 'alpha');
       expectStepTrio(join(postMerge, 'critic-2'), 'beta');
+      const owner = (await tasks.get(task.id))!;
+      const rows = await verificationAttempts.list(run.id);
+      expect(rows.map((row) => row.promptKey).sort()).toEqual(['verification/post-merge/critic-1/prompt.md', 'verification/post-merge/critic-2/prompt.md']);
+      for (const row of rows) expect(await archive.readArchivedPrompt(owner, run.number, row.promptKey!)).toContain('review-');
     });
 
     it('writes Epic critic Steps keyed by the review Step id under epic-<ref>/attempts/<n>/verification/pre-merge', async () => {
@@ -201,6 +205,7 @@ describe('Critic Step archive wiring (#730)', () => {
       const settingsStore = await makeSettingsStore(dir);
       const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
       const epicAttempts = new AttemptStore(asyncDb);
+      const epicVerificationAttempts = new VerificationAttemptStore(asyncDb);
       const archive = new TaskArchive({ dataDir: dir, ensureArchiveId: (id) => tasks.ensureArchiveId(id), workspaceName: async () => 'ws' });
       await tasks.syncEpics(wsRow.id, [{ ref: trackerRef(77), kind: 'epic' }]);
       const workspace = { ...wsRow, epicPreMergeCommands: null, epicPreMergeCritics: JSON.stringify(twoCritics) };
@@ -211,7 +216,7 @@ describe('Critic Step archive wiring (#730)', () => {
         getConfig: () => criticConfig(logDir),
         worktrees: { acquire: async () => repoDir, get: () => repoDir } as unknown as EpicWorktreePool,
         epicAttempts,
-        verificationAttemptStore: new VerificationAttemptStore(asyncDb),
+        verificationAttemptStore: epicVerificationAttempts,
         criticDrive: drive,
         archive,
       });
@@ -230,6 +235,9 @@ describe('Critic Step archive wiring (#730)', () => {
       expectStepTrio(byMarker.get('alpha')!, 'alpha');
       expectStepTrio(byMarker.get('beta')!, 'beta');
       expect(steps.every((step) => step.state === 'passed' && step.logLocator?.startsWith('verification_attempt:'))).toBe(true);
+      const rows = await epicVerificationAttempts.list(epicAttempt.id);
+      expect(rows.map((row) => row.promptKey).sort()).toEqual(steps.map((step) => `verification/pre-merge/${step.id}/prompt.md`).sort());
+      for (const row of rows) expect(await archive.readArchivedPrompt({ workspaceId: wsRow.id, epicRef: trackerRef(77) }, epicAttempt.number, row.promptKey!)).toContain('review-');
     });
 
     it('fails the Epic review Step instead of leaving it running when recording the critic throws', async () => {

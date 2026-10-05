@@ -375,7 +375,6 @@ export function criticAttemptToInput(attempt: CriticAttempt): VerificationAttemp
     verdict: attempt.verdict,
     summary: attempt.summary,
     output: attempt.output,
-    prompt: attempt.prompt,
     transcriptPath: attempt.transcriptPath,
     harness: attempt.harness,
   };

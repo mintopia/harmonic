@@ -77,7 +77,7 @@ const run: AttemptSummary = {
 };
 const attempt = (over: Partial<VerificationAttempt>): VerificationAttempt => ({
   id: 1, attemptId: 1, seq: 1, ts: 1, mechanism: 'command', inputOid: 'a'.repeat(40), verdict: 'fail', summary: 'Command failed.',
-  output: 'preview', prompt: null, harness: null, hasTranscript: false, outputTruncated: false, ...over,
+  output: 'preview', promptLocator: null, harness: null, hasTranscript: false, outputTruncated: false, ...over,
 });
 
 describe('copy placements', () => {

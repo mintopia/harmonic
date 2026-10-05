@@ -1,5 +1,5 @@
 import type { TrackerRef } from './adapter.js';
-import type { TaskArchive } from '../archive/task-archive.js';
+import { criticPromptKey, type TaskArchive } from '../archive/task-archive.js';
 import type { AppConfig } from '../config.js';
 import { isEpicAttempt, type AttemptRow, type EpicAttemptRow, type WorkspaceRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
@@ -186,6 +186,7 @@ export class EpicVerificationRunner {
       if (tracked && step) {
         const persisted = await tracked.verificationAttemptStore.append(tracked.attempt.id, {
           ...criticAttemptToInput(criticAttempt),
+          ...(archive ? { promptKey: criticPromptKey('pre-merge', String(step.id)) } : {}),
           ...(usage ? { usage: JSON.stringify(usage) } : {}),
         });
         await tracked.epicAttempts.updateStep(step.id, {

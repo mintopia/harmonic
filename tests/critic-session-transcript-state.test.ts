@@ -23,7 +23,7 @@ const criticAttempt: VerificationAttempt = {
   verdict: 'pass',
   summary: 'Critic passed.',
   output: '',
-  prompt: null,
+  promptLocator: null,
   harness: null,
   hasTranscript: true,
   outputTruncated: false,

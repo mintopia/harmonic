@@ -19,9 +19,8 @@ export interface VerificationAttemptInput {
   output: string;
   /** Archive-relative key of the complete command output; see `verificationAttempts.fullOutputKey`. */
   fullOutputKey?: string | null;
-  /** The exact prompt sent to the critic (`buildCriticPrompt`); null for the
-   * command verifier, which sends no prompt. */
-  prompt?: string | null;
+  /** Archive locator of the critic's Resolved Prompt; see `verificationAttempts.promptKey`. */
+  promptKey?: string | null;
   /** Locator for the critic's native transcript + the harness that wrote it.
    * Both null for the command verifier and where no transcript was resolved. */
   transcriptPath?: string | null;
@@ -67,7 +66,7 @@ export class VerificationAttemptStore {
           summary: attempt.summary,
           output: attempt.output,
           fullOutputKey: attempt.fullOutputKey ?? null,
-          prompt: attempt.prompt ?? null,
+          promptKey: attempt.promptKey ?? null,
           transcriptPath: attempt.transcriptPath ?? null,
           harness: attempt.harness ?? null,
           usage: attempt.usage ?? null,

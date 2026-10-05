@@ -8,7 +8,7 @@ import { integrationBranchName } from './epic-coordinator.js';
 import { LIVE_RUN_LOG_EVENT_ID_OFFSET } from './live-events.js';
 import type { RunnerEvents } from './runner.js';
 import type { ActiveRuns } from './active-runs.js';
-import type { TaskArchive } from '../archive/task-archive.js';
+import { criticPromptKey, type TaskArchive } from '../archive/task-archive.js';
 import type { TranscriptCapture } from './transcript-capture.js';
 import type { AppConfig, HarnessConfig, TaskVerificationCritic, VerificationCommand } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow, StepRow, VerificationAttemptRow } from '../db/schema.js';
@@ -307,6 +307,7 @@ export class VerificationCoordinator {
         await this.deps.updateStep(task.id, timelineStep.id, { state: 'running', startedAt: Date.now() });
         record('lifecycle', { event: 'verification-started', mechanism: 'critic', model: critic.model });
         const archive = this.deps.archive?.criticStep(task, timelineAttempt.number, 'pre-merge', String(timelineStep.id));
+        const promptKey = archive ? criticPromptKey('pre-merge', String(timelineStep.id)) : null;
         const attempt = await runCritic({
           cwd: criticCwd,
           verifiedHeadOid: oid,
@@ -325,7 +326,7 @@ export class VerificationCoordinator {
           onUpdate: this.relayCriticUpdateAsBuilderEvent(run.id),
           onAgentDurationMs: (ms) => this.deps.attempts.addAgentDuration(run.id, ms),
         });
-        const persisted = await this.deps.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
+        const persisted = await this.deps.verificationAttempts.append(timelineAttempt.id, { ...criticAttemptToInput(attempt), promptKey });
         this.captureCriticArtifacts({
           persisted,
           sessionId: attempt.sessionId,

@@ -135,9 +135,10 @@ export interface VerificationAttempt {
   verdict: Verdict;
   summary: string;
   output: string;
-  /** The exact prompt sent to the critic for this attempt; null for a command
-   * verifier (which sends no prompt) and pre-feature rows. */
-  prompt: string | null;
+  /** Archive locator of the critic's Resolved Prompt — read it with
+   * `api.resolvedPrompt(attemptId, promptLocator)`; null for a command verifier
+   * and for rows with no archived prompt. */
+  promptLocator: string | null;
   /** The critic harness that drove this attempt (may differ from the builder's);
    * null for a command verifier or a pre-feature row. */
   harness: string | null;

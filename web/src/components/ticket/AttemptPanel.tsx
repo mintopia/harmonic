@@ -16,7 +16,6 @@ import {
   attemptIdentityModel,
   attemptStepTabs,
   defaultStepTab,
-  latestCriticPrompt,
   verificationOutputTail,
   type StepTab,
   type TaskStats,
@@ -172,7 +171,6 @@ export function AttemptPanel({
       stepLabel="Implementation"
     />
   );
-  const reviewPrompt = latestCriticPrompt(verificationAttempts);
   const tabContent =
     activeTab && active ? (
       activeTab.pending ? (
@@ -191,7 +189,6 @@ export function AttemptPanel({
         </div>
       ) : (
         <div className="mt-4">
-          {reviewPrompt && <PromptSent prompt={reviewPrompt} label="Review prompt sent" />}
           <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="critic" verifier={`critic:${steps.filter((step) => step.type === 'review').findIndex((step) => `review:${step.id}` === activeTab.id)}`} steps={steps} />
           <CriticSessions attempts={verificationAttempts} run={run} />
         </div>

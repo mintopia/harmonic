@@ -370,6 +370,7 @@ export const api: typeof RealApi = {
   attemptGuardrailEvents: (_id: number) => ok({ guardrailEvents: [], total: 0 }),
   attemptVerificationAttempts: (_id: number) => ok({ verificationAttempts: f.verificationAttempts, verifierStatuses: f.verifierStatuses, total: f.verificationAttempts.length }),
   verificationAttempt: (_id: number) => ok({ output: '', summary: 'pass', hasTranscript: false }),
+  resolvedPrompt: (_attemptId: number, locator: string) => ok(f.criticPrompts[locator] ?? ''),
   criticLog: (_id: number) => ok({ status: 'available' as const, events: f.criticLog, liveCursor: 999, fromArchive: storyName === 'x-archive' }),
   attemptDiff: (_id: number) => ok({ branch: f.task.branch ?? null, baseBranch: f.task.baseBranch ?? null, stat: f.task.stat }),
   attemptDiffFiles: (_id: number) => ok({ files: f.diffFiles, total: f.diffFiles.length }),

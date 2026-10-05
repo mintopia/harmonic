@@ -48,6 +48,11 @@ export interface StepArchiveWriter {
 
 export type CriticArchiveStage = 'pre-merge' | 'post-merge';
 
+/** Attempt-relative locator of a critic step's Resolved Prompt, matching the directory `criticStep`/`epicCriticStep` write. */
+export function criticPromptKey(stage: CriticArchiveStage, stepId: string): string {
+  return `verification/${stage}/${stepId}/prompt.md`;
+}
+
 export type OperatorAction = 'steer' | 'reject' | 'accept' | 'pause' | 'resume' | 'close' | 'cancel';
 export type OperatorActor = 'operator' | 'agent';
 

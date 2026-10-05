@@ -1,4 +1,4 @@
-import type { TaskArchive } from '../archive/task-archive.js';
+import { criticPromptKey, type TaskArchive } from '../archive/task-archive.js';
 import type { AppConfig } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
@@ -86,7 +86,8 @@ export function createPostMergeCheck(deps: {
       const harnessId = critic.harness ?? task.harness;
       const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
       if (!harness) throw new DomainError('validation', `critic harness '${harnessId}' is not configured`);
-      const archive = taskArchive?.criticStep(task, verificationAttempt.number, 'post-merge', `critic-${index + 1}`);
+      const stepId = `critic-${index + 1}`;
+      const archive = taskArchive?.criticStep(task, verificationAttempt.number, 'post-merge', stepId);
       const attempt = await runCritic({
         cwd: baseDir,
         verifiedHeadOid: mergeOid,
@@ -103,7 +104,7 @@ export function createPostMergeCheck(deps: {
         ...(onUpdate ? { onUpdate } : {}),
         onAgentDurationMs: (ms: number) => attempts.addAgentDuration(run.id, ms),
       });
-      const persisted = await verificationAttempts.append(verificationAttempt.id, criticAttemptToInput(attempt));
+      const persisted = await verificationAttempts.append(verificationAttempt.id, { ...criticAttemptToInput(attempt), promptKey: archive ? criticPromptKey('post-merge', stepId) : null });
       const sessionId = attempt.sessionId;
       if (sessionId) {
         if (attempt.transcriptPath === null) {
