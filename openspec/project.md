@@ -5,7 +5,7 @@ agent Harnesses (Claude, Codex, Copilot) over ACP.
 
 ## Conventions
 
-- Vocabulary: `CONTEXT.md` is the authoritative glossary. Specs use its terms
+- Vocabulary: `GLOSSARY.md` is the authoritative glossary. Specs use its terms
   and avoid its `_Avoid_` lists.
 - Decisions: `docs/adr/` holds the accepted ADRs; `docs/adr/README.md` indexes
   them. A change proposal cites the ADR it implements or amends.

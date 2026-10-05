@@ -3,7 +3,7 @@
  * Jev CI gate — scores git-changed files against the Jev code-quality model
  * and passes/fails per /home/workspace/reports/jev-thresholds-proposal.md.
  * Meant to run as a `verify` stage command (task.preMerge / task.postMerge /
- * epic.preMerge — see CONTEXT.md's "Verification" entry); see README.md next
+ * epic.preMerge — see GLOSSARY.md's "Verification" entry); see README.md next
  * to this file for the exact command to configure and the config/env/exit
  * code reference.
  *

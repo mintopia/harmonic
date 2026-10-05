@@ -52,7 +52,7 @@ TS 7, and a side-by-side TS 6 toolchain purely for linting is brittle).
 User-facing documentation is a standalone static site under `website/`,
 published to GitHub Pages by its own workflow on push to `main` — docs deploy
 on their own cadence, decoupled from app releases. Content draws from the
-repo's markdown (`README.md`, `CONTEXT.md`, `PRODUCT.md`, `docs/**`, these
+repo's markdown (`README.md`, `GLOSSARY.md`, `PRODUCT.md`, `docs/**`, these
 ADRs). The API reference is generated from the in-process `app.swagger()`
 export (`npm run docs:openapi` writes the committed `website/src/openapi.json`
 snapshot, regenerated in the Pages workflow), so it can never drift from the

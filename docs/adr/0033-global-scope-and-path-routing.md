@@ -39,7 +39,7 @@ A view runs in one of two **Scopes**: **Workspace** (the default — each page r
 only the active Workspace) or **Global** (pages aggregate across all Workspaces).
 Scope is chosen in the Workspace switcher, where **Global** is a peer entry above
 the Workspace rows; the switcher button reads "Global" when active. Scope drives
-which navigation rail and which pages are shown. See CONTEXT.md.
+which navigation rail and which pages are shown. See GLOSSARY.md.
 
 ### 2. Routing is path-based; scope is implicit in the path
 

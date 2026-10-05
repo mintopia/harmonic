@@ -13,7 +13,7 @@ ADR-0025 (`commandPrefix`, Harness Capability).
 
 ## Context
 
-A Conversation drives a Harness over ACP (CONTEXT.md "Conversation"). The
+A Conversation drives a Harness over ACP (GLOSSARY.md "Conversation"). The
 Composer is a plain textarea + Send; it carries a **decorative** `/ commands`
 footer hint that nothing backs — there is no slash-command registry, parser, or
 forwarding anywhere in the codebase.

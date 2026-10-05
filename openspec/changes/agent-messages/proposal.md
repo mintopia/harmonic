@@ -1,7 +1,7 @@
 # Change: Agent Messages
 
 Implements ADR-0045 (Agent Messages travel over Harmonic's MCP server with
-A2A-shaped payloads). Glossary: `CONTEXT.md` → Agent Messages (Agent Message,
+A2A-shaped payloads). Glossary: `GLOSSARY.md` → Agent Messages (Agent Message,
 Thread).
 
 ## Why

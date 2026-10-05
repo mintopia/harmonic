@@ -10,7 +10,7 @@ miss; it does not invalidate the verdict.
 
 ## Context
 
-`CONTEXT.md`'s **Merge** entry and ADR-0001 describe one merge policy: under the
+`GLOSSARY.md`'s **Merge** entry and ADR-0001 describe one merge policy: under the
 per-Workspace-repository mutex, an ordinary merge commit of the ticket branch
 onto the base, then the deterministic verify commands once on the merged tip.
 The entry is explicit that **base movement since the verdict is irrelevant — the

@@ -38,7 +38,7 @@ have no way to do so.
 ## Impact
 
 - Decision: `docs/adr/0044-task-archive-and-export.md` (supersedes part of
-  ADR-0007). Glossary: `CONTEXT.md` — Archive, Export, Export Destination.
+  ADR-0007). Glossary: `GLOSSARY.md` — Archive, Export, Export Destination.
 - Affected specs: new capabilities `task-archive`, `task-export`.
 - Affected code (indicative):
   - `src/execution/turn-listeners.ts`, `src/execution/transcript-capture.ts`

@@ -14,7 +14,7 @@ always instance-wide; it stays strictly read-only).
 
 ## Context
 
-CONTEXT.md defines **Activity** as the surface that answers *"what are the Agents
+GLOSSARY.md defines **Activity** as the surface that answers *"what are the Agents
 doing"* — per-Agent Usage, context fill, tools, and the Process Tree. The shipped
 build drifted from that in two ways:
 
@@ -70,7 +70,7 @@ now" line on the Activity surface.
 
 - Activity loses its action wiring (permission/resolve/stop) and its
   transcript/drill-in; it becomes a pure snapshot+firehose glance that deep-links
-  out. Simpler, and back in line with CONTEXT.md's Activity definition.
+  out. Simpler, and back in line with GLOSSARY.md's Activity definition.
 - The **global permission alert** needs pending-permission state available
   app-wide, not just on Activity. It shipped after this ADR; the Task page
   remains the place where the operator answers the request.

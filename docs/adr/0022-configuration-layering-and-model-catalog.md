@@ -82,7 +82,7 @@ Each harness carries a single **`cacheWarmSeconds`**. The per-model
 UI are **derived** at runtime (`lastActiveAt + cacheWarmSeconds`), never stored
 config — a different plan is one edit to the harness's number, not a schema
 branch. This matches the Session concept's existing per-Harness warm-window
-framing (CONTEXT.md).
+framing (GLOSSARY.md).
 
 ### 5. Modified state and revert, unified across both boundaries
 
@@ -134,7 +134,7 @@ needs a code adapter. The harness set stays defined in code.
   stay in code on the new shape.
 - **A second YAML ships in-repo** (`baseline.yaml`), reversing ADR-0009's
   "no out-of-band seed"; that clause is amended here (below).
-- CONTEXT.md gains the **Baseline** layer (Setting Override), a **Model**
+- GLOSSARY.md gains the **Baseline** layer (Setting Override), a **Model**
   catalog entry, and the cache-window-on-harness clarification; the Session
   entry's warm-window framing is confirmed and names `cacheWarmSeconds`.
 - The configuration track deferred by ADR-0021 has shipped. ADR-0025 adds

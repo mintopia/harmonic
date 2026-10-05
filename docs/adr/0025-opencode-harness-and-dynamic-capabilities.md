@@ -13,7 +13,7 @@ Amends ADR-0022 (see "Amends" below).
 ## Context
 
 Harmonic drives a **closed set of three** Harnesses over ACP (Claude, Codex,
-Copilot), each behind a code Adapter (CONTEXT.md "Harness"; ADR-0022 §9). We
+Copilot), each behind a code Adapter (GLOSSARY.md "Harness"; ADR-0022 §9). We
 want a fourth: **OpenCode** (`opencode`, v1.18.28), which speaks ACP over stdio
 like the others. Two things make it different from the existing three:
 
@@ -140,12 +140,12 @@ additive.
 
 OpenCode's Usage Collector reads its native store `~/.local/share/opencode/
 opencode.db` (SQLite) for the per-model token breakdown, the same shape as
-Copilot's `session-store.db` collector (CONTEXT.md "Usage Collector"). Each
+Copilot's `session-store.db` collector (GLOSSARY.md "Usage Collector"). Each
 Harness still has exactly one Collector.
 
 ## Consequences
 
-- The "set of three" becomes four across code, config, UI enums, and CONTEXT.md;
+- The "set of three" becomes four across code, config, UI enums, and GLOSSARY.md;
   ADR-0022 §9's *decision* (operators cannot add a Harness; the set is defined
   in code) is untouched.
 - Harnesses gain a first, optional extension point (`capabilities`); the base
