@@ -15,6 +15,7 @@ import {
   type AppConfig,
   type DeepPartial,
 } from '../../config.js';
+import { verdictContractSchema } from '../../verification/critic-schema.js';
 import { maskConfigSecrets } from '../../archive/export-secrets.js';
 
 const harnessPermissionModesSchema = z.record(
@@ -114,7 +115,13 @@ const configPatchBodySchema = z
       .partial()
       .optional(),
     promptFragments: z
-      .object({ readOnlyRestraint: z.string().min(1).meta({ example: 'You are acting in a READ-ONLY role…' }) })
+      .object({
+        readOnlyRestraint: z.string().min(1).meta({ example: 'You MAY read any file, but you MUST NOT edit…' }),
+        criticRevisionIdentical: z.string().min(1).meta({ example: '{ticketFirst} The candidate revision {head} is IDENTICAL…' }),
+        criticRevisionDiff: z.string().min(1).meta({ example: '{ticketFirst} Then review the candidate revision {head}…' }),
+        criticRevisionAlone: z.string().min(1).meta({ example: '{ticketFirst} Then review the candidate revision {head} on its own merits…' }),
+        criticVerdictContract: verdictContractSchema.meta({ example: 'Your reply: respond with ONLY {"verdict":"pass|fail|inconclusive","summary":"…"}' }),
+      })
       .partial()
       .optional(),
     verify: z

@@ -121,6 +121,22 @@ describe('PATCH /api/config verification', () => {
     expect(invalid.status).toBe(400);
   });
 
+  it('rejects a verdict contract missing the parser keys, with a clear error, and accepts the default back (reset)', async () => {
+    const invalid = await server.api('PATCH', '/api/config', { promptFragments: { criticVerdictContract: 'Reply with {"verdict":"pass"} only.' } });
+    expect(invalid.status).toBe(400);
+    expect(invalid.body.error.message).toContain('a "summary" key');
+
+    const edited = await server.api('PATCH', '/api/config', {
+      promptFragments: { criticVerdictContract: 'Answer {"verdict":"pass|fail|inconclusive","summary":"why"} and nothing else.' },
+    });
+    expect(edited.status).toBe(200);
+    expect(edited.body.promptFragments.criticVerdictContract).toContain('and nothing else');
+
+    const reset = await server.api('PATCH', '/api/config', { promptFragments: { criticVerdictContract: baselineConfig().promptFragments.criticVerdictContract } });
+    expect(reset.status).toBe(200);
+    expect(reset.body.promptFragments.criticVerdictContract).toBe(baselineConfig().promptFragments.criticVerdictContract);
+  });
+
   it('clears a configured command back to null', async () => {
     const withCommand = await server.api('PATCH', '/api/config', {
       verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'] }], critics: [] } } },

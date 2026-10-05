@@ -1175,7 +1175,13 @@ export interface AppConfig {
   /** The Task Prompt template for native Attempts, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
   taskPrompt: string;
   /** Shared Prompt Fragments, referenced from prompts as `{fragment.<name>}`. */
-  promptFragments: { readOnlyRestraint: string };
+  promptFragments: {
+    readOnlyRestraint: string;
+    criticRevisionIdentical: string;
+    criticRevisionDiff: string;
+    criticRevisionAlone: string;
+    criticVerdictContract: string;
+  };
   archive: { retain: { days: number | null; maxTotalMB: number | null } };
   /** S3 credentials arrive masked (`********`) when set; writing the mask back keeps the stored value. */
   export: {

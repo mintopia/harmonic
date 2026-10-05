@@ -83,7 +83,7 @@ interface WorkspaceEpicEntry { epics: EpicLifecycle; epicIntegrate?: EpicCoordin
 
 /** Everything whole-Epic verification, integration and resolution need; supplied together or not at all. */
 export interface EpicIntegrationWiring {
-  getConfig: () => Pick<AppConfig, 'verify' | 'maxAttempts' | 'defaults' | 'harnesses'>;
+  getConfig: () => Pick<AppConfig, 'verify' | 'maxAttempts' | 'defaults' | 'harnesses' | 'promptFragments'>;
   mergeEpicIntegration: MergeEpicIntegration;
   criticDrive: CriticHarnessDrive;
   commandSpawn: CommandSpawn;

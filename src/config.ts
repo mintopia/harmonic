@@ -5,6 +5,7 @@ import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 import { z } from 'zod';
+import { verdictContractSchema } from './verification/critic-schema.js';
 import { isModelPriced, pricesForHarness } from './domain/pricing.js';
 
 export const HARNESS_IDS = ['claude', 'codex', 'copilot', 'opencode'] as const;
@@ -292,7 +293,11 @@ export const appConfigSchema = z.object({
   pauseMessage: z.string().min(1).meta({ example: 'Please finish the current turn, then pause and wait for further instructions.' }),
   /** Named pieces of prompt text defined once and referenced from prompts as `{fragment.<name>}`. */
   promptFragments: z.object({
-    readOnlyRestraint: z.string().min(1).meta({ example: 'You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file.' }),
+    readOnlyRestraint: z.string().min(1).meta({ example: 'You MAY read any file, but you MUST NOT edit, create, or delete any file.' }),
+    criticRevisionIdentical: z.string().min(1).meta({ example: '{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…' }),
+    criticRevisionDiff: z.string().min(1).meta({ example: '{ticketFirst} Then review the candidate revision {head}, which branched from {base}…' }),
+    criticRevisionAlone: z.string().min(1).meta({ example: '{ticketFirst} Then review the candidate revision {head} on its own merits…' }),
+    criticVerdictContract: verdictContractSchema.meta({ example: 'Your reply: respond with ONLY {"verdict":"pass|fail|inconclusive","summary":"…"}' }),
   }),
   /** End a Conversation with no Turn for this many minutes; 0 disables. Fractional values are allowed. */
   conversationIdleTimeoutMinutes: z.number().nonnegative().meta({ example: 30 }),

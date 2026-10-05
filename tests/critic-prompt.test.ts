@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { buildCriticPrompt } from '../src/verification/critic-prompt.js';
+import { DEFAULT_PROMPT_FRAGMENTS } from '../src/config.js';
+import { buildCriticPrompt as buildWithFragments, type BuildCriticPromptArgs } from '../src/verification/critic-prompt.js';
 import type { DriveFields } from '../src/execution/prompt-template.js';
 
 const FIELDS: DriveFields = {
@@ -10,6 +12,9 @@ const FIELDS: DriveFields = {
   title: 'Fix the timeout',
   description: 'The request hangs forever.',
 };
+
+const buildCriticPrompt = (args: Omit<BuildCriticPromptArgs, 'fragments'>): string =>
+  buildWithFragments({ ...args, fragments: DEFAULT_PROMPT_FRAGMENTS });
 
 const CANDIDATE = 'cand0000000000000000000000000000000000000';
 const BASE = 'base0000000000000000000000000000000000000';
@@ -155,5 +160,41 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
       expect(prompt).toMatch(/when the review instructions above required none/i);
       expect(prompt).not.toMatch(/Decide from the ticket/i);
     });
+  });
+});
+
+describe('critic Prompt Fragments', () => {
+  const golden = JSON.parse(readFileSync(new URL('./fixtures/critic-prompt-golden.json', import.meta.url), 'utf8')) as Record<string, string>;
+  const native: DriveFields = { ...FIELDS, ref: '', url: '' };
+
+  it('assembles byte-for-byte the pre-fragment prompt when fragments are at defaults', () => {
+    const op = (text: string) => ({ operatorPrompt: text });
+    const built = {
+      ticketDiff: buildCriticPrompt({ ...op('Review {ref}.'), fields: { ...FIELDS, ref: '123', url: 'https://t/123', title: 'T', description: 'D' }, verifiedHeadOid: 'HEAD1', baseOid: 'BASE1' }),
+      ticketDirty: buildCriticPrompt({ ...op('Review {ref}.'), fields: { ...FIELDS, ref: '123', url: 'https://t/123', title: 'T', description: 'D' }, verifiedHeadOid: 'HEAD1', baseOid: 'BASE1', dirty: true }),
+      nativeIdentical: buildCriticPrompt({ ...op('Review {title}.'), fields: { ...native, title: 'T', description: 'D', url: '' }, verifiedHeadOid: 'HEAD1', baseOid: 'HEAD1' }),
+      ticketAlone: buildCriticPrompt({ ...op('Review {ref}.'), fields: { ...FIELDS, ref: '123', url: 'https://t/123', title: 'T', description: 'D' }, verifiedHeadOid: 'HEAD1' }),
+      nativeAloneDirty: buildCriticPrompt({ ...op('Review.'), fields: { ...native, title: 'T', description: 'D', url: '' }, verifiedHeadOid: 'HEAD1', dirty: true }),
+    };
+    expect(built).toEqual(golden);
+  });
+
+  it('puts an edited fragment into the Resolved Prompt, in the matching revision variant only', () => {
+    const fragments = {
+      ...DEFAULT_PROMPT_FRAGMENTS,
+      criticRevisionDiff: 'EDITED-DIFF head={head} base={base}.{workingTreeNote}',
+      criticRevisionIdentical: 'EDITED-SAME {head}',
+      criticRevisionAlone: 'EDITED-ALONE {head}',
+      readOnlyRestraint: 'EDITED-RESTRAINT',
+      criticVerdictContract: 'EDITED-CONTRACT {"verdict":"pass","summary":"x"}',
+    };
+    const args = { operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE, fragments };
+    const diff = buildWithFragments({ ...args, baseOid: BASE });
+    expect(diff).toContain(`EDITED-DIFF head=${CANDIDATE} base=${BASE}.`);
+    expect(diff).toContain('EDITED-RESTRAINT');
+    expect(diff).toContain('EDITED-CONTRACT');
+    expect(diff).not.toContain('EDITED-SAME');
+    expect(buildWithFragments({ ...args, baseOid: CANDIDATE })).toContain(`EDITED-SAME ${CANDIDATE}`);
+    expect(buildWithFragments(args)).toContain(`EDITED-ALONE ${CANDIDATE}`);
   });
 });

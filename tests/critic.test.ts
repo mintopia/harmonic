@@ -1,3 +1,4 @@
+import { DEFAULT_PROMPT_FRAGMENTS } from '../src/config.js';
 import { describe, it, expect, afterAll, afterEach, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -94,6 +95,7 @@ describe('runCritic (issue #136)', () => {
     const drive: CriticHarnessDrive = { run: async () => ({ output, permissionRequests: [] }) };
 
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: repo,
       verifiedHeadOid: oid,
       fields: FIELDS,
@@ -116,6 +118,31 @@ describe('runCritic (issue #136)', () => {
     });
   });
 
+  it('an edited Prompt Fragment reaches the prompt sent to the critic and persisted on the attempt', async () => {
+    const { repo, oid } = await makeCandidate('refs/harmonic/direct/attempt-critic-fragment');
+    let drivenPrompt = '';
+    const drive: CriticHarnessDrive = {
+      run: async (request) => {
+        drivenPrompt = request.prompt;
+        return { output: '{"verdict":"pass","summary":"ok"}', permissionRequests: [] };
+      },
+    };
+
+    const attempt = await runCritic({
+      fragments: { ...DEFAULT_PROMPT_FRAGMENTS, readOnlyRestraint: 'EDITED-RESTRAINT: touch nothing.' },
+      cwd: repo,
+      verifiedHeadOid: oid,
+      fields: FIELDS,
+      critic: { prompt: 'Review the diff.', model: 'stub-model' },
+      harness: FAKE_HARNESS,
+      harnessId: 'claude',
+      drive,
+    });
+
+    expect(drivenPrompt).toContain('EDITED-RESTRAINT: touch nothing.');
+    expect(attempt.prompt).toBe(drivenPrompt);
+  });
+
   it('given the base revision, drives the in-place cwd and names both revisions in the prompt', async () => {
     const { repo, oid } = await makeCandidate('refs/harmonic/direct/attempt-critic-two-rev');
     const baseOid = git(repo, 'rev-parse', `${oid}~1`);
@@ -130,6 +157,7 @@ describe('runCritic (issue #136)', () => {
     };
 
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: repo,
       verifiedHeadOid: oid,
       baseOid,
@@ -161,6 +189,7 @@ describe('runCritic (issue #136)', () => {
     };
 
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: repo,
       verifiedHeadOid: oid,
       fields: FIELDS,
@@ -185,6 +214,7 @@ describe('runCritic (issue #136)', () => {
 
     const attempt = await parent.run(() =>
       runCritic({
+        fragments: DEFAULT_PROMPT_FRAGMENTS,
         cwd: repo,
         verifiedHeadOid: oid,
         fields: FIELDS,
@@ -218,6 +248,7 @@ describe('runCritic (issue #136)', () => {
     const drive: CriticHarnessDrive = { run: async () => ({ output: 'not json at all, just prose', permissionRequests: [] }) };
 
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: repo,
       verifiedHeadOid: oid,
       fields: FIELDS,
@@ -242,6 +273,7 @@ describe('runCritic (issue #136)', () => {
     };
 
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: repo,
       verifiedHeadOid: oid,
       fields: FIELDS,
@@ -267,6 +299,7 @@ describe('runCritic (issue #136)', () => {
     };
 
     await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: repo,
       verifiedHeadOid: oid,
       fields: FIELDS,
@@ -297,6 +330,7 @@ describe('runCritic (issue #136)', () => {
     };
 
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: repo,
       verifiedHeadOid: oid,
       fields: FIELDS,
@@ -314,6 +348,7 @@ describe('runCritic (issue #136)', () => {
     const drive: CriticHarnessDrive = { run: async () => ({ output: '{"verdict":"pass","summary":"clean"}', permissionRequests: [] }) };
 
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: repo,
       verifiedHeadOid: oid,
       fields: FIELDS,
@@ -338,6 +373,7 @@ describe('runCritic (issue #136)', () => {
       const drive: CriticHarnessDrive = { run: async () => ({ output: c.output, permissionRequests: [] }) };
 
       const attempt = await runCritic({
+        fragments: DEFAULT_PROMPT_FRAGMENTS,
         cwd: repo,
         verifiedHeadOid: oid,
         fields: FIELDS,
@@ -358,6 +394,7 @@ describe('runCritic (issue #136)', () => {
       run: async () => ({ output: '{"verdict":"fail","summary":"the diff drops a null check"}', permissionRequests: [] }),
     };
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: repo,
       verifiedHeadOid: oid,
       fields: FIELDS,

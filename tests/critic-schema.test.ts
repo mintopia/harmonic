@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseCriticOutput } from '../src/verification/critic-schema.js';
+import { appConfigSchema, DEFAULT_PROMPT_FRAGMENTS } from '../src/config.js';
+import { parseCriticOutput, verdictContractError } from '../src/verification/critic-schema.js';
 
 describe('parseCriticOutput (issue #136)', () => {
   it.each(['pass', 'fail', 'inconclusive'] as const)('accepts a valid %s verdict', (verdict) => {
@@ -90,6 +91,33 @@ describe('parseCriticOutput (issue #136)', () => {
     ];
     for (const raw of inputs) {
       expect(() => parseCriticOutput(raw)).not.toThrow();
+    }
+  });
+});
+
+describe('verdict contract save gate', () => {
+  it('accepts the default contract', () => {
+    expect(verdictContractError(DEFAULT_PROMPT_FRAGMENTS.criticVerdictContract)).toBeUndefined();
+  });
+
+  it.each([
+    ['verdict', 'Reply as {"summary":"why"}.'],
+    ['summary', 'Reply as {"verdict":"pass"}.'],
+  ])('rejects a contract that drops the "%s" key, naming it', (key, contract) => {
+    expect(verdictContractError(contract)).toContain(`"${key}"`);
+  });
+
+  it('is enforced by the config schema, so a bad contract cannot be saved or booted', () => {
+    const bad = { ...DEFAULT_PROMPT_FRAGMENTS, criticVerdictContract: 'Say pass or fail.' };
+    expect(appConfigSchema.shape.promptFragments.safeParse(bad).success).toBe(false);
+    expect(appConfigSchema.shape.promptFragments.safeParse(DEFAULT_PROMPT_FRAGMENTS).success).toBe(true);
+  });
+
+  it('still resolves malformed critic output to inconclusive at runtime (ADR-0003 backstop)', () => {
+    for (const output of ['looks good to me', '{"verdict":"pass"}', '{"verdict":"maybe","summary":"x"}']) {
+      const result = parseCriticOutput(output);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.verdict).toBe('inconclusive');
     }
   });
 });

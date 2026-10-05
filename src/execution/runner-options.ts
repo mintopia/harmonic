@@ -88,6 +88,7 @@ export interface RunnerOptions {
         | 'contextReuseTokenLimit'
         | 'taskPrompt'
         | 'pauseMessage'
+        | 'promptFragmentReadOnlyRestraint'
         | 'agentMessagesEnabled'
       > &
         Partial<Pick<WorkspaceRow, 'workingDir'>>)

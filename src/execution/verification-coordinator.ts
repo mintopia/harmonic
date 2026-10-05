@@ -17,7 +17,7 @@ import type { AttemptStore } from '../domain/attempts.js';
 import type { SessionStore } from '../domain/sessions.js';
 import type { TaskService } from '../domain/tasks.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
-import { resolveVerifiers, type ResolvedVerifiers } from '../domain/setting-override.js';
+import { resolvePromptFragments, resolveVerifiers, type ResolvedVerifiers } from '../domain/setting-override.js';
 import { pricesForHarness } from '../domain/pricing.js';
 import { runCommandVerifier, commandAttemptToInput, type CommandSpawn } from '../verification/command-verifier.js';
 import { runCritic, runTimedCriticDrive, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
@@ -55,6 +55,7 @@ type VerifierWorkspace = Pick<
   | 'taskPreMergeCommands' | 'taskPreMergeCritics'
   | 'taskPostMergeCommands' | 'taskPostMergeCritics'
   | 'epicPreMergeCommands' | 'epicPreMergeCritics'
+  | 'promptFragmentReadOnlyRestraint'
 >;
 
 export interface VerificationCoordinatorDeps {
@@ -88,17 +89,18 @@ const DEFAULT_VERIFIER_WORKSPACE: VerifierWorkspace = {
   taskPostMergeCritics: null,
   epicPreMergeCommands: null,
   epicPreMergeCritics: null,
+  promptFragmentReadOnlyRestraint: null,
 };
 
 export class VerificationCoordinator {
   constructor(private readonly deps: VerificationCoordinatorDeps) {}
 
   /** A task's effective verifiers, with the Workspace's own overrides applied over the global defaults. */
-  private async resolveTaskVerifiers(task: TaskRow): Promise<{ config: AppConfig; resolvedTask: ResolvedVerifiers['task'] }> {
+  private async resolveTaskVerifiers(task: TaskRow): Promise<{ config: AppConfig; resolvedTask: ResolvedVerifiers['task']; fragments: AppConfig['promptFragments'] }> {
     const config = this.deps.getConfig();
     const ws = await this.deps.getWorkspace?.(task.workspaceId);
     const { task: resolvedTask } = resolveVerifiers(ws ?? DEFAULT_VERIFIER_WORKSPACE, config);
-    return { config, resolvedTask };
+    return { config, resolvedTask, fragments: resolvePromptFragments(ws ?? DEFAULT_VERIFIER_WORKSPACE, config) };
   }
 
   private buildCriticInput(task: TaskRow, configuredCritic: TaskVerificationCritic): { prompt: string; model: string; harness?: string } {
@@ -241,7 +243,7 @@ export class VerificationCoordinator {
     startAt: 'commands' | 'critics' = 'commands',
   ): Promise<{ decision: VerificationDecision; ran: boolean }> {
     run = await this.deps.attempts.get(run.id);
-    const { config, resolvedTask } = await this.resolveTaskVerifiers(task);
+    const { config, resolvedTask, fragments } = await this.resolveTaskVerifiers(task);
     const { commands, critics } = resolvedTask.preMerge;
 
     const verdicts: VerifierVerdict[] = [];
@@ -311,6 +313,7 @@ export class VerificationCoordinator {
           ...(baseOid ? { baseOid } : {}),
           ...(dirty ? { dirty } : {}),
           critic,
+          fragments,
           timeoutMs: configuredCritic.timeoutSeconds * 1000,
           fields: driveFields(task, this.deps.urlFor),
           harness: criticHarness,
