@@ -314,6 +314,7 @@ CREATE TABLE `tasks` (
 	`wayfinder_type` text,
 	`escalation_reason` text,
 	`merge_status` text,
+	`ticket_close_pending` integer DEFAULT false NOT NULL,
 	`map_ref` text,
 	`base_branch` text,
 	`tracker_state` text,

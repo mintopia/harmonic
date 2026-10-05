@@ -506,6 +506,7 @@ export async function createRuntime(deps: {
     resolveRepository,
     scheduler,
     workStartAllowed: () => upgrade.workStartAllowed(),
+    closeTicket: (task) => autoDrive.retryTicketClose(task),
   });
   trackerManagerRef = trackerManager;
   for (const merged of pendingPostMerge.splice(0)) await postMerge(merged);

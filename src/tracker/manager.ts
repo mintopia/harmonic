@@ -12,7 +12,7 @@ import type { Epic } from '../domain/epic-view.js';
 import type { Ticket, TrackerRef } from './adapter.js';
 import type { FeatureIndex } from './local-markdown.js';
 import { deriveMaps, type DerivedMap } from './mirror.js';
-import { MirrorCoordinator } from './coordinator.js';
+import { MirrorCoordinator, type TicketCloser } from './coordinator.js';
 import { TrackerPoller } from './poller.js';
 import { persistedTickets } from './persisted.js';
 import type { RepositoryAdapter } from '../repository/adapter.js';
@@ -30,6 +30,7 @@ export interface TrackerPollerManagerOptions {
   yieldOptions?: YieldOptions;
   /** Absent means epic reconcile always runs. */
   workStartAllowed?: () => boolean | Promise<boolean>;
+  closeTicket?: TicketCloser;
 }
 
 /** Owns tracker polling, mirroring, and tracker resolution for each enabled Workspace. */
@@ -45,6 +46,7 @@ export class TrackerPollerManager {
   private readonly scheduler: Scheduler | undefined;
   private readonly yieldOptions: YieldOptions | undefined;
   private readonly workStartAllowed: (() => boolean | Promise<boolean>) | undefined;
+  private readonly closeTicket: TicketCloser | undefined;
   readonly sync: () => Promise<void>;
 
   constructor(
@@ -59,6 +61,7 @@ export class TrackerPollerManager {
     this.epicService = options.epicService;
     this.yieldOptions = options.yieldOptions;
     this.workStartAllowed = options.workStartAllowed;
+    this.closeTicket = options.closeTicket;
     // Boot, every workspace POST/PATCH/DELETE, and the workspace watcher all call
     // sync() independently; two overlapping passes both see a not-yet-registered
     // workspace and double-register its Scheduler job. Single-flight it.
@@ -79,7 +82,7 @@ export class TrackerPollerManager {
 
   private startLoop(workspace: WorkspaceRow): void {
     if (this.closed) return;
-    const mirror = new MirrorCoordinator(this.tasks, workspace.id);
+    const mirror = new MirrorCoordinator(this.tasks, workspace.id, this.closeTicket);
     const poller = new TrackerPoller(this.tasks, workspace.id, workspace.workingDir, workspace.trackerPollIntervalSeconds * 1000, (dir) => this.resolveAdapter(dir, (slug) => this.tasks.mdFeatureIndex(workspace.id, slug), workspaceTrackerSettings(workspace)), this.onError, mirror, (resolved) => this.resolved.set(workspace.id, resolved), this.epicService.startWorkspace(workspace), { reconcileOnPoll: this.scheduler === undefined, ...(this.workStartAllowed ? { workStartAllowed: this.workStartAllowed } : {}) });
     const scheduler = this.scheduler;
     if (!scheduler) poller.start();

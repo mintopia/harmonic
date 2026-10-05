@@ -156,4 +156,36 @@ describe('MirrorCoordinator (issue #32)', () => {
     await coord.reconcile();
     expect(calls.release).toEqual(['21', '20']);
   });
+
+  it('reconcile: retries a pending ticket close each poll, clearing the flag on success or ticket-gone', async () => {
+    const ok = await tasks.upsertMirrored(mirrored(11));
+    const gone = await tasks.upsertMirrored(mirrored(12));
+    const flaky = await tasks.upsertMirrored(mirrored(13));
+    const notPending = await tasks.upsertMirrored(mirrored(14));
+    for (const t of [ok, gone, flaky, notPending]) {
+      await tasks.setState(t.id, 'working');
+      await tasks.setState(t.id, 'done');
+    }
+    for (const t of [ok, gone, flaky]) await tasks.setTicketClosePending(t.id, true);
+
+    const attempts: string[] = [];
+    const closer = async (task: { trackerRef: string | null }) => {
+      attempts.push(String(task.trackerRef));
+      if (task.trackerRef === trackerRef(12)) return { ok: false as const, error: new Error('gh: 404 Not Found') };
+      if (task.trackerRef === trackerRef(13)) return { ok: false as const, error: new Error('API rate limit exceeded') };
+      return { ok: true as const };
+    };
+    const coord = new MirrorCoordinator(tasks, wsId, closer);
+    await coord.observe(fakeAdapter().adapter);
+    await coord.reconcile();
+
+    expect(attempts.sort()).toEqual([trackerRef(11), trackerRef(12), trackerRef(13)].map(String).sort());
+    expect((await tasks.get(ok.id)).ticketClosePending).toBe(false);
+    expect((await tasks.get(gone.id)).ticketClosePending).toBe(false);
+    expect((await tasks.get(flaky.id)).ticketClosePending).toBe(true);
+
+    attempts.length = 0;
+    await coord.reconcile();
+    expect(attempts).toEqual([trackerRef(13)]);
+  });
 });

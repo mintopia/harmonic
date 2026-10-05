@@ -102,7 +102,8 @@ export class AutoDrive {
    * only after verify + merge:
    *
    * - **auto-merge** — the Runner has already merged the verified branch, so
-   *   Harmonic closes the ticket. A close that fails Escalates.
+   *   Harmonic closes the ticket. A close that fails still completes (the merge
+   *   succeeded) and is retried each poll — `'completed-close-pending'`.
    * - **open-PR** — open a PR and leave the ticket **open**; the PR's own merge
    *   closes the issue later. A PR that can't be created Escalates. A repo
    *   with no Code Repository adapter degrades to artifact.
@@ -111,7 +112,7 @@ export class AutoDrive {
    * Returns `'completed'` once the fate has merged, or `'escalate'` when it
    * could not be applied.
    */
-  async onCompleted(task: TaskRow, run: AttemptRow): Promise<'completed' | 'escalate'> {
+  async onCompleted(task: TaskRow, run: AttemptRow): Promise<'completed' | 'completed-close-pending' | 'escalate'> {
     const worktree = task.isolationMode === 'worktree';
     const fate = await this.mergeFate(task);
 
@@ -144,7 +145,7 @@ export class AutoDrive {
     }
 
     if (fate === 'auto-merge') {
-      return (await this.closeTicket(task)) ? 'completed' : 'escalate';
+      return (await this.closeTicket(task)) ? 'completed' : 'completed-close-pending';
     }
 
     return 'completed';
@@ -152,7 +153,7 @@ export class AutoDrive {
 
   /**
    * The auto-merge close step, for a path that already merged the branch
-   * elsewhere. Returns whether the close was issued (false ⇒ the caller Escalates).
+   * elsewhere. Returns whether the close was issued.
    */
   async closeCompleted(task: TaskRow): Promise<boolean> {
     return this.closeTicket(task);
@@ -164,14 +165,24 @@ export class AutoDrive {
    * No tracker ref means nothing to close.
    */
   async closeTicket(task: TaskRow, comment = `Completed and merged by Harmonic (task ${task.id}).`): Promise<boolean> {
-    if (task.trackerRef == null) return true;
+    const result = await this.attemptClose(task, comment);
+    if (!result.ok) this.onTicketCloseFailed?.(task, result.error);
+    return result.ok;
+  }
+
+  retryTicketClose(task: TaskRow): Promise<{ ok: true } | { ok: false; error: unknown }> {
+    return this.attemptClose(task, `Completed and merged by Harmonic (task ${task.id}).`);
+  }
+
+  private async attemptClose(task: TaskRow, comment: string): Promise<{ ok: true } | { ok: false; error: unknown }> {
+    if (task.trackerRef == null) return { ok: true };
     try {
       const adapter = await this.resolveAdapter(task.workingDir, undefined, workspaceTrackerSettings(await this.getWorkspace?.(task.workspaceId)));
-      if (!adapter.close) return true;
+      if (!adapter.close) return { ok: true };
       const { title } = splitTitleBody(task.prompt);
       const ref = { ref: task.trackerRef, title, state: 'open' as const };
       // Closing an already-closed issue errors on some trackers (`gh issue close`).
-      if ((await adapter.readTicket(ref)).state === 'closed') return true;
+      if ((await adapter.readTicket(ref)).state === 'closed') return { ok: true };
       let commit: { oid: string; paths: string[] } | null = null;
       if (adapter.persistsInWorkingTree) {
         commit = await this.commitLifecycleWrite(task, ref, () => adapter.close!(ref, comment), comment);
@@ -179,10 +190,9 @@ export class AutoDrive {
         await adapter.close(ref, comment);
       }
       this.onTicketClosed?.(task, commit);
-      return true;
-    } catch (err) {
-      this.onTicketCloseFailed?.(task, err);
-      return false;
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error };
     }
   }
 

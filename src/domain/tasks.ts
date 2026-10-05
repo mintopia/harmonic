@@ -767,6 +767,13 @@ export class TaskService {
     });
   }
 
+  async setTicketClosePending(id: number, pending: boolean): Promise<TaskRow> {
+    const row = await this.db.write((db) =>
+      db.update(tasks).set({ ticketClosePending: pending, updatedAt: Date.now() }).where(eq(tasks.id, id)).returning().get(),
+    );
+    return await this.changed(row!);
+  }
+
   /**
    * Resume an escalated ticket's Attempt loop: back to ready with optional
    * guidance recorded as feedback for the next Attempt. Native Tasks bake it
