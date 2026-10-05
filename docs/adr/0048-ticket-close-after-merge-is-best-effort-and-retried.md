@@ -24,6 +24,12 @@ merged work while the ticket stayed open (ADR-0001, ADR-0038).
 - A close failure after a successful Merge, or on the no-change path, settles
   the Task `done` and sets `tasks.ticket_close_pending`. A close that succeeds
   leaves it false.
+- The operator Accept path is best-effort too. The merge effect runs before the
+  ticket-close effect, so failing the Accept on a later close failure would
+  re-strand already-merged work: the Task stays escalated and the next Accept
+  finds no candidate. The close effect always reports success and sets
+  `ticketClosePending` itself on failure; the failure is
+  flagged pending and retried.
 - A failed open-PR fate still Escalates: nothing has merged.
 - `reconcile()` retries the close for `done` Tasks with the flag set, using the
   adapter it already holds. It clears the flag on success or when the ticket is
