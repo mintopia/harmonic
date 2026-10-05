@@ -603,10 +603,8 @@ export const verificationAttempts = sqliteTable('verification_attempts', {
   output: text('output').notNull(),
   /** Archive-relative key (under the Attempt's archive directory) of the complete, uncapped command output; null when `output` was not truncated, the log was not saved, or for a critic. */
   fullOutputKey: text('full_output_key'),
-  /** The exact prompt sent to the critic for this attempt (`buildCriticPrompt`);
-   * null for the command verifier and pre-feature rows. Persisted so Task
-   * detail's Review tab shows what actually went to the reviewer. */
-  prompt: text('prompt'),
+  /** Archive locator (relative to the Attempt's archive directory) of the critic's Resolved Prompt `prompt.md`; null for the command verifier, a critic run without an Archive, and pre-locator rows. The prompt text lives only in the Archive. */
+  promptKey: text('prompt_key'),
   /** Locator for the critic's native harness transcript; null for the command verifier or a harness with no native JSONL. Server-only. */
   transcriptPath: text('transcript_path'),
   /** The critic harness id that produced {@link transcriptPath}; may differ from the builder's. */

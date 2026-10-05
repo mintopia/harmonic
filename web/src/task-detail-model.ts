@@ -3,7 +3,7 @@
 import { splitPathTail } from './path.js';
 import type { RailSelection } from './router-model.js';
 import { ROOT_AGENT, totalTokens } from './stats-model.js';
-import type { Attempt, AttemptLogEvent, AttemptSummary, Step, StepState, StepType, Task, TaskState, ToolTokenAttribution, VerificationAttempt, VerificationMechanism, VerifierStatus } from './types.js';
+import type { Attempt, AttemptLogEvent, AttemptSummary, Step, StepState, StepType, Task, TaskState, ToolTokenAttribution, VerificationMechanism, VerifierStatus } from './types.js';
 
 /**
  * What the operator has selected in the navigation sidebar, normalised for the
@@ -430,13 +430,6 @@ export function verificationOutputTail(events: readonly AttemptLogEvent[], mecha
   }
   if (!text) return null;
   return text.length > cap ? text.slice(-cap) : text;
-}
-
-/** The critic prompt actually driving the current review — the latest
- * critic-mechanism attempt's, since re-verify turns share one operator prompt
- * across multiple candidate OIDs. */
-export function latestCriticPrompt(verificationAttempts: readonly VerificationAttempt[]): string | null {
-  return verificationAttempts.filter((a) => a.mechanism === 'critic' && a.prompt).at(-1)?.prompt ?? null;
 }
 
 /**

@@ -5219,7 +5219,7 @@
                 "output": {
                   "type": "string"
                 },
-                "prompt": {
+                "promptLocator": {
                   "anyOf": [
                     {
                       "type": "string"
@@ -5256,7 +5256,7 @@
                 "verdict",
                 "summary",
                 "output",
-                "prompt",
+                "promptLocator",
                 "harness",
                 "hasTranscript",
                 "outputTruncated"
@@ -14121,7 +14121,7 @@
                 "output": {
                   "type": "string"
                 },
-                "prompt": {
+                "promptLocator": {
                   "anyOf": [
                     {
                       "type": "string"
@@ -14158,7 +14158,7 @@
                 "verdict",
                 "summary",
                 "output",
-                "prompt",
+                "promptLocator",
                 "harness",
                 "hasTranscript",
                 "outputTruncated"
@@ -20237,7 +20237,7 @@
                             "type": "string",
                             "example": ""
                           },
-                          "prompt": {
+                          "promptLocator": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -20246,7 +20246,7 @@
                                 "type": "null"
                               }
                             ],
-                            "example": null
+                            "example": "verification/pre-merge/12/prompt.md"
                           },
                           "harness": {
                             "anyOf": [
@@ -20278,7 +20278,7 @@
                           "verdict",
                           "summary",
                           "output",
-                          "prompt",
+                          "promptLocator",
                           "harness",
                           "hasTranscript",
                           "outputTruncated"

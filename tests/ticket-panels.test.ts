@@ -60,7 +60,7 @@ describe('ticket panel components (issue #465)', () => {
       verdict: 'pass',
       summary: 'All tests passed.',
       output: '',
-      prompt: null,
+      promptLocator: null,
       harness: null,
       hasTranscript: false,
       outputTruncated: false,

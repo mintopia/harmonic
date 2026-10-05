@@ -19,7 +19,7 @@ import { FilesPage } from '../components/FilesPage';
 import { CodeViewer } from '../components/CodeViewer';
 import { GlobalDashboard } from '../components/GlobalDashboard';
 import { ExtendGuardrailDialog } from '../components/ExtendGuardrailDialog';
-import { Verification } from '../components/ticket/Verification';
+import { CriticSessions, Verification } from '../components/ticket/Verification';
 import { LifecycleTimeline } from '../components/ticket/LifecycleTimeline';
 import { MergeProgress } from '../components/MergeProgress';
 import { EpicIntegrationBar } from '../components/EpicIntegrationBar';
@@ -30,7 +30,7 @@ import { ExportPanel } from '../components/ticket/ExportPanel';
 import type { TaskExportStatus, Workspace } from '../types';
 import { SecretField, IssueTrackerSection, CodeRepositorySection, TriageLabelsSection } from '../components/TrackerSettings';
 import { SettingsSection } from '../components/SettingsSection';
-import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline } from './fixtures';
+import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline, verificationAttempts as storyVerificationAttempts, verifierStatuses } from './fixtures';
 
 const mergedSteps: MergeStepEvent[] = [
   { step: 'started', baseBranch: 'develop', taskBranch: 'task/handoff-10-merge-visibility' },
@@ -149,6 +149,15 @@ function CriticRunningStory() {
   return (
     <StoryFrame style={{ padding: 30, maxWidth: 900 }}>
       <Verification attempts={[]} statuses={runningCritic} run={runs[2]!} only="critic" />
+    </StoryFrame>
+  );
+}
+
+function CriticPromptsStory() {
+  return (
+    <StoryFrame style={{ padding: 30, maxWidth: 900 }}>
+      <Verification attempts={storyVerificationAttempts} statuses={verifierStatuses} run={runs[2]!} only="critic" />
+      <CriticSessions attempts={storyVerificationAttempts} run={runs[2]!} />
     </StoryFrame>
   );
 }
@@ -423,6 +432,8 @@ const STORIES: Record<string, () => JSX.Element> = {
   settings: SettingsStory,
   board: BoardStory,
   'critic-running': CriticRunningStory,
+  'critic-prompts': CriticPromptsStory,
+  'epic-critic-prompt': EpicStory,
   transcript: TranscriptStory,
   timeline: TimelineStory,
   merge: MergeStory,

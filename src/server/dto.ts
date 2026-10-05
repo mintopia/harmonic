@@ -279,15 +279,17 @@ export type ApiEpicAttempt = {
   verificationAttempts: ApiVerificationAttempt[];
 };
 
-export type ApiVerificationAttempt = Omit<VerificationAttemptRow, 'transcriptPath' | 'usage' | 'fullOutputKey'> & {
+export type ApiVerificationAttempt = Omit<VerificationAttemptRow, 'transcriptPath' | 'usage' | 'fullOutputKey' | 'promptKey'> & {
+  /** Archive locator of the Resolved Prompt; read it with `GET /api/attempts/:attemptId/resolved-prompt?locator=`. */
+  promptLocator: string | null;
   hasTranscript: boolean;
   /** The command output was capped; the full text is at `GET /api/verification-attempts/:id/output`. */
   outputTruncated: boolean;
 };
 
 export function verificationAttemptToApi(row: VerificationAttemptRow): ApiVerificationAttempt {
-  const { transcriptPath: _transcriptPath, usage: _usage, fullOutputKey, ...attempt } = row;
-  return { ...attempt, outputTruncated: fullOutputKey !== null, hasTranscript: row.transcriptPath !== null };
+  const { transcriptPath: _transcriptPath, usage: _usage, fullOutputKey, promptKey, ...attempt } = row;
+  return { ...attempt, promptLocator: promptKey, outputTruncated: fullOutputKey !== null, hasTranscript: row.transcriptPath !== null };
 }
 
 function apiAttemptState(state: AttemptState): ApiAttemptSummary['state'] {

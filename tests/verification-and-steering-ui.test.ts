@@ -34,7 +34,7 @@ const commandAttempt: VerificationAttempt = {
   verdict: 'pass',
   summary: 'Command passed.',
   output: 'stdout survives verification completion',
-  prompt: null,
+  promptLocator: null,
   harness: null,
   hasTranscript: false,
   outputTruncated: false,

@@ -359,6 +359,7 @@ export const api = {
     request<{ output: string; summary: string; hasTranscript: boolean }>('GET', `/api/verification-attempts/${id}`),
   verificationOutputUrl: (id: number) => `/api/verification-attempts/${id}/output`,
   verificationFullOutput: (id: number) => requestText(`/api/verification-attempts/${id}/output`),
+  resolvedPrompt: (attemptId: number, locator: string) => requestText(`/api/attempts/${attemptId}/resolved-prompt?locator=${encodeURIComponent(locator)}`),
   criticLog: (attemptId: number) =>
     request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number; fromArchive?: boolean } | { status: 'unavailable'; liveCursor: number }>(
       'GET',

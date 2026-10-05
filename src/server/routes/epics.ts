@@ -143,7 +143,7 @@ const verificationAttemptSchema = z.object({
   verdict: z.enum(['pass', 'fail', 'inconclusive']),
   summary: z.string(),
   output: z.string(),
-  prompt: z.string().nullable(),
+  promptLocator: z.string().nullable(),
   harness: z.string().nullable(),
   hasTranscript: z.boolean(),
   outputTruncated: z.boolean(),

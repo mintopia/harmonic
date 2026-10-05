@@ -338,8 +338,8 @@ const verificationAttemptSchema = z.object({
   summary: z.string().meta({ example: 'all checks passed' }),
   /** Raw verifier output, capped to a head and tail with the elided middle marked. The full text, when kept, is reported by `outputTruncated`. */
   output: z.string().meta({ example: '' }),
-  /** The exact prompt sent to the critic; null for a command verifier. */
-  prompt: z.string().nullable().meta({ example: null }),
+  /** Archive locator of the critic's Resolved Prompt, read with `GET /api/attempts/:attemptId/resolved-prompt?locator=`; null for a command verifier or an older row. */
+  promptLocator: z.string().nullable().meta({ example: 'verification/pre-merge/12/prompt.md' }),
   /** The critic harness that produced the transcript; null for a command verifier or an older row. */
   harness: z.string().nullable().meta({ example: 'claude' }),
   /** Whether a critic transcript is available; fetch the parsed log from `GET /api/verification-attempts/:id/log`. */

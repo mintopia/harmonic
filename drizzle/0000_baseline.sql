@@ -369,7 +369,7 @@ CREATE TABLE `verification_attempts` (
 	`summary` text NOT NULL,
 	`output` text NOT NULL,
 	`full_output_key` text,
-	`prompt` text,
+	`prompt_key` text,
 	`transcript_path` text,
 	`harness` text,
 	`usage` text,

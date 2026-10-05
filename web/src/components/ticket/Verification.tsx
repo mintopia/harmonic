@@ -11,6 +11,7 @@ import { CopyButton, revealOnHover } from '../CopyButton';
 import { Icon } from '../Icon';
 import { Markdown } from '../Markdown';
 import { ChatTranscript } from './ChatTranscript';
+import { PromptSent } from './Description';
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
 
@@ -84,14 +85,33 @@ function CriticSession({ attemptId, label, model, agent }: { attemptId: number; 
   return <ChatTranscript events={events} unavailable={false} model={model} agent={agent} stepLabel={label} fromArchive={fromArchive} />;
 }
 
+function ResolvedPrompt({ attemptId, locator }: { attemptId: number; locator: string }) {
+  const [prompt, setPrompt] = useState<string | null>(null);
+
+  useLiveEffect((live) => {
+    setPrompt(null);
+    api.resolvedPrompt(attemptId, locator).then(
+      (text) => {
+        if (live()) setPrompt(text);
+      },
+      () => undefined,
+    );
+  }, [attemptId, locator]);
+
+  return prompt ? <PromptSent prompt={prompt} label="Review prompt sent" /> : null;
+}
+
 export function CriticSessions({ attempts, run, model }: { attempts: VerificationAttempt[]; run?: AttemptSummary; model?: string }) {
-  const sessions = attempts.filter((a) => a.mechanism === 'critic' && a.hasTranscript);
+  const sessions = attempts.filter((a) => a.mechanism === 'critic' && (a.hasTranscript || a.promptLocator));
   if (sessions.length === 0) return null;
   const criticName = model ?? (run ? criticModel(run) : null) ?? 'critic';
   return (
     <div className="flex flex-col gap-2">
       {sessions.map((c, i) => (
-        <CriticSession key={c.id} attemptId={c.id} model={criticName} agent={c.harness ? harnessLabel(c.harness) : 'Critic'} label={sessions.length > 1 ? `Critic ${i + 1} of ${sessions.length} · ${c.verdict}` : 'Critic'} />
+        <div key={c.id}>
+          {c.promptLocator && <ResolvedPrompt attemptId={c.attemptId} locator={c.promptLocator} />}
+          {c.hasTranscript && <CriticSession attemptId={c.id} model={criticName} agent={c.harness ? harnessLabel(c.harness) : 'Critic'} label={sessions.length > 1 ? `Critic ${i + 1} of ${sessions.length} · ${c.verdict}` : 'Critic'} />}
+        </div>
       ))}
     </div>
   );
