@@ -20422,7 +20422,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "Read a Resolved Prompt from the Task Archive by its Attempt-relative locator (e.g. `verification/pre-merge/<stepId>/prompt.md` or `implementation/prompt.md`), as text/plain. The file is read on demand off the event loop; nothing is stored in the database. 404 when the Attempt or the archived prompt is absent.",
+        "description": "Read a Resolved Prompt from the Task Archive by its Attempt-relative locator (e.g. `verification/pre-merge/<stepId>/prompt.md` or `implementation/prompt.md`), as text/plain. The file is read on demand off the event loop; nothing is stored in the database. With `segments=true` it returns JSON `{ prompts }`, one string per turn, sliced from the step's offset index so prompts containing horizontal rules stay whole (archives written before the index existed fall back to splitting on the separator). 404 when the Attempt or the archived prompt is absent.",
         "parameters": [
           {
             "schema": {
@@ -20433,6 +20433,19 @@
             "name": "locator",
             "required": true,
             "description": "Archive locator of the prompt file, relative to the Attempt directory."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "segments",
+            "required": false,
+            "description": "When `true`, return the prompts of the step as a JSON array instead of the joined text."
           },
           {
             "schema": {
@@ -20448,11 +20461,11 @@
         ],
         "responses": {
           "200": {
-            "description": "The archived prompt text exactly as sent (multiple prompts in one step are separated by a horizontal rule).",
+            "description": "Plain text: the archived prompt exactly as sent, multiple prompts joined by a horizontal rule. With `segments=true`: JSON `{ prompts: string[] }`, one entry per prompt sent.",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "The archived prompt text exactly as sent (multiple prompts in one step are separated by a horizontal rule)."
+                  "description": "Plain text: the archived prompt exactly as sent, multiple prompts joined by a horizontal rule. With `segments=true`: JSON `{ prompts: string[] }`, one entry per prompt sent."
                 }
               }
             }
@@ -39733,6 +39746,165 @@
           },
           "404": {
             "description": "No Workspace has that id, or its last scan derives no Epic with that ref.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspaceId}/epics/{epicRef}/refresh-prompts": {
+      "get": {
+        "tags": [
+          "Epics"
+        ],
+        "description": "List the archived Epic refresh-resolver prompts (the corrective merge-conflict turns), oldest first. Each locator is readable via `GET …/refresh-prompt`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 1
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "example": "42",
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "epicRef",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Archived refresh-resolver prompt locators with their timestamps.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "prompts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "locator": {
+                            "type": "string",
+                            "example": "refresh/1767000000000-ab12cd/prompt.md"
+                          },
+                          "at": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "locator",
+                          "at"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "prompts"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Archived refresh-resolver prompt locators with their timestamps."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Workspace has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspaceId}/epics/{epicRef}/refresh-prompt": {
+      "get": {
+        "tags": [
+          "Epics"
+        ],
+        "description": "Read an archived Epic refresh-resolver prompt by its locator (from `GET …/refresh-prompts`), as text/plain. Read on demand off the event loop. 404 when the Workspace or the archived prompt is absent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "query",
+            "name": "locator",
+            "required": true,
+            "description": "Archive locator, e.g. `refresh/<runId>/prompt.md`."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 1
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "example": "42",
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "epicRef",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The archived prompt text exactly as sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The archived prompt text exactly as sent."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such Workspace, or no archived refresh prompt at the locator.",
             "content": {
               "application/json": {
                 "schema": {

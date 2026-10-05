@@ -48,6 +48,40 @@ describe('GET /api/attempts/:id/resolved-prompt', () => {
     expect((await fetchPrompt(attemptId, 'verification/pre-merge/7/acp.jsonl')).status).toBe(404);
   });
 
+  const fetchSegments = (id: number, loc: string) =>
+    fetch(`${server.baseUrl}/api/attempts/${id}/resolved-prompt?locator=${encodeURIComponent(loc)}&segments=true`, { headers: { cookie: `harmonic_session=${server.sessionToken}` } });
+
+  it('segments=true round-trips prompts that themselves contain the separator and rules', async () => {
+    const taskRow = await server.app.ctx.tasks.get((await server.app.ctx.attempts.get(attemptId)).taskId as number);
+    const prompts = ['Ticket body\n\n---\n\nmore body\n---\nend \u00e9\u4e2d', '\n\n---\n\n', 'steer: use the cache\n\n---\n\n', 'last'];
+    const writer = server.app.ctx.archive.criticStep(taskRow, attemptNumber, 'pre-merge', 'seg');
+    for (const text of prompts) writer.appendPrompt(text);
+    await writer.close();
+    const res = await fetchSegments(attemptId, 'verification/pre-merge/seg/prompt.md');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ prompts });
+    const plain = await fetchPrompt(attemptId, 'verification/pre-merge/seg/prompt.md');
+    expect(await plain.text()).toBe(prompts.join('\n\n---\n\n'));
+  });
+
+  it('segments=true falls back to separator splitting for a legacy archive with no index', async () => {
+    const taskRow = await server.app.ctx.tasks.get((await server.app.ctx.attempts.get(attemptId)).taskId as number);
+    const writer = server.app.ctx.archive.criticStep(taskRow, attemptNumber, 'pre-merge', 'legacy');
+    writer.appendPrompt('one');
+    writer.appendPrompt('two');
+    await writer.close();
+    rmSync(join(await writer.dir, 'prompt.index.jsonl'));
+    const res = await fetchSegments(attemptId, 'verification/pre-merge/legacy/prompt.md');
+    expect(await res.json()).toEqual({ prompts: ['one', 'two'] });
+  });
+
+  it('segments=true 404s for a missing prompt, an unknown attempt, a traversal, and a non-prompt file', async () => {
+    expect((await fetchSegments(attemptId, 'verification/pre-merge/99/prompt.md')).status).toBe(404);
+    expect((await fetchSegments(999_999, locator)).status).toBe(404);
+    expect((await fetchSegments(attemptId, '../../../../../prompt.md')).status).toBe(404);
+    expect((await fetchSegments(attemptId, 'verification/pre-merge/7/prompt.index.jsonl')).status).toBe(404);
+  });
+
   it('yields the event loop between chunks of a large prompt', async () => {
     const taskRow = await server.app.ctx.tasks.get((await server.app.ctx.attempts.get(attemptId)).taskId as number);
     const big = 'x'.repeat(200 * 1024);

@@ -9,6 +9,8 @@ import { tasks as tasksTable, workspaces } from '../src/db/schema.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { readTranscriptLog } from '../src/execution/transcript-log.js';
 import { TaskArchive } from '../src/archive/task-archive.js';
+import { promptTurn } from '../src/execution/turn-completion.js';
+import type { AcpDriver } from '../src/acp/driver.js';
 import { baselineConfig } from '../src/config.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -129,6 +131,35 @@ describe('TaskArchive', () => {
     expect(readFileSync(join(stepDir, 'prompt.md'), 'utf8')).toBe('first\n\n---\n\nsecond');
     const lines = readFileSync(join(stepDir, 'acp.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     expect(lines.map((l) => l.update.n)).toEqual([1, 2]);
+  });
+
+  it('archives every implementation prompt of a multi-turn Attempt (first, steer, continue, commit nudge) in order', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const archive = archiveFor();
+    const driver = { prompt: async () => ({ stopReason: 'end_turn' }) } as unknown as AcpDriver;
+    const turns = ['first prompt', 'steer: use the cache', 'continue the work', 'commit your changes'];
+    for (const text of turns) {
+      const step = archive.implementationStep(task, 1);
+      await promptTurn(driver, text, () => {}, step);
+      await step.close();
+    }
+    const prompt = await archive.readArchivedPrompt(task, 1, 'implementation/prompt.md');
+    expect(prompt).toBe(turns.join('\n\n---\n\n'));
+  });
+
+  it('records one prompt_sent marker per archived prompt, and none without an archive', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const archive = archiveFor();
+    const driver = { prompt: async () => ({ stopReason: 'end_turn' }) } as unknown as AcpDriver;
+    const recorded: unknown[] = [];
+    const step = archive.implementationStep(task, 1);
+    await promptTurn(driver, 'one', (_type, payload) => recorded.push(payload), step);
+    await promptTurn(driver, 'two', (_type, payload) => recorded.push(payload), step);
+    await step.close();
+    expect(recorded).toEqual([{ event: 'prompt_sent' }, { event: 'prompt_sent' }]);
+    const bare: unknown[] = [];
+    await promptTurn(driver, 'three', (_type, payload) => bare.push(payload));
+    expect(bare).toEqual([]);
   });
 
   it('copies the native transcript and subagent files', async () => {

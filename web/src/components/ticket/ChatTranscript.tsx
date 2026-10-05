@@ -2,6 +2,7 @@ import { useMemo, type ReactNode } from 'react';
 import { eventCount } from '../../id-format';
 import { coalesceEvents, coalesceTail } from '../../event-stream-model';
 import { transcriptLanes } from '../../transcript-timeline-model';
+import { placeTurnPrompts, promptSentAnchors } from '../../resolved-prompt-model';
 import { chatRows, type ChatRow, type ChatToolStatus } from '../../attempt-chat-model';
 import type { AttemptLogEvent } from '../../types';
 import { railSectionCount } from '../../ui';
@@ -10,6 +11,7 @@ import { Icon } from '../Icon';
 import { Markdown } from '../Markdown';
 import { DiffViewer } from '../DiffViewer';
 import { toolDiffFile } from '../../tool-diff';
+import { PromptSent } from './Description';
 import { FollowTail } from './FollowTail';
 
 const CAPS = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
@@ -128,6 +130,10 @@ function SubagentLane({ label, rows, model, agent }: { label: string; rows: Chat
   );
 }
 
+function TurnPrompt({ turn, text }: { turn: number; text: string }) {
+  return <PromptSent prompt={text} label={`Prompt sent · turn ${turn}`} className="ml-10" />;
+}
+
 function Row({ row, model, agent }: { row: ChatRow; model: string; agent: string }) {
   switch (row.kind) {
     case 'message':
@@ -160,6 +166,7 @@ export function ChatTranscript({
   agent,
   stepLabel,
   pendingSteers = [],
+  turnPrompts = [],
 }: {
   events: AttemptLogEvent[];
   unavailable: boolean;
@@ -174,8 +181,10 @@ export function ChatTranscript({
   agent: string;
   stepLabel?: string;
   pendingSteers?: readonly PendingSteer[];
+  /** Resolved Prompts for turn 2 onward, shown where each was sent; turn 1's is shown above the transcript. */
+  turnPrompts?: readonly string[];
 }) {
-  const { rows, hidden, lanes } = useMemo(() => {
+  const { rows, hidden, lanes, prompts } = useMemo(() => {
     // Chat the main agent's own turns; each spawned Subagent's turns lane under
     // the Agent/Task card that spawned it, never interleaved as foreign messages.
     const [main, ...subagents] = transcriptLanes(events);
@@ -198,8 +207,13 @@ export function ChatTranscript({
         return false;
       })
       .map((steer): ChatRow => ({ kind: 'message', author: 'operator', text: steer.text, at: steer.at, key: `pending-${steer.id}`, pending: true }));
-    return { rows: [...rows, ...pending], hidden, lanes };
-  }, [events, pendingSteers]);
+    const prompts = placeTurnPrompts(
+      turnPrompts,
+      promptSentAnchors(main?.events ?? []),
+      rows.map((row) => row.key),
+    );
+    return { rows: [...rows, ...pending], hidden, lanes, prompts };
+  }, [events, pendingSteers, turnPrompts]);
   // A lane whose spawning card fell outside the rendered tail still shows, at the end.
   const anchored = new Set(rows.flatMap((row) => (row.kind === 'tool' && row.toolCallId && lanes.has(row.toolCallId) ? [row.toolCallId] : [])));
 
@@ -239,11 +253,17 @@ export function ChatTranscript({
             const lane = row.kind === 'tool' && row.toolCallId ? lanes.get(row.toolCallId) : undefined;
             return (
               <div key={row.key} className="flex flex-col gap-3">
+                {prompts.before.get(row.key)?.map((p) => (
+                  <TurnPrompt key={p.turn} turn={p.turn} text={p.text} />
+                ))}
                 <Row row={row} model={model} agent={agent} />
                 {lane && <SubagentLane label={lane.label} rows={lane.rows} model={model} agent={agent} />}
               </div>
             );
           })}
+          {prompts.trailing.map((p) => (
+            <TurnPrompt key={p.turn} turn={p.turn} text={p.text} />
+          ))}
           {[...lanes].filter(([id]) => !anchored.has(id)).map(([id, lane]) => (
             <SubagentLane key={id} label={lane.label} rows={lane.rows} model={model} agent={agent} />
           ))}

@@ -259,6 +259,50 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
   );
 
   app.get(
+    '/workspaces/:workspaceId/epics/:epicRef/refresh-prompts',
+    {
+      schema: {
+        tags: ['Epics'],
+        description: 'List the archived Epic refresh-resolver prompts (the corrective merge-conflict turns), oldest first. Each locator is readable via `GET …/refresh-prompt`.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: epicParamsSchema,
+        response: {
+          200: z.object({ prompts: z.array(z.object({ locator: z.string().meta({ example: 'refresh/1767000000000-ab12cd/prompt.md' }), at: z.string() })) }).describe('Archived refresh-resolver prompt locators with their timestamps.'),
+          404: errorResponse('No Workspace has that id.'),
+        },
+      },
+    },
+    async (req) => {
+      await ctx.workspaces.assertExists(req.params.workspaceId);
+      return { prompts: await ctx.archive.listEpicRefreshPrompts(req.params.workspaceId, req.params.epicRef) };
+    },
+  );
+
+  app.get(
+    '/workspaces/:workspaceId/epics/:epicRef/refresh-prompt',
+    {
+      schema: {
+        tags: ['Epics'],
+        description:
+          'Read an archived Epic refresh-resolver prompt by its locator (from `GET …/refresh-prompts`), as text/plain. Read on demand off the event loop. 404 when the Workspace or the archived prompt is absent.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: epicParamsSchema,
+        querystring: z.object({ locator: z.string().min(1).describe('Archive locator, e.g. `refresh/<runId>/prompt.md`.') }),
+        response: {
+          200: z.any().describe('The archived prompt text exactly as sent.'),
+          404: errorResponse('No such Workspace, or no archived refresh prompt at the locator.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      await ctx.workspaces.assertExists(req.params.workspaceId);
+      const text = await ctx.archive.readArchivedEpicRefreshPrompt(req.params.workspaceId, req.params.epicRef, req.query.locator);
+      if (text === null) throw new DomainError('not_found', `no archived refresh prompt for epic ${req.params.epicRef} at that locator`);
+      return reply.header('content-type', 'text/plain; charset=utf-8').send(text);
+    },
+  );
+
+  app.get(
     '/workspaces/:workspaceId/epics/:epicRef/attempts',
     {
       schema: {

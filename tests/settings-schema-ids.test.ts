@@ -192,9 +192,12 @@ describe('Settings schema field ids are unique (issue #472)', () => {
     };
     for (const ctx of [globalCtx, workspaceCtx]) {
       const fields = (renderSection(section, ctx).body as { props: { children: unknown[] } }).props.children.flat().filter(Boolean) as { key: string }[];
+      const kebab = (name: string) => name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
       expect(fields.map((f) => f.key)).toEqual([
-        ...PROMPT_FRAGMENT_NAMES.map((name) => `fragment-${name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`),
-        ...(ctx.surface === 'global' ? ['criticRevisionDiff', 'criticRevisionIdentical', 'criticRevisionAlone', 'criticVerdictContract'].map((name) => `fragment-${name}`) : []),
+        ...PROMPT_FRAGMENT_NAMES.map((name) => `fragment-${kebab(name)}`),
+        ...(ctx.surface === 'global'
+          ? ['fragment-criticRevisionDiff', 'fragment-criticRevisionIdentical', 'fragment-criticRevisionAlone', 'fragment-criticVerdictContract']
+          : []),
       ]);
     }
   });

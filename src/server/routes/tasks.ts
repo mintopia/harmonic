@@ -1152,11 +1152,14 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Attempts'],
         description:
-          "Read a Resolved Prompt from the Task Archive by its Attempt-relative locator (e.g. `verification/pre-merge/<stepId>/prompt.md` or `implementation/prompt.md`), as text/plain. The file is read on demand off the event loop; nothing is stored in the database. 404 when the Attempt or the archived prompt is absent.",
+          "Read a Resolved Prompt from the Task Archive by its Attempt-relative locator (e.g. `verification/pre-merge/<stepId>/prompt.md` or `implementation/prompt.md`), as text/plain. The file is read on demand off the event loop; nothing is stored in the database. With `segments=true` it returns JSON `{ prompts }`, one string per turn, sliced from the step's offset index so prompts containing horizontal rules stay whole (archives written before the index existed fall back to splitting on the separator). 404 when the Attempt or the archived prompt is absent.",
         params: idParamsSchema,
-        querystring: z.object({ locator: z.string().min(1).describe('Archive locator of the prompt file, relative to the Attempt directory.') }),
+        querystring: z.object({
+          locator: z.string().min(1).describe('Archive locator of the prompt file, relative to the Attempt directory.'),
+          segments: z.enum(['true', 'false']).optional().describe('When `true`, return the prompts of the step as a JSON array instead of the joined text.'),
+        }),
         response: {
-          200: z.any().describe('The archived prompt text exactly as sent (multiple prompts in one step are separated by a horizontal rule).'),
+          200: z.any().describe('Plain text: the archived prompt exactly as sent, multiple prompts joined by a horizontal rule. With `segments=true`: JSON `{ prompts: string[] }`, one entry per prompt sent.'),
           404: errorResponse('No such Attempt, or no archived Resolved Prompt at the locator.'),
         },
       },
@@ -1164,6 +1167,11 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req, reply) => {
       const run = await ctx.attempts.get(req.params.id).catch(() => null);
       const owner = run ? await archiveOwner(run) : null;
+      if (req.query.segments === 'true') {
+        const prompts = run && owner ? await ctx.archive.readArchivedPromptSegments(owner, run.number, req.query.locator) : null;
+        if (prompts === null) throw new DomainError('not_found', `no archived resolved prompt for attempt ${req.params.id} at that locator`);
+        return { prompts };
+      }
       const text = run && owner ? await ctx.archive.readArchivedPrompt(owner, run.number, req.query.locator) : null;
       if (text === null) throw new DomainError('not_found', `no archived resolved prompt for attempt ${req.params.id} at that locator`);
       return reply.header('content-type', 'text/plain; charset=utf-8').send(text);

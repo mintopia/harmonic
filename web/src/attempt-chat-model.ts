@@ -42,6 +42,7 @@ function eventRow(item: Extract<StreamItem<AttemptLogEvent>, { kind: 'event' }>)
     return { kind: 'note', label: 'Interrupted', text: null, key: item.key };
   }
   const payload = item.event.payload as { event?: unknown; text?: unknown } | null;
+  if (payload?.event === 'prompt_sent') return null;
   const label = typeof payload?.event === 'string' ? payload.event : item.event.type;
   const text = typeof payload?.text === 'string' && payload.text.trim() ? payload.text : null;
   if (!text && label === item.event.type) return null;

@@ -14,6 +14,7 @@ import { Runner } from '../src/execution/runner.js';
 import { TrackerEpicService } from '../src/tracker/epic-service.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
 import { type Ticket, trackerRef, type TrackerRef } from '../src/tracker/adapter.js';
+import { TaskArchive } from '../src/archive/task-archive.js';
 import type { CriticDriveRequest } from '../src/verification/critic.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { executionPlumbing, allWorkspaces, makeSettingsStore, waitFor, seedWorkspace } from './helpers.js';
@@ -209,9 +210,10 @@ describe('epic refresh corrective turn (issue #315)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  function makeRunner(drive: (req: CriticDriveRequest) => Promise<void>): Runner {
+  function makeRunner(drive: (req: CriticDriveRequest) => Promise<void>, archive?: TaskArchive): Runner {
     return new Runner(tasks, asyncDb, () => baselineConfig(), {
       ...executionPlumbing(),
+      archive,
       worktreesDir: join(dir, 'worktrees'),
       criticDrive: {
         run: async (req) => {
@@ -260,7 +262,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     const target = { ref: trackerRef(5), repoDir: repo, defaultBranch: 'develop' };
     const coordinator: EpicRefresh = new EpicRefresh({
       dispatchResolve: (t, detail) =>
-        runner.enqueueEpicRefreshResolution(t, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
+        runner.enqueueEpicRefreshResolution({ ...t, workspaceId: 1 }, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
           const outcome = await coordinator.refresh(t);
           retryOutcomes.push(outcome);
           return outcome;
@@ -280,6 +282,34 @@ describe('epic refresh corrective turn (issue #315)', () => {
     await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'refreshed' });
   });
 
+  it('archives the corrective turn prompt under the Epic and serves it by locator', async () => {
+    const archive = new TaskArchive({ dataDir: join(dir, 'data'), ensureArchiveId: (id) => tasks.ensureArchiveId(id), workspaceName: async () => 'ws' });
+    let prompt = '';
+    const runner = makeRunner(async (req) => {
+      prompt = req.prompt;
+      git(req.cwd, 'checkout', '--theirs', '.');
+      git(req.cwd, 'add', '-A');
+      git(req.cwd, 'commit', '--no-edit');
+    }, archive);
+    await runningMember('epic/5');
+    git(repo, 'checkout', '--detach');
+    const retried: EpicRefreshOutcome[] = [];
+    const coordinator: EpicRefresh = new EpicRefresh({
+      dispatchResolve: (t, detail) =>
+        runner.enqueueEpicRefreshResolution({ ...t, workspaceId: 1 }, detail, () => {}, async () => {
+          retried.push(await coordinator.refresh(t));
+        }),
+      escalate: () => {},
+    });
+    await coordinator.refresh({ ref: trackerRef(5), repoDir: repo, defaultBranch: 'develop' });
+    await waitFor(async () => retried.length === 1);
+
+    const listed = await archive.listEpicRefreshPrompts(1, trackerRef(5));
+    expect(listed).toHaveLength(1);
+    expect(listed[0]!.locator).toMatch(/^refresh\/[^/]+\/prompt\.md$/);
+    expect(await archive.readArchivedEpicRefreshPrompt(1, trackerRef(5), listed[0]!.locator)).toBe(prompt);
+  });
+
   it('an unresolved corrective turn re-conflicts and escalates, leaving no worktree and no stranded flag', async () => {
     const escalations: string[] = [];
     const retryOutcomes: EpicRefreshOutcome[] = [];
@@ -291,7 +321,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     const target = { ref: trackerRef(5), repoDir: repo, defaultBranch: 'develop' };
     const coordinator: EpicRefresh = new EpicRefresh({
       dispatchResolve: (t, detail) =>
-        runner.enqueueEpicRefreshResolution(t, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
+        runner.enqueueEpicRefreshResolution({ ...t, workspaceId: 1 }, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
           const outcome = await coordinator.refresh(t);
           retryOutcomes.push(outcome);
           return outcome;
@@ -315,7 +345,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     await runningMember('epic/9');
 
     const outcome = await runner.enqueueEpicRefreshResolution(
-      { ref: trackerRef(9), repoDir: repo, defaultBranch: 'develop' },
+      { ref: trackerRef(9), repoDir: repo, defaultBranch: 'develop', workspaceId: 1 },
       'both changed shared.txt',
       () => {},
       async () => {
@@ -344,7 +374,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     const target = { ref: trackerRef(5), repoDir: repo, defaultBranch: 'develop' };
     const coordinator: EpicRefresh = new EpicRefresh({
       dispatchResolve: (t, detail) =>
-        runner.enqueueEpicRefreshResolution(t, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
+        runner.enqueueEpicRefreshResolution({ ...t, workspaceId: 1 }, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
           const outcome = await coordinator.refresh(t);
           retryOutcomes.push(outcome);
           return outcome;

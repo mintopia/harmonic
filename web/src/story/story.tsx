@@ -6,6 +6,7 @@ import '../index.css';
 import { GlobalVerificationSettings } from '../components/VerificationSettings';
 import { TicketPage } from '../components/TicketPage';
 import { ChatTranscript } from '../components/ticket/ChatTranscript';
+import { PromptSent } from '../components/ticket/Description';
 import type { AttemptLogEvent, VerifierStatus } from '../types';
 import { EpicPage } from '../components/EpicPage';
 import { StatsPage } from '../components/StatsPage';
@@ -178,6 +179,44 @@ function TranscriptStory() {
   return (
     <StoryFrame style={{ padding: 30, maxWidth: 760, margin: '0 auto' }}>
       <ChatTranscript events={codexEvents} unavailable={false} model="gpt-5.6-sol" agent="Codex" stepLabel="Implement" />
+    </StoryFrame>
+  );
+}
+
+function MultiTurnStory() {
+  const ev = (i: number, payload: AttemptLogEvent['payload'], type = 'session_update'): AttemptLogEvent => ({ id: i, seq: i, ts: 1_756_000_000_000 + i * 1000, type: type as 'session_update', payload });
+  const lifecycle = (i: number, event: string, extra: Record<string, unknown> = {}) => ev(i, { sessionUpdate: '', event, ...extra } as AttemptLogEvent['payload'], 'lifecycle');
+  const say = (i: number, text: string) => ev(i, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } });
+  const events: AttemptLogEvent[] = [
+    lifecycle(1, 'prompt_sent'),
+    say(2, 'Implemented the change; tests still to run.'),
+    ev(3, { sessionUpdate: 'tool_call', toolCallId: 'a', title: 'Edit src/widget.ts', status: 'completed' }),
+    lifecycle(4, 'steer_delivered', { text: 'Use the existing cache helper.' }),
+    lifecycle(5, 'prompt_sent'),
+    say(6, 'Switched to the cache helper.'),
+    lifecycle(7, 'continue', { attempt: 1 }),
+    lifecycle(8, 'prompt_sent'),
+    say(9, 'Ran the tests; they pass. Changes are not committed yet.'),
+    lifecycle(10, 'finished', { stopReason: 'end_turn' }),
+    lifecycle(11, 'commit-nudge'),
+    lifecycle(12, 'prompt_sent'),
+    say(13, 'Committed the work.'),
+  ];
+  return (
+    <StoryFrame style={{ padding: 30, maxWidth: 760, margin: '0 auto' }}>
+      <PromptSent prompt={"Implement #801: render each turn's Resolved Prompt inline.\n\n---\n\nAcceptance: every turn's prompt renders whole, even when the ticket body contains a rule."} />
+      <ChatTranscript
+        events={events}
+        unavailable={false}
+        model="claude-sonnet-4-6"
+        agent="Claude"
+        stepLabel="Implementation"
+        turnPrompts={[
+          'Use the existing cache helper.',
+          'Continue: run the tests, then commit.',
+          'Your implementation left uncommitted changes. Commit the completed work now, then finish.',
+        ]}
+      />
     </StoryFrame>
   );
 }
@@ -435,6 +474,7 @@ const STORIES: Record<string, () => JSX.Element> = {
   'critic-prompts': CriticPromptsStory,
   'epic-critic-prompt': EpicStory,
   transcript: TranscriptStory,
+  'multi-turn': MultiTurnStory,
   timeline: TimelineStory,
   merge: MergeStory,
   compose: ComposeStory,

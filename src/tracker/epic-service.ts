@@ -20,7 +20,7 @@ import {
   reduceMemberState,
   type EpicIntegrateOutcome,
   type EpicRefreshResolveDispatchOutcome,
-  type EpicRefreshTarget,
+  type EpicRefreshResolveTarget,
   type EpicResolve,
 } from '../execution/epic-coordinator.js';
 import type { MemberMergeState } from '../domain/epic-integrate-decision.js';
@@ -96,7 +96,7 @@ export interface TrackerEpicServiceOptions {
   onError?: (message: string) => void;
   operations?: EpicOperations;
   dispatchRefreshResolution?: (
-    target: EpicRefreshTarget,
+    target: EpicRefreshResolveTarget,
     detail: string,
     escalate: (epicRef: TrackerRef, reason: string) => void,
     retry: () => Promise<unknown>,
@@ -121,7 +121,7 @@ export class TrackerEpicService implements EpicService {
   private readonly integration: TrackerEpicServiceOptions['integration'];
   private readonly operations: EpicOperations;
   private readonly dispatchRefreshResolution: (
-    target: EpicRefreshTarget,
+    target: EpicRefreshResolveTarget,
     detail: string,
     escalate: (epicRef: TrackerRef, reason: string) => void,
     retry: () => Promise<unknown>,
@@ -240,7 +240,7 @@ export class TrackerEpicService implements EpicService {
       else logger.debug(`epic ${ref} integration refresh behind develop (retrying): ${reason}`);
     };
     const refresh = new EpicRefresh({
-      dispatchResolve: (target, detail) => this.dispatchRefreshResolution(target, detail, noteRefreshBehind, () => refresh.refresh(target)),
+      dispatchResolve: (target, detail) => this.dispatchRefreshResolution({ ...target, workspaceId: workspace.id }, detail, noteRefreshBehind, () => refresh.refresh(target)),
       escalate: noteRefreshBehind,
     });
     epics.attachRefreshTrigger(refresh);
