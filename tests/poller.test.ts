@@ -59,6 +59,24 @@ function stubAdapter(tickets: Ticket[]) {
   return { adapter, scans: () => scans };
 }
 
+function openOnlyAdapter(open: Ticket[], byRef: Record<string, Ticket>) {
+  const reads: string[] = [];
+  const adapter: TrackerAdapter = {
+    name: 'stub',
+    scansOpenOnly: true,
+    scan: async () => open,
+    readTicket: async (r) => {
+      reads.push(r.ref);
+      return byRef[r.ref]!;
+    },
+    claim: async () => {},
+    release: async () => {},
+    close: async () => {},
+    reopen: async () => {},
+  };
+  return { adapter, reads };
+}
+
 describe('TrackerPoller.poll', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
@@ -93,6 +111,38 @@ describe('TrackerPoller.poll', () => {
     expect(scans()).toBe(1);
     expect(await tasks.list()).toHaveLength(1);
     expect((await tasks.list())[0]).toMatchObject({ origin: 'mirrored', trackerRef: '42', state: 'ready', workspaceId: wsId });
+  });
+
+  it('settles a mirrored Task whose ticket left the open scan because it was closed', async () => {
+    const t42 = ticket({ ref: trackerRef(42), labels: ['ready-for-agent'] });
+    const open = [t42];
+    const { adapter, reads } = openOnlyAdapter(open, { '42': { ...t42, state: 'closed' } });
+    const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
+    await poller.poll();
+    expect((await tasks.list())[0]).toMatchObject({ trackerRef: '42', state: 'ready' });
+
+    open.length = 0;
+    await poller.poll();
+    expect((await tasks.list())[0]).toMatchObject({ trackerRef: '42', state: 'done' });
+    expect(reads).toEqual(['42']);
+
+    await poller.poll();
+    expect(reads).toEqual(['42']);
+  });
+
+  it('resolves a closed parent absent from the open scan once, keeping the Epic container', async () => {
+    const epic = ticket({ ref: trackerRef(10), title: 'Closed epic', state: 'closed', labels: ['epic'] });
+    const child = ticket({ ref: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] });
+    const { adapter, reads } = openOnlyAdapter([child], { '10': epic });
+    const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
+
+    await poller.poll();
+    await poller.poll();
+
+    expect(reads).toEqual(['10']);
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual(['10']);
+    expect((await tasks.list())[0]).toMatchObject({ trackerRef: '11', mapRef: '10' });
+    expect(poller.urlFor(trackerRef(10))).toBe(epic.url);
   });
 
   it('records each poll and its mirror work as linked Operations (issue #288)', async () => {
