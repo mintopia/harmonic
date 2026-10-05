@@ -94,6 +94,7 @@ export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): Writ
 
   return {
     name: 'github',
+    scansOpenOnly: true,
 
     async identify() {
       return (await run(['api', 'user', '--jq', '.login'], repoRoot)).trim();
@@ -104,7 +105,7 @@ export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): Writ
         'issue',
         'list',
         '--state',
-        'all',
+        'open',
         '--limit',
         String(SCAN_SAFETY_VALVE),
         '--json',

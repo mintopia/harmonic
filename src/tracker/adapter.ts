@@ -66,7 +66,9 @@ export interface TrackerAdapter {
    * so the caller must commit the returned {@link TrackerLifecycleWrite.changedPaths}
    * onto the base branch. Remote trackers omit it. */
   readonly persistsInWorkingTree?: boolean;
-  /** Whole tracker, one read. Poll = call on an interval; frontier/board derive from the array. */
+  /** True when {@link scan} returns only open tickets; the poller then reads closed refs it still needs (mirrored Tasks, parents) via {@link readTicket}. */
+  readonly scansOpenOnly?: boolean;
+  /** Whole tracker, one read (open tickets only when {@link scansOpenOnly}). Poll = call on an interval; frontier/board derive from the array. */
   scan(): Promise<Ticket[]>;
   /** The authenticated identity the tracker acts as; throws when credentials are missing or rejected. A tracker without identity omits this. */
   identify?(): Promise<string>;
