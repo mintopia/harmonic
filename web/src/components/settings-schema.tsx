@@ -8,8 +8,10 @@ import {
   TASK_ID_PLACEHOLDER,
   TASK_PLACEHOLDERS,
   compileDrivePreview,
+  compileFragmentPreview,
   compileTaskIdPreview,
   compileTaskPreview,
+  fragmentPlaceholders,
   type LabeledPreview,
   type Placeholder,
 } from '../prompt-preview-model';
@@ -26,6 +28,7 @@ import { PermissionRules } from './PermissionRules';
 import { SecuritySection } from './SecuritySection';
 import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection } from './ArchiveExportSettings';
 import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './VerificationSettings';
+import { PROMPT_FRAGMENTS, PROMPT_FRAGMENT_NAMES, promptFragmentOverrideKey } from '../../../src/domain/prompt-fragments.js';
 import { settingsRegistry, type SettingKey, type SettingTab } from '../../../src/domain/settings-registry.js';
 import { WORKSPACE_COLORS } from '../../../src/domain/workspace-colors.js';
 
@@ -692,32 +695,43 @@ const continuePromptField = prompt(
 );
 
 
-const readOnlyRestraintField = prompt(
-  'fragment-read-only-restraint',
-  {
-    id: 'settings-fragment-read-only-restraint',
-    label: 'Read-only restraint',
-    description: 'Referenced from prompts as {fragment.readOnlyRestraint}; defined once, never copied.',
-    errorKey: 'promptFragments.readOnlyRestraint',
-    get: (c) => c.promptFragments.readOnlyRestraint,
-    set: (c, v) => ({ ...c, promptFragments: { ...c.promptFragments, readOnlyRestraint: v } }),
-    placeholders: DRIVE_PLACEHOLDERS,
-    compile: compileDrivePreview,
-    textareaClass: `${field} min-h-24`,
-  },
-  {
-    key: 'promptFragmentReadOnlyRestraint',
-    id: 'workspace-fragment-read-only-restraint',
-    errorKey: 'promptFragmentReadOnlyRestraint',
-    description: 'Referenced from prompts as {fragment.readOnlyRestraint}; defined once, never copied.',
-    get: (w) => w.promptFragmentReadOnlyRestraint,
-    set: (w, v) => ({ ...w, promptFragmentReadOnlyRestraint: v }),
-    inherited: (c) => c.promptFragments.readOnlyRestraint,
-    placeholders: DRIVE_PLACEHOLDERS,
-    compile: compileDrivePreview,
-    textareaClass: `${field} min-h-24`,
-  },
-);
+const kebab = (name: string): string => name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+
+const promptFragmentFields = PROMPT_FRAGMENT_NAMES.map((name) => {
+  const spec = PROMPT_FRAGMENTS[name];
+  const required = spec.required.map((token) => `{${token}}`).join(' ');
+  const description = `${spec.help}${required ? ` Must keep ${required}.` : ''}`;
+  const key = promptFragmentOverrideKey(name);
+  const placeholders = fragmentPlaceholders(name);
+  const compile = compileFragmentPreview(name);
+  const textareaClass = `${field} min-h-24`;
+  return prompt(
+    `fragment-${kebab(name)}`,
+    {
+      id: `settings-fragment-${kebab(name)}`,
+      label: spec.label,
+      description,
+      errorKey: `promptFragments.${name}`,
+      get: (c) => c.promptFragments[name],
+      set: (c, v) => ({ ...c, promptFragments: { ...c.promptFragments, [name]: v } }),
+      placeholders,
+      compile,
+      textareaClass,
+    },
+    {
+      key,
+      id: `workspace-fragment-${kebab(name)}`,
+      errorKey: key,
+      description,
+      get: (w) => w[key],
+      set: (w, v) => ({ ...w, [key]: v }),
+      inherited: (c) => c.promptFragments[name],
+      placeholders,
+      compile,
+      textareaClass,
+    },
+  );
+});
 
 const guardrailScalarFields: OverridableDescriptor[] = [
   {
@@ -1246,7 +1260,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
       workspace:
         'Named pieces of prompt text shared across prompts. Each inherits the global fragment until overridden.',
     },
-    body: (ctx) => renderField(readOnlyRestraintField, ctx),
+    body: (ctx) => <div className="flex flex-col gap-4">{promptFragmentFields.map((f) => renderField(f, ctx))}</div>,
   },
 
   {

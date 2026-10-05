@@ -6480,6 +6480,105 @@
             ],
             "example": null
           },
+          "promptFragmentOperatorMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentSelfHeal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPeerMessages": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPeerMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPeerLine": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPeerLiveMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentRebaseConflict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPriorSession": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCodeIndexGuidance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "exportEnabled": {
             "anyOf": [
               {
@@ -6775,6 +6874,15 @@
           "driveContinueAttempts",
           "taskPrompt",
           "promptFragmentReadOnlyRestraint",
+          "promptFragmentOperatorMessage",
+          "promptFragmentSelfHeal",
+          "promptFragmentPeerMessages",
+          "promptFragmentPeerMessage",
+          "promptFragmentPeerLine",
+          "promptFragmentPeerLiveMessage",
+          "promptFragmentRebaseConflict",
+          "promptFragmentPriorSession",
+          "promptFragmentCodeIndexGuidance",
           "exportEnabled",
           "exportDirectoryPath",
           "exportS3Endpoint",
@@ -7345,7 +7453,52 @@
               "readOnlyRestraint": {
                 "type": "string",
                 "minLength": 1,
-                "example": "You are acting in a READ-ONLY role…"
+                "example": "Read-only restraint"
+              },
+              "operatorMessage": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Operator message"
+              },
+              "selfHeal": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Self-heal"
+              },
+              "peerMessages": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Peer messages section"
+              },
+              "peerMessage": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Peer message entry"
+              },
+              "peerLine": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Peer line"
+              },
+              "peerLiveMessage": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Live peer message"
+              },
+              "rebaseConflict": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Rebase conflict"
+              },
+              "priorSession": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Prior session"
+              },
+              "codeIndexGuidance": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Code index guidance"
               }
             }
           },
@@ -15245,6 +15398,105 @@
             ],
             "example": null
           },
+          "promptFragmentOperatorMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentSelfHeal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPeerMessages": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPeerMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPeerLine": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPeerLiveMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentRebaseConflict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentPriorSession": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCodeIndexGuidance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "exportEnabled": {
             "anyOf": [
               {
@@ -15541,6 +15793,15 @@
           "driveContinueAttempts",
           "taskPrompt",
           "promptFragmentReadOnlyRestraint",
+          "promptFragmentOperatorMessage",
+          "promptFragmentSelfHeal",
+          "promptFragmentPeerMessages",
+          "promptFragmentPeerMessage",
+          "promptFragmentPeerLine",
+          "promptFragmentPeerLiveMessage",
+          "promptFragmentRebaseConflict",
+          "promptFragmentPriorSession",
+          "promptFragmentCodeIndexGuidance",
           "exportEnabled",
           "exportDirectoryPath",
           "exportS3Endpoint",
@@ -16125,7 +16386,52 @@
               "readOnlyRestraint": {
                 "type": "string",
                 "minLength": 1,
-                "example": "You are acting in a READ-ONLY role…"
+                "example": "Read-only restraint"
+              },
+              "operatorMessage": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Operator message"
+              },
+              "selfHeal": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Self-heal"
+              },
+              "peerMessages": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Peer messages section"
+              },
+              "peerMessage": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Peer message entry"
+              },
+              "peerLine": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Peer line"
+              },
+              "peerLiveMessage": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Live peer message"
+              },
+              "rebaseConflict": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Rebase conflict"
+              },
+              "priorSession": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Prior session"
+              },
+              "codeIndexGuidance": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Code index guidance"
               }
             },
             "additionalProperties": false
@@ -22320,7 +22626,116 @@
                     "anyOf": [
                       {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "example": "Read-only restraint"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentOperatorMessage": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Operator message"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentSelfHeal": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Self-heal"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentPeerMessages": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Peer messages section"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentPeerMessage": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Peer message entry"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentPeerLine": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Peer line"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentPeerLiveMessage": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Live peer message"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentRebaseConflict": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Rebase conflict"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentPriorSession": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Prior session"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentCodeIndexGuidance": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Code index guidance"
                       },
                       {
                         "type": "null"
@@ -24252,11 +24667,65 @@
                         "readOnlyRestraint": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                          "example": "Read-only restraint"
+                        },
+                        "operatorMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Operator message"
+                        },
+                        "selfHeal": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Self-heal"
+                        },
+                        "peerMessages": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer messages section"
+                        },
+                        "peerMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer message entry"
+                        },
+                        "peerLine": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer line"
+                        },
+                        "peerLiveMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Live peer message"
+                        },
+                        "rebaseConflict": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Rebase conflict"
+                        },
+                        "priorSession": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Prior session"
+                        },
+                        "codeIndexGuidance": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Code index guidance"
                         }
                       },
                       "required": [
-                        "readOnlyRestraint"
+                        "readOnlyRestraint",
+                        "operatorMessage",
+                        "selfHeal",
+                        "peerMessages",
+                        "peerMessage",
+                        "peerLine",
+                        "peerLiveMessage",
+                        "rebaseConflict",
+                        "priorSession",
+                        "codeIndexGuidance"
                       ],
                       "additionalProperties": false
                     },
@@ -25402,11 +25871,65 @@
                         "readOnlyRestraint": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                          "example": "Read-only restraint"
+                        },
+                        "operatorMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Operator message"
+                        },
+                        "selfHeal": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Self-heal"
+                        },
+                        "peerMessages": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer messages section"
+                        },
+                        "peerMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer message entry"
+                        },
+                        "peerLine": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer line"
+                        },
+                        "peerLiveMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Live peer message"
+                        },
+                        "rebaseConflict": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Rebase conflict"
+                        },
+                        "priorSession": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Prior session"
+                        },
+                        "codeIndexGuidance": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Code index guidance"
                         }
                       },
                       "required": [
-                        "readOnlyRestraint"
+                        "readOnlyRestraint",
+                        "operatorMessage",
+                        "selfHeal",
+                        "peerMessages",
+                        "peerMessage",
+                        "peerLine",
+                        "peerLiveMessage",
+                        "rebaseConflict",
+                        "priorSession",
+                        "codeIndexGuidance"
                       ],
                       "additionalProperties": false
                     },
@@ -26524,11 +27047,65 @@
                       "readOnlyRestraint": {
                         "type": "string",
                         "minLength": 1,
-                        "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                        "example": "Read-only restraint"
+                      },
+                      "operatorMessage": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Operator message"
+                      },
+                      "selfHeal": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Self-heal"
+                      },
+                      "peerMessages": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Peer messages section"
+                      },
+                      "peerMessage": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Peer message entry"
+                      },
+                      "peerLine": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Peer line"
+                      },
+                      "peerLiveMessage": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Live peer message"
+                      },
+                      "rebaseConflict": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Rebase conflict"
+                      },
+                      "priorSession": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Prior session"
+                      },
+                      "codeIndexGuidance": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Code index guidance"
                       }
                     },
                     "required": [
-                      "readOnlyRestraint"
+                      "readOnlyRestraint",
+                      "operatorMessage",
+                      "selfHeal",
+                      "peerMessages",
+                      "peerMessage",
+                      "peerLine",
+                      "peerLiveMessage",
+                      "rebaseConflict",
+                      "priorSession",
+                      "codeIndexGuidance"
                     ]
                   },
                   "conversationIdleTimeoutMinutes": {
@@ -27606,11 +28183,65 @@
                         "readOnlyRestraint": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                          "example": "Read-only restraint"
+                        },
+                        "operatorMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Operator message"
+                        },
+                        "selfHeal": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Self-heal"
+                        },
+                        "peerMessages": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer messages section"
+                        },
+                        "peerMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer message entry"
+                        },
+                        "peerLine": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer line"
+                        },
+                        "peerLiveMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Live peer message"
+                        },
+                        "rebaseConflict": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Rebase conflict"
+                        },
+                        "priorSession": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Prior session"
+                        },
+                        "codeIndexGuidance": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Code index guidance"
                         }
                       },
                       "required": [
-                        "readOnlyRestraint"
+                        "readOnlyRestraint",
+                        "operatorMessage",
+                        "selfHeal",
+                        "peerMessages",
+                        "peerMessage",
+                        "peerLine",
+                        "peerLiveMessage",
+                        "rebaseConflict",
+                        "priorSession",
+                        "codeIndexGuidance"
                       ],
                       "additionalProperties": false
                     },
@@ -28751,11 +29382,65 @@
                             "readOnlyRestraint": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                              "example": "Read-only restraint"
+                            },
+                            "operatorMessage": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Operator message"
+                            },
+                            "selfHeal": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Self-heal"
+                            },
+                            "peerMessages": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Peer messages section"
+                            },
+                            "peerMessage": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Peer message entry"
+                            },
+                            "peerLine": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Peer line"
+                            },
+                            "peerLiveMessage": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Live peer message"
+                            },
+                            "rebaseConflict": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Rebase conflict"
+                            },
+                            "priorSession": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Prior session"
+                            },
+                            "codeIndexGuidance": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Code index guidance"
                             }
                           },
                           "required": [
-                            "readOnlyRestraint"
+                            "readOnlyRestraint",
+                            "operatorMessage",
+                            "selfHeal",
+                            "peerMessages",
+                            "peerMessage",
+                            "peerLine",
+                            "peerLiveMessage",
+                            "rebaseConflict",
+                            "priorSession",
+                            "codeIndexGuidance"
                           ],
                           "additionalProperties": false
                         },
@@ -29867,11 +30552,65 @@
                             "readOnlyRestraint": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                              "example": "Read-only restraint"
+                            },
+                            "operatorMessage": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Operator message"
+                            },
+                            "selfHeal": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Self-heal"
+                            },
+                            "peerMessages": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Peer messages section"
+                            },
+                            "peerMessage": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Peer message entry"
+                            },
+                            "peerLine": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Peer line"
+                            },
+                            "peerLiveMessage": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Live peer message"
+                            },
+                            "rebaseConflict": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Rebase conflict"
+                            },
+                            "priorSession": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Prior session"
+                            },
+                            "codeIndexGuidance": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Code index guidance"
                             }
                           },
                           "required": [
-                            "readOnlyRestraint"
+                            "readOnlyRestraint",
+                            "operatorMessage",
+                            "selfHeal",
+                            "peerMessages",
+                            "peerMessage",
+                            "peerLine",
+                            "peerLiveMessage",
+                            "rebaseConflict",
+                            "priorSession",
+                            "codeIndexGuidance"
                           ],
                           "additionalProperties": false
                         },
@@ -31045,11 +31784,65 @@
                         "readOnlyRestraint": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "You are acting in a READ-ONLY role. You MUST NOT edit, create, or delete any file."
+                          "example": "Read-only restraint"
+                        },
+                        "operatorMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Operator message"
+                        },
+                        "selfHeal": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Self-heal"
+                        },
+                        "peerMessages": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer messages section"
+                        },
+                        "peerMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer message entry"
+                        },
+                        "peerLine": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Peer line"
+                        },
+                        "peerLiveMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Live peer message"
+                        },
+                        "rebaseConflict": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Rebase conflict"
+                        },
+                        "priorSession": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Prior session"
+                        },
+                        "codeIndexGuidance": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Code index guidance"
                         }
                       },
                       "required": [
-                        "readOnlyRestraint"
+                        "readOnlyRestraint",
+                        "operatorMessage",
+                        "selfHeal",
+                        "peerMessages",
+                        "peerMessage",
+                        "peerLine",
+                        "peerLiveMessage",
+                        "rebaseConflict",
+                        "priorSession",
+                        "codeIndexGuidance"
                       ],
                       "additionalProperties": false
                     },

@@ -149,6 +149,15 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
       'taskPrompt',
       'pauseMessage',
       'promptFragmentReadOnlyRestraint',
+      'promptFragmentOperatorMessage',
+      'promptFragmentSelfHeal',
+      'promptFragmentPeerMessages',
+      'promptFragmentPeerMessage',
+      'promptFragmentPeerLine',
+      'promptFragmentPeerLiveMessage',
+      'promptFragmentRebaseConflict',
+      'promptFragmentPriorSession',
+      'promptFragmentCodeIndexGuidance',
     ]);
   });
 

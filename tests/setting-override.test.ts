@@ -277,7 +277,7 @@ describe('staged verifier overlays (#523, ADR-0037)', () => {
 });
 
 describe('Prompt Fragments', () => {
-  const config = { promptFragments: { readOnlyRestraint: 'GLOBAL RESTRAINT' } };
+  const config = { promptFragments: { ...DEFAULT_PROMPT_FRAGMENTS, readOnlyRestraint: 'GLOBAL RESTRAINT' } };
 
   it('inherits the global fragment unless the Workspace overrides it', () => {
     expect(resolvePromptFragments({ promptFragmentReadOnlyRestraint: null }, config).readOnlyRestraint).toBe('GLOBAL RESTRAINT');
@@ -295,6 +295,6 @@ describe('Prompt Fragments', () => {
   });
 
   it('rejects an empty fragment at boot', () => {
-    expect(() => appConfigSchema.shape.promptFragments.parse({ readOnlyRestraint: '' })).toThrow();
+    expect(() => appConfigSchema.shape.promptFragments.parse({ ...DEFAULT_PROMPT_FRAGMENTS, readOnlyRestraint: '' })).toThrow();
   });
 });

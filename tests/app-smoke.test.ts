@@ -3,6 +3,8 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../web/src/App.js';
+import { blankPromptFragments } from './prompt-fragment-fixtures.js';
+import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../src/domain/prompt-fragments.js';
 import type { AppConfig, Conversation, UpdateState, Workspace } from '../web/src/types.js';
 
 class IdleWebSocket {
@@ -48,7 +50,7 @@ function makeConfig(): AppConfig {
     contextReuseTokenLimit: 100_000,
     editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
-    promptFragments: { readOnlyRestraint: '' },
+    promptFragments: blankPromptFragments(),
     archive: { retain: { days: null, maxTotalMB: null } },
     export: {
       enabled: false,
@@ -114,7 +116,7 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     driveMergeFate: null,
     driveContinueAttempts: null,
     taskPrompt: null,
-    promptFragmentReadOnlyRestraint: null,
+    ...NO_PROMPT_FRAGMENT_OVERRIDES,
     createdAt: 0,
     updatedAt: 0,
     ...overrides,

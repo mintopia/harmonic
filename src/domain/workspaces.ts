@@ -17,7 +17,8 @@ import {
   type WorkspaceRow,
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
-import { EXPORT_STATES, exportDirectoryPathSchema, exportS3EndpointSchema, redactPatternsSchema } from '../config.js';
+import { PROMPT_FRAGMENT_OVERRIDE_KEYS, type PromptFragmentOverrides } from './prompt-fragments.js';
+import { EXPORT_STATES, exportDirectoryPathSchema, exportS3EndpointSchema, promptFragmentOverrideShape, redactPatternsSchema } from '../config.js';
 import { DomainError } from './errors.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
 import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
@@ -106,8 +107,7 @@ export const workspaceOverridesSchema = z.object({
   /** Task Prompt override; null inherits `config.taskPrompt`. */
   taskPrompt: z.string().min(1).nullable().optional(),
   pauseMessage: z.string().min(1).nullable().optional(),
-  /** Read-only restraint Prompt Fragment override; null inherits `config.promptFragments.readOnlyRestraint`. */
-  promptFragmentReadOnlyRestraint: z.string().min(1).nullable().optional(),
+  ...promptFragmentOverrideShape,
   /** Export-on-terminal toggle override; null inherits `config.export.enabled`. */
   exportEnabled: z.boolean().nullable().optional(),
   /** Export directory override (absolute); null inherits `config.export.directory.path`. */
@@ -167,7 +167,7 @@ export const OVERRIDE_KEYS = [
   'driveContinueAttempts',
   'taskPrompt',
   'pauseMessage',
-  'promptFragmentReadOnlyRestraint',
+  ...PROMPT_FRAGMENT_OVERRIDE_KEYS,
   'exportEnabled',
   'exportDirectoryPath',
   'exportS3Endpoint',
@@ -258,7 +258,7 @@ export class WorkspaceService {
       driveContinueAttempts: o.driveContinueAttempts,
       taskPrompt: o.taskPrompt,
       pauseMessage: o.pauseMessage,
-      promptFragmentReadOnlyRestraint: o.promptFragmentReadOnlyRestraint,
+      ...(Object.fromEntries(PROMPT_FRAGMENT_OVERRIDE_KEYS.map((key) => [key, o[key]])) as PromptFragmentOverrides),
       exportEnabled: o.exportEnabled,
       exportDirectoryPath: o.exportDirectoryPath,
       exportS3Endpoint: o.exportS3Endpoint,

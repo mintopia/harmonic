@@ -2,6 +2,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { DEFAULT_PROMPT_FRAGMENTS } from '../src/config.js';
 import { codeIndexRepoGuidance } from '../src/execution/prompt-template.js';
 import {
   codeIndexAvailable,
@@ -23,11 +24,11 @@ process.exit(0);
 
 describe('codeIndexRepoGuidance (pure prompt fragment)', () => {
   it('renders nothing for an empty repo id', () => {
-    expect(codeIndexRepoGuidance('')).toBe('');
+    expect(codeIndexRepoGuidance('', { ...DEFAULT_PROMPT_FRAGMENTS })).toBe('');
   });
 
   it('names the repo id and forbids resolving the repo by `.`', () => {
-    const block = codeIndexRepoGuidance('local/run-7-abc123');
+    const block = codeIndexRepoGuidance('local/run-7-abc123', { ...DEFAULT_PROMPT_FRAGMENTS });
     expect(block).toContain('local/run-7-abc123');
     expect(block).toMatch(/do not resolve the repo by `\.`/i);
     expect(block).toMatch(/stale code/i);

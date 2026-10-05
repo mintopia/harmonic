@@ -14,6 +14,7 @@ import {
   epicVerificationStageSchema,
   type AppConfig,
   type DeepPartial,
+  promptFragmentsShape,
 } from '../../config.js';
 import { maskConfigSecrets } from '../../archive/export-secrets.js';
 
@@ -113,10 +114,7 @@ const configPatchBodySchema = z
       })
       .partial()
       .optional(),
-    promptFragments: z
-      .object({ readOnlyRestraint: z.string().min(1).meta({ example: 'You are acting in a READ-ONLY role…' }) })
-      .partial()
-      .optional(),
+    promptFragments: z.object(promptFragmentsShape).partial().optional(),
     verify: z
       .object({
         task: z.object({ preMerge: taskVerificationStageSchema, postMerge: taskVerificationStageSchema }).partial(),

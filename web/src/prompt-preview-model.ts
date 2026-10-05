@@ -1,4 +1,5 @@
-import { fillTemplate, type DriveFields } from '../../src/execution/prompt-template.js';
+import { expandFragments, fillTemplate, type DriveFields } from '../../src/execution/prompt-template.js';
+import { PROMPT_FRAGMENTS, type PromptFragmentName } from '../../src/domain/prompt-fragments.js';
 import { buildCriticPrompt } from '../../src/verification/critic-prompt.js';
 import type { AppConfig } from './types';
 
@@ -74,6 +75,19 @@ export const TASK_PLACEHOLDERS: Placeholder[] = [
   { token: '{harness}', desc: 'harness id' },
   { token: '{model}', desc: 'model id' },
 ];
+
+export function fragmentPlaceholders(name: PromptFragmentName): Placeholder[] {
+  const spec = PROMPT_FRAGMENTS[name];
+  const required: readonly string[] = spec.required;
+  return Object.entries<string>(spec.fields).map(([token, desc]) => ({ token: `{${token}}`, desc, core: required.includes(token) }));
+}
+
+export function compileFragmentPreview(name: PromptFragmentName): (template: string, config: Pick<AppConfig, 'promptFragments'>) => string {
+  const samples = Object.fromEntries(
+    Object.entries<string>(PROMPT_FRAGMENTS[name].fields).map(([token, desc]) => [token, token === 'taskId' ? '123' : `[${desc}]`]),
+  );
+  return (template, config) => fillTemplate(expandFragments(template, config.promptFragments), samples);
+}
 
 /** Fill the five Drive tokens with the sample values. */
 export function compileDrivePreview(template: string): string {
