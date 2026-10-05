@@ -627,7 +627,6 @@ describe('epic-routes', () => {
       parent: null,
       blockedBy: [],
       blocking: [],
-      comments: [],
       isMap: false,
       url: `https://x/${over.ref}`,
       ...over,

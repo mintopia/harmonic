@@ -26,12 +26,6 @@ export interface TicketRef {
   state: TicketState;
 }
 
-export interface TicketComment {
-  author: string;
-  body: string;
-  createdAt: string;
-}
-
 /** The tracker-identity fields every tracker record carries; {@link Ticket} and the stored Epic are siblings over this base. */
 export interface TrackerIdentity {
   ref: TrackerRef;
@@ -49,7 +43,6 @@ export interface Ticket extends TrackerIdentity {
   closedAt: string | null;
   assignees: string[];
   blocking: TicketRef[];
-  comments: TicketComment[];
   isMap: boolean;
   url: string;
 }
@@ -79,6 +72,8 @@ export interface TrackerAdapter {
   identify?(): Promise<string>;
   /** Fresh single-ticket read for consumers that need current tracker details. */
   readTicket(ref: TicketRef): Promise<Ticket>;
+  /** Cheap state-only read for the pre-close check; omit to fall back to {@link readTicket}. */
+  readState?(ref: TicketRef): Promise<TicketState>;
   /** Advertise local ownership by assigning the ambient identity. Best-effort; never a lock. */
   claim(ticket: TicketRef): Promise<void>;
   /** Remove the advisory assignment when Harmonic hands the Task back. */

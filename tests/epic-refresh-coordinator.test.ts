@@ -33,7 +33,6 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
   parent: null,
   blockedBy: [],
   blocking: [],
-  comments: [],
   isMap: false,
   url: 'https://github.com/mintopia/harmonic/issues/100',
   ...over,

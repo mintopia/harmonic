@@ -154,7 +154,6 @@ describe('ticket-closed-while-working', () => {
     parent: null,
     blockedBy: [],
     blocking: [],
-    comments: [],
     isMap: false,
     url: 'https://x/7',
     ...over,

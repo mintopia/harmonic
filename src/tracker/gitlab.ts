@@ -55,12 +55,6 @@ interface RawIssue {
   assignees: Array<{ id: number; username: string }>;
   web_url: string;
 }
-interface RawNote {
-  body: string;
-  system: boolean;
-  author: { username: string } | null;
-  created_at: string;
-}
 interface RawUser {
   id: number;
   username: string;
@@ -72,7 +66,7 @@ const state = (s: string): TicketState => (s === 'closed' ? 'closed' : 'open');
 /** Free-tier GitLab has no native Epics, so an `Epic:`-titled issue stands in for one (issue-as-epic convention). */
 const EPIC_TITLE = /^\s*epic\s*:/i;
 
-function normaliseBase(raw: RawIssue): Omit<Ticket, 'parent' | 'blockedBy' | 'blocking' | 'comments'> {
+function normaliseBase(raw: RawIssue): Omit<Ticket, 'parent' | 'blockedBy' | 'blocking'> {
   const rawLabels = raw.labels ?? [];
   const labels =
     EPIC_TITLE.test(raw.title) && !rawLabels.includes(EPIC_LABEL) ? [...rawLabels, EPIC_LABEL] : rawLabels;
@@ -111,7 +105,6 @@ function synthesise(raws: RawIssue[]): Ticket[] {
     parent: p.parent === null ? null : trackerRef(p.parent),
     blockedBy: refs(blockedBy.get(p.raw.iid)!),
     blocking: refs(blocking.get(p.raw.iid)!),
-    comments: [], // ponytail: scan skips per-issue notes (N+1, no scan consumer reads them); readTicket fills them.
   }));
 }
 
@@ -181,13 +174,7 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
     async readTicket(ref: TicketRef) {
       const found = (await scanAll()).find((t) => t.ref === ref.ref);
       if (!found) throw new Error(`GitLab: no issue #${ref.ref} in ${config.project}`);
-      const notes = await api<RawNote[]>(`${proj}/issues/${ref.ref}/notes?per_page=100&sort=asc`);
-      return {
-        ...found,
-        comments: notes
-          .filter((n) => !n.system && n.body)
-          .map((n) => ({ author: n.author?.username ?? '', body: n.body, createdAt: n.created_at })),
-      };
+      return found;
     },
 
     async claim(ticket: TicketRef) {

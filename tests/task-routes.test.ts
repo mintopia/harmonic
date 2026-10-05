@@ -339,7 +339,6 @@ describe('task-list-epics', () => {
       parent: null,
       blockedBy: [],
       blocking: [],
-      comments: [],
       isMap: false,
       url: 'https://tracker/101',
       ...over,

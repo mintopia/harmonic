@@ -25,7 +25,6 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
   parent: null,
   blockedBy: [],
   blocking: [],
-  comments: [],
   isMap: false,
   url: 'https://x/100',
   ...over,

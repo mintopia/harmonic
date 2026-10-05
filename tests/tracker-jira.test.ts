@@ -193,7 +193,6 @@ describe('jira scan', () => {
       assignees: ['J Smith'],
       isMap: true,
       url: 'https://acme.atlassian.net/browse/PROJ-1',
-      comments: [],
       closedAt: null,
     });
     expect(b).toMatchObject({ state: 'closed', closedAt: '2026-01-05T00:00:00Z' });
@@ -260,20 +259,11 @@ describe('jira scan', () => {
 });
 
 describe('jira readTicket', () => {
-  it('reads the issue and its comments', async () => {
-    const f = fake({
-      issues: [issue('PROJ-1')],
-      comments: [
-        { author: { displayName: 'Ann' }, body: 'first', created: '2026-01-02T00:00:00Z' },
-        { author: { name: 'bob' }, body: 'second', created: '2026-01-03T00:00:00Z' },
-      ],
-    });
+  it('reads the issue without fetching comments', async () => {
+    const f = fake({ issues: [issue('PROJ-1')] });
     const t = await make(cloudSettings, f).readTicket(ref('PROJ-1'));
     expect(t.ref).toBe('PROJ-1');
-    expect(t.comments).toEqual([
-      { author: 'Ann', body: 'first', createdAt: '2026-01-02T00:00:00Z' },
-      { author: 'bob', body: 'second', createdAt: '2026-01-03T00:00:00Z' },
-    ]);
+    expect(f.of('/issue/PROJ-1/comment', 'GET')).toHaveLength(0);
   });
 });
 

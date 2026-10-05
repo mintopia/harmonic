@@ -30,7 +30,6 @@ const ghIssue = (number: number, title: string, over: Record<string, unknown> = 
   closedAt: null,
   labels: [],
   assignees: [],
-  comments: [],
   parent: null,
   blockedBy: null,
   blocking: null,

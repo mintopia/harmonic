@@ -66,7 +66,6 @@ function fakeAdapter(ticketState: 'open' | 'closed' = 'open') {
         parent: null,
         blockedBy: [],
         blocking: [],
-        comments: [],
         isMap: false,
         url: `https://x/${ref.ref}`,
       };
@@ -237,7 +236,6 @@ describe('Drive Prompt fill (issue #33)', () => {
         parent: null,
         blockedBy: [],
         blocking: [],
-        comments: [],
         isMap: false,
         url: '',
       }),

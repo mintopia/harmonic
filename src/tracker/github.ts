@@ -14,7 +14,7 @@ const SCAN_SAFETY_VALVE = 10_000;
 
 /** The `gh` fields that normalise straight onto a `Ticket` — one bulk read covers relationships. */
 const FIELDS =
-  'number,title,state,body,createdAt,closedAt,labels,assignees,comments,parent,blockedBy,blocking,url';
+  'number,title,state,body,createdAt,closedAt,labels,assignees,parent,blockedBy,blocking,url';
 
 /** Runs a `gh` subprocess in the repo (so `gh` infers the repo from its remote). Injectable for tests. */
 export type GhRunner = (args: string[], cwd: string) => Promise<string>;
@@ -52,7 +52,6 @@ interface RawIssue {
   closedAt: string | null;
   labels: Array<{ name: string }>;
   assignees: Array<{ login: string }>;
-  comments: Array<{ author: { login: string } | null; body: string; createdAt: string }>;
   parent: RawRef | null;
   blockedBy: { nodes: RawRef[] } | null;
   blocking: { nodes: RawRef[] } | null;
@@ -84,11 +83,6 @@ function normalise(raw: RawIssue): Ticket {
     parent: raw.parent ? trackerRef(raw.parent.number) : null,
     blockedBy,
     blocking: (raw.blocking?.nodes ?? []).map(ref),
-    comments: (raw.comments ?? []).map((c) => ({
-      author: c.author?.login ?? '',
-      body: c.body,
-      createdAt: c.createdAt,
-    })),
     isMap: labels.includes(MAP_LABEL),
     url: raw.url,
   };
@@ -124,6 +118,10 @@ export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): Writ
 
     async readTicket(ref: TicketRef) {
       return normalise(await json<RawIssue>(['issue', 'view', String(ref.ref), '--json', FIELDS]));
+    },
+
+    async readState(ref: TicketRef) {
+      return state((await json<Pick<RawIssue, 'state'>>(['issue', 'view', String(ref.ref), '--json', 'number,state'])).state);
     },
 
     async claim(ticket: TicketRef) {
