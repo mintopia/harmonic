@@ -56,6 +56,15 @@ describe('github tracker adapter', () => {
     expect(t.blockedBy).toEqual([]);
   });
 
+  it('scan requests open issues only and advertises it', async () => {
+    const { run, calls } = fakeGh();
+    const adapter = githubAdapter('/repo', run);
+    await adapter.scan();
+    const list = calls.find((c) => c[1] === 'list')!;
+    expect(list[list.indexOf('--state') + 1]).toBe('open');
+    expect(adapter.scansOpenOnly).toBe(true);
+  });
+
   it('readTicket reads one fresh issue by number', async () => {
     const { run, calls } = fakeGh();
     const t = await githubAdapter('/repo', run).readTicket({ ref: trackerRef(29), title: '', state: 'open' });

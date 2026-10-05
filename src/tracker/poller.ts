@@ -3,6 +3,7 @@ import type { TaskRow } from '../db/schema.js';
 import type { ResolvedTracker, Ticket, TrackerAdapter, TrackerRef } from './adapter.js';
 import { resolutionFailure, resolutionSuccess, resolveTrackerAdapter } from './adapter.js';
 import { mirrorScan } from './mirror.js';
+import { ClosedRefResolver } from './closed-refs.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import { InFlight } from '../reliability/in-flight.js';
 import { persistedTickets } from './persisted.js';
@@ -45,6 +46,7 @@ export class TrackerPoller {
 
   private readonly pollGate = singleFlight(() => this.pollOnce());
   private readonly inFlight = new InFlight();
+  private readonly closedRefs = new ClosedRefResolver();
 
   poll(): Promise<void> {
     return this.inFlight.track(this.pollGate());
@@ -72,7 +74,14 @@ export class TrackerPoller {
     this.onResolved(resolutionSuccess(adapter));
     poll.update({ 'tracker.name': adapter.name });
     const observedAt = Date.now();
-    const tickets = await adapter.scan();
+    const scanned = await adapter.scan();
+    const rows = adapter.scansOpenOnly ? await this.tasks.list({ workspaceId: this.workspaceId }) : [];
+    const tickets = await this.closedRefs.complete(
+      adapter,
+      scanned,
+      rows.flatMap((task) => (task.origin === 'mirrored' && task.trackerRef !== null && task.state !== 'done' && task.state !== 'cancelled' ? [task.trackerRef] : [])),
+      adapter.scansOpenOnly ? await persistedTickets(rows, []) : [],
+    );
     poll.update({ 'tracker.ticket.count': tickets.length });
     this.urlByRef = new Map();
     this.titleByRef = new Map();
