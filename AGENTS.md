@@ -9,6 +9,10 @@ See `CONTEXT.md` for the domain glossary.
  - Use subagents for tasks.
  - Use multiple subagents in parallel working as a team, with agent messaging
    to co-ordinate.
+ - A subagent whose result runs long writes it to a file under the session
+   scratchpad and sends only a one-line summary plus that path. Never paste full
+   reports, reviews, or findings into an agent message — they flood the lead's
+   context.
  - Subagents must use an appropriate model, defaults:
    - Explore, Coding, Code Reviews: Sonnet / Terra
    - Codebase Mapping: jcodemunch MCP and Sonnet / Terra
@@ -24,6 +28,8 @@ See `CONTEXT.md` for the domain glossary.
 
 While editing, run the relevant test file with `npx vitest run <file>`.
 Before the final test run, run `npm run typecheck` and `npm run lint`.
+If you changed a route or its zod schema, run `npm run docs:openapi` and commit
+the regenerated `website/src/openapi.json` — CI fails if the snapshot drifts.
 Run `npm test` once when the work is complete. It starts ACP harnesses and
 covers shared-lock integration cases, so it is slower than a focused test.
 
