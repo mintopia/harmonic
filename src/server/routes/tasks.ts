@@ -144,6 +144,8 @@ const taskWithDepsSchema = z
     escalationReason: z.string().nullable().meta({ example: null }),
     /** Live merge indicator, orthogonal to `state`: 'merging' while the candidate merges onto base, 'resolving-conflicts' once that merge conflicts; null at rest. */
     mergeStatus: z.enum(MERGE_STATUSES).nullable().meta({ example: null }),
+    /** True while the Task is merged but its tracker ticket close is outstanding. */
+    ticketClosePending: z.boolean().meta({ example: false }),
     feedback: z.string().nullable().meta({ example: null }),
     /** 'full' resumes the same Session, 'condensed' starts fresh; null before any continuation (⇒ full). */
     continuationChoice: z.enum(['full', 'condensed']).nullable().meta({ example: null }),

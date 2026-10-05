@@ -458,6 +458,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListR
     state: 'ready',
     escalationReason: null,
     mergeStatus: null,
+    ticketClosePending: false,
     feedback: null,
     continuationChoice: null,
     origin: 'mirrored',

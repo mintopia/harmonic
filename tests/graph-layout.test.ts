@@ -28,7 +28,7 @@ const task = (id: number, state: TaskState = 'ready', extra: Partial<Task> = {})
   workflow: null,
   wayfinderType: null,
   escalationReason: null,
-  mergeStatus: null,
+  mergeStatus: null, ticketClosePending: false,
   openBlockerCount: 0,
   agentWorkable: true,
   humanOnly: false,

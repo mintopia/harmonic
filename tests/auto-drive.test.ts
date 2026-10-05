@@ -290,13 +290,27 @@ describe('AutoDrive.onCompleted — Merge Fate close-after-verify (issue #139)',
     expect(calls.close).toEqual(['7']);
   });
 
-  it('auto-merge whose close fails escalates', async () => {
+  it('auto-merge whose close fails still completes, flagged close-pending (the merge succeeded)', async () => {
     const { adapter } = fakeAdapter('open');
     adapter.close = async () => {
       throw new Error('no permission to close');
     };
-    const drive = new AutoDrive(() => cfg('auto-merge'), () => null, async () => adapter);
-    expect(await drive.onCompleted(worktreeTask(), run())).toBe('escalate');
+    const failures: unknown[] = [];
+    const drive = new AutoDrive(() => cfg('auto-merge'), () => null, async () => adapter, undefined, undefined, undefined, (_task, err) => failures.push(err));
+    expect(await drive.onCompleted(worktreeTask(), run())).toBe('completed-close-pending');
+    expect(failures).toHaveLength(1);
+  });
+
+  it('retryTicketClose reports the error without recording a close-failed event', async () => {
+    const { adapter } = fakeAdapter('open');
+    adapter.close = async () => {
+      throw new Error('API rate limit exceeded');
+    };
+    const failures: unknown[] = [];
+    const drive = new AutoDrive(() => cfg('auto-merge'), () => null, async () => adapter, undefined, undefined, undefined, (_task, err) => failures.push(err));
+    const result = await drive.retryTicketClose(worktreeTask());
+    expect(result.ok).toBe(false);
+    expect(failures).toEqual([]);
   });
 
   it('open-PR opens a PR and leaves the issue open — no close', async () => {

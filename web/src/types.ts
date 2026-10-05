@@ -587,6 +587,8 @@ export interface Task {
   escalationReason: string | null;
   /** Live merge indicator, orthogonal to `state`: 'merging' while the candidate merges onto base, 'resolving-conflicts' once that merge conflicts a human must settle; null at rest. */
   mergeStatus: MergeStatus | null;
+  /** Merged, but the tracker ticket close is outstanding. */
+  ticketClosePending: boolean;
   /** Feedback held for the next same-ticket Attempt, if any. */
   feedback: string | null;
   createdAt: number;

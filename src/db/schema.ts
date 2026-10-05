@@ -119,6 +119,8 @@ export const tasks = sqliteTable('tasks', {
   escalationReason: text('escalation_reason'),
   /** Live merge indicator, orthogonal to `state`; null at rest. */
   mergeStatus: text('merge_status').$type<MergeStatus>(),
+  /** Merged, but the tracker ticket close failed and is outstanding. */
+  ticketClosePending: integer('ticket_close_pending', { mode: 'boolean' }).notNull().default(false),
   /** The parent Map issue's number, for the query-time Map rollup. Not a Dependency edge. */
   mapRef: text('map_ref').$type<TrackerRef>(),
   /** Null ⇒ resolved at spawn to the working dir's current branch. */

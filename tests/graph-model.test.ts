@@ -47,7 +47,7 @@ const task = (
   workflow: null,
   wayfinderType: null,
   escalationReason: null,
-  mergeStatus: null,
+  mergeStatus: null, ticketClosePending: false,
   openBlockerCount: 0,
   agentWorkable: true,
   humanOnly: false,
