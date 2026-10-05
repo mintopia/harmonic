@@ -72,6 +72,9 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   driveContinueAttempts: null,
   taskPrompt: null,
   ...NO_PROMPT_FRAGMENT_OVERRIDES,
+  mergeConflictPrompt: null,
+  mergeEpicConflictPrompt: null,
+  driveCommitNudge: null,
   createdAt: id,
   updatedAt: id,
 });

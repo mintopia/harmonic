@@ -218,14 +218,15 @@ export async function epicAttemptTimelineToApi(
   return {
     attempts: await Promise.all(
       runs.map(async (run) => {
-        const [toolTotals, stepRows, verificationRows] = await Promise.all([
+        const [toolTotals, stepRows, verificationRows, events] = await Promise.all([
           ctx.attempts.listToolCalls(run.id),
           ctx.attempts.listSteps(run.id),
           ctx.verificationAttempts.list(run.id),
+          ctx.attempts.listEvents(run.id),
         ]);
         let toolCalls = 0;
         for (const count of toolTotals.values()) toolCalls += count;
-        return epicAttemptToApi(run, toolCalls, stepRows, verificationRows);
+        return epicAttemptToApi(run, toolCalls, stepRows, verificationRows, events);
       }),
     ),
   };

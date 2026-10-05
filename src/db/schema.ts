@@ -61,6 +61,7 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   guardrailBudget: string | null; guardrailProgress: boolean | null; toolTimeoutMinutes: number | null;
   drivePrompt: string | null; driveUnattendedReminder: string | null; driveContinuePrompt: string | null;
   driveMergeFate: string | null; driveContinueAttempts: number | null; taskPrompt: string | null; pauseMessage: string | null;
+  driveCommitNudge: string | null; mergeConflictPrompt: string | null; mergeEpicConflictPrompt: string | null;
   exportEnabled: boolean | null; exportDirectoryPath: string | null; exportRedactPatterns: string | null;
   exportS3Endpoint: string | null; exportS3Region: string | null; exportS3Bucket: string | null; exportS3Prefix: string | null;
   exportS3ForcePathStyle: boolean | null; exportS3AccessKeyId: string | null; exportS3SecretAccessKey: string | null;

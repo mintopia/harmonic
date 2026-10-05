@@ -35,7 +35,7 @@ afterEach(async () => {
 
 describe('Critic Resolved Prompts inline (#799)', () => {
   it('shows every critic attempt\'s own prompt, read through the archive-read API by locator', async () => {
-    resolvedPrompt.mockImplementation(async (_id: number, locator: string) => `prompt for ${locator}`);
+    resolvedPrompt.mockImplementation(async (_owner: unknown, locator: string) => `prompt for ${locator}`);
     const host = await mountComponent(
       createElement(CriticSessions, {
         attempts: [
@@ -46,8 +46,8 @@ describe('Critic Resolved Prompts inline (#799)', () => {
     );
     await flush();
 
-    expect(resolvedPrompt).toHaveBeenCalledWith(40, 'verification/pre-merge/11/prompt.md');
-    expect(resolvedPrompt).toHaveBeenCalledWith(40, 'verification/pre-merge/12/prompt.md');
+    expect(resolvedPrompt).toHaveBeenCalledWith({ attemptId: 40 }, 'verification/pre-merge/11/prompt.md');
+    expect(resolvedPrompt).toHaveBeenCalledWith({ attemptId: 40 }, 'verification/pre-merge/12/prompt.md');
     expect(host.textContent).toContain('prompt for verification/pre-merge/11/prompt.md');
     expect(host.textContent).toContain('prompt for verification/pre-merge/12/prompt.md');
   });

@@ -1,7 +1,6 @@
 import type { TrackerRef } from '../tracker/adapter.js';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { randomBytes } from 'node:crypto';
 import { Git } from './git.js';
 import { bestEffort, reportFailure, type FireAndForget } from '../error-handling.js';
 import { integrationBranchName, type EpicRefreshResolveDispatchOutcome, type EpicRefreshResolveTarget } from './epic-coordinator.js';
@@ -9,15 +8,23 @@ import { RESOLVE_TURN_TIMEOUT_MS } from './merge-coordinator.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { TaskService } from '../domain/tasks.js';
 import type { RunnerOptions } from './runner.js';
+import type { RunnerEvents } from './runner-options.js';
+import type { AttemptStore } from '../domain/attempts.js';
+import type { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import type { TaskArchive } from '../archive/task-archive.js';
+import { fillTemplate } from './prompt-template.js';
+import { logger } from '../logger.js';
 
 export interface EpicRefreshResolverDeps {
   taskService: TaskService;
+  attempts: AttemptStore;
+  archive?: TaskArchive | undefined;
+  epicMergeEvents: Pick<EpicMergeEventStore, 'append'>;
+  onAttemptEvent?: RunnerEvents['onAttemptEvent'];
   getConfig: () => AppConfig;
   worktreesDir: string;
   criticDrive: RunnerOptions['criticDrive'];
   fireAndForget: FireAndForget;
-  archive?: TaskArchive | undefined;
 }
 
 export class EpicRefreshResolver {
@@ -95,6 +102,25 @@ export class EpicRefreshResolver {
     return { status: 'dispatched' };
   }
 
+  /** Best-effort: archive the Resolved Prompt (under Attempt 1 while the Epic has none) and record it on the Epic's latest Attempt, else in the Epic's merge-event log. */
+  private async archiveAndRecord(target: EpicRefreshResolveTarget, prompt: string): Promise<void> {
+    if (target.workspaceId === undefined) return;
+    try {
+      const owner = { workspaceId: target.workspaceId, epicRef: target.ref };
+      const attempt = (await this.deps.attempts.listForEpic(owner)).at(-1);
+      const archived = await this.deps.archive?.appendResolutionPrompt(owner, attempt?.number ?? 1, 'epic-refresh', 1, prompt);
+      if (!attempt) {
+        if (archived) await this.deps.epicMergeEvents.append(target.workspaceId, target.ref, { step: 'resolver-prompt', kind: 'refresh', attempt: 1, ...archived });
+        return;
+      }
+      this.deps.onAttemptEvent?.(
+        await this.deps.attempts.appendEvent(attempt.id, { type: 'lifecycle', payload: { event: 'epic-resolve', kind: 'refresh', ...archived } }),
+      );
+    } catch (err) {
+      logger.warn('epic refresh resolver prompt not recorded', { epicRef: target.ref, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   private async runEpicRefreshResolveTurn(args: {
     target: EpicRefreshResolveTarget;
     branch: string;
@@ -108,20 +134,12 @@ export class EpicRefreshResolver {
     try {
       if (args.conflicted) {
         const drive = this.deps.criticDrive;
-        const prompt =
-          `## Epic integration refresh — merge conflict resolution\n` +
-          `Merging \`${args.target.defaultBranch}\` into the Epic integration branch \`${args.branch}\` conflicted:\n${args.conflictDetail}\n\n` +
-          `This worktree has \`${args.branch}\` checked out with that merge in progress — conflict markers are present. ` +
-          `Resolve the conflicts so the result keeps both \`${args.branch}\`'s work and \`${args.target.defaultBranch}\`'s changes, ` +
-          `then complete the merge (\`git add -A\` and \`git commit --no-edit\`). ` +
-          `Do not create or switch branches, do not push, and do not change anything beyond what resolving this merge requires.`;
-        try {
-          const step = this.deps.archive?.epicRefreshStep(args.target.workspaceId, args.target.ref, `${Date.now()}-${randomBytes(3).toString('hex')}`);
-          step?.appendPrompt(prompt);
-          await step?.close();
-        } catch (err) {
-          reportFailure(err, { op: 'runner.epicRefreshResolveTurn.archivePrompt', level: 'warn', context: { epicRef: args.target.ref } });
-        }
+        const prompt = fillTemplate(this.deps.getConfig().merge.epicRefreshPrompt, {
+          defaultBranch: args.target.defaultBranch,
+          branch: args.branch,
+          detail: args.conflictDetail,
+        });
+        await this.archiveAndRecord(args.target, prompt);
         await drive.run({
           harness: args.harness,
           harnessId: args.harnessId,

@@ -190,7 +190,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     const resolved = resolveVerifiers(updated, {
       verify: {
         task: { preMerge: { commands: [], critics: [{ id: 'critic-global', name: 'Test critic', issuePrompt: 'global issue review', noIssuePrompt: 'global Task review', model: 'claude-opus-5' }] }, postMerge: { commands: [], critics: [] } },
-        epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.' },
+        epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.', resolveSuffix: 'Branch {branch}.' },
       },
     } as any);
     expect(resolved.task.preMerge.critics).toEqual([]);
@@ -344,6 +344,9 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       driveContinueAttempts: null,
       taskPrompt: null,
       ...NO_PROMPT_FRAGMENT_OVERRIDES,
+      driveCommitNudge: null,
+      mergeConflictPrompt: null,
+      mergeEpicConflictPrompt: null,
       pauseMessage: null,
       exportEnabled: null,
       exportDirectoryPath: null,

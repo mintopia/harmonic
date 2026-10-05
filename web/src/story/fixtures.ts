@@ -108,6 +108,9 @@ const workspace = {
   driveContinueAttempts: null,
   taskPrompt: null,
   ...NO_PROMPT_FRAGMENT_OVERRIDES,
+  mergeConflictPrompt: null,
+  mergeEpicConflictPrompt: null,
+  driveCommitNudge: null,
   createdAt: T0 - 30 * 24 * 3600_000,
   updatedAt: T0,
 } satisfies Workspace;
@@ -271,7 +274,7 @@ const E0 = Date.parse('2026-08-30T09:00:00Z');
 const emin = (n: number) => n * 60_000;
 
 export const epicAttempts = [
-  { id: 8001, number: 1, state: 'passed', reason: null, prompt: null, usage: null, cost: null, toolCalls: 18, contextTokens: null, startedAt: E0 + emin(200), endedAt: E0 + emin(214), steps: [], verificationAttempts: [
+  { id: 8001, number: 1, state: 'passed', reason: null, prompt: null, usage: null, cost: null, toolCalls: 18, contextTokens: null, startedAt: E0 + emin(200), endedAt: E0 + emin(214), steps: [], resolverPrompts: [], verificationAttempts: [
     { id: 8101, attemptId: 8001, seq: 1, ts: E0 + emin(212), mechanism: 'critic', inputOid: 'a1b2c3d', verdict: 'pass', summary: 'Verdict proceed — the integration branch matches the Epic description.', output: '', promptLocator: 'verification/pre-merge/8001/prompt.md', harness: 'claude', hasTranscript: false, outputTruncated: false },
   ] },
 ] satisfies EpicAttempt[];
@@ -591,6 +594,35 @@ export const epicExportFixture: TaskExportStatus = {
   },
   earlier: [],
 };
+
+export const epicResolver: Epic = {
+  ...epic,
+  timelineEvents: [
+    { seq: 1, at: E0 + emin(150), step: { step: 'resolver-prompt', kind: 'refresh', attempt: 1, locator: 'resolution/epic-refresh-1/prompt.md', promptIndex: 2 } },
+  ],
+};
+
+export const epicResolverAttempts: EpicAttempt[] = [
+  {
+    id: 9001,
+    number: 1,
+    state: 'passed',
+    reason: null,
+    prompt: null,
+    usage: null,
+    cost: null,
+    toolCalls: 14,
+    contextTokens: null,
+    startedAt: E0 + emin(160),
+    endedAt: E0 + emin(190),
+    steps: [],
+    verificationAttempts: [],
+    resolverPrompts: [
+      { kind: 'refresh', locator: 'resolution/epic-refresh-1/prompt.md', promptIndex: 2, ts: E0 + emin(161) },
+      { kind: 'verification', locator: 'resolution/epic-resolve-1/prompt.md', promptIndex: 3, ts: E0 + emin(170) },
+    ],
+  },
+];
 
 export const epicIntegrated: Epic = {
   ...epic,

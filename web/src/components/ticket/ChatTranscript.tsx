@@ -13,6 +13,7 @@ import { DiffViewer } from '../DiffViewer';
 import { toolDiffFile } from '../../tool-diff';
 import { PromptSent } from './Description';
 import { FollowTail } from './FollowTail';
+import { ResolvedPromptInline } from './ResolvedPromptInline';
 
 const CAPS = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
 
@@ -134,7 +135,7 @@ function TurnPrompt({ turn, text }: { turn: number; text: string }) {
   return <PromptSent prompt={text} label={`Prompt sent · turn ${turn}`} className="ml-10" />;
 }
 
-function Row({ row, model, agent }: { row: ChatRow; model: string; agent: string }) {
+function Row({ row, model, agent, attemptId }: { row: ChatRow; model: string; agent: string; attemptId?: number }) {
   switch (row.kind) {
     case 'message':
       return <MessageRow row={row} model={model} agent={agent} />;
@@ -144,6 +145,12 @@ function Row({ row, model, agent }: { row: ChatRow; model: string; agent: string
       return <ToolCard row={row} />;
     case 'note':
       return <Note row={row} />;
+    case 'resolved-prompt':
+      return attemptId === undefined ? (
+        <Note row={{ kind: 'note', label: row.label, text: null, key: row.key }} />
+      ) : (
+        <ResolvedPromptInline owner={{ attemptId }} locator={row.locator} index={row.index} label={row.label} />
+      );
   }
 }
 
@@ -165,6 +172,7 @@ export function ChatTranscript({
   model,
   agent,
   stepLabel,
+  attemptId,
   pendingSteers = [],
   turnPrompts = [],
 }: {
@@ -180,6 +188,8 @@ export function ChatTranscript({
    * "Claude", "Codex") so a transcript never misattributes a non-Claude run. */
   agent: string;
   stepLabel?: string;
+  /** Enables inline Resolved Prompts for nudge and resolver rows. */
+  attemptId?: number;
   pendingSteers?: readonly PendingSteer[];
   /** Resolved Prompts for turn 2 onward, shown where each was sent; turn 1's is shown above the transcript. */
   turnPrompts?: readonly string[];
@@ -256,7 +266,7 @@ export function ChatTranscript({
                 {prompts.before.get(row.key)?.map((p) => (
                   <TurnPrompt key={p.turn} turn={p.turn} text={p.text} />
                 ))}
-                <Row row={row} model={model} agent={agent} />
+                <Row row={row} model={model} agent={agent} attemptId={attemptId} />
                 {lane && <SubagentLane label={lane.label} rows={lane.rows} model={model} agent={agent} />}
               </div>
             );

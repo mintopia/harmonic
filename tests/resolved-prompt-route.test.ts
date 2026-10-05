@@ -40,6 +40,21 @@ describe('GET /api/attempts/:id/resolved-prompt', () => {
     expect(await res.text()).toBe(prompt);
   });
 
+  it('serves one prompt of a multi-prompt file by index, and 404s past the end', async () => {
+    const taskRow = await server.app.ctx.tasks.get((await server.app.ctx.attempts.get(attemptId)).taskId as number);
+    const writer = server.app.ctx.archive.implementationStep(taskRow, attemptNumber);
+    expect(await writer.appendPrompt('turn zero')).toBe(0);
+    expect(await writer.appendPrompt('turn one\n\nwith a body')).toBe(1);
+    await writer.close();
+    const byIndex = (index: string) =>
+      fetch(`${server.baseUrl}/api/attempts/${attemptId}/resolved-prompt?locator=${encodeURIComponent('implementation/prompt.md')}&index=${index}`, { headers: { cookie: `harmonic_session=${server.sessionToken}` } });
+    expect(await (await byIndex('0')).text()).toBe('turn zero');
+    expect(await (await byIndex('1')).text()).toBe('turn one\n\nwith a body');
+    expect((await byIndex('2')).status).toBe(404);
+    expect((await byIndex('-1')).status).toBe(400);
+    expect(await (await fetchPrompt(attemptId, 'implementation/prompt.md')).text()).toBe('turn zero\n\n---\n\nturn one\n\nwith a body');
+  });
+
   it('404s for a missing prompt, an unknown attempt, a traversal, and a non-prompt file', async () => {
     expect((await fetchPrompt(attemptId, 'verification/pre-merge/99/prompt.md')).status).toBe(404);
     expect((await fetchPrompt(999_999, locator)).status).toBe(404);

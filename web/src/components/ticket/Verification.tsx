@@ -90,7 +90,7 @@ function ResolvedPrompt({ attemptId, locator }: { attemptId: number; locator: st
 
   useLiveEffect((live) => {
     setPrompt(null);
-    api.resolvedPrompt(attemptId, locator).then(
+    api.resolvedPrompt({ attemptId }, locator).then(
       (text) => {
         if (live()) setPrompt(text);
       },

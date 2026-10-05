@@ -18,6 +18,7 @@ import type { MergeCoordinator } from './merge-coordinator.js';
 import type { TaskService } from '../domain/tasks.js';
 import type { StepArchiveWriter } from '../archive/task-archive.js';
 import type { AutoDrive } from './auto-drive.js';
+import { resolveCommitNudge } from '../domain/setting-override.js';
 
 export type TurnOutcome =
   | { kind: 'terminal' }
@@ -34,6 +35,7 @@ export interface TurnCompletionDeps {
   autoDrive: AutoDrive | undefined;
   taskService: TaskService;
   getConfig: () => AppConfig;
+  getWorkspace: RunnerOptions['getWorkspace'];
   postMerge: RunnerOptions['postMerge'];
   isShuttingDown: () => boolean;
   settleEscalated: (task: TaskRow, run: AttemptRow, reason: string, patch: Partial<AttemptRow>) => Promise<void>;
@@ -71,8 +73,8 @@ export class TurnCompletion {
     // input.operatorSeed — ever reaches the harness. The caller must put the seed back rather
     // than treat it as delivered (ADR-0005 §6).
     if (active.pauseRequested) return { result: {}, connectionGone: false, escalating: null, operatorSeedDelivered: false, promptSent: false };
-    const timedPromptTurn = (text: string) => this.deps.attempts.measureAgentTurn(
-      active.attemptId, () => promptTurn(driver, text, record, listeners.archive),
+    const timedPromptTurn = (text: string, lifecycle?: PromptLifecycle) => this.deps.attempts.measureAgentTurn(
+      active.attemptId, () => promptTurn(driver, text, record, listeners.archive, lifecycle),
     );
     active.steerable = true;
     let connectionGone = false;
@@ -105,10 +107,9 @@ export class TurnCompletion {
       if (!autoDriven || active.agentFinished || attempt > (await this.deps.autoDrive!.continueAttempts(task))) {
         break;
       }
-      record('lifecycle', { event: 'continue', attempt });
       promptText = await this.deps.autoDrive!.continuePrompt(task);
       active.idle = false;
-      const turn = await timedPromptTurn(promptText);
+      const turn = await timedPromptTurn(promptText, { event: 'continue', attempt });
       connectionGone ||= turn.connectionGone;
       if (turn.result) result = turn.result;
       active.idle = true;
@@ -267,6 +268,11 @@ export class TurnCompletion {
     if (implementation) await this.deps.updateStep(taskId, implementation.id, { state: 'failed', endedAt: Date.now() });
   }
 
+  private async commitNudge(task: TaskRow): Promise<string> {
+    const ws = await this.deps.getWorkspace?.(task.workspaceId);
+    return resolveCommitNudge(ws, this.deps.getConfig());
+  }
+
   private async resolveImplementationHead(input: {
     task: TaskRow;
     run: AttemptRow;
@@ -286,11 +292,10 @@ export class TurnCompletion {
     let noChangeFinishHead: string | null = null;
     if (escalating || stoppedShort) return { connectionGone, result, implementationHead, noChangeFinishHead };
     if (!connectionGone && !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
-      const nudge = 'Your implementation left uncommitted changes. Commit the completed work now, then finish.';
-      record('lifecycle', { event: 'commit-nudge' });
+      const nudge = await this.commitNudge(input.task);
       active.idle = false;
       const turn = await this.deps.attempts.measureAgentTurn(
-        active.attemptId, () => promptTurn(active.driver, nudge, record, input.archive),
+        active.attemptId, () => promptTurn(active.driver, nudge, record, input.archive, { event: 'commit-nudge' }),
       );
       connectionGone ||= turn.connectionGone;
       if (turn.result) result = turn.result;
@@ -406,15 +411,25 @@ export class TurnCompletion {
   }
 }
 
+/** A lifecycle event emitted when this prompt is sent, enriched with where its Resolved Prompt was archived. */
+export type PromptLifecycle = { event: string; [key: string]: unknown };
+
 export async function promptTurn(
   driver: AcpDriver,
   text: string,
   record: (type: 'permission_request' | 'lifecycle', payload: unknown) => void,
   archive?: StepArchiveWriter,
+  lifecycle?: PromptLifecycle,
 ): Promise<{ result: PromptResult | null; connectionGone: boolean }> {
   if (archive) {
     record('lifecycle', { event: 'prompt_sent' });
-    archive.appendPrompt(text);
+    const index = archive.appendPrompt(text);
+    if (lifecycle) {
+      const promptIndex = await index;
+      record('lifecycle', promptIndex != null ? { ...lifecycle, locator: archive.promptLocator, promptIndex } : lifecycle);
+    }
+  } else if (lifecycle) {
+    record('lifecycle', lifecycle);
   }
   try {
     return { result: await driver.prompt([{ type: 'text', text }]), connectionGone: false };

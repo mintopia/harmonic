@@ -11,6 +11,7 @@ import type {
   NotificationRow,
 } from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
+import type { PersistedAttemptEvent } from '../domain/attempts.js';
 import type { IsolationMode, Priority } from '../config.js';
 import type { Ticket, TrackerRef } from '../tracker/adapter.js';
 import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
@@ -277,7 +278,27 @@ export type ApiEpicAttempt = {
   endedAt: number | null;
   steps: ApiStep[];
   verificationAttempts: ApiVerificationAttempt[];
+  /** Each Resolved Prompt this Epic Attempt sent to a resolver, read via `GET …/epics/:ref/resolved-prompt`. */
+  resolverPrompts: ApiEpicResolverPrompt[];
 };
+
+export type ApiEpicResolverPrompt = {
+  kind: 'merge-conflict' | 'verification' | 'refresh';
+  locator: string;
+  promptIndex: number;
+  ts: number;
+};
+
+/** The archived resolver prompts among an Epic Attempt's lifecycle events, in order. */
+export function epicResolverPrompts(events: readonly PersistedAttemptEvent[]): ApiEpicResolverPrompt[] {
+  return events.flatMap<ApiEpicResolverPrompt>((event) => {
+    const payload = event.type === 'lifecycle' ? (event.payload as { event?: unknown; kind?: unknown; locator?: unknown; promptIndex?: unknown } | null) : null;
+    if (typeof payload?.locator !== 'string' || typeof payload.promptIndex !== 'number') return [];
+    if (payload.event === 'merge-conflict-resolve') return [{ kind: 'merge-conflict', locator: payload.locator, promptIndex: payload.promptIndex, ts: event.ts }];
+    if (payload.event === 'epic-resolve') return [{ kind: payload.kind === 'refresh' ? 'refresh' : 'verification', locator: payload.locator, promptIndex: payload.promptIndex, ts: event.ts }];
+    return [];
+  });
+}
 
 export type ApiVerificationAttempt = Omit<VerificationAttemptRow, 'transcriptPath' | 'usage' | 'fullOutputKey' | 'promptKey'> & {
   /** Archive locator of the Resolved Prompt; read it with `GET /api/attempts/:attemptId/resolved-prompt?locator=`. */
@@ -335,6 +356,7 @@ export function epicAttemptToApi(
   toolCalls: number,
   stepRows: readonly StepRow[],
   verificationAttempts: readonly VerificationAttemptRow[],
+  events: readonly PersistedAttemptEvent[],
 ): ApiEpicAttempt {
   return {
     id: run.id,
@@ -350,6 +372,7 @@ export function epicAttemptToApi(
     endedAt: run.endedAt,
     steps: stepRows.map(stepToApi),
     verificationAttempts: verificationAttempts.map(verificationAttemptToApi),
+    resolverPrompts: epicResolverPrompts(events),
   };
 }
 

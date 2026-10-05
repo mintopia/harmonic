@@ -11,6 +11,12 @@ import {
   compileCriticFragmentPreview,
   compileDrivePreview,
   compileFragmentPreview,
+  compileConflictPreview,
+  compileMergeConflictPreview,
+  COMMIT_NUDGE_PLACEHOLDERS,
+  MERGE_CONFLICT_PLACEHOLDERS,
+  EPIC_REFRESH_PLACEHOLDERS,
+  EPIC_RESOLVE_SUFFIX_PLACEHOLDERS,
   compileTaskIdPreview,
   compileTaskPreview,
   fragmentPlaceholders,
@@ -790,6 +796,119 @@ const criticVerdictContractField = criticFragmentField(
   [],
 );
 
+const commitNudgeField = prompt(
+  'commit-nudge',
+  {
+    id: 'settings-commit-nudge',
+    label: 'Commit nudge',
+    description: 'Sent when an Attempt finishes its turn with uncommitted changes. No placeholders.',
+    errorKey: 'drive.commitNudge',
+    get: (c) => c.drive.commitNudge,
+    set: (c, v) => ({ ...c, drive: { ...c.drive, commitNudge: v } }),
+    placeholders: COMMIT_NUDGE_PLACEHOLDERS,
+    compile: (text) => text,
+    textareaClass: `${field} min-h-24`,
+  },
+  {
+    key: 'driveCommitNudge',
+    id: 'workspace-commit-nudge',
+    errorKey: 'driveCommitNudge',
+    description: 'Sent when an Attempt finishes its turn with uncommitted changes. No placeholders.',
+    get: (w) => w.driveCommitNudge,
+    set: (w, v) => ({ ...w, driveCommitNudge: v }),
+    inherited: (c) => c.drive.commitNudge,
+    placeholders: COMMIT_NUDGE_PLACEHOLDERS,
+    compile: (text) => text,
+    textareaClass: `${field} min-h-24`,
+  },
+);
+
+const mergeConflictPromptField = prompt(
+  'merge-conflict-prompt',
+  {
+    id: 'settings-merge-conflict-prompt',
+    label: 'Merge conflict resolver',
+    description: 'Opens each turn of the agent that resolves a Task merge conflict.',
+    errorKey: 'merge.conflictPrompt',
+    get: (c) => c.merge.conflictPrompt,
+    set: (c, v) => ({ ...c, merge: { ...c.merge, conflictPrompt: v } }),
+    placeholders: MERGE_CONFLICT_PLACEHOLDERS,
+    compile: compileMergeConflictPreview,
+    textareaClass: `${field} min-h-36`,
+  },
+  {
+    key: 'mergeConflictPrompt',
+    id: 'workspace-merge-conflict-prompt',
+    errorKey: 'mergeConflictPrompt',
+    description: 'Opens each turn of the agent that resolves a Task merge conflict.',
+    get: (w) => w.mergeConflictPrompt,
+    set: (w, v) => ({ ...w, mergeConflictPrompt: v }),
+    inherited: (c) => c.merge.conflictPrompt,
+    placeholders: MERGE_CONFLICT_PLACEHOLDERS,
+    compile: compileMergeConflictPreview,
+    textareaClass: `${field} min-h-36`,
+  },
+);
+
+const epicConflictPromptField = prompt(
+  'epic-conflict-prompt',
+  {
+    id: 'settings-epic-conflict-prompt',
+    label: 'Epic merge conflict resolver',
+    description: 'Opens each turn of the agent that resolves an Epic integration merge conflict.',
+    errorKey: 'merge.epicConflictPrompt',
+    get: (c) => c.merge.epicConflictPrompt,
+    set: (c, v) => ({ ...c, merge: { ...c.merge, epicConflictPrompt: v } }),
+    placeholders: MERGE_CONFLICT_PLACEHOLDERS,
+    compile: compileMergeConflictPreview,
+    textareaClass: `${field} min-h-36`,
+  },
+  {
+    key: 'mergeEpicConflictPrompt',
+    id: 'workspace-epic-conflict-prompt',
+    errorKey: 'mergeEpicConflictPrompt',
+    description: 'Opens each turn of the agent that resolves an Epic integration merge conflict.',
+    get: (w) => w.mergeEpicConflictPrompt,
+    set: (w, v) => ({ ...w, mergeEpicConflictPrompt: v }),
+    inherited: (c) => c.merge.epicConflictPrompt,
+    placeholders: MERGE_CONFLICT_PLACEHOLDERS,
+    compile: compileMergeConflictPreview,
+    textareaClass: `${field} min-h-36`,
+  },
+);
+
+const epicRefreshPromptField = prompt(
+  'epic-refresh-prompt',
+  {
+    id: 'settings-epic-refresh-prompt',
+    label: 'Epic refresh resolver',
+    description: 'Sent to the agent that resolves a conflict when the Epic integration branch is refreshed from the default branch.',
+    errorKey: 'merge.epicRefreshPrompt',
+    get: (c) => c.merge.epicRefreshPrompt,
+    set: (c, v) => ({ ...c, merge: { ...c.merge, epicRefreshPrompt: v } }),
+    placeholders: EPIC_REFRESH_PLACEHOLDERS,
+    compile: compileConflictPreview,
+    textareaClass: `${field} min-h-36`,
+  },
+  null,
+);
+
+const epicResolveSuffixField = prompt(
+  'epic-resolve-suffix',
+  {
+    id: 'settings-epic-resolve-suffix',
+    label: 'Epic verification resolver suffix',
+    description: 'Appended to the Epic resolve prompt (set on the Verification tab) when the agent fixes a failing Epic verification.',
+    errorKey: 'verify.epic.resolveSuffix',
+    get: (c) => c.verify.epic.resolveSuffix,
+    set: (c, v) => ({ ...c, verify: { ...c.verify, epic: { ...c.verify.epic, resolveSuffix: v } } }),
+    placeholders: EPIC_RESOLVE_SUFFIX_PLACEHOLDERS,
+    compile: compileConflictPreview,
+    textareaClass: `${field} min-h-24`,
+  },
+  null,
+);
+
 const guardrailScalarFields: OverridableDescriptor[] = [
   {
     key: 'guardrailProgress',
@@ -1301,7 +1420,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     },
     body: (ctx) => (
       <div className="flex flex-col gap-4">
-        {[drivePromptField, unattendedReminderField, continuePromptField].map((p) => renderField(p, ctx))}
+        {[drivePromptField, unattendedReminderField, continuePromptField, commitNudgeField].map((p) => renderField(p, ctx))}
         {grid('flex flex-wrap items-start gap-x-8 gap-y-4', [driveMergeFate, driveContinueAttempts], ctx)}
       </div>
     ),
@@ -1324,6 +1443,23 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
         {renderField(criticRevisionIdenticalField, ctx)}
         {renderField(criticRevisionAloneField, ctx)}
         {renderField(criticVerdictContractField, ctx)}
+      </div>
+    ),
+  },
+
+  {
+    tab: 'prompts',
+    surfaces: BOTH,
+    title: 'Merge and Epic resolver prompts',
+    description: {
+      global:
+        'What Harmonic sends to the agents that resolve merge conflicts and Epic verification failures. Edits apply to the next resolver turn.',
+      workspace:
+        'What Harmonic sends to merge conflict resolvers here. Each field inherits the global default until overridden.',
+    },
+    body: (ctx) => (
+      <div className="flex flex-col gap-4">
+        {[mergeConflictPromptField, epicConflictPromptField, epicRefreshPromptField, epicResolveSuffixField].map((p) => renderField(p, ctx))}
       </div>
     ),
   },

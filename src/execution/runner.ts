@@ -186,6 +186,9 @@ export class Runner {
       attempts: this.attempts,
       epicMergeEvents: new EpicMergeEventStore(this.asyncDb),
       criticDrive: this.criticDrive,
+      archive: this.archive,
+      onAttemptEvent: (event) => this.events.onAttemptEvent?.(event),
+      getWorkspace: this.getWorkspace,
       postMergeCheck: createPostMergeCheck({
         commandSpawn: this.commandSpawn,
         fireAndForget: this.fireAndForget,
@@ -212,11 +215,14 @@ export class Runner {
   private epicRefreshResolverDeps(): EpicRefreshResolverDeps {
     return {
       taskService: this.taskService,
+      attempts: this.attempts,
+      archive: this.archive,
+      epicMergeEvents: new EpicMergeEventStore(this.asyncDb),
+      onAttemptEvent: (event) => this.events.onAttemptEvent?.(event),
       getConfig: this.getConfig,
       worktreesDir: this.worktreesDir,
       criticDrive: this.criticDrive,
       fireAndForget: this.fireAndForget,
-      archive: this.archive,
     };
   }
 

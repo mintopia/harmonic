@@ -62,6 +62,7 @@ describe('an unresolved auto-driven attempt fails its implementation step (issue
       autoDrive: undefined,
       taskService: {} as unknown as TurnCompletionDeps['taskService'],
       getConfig: () => baselineConfig(),
+      getWorkspace: undefined,
       postMerge: undefined,
       isShuttingDown: () => false,
       settleEscalated: async () => {},

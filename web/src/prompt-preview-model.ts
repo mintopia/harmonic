@@ -167,7 +167,7 @@ export function compileEpicCriticPreview(prompt: string, fragments: AppConfig['p
   });
 }
 
-export function compileEpicResolvePreview(template: string): string {
+export function compileEpicResolvePreview(template: string, suffix: string): string {
   const prompt = template
     .replaceAll('{ref}', SAMPLE_DRIVE_FIELDS.ref)
     .replaceAll('{title}', SAMPLE_DRIVE_FIELDS.title)
@@ -179,6 +179,43 @@ export function compileEpicResolvePreview(template: string): string {
     '## Failing Epic verification',
     'Example verifier feedback.',
     '',
-    `Work in the checked-out integration branch \`epic/${SAMPLE_DRIVE_FIELDS.ref}\`. Fix the failure and commit the result. Do not create or switch branches, and do not push.`,
+    suffix.replaceAll('{branch}', `epic/${SAMPLE_DRIVE_FIELDS.ref}`),
   ].join('\n');
+}
+
+export const COMMIT_NUDGE_PLACEHOLDERS: Placeholder[] = [];
+
+export const MERGE_CONFLICT_PLACEHOLDERS: Placeholder[] = [
+  { token: '{turn}', desc: 'resolution turn number' },
+  { token: '{taskBranch}', desc: 'branch being merged' },
+  { token: '{baseBranch}', desc: 'branch being merged into' },
+  { token: '{paths}', desc: 'conflicted paths' },
+  { token: '{fragment.conflictResolution}', desc: 'the Conflict resolution fragment' },
+];
+
+export const EPIC_REFRESH_PLACEHOLDERS: Placeholder[] = [
+  { token: '{defaultBranch}', desc: 'Default branch merged into the Epic' },
+  { token: '{branch}', desc: 'Epic integration branch' },
+  { token: '{detail}', desc: 'Conflict detail from the merge attempt' },
+];
+
+export const EPIC_RESOLVE_SUFFIX_PLACEHOLDERS: Placeholder[] = [{ token: '{branch}', desc: 'Epic integration branch' }];
+
+const SAMPLE_CONFLICT_VALUES: Record<string, string> = {
+  baseDir: '/repo',
+  baseBranch: 'develop',
+  taskBranch: 'harmonic/task-123',
+  turn: '1',
+  paths: '- src/app.ts',
+  branch: 'epic/example',
+};
+
+/** Fill sample values into any `{token}` the sample set knows; unknown tokens stay literal. */
+export function compileConflictPreview(template: string): string {
+  return template.replace(/\{(\w+)\}/g, (match, name: string) => SAMPLE_CONFLICT_VALUES[name] ?? match);
+}
+
+/** Preview a merge prompt with `{fragment.conflictResolution}` expanded from the configured fragment. */
+export function compileMergeConflictPreview(template: string, config: Pick<AppConfig, 'promptFragments'>): string {
+  return compileConflictPreview(template.replace(/\{fragment\.conflictResolution\}/g, config.promptFragments.conflictResolution));
 }

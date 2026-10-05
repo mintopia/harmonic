@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { appConfigSchema, DEFAULT_PROMPT_FRAGMENTS, type AppConfig } from '../src/config.js';
+import { appConfigSchema, DEFAULT_PROMPT_FRAGMENTS, baselineConfig, type AppConfig } from '../src/config.js';
 import { expandFragments } from '../src/execution/prompt-template.js';
 import type { WorkspaceRow } from '../src/db/schema.js';
-import { resolve, resolveCap, resolveVerifiers, resolveGuardrails, resolveDrive, resolvePauseMessage, resolveTaskPrompt, resolvePromptFragments } from '../src/domain/setting-override.js';
+import { resolve, resolveCap, resolveVerifiers, resolveGuardrails, resolveDrive, resolvePauseMessage, resolveTaskPrompt, resolvePromptFragments, resolveCommitNudge, resolveMergePrompts } from '../src/domain/setting-override.js';
 
 describe('Setting Override resolution (ADR-0012, issue #59)', () => {
   it('resolves the pause message from the Workspace override or global default', () => {
@@ -54,7 +54,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
           preMerge: { commands: [globalCommand], critics: [globalCritic] },
           postMerge: { commands: [globalCommand], critics: [globalCritic] },
         },
-        epic: { preMerge: { commands: [globalCommand], critics: [epicCritic] }, resolvePrompt: 'Resolve it.' },
+        epic: { preMerge: { commands: [globalCommand], critics: [epicCritic] }, resolvePrompt: 'Resolve it.', resolveSuffix: 'Branch {branch}.' },
       },
     };
     const inherited: Pick<WorkspaceRow, 'taskPreMergeCommands' | 'taskPreMergeCritics' | 'taskPostMergeCommands' | 'taskPostMergeCritics' | 'epicPreMergeCommands' | 'epicPreMergeCritics'> = {
@@ -228,7 +228,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
   describe('staged verifier overlays (#523, ADR-0037)', () => {
     const command = { id: 'cmd-npm-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
     const critic = { id: 'critic-task', name: 'Test critic', issuePrompt: 'Review this issue change.', noIssuePrompt: 'Review this Task change.', model: 'claude-opus-5', timeoutSeconds: 300 };
-    const config = { verify: { task: { preMerge: { commands: [command], critics: [critic] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve it.' } } };
+    const config = { verify: { task: { preMerge: { commands: [command], critics: [critic] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve it.', resolveSuffix: 'Branch {branch}.' } } };
     const inherited = { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null };
     it('inherits at null and disables/adds at each stage grain independently', () => {
       expect(resolveVerifiers(inherited, config).task.preMerge).toEqual({ commands: [command], critics: [critic] });
@@ -260,7 +260,7 @@ describe('staged verifier overlays (#523, ADR-0037)', () => {
   const config = {
     verify: {
       task: { preMerge: { commands: [command], critics: [critic] }, postMerge: { commands: [], critics: [] } },
-      epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve it.' },
+      epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve it.', resolveSuffix: 'Branch {branch}.' },
     },
   };
   const inherited = {
@@ -277,12 +277,25 @@ describe('staged verifier overlays (#523, ADR-0037)', () => {
 });
 
 describe('Prompt Fragments', () => {
-  const config = { promptFragments: { ...DEFAULT_PROMPT_FRAGMENTS, readOnlyRestraint: 'GLOBAL RESTRAINT' } };
+  const config = { promptFragments: { ...DEFAULT_PROMPT_FRAGMENTS, readOnlyRestraint: 'GLOBAL RESTRAINT', conflictResolution: 'GLOBAL CONFLICT' } };
+  const inheritAll = { promptFragmentReadOnlyRestraint: null, promptFragmentConflictResolution: null };
 
   it('inherits the global fragment unless the Workspace overrides it', () => {
-    expect(resolvePromptFragments({ promptFragmentReadOnlyRestraint: null }, config).readOnlyRestraint).toBe('GLOBAL RESTRAINT');
+    expect(resolvePromptFragments(inheritAll, config).readOnlyRestraint).toBe('GLOBAL RESTRAINT');
     expect(resolvePromptFragments(undefined, config).readOnlyRestraint).toBe('GLOBAL RESTRAINT');
-    expect(resolvePromptFragments({ promptFragmentReadOnlyRestraint: 'WS RESTRAINT' }, config).readOnlyRestraint).toBe('WS RESTRAINT');
+    expect(resolvePromptFragments({ ...inheritAll, promptFragmentReadOnlyRestraint: 'WS RESTRAINT' }, config).readOnlyRestraint).toBe('WS RESTRAINT');
+    expect(resolvePromptFragments({ ...inheritAll, promptFragmentConflictResolution: 'WS CONFLICT' }, config).conflictResolution).toBe('WS CONFLICT');
+    expect(resolvePromptFragments(inheritAll, config).conflictResolution).toBe('GLOBAL CONFLICT');
+  });
+
+  it('resolves the commit nudge and merge conflict prompts per Workspace', () => {
+    const global = { ...baselineConfig() };
+    expect(resolveCommitNudge({ driveCommitNudge: null }, global)).toBe(global.drive.commitNudge);
+    expect(resolveCommitNudge({ driveCommitNudge: 'WS nudge' }, global)).toBe('WS nudge');
+    const inherit = { ...inheritAll, mergeConflictPrompt: null, mergeEpicConflictPrompt: null };
+    expect(resolveMergePrompts(inherit, global).conflictPrompt).toBe(global.merge.conflictPrompt);
+    const own = resolveMergePrompts({ ...inherit, mergeConflictPrompt: 'WS A', mergeEpicConflictPrompt: 'WS B', promptFragmentConflictResolution: 'WS F' }, global);
+    expect([own.conflictPrompt, own.epicConflictPrompt, own.fragments.conflictResolution]).toEqual(['WS A', 'WS B', 'WS F']);
   });
 
   it('is defined once in the baseline and expands in more than one prompt', () => {

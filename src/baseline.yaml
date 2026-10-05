@@ -94,6 +94,7 @@ drive:
   continuePrompt: "Your last turn ended but Task {taskId} isn't finished — you haven't called `finish_task`. Pick the work back up and drive it to completion now; don't idle-wait, then call `finish_task` when it's done."
   mergeFate: auto-merge
   continueAttempts: 10
+  commitNudge: "Your implementation left uncommitted changes. Commit the completed work now, then finish."
 taskPrompt: "{prompt}"
 pauseMessage: "Please finish the current turn, then pause and wait for further instructions."
 promptFragments:
@@ -126,6 +127,7 @@ promptFragments:
 
     "pass" only if the change genuinely satisfies the instructions above; "fail" if
     it does not; "inconclusive" if you cannot tell.
+  conflictResolution: "This checkout (`{baseDir}`) has `{baseBranch}` checked out with that merge in progress — conflict markers are present in the listed paths. Resolve the conflicts so the result keeps both `{baseBranch}`'s and `{taskBranch}`'s work, then `git add` the resolved paths. Do not run `git commit`, do not create or switch branches, do not push, and do not change anything beyond what resolving this merge requires."
   operatorMessage: "## Operator message\n\n{seed}"
   selfHeal: "## Previous attempt failed — fix required (self-heal {attempt})\nYour previous attempt did not pass:\n{reason}\n\n{output}\n\nFix the cause so the full verification suite passes, then finish."
   peerMessages: "## Messages from peers\n\nThese came from peer Tasks, not from the operator.\n\n{messages}"
@@ -144,8 +146,12 @@ verify:
   epic:
     preMerge: { commands: [], critics: [] }
     resolvePrompt: "Resolve the Epic verification failures, then commit the fix."
+    resolveSuffix: "Work in the checked-out integration branch `{branch}`. Fix the failure and commit the result. Do not create or switch branches, and do not push."
 merge:
   postMergeCheck: true
+  conflictPrompt: "## Merge conflict resolution (turn {turn})\nMerging `{taskBranch}` into `{baseBranch}` conflicted in:\n{paths}\n\n{fragment.conflictResolution}"
+  epicRefreshPrompt: "## Epic integration refresh — merge conflict resolution\nMerging `{defaultBranch}` into the Epic integration branch `{branch}` conflicted:\n{detail}\n\nThis worktree has `{branch}` checked out with that merge in progress — conflict markers are present. Resolve the conflicts so the result keeps both `{branch}`'s work and `{defaultBranch}`'s changes, then complete the merge (`git add -A` and `git commit --no-edit`). Do not create or switch branches, do not push, and do not change anything beyond what resolving this merge requires."
+  epicConflictPrompt: "## Epic integration merge conflict resolution (turn {turn})\nMerging the Epic integration branch `{taskBranch}` into `{baseBranch}` conflicted in:\n{paths}\n\n{fragment.conflictResolution}"
 guardrails:
   budget:
     wallClockMinutes: 60

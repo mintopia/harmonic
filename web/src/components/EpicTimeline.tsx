@@ -1,12 +1,9 @@
-import { useEffect, useState } from 'react';
-import { api } from '../api.js';
-import type { TrackerRef } from '../types.js';
 import type { Epic } from '../epic-model.js';
 import { eventCount } from '../id-format.js';
 import { epicTimelineRows } from '../epic-timeline-model.js';
 import type { MergeStepTone } from '../merge-progress-model.js';
 import { card, railSectionCount } from '../ui.js';
-import { PromptSent } from './ticket/Description.js';
+import { ResolvedPromptInline } from './ticket/ResolvedPromptInline';
 
 const CAPS = 'text-label font-bold uppercase tracking-caps text-faint';
 
@@ -30,51 +27,7 @@ function clockTime(at: number): string {
   return new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 }
 
-type RefreshPrompt = { locator: string; at: string };
-
-function RefreshPromptItem({ workspaceId, epicRef, prompt }: { workspaceId: number; epicRef: TrackerRef; prompt: RefreshPrompt }) {
-  const [text, setText] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-  const load = () => {
-    if (text !== null) return;
-    api.epicRefreshPrompt(workspaceId, epicRef, prompt.locator).then(setText, () => setFailed(true));
-  };
-  const at = new Date(prompt.at).getTime();
-  return (
-    <details onToggle={(event) => event.currentTarget.open && load()} className="border-t border-hairline px-5 py-3">
-      <summary className="cursor-pointer text-small font-semibold text-ink">
-        Refresh resolver prompt · <time dateTime={prompt.at} className="font-data tabular-nums text-muted">{clockTime(at)}</time>
-      </summary>
-      {text !== null && <PromptSent prompt={text} label="Prompt sent" className="mt-3" />}
-      {failed && <p className="mt-2 text-small text-muted">The archived prompt could not be read.</p>}
-    </details>
-  );
-}
-
-/** The epic refresh resolver's Resolved Prompts, read from the Archive on demand; absent when none were sent. */
-function RefreshPrompts({ workspaceId, epicRef }: { workspaceId: number; epicRef: TrackerRef }) {
-  const [prompts, setPrompts] = useState<RefreshPrompt[]>([]);
-  useEffect(() => {
-    let live = true;
-    api.epicRefreshPrompts(workspaceId, epicRef).then(
-      ({ prompts: list }) => live && setPrompts(list),
-      () => {},
-    );
-    return () => {
-      live = false;
-    };
-  }, [workspaceId, epicRef]);
-  if (prompts.length === 0) return null;
-  return (
-    <div aria-label="Epic refresh resolver prompts">
-      {prompts.map((prompt) => (
-        <RefreshPromptItem key={prompt.locator} workspaceId={workspaceId} epicRef={epicRef} prompt={prompt} />
-      ))}
-    </div>
-  );
-}
-
-export function EpicTimeline({ epic, workspaceId }: { epic: Epic; workspaceId?: number }) {
+export function EpicTimeline({ epic, workspaceId }: { epic: Epic; workspaceId: number }) {
   const rows = epicTimelineRows(epic);
   return (
     <section aria-labelledby="epic-timeline-heading" className="py-5">
@@ -99,11 +52,19 @@ export function EpicTimeline({ epic, workspaceId }: { epic: Epic; workspaceId?: 
                   <span className="rounded-lg bg-raised px-1.5 py-px text-label font-bold uppercase tracking-caps-tight text-muted">{row.tag}</span>
                 </div>
                 {row.detail && <p className="mt-0.5 whitespace-pre-wrap break-words text-small text-muted">{row.detail}</p>}
+                {row.prompt && (
+                  <ResolvedPromptInline
+                    owner={{ workspaceId, epicRef: epic.ref, attempt: row.prompt.attempt }}
+                    locator={row.prompt.locator}
+                    index={row.prompt.index}
+                    label={row.label.replace(/ prompt sent$/, '')}
+                    className="mt-2"
+                  />
+                )}
               </div>
             </li>
           ))}
         </ol>
-        {workspaceId !== undefined && <RefreshPrompts workspaceId={workspaceId} epicRef={epic.ref} />}
       </div>
     </section>
   );

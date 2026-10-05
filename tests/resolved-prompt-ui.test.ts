@@ -3,17 +3,13 @@ import { createElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChatTranscript } from '../web/src/components/ticket/ChatTranscript.js';
 import { useTurnPrompts } from '../web/src/components/ticket/useTurnPrompts.js';
-import { EpicTimeline } from '../web/src/components/EpicTimeline.js';
-import type { Epic } from '../web/src/epic-model.js';
 import type { AttemptLogEvent } from '../web/src/types.js';
 import { cleanup, flush, mountComponent } from './component-smoke-harness.js';
 
-const { epicRefreshPrompts, epicRefreshPrompt, attemptResolvedPrompts } = vi.hoisted(() => ({
+const { attemptResolvedPrompts } = vi.hoisted(() => ({
   attemptResolvedPrompts: vi.fn(),
-  epicRefreshPrompts: vi.fn(),
-  epicRefreshPrompt: vi.fn(),
 }));
-vi.mock('../web/src/api.js', () => ({ api: { epicRefreshPrompts, epicRefreshPrompt, attemptResolvedPrompts } }));
+vi.mock('../web/src/api.js', () => ({ api: { attemptResolvedPrompts } }));
 
 const ev = (id: number, payload: Record<string, unknown>, type = 'session_update'): AttemptLogEvent => ({
   id,
@@ -72,32 +68,5 @@ describe('useTurnPrompts', () => {
     await flush();
     expect(attemptResolvedPrompts).toHaveBeenCalledWith(9, 'implementation/prompt.md');
     expect(JSON.parse(host.textContent ?? '[]')).toEqual([first, 'second']);
-  });
-});
-
-describe('epic refresh resolver prompts', () => {
-  const epic = { ref: '701', title: 't', kind: 'spec', state: 'open', timelineEvents: [], mergeSteps: [], createdAt: 1_000, updatedAt: null, members: [] } as unknown as Epic;
-
-  it('lists each prompt collapsed and reads its text from the Archive only when opened', async () => {
-    epicRefreshPrompts.mockResolvedValue({ prompts: [{ locator: 'refresh/r1/prompt.md', at: '2026-10-05T10:00:00.000Z' }] });
-    epicRefreshPrompt.mockResolvedValue('Refresh the epic exactly like this.');
-    const host = await mountComponent(createElement(EpicTimeline, { epic, workspaceId: 3 }));
-
-    const details = host.querySelector('details');
-    expect(details?.textContent).toContain('Refresh resolver prompt');
-    expect(epicRefreshPrompt).not.toHaveBeenCalled();
-
-    if (!details) throw new Error('missing details');
-    details.open = true;
-    details.dispatchEvent(new Event('toggle'));
-    await flush();
-    expect(epicRefreshPrompt).toHaveBeenCalledWith(3, '701', 'refresh/r1/prompt.md');
-    expect(host.textContent).toContain('Refresh the epic exactly like this.');
-  });
-
-  it('renders nothing extra when no refresh prompts exist', async () => {
-    epicRefreshPrompts.mockResolvedValue({ prompts: [] });
-    const host = await mountComponent(createElement(EpicTimeline, { epic, workspaceId: 3 }));
-    expect(host.querySelector('details')).toBeNull();
   });
 });

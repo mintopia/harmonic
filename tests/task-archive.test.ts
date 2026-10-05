@@ -116,6 +116,49 @@ describe('TaskArchive', () => {
     expect(typeof lines[0].ts).toBe('number');
   });
 
+  it('reports each prompt\'s 0-based index, continuing across a reopened writer', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const first = archiveFor().implementationStep(task, 1);
+    expect(first.promptLocator).toBe('implementation/prompt.md');
+    expect([await first.appendPrompt('a'), await first.appendPrompt('b')]).toEqual([0, 1]);
+    await first.close();
+    const reopened = archiveFor().implementationStep(task, 1);
+    expect(await reopened.appendPrompt('c')).toBe(2);
+    await reopened.close();
+    expect(await reopened.appendPrompt('d')).toBeNull();
+    const read = (index: number) => archiveFor().readResolvedPrompt(task, 1, 'implementation/prompt.md', index);
+    expect(await Promise.all([0, 1, 2, 3].map(read))).toEqual(['a', 'b', 'c', null]);
+  });
+
+  it('reads each prompt back by index even when an earlier prompt contains the separator or multibyte text', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const prompts = ['ticket body\n\n---\n\nwith a rule — é', 'second', '\n\n---\n\n', 'last'];
+    const writer = archiveFor().implementationStep(task, 1);
+    const indexes = [];
+    for (const text of prompts) indexes.push(await writer.appendPrompt(text));
+    await writer.close();
+    expect(indexes).toEqual([0, 1, 2, 3]);
+    const reopened = archiveFor().implementationStep(task, 1);
+    expect(await reopened.appendPrompt('after reopen')).toBe(4);
+    await reopened.close();
+    const read = (index: number) => archiveFor().readResolvedPrompt(task, 1, 'implementation/prompt.md', index);
+    expect(await Promise.all([0, 1, 2, 3, 4, 5].map(read))).toEqual([...prompts, 'after reopen', null]);
+  });
+
+  it('appends a resolution prompt under the Attempt for a Task owner and an Epic owner', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const archive = archiveFor();
+    expect(await archive.appendResolutionPrompt(task, 2, 'task-conflict', 1, 'task resolver prompt')).toEqual({
+      locator: 'resolution/task-conflict-1/prompt.md',
+      promptIndex: 0,
+    });
+    expect(readFileSync(join(await archive.ensure(task), 'attempts', '2', 'resolution', 'task-conflict-1', 'prompt.md'), 'utf8')).toBe('task resolver prompt');
+    const owner = { workspaceId: 1, epicRef: trackerRef(9) };
+    await archive.appendResolutionPrompt(owner, 3, 'epic-resolve', 1, 'one');
+    expect(await archive.appendResolutionPrompt(owner, 3, 'epic-resolve', 1, 'two')).toEqual({ locator: 'resolution/epic-resolve-1/prompt.md', promptIndex: 1 });
+    expect(await archive.readArchivedPrompt(owner, 3, 'resolution/epic-resolve-1/prompt.md')).toBe('one\n\n---\n\ntwo');
+  });
+
   it('appends a later turn of the same Attempt to the existing prompt.md and acp.jsonl', async () => {
     const task = await tasks.create({ prompt: 'p' });
     const archive = archiveFor();

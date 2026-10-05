@@ -100,6 +100,14 @@ const epicTimelineStepSchema = z
     z.object({ step: z.literal('export-built'), disposition: z.string(), name: z.string(), bytes: z.number().int(), partial: z.boolean() }),
     z.object({ step: z.literal('export-delivered'), destination: z.enum(['directory', 's3']), file: z.string(), retry: z.number().int() }),
     z.object({ step: z.literal('export-failed'), destination: z.enum(['directory', 's3']), error: z.string(), retry: z.number().int(), nextRetryAt: z.string().nullable() }),
+    z.object({
+      step: z.literal('resolver-prompt'),
+      kind: z.enum(['merge-conflict', 'refresh']),
+      turn: z.number().int().optional(),
+      attempt: z.number().int().positive(),
+      locator: z.string(),
+      promptIndex: z.number().int().nonnegative(),
+    }),
   ])
   .meta({ id: 'EpicTimelineStep' });
 
@@ -175,6 +183,12 @@ const epicAttemptSchema = z
       endedAt: z.number().int().nullable(),
     })),
     verificationAttempts: z.array(verificationAttemptSchema),
+    resolverPrompts: z.array(z.object({
+      kind: z.enum(['merge-conflict', 'verification', 'refresh']),
+      locator: z.string(),
+      promptIndex: z.number().int().nonnegative(),
+      ts: z.number().int(),
+    })),
   })
   .meta({ id: 'EpicAttempt' });
 
@@ -259,50 +273,6 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
   );
 
   app.get(
-    '/workspaces/:workspaceId/epics/:epicRef/refresh-prompts',
-    {
-      schema: {
-        tags: ['Epics'],
-        description: 'List the archived Epic refresh-resolver prompts (the corrective merge-conflict turns), oldest first. Each locator is readable via `GET …/refresh-prompt`.',
-        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
-        params: epicParamsSchema,
-        response: {
-          200: z.object({ prompts: z.array(z.object({ locator: z.string().meta({ example: 'refresh/1767000000000-ab12cd/prompt.md' }), at: z.string() })) }).describe('Archived refresh-resolver prompt locators with their timestamps.'),
-          404: errorResponse('No Workspace has that id.'),
-        },
-      },
-    },
-    async (req) => {
-      await ctx.workspaces.assertExists(req.params.workspaceId);
-      return { prompts: await ctx.archive.listEpicRefreshPrompts(req.params.workspaceId, req.params.epicRef) };
-    },
-  );
-
-  app.get(
-    '/workspaces/:workspaceId/epics/:epicRef/refresh-prompt',
-    {
-      schema: {
-        tags: ['Epics'],
-        description:
-          'Read an archived Epic refresh-resolver prompt by its locator (from `GET …/refresh-prompts`), as text/plain. Read on demand off the event loop. 404 when the Workspace or the archived prompt is absent.',
-        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
-        params: epicParamsSchema,
-        querystring: z.object({ locator: z.string().min(1).describe('Archive locator, e.g. `refresh/<runId>/prompt.md`.') }),
-        response: {
-          200: z.any().describe('The archived prompt text exactly as sent.'),
-          404: errorResponse('No such Workspace, or no archived refresh prompt at the locator.'),
-        },
-      },
-    },
-    async (req, reply) => {
-      await ctx.workspaces.assertExists(req.params.workspaceId);
-      const text = await ctx.archive.readArchivedEpicRefreshPrompt(req.params.workspaceId, req.params.epicRef, req.query.locator);
-      if (text === null) throw new DomainError('not_found', `no archived refresh prompt for epic ${req.params.epicRef} at that locator`);
-      return reply.header('content-type', 'text/plain; charset=utf-8').send(text);
-    },
-  );
-
-  app.get(
     '/workspaces/:workspaceId/epics/:epicRef/attempts',
     {
       schema: {
@@ -319,6 +289,39 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
       return epicAttemptTimelineToApi(ctx, { workspaceId: req.params.workspaceId, epicRef: req.params.epicRef });
+    },
+  );
+
+  app.get(
+    '/workspaces/:workspaceId/epics/:epicRef/resolved-prompt',
+    {
+      schema: {
+        tags: ['Epics'],
+        description:
+          "Read an Epic's Resolved Prompt from the Task Archive by Attempt number and Attempt-relative locator, as text/plain. Serves prompts archived before the Epic had an Attempt row (under Attempt 1). 404 when the archived prompt is absent.",
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: epicParamsSchema,
+        querystring: z.object({
+          attempt: z.coerce.number().int().positive().describe('Epic-local Attempt number the prompt was archived under.'),
+          locator: z.string().min(1).describe('Archive locator of the prompt file, relative to the Attempt directory.'),
+          index: z.coerce.number().int().min(0).optional().describe('0-based index of one prompt within the file; omit to return the whole file.'),
+        }),
+        response: {
+          200: z.any().describe('The archived prompt text exactly as sent, or only the `index`-th prompt when `index` is given.'),
+          404: errorResponse('No Workspace has that id, or no archived Resolved Prompt at the locator.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      await ctx.workspaces.assertExists(req.params.workspaceId);
+      const text = await ctx.archive.readResolvedPrompt(
+        { workspaceId: req.params.workspaceId, epicRef: req.params.epicRef },
+        req.query.attempt,
+        req.query.locator,
+        req.query.index,
+      );
+      if (text === null) throw new DomainError('not_found', `no archived resolved prompt for epic ${req.params.epicRef} at that locator/index`);
+      return reply.header('content-type', 'text/plain; charset=utf-8').send(text);
     },
   );
 

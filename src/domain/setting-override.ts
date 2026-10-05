@@ -229,6 +229,14 @@ export function resolvePauseMessage(
   return resolveScoped('pauseMessage', ws?.pauseMessage, config.pauseMessage);
 }
 
+/** Resolve the nudge sent when an Attempt ends its turn with uncommitted changes. */
+export function resolveCommitNudge(
+  ws: Pick<WorkspaceRow, 'driveCommitNudge'> | null | undefined,
+  config: Pick<AppConfig, 'drive'>,
+): string {
+  return resolveScoped('driveCommitNudge', ws?.driveCommitNudge, config.drive.commitNudge);
+}
+
 /** Resolve the Prompt Fragments a Workspace's prompts reference, each `workspace ?? global`. */
 export function resolvePromptFragments(
   ws: Partial<PromptFragmentOverrides> | null | undefined,
@@ -242,5 +250,17 @@ export function resolvePromptFragments(
         return [name, resolveScoped(key, ws?.[key], config.promptFragments[name])];
       }),
     ) as PromptFragments),
+  };
+}
+
+/** Resolve the merge-conflict resolution prompts and their shared fragment for a Workspace, each `workspace ?? global`. */
+export function resolveMergePrompts(
+  ws: Pick<WorkspaceRow, 'promptFragmentReadOnlyRestraint' | 'promptFragmentConflictResolution' | 'mergeConflictPrompt' | 'mergeEpicConflictPrompt'> | null | undefined,
+  config: Pick<AppConfig, 'merge' | 'promptFragments'>,
+): { conflictPrompt: string; epicConflictPrompt: string; fragments: AppConfig['promptFragments'] } {
+  return {
+    conflictPrompt: resolveScoped('mergeConflictPrompt', ws?.mergeConflictPrompt, config.merge.conflictPrompt),
+    epicConflictPrompt: resolveScoped('mergeEpicConflictPrompt', ws?.mergeEpicConflictPrompt, config.merge.epicConflictPrompt),
+    fragments: resolvePromptFragments(ws, config),
   };
 }

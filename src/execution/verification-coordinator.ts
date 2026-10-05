@@ -2,7 +2,8 @@ import type { TrackerRef } from '../tracker/adapter.js';
 import { Git } from './git.js';
 import { adapterFor, adapterVersion } from './harness/registry.js';
 import { collectUsage, toolCallName } from './usage.js';
-import { driveFields } from './prompt-template.js';
+import { driveFields, fillTemplate } from './prompt-template.js';
+import { logger } from '../logger.js';
 import { indexWorktree } from './code-index.js';
 import { integrationBranchName } from './epic-coordinator.js';
 import { LIVE_RUN_LOG_EVENT_ID_OFFSET } from './live-events.js';
@@ -48,7 +49,7 @@ export interface EpicVerificationResolutionInput {
 
 export type LifecycleRecorder = (type: 'lifecycle', payload: unknown) => void;
 
-export type VerificationEvents = Pick<RunnerEvents, 'onAttemptLogEvent' | 'onCriticLogEvent'>;
+export type VerificationEvents = Pick<RunnerEvents, 'onAttemptEvent' | 'onAttemptLogEvent' | 'onCriticLogEvent'>;
 
 type VerifierWorkspace = Pick<
   WorkspaceRow,
@@ -409,8 +410,12 @@ export class VerificationCoordinator {
       '## Failing Epic verification',
       input.verificationReason,
       '',
-      `Work in the checked-out integration branch \`${branch}\`. Fix the failure and commit the result. Do not create or switch branches, and do not push.`,
+      fillTemplate(config.verify.epic.resolveSuffix, { branch }),
     ].join('\n');
+    const archived = await this.deps.archive?.appendResolutionPrompt({ workspaceId: input.workspaceId, epicRef: input.epicRef }, input.attempt.number, 'epic-resolve', 1, prompt);
+    await this.deps.attempts.appendEvent(input.attempt.id, { type: 'lifecycle', payload: { event: 'epic-resolve', kind: 'verification', ...archived } }).then((event) => this.deps.events.onAttemptEvent?.(event)).catch((err: unknown) => {
+      logger.warn('epic-resolve event failed', { attemptId: input.attempt.id, error: err instanceof Error ? err.message : String(err) });
+    });
     const toolCalls = this.deps.activeRuns.getToolCallTotals(input.attempt.id) ?? await this.deps.attempts.listToolCalls(input.attempt.id);
     this.deps.activeRuns.setToolCallTotals(input.attempt.id, toolCalls);
     const onUpdate = (update: { sessionUpdate: string; [key: string]: unknown }): void => {
