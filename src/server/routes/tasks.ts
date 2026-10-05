@@ -1145,6 +1145,30 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
   );
 
   app.get(
+    '/attempts/:id/resolved-prompt',
+    {
+      schema: {
+        tags: ['Attempts'],
+        description:
+          "Read a Resolved Prompt from the Task Archive by its Attempt-relative locator (e.g. `verification/pre-merge/<stepId>/prompt.md` or `implementation/prompt.md`), as text/plain. The file is read on demand off the event loop; nothing is stored in the database. 404 when the Attempt or the archived prompt is absent.",
+        params: idParamsSchema,
+        querystring: z.object({ locator: z.string().min(1).describe('Archive locator of the prompt file, relative to the Attempt directory.') }),
+        response: {
+          200: z.any().describe('The archived prompt text exactly as sent (multiple prompts in one step are separated by a horizontal rule).'),
+          404: errorResponse('No such Attempt, or no archived Resolved Prompt at the locator.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const run = await ctx.attempts.get(req.params.id).catch(() => null);
+      const owner = run ? await archiveOwner(run) : null;
+      const text = run && owner ? await ctx.archive.readArchivedPrompt(owner, run.number, req.query.locator) : null;
+      if (text === null) throw new DomainError('not_found', `no archived resolved prompt for attempt ${req.params.id} at that locator`);
+      return reply.header('content-type', 'text/plain; charset=utf-8').send(text);
+    },
+  );
+
+  app.get(
     '/verification-attempts/:id/log',
     {
       schema: {

@@ -20031,6 +20031,59 @@
         }
       }
     },
+    "/api/attempts/{id}/resolved-prompt": {
+      "get": {
+        "tags": [
+          "Attempts"
+        ],
+        "description": "Read a Resolved Prompt from the Task Archive by its Attempt-relative locator (e.g. `verification/pre-merge/<stepId>/prompt.md` or `implementation/prompt.md`), as text/plain. The file is read on demand off the event loop; nothing is stored in the database. 404 when the Attempt or the archived prompt is absent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "query",
+            "name": "locator",
+            "required": true,
+            "description": "Archive locator of the prompt file, relative to the Attempt directory."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The archived prompt text exactly as sent (multiple prompts in one step are separated by a horizontal rule).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The archived prompt text exactly as sent (multiple prompts in one step are separated by a horizontal rule)."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such Attempt, or no archived Resolved Prompt at the locator.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/verification-attempts/{id}/log": {
       "get": {
         "tags": [
