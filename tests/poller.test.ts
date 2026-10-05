@@ -145,6 +145,24 @@ describe('TrackerPoller.poll', () => {
     expect(poller.urlFor(trackerRef(10))).toBe(epic.url);
   });
 
+  it('keeps an open label-less Epic a container after all its mirrored children closed', async () => {
+    const epic = ticket({ ref: trackerRef(10), title: 'Root epic' });
+    const child = ticket({ ref: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] });
+    const open = [epic, child];
+    const { adapter } = openOnlyAdapter(open, { '11': { ...child, state: 'closed' } });
+    const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
+    await poller.poll();
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual(['10']);
+
+    open.splice(1, 1);
+    await poller.poll();
+    await poller.poll();
+
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual(['10']);
+    expect((await tasks.list()).map((t) => t.trackerRef)).toEqual(['11']);
+    expect((await tasks.list())[0]).toMatchObject({ state: 'done' });
+  });
+
   it('records each poll and its mirror work as linked Operations (issue #288)', async () => {
     const exporter = installOperations();
     const { adapter } = stubAdapter([

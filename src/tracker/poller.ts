@@ -75,11 +75,12 @@ export class TrackerPoller {
     poll.update({ 'tracker.name': adapter.name });
     const observedAt = Date.now();
     const scanned = await adapter.scan();
-    const active = await this.tasks.list({ workspaceId: this.workspaceId, state: 'open' });
+    const rows = adapter.scansOpenOnly ? await this.tasks.list({ workspaceId: this.workspaceId }) : [];
     const tickets = await this.closedRefs.complete(
       adapter,
       scanned,
-      active.flatMap((task) => (task.origin === 'mirrored' && task.trackerRef !== null ? [task.trackerRef] : [])),
+      rows.flatMap((task) => (task.origin === 'mirrored' && task.trackerRef !== null && task.state !== 'done' && task.state !== 'cancelled' ? [task.trackerRef] : [])),
+      adapter.scansOpenOnly ? await persistedTickets(rows, []) : [],
     );
     poll.update({ 'tracker.ticket.count': tickets.length });
     this.urlByRef = new Map();
