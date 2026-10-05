@@ -91,6 +91,9 @@ export interface RunnerOptions {
         | 'pauseMessage'
         | PromptFragmentOverrideKey
         | 'agentMessagesEnabled'
+        | 'driveCommitNudge'
+        | 'mergeConflictPrompt'
+        | 'mergeEpicConflictPrompt'
       > &
         Partial<Pick<WorkspaceRow, 'workingDir'>>)
     | undefined

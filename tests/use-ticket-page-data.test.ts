@@ -54,7 +54,7 @@ describe('useTicketPageData (issue #657)', () => {
       1,
       null,
       fakeDeps({
-        loadConfig: async () => makeConfig({ maxAttempts: 3, verify: { task: { preMerge: { commands: [], critics: [] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: '' } } }),
+        loadConfig: async () => makeConfig({ maxAttempts: 3, verify: { task: { preMerge: { commands: [], critics: [] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: '', resolveSuffix: '' } } }),
         loadWorkspaces: async () => ({
           workspaces: [
             makeWorkspace({

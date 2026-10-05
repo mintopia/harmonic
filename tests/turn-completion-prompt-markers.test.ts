@@ -40,7 +40,7 @@ describe('prompt_sent markers line up with archived prompts', () => {
     expect(log).toEqual([
       'prompt_sent', 'archived:first text',
       'steer_delivered', 'prompt_sent', 'archived:steer text',
-      'continue', 'prompt_sent', 'archived:continue text',
+      'prompt_sent', 'archived:continue text', 'continue',
       'finished', 'commit-nudge', 'prompt_sent', 'archived:nudge text',
     ]);
     expect(log.filter((entry) => entry === 'prompt_sent')).toHaveLength(prompts.length);

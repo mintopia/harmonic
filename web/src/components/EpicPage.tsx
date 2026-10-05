@@ -44,6 +44,8 @@ import { CriticSessions } from './ticket/Verification';
 import { ExportPanel } from './ticket/ExportPanel';
 import { epicExportTarget } from '../export-targets';
 import { EpicTimeline } from './EpicTimeline';
+import { ResolvedPromptInline } from './ticket/ResolvedPromptInline';
+import { EPIC_RESOLVER_LABEL } from '../epic-timeline-model';
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
 
@@ -239,7 +241,7 @@ function EpicVerificationOutput({ attempts }: { attempts: VerificationAttempt[] 
   );
 }
 
-function EpicAttemptsTimeline({ attempts }: { attempts: EpicAttempt[] }) {
+export function EpicAttemptsTimeline({ attempts }: { attempts: EpicAttempt[] }) {
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
@@ -262,6 +264,11 @@ function EpicAttemptsTimeline({ attempts }: { attempts: EpicAttempt[] }) {
                 <span className="text-data text-faint tabular-nums">{attempt.usage.totals.totalTokens.toLocaleString()} tokens</span>
               )}
               {attempt.reason && <p className="w-full text-small text-muted">{attempt.reason}</p>}
+              {attempt.resolverPrompts.map((prompt) => (
+                <div key={`${prompt.locator}:${prompt.promptIndex}`} className="w-full">
+                  <ResolvedPromptInline owner={{ attemptId: attempt.id }} locator={prompt.locator} index={prompt.promptIndex} label={EPIC_RESOLVER_LABEL[prompt.kind]} className="mt-1" />
+                </div>
+              ))}
               <EpicVerificationOutput attempts={attempt.verificationAttempts} />
             </li>
           ))}

@@ -14,6 +14,12 @@ export const PROMPT_FRAGMENTS = {
     fields: {},
     required: [],
   },
+  conflictResolution: {
+    label: 'Conflict resolution',
+    help: 'Shared instructions for resolving a merge conflict; referenced from the merge conflict prompts as {fragment.conflictResolution}, defined once, never copied.',
+    fields: { baseDir: 'the checkout with the merge in progress', baseBranch: 'the branch merged into', taskBranch: 'the branch being merged' },
+    required: [],
+  },
   operatorMessage: {
     label: 'Operator message',
     help: "Heading and body for the operator's message in an Attempt prompt.",

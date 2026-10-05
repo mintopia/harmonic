@@ -111,14 +111,16 @@ const configPatchBodySchema = z
         continuePrompt: z.string().meta({ example: "Your last turn ended but Task {taskId} isn't finished…" }),
         mergeFate: z.enum(MERGE_FATES).meta({ example: 'auto-merge' }),
         continueAttempts: z.number().int().min(0).meta({ example: 1 }),
+        commitNudge: z.string().min(1).meta({ example: 'Commit the completed work now, then finish.' }),
       })
       .partial()
       .optional(),
     promptFragments: z.object(globalPromptFragmentsShape).partial().optional(),
+    merge: appConfigSchema.shape.merge.partial().optional(),
     verify: z
       .object({
         task: z.object({ preMerge: taskVerificationStageSchema, postMerge: taskVerificationStageSchema }).partial(),
-        epic: z.object({ preMerge: epicVerificationStageSchema, resolvePrompt: z.string().min(1) }).partial(),
+        epic: z.object({ preMerge: epicVerificationStageSchema, resolvePrompt: z.string().min(1), resolveSuffix: appConfigSchema.shape.verify.shape.epic.shape.resolveSuffix }).partial(),
       })
       .partial()
       .optional(),

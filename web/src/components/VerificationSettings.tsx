@@ -285,7 +285,7 @@ export function GlobalVerificationSettings({
                   })
                 }
                 placeholders={EPIC_RESOLVE_PLACEHOLDERS}
-                preview={compileEpicResolvePreview(config.verify.epic.resolvePrompt)}
+                preview={compileEpicResolvePreview(config.verify.epic.resolvePrompt, config.verify.epic.resolveSuffix)}
                 error={fieldErrors["verify.epic.resolvePrompt"]}
                 rows={5}
               />

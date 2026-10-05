@@ -79,9 +79,10 @@ describe('prompt-preview-model (settings compiled preview)', () => {
 
   it('matches the Epic resolver prompt and offers its supported tokens', () => {
     expect(EPIC_RESOLVE_PLACEHOLDERS.map((p) => p.token)).toEqual(['{title}', '{description}', '{ref}', '{url}']);
-    expect(compileEpicResolvePreview('Fix {ref}: {title} — {description}')).toContain(
+    expect(compileEpicResolvePreview('Fix {ref}: {title} — {description}', 'Work in {branch}.')).toContain(
       `Fix ${SAMPLE_DRIVE_FIELDS.ref}: ${SAMPLE_DRIVE_FIELDS.title} — ${SAMPLE_DRIVE_FIELDS.description}`,
     );
-    expect(compileEpicResolvePreview('Fix {ref}.')).toContain('## Failing Epic verification');
+    expect(compileEpicResolvePreview('Fix {ref}.', 'Work in {branch}.')).toContain('## Failing Epic verification');
+    expect(compileEpicResolvePreview('Fix {ref}.', 'Stay on {branch}.')).toContain(`Stay on epic/${SAMPLE_DRIVE_FIELDS.ref}.`);
   });
 });

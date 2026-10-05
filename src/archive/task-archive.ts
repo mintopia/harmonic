@@ -40,11 +40,16 @@ interface ArchiveManifest {
 
 export interface StepArchiveWriter {
   readonly dir: Promise<string>;
-  appendPrompt(text: string): void;
+  /** Attempt-relative path of this step's `prompt.md`. */
+  readonly promptLocator: string;
+  /** Append a Resolved Prompt; resolves to its 0-based index in `prompt.md`, or null when the write failed. */
+  appendPrompt(text: string): Promise<number | null>;
   appendUpdate(update: unknown): void;
   copyNative(harness: string, transcriptPath: string | null): Promise<void>;
   close(): Promise<void>;
 }
+
+export type ResolutionKind = 'task-conflict' | 'epic-conflict' | 'epic-resolve' | 'epic-refresh';
 
 export type CriticArchiveStage = 'pre-merge' | 'post-merge';
 
@@ -65,7 +70,6 @@ export interface OperatorInput {
 const PROMPT_SEPARATOR = '\n\n---\n\n';
 const PROMPT_INDEX_FILE = 'prompt.index.jsonl';
 const PROMPT_READ_CHUNK_BYTES = 64 * 1024;
-
 
 function warn(message: string, err: unknown, fields: Record<string, unknown> = {}): void {
   logger.warn(message, { ...fields, error: err instanceof Error ? err.message : String(err) });
@@ -118,9 +122,9 @@ class AppendFile {
   constructor(private readonly dir: Promise<string>, private readonly name: string) {}
 
   /** `onWritten` receives the byte offset and length of `data` itself (excluding the separator). */
-  write(data: string, separator = '', onWritten?: (start: number, length: number) => void): void {
-    if (this.closed) return;
-    this.chain = this.chain.then(async () => {
+  write(data: string, separator = '', onWritten?: (start: number, length: number) => void): Promise<boolean> {
+    if (this.closed) return Promise.resolve(false);
+    const written = this.chain.then(async (): Promise<boolean> => {
       try {
         if (!this.stream) {
           const path = join(await this.dir, this.name);
@@ -130,7 +134,7 @@ class AppendFile {
           this.stream.on('error', (err) => warn('archive: append stream failed', err, { file: this.name }));
         }
         const stream = this.stream;
-        if (stream.destroyed) return;
+        if (stream.destroyed) return false;
         const lead = this.hasContent ? Buffer.byteLength(separator) : 0;
         const start = this.size + lead;
         const length = Buffer.byteLength(data);
@@ -144,10 +148,14 @@ class AppendFile {
           });
         });
         onWritten?.(start, length);
+        return true;
       } catch (err) {
         warn('archive: append failed', err, { file: this.name });
+        return false;
       }
     });
+    this.chain = written.then(() => undefined);
+    return written;
   }
 
   async close(): Promise<void> {
@@ -378,24 +386,44 @@ export class TaskArchive {
   }
 
   implementationStep(task: TaskRow, attemptNumber: number): StepArchiveWriter {
-    return this.stepWriter(this.implementationDir(task, attemptNumber), { taskId: task.id, attemptNumber });
+    return this.stepWriter(this.implementationDir(task, attemptNumber), 'implementation', { taskId: task.id, attemptNumber });
+  }
+
+  /**
+   * Archive a conflict- or Epic-resolution turn's Resolved Prompt at `<attempt>/resolution/<kind>-<turn>/prompt.md`
+   * before it is sent. Best-effort: resolves null (never throws) when the Archive write fails.
+   */
+  async appendResolutionPrompt(
+    owner: TaskRow | { workspaceId: number; epicRef: TrackerRef },
+    attemptNumber: number,
+    kind: ResolutionKind,
+    turn: number,
+    prompt: string,
+  ): Promise<{ locator: string; promptIndex: number } | null> {
+    const rel = `resolution/${kind}-${turn}`;
+    const root = 'epicRef' in owner ? this.ensureEpic(owner.workspaceId, owner.epicRef) : this.ensure(owner);
+    const dir = root.then((r) => this.makeDir(join(r, 'attempts', String(attemptNumber), rel)));
+    const writer = this.stepWriter(dir, rel, { attemptNumber, kind, turn });
+    try {
+      const promptIndex = await writer.appendPrompt(prompt);
+      await writer.close();
+      return promptIndex === null ? null : { locator: writer.promptLocator, promptIndex };
+    } catch (err) {
+      warn('archive: resolution prompt failed', err, { attemptNumber, kind, turn });
+      return null;
+    }
   }
 
   criticStep(task: TaskRow, attemptNumber: number, stage: CriticArchiveStage, stepId: string): StepArchiveWriter {
     const dir = this.ensure(task).then((root) => this.makeDir(join(root, 'attempts', String(attemptNumber), 'verification', stage, stepId)));
-    return this.stepWriter(dir, { taskId: task.id, attemptNumber, stage, stepId });
+    return this.stepWriter(dir, `verification/${stage}/${stepId}`, { taskId: task.id, attemptNumber, stage, stepId });
   }
 
   epicCriticStep(workspaceId: number, epicRef: TrackerRef, attemptNumber: number, stepId: string): StepArchiveWriter {
     const dir = this.ensureEpic(workspaceId, epicRef).then((root) =>
       this.makeDir(join(root, 'attempts', String(attemptNumber), 'verification', 'pre-merge', stepId)),
     );
-    return this.stepWriter(dir, { workspaceId, epicRef, attemptNumber, stepId });
-  }
-
-  epicRefreshStep(workspaceId: number, epicRef: TrackerRef, runId: string): StepArchiveWriter {
-    const dir = this.ensureEpic(workspaceId, epicRef).then((root) => this.makeDir(join(root, 'refresh', safeSegment(runId))));
-    return this.stepWriter(dir, { workspaceId, epicRef, runId });
+    return this.stepWriter(dir, `verification/pre-merge/${stepId}`, { workspaceId, epicRef, attemptNumber, stepId });
   }
 
   ensureEpic(workspaceId: number, epicRef: TrackerRef): Promise<string> {
@@ -475,43 +503,6 @@ export class TaskArchive {
     }
   }
 
-  /** Read an Epic refresh-resolver prompt by its `refresh/<runId>/prompt.md` locator; null when absent or not a prompt file under the Epic's `refresh` directory. */
-  async readArchivedEpicRefreshPrompt(
-    workspaceId: number,
-    epicRef: TrackerRef,
-    locator: string,
-    yieldNow: () => Promise<void> = yieldToEventLoop,
-  ): Promise<string | null> {
-    try {
-      const root = await this.existingOwnerDir({ workspaceId, epicRef });
-      if (!root) return null;
-      return await this.readPromptFile(join(root, 'refresh'), locator.replace(/^refresh\//, ''), yieldNow);
-    } catch (err) {
-      warn('archive: epic refresh prompt read failed', err, { workspaceId, epicRef, locator });
-      return null;
-    }
-  }
-
-  /** Locators of the archived refresh-resolver prompts for an Epic, oldest first. */
-  async listEpicRefreshPrompts(workspaceId: number, epicRef: TrackerRef): Promise<{ locator: string; at: string }[]> {
-    try {
-      const root = await this.existingOwnerDir({ workspaceId, epicRef });
-      if (!root) return [];
-      const refreshDir = join(root, 'refresh');
-      const found: { locator: string; at: string; ms: number }[] = [];
-      for (const entry of await readdir(refreshDir, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        const info = await stat(join(refreshDir, entry.name, 'prompt.md')).catch(() => null);
-        if (info) found.push({ locator: `refresh/${entry.name}/prompt.md`, at: info.birthtime.toISOString(), ms: info.birthtimeMs });
-        await yieldToEventLoop();
-      }
-      return found.sort((a, b) => a.ms - b.ms).map(({ locator, at }) => ({ locator, at }));
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') warn('archive: epic refresh prompt listing failed', err, { workspaceId, epicRef });
-      return [];
-    }
-  }
-
   private async readPromptFile(baseDir: string, locator: string, yieldNow: () => Promise<void>): Promise<string | null>;
   private async readPromptFile(baseDir: string, locator: string, yieldNow: () => Promise<void>, raw: true, name?: string): Promise<Buffer | null>;
   private async readPromptFile(baseDir: string, locator: string, yieldNow: () => Promise<void>, raw = false, name = 'prompt.md'): Promise<string | Buffer | null> {
@@ -537,6 +528,17 @@ export class TaskArchive {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT' || (err as NodeJS.ErrnoException).code === 'EISDIR') return null;
       throw err;
     }
+  }
+
+  /** The whole archived prompt file, or only its `index`-th prompt (sliced by the byte-offset sidecar); null when absent or out of range. */
+  async readResolvedPrompt(
+    owner: TaskRow | { workspaceId: number; epicRef: TrackerRef },
+    attemptNumber: number,
+    locator: string,
+    index?: number,
+  ): Promise<string | null> {
+    if (index === undefined) return this.readArchivedPrompt(owner, attemptNumber, locator);
+    return (await this.readArchivedPromptSegments(owner, attemptNumber, locator))?.[index] ?? null;
   }
 
   async archivedTranscript(
@@ -594,17 +596,39 @@ export class TaskArchive {
     return dir;
   }
 
-  private stepWriter(dir: Promise<string>, fields: Record<string, unknown>): StepArchiveWriter {
+  /** Prompts already archived in a step directory (a resumed step appends to the same file). */
+  private async archivedPromptCount(dir: Promise<string>): Promise<number> {
+    try {
+      const root = await dir;
+      const index = await readFile(join(root, PROMPT_INDEX_FILE), 'utf8').catch(() => null);
+      if (index !== null) return index.split('\n').filter((l) => l !== '').length;
+      const body = await readFile(join(root, 'prompt.md'), 'utf8').catch(() => '');
+      return body === '' ? 0 : body.split(PROMPT_SEPARATOR).length;
+    } catch {
+      return 0;
+    }
+  }
+
+  private stepWriter(dir: Promise<string>, relDir: string, fields: Record<string, unknown>): StepArchiveWriter {
     dir.catch((err) => warn('archive: step directory failed', err, fields));
     const prompts = new AppendFile(dir, 'prompt.md');
     const promptIndex = new AppendFile(dir, PROMPT_INDEX_FILE);
+    let promptChain: Promise<unknown> = Promise.resolve();
+    let count: number | null = null;
     const updates = new AppendFile(dir, 'acp.jsonl');
     let closing: Promise<void> | null = null;
     let natives: Promise<void> = Promise.resolve();
     return {
       dir,
+      promptLocator: `${relDir}/prompt.md`,
       appendPrompt: (text) => {
-        prompts.write(text, PROMPT_SEPARATOR, (start, length) => promptIndex.write(`${JSON.stringify({ start, length })}\n`));
+        const appended = promptChain.then(async () => {
+          count ??= await this.archivedPromptCount(dir);
+          if (!(await prompts.write(text, PROMPT_SEPARATOR, (start, length) => { promptIndex.write(`${JSON.stringify({ start, length })}\n`); }))) return null;
+          return count++;
+        });
+        promptChain = appended;
+        return appended;
       },
       appendUpdate: (update) => {
         let line: string;
@@ -620,7 +644,7 @@ export class TaskArchive {
         natives = natives.then(() => this.copyNativeInto(() => dir, harness, transcriptPath, fields));
         return natives;
       },
-      close: () => (closing ??= Promise.all([prompts.close().then(() => promptIndex.close()), updates.close(), natives]).then(() => undefined)),
+      close: () => (closing ??= Promise.all([promptChain.then(() => prompts.close()).then(() => promptIndex.close()), updates.close(), natives]).then(() => undefined)),
     };
   }
 

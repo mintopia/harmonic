@@ -322,6 +322,7 @@ export const appConfigSchema = z.object({
     continuePrompt: z.string().meta({ example: 'Continue Task {taskId}.' }),
     mergeFate: z.enum(MERGE_FATES).meta({ example: 'auto-merge' }),
     continueAttempts: z.number().int().min(0).meta({ example: 10 }),
+    commitNudge: z.string().min(1).meta({ example: 'Commit the completed work now, then finish.' }),
   }),
   /** Operator-editable wrapper around a native Task's prompt (`{prompt}`, `{id}`, `{workingDir}`, `{harness}`, `{model}`); defaults to bare `{prompt}`. */
   taskPrompt: z.string().meta({ example: 'Work on {prompt}.' }),
@@ -335,11 +336,14 @@ export const appConfigSchema = z.object({
   /** Ordered verifier lists for each Task and Epic verification stage. */
   verify: z.object({
     task: z.object({ preMerge: taskVerificationStageSchema, postMerge: taskVerificationStageSchema }),
-    epic: z.object({ preMerge: epicVerificationStageSchema, resolvePrompt: z.string().min(1) }),
+    epic: z.object({ preMerge: epicVerificationStageSchema, resolvePrompt: z.string().min(1), resolveSuffix: z.string().min(1).meta({ example: 'Work in the checked-out integration branch `{branch}`.' }) }),
   }),
-  /** `postMergeCheck` runs the verification commands on the merged base tip; the off-switch for slow suites. */
+  /** `postMergeCheck` runs the verification commands on the merged base tip; the off-switch for slow suites. `conflictPrompt`/`epicConflictPrompt` open a conflict-resolution turn (`{turn}`, `{taskBranch}`, `{baseBranch}`, `{paths}`, `{fragment.conflictResolution}`). */
   merge: z.object({
     postMergeCheck: z.boolean(),
+    conflictPrompt: z.string().min(1).meta({ example: '## Merge conflict resolution (turn {turn})\n{paths}' }),
+    epicRefreshPrompt: z.string().min(1).meta({ example: '## Epic integration refresh\nMerging {defaultBranch} into {branch} conflicted:\n{detail}' }),
+    epicConflictPrompt: z.string().min(1).meta({ example: '## Epic integration merge conflict resolution (turn {turn})\n{paths}' }),
   }),
   /**
    * `budget` = the wall-clock/token/cost caps; `progress` toggles the stall/loop detector;

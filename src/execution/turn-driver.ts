@@ -135,6 +135,7 @@ export class TurnDriver {
       autoDrive: deps.autoDrive,
       taskService: deps.taskService,
       getConfig: deps.getConfig,
+      getWorkspace: deps.getWorkspace,
       postMerge: deps.postMerge,
       isShuttingDown: deps.isShuttingDown,
       settleEscalated: deps.settleEscalated,

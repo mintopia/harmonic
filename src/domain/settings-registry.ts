@@ -235,6 +235,27 @@ export const settingsRegistry = {
     help: 'Message injected before a running Task pauses; inherits the global message unless overridden.',
   },
   ...promptFragmentSettings,
+  driveCommitNudge: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'prompts',
+    label: 'Commit nudge',
+    help: 'Sent when an Attempt ends its turn with uncommitted changes, asking the agent to commit; inherits the global default when unset.',
+  },
+  mergeConflictPrompt: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'prompts',
+    label: 'Merge conflict prompt',
+    help: 'Opens a Task merge-conflict resolution turn ({turn}, {taskBranch}, {baseBranch}, {paths}, {fragment.conflictResolution}); inherits the global default when unset.',
+  },
+  mergeEpicConflictPrompt: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'prompts',
+    label: 'Epic merge conflict prompt',
+    help: 'Opens an Epic integration merge-conflict resolution turn ({turn}, {taskBranch}, {baseBranch}, {paths}, {fragment.conflictResolution}); inherits the global default when unset.',
+  },
   exportEnabled: {
     scope: 'overridable',
     control: 'toggle',

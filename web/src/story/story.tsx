@@ -163,6 +163,23 @@ function CriticPromptsStory() {
   );
 }
 
+function ResolvedPromptsStory() {
+  const ev = (i: number, payload: AttemptLogEvent['payload']): AttemptLogEvent => ({ id: i, seq: i, ts: 1_756_000_000_000 + i * 1000, type: 'session_update', payload });
+  const lifecycle = (i: number, payload: Record<string, unknown>) => ({ ...ev(i, { sessionUpdate: '' }), type: 'lifecycle', payload }) as unknown as AttemptLogEvent;
+  const events: AttemptLogEvent[] = [
+    ev(1, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Implemented the change; finishing now.' } }),
+    lifecycle(2, { event: 'commit-nudge', locator: 'attempt-1', promptIndex: 0 }),
+    ev(3, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Committed. Merging into develop.' } }),
+    lifecycle(4, { event: 'merge-conflict-resolve', locator: 'attempt-1', promptIndex: 1 }),
+    lifecycle(5, { event: 'continue', locator: 'attempt-1', promptIndex: 9 }),
+  ];
+  return (
+    <StoryFrame style={{ padding: 30, maxWidth: 760, margin: '0 auto' }}>
+      <ChatTranscript events={events} unavailable={false} model="claude-sonnet-5-5" agent="Claude" stepLabel="Implementation" attemptId={1} />
+    </StoryFrame>
+  );
+}
+
 function TranscriptStory() {
   const ev = (i: number, payload: AttemptLogEvent['payload']): AttemptLogEvent => ({ id: i, seq: i, ts: 1_756_000_000_000 + i * 1000, type: 'session_update', payload });
   const codexEvents: AttemptLogEvent[] = [
@@ -475,6 +492,7 @@ const STORIES: Record<string, () => JSX.Element> = {
   'epic-critic-prompt': EpicStory,
   transcript: TranscriptStory,
   'multi-turn': MultiTurnStory,
+  'resolved-prompts': ResolvedPromptsStory,
   timeline: TimelineStory,
   merge: MergeStory,
   compose: ComposeStory,
@@ -488,6 +506,7 @@ const STORIES: Record<string, () => JSX.Element> = {
   guardrail: GuardrailStory,
   epic: EpicStory,
   'epic-done': EpicStory,
+  'epic-resolver': EpicStory,
   export: ExportStory,
   hints: HintsStory,
   'settings-error': SettingsPageStory,

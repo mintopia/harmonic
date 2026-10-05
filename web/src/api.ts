@@ -52,6 +52,9 @@ import type { Epic, EpicIntegrateOutcome } from './epic-model.js';
 import type { Stats } from './stats-model.js';
 import type { WorktreeInventoryEntry } from './worktree-inventory-model.js';
 
+/** Where a Resolved Prompt is archived: an Attempt by id, or an Epic's Attempt by number (an Epic may have no Attempt row). */
+export type ResolvedPromptOwner = { attemptId: number } | { workspaceId: number; epicRef: TrackerRef; attempt: number };
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -97,9 +100,9 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   return json as T;
 }
 
-async function requestText(path: string): Promise<string> {
+async function requestText(path: string, unavailable = 'Full output unavailable'): Promise<string> {
   const { res, text } = await send('GET', path);
-  if (!res.ok) throw new ApiError(res.status, `Full output unavailable (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`);
+  if (!res.ok) throw new ApiError(res.status, `${unavailable} (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`);
   return text;
 }
 
@@ -358,8 +361,16 @@ export const api = {
   verificationAttempt: (id: number) =>
     request<{ output: string; summary: string; hasTranscript: boolean }>('GET', `/api/verification-attempts/${id}`),
   verificationOutputUrl: (id: number) => `/api/verification-attempts/${id}/output`,
+  resolvedPrompt: (owner: ResolvedPromptOwner, locator: string, index?: number) => {
+    const at = `locator=${encodeURIComponent(locator)}${index === undefined ? '' : `&index=${index}`}`;
+    return requestText(
+      'attemptId' in owner
+        ? `/api/attempts/${owner.attemptId}/resolved-prompt?${at}`
+        : `/api/workspaces/${owner.workspaceId}/epics/${owner.epicRef}/resolved-prompt?attempt=${owner.attempt}&${at}`,
+      'Sent prompt unavailable',
+    );
+  },
   verificationFullOutput: (id: number) => requestText(`/api/verification-attempts/${id}/output`),
-  resolvedPrompt: (attemptId: number, locator: string) => requestText(`/api/attempts/${attemptId}/resolved-prompt?locator=${encodeURIComponent(locator)}`),
   criticLog: (attemptId: number) =>
     request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number; fromArchive?: boolean } | { status: 'unavailable'; liveCursor: number }>(
       'GET',
@@ -438,10 +449,6 @@ export const api = {
   },
   epic: (workspaceId: number, epicRef: TrackerRef) =>
     request<Epic>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}`),
-  epicRefreshPrompts: (workspaceId: number, epicRef: TrackerRef) =>
-    request<{ prompts: { locator: string; at: string }[] }>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/refresh-prompts`),
-  epicRefreshPrompt: (workspaceId: number, epicRef: TrackerRef, locator: string) =>
-    requestText(`/api/workspaces/${workspaceId}/epics/${epicRef}/refresh-prompt?locator=${encodeURIComponent(locator)}`),
   attemptResolvedPrompt: (attemptId: number, locator: string) =>
     requestText(`/api/attempts/${attemptId}/resolved-prompt?locator=${encodeURIComponent(locator)}`),
   attemptResolvedPrompts: (attemptId: number, locator: string) =>

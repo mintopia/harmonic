@@ -175,6 +175,7 @@ export function AttemptPanel({
       model={topModel}
       agent={agent}
       stepLabel="Implementation"
+      attemptId={run.id}
     />
   );
   const tabContent =
