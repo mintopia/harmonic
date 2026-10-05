@@ -3,6 +3,7 @@ import { createElement } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Properties } from '../web/src/components/ticket/Metrics.js';
 import type { Task } from '../web/src/types.js';
+import { task as storyTask } from '../web/src/story/fixtures.js';
 import { trackerRef } from '../src/tracker/adapter.js';
 import { cleanup, makeTask, mountComponent } from './component-smoke-harness.js';
 
@@ -23,6 +24,13 @@ describe('Properties tracker fact', () => {
     const host = await mount(makeTask({ origin: 'mirrored', trackerRef: trackerRef(3), trackerLabel: 'Local markdown', url: null }));
     expect(host.querySelector('a')).toBeNull();
     expect(host.textContent).toContain('Local markdown');
+  });
+
+  it('renders GitHub #<n> as a link for the story ticket fixture', async () => {
+    const host = await mount(storyTask as Task);
+    const link = host.querySelector('a');
+    expect(link?.textContent?.replace(/\s+/g, ' ').trim()).toBe(`GitHub #${storyTask.trackerRef}`);
+    expect(link?.getAttribute('href')).toBe(storyTask.url);
   });
 
   it('shows nothing for a native Task', async () => {

@@ -101,8 +101,6 @@ export class EscalationService {
           throw new DomainError('conflict', `${effect.effect} failed on accept; the ticket stays escalated`);
         }
         if (!result.ok) {
-          // Only a real merge conflict surfaces the resolving-conflicts indicator; a
-          // post-merge-red failure leaves the ticket plainly escalated.
           await this.taskService.setMergeStatus(task.id, result.observed?.reason === 'conflict' ? 'resolving-conflicts' : null);
           throw new DomainError('conflict', result.detail ?? `${effect.effect} failed on accept`);
         }

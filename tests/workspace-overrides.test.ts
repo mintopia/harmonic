@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { DEFAULT_EXCLUDED_DIRECTORIES, workspaceOverridesSchema, WorkspaceService } from '../src/domain/workspaces.js';
-import { verificationCommandSchema, taskVerificationCriticSchema, budgetGuardrailSchema } from '../src/config.js';
+import { baselineConfig, verificationCommandSchema, taskVerificationCriticSchema, budgetGuardrailSchema } from '../src/config.js';
 import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../src/domain/prompt-fragments.js';
 import { resolveVerifiers, resolveDrive } from '../src/domain/setting-override.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -297,6 +297,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
         mergeFate: 'auto-merge',
         continueAttempts: 1,
       },
+      promptFragments: baselineConfig().promptFragments,
     } as any);
     expect(resolved.continueAttempts).toBe(0);
     expect(resolved.mergeFate).toBe('auto-merge');
@@ -347,6 +348,8 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       driveCommitNudge: null,
       mergeConflictPrompt: null,
       mergeEpicConflictPrompt: null,
+      mergeEpicRefreshPrompt: null,
+      verifyEpicResolveSuffix: null,
       pauseMessage: null,
       exportEnabled: null,
       exportDirectoryPath: null,

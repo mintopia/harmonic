@@ -5,12 +5,15 @@ import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 import { z } from 'zod';
-import { verdictContractSchema } from './verification/critic-schema.js';
+import { verdictContractError } from './verification/critic-schema.js';
 import { isModelPriced, pricesForHarness } from './domain/pricing.js';
 import {
   PROMPT_FRAGMENT_NAMES,
   PROMPT_FRAGMENTS,
   missingPromptFragmentTokens,
+  unknownFragmentRefs,
+  unknownFragmentIssues,
+  UNKNOWN_FRAGMENT_MESSAGE,
   promptFragmentOverrideKey,
   type PromptFragmentName,
   type PromptFragmentOverrideKey,
@@ -28,28 +31,29 @@ export type Priority = (typeof PRIORITIES)[number];
 export const MERGE_FATES = ['auto-merge', 'open-PR', 'artifact'] as const;
 export type MergeFate = (typeof MERGE_FATES)[number];
 
-export function promptFragmentSchema(name: PromptFragmentName): z.ZodString {
-  const required = PROMPT_FRAGMENTS[name].required;
+/** A Prompt Fragment's text: its `{fragment.<name>}` references must all name a Prompt Fragment, so none can reach the agent literally. */
+export function fragmentTemplateSchema(example: string): z.ZodString {
   return z
     .string()
     .min(1)
+    .refine((text) => unknownFragmentRefs(text).length === 0, { message: UNKNOWN_FRAGMENT_MESSAGE })
+    .meta({ example });
+}
+
+export function promptFragmentSchema(name: PromptFragmentName): z.ZodString {
+  const required = PROMPT_FRAGMENTS[name].required;
+  return fragmentTemplateSchema(PROMPT_FRAGMENTS[name].label)
     .refine((text) => missingPromptFragmentTokens(name, text).length === 0, {
       message: `must contain ${required.map((token) => `{${token}}`).join(' ')}`,
     })
-    .meta({ example: PROMPT_FRAGMENTS[name].label });
+    .refine((text) => name !== 'criticVerdictContract' || verdictContractError(text) === undefined, {
+      message: 'must ask the critic for a JSON object with a "verdict" key and a "summary" key; without it every critic run is inconclusive',
+    });
 }
 
 export const promptFragmentsShape = Object.fromEntries(
   PROMPT_FRAGMENT_NAMES.map((name) => [name, promptFragmentSchema(name)]),
 ) as Record<PromptFragmentName, z.ZodString>;
-
-export const globalPromptFragmentsShape = {
-  ...promptFragmentsShape,
-  criticRevisionIdentical: z.string().min(1).meta({ example: '{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…' }),
-  criticRevisionDiff: z.string().min(1).meta({ example: '{ticketFirst} Then review the candidate revision {head}, which branched from {base}…' }),
-  criticRevisionAlone: z.string().min(1).meta({ example: '{ticketFirst} Then review the candidate revision {head} on its own merits…' }),
-  criticVerdictContract: verdictContractSchema.meta({ example: 'Your reply: respond with ONLY {"verdict":"pass|fail|inconclusive","summary":"…"}' }),
-};
 
 export const promptFragmentOverrideShape = Object.fromEntries(
   PROMPT_FRAGMENT_NAMES.map((name) => [promptFragmentOverrideKey(name), promptFragmentSchema(name).nullable().optional()]),
@@ -328,7 +332,7 @@ export const appConfigSchema = z.object({
   taskPrompt: z.string().meta({ example: 'Work on {prompt}.' }),
   pauseMessage: z.string().min(1).meta({ example: 'Please finish the current turn, then pause and wait for further instructions.' }),
   /** Named pieces of prompt text defined once and referenced from prompts as `{fragment.<name>}`. */
-  promptFragments: z.object(globalPromptFragmentsShape),
+  promptFragments: z.object(promptFragmentsShape),
   /** End a Conversation with no Turn for this many minutes; 0 disables. Fractional values are allowed. */
   conversationIdleTimeoutMinutes: z.number().nonnegative().meta({ example: 30 }),
   /** Trailing debounce for Working Directory watcher events. */
@@ -386,6 +390,7 @@ export const appConfigSchema = z.object({
     }),
   }),
 }).superRefine((config, ctx) => {
+  for (const issue of unknownFragmentIssues(config)) ctx.addIssue({ code: 'custom', ...issue });
   for (const [id, harness] of Object.entries(config.harnesses)) {
     if (harness.models.length > 0 && !harness.models.some((model) => model.id === harness.defaultModel)) {
       ctx.addIssue({
@@ -462,7 +467,6 @@ export const UNATTENDED_REMINDER = baseline.drive.unattendedReminder;
 export const DEFAULT_CONTINUE_PROMPT = baseline.drive.continuePrompt;
 export const DEFAULT_TASK_PROMPT = baseline.taskPrompt;
 export const DEFAULT_PAUSE_MESSAGE = baseline.pauseMessage;
-export const DEFAULT_PROMPT_FRAGMENTS = baseline.promptFragments;
 
 export function baselineConfig(): AppConfig {
   return structuredClone(baseline);

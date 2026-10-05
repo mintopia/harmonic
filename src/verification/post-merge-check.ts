@@ -1,4 +1,4 @@
-import { criticPromptKey, type TaskArchive } from '../archive/task-archive.js';
+import type { TaskArchive } from '../archive/task-archive.js';
 import type { AppConfig } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
@@ -13,10 +13,11 @@ import type { TranscriptCapture } from '../execution/transcript-capture.js';
 import type { PostMergeCheckResult } from '../execution/merge-policy.js';
 import { commandAttemptToInput, type CommandSpawn } from './command-verifier.js';
 import { runPostMergeCommands } from './post-merge-commands.js';
+import { NO_PROMPT_FRAGMENT_OVERRIDES, type PromptFragmentOverrideKey } from '../domain/prompt-fragments.js';
 import { criticAttemptToInput, runCritic, type CriticHarnessDrive } from './critic.js';
 
 type VerifierWorkspace = Pick<WorkspaceRow,
-  'taskPreMergeCommands' | 'taskPreMergeCritics' | 'taskPostMergeCommands' | 'taskPostMergeCritics' | 'epicPreMergeCommands' | 'epicPreMergeCritics' | 'promptFragmentReadOnlyRestraint'>;
+  'taskPreMergeCommands' | 'taskPreMergeCritics' | 'taskPostMergeCommands' | 'taskPostMergeCritics' | 'epicPreMergeCommands' | 'epicPreMergeCritics' | PromptFragmentOverrideKey>;
 
 type PostMergeInput = {
   task: TaskRow;
@@ -56,7 +57,7 @@ export function createPostMergeCheck(deps: {
     const ws = await getWorkspace(task.workspaceId);
     const config = getConfig();
     const { task: resolvedTask } = resolveVerifiers(
-      ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null, promptFragmentReadOnlyRestraint: null },
+      ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null, ...NO_PROMPT_FRAGMENT_OVERRIDES },
       config,
     );
     const { commands, critics } = resolvedTask.postMerge;
@@ -104,7 +105,7 @@ export function createPostMergeCheck(deps: {
         ...(onUpdate ? { onUpdate } : {}),
         onAgentDurationMs: (ms: number) => attempts.addAgentDuration(run.id, ms),
       });
-      const persisted = await verificationAttempts.append(verificationAttempt.id, { ...criticAttemptToInput(attempt), promptKey: archive ? criticPromptKey('post-merge', stepId) : null });
+      const persisted = await verificationAttempts.append(verificationAttempt.id, criticAttemptToInput(attempt));
       const sessionId = attempt.sessionId;
       if (sessionId) {
         if (attempt.transcriptPath === null) {

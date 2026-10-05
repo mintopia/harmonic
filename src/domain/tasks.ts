@@ -962,6 +962,10 @@ export class TaskService {
     }
   }
 
+  doneMirroredIdsByRef(workspaceId: number, refs: TrackerRef[]): Promise<Map<TrackerRef, number>> {
+    return this.mirror.doneMirroredIdsByRef(workspaceId, refs);
+  }
+
   /**
    * Set a mirrored Task's dependency edges to exactly `dependsOnIds` — the
    * tracker's `blockedBy` projected onto real edges — then re-derive

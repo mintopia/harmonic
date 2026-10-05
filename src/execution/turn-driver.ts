@@ -779,7 +779,6 @@ export class TurnDriver {
     if (rebaseConflict) promptText = `${promptText}\n\n${renderFragment('rebaseConflict', fragments)}`;
     if (condensed) promptText = `${promptText}\n\n${condensed}`;
     if (codeIndexRepoId) promptText = `${promptText}${codeIndexRepoGuidance(codeIndexRepoId, fragments)}`;
-    await this.deps.attempts.update(run.id, { prompt: promptText });
     return { promptText, operatorSeed, heldMessages: peer.held };
   }
 

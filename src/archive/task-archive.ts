@@ -6,6 +6,7 @@ import { basename, dirname, join, resolve, sep } from 'node:path';
 import type { TaskRow } from '../db/schema.js';
 import { logger } from '../logger.js';
 import { yieldToEventLoop } from '../reliability/yield.js';
+import { PROMPT_INDEX_FILE, PROMPT_SEPARATOR, parsePromptSpans, promptSpanLine, readPromptSegments, type PromptSpan } from './prompt-spans.js';
 import type { VerificationOutputLog } from '../verification/command-verifier.js';
 
 export interface ArchiveDeps {
@@ -67,8 +68,6 @@ export interface OperatorInput {
   text: string | null;
 }
 
-const PROMPT_SEPARATOR = '\n\n---\n\n';
-const PROMPT_INDEX_FILE = 'prompt.index.jsonl';
 const PROMPT_READ_CHUNK_BYTES = 64 * 1024;
 
 function warn(message: string, err: unknown, fields: Record<string, unknown> = {}): void {
@@ -95,21 +94,6 @@ export function safeSegment(id: string): string {
 
 async function pathExists(path: string): Promise<boolean> {
   return await access(path).then(() => true, () => false);
-}
-
-function parsePromptIndex(text: string, bodyBytes: number): { start: number; length: number }[] | null {
-  const spans: { start: number; length: number }[] = [];
-  for (const line of text.split('\n')) {
-    if (line === '') continue;
-    try {
-      const { start, length } = JSON.parse(line) as { start: unknown; length: unknown };
-      if (!Number.isInteger(start) || !Number.isInteger(length) || (start as number) < 0 || (length as number) < 0 || (start as number) + (length as number) > bodyBytes) return null;
-      spans.push({ start: start as number, length: length as number });
-    } catch {
-      return null;
-    }
-  }
-  return spans.length > 0 ? spans : null;
 }
 
 class AppendFile {
@@ -445,6 +429,21 @@ export class TaskArchive {
     return (await pathExists(join(dir, 'archive.json'))) ? dir : null;
   }
 
+  /** The locator of a critic step's archived `prompt.md`, whichever verification stage wrote it; null when none exists. */
+  async archivedCriticPromptKey(
+    owner: TaskRow | { workspaceId: number; epicRef: TrackerRef },
+    attemptNumber: number,
+    stepId: string,
+  ): Promise<string | null> {
+    const root = await this.existingOwnerDir(owner);
+    if (!root) return null;
+    for (const stage of ['pre-merge', 'post-merge'] as const) {
+      const key = criticPromptKey(stage, stepId);
+      if (await pathExists(join(root, 'attempts', String(attemptNumber), key))) return key;
+    }
+    return null;
+  }
+
   async archivedVerificationOutput(
     owner: TaskRow | { workspaceId: number; epicRef: TrackerRef },
     attemptNumber: number,
@@ -480,7 +479,7 @@ export class TaskArchive {
     }
   }
 
-  /** Each prompt of a step's `prompt.md` as a separate string, sliced by the byte-offset sidecar; archives without one (legacy) are split on the separator, which is ambiguous when a prompt contains a rule. */
+  /** Each prompt of a step's `prompt.md`, position = prompt index. */
   async readArchivedPromptSegments(
     owner: TaskRow | { workspaceId: number; epicRef: TrackerRef },
     attemptNumber: number,
@@ -491,36 +490,46 @@ export class TaskArchive {
       const root = await this.existingOwnerDir(owner);
       if (!root) return null;
       const attemptDir = join(root, 'attempts', String(attemptNumber));
-      const body = await this.readPromptFile(attemptDir, locator, yieldNow, true);
+      const body = await this.readPromptFile(attemptDir, locator, yieldNow, { raw: true });
       if (!body) return null;
-      const index = await this.readPromptFile(attemptDir, join(dirname(locator), PROMPT_INDEX_FILE), yieldNow, true, PROMPT_INDEX_FILE);
-      const spans = index ? parsePromptIndex(index.toString('utf8'), body.length) : null;
-      if (!spans) return body.toString('utf8').split(PROMPT_SEPARATOR).filter((p) => p.trim() !== '');
-      return spans.map(({ start, length }) => body.subarray(start, start + length).toString('utf8'));
+      return readPromptSegments(body, await this.readPromptSpans(attemptDir, locator, body.length, yieldNow));
     } catch (err) {
       warn('archive: resolved prompt segments read failed', err, { attemptNumber, locator });
       return null;
     }
   }
 
+  private async readPromptSpans(attemptDir: string, locator: string, bodyBytes: number, yieldNow: () => Promise<void>): Promise<PromptSpan[] | null> {
+    const index = await this.readPromptFile(attemptDir, join(dirname(locator), PROMPT_INDEX_FILE), yieldNow, { raw: true, name: PROMPT_INDEX_FILE });
+    return index ? parsePromptSpans(index.toString('utf8'), bodyBytes) : null;
+  }
+
   private async readPromptFile(baseDir: string, locator: string, yieldNow: () => Promise<void>): Promise<string | null>;
-  private async readPromptFile(baseDir: string, locator: string, yieldNow: () => Promise<void>, raw: true, name?: string): Promise<Buffer | null>;
-  private async readPromptFile(baseDir: string, locator: string, yieldNow: () => Promise<void>, raw = false, name = 'prompt.md'): Promise<string | Buffer | null> {
+  private async readPromptFile(baseDir: string, locator: string, yieldNow: () => Promise<void>, options: { raw: true; name?: string; range?: { start: number; length: number } }): Promise<Buffer | null>;
+  private async readPromptFile(
+    baseDir: string,
+    locator: string,
+    yieldNow: () => Promise<void>,
+    options: { raw?: boolean; name?: string; range?: { start: number; length: number } } = {},
+  ): Promise<string | Buffer | null> {
     const file = resolve(baseDir, locator);
-    if (!file.startsWith(baseDir + sep) || basename(file) !== name) return null;
+    if (!file.startsWith(baseDir + sep) || basename(file) !== (options.name ?? 'prompt.md')) return null;
     try {
       const handle = await open(file, 'r');
       try {
         const chunks: Buffer[] = [];
-        for (;;) {
-          const buffer = Buffer.allocUnsafe(PROMPT_READ_CHUNK_BYTES);
-          const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+        let position = options.range?.start ?? 0;
+        const end = options.range ? options.range.start + options.range.length : Number.POSITIVE_INFINITY;
+        while (position < end) {
+          const buffer = Buffer.allocUnsafe(Math.min(PROMPT_READ_CHUNK_BYTES, end - position));
+          const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
           if (bytesRead === 0) break;
           chunks.push(buffer.subarray(0, bytesRead));
+          position += bytesRead;
           await yieldNow();
         }
         const all = Buffer.concat(chunks);
-        return raw ? all : all.toString('utf8');
+        return options.raw ? all : all.toString('utf8');
       } finally {
         await handle.close();
       }
@@ -530,15 +539,29 @@ export class TaskArchive {
     }
   }
 
-  /** The whole archived prompt file, or only its `index`-th prompt (sliced by the byte-offset sidecar); null when absent or out of range. */
+  /** The whole archived prompt file, or only its `index`-th prompt; null when absent or out of range. */
   async readResolvedPrompt(
     owner: TaskRow | { workspaceId: number; epicRef: TrackerRef },
     attemptNumber: number,
     locator: string,
     index?: number,
+    yieldNow: () => Promise<void> = yieldToEventLoop,
   ): Promise<string | null> {
-    if (index === undefined) return this.readArchivedPrompt(owner, attemptNumber, locator);
-    return (await this.readArchivedPromptSegments(owner, attemptNumber, locator))?.[index] ?? null;
+    if (index === undefined) return this.readArchivedPrompt(owner, attemptNumber, locator, yieldNow);
+    try {
+      const root = await this.existingOwnerDir(owner);
+      if (!root) return null;
+      const attemptDir = join(root, 'attempts', String(attemptNumber));
+      const file = resolve(attemptDir, locator);
+      const bodyBytes = await stat(file).then((s) => s.size, () => null);
+      if (bodyBytes === null) return null;
+      const span = (await this.readPromptSpans(attemptDir, locator, bodyBytes, yieldNow))?.find((candidate) => candidate.index === index);
+      if (span) return await this.readPromptFile(attemptDir, locator, yieldNow, { raw: true, range: span }).then((buf) => buf?.toString('utf8') ?? null);
+      return (await this.readArchivedPromptSegments(owner, attemptNumber, locator, yieldNow))?.[index] || null;
+    } catch (err) {
+      warn('archive: resolved prompt read failed', err, { attemptNumber, locator, index });
+      return null;
+    }
   }
 
   async archivedTranscript(
@@ -596,14 +619,17 @@ export class TaskArchive {
     return dir;
   }
 
-  /** Prompts already archived in a step directory (a resumed step appends to the same file). */
+  /** Prompts already archived in a step directory; a resumed step appends, so new prompts must not reuse an index. */
   private async archivedPromptCount(dir: Promise<string>): Promise<number> {
     try {
       const root = await dir;
-      const index = await readFile(join(root, PROMPT_INDEX_FILE), 'utf8').catch(() => null);
-      if (index !== null) return index.split('\n').filter((l) => l !== '').length;
-      const body = await readFile(join(root, 'prompt.md'), 'utf8').catch(() => '');
-      return body === '' ? 0 : body.split(PROMPT_SEPARATOR).length;
+      const bodyBytes = await stat(join(root, 'prompt.md')).then((s) => s.size, () => 0);
+      if (bodyBytes === 0) return 0;
+      const sidecar = await readFile(join(root, PROMPT_INDEX_FILE), 'utf8').catch(() => null);
+      const spans = sidecar === null ? null : parsePromptSpans(sidecar, bodyBytes);
+      const last = spans?.at(-1);
+      if (last && last.start + last.length === bodyBytes) return last.index + 1;
+      return readPromptSegments(await readFile(join(root, 'prompt.md')), spans).length;
     } catch {
       return 0;
     }
@@ -624,8 +650,10 @@ export class TaskArchive {
       appendPrompt: (text) => {
         const appended = promptChain.then(async () => {
           count ??= await this.archivedPromptCount(dir);
-          if (!(await prompts.write(text, PROMPT_SEPARATOR, (start, length) => { promptIndex.write(`${JSON.stringify({ start, length })}\n`); }))) return null;
-          return count++;
+          const index = count;
+          if (!(await prompts.write(text, PROMPT_SEPARATOR, (start, length) => { promptIndex.write(promptSpanLine({ index, start, length })); }))) return null;
+          count = index + 1;
+          return index;
         });
         promptChain = appended;
         return appended;

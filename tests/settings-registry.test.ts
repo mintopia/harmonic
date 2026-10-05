@@ -159,9 +159,23 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
       'promptFragmentRebaseConflict',
       'promptFragmentPriorSession',
       'promptFragmentCodeIndexGuidance',
+      'promptFragmentCriticRevisionIdentical',
+      'promptFragmentCriticRevisionDiff',
+      'promptFragmentCriticRevisionAlone',
+      'promptFragmentCriticTicketFirst',
+      'promptFragmentCriticInstructionsFirst',
+      'promptFragmentCriticSpecTicket',
+      'promptFragmentCriticSpecInstructions',
+      'promptFragmentCriticWorkingTreeNote',
+      'promptFragmentCriticRole',
+      'promptFragmentCriticSecurity',
+      'promptFragmentCriticVerdictContract',
+      'promptFragmentEpicFailingVerification',
       'driveCommitNudge',
       'mergeConflictPrompt',
       'mergeEpicConflictPrompt',
+      'mergeEpicRefreshPrompt',
+      'verifyEpicResolveSuffix',
     ]);
   });
 

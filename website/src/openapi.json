@@ -5076,16 +5076,6 @@
               }
             ]
           },
-          "prompt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "usage": {
             "anyOf": [
               {
@@ -5381,7 +5371,6 @@
           "number",
           "state",
           "reason",
-          "prompt",
           "usage",
           "cost",
           "toolCalls",
@@ -6602,6 +6591,17 @@
             ],
             "example": null
           },
+          "pauseMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "promptFragmentReadOnlyRestraint": {
             "anyOf": [
               {
@@ -6723,6 +6723,138 @@
             ],
             "example": null
           },
+          "promptFragmentCriticRevisionIdentical": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticRevisionDiff": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticRevisionAlone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticTicketFirst": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticInstructionsFirst": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticSpecTicket": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticSpecInstructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticWorkingTreeNote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticRole": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticSecurity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticVerdictContract": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentEpicFailingVerification": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "driveCommitNudge": {
             "anyOf": [
               {
@@ -6746,6 +6878,28 @@
             "example": null
           },
           "mergeEpicConflictPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "mergeEpicRefreshPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "verifyEpicResolveSuffix": {
             "anyOf": [
               {
                 "type": "string"
@@ -7050,6 +7204,7 @@
           "driveMergeFate",
           "driveContinueAttempts",
           "taskPrompt",
+          "pauseMessage",
           "promptFragmentReadOnlyRestraint",
           "promptFragmentConflictResolution",
           "promptFragmentOperatorMessage",
@@ -7061,9 +7216,23 @@
           "promptFragmentRebaseConflict",
           "promptFragmentPriorSession",
           "promptFragmentCodeIndexGuidance",
+          "promptFragmentCriticRevisionIdentical",
+          "promptFragmentCriticRevisionDiff",
+          "promptFragmentCriticRevisionAlone",
+          "promptFragmentCriticTicketFirst",
+          "promptFragmentCriticInstructionsFirst",
+          "promptFragmentCriticSpecTicket",
+          "promptFragmentCriticSpecInstructions",
+          "promptFragmentCriticWorkingTreeNote",
+          "promptFragmentCriticRole",
+          "promptFragmentCriticSecurity",
+          "promptFragmentCriticVerdictContract",
+          "promptFragmentEpicFailingVerification",
           "driveCommitNudge",
           "mergeConflictPrompt",
           "mergeEpicConflictPrompt",
+          "mergeEpicRefreshPrompt",
+          "verifyEpicResolveSuffix",
           "exportEnabled",
           "exportDirectoryPath",
           "exportS3Endpoint",
@@ -7694,22 +7863,62 @@
               "criticRevisionIdentical": {
                 "type": "string",
                 "minLength": 1,
-                "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                "example": "Critic revision block (no change)"
               },
               "criticRevisionDiff": {
                 "type": "string",
                 "minLength": 1,
-                "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                "example": "Critic revision block"
               },
               "criticRevisionAlone": {
                 "type": "string",
                 "minLength": 1,
-                "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                "example": "Critic revision block (no base)"
+              },
+              "criticTicketFirst": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Critic ticket pointer"
+              },
+              "criticInstructionsFirst": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Critic instructions pointer"
+              },
+              "criticSpecTicket": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Critic specification (ticket)"
+              },
+              "criticSpecInstructions": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Critic specification (instructions)"
+              },
+              "criticWorkingTreeNote": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Critic uncommitted changes note"
+              },
+              "criticRole": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Critic role"
+              },
+              "criticSecurity": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Critic security notice"
               },
               "criticVerdictContract": {
                 "type": "string",
                 "minLength": 1,
-                "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
+                "example": "Critic verdict contract"
+              },
+              "epicFailingVerification": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Failing Epic verification"
               }
             }
           },
@@ -14177,16 +14386,6 @@
               }
             ]
           },
-          "prompt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "usage": {
             "anyOf": [
               {
@@ -14485,7 +14684,6 @@
           "number",
           "state",
           "reason",
-          "prompt",
           "usage",
           "cost",
           "toolCalls",
@@ -15761,6 +15959,17 @@
             ],
             "example": null
           },
+          "pauseMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "promptFragmentReadOnlyRestraint": {
             "anyOf": [
               {
@@ -15882,6 +16091,138 @@
             ],
             "example": null
           },
+          "promptFragmentCriticRevisionIdentical": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticRevisionDiff": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticRevisionAlone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticTicketFirst": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticInstructionsFirst": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticSpecTicket": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticSpecInstructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticWorkingTreeNote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticRole": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticSecurity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentCriticVerdictContract": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "promptFragmentEpicFailingVerification": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "driveCommitNudge": {
             "anyOf": [
               {
@@ -15905,6 +16246,28 @@
             "example": null
           },
           "mergeEpicConflictPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "mergeEpicRefreshPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "verifyEpicResolveSuffix": {
             "anyOf": [
               {
                 "type": "string"
@@ -16210,6 +16573,7 @@
           "driveMergeFate",
           "driveContinueAttempts",
           "taskPrompt",
+          "pauseMessage",
           "promptFragmentReadOnlyRestraint",
           "promptFragmentConflictResolution",
           "promptFragmentOperatorMessage",
@@ -16221,9 +16585,23 @@
           "promptFragmentRebaseConflict",
           "promptFragmentPriorSession",
           "promptFragmentCodeIndexGuidance",
+          "promptFragmentCriticRevisionIdentical",
+          "promptFragmentCriticRevisionDiff",
+          "promptFragmentCriticRevisionAlone",
+          "promptFragmentCriticTicketFirst",
+          "promptFragmentCriticInstructionsFirst",
+          "promptFragmentCriticSpecTicket",
+          "promptFragmentCriticSpecInstructions",
+          "promptFragmentCriticWorkingTreeNote",
+          "promptFragmentCriticRole",
+          "promptFragmentCriticSecurity",
+          "promptFragmentCriticVerdictContract",
+          "promptFragmentEpicFailingVerification",
           "driveCommitNudge",
           "mergeConflictPrompt",
           "mergeEpicConflictPrompt",
+          "mergeEpicRefreshPrompt",
+          "verifyEpicResolveSuffix",
           "exportEnabled",
           "exportDirectoryPath",
           "exportS3Endpoint",
@@ -16868,22 +17246,62 @@
               "criticRevisionIdentical": {
                 "type": "string",
                 "minLength": 1,
-                "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                "example": "Critic revision block (no change)"
               },
               "criticRevisionDiff": {
                 "type": "string",
                 "minLength": 1,
-                "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                "example": "Critic revision block"
               },
               "criticRevisionAlone": {
                 "type": "string",
                 "minLength": 1,
-                "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                "example": "Critic revision block (no base)"
+              },
+              "criticTicketFirst": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Critic ticket pointer"
+              },
+              "criticInstructionsFirst": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Critic instructions pointer"
+              },
+              "criticSpecTicket": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Critic specification (ticket)"
+              },
+              "criticSpecInstructions": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Critic specification (instructions)"
+              },
+              "criticWorkingTreeNote": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Critic uncommitted changes note"
+              },
+              "criticRole": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Critic role"
+              },
+              "criticSecurity": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Critic security notice"
               },
               "criticVerdictContract": {
                 "type": "string",
                 "minLength": 1,
-                "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
+                "example": "Critic verdict contract"
+              },
+              "epicFailingVerification": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Failing Epic verification"
               }
             },
             "additionalProperties": false
@@ -20857,7 +21275,7 @@
             "in": "query",
             "name": "index",
             "required": false,
-            "description": "0-based index of one prompt within the file; omit to return the whole file."
+            "description": "0-based index of one prompt within the file; omit to return the whole file. Cannot be combined with `segments=true`."
           },
           {
             "schema": {
@@ -23312,6 +23730,150 @@
                       }
                     ]
                   },
+                  "promptFragmentCriticRevisionIdentical": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Critic revision block (no change)"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentCriticRevisionDiff": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Critic revision block"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentCriticRevisionAlone": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Critic revision block (no base)"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentCriticTicketFirst": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Critic ticket pointer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentCriticInstructionsFirst": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Critic instructions pointer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentCriticSpecTicket": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Critic specification (ticket)"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentCriticSpecInstructions": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Critic specification (instructions)"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentCriticWorkingTreeNote": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Critic uncommitted changes note"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentCriticRole": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Critic role"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentCriticSecurity": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Critic security notice"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentCriticVerdictContract": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Critic verdict contract"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentEpicFailingVerification": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Failing Epic verification"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "driveCommitNudge": {
                     "anyOf": [
                       {
@@ -23327,7 +23889,8 @@
                     "anyOf": [
                       {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "example": "## Merge conflict resolution (turn {turn})"
                       },
                       {
                         "type": "null"
@@ -23338,7 +23901,32 @@
                     "anyOf": [
                       {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "example": "## Epic integration merge conflict resolution (turn {turn})"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "mergeEpicRefreshPrompt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "## Epic integration refresh"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "verifyEpicResolveSuffix": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Work in the checked-out integration branch `{branch}`."
                       },
                       {
                         "type": "null"
@@ -25331,22 +25919,62 @@
                         "criticRevisionIdentical": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                          "example": "Critic revision block (no change)"
                         },
                         "criticRevisionDiff": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                          "example": "Critic revision block"
                         },
                         "criticRevisionAlone": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                          "example": "Critic revision block (no base)"
+                        },
+                        "criticTicketFirst": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic ticket pointer"
+                        },
+                        "criticInstructionsFirst": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic instructions pointer"
+                        },
+                        "criticSpecTicket": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic specification (ticket)"
+                        },
+                        "criticSpecInstructions": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic specification (instructions)"
+                        },
+                        "criticWorkingTreeNote": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic uncommitted changes note"
+                        },
+                        "criticRole": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic role"
+                        },
+                        "criticSecurity": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic security notice"
                         },
                         "criticVerdictContract": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
+                          "example": "Critic verdict contract"
+                        },
+                        "epicFailingVerification": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Failing Epic verification"
                         }
                       },
                       "required": [
@@ -25364,7 +25992,15 @@
                         "criticRevisionIdentical",
                         "criticRevisionDiff",
                         "criticRevisionAlone",
-                        "criticVerdictContract"
+                        "criticTicketFirst",
+                        "criticInstructionsFirst",
+                        "criticSpecTicket",
+                        "criticSpecInstructions",
+                        "criticWorkingTreeNote",
+                        "criticRole",
+                        "criticSecurity",
+                        "criticVerdictContract",
+                        "epicFailingVerification"
                       ],
                       "additionalProperties": false
                     },
@@ -26595,22 +27231,62 @@
                         "criticRevisionIdentical": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                          "example": "Critic revision block (no change)"
                         },
                         "criticRevisionDiff": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                          "example": "Critic revision block"
                         },
                         "criticRevisionAlone": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                          "example": "Critic revision block (no base)"
+                        },
+                        "criticTicketFirst": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic ticket pointer"
+                        },
+                        "criticInstructionsFirst": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic instructions pointer"
+                        },
+                        "criticSpecTicket": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic specification (ticket)"
+                        },
+                        "criticSpecInstructions": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic specification (instructions)"
+                        },
+                        "criticWorkingTreeNote": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic uncommitted changes note"
+                        },
+                        "criticRole": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic role"
+                        },
+                        "criticSecurity": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic security notice"
                         },
                         "criticVerdictContract": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
+                          "example": "Critic verdict contract"
+                        },
+                        "epicFailingVerification": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Failing Epic verification"
                         }
                       },
                       "required": [
@@ -26628,7 +27304,15 @@
                         "criticRevisionIdentical",
                         "criticRevisionDiff",
                         "criticRevisionAlone",
-                        "criticVerdictContract"
+                        "criticTicketFirst",
+                        "criticInstructionsFirst",
+                        "criticSpecTicket",
+                        "criticSpecInstructions",
+                        "criticWorkingTreeNote",
+                        "criticRole",
+                        "criticSecurity",
+                        "criticVerdictContract",
+                        "epicFailingVerification"
                       ],
                       "additionalProperties": false
                     },
@@ -27831,22 +28515,62 @@
                       "criticRevisionIdentical": {
                         "type": "string",
                         "minLength": 1,
-                        "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                        "example": "Critic revision block (no change)"
                       },
                       "criticRevisionDiff": {
                         "type": "string",
                         "minLength": 1,
-                        "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                        "example": "Critic revision block"
                       },
                       "criticRevisionAlone": {
                         "type": "string",
                         "minLength": 1,
-                        "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                        "example": "Critic revision block (no base)"
+                      },
+                      "criticTicketFirst": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Critic ticket pointer"
+                      },
+                      "criticInstructionsFirst": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Critic instructions pointer"
+                      },
+                      "criticSpecTicket": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Critic specification (ticket)"
+                      },
+                      "criticSpecInstructions": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Critic specification (instructions)"
+                      },
+                      "criticWorkingTreeNote": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Critic uncommitted changes note"
+                      },
+                      "criticRole": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Critic role"
+                      },
+                      "criticSecurity": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Critic security notice"
                       },
                       "criticVerdictContract": {
                         "type": "string",
                         "minLength": 1,
-                        "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
+                        "example": "Critic verdict contract"
+                      },
+                      "epicFailingVerification": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Failing Epic verification"
                       }
                     },
                     "required": [
@@ -27864,7 +28588,15 @@
                       "criticRevisionIdentical",
                       "criticRevisionDiff",
                       "criticRevisionAlone",
-                      "criticVerdictContract"
+                      "criticTicketFirst",
+                      "criticInstructionsFirst",
+                      "criticSpecTicket",
+                      "criticSpecInstructions",
+                      "criticWorkingTreeNote",
+                      "criticRole",
+                      "criticSecurity",
+                      "criticVerdictContract",
+                      "epicFailingVerification"
                     ]
                   },
                   "conversationIdleTimeoutMinutes": {
@@ -29027,22 +29759,62 @@
                         "criticRevisionIdentical": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                          "example": "Critic revision block (no change)"
                         },
                         "criticRevisionDiff": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                          "example": "Critic revision block"
                         },
                         "criticRevisionAlone": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                          "example": "Critic revision block (no base)"
+                        },
+                        "criticTicketFirst": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic ticket pointer"
+                        },
+                        "criticInstructionsFirst": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic instructions pointer"
+                        },
+                        "criticSpecTicket": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic specification (ticket)"
+                        },
+                        "criticSpecInstructions": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic specification (instructions)"
+                        },
+                        "criticWorkingTreeNote": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic uncommitted changes note"
+                        },
+                        "criticRole": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic role"
+                        },
+                        "criticSecurity": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic security notice"
                         },
                         "criticVerdictContract": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
+                          "example": "Critic verdict contract"
+                        },
+                        "epicFailingVerification": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Failing Epic verification"
                         }
                       },
                       "required": [
@@ -29060,7 +29832,15 @@
                         "criticRevisionIdentical",
                         "criticRevisionDiff",
                         "criticRevisionAlone",
-                        "criticVerdictContract"
+                        "criticTicketFirst",
+                        "criticInstructionsFirst",
+                        "criticSpecTicket",
+                        "criticSpecInstructions",
+                        "criticWorkingTreeNote",
+                        "criticRole",
+                        "criticSecurity",
+                        "criticVerdictContract",
+                        "epicFailingVerification"
                       ],
                       "additionalProperties": false
                     },
@@ -30286,22 +31066,62 @@
                             "criticRevisionIdentical": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                              "example": "Critic revision block (no change)"
                             },
                             "criticRevisionDiff": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                              "example": "Critic revision block"
                             },
                             "criticRevisionAlone": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                              "example": "Critic revision block (no base)"
+                            },
+                            "criticTicketFirst": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic ticket pointer"
+                            },
+                            "criticInstructionsFirst": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic instructions pointer"
+                            },
+                            "criticSpecTicket": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic specification (ticket)"
+                            },
+                            "criticSpecInstructions": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic specification (instructions)"
+                            },
+                            "criticWorkingTreeNote": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic uncommitted changes note"
+                            },
+                            "criticRole": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic role"
+                            },
+                            "criticSecurity": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic security notice"
                             },
                             "criticVerdictContract": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
+                              "example": "Critic verdict contract"
+                            },
+                            "epicFailingVerification": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Failing Epic verification"
                             }
                           },
                           "required": [
@@ -30319,7 +31139,15 @@
                             "criticRevisionIdentical",
                             "criticRevisionDiff",
                             "criticRevisionAlone",
-                            "criticVerdictContract"
+                            "criticTicketFirst",
+                            "criticInstructionsFirst",
+                            "criticSpecTicket",
+                            "criticSpecInstructions",
+                            "criticWorkingTreeNote",
+                            "criticRole",
+                            "criticSecurity",
+                            "criticVerdictContract",
+                            "epicFailingVerification"
                           ],
                           "additionalProperties": false
                         },
@@ -31516,22 +32344,62 @@
                             "criticRevisionIdentical": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                              "example": "Critic revision block (no change)"
                             },
                             "criticRevisionDiff": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                              "example": "Critic revision block"
                             },
                             "criticRevisionAlone": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                              "example": "Critic revision block (no base)"
+                            },
+                            "criticTicketFirst": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic ticket pointer"
+                            },
+                            "criticInstructionsFirst": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic instructions pointer"
+                            },
+                            "criticSpecTicket": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic specification (ticket)"
+                            },
+                            "criticSpecInstructions": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic specification (instructions)"
+                            },
+                            "criticWorkingTreeNote": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic uncommitted changes note"
+                            },
+                            "criticRole": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic role"
+                            },
+                            "criticSecurity": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic security notice"
                             },
                             "criticVerdictContract": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
+                              "example": "Critic verdict contract"
+                            },
+                            "epicFailingVerification": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Failing Epic verification"
                             }
                           },
                           "required": [
@@ -31549,7 +32417,15 @@
                             "criticRevisionIdentical",
                             "criticRevisionDiff",
                             "criticRevisionAlone",
-                            "criticVerdictContract"
+                            "criticTicketFirst",
+                            "criticInstructionsFirst",
+                            "criticSpecTicket",
+                            "criticSpecInstructions",
+                            "criticWorkingTreeNote",
+                            "criticRole",
+                            "criticSecurity",
+                            "criticVerdictContract",
+                            "epicFailingVerification"
                           ],
                           "additionalProperties": false
                         },
@@ -32808,22 +33684,62 @@
                         "criticRevisionIdentical": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "{ticketFirst} The candidate revision {head} is IDENTICAL to the base revision…"
+                          "example": "Critic revision block (no change)"
                         },
                         "criticRevisionDiff": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "{ticketFirst} Then review the candidate revision {head}, which branched from {base}…"
+                          "example": "Critic revision block"
                         },
                         "criticRevisionAlone": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "{ticketFirst} Then review the candidate revision {head} on its own merits…"
+                          "example": "Critic revision block (no base)"
+                        },
+                        "criticTicketFirst": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic ticket pointer"
+                        },
+                        "criticInstructionsFirst": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic instructions pointer"
+                        },
+                        "criticSpecTicket": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic specification (ticket)"
+                        },
+                        "criticSpecInstructions": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic specification (instructions)"
+                        },
+                        "criticWorkingTreeNote": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic uncommitted changes note"
+                        },
+                        "criticRole": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic role"
+                        },
+                        "criticSecurity": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Critic security notice"
                         },
                         "criticVerdictContract": {
                           "type": "string",
                           "minLength": 1,
-                          "example": "Your reply: respond with ONLY {\"verdict\":\"pass|fail|inconclusive\",\"summary\":\"…\"}"
+                          "example": "Critic verdict contract"
+                        },
+                        "epicFailingVerification": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Failing Epic verification"
                         }
                       },
                       "required": [
@@ -32841,7 +33757,15 @@
                         "criticRevisionIdentical",
                         "criticRevisionDiff",
                         "criticRevisionAlone",
-                        "criticVerdictContract"
+                        "criticTicketFirst",
+                        "criticInstructionsFirst",
+                        "criticSpecTicket",
+                        "criticSpecInstructions",
+                        "criticWorkingTreeNote",
+                        "criticRole",
+                        "criticSecurity",
+                        "criticVerdictContract",
+                        "epicFailingVerification"
                       ],
                       "additionalProperties": false
                     },

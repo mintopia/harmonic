@@ -574,7 +574,7 @@ export function EpicStepper({ epic }: { epic: Epic }) {
             </div>
             <div className="contents max-md:flex max-md:min-w-0 max-md:flex-col">
               <span className={`text-[12px] font-semibold leading-tight ${step.disabled ? 'text-faint' : STEP_LABEL_TONE[step.state]}`}>{step.label}</span>
-              <span className="truncate text-[10.5px] leading-tight text-faint max-md:max-w-none md:max-w-[10rem]" title={step.sublabel}>
+              <span className="line-clamp-2 break-words text-[10.5px] leading-tight text-faint max-md:max-w-none md:max-w-[10rem]" title={step.sublabel}>
                 {step.sublabel}
               </span>
             </div>

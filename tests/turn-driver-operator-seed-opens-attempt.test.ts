@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { trackerRef } from '../src/tracker/adapter.js';
 import { type AppConfig, type DeepPartial } from '../src/config.js';
-import { startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
+import { startServer, stubHarness, type TestServer, waitFor, withArchivedPrompt } from './helpers.js';
 import type { ActiveRuns } from '../src/execution/active-runs.js';
 
 /**
@@ -58,7 +58,7 @@ describe('operator seed on an Attempt that opens with a warm, opportunistically-
 
     const latest = await waitFor(async () => {
       const all = await server.app.ctx.attempts.listForTask(mirrored.id);
-      const last = all.at(-1);
+      const last = await withArchivedPrompt(server, all.at(-1), 'focus on the tokenizer first');
       return all.length === runsBefore.length + 1 && last?.prompt ? last : undefined;
     });
 
@@ -69,6 +69,7 @@ describe('operator seed on an Attempt that opens with a warm, opportunistically-
     expect(latest.prompt).toContain('Running unattended');
     expect(latest.prompt).toContain('## Operator message');
     expect(latest.prompt).toContain('focus on the tokenizer first');
+    expect((await server.app.ctx.attempts.get(latest.id)).prompt).toBeNull();
   });
 
   it('renders the operator message through the edited Prompt Fragment', async () => {
@@ -84,7 +85,7 @@ describe('operator seed on an Attempt that opens with a warm, opportunistically-
       activeRuns.setPendingOperatorSeed(mirrored.id, 'start with {braces}');
       await server.api('POST', `/api/tasks/${mirrored.id}/run`);
       const latest = await waitFor(async () => {
-        const last = (await server.app.ctx.attempts.listForTask(mirrored.id)).at(-1);
+        const last = await withArchivedPrompt(server, (await server.app.ctx.attempts.listForTask(mirrored.id)).at(-1), 'BOSS SAYS');
         return last?.prompt ? last : undefined;
       });
       expect(latest.prompt).toContain('BOSS SAYS >> start with {braces}');

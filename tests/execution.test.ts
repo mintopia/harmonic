@@ -3,8 +3,8 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
-import { startServer, stubHarness, waitFor, cancelRunningTasks, type TestServer } from './helpers.js';
-import { attemptToolCalls, attempts, guardrailEvents } from '../src/db/schema.js';
+import { startServer, stubHarness, waitFor, cancelRunningTasks, type TestServer, withArchivedPrompt } from './helpers.js';
+import { attemptToolCalls, guardrailEvents } from '../src/db/schema.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 
@@ -75,8 +75,7 @@ describe('run execution over ACP (direct mode)', () => {
 
   it('a native Run resolves and uses the Workspace Task Prompt override, else inherits the global default (#339)', async () => {
     const wsId = (await server.api('GET', '/api/workspaces')).body.workspaces[0].id;
-    const promptOf = async (attemptId: number) =>
-      (await server.app.ctx.asyncDb.read((d) => d.select().from(attempts).where(eq(attempts.id, attemptId)).get()))!.prompt;
+    const promptOf = async (attemptId: number) => (await withArchivedPrompt(server, await server.app.ctx.attempts.get(attemptId))).prompt;
     const settle = async (taskId: number) =>
       waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done' ? true : undefined), {
         timeoutMs: 20_000,

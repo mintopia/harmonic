@@ -11,7 +11,7 @@ import { CopyButton, revealOnHover } from '../CopyButton';
 import { Icon } from '../Icon';
 import { Markdown } from '../Markdown';
 import { ChatTranscript } from './ChatTranscript';
-import { PromptSent } from './Description';
+import { PromptSent, PromptSentCard } from './Description';
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
 
@@ -87,29 +87,42 @@ function CriticSession({ attemptId, label, model, agent }: { attemptId: number; 
 
 function ResolvedPrompt({ attemptId, locator }: { attemptId: number; locator: string }) {
   const [prompt, setPrompt] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useLiveEffect((live) => {
     setPrompt(null);
+    setFailed(false);
     api.resolvedPrompt({ attemptId }, locator).then(
       (text) => {
         if (live()) setPrompt(text);
       },
-      () => undefined,
+      () => {
+        if (live()) setFailed(true);
+      },
     );
   }, [attemptId, locator]);
 
-  return prompt ? <PromptSent prompt={prompt} label="Review prompt sent" /> : null;
+  if (prompt) return <PromptSent prompt={prompt} label="Review prompt sent" />;
+  return failed ? <PromptNotArchived /> : null;
+}
+
+function PromptNotArchived() {
+  return (
+    <PromptSentCard label="Review prompt sent">
+      <p className="text-small text-muted">Prompt not archived.</p>
+    </PromptSentCard>
+  );
 }
 
 export function CriticSessions({ attempts, run, model }: { attempts: VerificationAttempt[]; run?: AttemptSummary; model?: string }) {
-  const sessions = attempts.filter((a) => a.mechanism === 'critic' && (a.hasTranscript || a.promptLocator));
+  const sessions = attempts.filter((a) => a.mechanism === 'critic');
   if (sessions.length === 0) return null;
   const criticName = model ?? (run ? criticModel(run) : null) ?? 'critic';
   return (
     <div className="flex flex-col gap-2">
       {sessions.map((c, i) => (
         <div key={c.id}>
-          {c.promptLocator && <ResolvedPrompt attemptId={c.attemptId} locator={c.promptLocator} />}
+          {c.promptLocator ? <ResolvedPrompt attemptId={c.attemptId} locator={c.promptLocator} /> : <PromptNotArchived />}
           {c.hasTranscript && <CriticSession attemptId={c.id} model={criticName} agent={c.harness ? harnessLabel(c.harness) : 'Critic'} label={sessions.length > 1 ? `Critic ${i + 1} of ${sessions.length} · ${c.verdict}` : 'Critic'} />}
         </div>
       ))}

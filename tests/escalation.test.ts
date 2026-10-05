@@ -12,7 +12,7 @@ import { VerificationAttemptStore } from '../src/domain/verification-attempts.js
 import { type SettingsStore } from '../src/server/settings-store.js';
 import { type Verdict } from '../src/verification/critic-schema.js';
 import { type CriticDriveRequest, type CriticHarnessDrive } from '../src/verification/critic.js';
-import { allWorkspaces, makeSettingsStore, startServer, stubHarness, type TestServer, waitFor, seedWorkspace } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, startServer, stubHarness, type TestServer, waitFor, seedWorkspace, withArchivedPrompt } from './helpers.js';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -119,8 +119,9 @@ describe('escalation', () => {
       ]);
       const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
       expect(runs).toHaveLength(2);
-      expect(runs[1].prompt).toContain('Do not crash; write the CSV header first.');
-      expect(runs[1].prompt).toContain('crash-before-response');
+      const retryPrompt = (await withArchivedPrompt(server, runs[1], 'Do not crash; write the CSV header first.')).prompt;
+      expect(retryPrompt).toContain('Do not crash; write the CSV header first.');
+      expect(retryPrompt).toContain('crash-before-response');
     });
 
     it('Reject without start requeues to ready and records the guidance, but does not force-start', async () => {
@@ -151,7 +152,7 @@ describe('escalation', () => {
       const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
       expect(runs).toHaveLength(1);
       expect(runs[0]!.branch).toBe(branch);
-      expect(runs[0].prompt).not.toContain('Feedback from the previous attempt');
+      expect((await withArchivedPrompt(server, runs[0])).prompt).not.toContain('Feedback from the previous attempt');
       expect((await timeline(taskId)).find((attempt) => attempt.number === 1)!.feedback).toBe(feedbackBefore);
 
       expect((await server.api('POST', `/api/tasks/${taskId}/run`)).status).toBe(201);
@@ -646,7 +647,7 @@ describe('escalation-routes', () => {
         const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
         expect(runs).toHaveLength(3);
         expect(runs[2].number).toBe(3);
-        expect(runs[2].prompt).toContain('The timeout is intentional');
+        expect((await withArchivedPrompt(server, runs[2], 'The timeout is intentional')).prompt).toContain('The timeout is intentional');
         expect(branch).toBe(`harmonic/task-${taskId}`);
         expect(runs[2].branch).toBe(branch);
         expect(runs[0].branch).toBe(branch);

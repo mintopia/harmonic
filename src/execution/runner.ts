@@ -220,6 +220,7 @@ export class Runner {
       epicMergeEvents: new EpicMergeEventStore(this.asyncDb),
       onAttemptEvent: (event) => this.events.onAttemptEvent?.(event),
       getConfig: this.getConfig,
+      getWorkspace: this.getWorkspace,
       worktreesDir: this.worktreesDir,
       criticDrive: this.criticDrive,
       fireAndForget: this.fireAndForget,

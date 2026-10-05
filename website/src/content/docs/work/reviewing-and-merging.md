@@ -29,6 +29,11 @@ a verify command's result and its output, and each of the agent's messages.
 Code blocks in Markdown have one too. Summaries and messages copy as Markdown,
 and verify output copies in full, even when the page shows only part of it.
 
+The prompt sent to each agent (the **Resolved Prompt**) is shown inline on the
+ticket page in a **Sent prompt** block, at the point where it was sent. You see
+the text exactly as the agent received it, with placeholders and fragments
+already filled in.
+
 ## Completion and merging
 
 Successful Tasks complete automatically after their configured checks.
@@ -54,6 +59,11 @@ Harmonic reconciles base-branch movement and handles conflicts.
 When an Attempt opens a pull or merge request, a **PR / MR** link appears on
 the Task page above the Attempt details, taking you to the request on the forge.
 If multiple Attempts open requests, the link points to the newest one.
+
+After a successful merge, Harmonic closes the mirrored ticket in the tracker.
+If the close fails, the Task still completes and shows a **ticket close
+pending** badge. Harmonic retries the close on each tracker poll until it
+succeeds.
 
 If work needs a human decision or exhausts its Attempts, open the escalated
 Task to resolve it. An escalation keeps the work and its history available

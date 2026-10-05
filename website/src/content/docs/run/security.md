@@ -61,4 +61,4 @@ file is lost, all stored tokens become unreadable.
 When an unexpected server error occurs, the web UI shows a message like
 `internal server error (ref abc123def456)`. Search the Harmonic log (usually
 `~/.harmonic/harmonic.log` or `journalctl -u harmonic`) for that ref ID to
-find the logged error with its full stack trace, which helps diagnose the issue.
+find the logged error with its full stack trace.

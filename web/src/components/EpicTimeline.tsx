@@ -41,8 +41,8 @@ export function EpicTimeline({ epic, workspaceId }: { epic: Epic; workspaceId: n
         </div>
         <ol className="px-5 py-4" aria-label="Chronological epic timeline">
           {rows.map((row) => (
-            <li key={row.id} className="grid grid-cols-[64px_minmax(0,1fr)] gap-x-3">
-              <time dateTime={new Date(row.at).toISOString()} className="pt-0.5 text-right font-data text-micro leading-[1.35] tabular-nums text-faint">
+            <li key={row.id} className="grid grid-cols-[64px_minmax(0,1fr)] gap-x-3 max-md:grid-cols-1">
+              <time dateTime={new Date(row.at).toISOString()} className="pt-0.5 text-right font-data max-md:pl-5 max-md:text-left text-micro leading-[1.35] tabular-nums text-faint">
                 {clockTime(row.at)}
               </time>
               <div className="relative border-l border-hairline pb-5 pl-5 last:pb-1">
@@ -58,6 +58,7 @@ export function EpicTimeline({ epic, workspaceId }: { epic: Epic; workspaceId: n
                     locator={row.prompt.locator}
                     index={row.prompt.index}
                     label={row.label.replace(/ prompt sent$/, '')}
+                    caption="Prompt"
                     className="mt-2"
                   />
                 )}

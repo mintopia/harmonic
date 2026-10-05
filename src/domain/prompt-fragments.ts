@@ -80,13 +80,91 @@ export const PROMPT_FRAGMENTS = {
     fields: { repoId: 'the code-index repo id' },
     required: [],
   },
+  criticRevisionIdentical: {
+    label: 'Critic revision block (no change)',
+    help: 'Revision block when the candidate is identical to its base, so the builder made no code change.',
+    fields: { ticketFirst: 'how the critic locates the specification', spec: 'what the critic judges against', head: 'the candidate revision' },
+    required: ['head'],
+  },
+  criticRevisionDiff: {
+    label: 'Critic revision block',
+    help: 'Revision block when the candidate branched from a known base.',
+    fields: {
+      ticketFirst: 'how the critic locates the specification',
+      head: 'the candidate revision',
+      base: 'the base revision',
+      workingTreeNote: 'the uncommitted-changes note, empty when the worktree is clean',
+    },
+    required: ['head', 'base', 'workingTreeNote'],
+  },
+  criticRevisionAlone: {
+    label: 'Critic revision block (no base)',
+    help: 'Revision block when the base revision is unknown.',
+    fields: {
+      ticketFirst: 'how the critic locates the specification',
+      head: 'the candidate revision',
+      workingTreeNote: 'the uncommitted-changes note, empty when the worktree is clean',
+    },
+    required: ['head', 'workingTreeNote'],
+  },
+  criticTicketFirst: {
+    label: 'Critic ticket pointer',
+    help: 'Opens the revision block for a Task with a mirrored ticket.',
+    fields: {},
+    required: [],
+  },
+  criticInstructionsFirst: {
+    label: 'Critic instructions pointer',
+    help: 'Opens the revision block for a native Task with no ticket.',
+    fields: {},
+    required: [],
+  },
+  criticSpecTicket: {
+    label: 'Critic specification (ticket)',
+    help: 'Names the specification in the revision block when the Task has a ticket.',
+    fields: {},
+    required: [],
+  },
+  criticSpecInstructions: {
+    label: 'Critic specification (instructions)',
+    help: 'Names the specification in the revision block when the Task has no ticket.',
+    fields: {},
+    required: [],
+  },
+  criticWorkingTreeNote: {
+    label: 'Critic uncommitted changes note',
+    help: 'Added to the revision block when the worktree carries uncommitted changes on top of the candidate.',
+    fields: { head: 'the candidate revision', base: 'the revision to diff the working tree against' },
+    required: ['base'],
+  },
+  criticRole: {
+    label: 'Critic role',
+    help: 'Tells the critic it is a read-only evaluator; references {fragment.readOnlyRestraint}.',
+    fields: {},
+    required: [],
+  },
+  criticSecurity: {
+    label: 'Critic security notice',
+    help: 'Tells the critic that everything it reads is untrusted data, not instructions.',
+    fields: {},
+    required: [],
+  },
+  criticVerdictContract: {
+    label: 'Critic verdict contract',
+    help: 'The JSON output contract demanded of the critic. A save is rejected unless it still asks for a "verdict" and a "summary".',
+    fields: {},
+    required: [],
+  },
+  epicFailingVerification: {
+    label: 'Failing Epic verification',
+    help: 'Section reporting the failed Epic verification to the resolver agent.',
+    fields: { reason: 'why the Epic verification failed' },
+    required: ['reason'],
+  },
 } as const satisfies Record<string, PromptFragmentSpec>;
 
-export const CRITIC_FRAGMENT_NAMES = ['criticRevisionIdentical', 'criticRevisionDiff', 'criticRevisionAlone', 'criticVerdictContract'] as const;
-export type CriticFragmentName = (typeof CRITIC_FRAGMENT_NAMES)[number];
-export type CriticFragments = Record<CriticFragmentName, string>;
-
 export type PromptFragmentName = keyof typeof PROMPT_FRAGMENTS;
+export type CriticFragmentName = Extract<PromptFragmentName, `critic${string}`>;
 export type PromptFragments = Record<PromptFragmentName, string>;
 export type PromptFragmentOverrideKey = `promptFragment${Capitalize<PromptFragmentName>}`;
 export type PromptFragmentOverrides = { [N in PromptFragmentName as `promptFragment${Capitalize<N>}`]: string | null };
@@ -106,3 +184,70 @@ export function missingPromptFragmentTokens(name: PromptFragmentName, text: stri
 export const NO_PROMPT_FRAGMENT_OVERRIDES = Object.fromEntries(
   PROMPT_FRAGMENT_OVERRIDE_KEYS.map((key) => [key, null]),
 ) as PromptFragmentOverrides;
+
+const FRAGMENT_REF = /\{fragment\.([^{}]+)\}/g;
+
+/** The `{fragment.<name>}` references in `text` that name no Prompt Fragment, so they would reach the agent literally. */
+export function unknownFragmentRefs(text: string): string[] {
+  const unknown = new Set<string>();
+  for (const [, name] of text.matchAll(FRAGMENT_REF)) {
+    if (name && !Object.hasOwn(PROMPT_FRAGMENTS, name)) unknown.add(name);
+  }
+  return [...unknown];
+}
+
+/** A prompt template whose `{fragment.<name>}` references are expanded before it reaches an agent. */
+export interface FragmentTemplateField {
+  /** Path in the AppConfig; `*` fans out over array items. */
+  readonly config: readonly string[];
+  /** The Workspace override carrying the same template: its top-level key, and the path beneath it (`*` fans out over overlay entries; entries without the path are skipped). */
+  readonly workspace: { readonly key: string; readonly path: readonly string[] } | null;
+}
+
+const criticPromptFields = (stage: 'preMerge' | 'postMerge', key: 'taskPreMergeCritics' | 'taskPostMergeCritics'): FragmentTemplateField[] =>
+  (['issuePrompt', 'noIssuePrompt'] as const).map((prompt) => ({
+    config: ['verify', 'task', stage, 'critics', '*', prompt],
+    workspace: { key, path: ['*', 'critic', prompt] },
+  }));
+
+/** Every prompt template that expands `{fragment.<name>}` at runtime. */
+export const FRAGMENT_TEMPLATE_FIELDS: readonly FragmentTemplateField[] = [
+  { config: ['taskPrompt'], workspace: { key: 'taskPrompt', path: [] } },
+  { config: ['drive', 'prompt'], workspace: { key: 'drivePrompt', path: [] } },
+  { config: ['drive', 'unattendedReminder'], workspace: { key: 'driveUnattendedReminder', path: [] } },
+  { config: ['drive', 'continuePrompt'], workspace: { key: 'driveContinuePrompt', path: [] } },
+  { config: ['drive', 'commitNudge'], workspace: { key: 'driveCommitNudge', path: [] } },
+  { config: ['pauseMessage'], workspace: { key: 'pauseMessage', path: [] } },
+  { config: ['merge', 'conflictPrompt'], workspace: { key: 'mergeConflictPrompt', path: [] } },
+  { config: ['merge', 'epicConflictPrompt'], workspace: { key: 'mergeEpicConflictPrompt', path: [] } },
+  { config: ['merge', 'epicRefreshPrompt'], workspace: { key: 'mergeEpicRefreshPrompt', path: [] } },
+  { config: ['verify', 'epic', 'resolvePrompt'], workspace: null },
+  { config: ['verify', 'epic', 'resolveSuffix'], workspace: { key: 'verifyEpicResolveSuffix', path: [] } },
+  ...criticPromptFields('preMerge', 'taskPreMergeCritics'),
+  ...criticPromptFields('postMerge', 'taskPostMergeCritics'),
+  { config: ['verify', 'epic', 'preMerge', 'critics', '*', 'prompt'], workspace: { key: 'epicPreMergeCritics', path: ['*', 'critic', 'prompt'] } },
+];
+
+function templatesAt(root: unknown, path: readonly string[], prefix: (string | number)[] = []): { path: (string | number)[]; text: string }[] {
+  if (path.length === 0) return typeof root === 'string' ? [{ path: prefix, text: root }] : [];
+  if (root === null || typeof root !== 'object') return [];
+  const [head, ...rest] = path as [string, ...string[]];
+  if (head === '*') {
+    return Array.isArray(root) ? root.flatMap((item, i) => templatesAt(item, rest, [...prefix, i])) : [];
+  }
+  return Object.hasOwn(root, head) ? templatesAt((root as Record<string, unknown>)[head], rest, [...prefix, head]) : [];
+}
+
+export const UNKNOWN_FRAGMENT_MESSAGE = 'references an unknown prompt fragment (see the Prompts tab for the fragment names)';
+
+export function unknownFragmentIssues(config: unknown): { path: (string | number)[]; message: string }[] {
+  return FRAGMENT_TEMPLATE_FIELDS.flatMap((field) => templatesAt(config, field.config))
+    .filter(({ text }) => unknownFragmentRefs(text).length > 0)
+    .map(({ path }) => ({ path, message: UNKNOWN_FRAGMENT_MESSAGE }));
+}
+
+export function unknownWorkspaceFragmentIssues(overrides: unknown): { path: (string | number)[]; message: string }[] {
+  return FRAGMENT_TEMPLATE_FIELDS.flatMap((field) => (field.workspace ? templatesAt(overrides, [field.workspace.key, ...field.workspace.path]) : []))
+    .filter(({ text }) => unknownFragmentRefs(text).length > 0)
+    .map(({ path }) => ({ path, message: UNKNOWN_FRAGMENT_MESSAGE }));
+}

@@ -1,5 +1,5 @@
 import type { TrackerResolveFailureCode } from '../../src/tracker/adapter.js';
-import type { CriticFragments, PromptFragmentOverrides, PromptFragments } from '../../src/domain/prompt-fragments.js';
+import type { PromptFragmentOverrides, PromptFragments } from '../../src/domain/prompt-fragments.js';
 import type { Verdict } from '../../src/verification/critic-schema.js';
 
 /** The stored Ticket states; blocked-ness and agent-workability are derived, never stored. */
@@ -458,8 +458,12 @@ export interface Workspace extends PromptFragmentOverrides {
   driveContinueAttempts: number | null;
   /** Task Prompt override; `null` inherits `config.taskPrompt`. */
   taskPrompt: string | null;
+  /** Pause message override; `null` inherits `config.pauseMessage`. */
+  pauseMessage: string | null;
   mergeConflictPrompt: string | null;
   mergeEpicConflictPrompt: string | null;
+  mergeEpicRefreshPrompt: string | null;
+  verifyEpicResolveSuffix: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -680,8 +684,7 @@ export interface AttemptSummary {
   reason: string | null;
   stopReason: string | null;
   sessionId: string | null;
-  /** The exact prompt text sent to the harness for this Attempt; null for
-   * pre-feature Attempts and while an Attempt is still starting up. */
+  /** Legacy: the prompt stored on Attempts that predate the Archive-only Resolved Prompt read; null on every newer Attempt, whose prompts the transcript reads from the Archive. */
   prompt: string | null;
   branch: string | null;
   baseBranch: string | null;
@@ -720,7 +723,6 @@ export interface EpicAttempt {
   number: number;
   state: AttemptState;
   reason: string | null;
-  prompt: string | null;
   usage: AttemptUsage | null;
   cost: Cost | null;
   toolCalls: number;
@@ -1194,8 +1196,9 @@ export interface AppConfig {
   };
   /** The Task Prompt template for native Attempts, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
   taskPrompt: string;
+  pauseMessage: string;
   /** Shared Prompt Fragments, referenced from prompts as `{fragment.<name>}`. */
-  promptFragments: PromptFragments & CriticFragments;
+  promptFragments: PromptFragments;
   archive: { retain: { days: number | null; maxTotalMB: number | null } };
   /** S3 credentials arrive masked (`********`) when set; writing the mask back keeps the stored value. */
   export: {

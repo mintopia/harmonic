@@ -1159,7 +1159,10 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         querystring: z.object({
           locator: z.string().min(1).describe('Archive locator of the prompt file, relative to the Attempt directory.'),
           segments: z.enum(['true', 'false']).optional().describe('When `true`, return the prompts of the step as a JSON array instead of the joined text.'),
-          index: z.coerce.number().int().min(0).optional().describe('0-based index of one prompt within the file; omit to return the whole file.'),
+          index: z.coerce.number().int().min(0).optional().describe('0-based index of one prompt within the file; omit to return the whole file. Cannot be combined with `segments=true`.'),
+        }).refine((query) => !(query.segments === 'true' && query.index !== undefined), {
+          message: '`index` cannot be combined with `segments=true`',
+          path: ['index'],
         }),
         response: {
           200: z.any().describe('Plain text: the archived prompt exactly as sent (only the `index`-th prompt when `index` is given); multiple prompts joined by a horizontal rule. With `segments=true`: JSON `{ prompts: string[] }`, one entry per prompt sent.'),

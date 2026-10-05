@@ -90,6 +90,8 @@ const workspaceSchema = z
     driveContinueAttempts: z.number().nullable().meta({ example: null }),
     /** Task Prompt override; null inherits `config.taskPrompt`. */
     taskPrompt: z.string().nullable().meta({ example: null }),
+    /** Pause message override; null inherits `config.pauseMessage`. */
+    pauseMessage: z.string().nullable().meta({ example: null }),
     ...promptFragmentOverrideResponseShape,
     /** Commit nudge override; null inherits `config.drive.commitNudge`. */
     driveCommitNudge: z.string().nullable().meta({ example: null }),
@@ -97,6 +99,8 @@ const workspaceSchema = z
     mergeConflictPrompt: z.string().nullable().meta({ example: null }),
     /** Epic integration merge-conflict prompt override; null inherits `config.merge.epicConflictPrompt`. */
     mergeEpicConflictPrompt: z.string().nullable().meta({ example: null }),
+    mergeEpicRefreshPrompt: z.string().nullable().meta({ example: null }),
+    verifyEpicResolveSuffix: z.string().nullable().meta({ example: null }),
     exportEnabled: z.boolean().nullable().meta({ example: null }),
     exportDirectoryPath: z.string().nullable().meta({ example: null }),
     exportS3Endpoint: z.string().nullable().meta({ example: null }),

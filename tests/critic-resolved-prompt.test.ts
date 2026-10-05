@@ -62,11 +62,20 @@ describe('Critic Resolved Prompts inline (#799)', () => {
     expect(host.textContent).not.toMatch(/\bEdit\b/);
   });
 
-  it('renders nothing for a critic attempt with no archived prompt', async () => {
+  it('says the prompt was not archived for a historical critic attempt with no locator, without fetching', async () => {
     const host = await mountComponent(createElement(CriticSessions, { attempts: [attempt({})] }));
     await flush();
 
     expect(resolvedPrompt).not.toHaveBeenCalled();
-    expect(host.textContent).toBe('');
+    expect(host.textContent).toContain('Review prompt sent');
+    expect(host.textContent).toContain('Prompt not archived.');
+  });
+
+  it('says the prompt was not archived when the archive read fails, rather than showing nothing', async () => {
+    resolvedPrompt.mockRejectedValue(new Error('Sent prompt unavailable (404)'));
+    const host = await mountComponent(createElement(CriticSessions, { attempts: [attempt({ promptLocator: 'verification/pre-merge/9/prompt.md' })] }));
+    await flush();
+
+    expect(host.textContent).toContain('Prompt not archived.');
   });
 });

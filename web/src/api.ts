@@ -449,8 +449,6 @@ export const api = {
   },
   epic: (workspaceId: number, epicRef: TrackerRef) =>
     request<Epic>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}`),
-  attemptResolvedPrompt: (attemptId: number, locator: string) =>
-    requestText(`/api/attempts/${attemptId}/resolved-prompt?locator=${encodeURIComponent(locator)}`),
   attemptResolvedPrompts: (attemptId: number, locator: string) =>
     request<{ prompts: string[] }>('GET', `/api/attempts/${attemptId}/resolved-prompt?locator=${encodeURIComponent(locator)}&segments=true`).then((r) => r.prompts),
   epicAttempts: (workspaceId: number, epicRef: TrackerRef) =>

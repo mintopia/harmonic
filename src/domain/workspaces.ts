@@ -17,7 +17,7 @@ import {
   type WorkspaceRow,
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
-import { PROMPT_FRAGMENT_OVERRIDE_KEYS, type PromptFragmentOverrides } from './prompt-fragments.js';
+import { PROMPT_FRAGMENT_OVERRIDE_KEYS, unknownWorkspaceFragmentIssues, type PromptFragmentOverrides } from './prompt-fragments.js';
 import { EXPORT_STATES, exportDirectoryPathSchema, exportS3EndpointSchema, promptFragmentOverrideShape, redactPatternsSchema } from '../config.js';
 import { DomainError } from './errors.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
@@ -111,9 +111,13 @@ export const workspaceOverridesSchema = z.object({
   /** Commit nudge override; null inherits `config.drive.commitNudge`. */
   driveCommitNudge: z.string().min(1).nullable().optional(),
   /** Task merge-conflict prompt override; null inherits `config.merge.conflictPrompt`. */
-  mergeConflictPrompt: z.string().min(1).nullable().optional(),
+  mergeConflictPrompt: z.string().min(1).meta({ example: '## Merge conflict resolution (turn {turn})' }).nullable().optional(),
   /** Epic integration merge-conflict prompt override; null inherits `config.merge.epicConflictPrompt`. */
-  mergeEpicConflictPrompt: z.string().min(1).nullable().optional(),
+  mergeEpicConflictPrompt: z.string().min(1).meta({ example: '## Epic integration merge conflict resolution (turn {turn})' }).nullable().optional(),
+  /** Epic integration refresh prompt override; null inherits `config.merge.epicRefreshPrompt`. */
+  mergeEpicRefreshPrompt: z.string().min(1).meta({ example: '## Epic integration refresh' }).nullable().optional(),
+  /** Epic verification resolver suffix override; null inherits `config.verify.epic.resolveSuffix`. */
+  verifyEpicResolveSuffix: z.string().min(1).meta({ example: 'Work in the checked-out integration branch `{branch}`.' }).nullable().optional(),
   /** Export-on-terminal toggle override; null inherits `config.export.enabled`. */
   exportEnabled: z.boolean().nullable().optional(),
   /** Export directory override (absolute); null inherits `config.export.directory.path`. */
@@ -138,6 +142,8 @@ export const workspaceOverridesSchema = z.object({
   /** Archive retention overrides; a null field inherits `config.archive.retain`. */
   archiveRetentionDays: z.number().int().positive().nullable().optional().meta({ example: 90 }),
   archiveRetentionMaxTotalMB: z.number().positive().nullable().optional().meta({ example: 2048 }),
+}).superRefine((overrides, ctx) => {
+  for (const issue of unknownWorkspaceFragmentIssues(overrides)) ctx.addIssue({ code: 'custom', ...issue });
 });
 export type WorkspaceOverrides = z.infer<typeof workspaceOverridesSchema>;
 
@@ -177,6 +183,8 @@ export const OVERRIDE_KEYS = [
   'driveCommitNudge',
   'mergeConflictPrompt',
   'mergeEpicConflictPrompt',
+  'mergeEpicRefreshPrompt',
+  'verifyEpicResolveSuffix',
   'exportEnabled',
   'exportDirectoryPath',
   'exportS3Endpoint',
@@ -207,7 +215,10 @@ export interface WorkspaceSettingsStore {
 
 export const updateWorkspaceInputSchema = createWorkspaceInputSchema
   .partial()
-  .extend({ ...workspaceOverridesSchema.shape, color: workspaceColorSchema.optional() });
+  .extend({ ...workspaceOverridesSchema.shape, color: workspaceColorSchema.optional() })
+  .superRefine((input, ctx) => {
+    for (const issue of unknownWorkspaceFragmentIssues(input)) ctx.addIssue({ code: 'custom', ...issue });
+  });
 export type UpdateWorkspaceInput = z.infer<typeof updateWorkspaceInputSchema>;
 
 /** The given Workspace, or the earliest-created one when `id` is omitted — the default-Workspace fallback. */
@@ -271,6 +282,8 @@ export class WorkspaceService {
       driveCommitNudge: o.driveCommitNudge,
       mergeConflictPrompt: o.mergeConflictPrompt,
       mergeEpicConflictPrompt: o.mergeEpicConflictPrompt,
+      mergeEpicRefreshPrompt: o.mergeEpicRefreshPrompt,
+      verifyEpicResolveSuffix: o.verifyEpicResolveSuffix,
       exportEnabled: o.exportEnabled,
       exportDirectoryPath: o.exportDirectoryPath,
       exportS3Endpoint: o.exportS3Endpoint,

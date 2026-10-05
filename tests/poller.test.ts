@@ -130,6 +130,20 @@ describe('TrackerPoller.poll', () => {
     expect(reads).toEqual(['42']);
   });
 
+  it('keeps the tracker link of a done Task whose closed ticket the open-only scan no longer returns', async () => {
+    const t42 = ticket({ ref: trackerRef(42), labels: ['ready-for-agent'], url: 'https://x/42' });
+    const open = [t42];
+    const { adapter } = openOnlyAdapter(open, { '42': { ...t42, state: 'closed' } });
+    const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
+    await poller.poll();
+    open.length = 0;
+    await poller.poll();
+    await poller.poll();
+
+    expect((await tasks.list())[0]).toMatchObject({ trackerRef: '42', state: 'done' });
+    expect(poller.urlFor(trackerRef(42))).toBe('https://x/42');
+  });
+
   it('resolves a closed parent absent from the open scan once, keeping the Epic container', async () => {
     const epic = ticket({ ref: trackerRef(10), title: 'Closed epic', state: 'closed', labels: ['epic'] });
     const child = ticket({ ref: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] });

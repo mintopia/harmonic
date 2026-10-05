@@ -1,6 +1,9 @@
+import { baselineConfig } from '../src/config.js';
 import { describe, expect, it } from 'vitest';
-import { appConfigSchema, DEFAULT_PROMPT_FRAGMENTS } from '../src/config.js';
+import { appConfigSchema } from '../src/config.js';
 import { parseCriticOutput, verdictContractError } from '../src/verification/critic-schema.js';
+
+const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
 
 describe('parseCriticOutput (issue #136)', () => {
   it.each(['pass', 'fail', 'inconclusive'] as const)('accepts a valid %s verdict', (verdict) => {

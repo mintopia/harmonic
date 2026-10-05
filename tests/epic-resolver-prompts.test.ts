@@ -24,7 +24,6 @@ const attempt: EpicAttempt = {
   number: 2,
   state: 'passed',
   reason: null,
-  prompt: null,
   usage: null,
   cost: null,
   toolCalls: 0,
@@ -65,12 +64,12 @@ const epic = (): Epic => ({
 describe('Epic resolver prompts on the Epic page', () => {
   it('shows each resolver prompt inline under its Epic Attempt row with the resolver label', async () => {
     const host = await mountComponent(createElement(EpicAttemptsTimeline, { attempts: [attempt] }));
-    const blocks = [...host.querySelectorAll('[data-testid="resolved-prompt"]')];
+    const blocks = [...host.querySelectorAll('[data-testid="prompt-sent"]')];
     expect(blocks).toHaveLength(3);
-    expect(blocks.map((b) => b.querySelector('span.text-muted')?.textContent)).toEqual([
-      'Epic refresh resolver',
-      'Epic verification resolver',
-      'Epic merge conflict resolver',
+    expect(blocks.map((b) => b.firstElementChild?.textContent)).toEqual([
+      'Prompt sent · Epic refresh resolver',
+      'Prompt sent · Epic verification resolver',
+      'Prompt sent · Epic merge conflict resolver',
     ]);
     expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([
       '/api/attempts/55/resolved-prompt?locator=resolution%2Fepic-refresh-1%2Fprompt.md&index=0',
@@ -87,6 +86,6 @@ describe('Epic resolver prompts on the Epic page', () => {
     await act(async () => {});
     expect(host.textContent).toContain('Epic refresh resolver prompt sent');
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/workspaces/3/epics/31/resolved-prompt?attempt=1&locator=resolution%2Fepic-refresh-1%2Fprompt.md&index=0');
-    expect(host.querySelector('[data-testid="resolved-prompt"] pre')?.textContent).toContain('sent via /api/workspaces/3/epics/31/resolved-prompt');
+    expect(host.querySelector('[data-testid="prompt-sent"] pre')?.textContent).toContain('sent via /api/workspaces/3/epics/31/resolved-prompt');
   });
 });

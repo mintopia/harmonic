@@ -31,10 +31,15 @@ merged work while the ticket stayed open (ADR-0001, ADR-0038).
   `ticketClosePending` itself on failure; the failure is
   flagged pending and retried.
 - A failed open-PR fate still Escalates: nothing has merged.
-- `reconcile()` retries the close for `done` Tasks with the flag set, using the
-  adapter it already holds. It clears the flag on success or when the ticket is
-  gone (404 / not found). Retries record no lifecycle event; the first failure
-  already recorded `ticket-close-failed`.
+- `reconcile()` retries the close for `done` Tasks with the flag set through
+  `AutoDrive.retryTicketClose`, which resolves the Workspace's tracker adapter
+  afresh each attempt (so a repaired token or setting takes effect), reads the
+  ticket state, and closes it if still open. It clears the flag on success or
+  when the tracker reports the ticket gone (an HTTP 404 or the adapter's own
+  "no issue" error; a loose "not found" in a message does not count). A
+  successful retry records the usual `ticket-closed` lifecycle event; the first
+  failure already recorded `ticket-close-failed`, and a failed retry records
+  nothing but a warning log naming the Task and the error.
 - The Task page shows a non-blocking "ticket close pending" pill so the state is
   visible to the operator.
 
@@ -42,7 +47,8 @@ merged work while the ticket stayed open (ADR-0001, ADR-0038).
 
 - A rate-limit burst can no longer strand a merged Task behind a dead Accept.
 - The tracker may show a merged ticket open for up to a few poll intervals.
-- A permanently failing close is retried every poll and logged as a failed
-  assignment write by `reconcile()`; it is not escalated.
+- A permanently failing close is retried every poll, costing one state read plus
+  one close attempt per pending Task, and logged as a warning with the Task id
+  and error; it is not escalated.
 
 Supersedes: none. Amends the close-failure clause of ADR-0001's auto-merge fate.

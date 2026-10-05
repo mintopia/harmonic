@@ -22,6 +22,8 @@ type DriveWorkspace = Pick<
  * Runner injects, and what becomes of a clean completion (Merge Fate +
  * fallback-close). Absent on a native-only server.
  */
+const completionComment = (task: TaskRow): string => `Completed and merged by Harmonic (task ${task.id}).`;
+
 export class AutoDrive {
   constructor(
     private readonly getConfig: () => AppConfig,
@@ -164,14 +166,14 @@ export class AutoDrive {
    * failure returns false so the caller can record the infrastructure failure.
    * No tracker ref means nothing to close.
    */
-  async closeTicket(task: TaskRow, comment = `Completed and merged by Harmonic (task ${task.id}).`): Promise<boolean> {
+  async closeTicket(task: TaskRow, comment = completionComment(task)): Promise<boolean> {
     const result = await this.attemptClose(task, comment);
     if (!result.ok) this.onTicketCloseFailed?.(task, result.error);
     return result.ok;
   }
 
   retryTicketClose(task: TaskRow): Promise<{ ok: true } | { ok: false; error: unknown }> {
-    return this.attemptClose(task, `Completed and merged by Harmonic (task ${task.id}).`);
+    return this.attemptClose(task, completionComment(task));
   }
 
   private async attemptClose(task: TaskRow, comment: string): Promise<{ ok: true } | { ok: false; error: unknown }> {

@@ -1,4 +1,5 @@
 import type { TrackerAdapter, TrackerRef } from './adapter.js';
+import { safeErrorReason } from './rest-client.js';
 
 /** Close an integrated Epic's tracker issue; idempotent, since `gh issue close` errors on an already-closed issue. */
 export async function closeIntegratedEpic(adapter: TrackerAdapter, epicRef: TrackerRef): Promise<void> {
@@ -19,6 +20,6 @@ export async function recordAndCloseIntegratedEpic(deps: {
   try {
     await closeIntegratedEpic(await deps.resolveAdapter(), deps.epicRef);
   } catch (err) {
-    deps.onError(`epic ${deps.epicRef} tracker issue close failed: ${String(err)}`);
+    deps.onError(`epic ${deps.epicRef} tracker issue close failed: ${safeErrorReason(err)}`);
   }
 }

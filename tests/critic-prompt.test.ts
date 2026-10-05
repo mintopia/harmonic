@@ -1,8 +1,10 @@
+import { baselineConfig } from '../src/config.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PROMPT_FRAGMENTS } from '../src/config.js';
 import { buildCriticPrompt as buildWithFragments, type BuildCriticPromptArgs } from '../src/verification/critic-prompt.js';
 import type { DriveFields } from '../src/execution/prompt-template.js';
+
+const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
 
 const FIELDS: DriveFields = {
   taskId: '172',
@@ -196,5 +198,37 @@ describe('critic Prompt Fragments', () => {
     expect(diff).not.toContain('EDITED-SAME');
     expect(buildWithFragments({ ...args, baseOid: CANDIDATE })).toContain(`EDITED-SAME ${CANDIDATE}`);
     expect(buildWithFragments(args)).toContain(`EDITED-ALONE ${CANDIDATE}`);
+  });
+
+  it('makes every piece of critic prose an editable fragment, expanding {fragment.x} references inside them', () => {
+    const fragments = {
+      ...DEFAULT_PROMPT_FRAGMENTS,
+      readOnlyRestraint: 'SHARED-RESTRAINT',
+      criticRole: 'ROLE-EDITED. {fragment.readOnlyRestraint}',
+      criticSecurity: 'SECURITY-EDITED',
+      criticTicketFirst: 'TICKET-FIRST-EDITED',
+      criticInstructionsFirst: 'INSTRUCTIONS-FIRST-EDITED',
+      criticSpecTicket: 'SPEC-TICKET-EDITED',
+      criticSpecInstructions: 'SPEC-INSTRUCTIONS-EDITED',
+      criticWorkingTreeNote: 'DIRTY-EDITED against {base} at {head}',
+      criticRevisionDiff: '{ticketFirst} vs {spec}: {head}/{base} {fragment.criticSpecTicket}{workingTreeNote}',
+    };
+    const args = { operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE, baseOid: BASE, fragments };
+    const clean = buildWithFragments(args);
+    expect(clean).toContain(`TICKET-FIRST-EDITED vs SPEC-TICKET-EDITED: ${CANDIDATE}/${BASE} SPEC-TICKET-EDITED\n`);
+    expect(clean).toContain('ROLE-EDITED. SHARED-RESTRAINT');
+    expect(clean).toContain('SECURITY-EDITED');
+    expect(clean).not.toContain('{fragment.');
+    expect(clean).not.toContain('READ-ONLY code critic');
+    expect(clean).not.toContain('UNTRUSTED DATA');
+    expect(clean).not.toContain('DIRTY-EDITED');
+    expect(buildWithFragments({ ...args, dirty: true })).toContain(`SPEC-TICKET-EDITED DIRTY-EDITED against ${BASE} at ${CANDIDATE}\n`);
+    const native = { ...FIELDS, ref: '', url: '' };
+    expect(buildWithFragments({ ...args, fields: native })).toContain('INSTRUCTIONS-FIRST-EDITED vs SPEC-INSTRUCTIONS-EDITED:');
+  });
+
+  it('leaves an unknown {fragment.name} literal, so save-time validation is the only guard', () => {
+    const fragments = { ...DEFAULT_PROMPT_FRAGMENTS, criticRole: 'ROLE {fragment.nope}' };
+    expect(buildWithFragments({ operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE, fragments })).toContain('ROLE {fragment.nope}');
   });
 });

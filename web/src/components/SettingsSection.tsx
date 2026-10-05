@@ -26,7 +26,7 @@ export function SettingsSection({
 export const fieldLabel = `mb-1.5 block ${labelType} text-muted`;
 
 const chipBase =
-  'rounded-md border px-1.5 py-1 font-data text-small leading-none transition-colors focus:outline-none focus-visible:border-accent';
+  'rounded-md border px-1.5 py-1.5 font-data text-small leading-none transition-colors focus:outline-none focus-visible:border-accent';
 
 /** The always-available Task-identity tokens ({@link Placeholder.core}) render
  * first in the accent voice; context tokens follow after a hairline. Clicking a
@@ -40,6 +40,7 @@ export function PlaceholderChips({
   onInsert: (token: string) => void;
 }) {
   const core = placeholders.filter((p) => p.core);
+  if (placeholders.length === 0) return null;
   const context = placeholders.filter((p) => !p.core);
   const chip = (p: Placeholder) => (
     <button

@@ -1,3 +1,6 @@
+import { errorMessage } from '../error-handling.js';
+import { logger } from '../logger.js';
+
 /** The merging side effects a caller may apply: a worktree merge, opening a PR, closing a tracker ticket. */
 export const MERGE_EFFECTS = ['target-ref', 'open-pr', 'ticket-close'] as const;
 export type MergeEffect = (typeof MERGE_EFFECTS)[number];
@@ -23,7 +26,13 @@ export function ticketCloseEffect(trackerRef: string, close: () => Promise<boole
     idempotencyKey: `ticket-${trackerRef}`,
     expected: { trackerRef },
     apply: async () => {
-      if (!(await close())) await markPending();
+      if (!(await close())) {
+        try {
+          await markPending();
+        } catch (error) {
+          logger.error('ticket-close: could not flag the Task close-pending after a failed close', { trackerRef, error: errorMessage(error) });
+        }
+      }
       return { ok: true, observed: { trackerRef } };
     },
   };

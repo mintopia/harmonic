@@ -7,6 +7,7 @@ import type {
   Workspace,
 } from "../types";
 import { EPIC_RESOLVE_PLACEHOLDERS, compileEpicResolvePreview } from "../prompt-preview-model";
+import { resolvePromptFragments } from "../../../src/domain/setting-override.js";
 import { CommandListEditor, CommandOverlayEditor } from "./CommandListEditor";
 import {
   PromptFragmentsContext,
@@ -285,7 +286,7 @@ export function GlobalVerificationSettings({
                   })
                 }
                 placeholders={EPIC_RESOLVE_PLACEHOLDERS}
-                preview={compileEpicResolvePreview(config.verify.epic.resolvePrompt, config.verify.epic.resolveSuffix)}
+                preview={compileEpicResolvePreview(config.verify.epic.resolvePrompt, config.verify.epic.resolveSuffix, config.promptFragments)}
                 error={fieldErrors["verify.epic.resolvePrompt"]}
                 rows={5}
               />
@@ -390,7 +391,7 @@ export function WorkspaceVerificationSettings({
 }) {
   const [scope, setScope] = useState<"task" | "epic">("task");
   return (
-    <PromptFragmentsContext.Provider value={{ ...config.promptFragments, readOnlyRestraint: workspace.promptFragmentReadOnlyRestraint ?? config.promptFragments.readOnlyRestraint }}>
+    <PromptFragmentsContext.Provider value={resolvePromptFragments(workspace, config)}>
       <div>
       <Tabs
         tabs={SCOPE_TABS}

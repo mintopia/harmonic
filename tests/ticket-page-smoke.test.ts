@@ -73,6 +73,18 @@ describe('TicketPage smoke (issue #469)', () => {
   });
 });
 
+describe('Ticket close pending pill (ADR-0048)', () => {
+  it('shows the pill on a done Task whose ticket close is still pending', async () => {
+    await renderTicket(makeTask({ id: 44, state: 'done', ticketClosePending: true }));
+    expect(host!.textContent).toContain('ticket close pending');
+  });
+
+  it('omits the pill when the close is not pending', async () => {
+    await renderTicket(makeTask({ id: 45, state: 'done', ticketClosePending: false }));
+    expect(host!.textContent).not.toContain('ticket close pending');
+  });
+});
+
 describe('Ticket Escape navigation', () => {
   it('leaves an open child dialog in charge of Escape', async () => {
     const task = makeTask({ state: 'escalated' });

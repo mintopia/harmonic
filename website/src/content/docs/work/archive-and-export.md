@@ -15,8 +15,9 @@ Export is off until you turn it on. See [Turn Export on](#turn-export-on).
 Harmonic starts an Archive for every task when the task is created. You
 don't need to configure anything. It holds:
 
-- the prompt sent to each agent, and everything the agent did, for the
-  implementation and for every Critic;
+- the **Resolved Prompt** sent to each agent (with all placeholders and
+  fragments expanded), and everything the agent did, for the implementation
+  and for every Critic;
 - a copy of each agent harness's own log, taken when its step ends;
 - the complete output of every verify command, with nothing cut;
 - everything you did to the task: steers, Accept, Reject with its reason,

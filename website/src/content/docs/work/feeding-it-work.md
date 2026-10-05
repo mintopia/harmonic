@@ -91,4 +91,6 @@ you can tell them apart:
   `PROJ-185`. In a listing, both appear together as `#185 · T-174`.
 
 Tasks created by hand (not mirrored from a tracker) show only their Task ID.
-The details page always shows both when the task has a tracker issue.
+The details page always shows both when the task has a tracker issue. A
+**Tracker** fact shows the tracker's name and the issue number, and links to
+the issue when the issue has a URL.

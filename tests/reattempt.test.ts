@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { trackerRef } from '../src/tracker/adapter.js';
-import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { startServer, stubHarness, waitFor, type TestServer, withArchivedPrompt } from './helpers.js';
 
 describe('unified corrective attempts', () => {
   let server: TestServer;
@@ -56,8 +56,9 @@ describe('unified corrective attempts', () => {
 
     const runs = (await server.api('GET', `/api/tasks/${ticket.id}/attempts`)).body.attempts;
     expect(runs).toHaveLength(2);
-    expect(runs[1].prompt).toContain('Add the CSV header');
-    expect(runs[1].prompt).toContain('crash-before-response');
+    const retryPrompt = (await withArchivedPrompt(server, runs[1], 'Add the CSV header')).prompt;
+    expect(retryPrompt).toContain('Add the CSV header');
+    expect(retryPrompt).toContain('crash-before-response');
 
     const after = await server.api('GET', `/api/tasks/${ticket.id}`);
     expect(after.body.id).toBe(ticket.id);

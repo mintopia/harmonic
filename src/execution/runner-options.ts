@@ -94,6 +94,8 @@ export interface RunnerOptions {
         | 'driveCommitNudge'
         | 'mergeConflictPrompt'
         | 'mergeEpicConflictPrompt'
+        | 'mergeEpicRefreshPrompt'
+        | 'verifyEpicResolveSuffix'
       > &
         Partial<Pick<WorkspaceRow, 'workingDir'>>)
     | undefined

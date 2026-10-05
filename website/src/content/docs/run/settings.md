@@ -16,6 +16,8 @@ whole instance:
 
 - the harnesses and their models (see [Harnesses](/harmonic/run/harnesses/)),
 - model prices (so cost is accurate),
+- prompts and prompt fragments (how Harmonic talks to agents and how agents
+  talk to each other),
 - the verification checks that run before a merge (commands and named
   critics, in the order you set),
 - notification channels,
@@ -50,6 +52,81 @@ bulk changes easy:
 
 You can adjust a ticket's settings right up until it starts running, so
 you can re-point something that's still waiting in the queue.
+
+## Prompts
+
+The **Prompts** tab holds the prompts and prompt fragments Harmonic sends when
+it runs work. Most fields can be overridden per Workspace. A Workspace field
+reads *Inherited from global default* until you set its own value. Editing a
+prompt or fragment affects the next time Harmonic sends it. A prompt already
+sent is not rewritten; you can read it on the Task page (see
+[Reviewing and merging](/harmonic/work/reviewing-and-merging/)).
+
+### Task prompt
+
+Wraps a native Task's own prompt before it goes to the agent. Placeholders are
+filled per Task, and the default, a bare `{prompt}`, sends the prompt as
+written. Mirrored tickets use the Drive prompt instead.
+
+### Drive prompt
+
+The prompt Harmonic sends when it runs a mirrored ticket unattended. The same
+section holds these fields:
+
+- **Unattended reminder**: appended to every auto-driven turn.
+- **Continue prompt**: the re-prompt sent when a turn ends without the task
+  finishing.
+- **Commit nudge**: sent when an Attempt ends its turn with uncommitted changes.
+- **Merge fate**: what happens to completed work. The options are
+  **Merge automatically** (the default, merges the branch), **Open a pull
+  request** (leaves the ticket open) and **Leave the branch** (for you or CI to
+  pick up).
+- **Continue attempts**: how many times Harmonic re-prompts an unfinished
+  Attempt before treating it as unresolved.
+
+### Pause message
+
+Sent to a running Task when you pause it, asking the agent to finish its turn
+and wait.
+
+### Prompt fragments
+
+Named pieces of prompt text, defined once and referenced from other prompts as
+`{fragment.<name>}`. Each fragment shows its own description and the
+placeholders it accepts. Some placeholders must stay in the text, and the page
+tells you which. The fragments are:
+
+- **Read-only restraint**, **Conflict resolution**, **Operator message**,
+  **Self-heal**, **Prior session**, **Rebase conflict** and **Code index
+  guidance**.
+- **Peer messages section**, **Peer message entry**, **Peer line** and
+  **Live peer message**, which shape how Attempts see each other's messages.
+- **Critic role**, **Critic security notice**, **Critic ticket pointer**,
+  **Critic instructions pointer**, **Critic specification (ticket)**, **Critic
+  specification (instructions)**, **Critic uncommitted changes note**, the
+  three **Critic revision block** variants and **Critic verdict contract**,
+  which shape what a Critic is told and the reply it must give.
+- **Failing Epic verification**, which describes a failed Epic verification to
+  the agent fixing it.
+
+If a fragment edit is rejected, the page tells you what the text must still
+contain.
+
+### Merge and Epic resolver prompts
+
+What Harmonic sends to the agents that resolve merge conflicts and Epic
+verification failures:
+
+- **Merge conflict resolver**: opens each turn that resolves a Task merge
+  conflict.
+- **Epic merge conflict resolver**: opens each turn that resolves an Epic
+  integration merge conflict.
+- **Epic refresh resolver**: sent when the Epic integration branch is
+  refreshed from the default branch and conflicts.
+- **Epic verification resolver suffix**: appended to the Epic resolve prompt
+  when the agent fixes a failing Epic verification.
+
+Edits apply to the next resolver turn.
 
 ## How much runs at once
 

@@ -1,40 +1,60 @@
 import { logger } from '../logger.js';
+import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
+import { safeErrorReason } from './rest-client.js';
 import type { Ticket, TrackerAdapter, TrackerRef } from './adapter.js';
 
-/**
- * Completes an open-only scan with the closed tickets the mirror still needs: refs of non-terminal mirrored Tasks
- * (so an externally closed ticket still settles its Task), closed parents of scanned tickets, and previously persisted closed children of
- * scanned parents (so an open Epic whose members are all closed still derives as an Epic). Only parents are read remotely, so cost scales
- * with active Tasks and distinct parents, not total issues; closed tickets are cached until they reappear open.
- */
+const DEFAULT_FAILURE_RETRY_MS = 5 * 60_000;
+
+/** Completes an open-only scan with the closed tickets the mirror still needs. */
 export class ClosedRefResolver {
   private readonly closed = new Map<TrackerRef, Ticket>();
+  /** Refs whose lookup failed, with when to try again; logged once until a lookup succeeds or the ref is no longer wanted. */
+  private readonly failed = new Map<TrackerRef, number>();
+
+  constructor(
+    private readonly options: { failureRetryMs?: number; now?: () => number; yieldOptions?: YieldOptions } = {},
+  ) {}
 
   async complete(adapter: TrackerAdapter, scanned: Ticket[], activeMirroredRefs: Iterable<TrackerRef>, persisted: Ticket[] = []): Promise<Ticket[]> {
     if (!adapter.scansOpenOnly) return scanned;
-    const scannedRefs = new Set(scanned.map((t) => t.ref));
+    const yieldOptions = this.options.yieldOptions;
+    const now = this.options.now ?? Date.now;
+    const scannedRefs = new Set<TrackerRef>();
+    await forEachYielding(scanned, (t) => { scannedRefs.add(t.ref); }, yieldOptions);
     const wanted = new Set<TrackerRef>();
-    for (const ref of activeMirroredRefs) if (!scannedRefs.has(ref)) wanted.add(ref);
-    for (const t of scanned) if (t.parent !== null && !scannedRefs.has(t.parent)) wanted.add(t.parent);
+    await forEachYielding(activeMirroredRefs, (ref) => {
+      if (!scannedRefs.has(ref)) wanted.add(ref);
+    }, yieldOptions);
+    await forEachYielding(scanned, (t) => {
+      if (t.parent !== null && !scannedRefs.has(t.parent)) wanted.add(t.parent);
+    }, yieldOptions);
     for (const ref of this.closed.keys()) if (!wanted.has(ref)) this.closed.delete(ref);
+    for (const ref of this.failed.keys()) if (!wanted.has(ref)) this.failed.delete(ref);
     const extra: Ticket[] = [];
-    for (const ref of wanted) {
+    await forEachYielding(wanted, async (ref) => {
       let ticket = this.closed.get(ref);
       if (!ticket) {
+        const retryAt = this.failed.get(ref);
+        if (retryAt !== undefined && now() < retryAt) return;
         try {
           ticket = await adapter.readTicket({ ref, title: '', state: 'closed' });
         } catch (err) {
-          logger.warn('tracker: could not read referenced ticket missing from the open scan', { ref, error: String(err) });
-          continue;
+          if (retryAt === undefined) {
+            logger.warn('tracker: could not read referenced ticket missing from the open scan', { ref, error: safeErrorReason(err) });
+          }
+          this.failed.set(ref, now() + (this.options.failureRetryMs ?? DEFAULT_FAILURE_RETRY_MS));
+          return;
         }
+        this.failed.delete(ref);
         if (ticket.state === 'closed') this.closed.set(ref, ticket);
       }
       extra.push(ticket);
-    }
-    const fetched = new Set(extra.map((t) => t.ref));
-    for (const t of persisted) {
+    }, yieldOptions);
+    const fetched = new Set<TrackerRef>();
+    await forEachYielding(extra, (t) => { fetched.add(t.ref); }, yieldOptions);
+    await forEachYielding(persisted, (t) => {
       if (t.parent !== null && scannedRefs.has(t.parent) && !scannedRefs.has(t.ref) && !fetched.has(t.ref)) extra.push({ ...t, state: 'closed' });
-    }
+    }, yieldOptions);
     return extra.length === 0 ? scanned : [...scanned, ...extra];
   }
 }

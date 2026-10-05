@@ -1,13 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { appConfigSchema, DEFAULT_PROMPT_FRAGMENTS, baselineConfig, type AppConfig } from '../src/config.js';
+import { appConfigSchema, baselineConfig, type AppConfig } from '../src/config.js';
 import { expandFragments } from '../src/execution/prompt-template.js';
 import type { WorkspaceRow } from '../src/db/schema.js';
 import { resolve, resolveCap, resolveVerifiers, resolveGuardrails, resolveDrive, resolvePauseMessage, resolveTaskPrompt, resolvePromptFragments, resolveCommitNudge, resolveMergePrompts } from '../src/domain/setting-override.js';
 
+const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
+
 describe('Setting Override resolution (ADR-0012, issue #59)', () => {
   it('resolves the pause message from the Workspace override or global default', () => {
-    expect(resolvePauseMessage({ pauseMessage: null }, { pauseMessage: 'global pause' })).toBe('global pause');
-    expect(resolvePauseMessage({ pauseMessage: 'workspace pause' }, { pauseMessage: 'global pause' })).toBe('workspace pause');
+    expect(resolvePauseMessage({ pauseMessage: null }, { pauseMessage: 'global pause', promptFragments: baselineConfig().promptFragments })).toBe('global pause');
+    expect(resolvePauseMessage({ pauseMessage: 'workspace pause' }, { pauseMessage: 'global pause', promptFragments: baselineConfig().promptFragments })).toBe('workspace pause');
   });
   describe('resolve', () => {
     it('inherits the global default when the Workspace value is null', () => {
@@ -176,6 +178,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
         mergeFate: 'auto-merge' as const,
         continueAttempts: 1,
       },
+      promptFragments: DEFAULT_PROMPT_FRAGMENTS,
     };
     const noOverrides = {
       drivePrompt: null,
@@ -238,7 +241,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
   });
 
   describe('resolveTaskPrompt (issue #339) — native Task framing overridable per-Workspace', () => {
-    const config = { taskPrompt: 'GLOBAL {prompt}' };
+    const config = { taskPrompt: 'GLOBAL {prompt}', promptFragments: DEFAULT_PROMPT_FRAGMENTS };
 
     it('inherits the global Task Prompt when the Workspace column is null', () => {
       expect(resolveTaskPrompt({ taskPrompt: null }, config as any)).toBe('GLOBAL {prompt}');

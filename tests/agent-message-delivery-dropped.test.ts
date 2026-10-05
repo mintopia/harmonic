@@ -1,8 +1,10 @@
+import { baselineConfig } from '../src/config.js';
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_PROMPT_FRAGMENTS } from '../src/config.js';
 import { deliverAgentMessage, type AgentMessageRunner } from '../src/execution/agent-message-delivery.js';
 import type { AgentMessageStore } from '../src/domain/agent-messages.js';
 import type { AgentMessageRecipient, AgentMessageRow } from '../src/db/schema.js';
+
+const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
 
 describe('deliverAgentMessage — a next-turn steer dropped when the run ends', () => {
   it('returns the queued receipt to held so it is redelivered later', async () => {

@@ -1,3 +1,4 @@
+import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../src/domain/prompt-fragments.js';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -168,7 +169,7 @@ describe('Critic Step archive wiring (#730)', () => {
       const archive = new TaskArchive({ dataDir: dir, ensureArchiveId: (id) => tasks.ensureArchiveId(id), workspaceName: async () => 'ws' });
       const task = await tasks.create({ prompt: 'post-merge', state: 'ready', workingDir: repoDir, isolationMode: 'direct' });
       const run = await attempts.create(task.id);
-      const ws = { taskPostMergeCommands: null, taskPostMergeCritics: JSON.stringify(twoCritics.map((entry) => ({ ...entry, critic: { ...entry.critic, timeoutSeconds: 17 } }))), taskPreMergeCommands: null, taskPreMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null, promptFragmentReadOnlyRestraint: null };
+      const ws = { taskPostMergeCommands: null, taskPostMergeCritics: JSON.stringify(twoCritics.map((entry) => ({ ...entry, critic: { ...entry.critic, timeoutSeconds: 17 } }))), taskPreMergeCommands: null, taskPreMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null, ...NO_PROMPT_FRAGMENT_OVERRIDES };
       const verificationAttempts = new VerificationAttemptStore(asyncDb);
       const transcripts = new TranscriptCapture(new SessionStore(asyncDb), verificationAttempts, () => criticConfig(logDir));
       const captureUsage = vi.spyOn(transcripts, 'captureCriticUsage');

@@ -145,6 +145,74 @@ describe('TaskArchive', () => {
     expect(await Promise.all([0, 1, 2, 3, 4, 5].map(read))).toEqual([...prompts, 'after reopen', null]);
   });
 
+  describe('prompt sidecar degraded paths', () => {
+    const LOCATOR = 'implementation/prompt.md';
+    const SEP = '\n\n---\n\n';
+
+    it('numbers prompts after a legacy file with no sidecar from the legacy count, and reads every one back', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const dirPath = await archiveFor().ensure(task);
+      const stepPath = join(dirPath, 'attempts', '1', 'implementation');
+      mkdirSync(stepPath, { recursive: true });
+      writeFileSync(join(stepPath, 'prompt.md'), `legacy zero${SEP}legacy one`);
+      const writer = archiveFor().implementationStep(task, 1);
+      expect(await writer.appendPrompt('new two')).toBe(2);
+      expect(await writer.appendPrompt('new three')).toBe(3);
+      await writer.close();
+      const archive = archiveFor();
+      const read = (index: number) => archive.readResolvedPrompt(task, 1, LOCATOR, index);
+      expect(await Promise.all([0, 1, 2, 3, 4].map(read))).toEqual(['legacy zero', 'legacy one', 'new two', 'new three', null]);
+      expect(await archive.readArchivedPromptSegments(task, 1, LOCATOR)).toEqual(['legacy zero', 'legacy one', 'new two', 'new three']);
+    });
+
+    it('keeps later indexes aligned when a sidecar line was lost', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const writer = archiveFor().implementationStep(task, 1);
+      for (const text of ['zero', 'one\n\n---\n\nwith a rule', 'two']) await writer.appendPrompt(text);
+      await writer.close();
+      const sidecarPath = join(await writer.dir, 'prompt.index.jsonl');
+      const lines = readFileSync(sidecarPath, 'utf8').trim().split('\n');
+      writeFileSync(sidecarPath, `${lines[0]}\n${lines[2]}\n`);
+      const reopened = archiveFor().implementationStep(task, 1);
+      expect(await reopened.appendPrompt('three')).toBe(3);
+      await reopened.close();
+      const archive = archiveFor();
+      const read = (index: number) => archive.readResolvedPrompt(task, 1, LOCATOR, index);
+      expect(await Promise.all([0, 1, 2, 3].map(read))).toEqual(['zero', 'one\n\n---\n\nwith a rule', 'two', 'three']);
+      expect(await archive.readArchivedPromptSegments(task, 1, LOCATOR)).toEqual(['zero', 'one\n\n---\n\nwith a rule', 'two', 'three']);
+    });
+
+    it('falls back to separator splitting when the sidecar is corrupt, and still never reuses an index', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const writer = archiveFor().implementationStep(task, 1);
+      await writer.appendPrompt('zero');
+      await writer.appendPrompt('one');
+      await writer.close();
+      writeFileSync(join(await writer.dir, 'prompt.index.jsonl'), '{"index":0,"start":0,"length":9999}\nnot json\n');
+      const reopened = archiveFor().implementationStep(task, 1);
+      expect(await reopened.appendPrompt('two')).toBe(2);
+      await reopened.close();
+      expect(await archiveFor().readArchivedPromptSegments(task, 1, LOCATOR)).toEqual(['zero', 'one', 'two']);
+      expect(await archiveFor().readResolvedPrompt(task, 1, LOCATOR, 1)).toBe('one');
+    });
+
+    it('reads one prompt with a ranged read (sidecar chunk plus the prompt chunk), not the whole 300 KB file', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const writer = archiveFor().implementationStep(task, 1);
+      await writer.appendPrompt('small first');
+      await writer.appendPrompt('x'.repeat(300_000));
+      await writer.appendPrompt('small last');
+      await writer.close();
+      const chunks: number[] = [];
+      const yieldNow = async () => { chunks.push(1); };
+      expect(await archiveFor().readResolvedPrompt(task, 1, LOCATOR, 0, yieldNow)).toBe('small first');
+      expect(chunks).toHaveLength(2);
+      chunks.length = 0;
+      expect(await archiveFor().readResolvedPrompt(task, 1, LOCATOR, 2, yieldNow)).toBe('small last');
+      expect(chunks).toHaveLength(2);
+    });
+  });
+
   it('appends a resolution prompt under the Attempt for a Task owner and an Epic owner', async () => {
     const task = await tasks.create({ prompt: 'p' });
     const archive = archiveFor();

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { trackerRef } from '../src/tracker/adapter.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -6,7 +6,11 @@ import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { baselineConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
-import { MirrorCoordinator } from '../src/tracker/coordinator.js';
+import { MirrorCoordinator, ticketGone } from '../src/tracker/coordinator.js';
+import { GhError } from '../src/tracker/github.js';
+import { GlabError } from '../src/tracker/gitlab.js';
+import { RestError } from '../src/tracker/rest-client.js';
+import { logger } from '../src/logger.js';
 import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
@@ -170,7 +174,7 @@ describe('MirrorCoordinator (issue #32)', () => {
     const attempts: string[] = [];
     const closer = async (task: { trackerRef: string | null }) => {
       attempts.push(String(task.trackerRef));
-      if (task.trackerRef === trackerRef(12)) return { ok: false as const, error: new Error('gh: 404 Not Found') };
+      if (task.trackerRef === trackerRef(12)) return { ok: false as const, error: new GhError('gh issue close failed', 'GraphQL: Could not resolve to an Issue with the number of 12. (repository.issue)') };
       if (task.trackerRef === trackerRef(13)) return { ok: false as const, error: new Error('API rate limit exceeded') };
       return { ok: true as const };
     };
@@ -186,5 +190,41 @@ describe('MirrorCoordinator (issue #32)', () => {
     attempts.length = 0;
     await coord.reconcile();
     expect(attempts).toEqual([trackerRef(13)]);
+  });
+
+  it('reconcile: logs a failed pending close with the task id and a body-free error', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const flaky = await tasks.upsertMirrored(mirrored(30));
+    await tasks.setState(flaky.id, 'working');
+    await tasks.setState(flaky.id, 'done');
+    await tasks.setTicketClosePending(flaky.id, true);
+    const error = new RestError('POST /close failed: 403 {"token":"s3cret"}', 403, '{"token":"s3cret"}', 'POST /close failed: 403');
+    const coord = new MirrorCoordinator(tasks, wsId, async () => ({ ok: false as const, error }));
+    await coord.observe(fakeAdapter().adapter);
+    await coord.reconcile();
+    const call = warn.mock.calls.find(([msg]) => String(msg).includes('pending ticket close failed'));
+    expect(call?.[1]).toMatchObject({ taskId: flaky.id, error: 'POST /close failed: 403' });
+    expect((await tasks.get(flaky.id)).ticketClosePending).toBe(true);
+    warn.mockRestore();
+  });
+});
+
+describe('ticketGone', () => {
+  it('accepts a real HTTP 404, a CLI 404 / unresolvable issue, and an adapter "no issue" error', () => {
+    expect(ticketGone(new RestError('GET /issues/1 failed: 404', 404, ''))).toBe(true);
+    expect(ticketGone(new GhError('gh failed', 'GraphQL: Could not resolve to an Issue with the number of 3.'))).toBe(true);
+    expect(ticketGone(new GhError('gh failed', 'gh: Not Found (HTTP 404)'))).toBe(true);
+    expect(ticketGone(new GlabError('glab failed', '404 Not Found'))).toBe(true);
+    expect(ticketGone(new Error('Forgejo: no issue 4 in o/r'))).toBe(true);
+    expect(ticketGone(new Error('GitLab: no issue #4 in g/r'))).toBe(true);
+    expect(ticketGone(new Error('local-markdown: no ticket #4 under /x'))).toBe(true);
+  });
+
+  it('rejects look-alikes that do not mean the ticket is gone', () => {
+    expect(ticketGone(new Error('gh: command not found'))).toBe(false);
+    expect(ticketGone(new GhError('gh failed', 'GraphQL: Could not resolve to a Repository with the name x/y.'))).toBe(false);
+    expect(ticketGone(new RestError('POST failed: 500', 500, 'not found in upstream'))).toBe(false);
+    expect(ticketGone(new Error('port 4040 in use'))).toBe(false);
+    expect(ticketGone('404')).toBe(false);
   });
 });

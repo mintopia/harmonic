@@ -52,7 +52,7 @@ function stepCaption(key: LifecycleStepKey, status: LifecycleStepStatus, task: T
 function TaskProgressBar({ task, attempts, attemptDetails, commandConfigured }: { task: Task; attempts: AttemptSummary[]; attemptDetails: Attempt[]; commandConfigured: boolean }) {
   const { steps } = taskLifecycle(task, attempts, attemptDetails, commandConfigured);
   return (
-    <div className="mb-6 mt-1">
+    <div className="mb-6 mt-6">
       <div className={`mb-3 ${sectionCaps}`}>Task progress</div>
       <ol
         className={`${card} flex items-start px-[22px] py-5 max-md:flex-col max-md:items-stretch max-md:gap-3 max-md:px-4`}

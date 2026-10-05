@@ -102,10 +102,15 @@ export async function mirrorScan(
   await forEachYielding(rows, (row) => {
     if (row.trackerRef !== null) idByRef.set(row.trackerRef, row.id);
   });
+  const unscannedBlockers = new Set<TrackerRef>();
+  await forEachYielding(issues, (issue) => {
+    for (const b of issue.blockedBy) if (!parentRefs.has(b.ref) && !idByRef.has(b.ref)) unscannedBlockers.add(b.ref);
+  });
+  const persistedIdByRef = await tasks.doneMirroredIdsByRef(workspaceId, [...unscannedBlockers]);
   await forEachYielding(issues, async (issue, i) => {
     const blockerIds = issue.blockedBy
       .filter((b) => !parentRefs.has(b.ref))
-      .map((b) => idByRef.get(b.ref))
+      .map((b) => idByRef.get(b.ref) ?? persistedIdByRef.get(b.ref))
       .filter((id): id is number => id !== undefined);
     await tasks.reconcileMirroredDeps(rows[i]!.id, blockerIds);
   });

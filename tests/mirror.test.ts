@@ -240,6 +240,27 @@ describe('mirrorScan upsert', () => {
     expect(child.state).toBe('ready');
   });
 
+  it('keeps the Dependency edge to a closed, done blocker the open-only scan no longer returns, without blocking', async () => {
+    await mscan([
+      ticket({ ref: trackerRef(1) }),
+      ticket({ ref: trackerRef(2), labels: ['ready-for-agent'], blockedBy: [{ ref: trackerRef(1), title: 'x', state: 'open' }] }),
+    ]);
+    await mscan([
+      ticket({ ref: trackerRef(1), state: 'closed', closedAt: '2026-08-07T01:00:00Z' }),
+      ticket({ ref: trackerRef(2), labels: ['ready-for-agent'], blockedBy: [{ ref: trackerRef(1), title: 'x', state: 'closed' }] }),
+    ]);
+    const blocker = (await tasks.list()).find((t) => t.trackerRef === '1')!;
+    expect(blocker.state).toBe('done');
+
+    const [dependent] = await mscan([
+      ticket({ ref: trackerRef(2), labels: ['ready-for-agent'], blockedBy: [{ ref: trackerRef(1), title: 'x', state: 'closed' }] }),
+    ]);
+    expect(await tasks.dependsOn(dependent!.id)).toEqual([blocker.id]);
+    expect(dependent!.state).toBe('ready');
+    const eligible = (await tasks.orderedEligibleWork(wsId)).find((t) => t.id === dependent!.id);
+    expect(eligible?.blockedBy).toEqual([]);
+  });
+
   it('a stale Epic→child blocking edge is removed on the next poll', async () => {
     await mscan([
       ticket({ ref: trackerRef(106) }),

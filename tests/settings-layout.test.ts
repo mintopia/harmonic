@@ -69,9 +69,9 @@ describe('settings prompts layout (issue #808)', () => {
     expect(host.querySelector('[role="tabpanel"]')?.className).toContain('xl:columns-2');
     const sections = [...host.querySelectorAll('section')];
     const titles = sections.map((s) => s.querySelector('h2')?.textContent);
-    expect(titles).toEqual(['Task prompt', 'Drive prompt', 'Merge and Epic resolver prompts', 'Prompt fragments']);
-    expect(sections.slice(0, 3).every((s) => s.className.includes('xl:break-inside-avoid'))).toBe(true);
-    expect(sections[3]?.className).toContain('xl:[column-span:all]');
+    expect(titles).toEqual(['Task prompt', 'Drive prompt', 'Pause message', 'Merge and Epic resolver prompts', 'Prompt fragments']);
+    expect(sections.slice(0, -1).every((s) => s.className.includes('xl:break-inside-avoid'))).toBe(true);
+    expect(sections.at(-1)?.className).toContain('xl:[column-span:all]');
   });
 });
 

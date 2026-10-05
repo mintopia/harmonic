@@ -1,11 +1,12 @@
+import { baselineConfig } from '../src/config.js';
 import { describe, expect, it } from 'vitest';
-import { appConfigSchema, DEFAULT_PROMPT_FRAGMENTS, promptFragmentSchema } from '../src/config.js';
+import { appConfigSchema, promptFragmentSchema } from '../src/config.js';
 import { workspaceOverridesSchema } from '../src/domain/workspaces.js';
 import {
   PROMPT_FRAGMENT_NAMES,
   PROMPT_FRAGMENTS,
   promptFragmentOverrideKey,
-  type CriticFragments,
+  unknownFragmentRefs,
   type PromptFragmentName,
   type PromptFragments,
 } from '../src/domain/prompt-fragments.js';
@@ -15,7 +16,9 @@ import { codeIndexRepoGuidance, renderFragment } from '../src/execution/prompt-t
 import { SessionContinuation } from '../src/execution/session-continuation.js';
 import type { AgentMessageRow, AttemptRow } from '../src/db/schema.js';
 
-const defaults = (): PromptFragments & CriticFragments => ({ ...DEFAULT_PROMPT_FRAGMENTS });
+const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
+
+const defaults = (): PromptFragments => ({ ...DEFAULT_PROMPT_FRAGMENTS });
 const edited = (patch: Partial<PromptFragments>): PromptFragments => ({ ...defaults(), ...patch });
 
 const peerRow = (senderTaskId: number, text: string) => ({ senderTaskId, parts: [{ text }] }) as unknown as AgentMessageRow;
@@ -163,6 +166,11 @@ describe('Prompt Fragment validation', () => {
       peerMessages: ['messages'],
       peerMessage: ['text'],
       peerLiveMessage: ['text'],
+      criticRevisionIdentical: ['head'],
+      criticRevisionDiff: ['head', 'base', 'workingTreeNote'],
+      criticRevisionAlone: ['head', 'workingTreeNote'],
+      criticWorkingTreeNote: ['base'],
+      epicFailingVerification: ['reason'],
     });
   });
 
@@ -205,6 +213,42 @@ describe('resolvePromptFragments for every fragment', () => {
       const resolved = resolvePromptFragments({ [key]: `WS ${name}` }, global);
       expect(resolved[name]).toBe(`WS ${name}`);
       for (const other of PROMPT_FRAGMENT_NAMES.filter((n) => n !== name)) expect(resolved[other]).toBe(defaults()[other]);
+    }
+  });
+
+  it('gates critic revision fragments on the placeholders they must keep', () => {
+    for (const [name, dropped] of [['criticRevisionIdentical', 'head'], ['criticRevisionDiff', 'base'], ['criticRevisionDiff', 'workingTreeNote'], ['criticRevisionAlone', 'head'], ['criticWorkingTreeNote', 'base']] as const) {
+      const text = DEFAULT_PROMPT_FRAGMENTS[name].replaceAll(`{${dropped}}`, '');
+      expect(appConfigSchema.shape.promptFragments.shape[name].safeParse(text).success, `${name} without {${dropped}}`).toBe(false);
+      expect(workspaceOverridesSchema.safeParse({ [promptFragmentOverrideKey(name)]: text }).success, `workspace ${name} without {${dropped}}`).toBe(false);
+    }
+  });
+
+  it('gates the verdict contract in the global config and in a Workspace override', () => {
+    const bad = 'Say pass or fail.';
+    expect(appConfigSchema.shape.promptFragments.shape.criticVerdictContract.safeParse(bad).success).toBe(false);
+    expect(workspaceOverridesSchema.safeParse({ promptFragmentCriticVerdictContract: bad }).success).toBe(false);
+    const good = 'Reply {"verdict":"pass","summary":"why"}';
+    expect(workspaceOverridesSchema.safeParse({ promptFragmentCriticVerdictContract: good }).success).toBe(true);
+  });
+
+  it('rejects an unknown {fragment.name} wherever a template is saved, and accepts a known one', () => {
+    expect(unknownFragmentRefs('{fragment.readOnlyRestraint} {fragment.nope} {fragment.nope} {fragment.other}')).toEqual(['nope', 'other']);
+    const withMerge = (patch: Record<string, string>) => {
+      const config = baselineConfig();
+      return appConfigSchema.safeParse({ ...config, merge: { ...config.merge, ...patch } });
+    };
+    expect(withMerge({ epicRefreshPrompt: 'x {fragment.conflictResolution}' }).success).toBe(true);
+    for (const key of ['conflictPrompt', 'epicRefreshPrompt', 'epicConflictPrompt'] as const) {
+      expect(withMerge({ [key]: 'x {fragment.nope}' }).success, key).toBe(false);
+    }
+    const config = baselineConfig();
+    expect(appConfigSchema.safeParse({ ...config, verify: { ...config.verify, epic: { ...config.verify.epic, resolveSuffix: 'x {fragment.nope}' } } }).success).toBe(false);
+    expect(appConfigSchema.shape.promptFragments.shape.criticRole.safeParse('x {fragment.nope}').success).toBe(false);
+    expect(workspaceOverridesSchema.safeParse({ promptFragmentPeerLine: 'x {fragment.nope}' }).success).toBe(false);
+    for (const key of ['mergeConflictPrompt', 'mergeEpicConflictPrompt', 'mergeEpicRefreshPrompt', 'verifyEpicResolveSuffix'] as const) {
+      expect(workspaceOverridesSchema.safeParse({ [key]: 'x {fragment.nope}' }).success, key).toBe(false);
+      expect(workspaceOverridesSchema.safeParse({ [key]: 'x {fragment.conflictResolution}' }).success, key).toBe(true);
     }
   });
 });

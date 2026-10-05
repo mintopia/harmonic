@@ -1,4 +1,3 @@
-import { DEFAULT_PROMPT_FRAGMENTS } from '../src/config.js';
 import { describe, it, expect, afterAll, afterEach, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -25,6 +24,8 @@ import { AttemptStore } from '../src/domain/attempts.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
 import { testSpawnProcessGroup, allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+
+const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
 
 const providers: NodeTracerProvider[] = [];
 
@@ -111,6 +112,7 @@ describe('runCritic (issue #136)', () => {
       summary: value.summary,
       output,
       prompt: expect.stringContaining('Review the diff.'),
+      promptKey: null,
       inputOid: oid,
       transcriptPath: null,
       harness: 'claude',

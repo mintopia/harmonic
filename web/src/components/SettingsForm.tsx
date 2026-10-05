@@ -60,7 +60,7 @@ export function SettingsForm({
         id={panelId(tab)}
         role="tabpanel"
         aria-labelledby={tabId(tab)}
-        className={`mt-5 grid gap-4 ${masonry ? 'xl:block xl:columns-2' : 'xl:grid-cols-2 xl:items-start'}`}
+        className={`mt-5 grid min-w-0 grid-cols-1 gap-4 ${masonry ? 'xl:block xl:columns-2' : 'xl:grid-cols-2 xl:items-start'}`}
       >
         {sections.map((section) => {
           const { title: sectionTitle, description, body } = renderSection(section, { ...ctx, dirty });

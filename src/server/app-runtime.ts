@@ -8,6 +8,7 @@ import type { TaskRow, AttemptRow } from '../db/schema.js';
 import { CrashRecoveryCoordinator } from '../execution/crash-recovery.js';
 import { Runner } from '../execution/runner.js';
 import { TaskArchive } from '../archive/task-archive.js';
+import { backfillCriticPromptKeys } from '../archive/critic-prompt-backfill.js';
 import { TranscriptCapture } from '../execution/transcript-capture.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import { ConversationDriver, createHarnessProcessSpawn } from '../execution/conversation-driver.js';
@@ -423,6 +424,8 @@ export async function createRuntime(deps: {
   await globalPause.rebuild();
   touchStartupProgress(opts.dataDir);
   await runner.backfillUsage();
+  touchStartupProgress(opts.dataDir);
+  await backfillCriticPromptKeys({ db: asyncDb, archive, getTask: (taskId) => tasks.get(taskId) });
   touchStartupProgress(opts.dataDir);
   const escalation = new EscalationService(attempts, tasks, operatorSettle, mergeEffectsFor, {
     resume: (task, guidance, startNow) => runner.resumeWithGuidance(task, guidance, startNow),

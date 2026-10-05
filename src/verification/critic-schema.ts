@@ -15,14 +15,6 @@ export function verdictContractError(contract: string): string | undefined {
     : `The verdict contract must ask the critic for a JSON object with ${missing.map((key) => `a "${key}" key`).join(' and ')}; without it every critic run is inconclusive.`;
 }
 
-export const verdictContractSchema = z
-  .string()
-  .min(1)
-  .superRefine((contract, ctx) => {
-    const message = verdictContractError(contract);
-    if (message) ctx.addIssue({ code: 'custom', message });
-  });
-
 export type ParsedCriticVerdict = z.infer<typeof criticVerdictSchema>;
 
 export type ParseCriticOutputResult =

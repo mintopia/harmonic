@@ -14,7 +14,7 @@ import {
   epicVerificationStageSchema,
   type AppConfig,
   type DeepPartial,
-  globalPromptFragmentsShape,
+  promptFragmentsShape,
 } from '../../config.js';
 import { maskConfigSecrets } from '../../archive/export-secrets.js';
 
@@ -115,7 +115,7 @@ const configPatchBodySchema = z
       })
       .partial()
       .optional(),
-    promptFragments: z.object(globalPromptFragmentsShape).partial().optional(),
+    promptFragments: z.object(promptFragmentsShape).partial().optional(),
     merge: appConfigSchema.shape.merge.partial().optional(),
     verify: z
       .object({

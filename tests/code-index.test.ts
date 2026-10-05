@@ -1,8 +1,8 @@
+import { baselineConfig } from '../src/config.js';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { DEFAULT_PROMPT_FRAGMENTS } from '../src/config.js';
 import { codeIndexRepoGuidance } from '../src/execution/prompt-template.js';
 import {
   codeIndexAvailable,
@@ -11,6 +11,8 @@ import {
   indexWorktree,
   resetCodeIndexAvailabilityForTest,
 } from '../src/execution/code-index.js';
+
+const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
 
 const FAKE_CLI = `#!/usr/bin/env node
 const fs = require('node:fs');

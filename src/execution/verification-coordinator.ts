@@ -2,23 +2,24 @@ import type { TrackerRef } from '../tracker/adapter.js';
 import { Git } from './git.js';
 import { adapterFor, adapterVersion } from './harness/registry.js';
 import { collectUsage, toolCallName } from './usage.js';
-import { driveFields, fillTemplate } from './prompt-template.js';
+import { driveFields, expandFragments, fillTemplate, renderFragment } from './prompt-template.js';
 import { logger } from '../logger.js';
 import { indexWorktree } from './code-index.js';
 import { integrationBranchName } from './epic-coordinator.js';
 import { LIVE_RUN_LOG_EVENT_ID_OFFSET } from './live-events.js';
 import type { RunnerEvents } from './runner.js';
 import type { ActiveRuns } from './active-runs.js';
-import { criticPromptKey, type TaskArchive } from '../archive/task-archive.js';
+import type { TaskArchive } from '../archive/task-archive.js';
 import type { TranscriptCapture } from './transcript-capture.js';
 import type { AppConfig, HarnessConfig, TaskVerificationCritic, VerificationCommand } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow, StepRow, VerificationAttemptRow } from '../db/schema.js';
 import { DomainError } from '../domain/errors.js';
+import { NO_PROMPT_FRAGMENT_OVERRIDES, type PromptFragmentOverrideKey } from '../domain/prompt-fragments.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { SessionStore } from '../domain/sessions.js';
 import type { TaskService } from '../domain/tasks.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
-import { resolvePromptFragments, resolveVerifiers, type ResolvedVerifiers } from '../domain/setting-override.js';
+import { resolveEpicResolverPrompts, resolvePromptFragments, resolveVerifiers, type ResolvedVerifiers } from '../domain/setting-override.js';
 import { pricesForHarness } from '../domain/pricing.js';
 import { runCommandVerifier, commandAttemptToInput, type CommandSpawn } from '../verification/command-verifier.js';
 import { runCritic, runTimedCriticDrive, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
@@ -56,7 +57,8 @@ type VerifierWorkspace = Pick<
   | 'taskPreMergeCommands' | 'taskPreMergeCritics'
   | 'taskPostMergeCommands' | 'taskPostMergeCritics'
   | 'epicPreMergeCommands' | 'epicPreMergeCritics'
-  | 'promptFragmentReadOnlyRestraint'
+  | 'mergeEpicRefreshPrompt' | 'verifyEpicResolveSuffix'
+  | PromptFragmentOverrideKey
 >;
 
 export interface VerificationCoordinatorDeps {
@@ -90,7 +92,9 @@ const DEFAULT_VERIFIER_WORKSPACE: VerifierWorkspace = {
   taskPostMergeCritics: null,
   epicPreMergeCommands: null,
   epicPreMergeCritics: null,
-  promptFragmentReadOnlyRestraint: null,
+  mergeEpicRefreshPrompt: null,
+  verifyEpicResolveSuffix: null,
+  ...NO_PROMPT_FRAGMENT_OVERRIDES,
 };
 
 export class VerificationCoordinator {
@@ -308,7 +312,6 @@ export class VerificationCoordinator {
         await this.deps.updateStep(task.id, timelineStep.id, { state: 'running', startedAt: Date.now() });
         record('lifecycle', { event: 'verification-started', mechanism: 'critic', model: critic.model });
         const archive = this.deps.archive?.criticStep(task, timelineAttempt.number, 'pre-merge', String(timelineStep.id));
-        const promptKey = archive ? criticPromptKey('pre-merge', String(timelineStep.id)) : null;
         const attempt = await runCritic({
           cwd: criticCwd,
           verifiedHeadOid: oid,
@@ -327,7 +330,7 @@ export class VerificationCoordinator {
           onUpdate: this.relayCriticUpdateAsBuilderEvent(run.id),
           onAgentDurationMs: (ms) => this.deps.attempts.addAgentDuration(run.id, ms),
         });
-        const persisted = await this.deps.verificationAttempts.append(timelineAttempt.id, { ...criticAttemptToInput(attempt), promptKey });
+        const persisted = await this.deps.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
         this.captureCriticArtifacts({
           persisted,
           sessionId: attempt.sessionId,
@@ -390,6 +393,7 @@ export class VerificationCoordinator {
 
   async resolveEpicVerification(input: EpicVerificationResolutionInput): Promise<void> {
     const config = this.deps.getConfig();
+    const resolver = resolveEpicResolverPrompts(await this.deps.getWorkspace?.(input.workspaceId), config);
     const branch = integrationBranchName(input.epicRef);
     const host = (await this.deps.taskService.list({ state: 'working' })).find((task) => task.baseBranch === branch);
     const harnessId = host?.harness ?? config.defaults.harness;
@@ -401,16 +405,15 @@ export class VerificationCoordinator {
     const step = await this.deps.attempts.createStep(input.attempt.id, { type: 'implementation' });
     await this.deps.attempts.updateStep(step.id, { state: 'running', startedAt: Date.now() });
     const prompt = [
-      input.resolvePrompt
+      expandFragments(input.resolvePrompt, resolver.fragments)
         .replaceAll('{ref}', String(input.epicRef))
         .replaceAll('{title}', input.title ?? `Epic #${input.epicRef}`)
         .replaceAll('{description}', input.body ?? '')
         .replaceAll('{url}', input.url ?? ''),
       '',
-      '## Failing Epic verification',
-      input.verificationReason,
+      renderFragment('epicFailingVerification', resolver.fragments, { reason: input.verificationReason }),
       '',
-      fillTemplate(config.verify.epic.resolveSuffix, { branch }),
+      fillTemplate(expandFragments(resolver.resolveSuffix, resolver.fragments), { branch }),
     ].join('\n');
     const archived = await this.deps.archive?.appendResolutionPrompt({ workspaceId: input.workspaceId, epicRef: input.epicRef }, input.attempt.number, 'epic-resolve', 1, prompt);
     await this.deps.attempts.appendEvent(input.attempt.id, { type: 'lifecycle', payload: { event: 'epic-resolve', kind: 'verification', ...archived } }).then((event) => this.deps.events.onAttemptEvent?.(event)).catch((err: unknown) => {
@@ -434,7 +437,6 @@ export class VerificationCoordinator {
     };
     await this.deps.attempts.update(input.attempt.id, {
       priceTable: JSON.stringify(pricesForHarness(harness)),
-      prompt,
       ...(input.continuationSessionId && input.continuationSessionRowId !== undefined ? { sessionId: input.continuationSessionId, sessionRowId: input.continuationSessionRowId } : {}),
     });
     try {

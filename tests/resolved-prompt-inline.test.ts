@@ -21,14 +21,13 @@ const mount = (props: Partial<Parameters<typeof ResolvedPromptInline>[0]> = {}) 
   mountComponent(createElement(ResolvedPromptInline, { owner: { attemptId: 7 }, locator: 'a/b.jsonl', index: 2, label: 'Commit nudge', ...props }));
 
 describe('ResolvedPromptInline', () => {
-  it('shows a loading state, then the blob verbatim under a Sent prompt label', async () => {
+  it('shows a loading state, then the blob verbatim under a Prompt sent label', async () => {
     let release: (r: Response) => void = () => {};
     fetchMock.mockReturnValue(new Promise<Response>((resolve) => (release = resolve)));
     const host = await mount();
     expect(host.textContent).toContain('Loading sent prompt');
     await act(async () => release(reply(200, 'Commit the work.\n  indented <b>raw</b>')));
-    expect(host.textContent).toContain('Sent prompt');
-    expect(host.textContent).toContain('Commit nudge');
+    expect(host.textContent).toContain('Prompt sent · Commit nudge');
     expect(host.querySelector('pre')?.textContent).toBe('Commit the work.\n  indented <b>raw</b>');
     expect(host.querySelector('button')).toBeNull();
   });
@@ -53,17 +52,23 @@ describe('ResolvedPromptInline', () => {
   });
 
   it('collapses a long prompt behind an expand control', async () => {
-    const long = Array.from({ length: 30 }, (_, i) => `line ${i}`).join('\n');
+    const long = Array.from({ length: 30 }, (_, i) => `line number ${i} of the long prompt`).join('\n');
     fetchMock.mockResolvedValue(reply(200, long));
     const host = await mount();
     const toggle = host.querySelector('button') as HTMLButtonElement;
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(host.querySelector('pre')?.className).toContain('max-h-48');
+    expect(host.querySelector('pre')?.className).toContain('line-clamp-');
     await act(async () => toggle.click());
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(toggle.textContent).toBe('Show less');
-    expect(host.querySelector('pre')?.className).not.toContain('max-h-48');
+    expect(host.querySelector('pre')?.className).not.toContain('line-clamp-');
     expect(host.querySelector('pre')?.textContent).toBe(long);
+  });
+
+  it('collapses a long single-line prompt too', async () => {
+    fetchMock.mockResolvedValue(reply(200, 'word '.repeat(200)));
+    const host = await mount();
+    expect(host.querySelector('button')).not.toBeNull();
   });
 });
 
@@ -74,20 +79,27 @@ describe('chatRows resolved-prompt rows', () => {
     event: { id, seq: id, ts: id, type: 'lifecycle', payload: { event, ...extra } } as unknown as AttemptLogEvent,
   });
 
-  it('labels each prompt-sending lifecycle event plainly', () => {
+  it('labels each resolver prompt-sending lifecycle event plainly', () => {
     const rows = chatRows([
-      lifecycle('continue', { locator: 'l', promptIndex: 0 }, 1),
-      lifecycle('commit-nudge', { locator: 'l', promptIndex: 1 }, 2),
       lifecycle('merge-conflict-resolve', { locator: 'l', promptIndex: 2 }, 3),
       lifecycle('epic-resolve', { kind: 'refresh', locator: 'l', promptIndex: 3 }, 4),
       lifecycle('epic-resolve', { kind: 'verification', locator: 'l', promptIndex: 4 }, 5),
     ]);
     expect(rows.map((r) => (r.kind === 'resolved-prompt' ? [r.label, r.index] : null))).toEqual([
-      ['Continue nudge', 0],
-      ['Commit nudge', 1],
       ['Merge conflict resolver', 2],
       ['Epic refresh resolver', 3],
       ['Epic verification resolver', 4],
+    ]);
+  });
+
+  it('shows each continue/commit nudge once: as a plain marker, since its text renders as the turn prompt', () => {
+    const rows = chatRows([
+      lifecycle('continue', { attempt: 1, locator: 'implementation/prompt.md', promptIndex: 1 }, 1),
+      lifecycle('commit-nudge', { locator: 'implementation/prompt.md', promptIndex: 2 }, 2),
+    ]);
+    expect(rows).toEqual([
+      { kind: 'note', label: 'continue', text: null, key: 1 },
+      { kind: 'note', label: 'commit-nudge', text: null, key: 2 },
     ]);
   });
 });

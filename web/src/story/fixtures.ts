@@ -107,9 +107,12 @@ const workspace = {
   driveMergeFate: null,
   driveContinueAttempts: null,
   taskPrompt: null,
+  pauseMessage: null,
   ...NO_PROMPT_FRAGMENT_OVERRIDES,
   mergeConflictPrompt: null,
   mergeEpicConflictPrompt: null,
+  mergeEpicRefreshPrompt: null,
+  verifyEpicResolveSuffix: null,
   driveCommitNudge: null,
   createdAt: T0 - 30 * 24 * 3600_000,
   updatedAt: T0,
@@ -148,9 +151,9 @@ export const task = {
   workflow: 'implement',
   wayfinderType: null,
   mapRef: '166',
-  url: null,
+  url: 'https://github.com/mintopia/harmonic/issues/185',
   mapTitle: null,
-  trackerLabel: null,
+  trackerLabel: 'GitHub',
   branch: 'harmonic/task-172',
   stat: [
     ' src/config.ts                    | 54 ++++++++++------',
@@ -274,7 +277,7 @@ const E0 = Date.parse('2026-08-30T09:00:00Z');
 const emin = (n: number) => n * 60_000;
 
 export const epicAttempts = [
-  { id: 8001, number: 1, state: 'passed', reason: null, prompt: null, usage: null, cost: null, toolCalls: 18, contextTokens: null, startedAt: E0 + emin(200), endedAt: E0 + emin(214), steps: [], resolverPrompts: [], verificationAttempts: [
+  { id: 8001, number: 1, state: 'passed', reason: null, usage: null, cost: null, toolCalls: 18, contextTokens: null, startedAt: E0 + emin(200), endedAt: E0 + emin(214), steps: [], resolverPrompts: [], verificationAttempts: [
     { id: 8101, attemptId: 8001, seq: 1, ts: E0 + emin(212), mechanism: 'critic', inputOid: 'a1b2c3d', verdict: 'pass', summary: 'Verdict proceed — the integration branch matches the Epic description.', output: '', promptLocator: 'verification/pre-merge/8001/prompt.md', harness: 'claude', hasTranscript: false, outputTruncated: false },
   ] },
 ] satisfies EpicAttempt[];
@@ -608,7 +611,6 @@ export const epicResolverAttempts: EpicAttempt[] = [
     number: 1,
     state: 'passed',
     reason: null,
-    prompt: null,
     usage: null,
     cost: null,
     toolCalls: 14,

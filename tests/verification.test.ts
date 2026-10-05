@@ -6,7 +6,7 @@ import { VerificationAttemptStore } from '../src/domain/verification-attempts.js
 import { resetCodeIndexAvailabilityForTest } from '../src/execution/code-index.js';
 import { type Verdict } from '../src/verification/critic-schema.js';
 import { type CriticHarnessDrive } from '../src/verification/critic.js';
-import { startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
+import { startServer, stubHarness, type TestServer, waitFor, withArchivedPrompt } from './helpers.js';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -289,9 +289,10 @@ describe('verification-selfheal', () => {
 
       const attemptsAfter = await ticketAttempts(taskId);
       expect(attemptsAfter).toHaveLength(2);
-      expect(attemptsAfter[1]!.prompt).toContain('## Previous attempt failed — fix required (self-heal 1)');
-      expect(attemptsAfter[1]!.prompt).toContain('## Operator message');
-      expect(attemptsAfter[1]!.prompt).toContain('watch the whitespace');
+      const retryPrompt = (await withArchivedPrompt(server, attemptsAfter[1]))!.prompt;
+      expect(retryPrompt).toContain('## Previous attempt failed — fix required (self-heal 1)');
+      expect(retryPrompt).toContain('## Operator message');
+      expect(retryPrompt).toContain('watch the whitespace');
     });
 
     it('an edited self-heal Prompt Fragment reaches the retry prompt', async () => {
@@ -305,8 +306,9 @@ describe('verification-selfheal', () => {
         });
         await waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done' ? true : undefined));
         const retry = (await ticketAttempts(taskId))[1]!;
-        expect(retry.prompt).toContain('REWORK (self-heal 1) because verifier command failed');
-        expect(retry.prompt).not.toContain('fix required');
+        const retryPrompt = (await withArchivedPrompt(server, retry))!.prompt;
+        expect(retryPrompt).toContain('REWORK (self-heal 1) because verifier command failed');
+        expect(retryPrompt).not.toContain('fix required');
       } finally {
         await server.app.ctx.workspaces.update(workspaceId, { promptFragmentSelfHeal: null });
       }
@@ -348,8 +350,9 @@ describe('verification-selfheal', () => {
       expect(second.id).toBe(first.id);
       expect(reloaded).toEqual([first.harnessSessionId]);
       expect(run.sessionId).toBe(first.harnessSessionId);
-      expect(run.prompt).toContain('## Previous attempt failed — fix required (self-heal 1)');
-      expect(run.prompt).not.toContain('## Prior session (condensed)');
+      const archived = (await withArchivedPrompt(server, run)).prompt;
+      expect(archived).toContain('## Previous attempt failed — fix required (self-heal 1)');
+      expect(archived).not.toContain('## Prior session (condensed)');
     });
 
     it('starts a condensed Session at/above the threshold: fresh session id, condensed section after the corrective feedback', async () => {
@@ -359,7 +362,7 @@ describe('verification-selfheal', () => {
       expect(second.harnessSessionId).not.toBe(first.harnessSessionId);
       expect(reloaded).toEqual([]);
       expect(run.sessionId).toBe(second.harnessSessionId);
-      const prompt = run.prompt!;
+      const prompt = (await withArchivedPrompt(server, run)).prompt!;
       expect(JSON.parse(prompt.split('\n\n## Previous attempt failed')[0]!)).toHaveProperty('turns');
       const verification = prompt.indexOf('## Previous attempt failed — fix required (self-heal 1)');
       const condensed = prompt.indexOf('## Prior session (condensed)');

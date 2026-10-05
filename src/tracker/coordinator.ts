@@ -2,10 +2,18 @@ import type { TicketRef, TrackerAdapter, TrackerRef } from './adapter.js';
 import type { TaskRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
 import { forEachYielding } from '../reliability/yield.js';
-import { attempted, bestEffort, errorMessage } from '../error-handling.js';
+import { attempted, bestEffort } from '../error-handling.js';
+import { GhError } from './github.js';
+import { GlabError } from './gitlab.js';
+import { RestError, safeErrorReason } from './rest-client.js';
 import { logger } from '../logger.js';
 
-const ticketGone = (err: unknown): boolean => /\b404\b|not found/i.test(errorMessage(err));
+/** The tracker says the ticket does not exist: an HTTP 404, a CLI's HTTP 404 / unresolvable issue, or an adapter's own "no issue/ticket" error. */
+export function ticketGone(err: unknown): boolean {
+  if (err instanceof RestError) return err.status === 404;
+  if (err instanceof GhError || err instanceof GlabError) return /\bHTTP 404\b|Could not resolve to an Issue|\b404 (Issue )?Not Found\b/i.test(err.stderr);
+  return err instanceof Error && /^(Forgejo|GitLab|local-markdown): no (issue|ticket)\b/.test(err.message);
+}
 
 export type TicketCloser = (task: TaskRow) => Promise<{ ok: true } | { ok: false; error: unknown }>;
 
@@ -50,7 +58,16 @@ export class MirrorCoordinator {
       if (task.ticketClosePending && task.state === 'done' && this.closeTicket) {
         const closed = await this.closeTicket(task);
         if (closed.ok || ticketGone(closed.error)) await this.tasks.setTicketClosePending(task.id, false);
-        else failed++;
+        else {
+          failed++;
+          logger.warn('tracker.reconcile: pending ticket close failed; will retry next poll', {
+            op: 'tracker.reconcile.close',
+            taskId: task.id,
+            workspaceId: this.workspaceId,
+            trackerRef: task.trackerRef ?? undefined,
+            error: safeErrorReason(closed.error),
+          });
+        }
         return;
       }
       if (task.origin !== 'mirrored' || task.trackerRef == null) return;

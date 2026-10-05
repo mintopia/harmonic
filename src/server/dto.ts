@@ -269,7 +269,6 @@ export type ApiEpicAttempt = {
   number: number;
   state: AttemptRow['state'];
   reason: string | null;
-  prompt: string | null;
   usage: AttemptUsage | null;
   cost: Cost | null;
   toolCalls: number;
@@ -363,7 +362,6 @@ export function epicAttemptToApi(
     number: run.number,
     state: run.state,
     reason: run.detail ?? run.reason,
-    prompt: run.prompt,
     usage: parseUsage(run.usage),
     cost: parseCost(run.cost),
     toolCalls,

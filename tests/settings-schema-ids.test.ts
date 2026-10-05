@@ -27,6 +27,7 @@ function makeConfig(): AppConfig {
     contextReuseTokenLimit: 100_000,
     editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
+    pauseMessage: 'Pause.',
     promptFragments: blankPromptFragments(),
     merge: { postMergeCheck: true, conflictPrompt: '', epicConflictPrompt: '', epicRefreshPrompt: '' },
     archive: { retain: { days: null, maxTotalMB: null } },
@@ -95,9 +96,12 @@ function makeWorkspace(): Workspace {
     driveMergeFate: null,
     driveContinueAttempts: null,
     taskPrompt: null,
+    pauseMessage: null,
     ...NO_PROMPT_FRAGMENT_OVERRIDES,
     mergeConflictPrompt: null,
     mergeEpicConflictPrompt: null,
+    mergeEpicRefreshPrompt: null,
+    verifyEpicResolveSuffix: null,
     driveCommitNudge: null,
     createdAt: 0,
     updatedAt: 0,
@@ -197,12 +201,19 @@ describe('Settings schema field ids are unique (issue #472)', () => {
     for (const ctx of [globalCtx, workspaceCtx]) {
       const fields = (renderSection(section, ctx).body as { props: { children: unknown[] } }).props.children.flat().filter(Boolean) as { key: string }[];
       const kebab = (name: string) => name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
-      expect(fields.map((f) => f.key)).toEqual([
-        ...PROMPT_FRAGMENT_NAMES.map((name) => `fragment-${kebab(name)}`),
-        ...(ctx.surface === 'global'
-          ? ['fragment-criticRevisionDiff', 'fragment-criticRevisionIdentical', 'fragment-criticRevisionAlone', 'fragment-criticVerdictContract']
-          : []),
-      ]);
+      expect(fields.map((f) => f.key)).toEqual(PROMPT_FRAGMENT_NAMES.map((name) => `fragment-${kebab(name)}`));
     }
+  });
+
+  it('lets a Workspace override the Epic refresh prompt and the Epic verification suffix, like the other resolver prompts', () => {
+    const section = SETTINGS_SCHEMA.find((s) => s.title === 'Merge and Epic resolver prompts')!;
+    const config = makeConfig();
+    const workspace = makeWorkspace();
+    const ctx: WorkspaceRenderCtx = {
+      surface: 'workspace', config, workspace, pristineWorkspace: workspace, setWorkspace: () => {}, errors: {},
+      blockedByRunningTask: false, onRequestDelete: () => {},
+    };
+    const fields = (renderSection(section, ctx).body as { props: { children: unknown[] } }).props.children.flat().filter(Boolean) as { key: string }[];
+    expect(fields.map((f) => f.key)).toEqual(['merge-conflict-prompt', 'epic-conflict-prompt', 'epic-refresh-prompt', 'epic-resolve-suffix']);
   });
 });

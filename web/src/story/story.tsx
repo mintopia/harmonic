@@ -168,10 +168,8 @@ function ResolvedPromptsStory() {
   const lifecycle = (i: number, payload: Record<string, unknown>) => ({ ...ev(i, { sessionUpdate: '' }), type: 'lifecycle', payload }) as unknown as AttemptLogEvent;
   const events: AttemptLogEvent[] = [
     ev(1, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Implemented the change; finishing now.' } }),
-    lifecycle(2, { event: 'commit-nudge', locator: 'attempt-1', promptIndex: 0 }),
     ev(3, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Committed. Merging into develop.' } }),
     lifecycle(4, { event: 'merge-conflict-resolve', locator: 'attempt-1', promptIndex: 1 }),
-    lifecycle(5, { event: 'continue', locator: 'attempt-1', promptIndex: 9 }),
   ];
   return (
     <StoryFrame style={{ padding: 30, maxWidth: 760, margin: '0 auto' }}>
@@ -211,11 +209,11 @@ function MultiTurnStory() {
     lifecycle(4, 'steer_delivered', { text: 'Use the existing cache helper.' }),
     lifecycle(5, 'prompt_sent'),
     say(6, 'Switched to the cache helper.'),
-    lifecycle(7, 'continue', { attempt: 1 }),
+    lifecycle(7, 'continue', { attempt: 1, locator: 'implementation/prompt.md', promptIndex: 2 }),
     lifecycle(8, 'prompt_sent'),
     say(9, 'Ran the tests; they pass. Changes are not committed yet.'),
     lifecycle(10, 'finished', { stopReason: 'end_turn' }),
-    lifecycle(11, 'commit-nudge'),
+    lifecycle(11, 'commit-nudge', { locator: 'implementation/prompt.md', promptIndex: 3 }),
     lifecycle(12, 'prompt_sent'),
     say(13, 'Committed the work.'),
   ];

@@ -7,11 +7,11 @@ import {
   DRIVE_PLACEHOLDERS,
   TASK_ID_PLACEHOLDER,
   TASK_PLACEHOLDERS,
-  CRITIC_REVISION_PLACEHOLDERS,
   compileCriticFragmentPreview,
   compileDrivePreview,
+  compileFragmentsOnlyPreview,
   compileFragmentPreview,
-  compileConflictPreview,
+  compileEpicRefreshPreview,
   compileMergeConflictPreview,
   COMMIT_NUDGE_PLACEHOLDERS,
   MERGE_CONFLICT_PLACEHOLDERS,
@@ -20,6 +20,7 @@ import {
   compileTaskIdPreview,
   compileTaskPreview,
   fragmentPlaceholders,
+  type CriticRevisionVariant,
   type LabeledPreview,
   type Placeholder,
 } from '../prompt-preview-model';
@@ -36,9 +37,10 @@ import { PermissionRules } from './PermissionRules';
 import { SecuritySection } from './SecuritySection';
 import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection } from './ArchiveExportSettings';
 import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './VerificationSettings';
-import { PROMPT_FRAGMENTS, PROMPT_FRAGMENT_NAMES, promptFragmentOverrideKey } from '../../../src/domain/prompt-fragments.js';
+import { PROMPT_FRAGMENTS, PROMPT_FRAGMENT_NAMES, promptFragmentOverrideKey, type CriticFragmentName, type PromptFragmentName } from '../../../src/domain/prompt-fragments.js';
 import { settingsRegistry, type SettingKey, type SettingTab } from '../../../src/domain/settings-registry.js';
 import { WORKSPACE_COLORS } from '../../../src/domain/workspace-colors.js';
+import { resolvePromptFragments } from '../../../src/domain/setting-override.js';
 
 export type Surface = 'global' | 'workspace';
 
@@ -184,7 +186,7 @@ function OverridePrompt({
           value={value}
           onChange={onChange}
           placeholders={d.placeholders}
-          preview={d.compile(value, config)}
+          preview={d.compile(value, { ...config, promptFragments: resolvePromptFragments(workspace, config) })}
           error={errors[d.errorKey]}
           rows={d.rows}
           textareaClass={d.textareaClass}
@@ -559,12 +561,18 @@ const agentMessagesSendCap = scalar(
   },
 );
 
+const MERGE_FATE_OPTIONS: FieldOption[] = [
+  { value: 'auto-merge', label: 'Merge automatically' },
+  { value: 'open-PR', label: 'Open a pull request' },
+  { value: 'artifact', label: 'Leave the branch' },
+];
+
 const driveMergeFate = scalar(
   registryField('driveMergeFate', {
     id: 'settings-merge-fate',
     errorKey: 'drive.mergeFate',
     get: (c) => c.drive.mergeFate,
-    options: () => toOptions(['auto-merge', 'open-PR', 'artifact']),
+    options: () => MERGE_FATE_OPTIONS,
     set: (c, raw) => ({ ...c, drive: { ...c.drive, mergeFate: raw as AppConfig['drive']['mergeFate'] } }),
   }),
   {
@@ -574,7 +582,7 @@ const driveMergeFate = scalar(
     get: (w) => w.driveMergeFate,
     set: (w, v) => ({ ...w, driveMergeFate: v as 'auto-merge' | 'open-PR' | 'artifact' | null }),
     inherited: (c) => c.drive.mergeFate,
-    options: () => toOptions(['auto-merge', 'open-PR', 'artifact']),
+    options: () => MERGE_FATE_OPTIONS,
   },
 );
 
@@ -620,6 +628,31 @@ const taskPromptField = prompt(
     placeholders: TASK_PLACEHOLDERS,
     compile: compileTaskPreview,
     textareaClass: `${field} min-h-36`,
+  },
+);
+
+const pauseMessageField = prompt(
+  'pause-message',
+  {
+    id: 'settings-pause-message',
+    label: 'Pause message',
+    errorKey: 'pauseMessage',
+    get: (c) => c.pauseMessage,
+    set: (c, v) => ({ ...c, pauseMessage: v }),
+    placeholders: [],
+    compile: compileFragmentsOnlyPreview,
+    textareaClass: `${field} min-h-24`,
+  },
+  {
+    key: 'pauseMessage',
+    id: 'workspace-pause-message',
+    errorKey: 'pauseMessage',
+    get: (w) => w.pauseMessage,
+    set: (w, v) => ({ ...w, pauseMessage: v }),
+    inherited: (c) => c.pauseMessage,
+    placeholders: [],
+    compile: compileFragmentsOnlyPreview,
+    textareaClass: `${field} min-h-24`,
   },
 );
 
@@ -705,13 +738,26 @@ const continuePromptField = prompt(
 
 const kebab = (name: string): string => name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
 
+const CRITIC_PREVIEW_VARIANT: Partial<Record<CriticFragmentName, CriticRevisionVariant>> = {
+  criticRevisionIdentical: 'identical',
+  criticRevisionAlone: 'alone',
+  criticWorkingTreeNote: 'dirty',
+};
+
+/** A critic fragment previews as the whole critic prompt it lands in, with the text being edited swapped in. */
+function criticFragmentPreview(name: PromptFragmentName) {
+  if (!name.startsWith('critic')) return undefined;
+  const variant = CRITIC_PREVIEW_VARIANT[name as CriticFragmentName] ?? 'diff';
+  return (text: string, c: Pick<AppConfig, 'promptFragments'>) => compileCriticFragmentPreview({ ...c.promptFragments, [name]: text }, variant);
+}
+
 const promptFragmentFields = PROMPT_FRAGMENT_NAMES.map((name) => {
   const spec = PROMPT_FRAGMENTS[name];
   const required = spec.required.map((token) => `{${token}}`).join(' ');
   const description = `${spec.help}${required ? ` Must keep ${required}.` : ''}`;
   const key = promptFragmentOverrideKey(name);
   const placeholders = fragmentPlaceholders(name);
-  const compile = compileFragmentPreview(name);
+  const compile = criticFragmentPreview(name) ?? compileFragmentPreview(name);
   const textareaClass = `${field} min-h-24`;
   return prompt(
     `fragment-${kebab(name)}`,
@@ -741,61 +787,6 @@ const promptFragmentFields = PROMPT_FRAGMENT_NAMES.map((name) => {
   );
 });
 
-type CriticFragmentName = 'criticRevisionIdentical' | 'criticRevisionDiff' | 'criticRevisionAlone' | 'criticVerdictContract';
-
-function criticFragmentField(
-  name: CriticFragmentName,
-  label: string,
-  description: string,
-  variant: 'diff' | 'identical' | 'alone',
-  placeholders: Placeholder[],
-) {
-  return prompt(
-    `fragment-${name}`,
-    {
-      id: `settings-fragment-${name}`,
-      label,
-      description,
-      errorKey: `promptFragments.${name}`,
-      get: (c) => c.promptFragments[name],
-      set: (c, v) => ({ ...c, promptFragments: { ...c.promptFragments, [name]: v } }),
-      placeholders,
-      compile: (_text, c) => compileCriticFragmentPreview(c.promptFragments, variant),
-      textareaClass: `${field} min-h-24`,
-    },
-    null,
-  );
-}
-
-const criticRevisionDiffField = criticFragmentField(
-  'criticRevisionDiff',
-  'Critic revision block',
-  'Tells the critic which revision to review and how to find the change, when the candidate differs from the base.',
-  'diff',
-  CRITIC_REVISION_PLACEHOLDERS,
-);
-const criticRevisionIdenticalField = criticFragmentField(
-  'criticRevisionIdentical',
-  'Critic revision block (no change)',
-  'Used when the candidate is identical to the base: the builder made no code change.',
-  'identical',
-  CRITIC_REVISION_PLACEHOLDERS,
-);
-const criticRevisionAloneField = criticFragmentField(
-  'criticRevisionAlone',
-  'Critic revision block (no base)',
-  'Used when the base revision is unknown, so the candidate is reviewed on its own.',
-  'alone',
-  CRITIC_REVISION_PLACEHOLDERS,
-);
-const criticVerdictContractField = criticFragmentField(
-  'criticVerdictContract',
-  'Critic verdict contract',
-  'The reply format demanded of the critic. It must keep the "verdict" and "summary" keys the verdict parser reads; a malformed reply is recorded as inconclusive.',
-  'diff',
-  [],
-);
-
 const commitNudgeField = prompt(
   'commit-nudge',
   {
@@ -806,7 +797,7 @@ const commitNudgeField = prompt(
     get: (c) => c.drive.commitNudge,
     set: (c, v) => ({ ...c, drive: { ...c.drive, commitNudge: v } }),
     placeholders: COMMIT_NUDGE_PLACEHOLDERS,
-    compile: (text) => text,
+    compile: compileFragmentsOnlyPreview,
     textareaClass: `${field} min-h-24`,
   },
   {
@@ -818,7 +809,7 @@ const commitNudgeField = prompt(
     set: (w, v) => ({ ...w, driveCommitNudge: v }),
     inherited: (c) => c.drive.commitNudge,
     placeholders: COMMIT_NUDGE_PLACEHOLDERS,
-    compile: (text) => text,
+    compile: compileFragmentsOnlyPreview,
     textareaClass: `${field} min-h-24`,
   },
 );
@@ -887,10 +878,21 @@ const epicRefreshPromptField = prompt(
     get: (c) => c.merge.epicRefreshPrompt,
     set: (c, v) => ({ ...c, merge: { ...c.merge, epicRefreshPrompt: v } }),
     placeholders: EPIC_REFRESH_PLACEHOLDERS,
-    compile: compileConflictPreview,
+    compile: compileEpicRefreshPreview,
     textareaClass: `${field} min-h-36`,
   },
-  null,
+  {
+    key: 'mergeEpicRefreshPrompt',
+    id: 'workspace-epic-refresh-prompt',
+    errorKey: 'mergeEpicRefreshPrompt',
+    description: 'Sent to the agent that resolves a conflict when the Epic integration branch is refreshed from the default branch.',
+    get: (w) => w.mergeEpicRefreshPrompt,
+    set: (w, v) => ({ ...w, mergeEpicRefreshPrompt: v }),
+    inherited: (c) => c.merge.epicRefreshPrompt,
+    placeholders: EPIC_REFRESH_PLACEHOLDERS,
+    compile: compileEpicRefreshPreview,
+    textareaClass: `${field} min-h-36`,
+  },
 );
 
 const epicResolveSuffixField = prompt(
@@ -903,10 +905,21 @@ const epicResolveSuffixField = prompt(
     get: (c) => c.verify.epic.resolveSuffix,
     set: (c, v) => ({ ...c, verify: { ...c.verify, epic: { ...c.verify.epic, resolveSuffix: v } } }),
     placeholders: EPIC_RESOLVE_SUFFIX_PLACEHOLDERS,
-    compile: compileConflictPreview,
+    compile: compileMergeConflictPreview,
     textareaClass: `${field} min-h-24`,
   },
-  null,
+  {
+    key: 'verifyEpicResolveSuffix',
+    id: 'workspace-epic-resolve-suffix',
+    errorKey: 'verifyEpicResolveSuffix',
+    description: 'Appended to the Epic resolve prompt when the agent fixes a failing Epic verification.',
+    get: (w) => w.verifyEpicResolveSuffix,
+    set: (w, v) => ({ ...w, verifyEpicResolveSuffix: v }),
+    inherited: (c) => c.verify.epic.resolveSuffix,
+    placeholders: EPIC_RESOLVE_SUFFIX_PLACEHOLDERS,
+    compile: compileMergeConflictPreview,
+    textareaClass: `${field} min-h-24`,
+  },
 );
 
 const guardrailScalarFields: OverridableDescriptor[] = [
@@ -1425,6 +1438,16 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
       </div>
     ),
   },
+  {
+    tab: 'prompts',
+    surfaces: BOTH,
+    title: 'Pause message',
+    description: {
+      global: 'Sent to a running Task when it is paused, asking the agent to finish its turn and wait.',
+      workspace: 'Sent to a running Task here when it is paused. Inherits the global message until overridden.',
+    },
+    body: (ctx) => renderField(pauseMessageField, ctx),
+  },
 
   {
     tab: 'prompts',
@@ -1434,7 +1457,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
       global:
         'What Harmonic sends to the agents that resolve merge conflicts and Epic verification failures. Edits apply to the next resolver turn.',
       workspace:
-        'What Harmonic sends to merge conflict resolvers here. Each field inherits the global default until overridden.',
+        'What Harmonic sends to the agents that resolve merge conflicts and Epic verification failures here. Each field inherits the global default until overridden.',
     },
     body: (ctx) => (
       <div className="flex flex-col gap-4">
@@ -1457,10 +1480,6 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     body: (ctx) => (
       <div className="grid items-start gap-4 xl:grid-cols-2">
         {promptFragmentFields.map((f) => renderField(f, ctx))}
-        {renderField(criticRevisionDiffField, ctx)}
-        {renderField(criticRevisionIdenticalField, ctx)}
-        {renderField(criticRevisionAloneField, ctx)}
-        {renderField(criticVerdictContractField, ctx)}
       </div>
     ),
   },

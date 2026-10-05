@@ -1,5 +1,6 @@
 import { Git } from './git.js';
 import { attempted, errorMessage } from '../error-handling.js';
+import { logger } from '../logger.js';
 import { runMergePolicy } from './merge-policy.js';
 import { observedModelMismatch, type AttemptUsage } from './usage.js';
 import { AcpDriver, AcpPromptTimeoutError, type PromptResult } from '../acp/driver.js';
@@ -403,7 +404,13 @@ export class TurnCompletion {
       record('lifecycle', { event: 'escalated', reason: 'merge fate could not be applied' });
       await this.deps.settleEscalated(task, run, 'merge fate could not be applied', patch);
     } else {
-      if (outcome === 'completed-close-pending') await this.deps.taskService.setTicketClosePending(task.id, true);
+      if (outcome === 'completed-close-pending') {
+        try {
+          await this.deps.taskService.setTicketClosePending(task.id, true);
+        } catch (error) {
+          logger.error('turn-completion: could not flag the Task close-pending', { taskId: task.id, error: errorMessage(error) });
+        }
+      }
       await advanceTask('merging');
       await this.deps.settleAutoCompleted(task, run, { ...patch, ...diff });
     }

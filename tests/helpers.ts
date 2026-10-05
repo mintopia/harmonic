@@ -444,3 +444,11 @@ export function executionPlumbing() {
     criticDrive: createAcpCriticDrive(testSpawnProcessGroup),
   };
 }
+
+/** The Attempt row with `prompt` filled from the Archive's latest Resolved Prompt for its implementation step (the latest one containing `containing`, when given) — the DB no longer stores prompts (ADR-0047 s5). */
+export async function withArchivedPrompt<T extends { taskId: number | null; number: number; prompt: string | null } | undefined>(server: TestServer, run: T, containing?: string): Promise<T extends undefined ? undefined : NonNullable<T>> {
+  if (!run || run.taskId === null) return run as never;
+  const task = await server.app.ctx.tasks.get(run.taskId);
+  const prompts = await server.app.ctx.archive.readArchivedPromptSegments(task, run.number, 'implementation/prompt.md');
+  return { ...run, prompt: (containing === undefined ? prompts?.at(-1) : prompts?.findLast((prompt) => prompt.includes(containing))) ?? null } as never;
+}

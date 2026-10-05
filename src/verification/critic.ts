@@ -225,6 +225,8 @@ export interface CriticAttempt {
   /** The exact prompt sent to the critic (`buildCriticPrompt`), persisted so the
    * Review tab can show what the reviewer was actually asked. */
   prompt: string;
+  /** Archive locator of the Resolved Prompt, only when the archive write succeeded. */
+  promptKey: string | null;
   /** The candidate OID this attempt verified. */
   inputOid: string;
   /** The critic's native transcript locator and the harness that wrote it; both null when unresolved. */
@@ -309,7 +311,7 @@ async function runCriticArchived(args: RunCriticArgs, archive: StepArchiveWriter
     ...(args.baseOid ? { baseOid: args.baseOid } : {}),
     ...(args.dirty ? { dirty: args.dirty } : {}),
   });
-  archive?.appendPrompt(prompt);
+  const promptKey = archive && (await archive.appendPrompt(prompt)) !== null ? archive.promptLocator : null;
   const onUpdate =
     archive || args.onUpdate
       ? (update: { sessionUpdate: string; [key: string]: unknown }): void => {
@@ -359,6 +361,7 @@ async function runCriticArchived(args: RunCriticArgs, archive: StepArchiveWriter
     summary,
     output,
     prompt,
+    promptKey,
     inputOid: args.verifiedHeadOid,
     transcriptPath,
     harness: args.harnessId,
@@ -377,5 +380,6 @@ export function criticAttemptToInput(attempt: CriticAttempt): VerificationAttemp
     output: attempt.output,
     transcriptPath: attempt.transcriptPath,
     harness: attempt.harness,
+    promptKey: attempt.promptKey,
   };
 }

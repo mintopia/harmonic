@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type AppConfig, type DeepPartial } from '../src/config.js';
-import { startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
+import { startServer, stubHarness, type TestServer, waitFor, withArchivedPrompt } from './helpers.js';
 import { trackerRef as brandRef } from '../src/tracker/adapter.js';
 
 describe('steering/resuming a Task whose Session is incompatible or stranded (issue: 409 after pause+resume across an upgrade)', () => {
@@ -73,7 +73,7 @@ describe('steering/resuming a Task whose Session is incompatible or stranded (is
 
     const latest = await waitFor(async () => {
       const all = await server.app.ctx.attempts.listForTask(mirrored.id);
-      const last = all.at(-1);
+      const last = await withArchivedPrompt(server, all.at(-1), 'pick up despite the upgrade');
       return all.length === runsBefore.length && last?.prompt?.includes('pick up despite the upgrade') ? last : undefined;
     });
     // Same Attempt continued — the counter only advances on a failed verdict.
@@ -119,7 +119,7 @@ describe('steering/resuming a Task whose Session is incompatible or stranded (is
 
     const latest = await waitFor(async () => {
       const all = await server.app.ctx.attempts.listForTask(taskId);
-      const last = all.at(-1);
+      const last = await withArchivedPrompt(server, all.at(-1), 'relaunch me');
       return all.length === 1 && last?.prompt?.includes('relaunch me') ? last : undefined;
     });
     expect(latest.id).toBe(attempt.id);
@@ -138,7 +138,7 @@ describe('steering/resuming a Task whose Session is incompatible or stranded (is
 
     const latest = await waitFor(async () => {
       const all = await server.app.ctx.attempts.listForTask(mirrored.id);
-      const last = all.at(-1);
+      const last = await withArchivedPrompt(server, all.at(-1), 'condensed continue');
       return all.length === runsBefore.length && last?.prompt?.includes('condensed continue') ? last : undefined;
     });
     expect(latest.id).toBe(attemptBefore.id);
@@ -198,7 +198,7 @@ describe('steering/resuming a Task whose Session is incompatible or stranded (is
 
       const latest = await waitFor(async () => {
         const all = await server.app.ctx.attempts.listForTask(taskId);
-        const last = all.at(-1);
+        const last = await withArchivedPrompt(server, all.at(-1), 'left over from a turn that never came');
         return all.length === 1 && last?.prompt?.includes('left over from a turn that never came') ? last : undefined;
       });
       expect(latest.id).toBe(attempt.id);

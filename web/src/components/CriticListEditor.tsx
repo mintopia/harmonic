@@ -12,7 +12,7 @@ import {
   compileCriticPreview,
   compileEpicCriticPreview,
 } from "../prompt-preview-model";
-import { chip, field } from "../ui";
+import { chip, field, selectField } from "../ui";
 import { EntryList } from "./EntryList";
 import { Switch } from "./Switch";
 import { FieldError, PromptField, fieldLabel } from "./SettingsSection";
@@ -68,7 +68,7 @@ function CriticRuntimeFields({
         </label>
         <select
           id={`${idPrefix}-harness`}
-          className={field}
+          className={selectField}
           value={critic.harness ?? ""}
           onChange={(e) => onChange("harness", e.target.value)}
         >

@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { type AppConfig, type DeepPartial } from '../src/config.js';
 import { Git } from '../src/execution/git.js';
 import { type Ticket, trackerRef } from '../src/tracker/adapter.js';
-import { startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
+import { startServer, stubHarness, type TestServer, waitFor, withArchivedPrompt } from './helpers.js';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -103,7 +103,7 @@ describe('task-steering', () => {
       expect(lifecycle.find((e: any) => e.payload.event === 'steer_queued')?.payload.text).toBe('mind the parser');
       expect(lifecycle.find((e: any) => e.payload.event === 'steer_delivered')?.payload.text).toBe('mind the parser');
       const attempts = await server.app.ctx.attempts.listForTask(taskId);
-      expect(attempts.find((a) => a.id === attemptId)?.prompt).toContain('## Operator message\n\nmind the parser');
+      expect((await withArchivedPrompt(server, attempts.find((a) => a.id === attemptId)))?.prompt).toContain('## Operator message\n\nmind the parser');
     });
 
     it('injects a steer into the running turn when the harness supports it', async () => {
@@ -263,7 +263,7 @@ describe('task-steering', () => {
 
       const latest = await waitFor(async () => {
         const all = await server.app.ctx.attempts.listForTask(mirrored.id);
-        const last = all.at(-1);
+        const last = await withArchivedPrompt(server, all.at(-1), 'actually, focus on the parser');
         return all.length === runsBefore.length && last?.prompt?.includes('actually, focus on the parser') ? last : undefined;
       });
       expect(latest.id).toBe(attemptBefore?.id);
@@ -297,7 +297,7 @@ describe('task-steering', () => {
 
       const latest = await waitFor(async () => {
         const all = await server.app.ctx.attempts.listForTask(mirrored.id);
-        const last = all.at(-1);
+        const last = await withArchivedPrompt(server, all.at(-1), 'pick up where you left off');
         return all.length === runsBefore.length && last?.prompt?.includes('pick up where you left off') ? last : undefined;
       });
       expect(latest.id).toBe(attemptBefore?.id);

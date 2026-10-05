@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { tasks, agentMessages, type AgentMessageRecipient } from '../src/db/schema.js';
-import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { startServer, stubHarness, waitFor, type TestServer, withArchivedPrompt } from './helpers.js';
 import { trackerRef } from '../src/tracker/adapter.js';
 
 const EPIC = 500;
@@ -82,7 +82,7 @@ describe('agent message delivery (stub Harness, run-control seam)', () => {
 
   const lastPrompt = async (taskId: number): Promise<string> => {
     const attempts = await server.app.ctx.attempts.listForTask(taskId);
-    return String(attempts[attempts.length - 1]?.prompt ?? '');
+    return String((await withArchivedPrompt(server, attempts[attempts.length - 1]))?.prompt ?? '');
   };
 
   it('delivers mid-turn with the peer frame when the Harness supports steering', async () => {

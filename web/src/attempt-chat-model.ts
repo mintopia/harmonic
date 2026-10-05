@@ -19,8 +19,6 @@ export type ChatRow =
   | { kind: 'resolved-prompt'; label: string; locator: string; index: number; key: number };
 
 const RESOLVED_PROMPT_LABEL: Record<string, string> = {
-  continue: 'Continue nudge',
-  'commit-nudge': 'Commit nudge',
   'merge-conflict-resolve': 'Merge conflict resolver',
   'epic-resolve': 'Epic resolver',
 };

@@ -280,13 +280,13 @@ function Group({ group }: { group: TranscriptGroup }) {
         <HarnessGlyph harness={group.harness} />
       </span>
       <div className="min-w-0">
-        <div className="flex flex-wrap items-baseline gap-2 leading-[1.3]">
+        <p className="leading-[1.3]">
           <span className="text-data font-bold text-[var(--id,var(--hm-ink))]">{group.name}</span>
           {(group.harnessLabel || group.attemptLabel) && (
-            <span className="text-small text-muted">{[group.harnessLabel, group.attemptLabel].filter(Boolean).map((part) => `· ${part}`).join(' ')}</span>
+            <span className="ml-2 text-small text-muted">{[group.harnessLabel, group.attemptLabel].filter(Boolean).join(' · ')}</span>
           )}
-          <span className="font-data text-micro text-faint">{group.time}</span>
-        </div>
+          <span className="ml-2 font-data text-micro text-faint">{group.time}</span>
+        </p>
         {group.messages.map((message, i) => (
           <Message key={message.id} message={message} first={i === 0} />
         ))}

@@ -163,7 +163,6 @@ const epicAttemptSchema = z
     number: z.number().int().positive(),
     state: z.enum(ATTEMPT_STATES),
     reason: z.string().nullable(),
-    prompt: z.string().nullable(),
     usage: attemptUsageSchema.nullable(),
     cost: costSchema.nullable(),
     toolCalls: z.number().int().nonnegative(),

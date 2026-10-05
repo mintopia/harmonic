@@ -62,6 +62,7 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   drivePrompt: string | null; driveUnattendedReminder: string | null; driveContinuePrompt: string | null;
   driveMergeFate: string | null; driveContinueAttempts: number | null; taskPrompt: string | null; pauseMessage: string | null;
   driveCommitNudge: string | null; mergeConflictPrompt: string | null; mergeEpicConflictPrompt: string | null;
+  mergeEpicRefreshPrompt: string | null; verifyEpicResolveSuffix: string | null;
   exportEnabled: boolean | null; exportDirectoryPath: string | null; exportRedactPatterns: string | null;
   exportS3Endpoint: string | null; exportS3Region: string | null; exportS3Bucket: string | null; exportS3Prefix: string | null;
   exportS3ForcePathStyle: boolean | null; exportS3AccessKeyId: string | null; exportS3SecretAccessKey: string | null;
@@ -210,7 +211,7 @@ export const attempts = sqliteTable('attempts', {
   sessionId: text('session_id'),
   /** The `sessions.id` this Attempt is bound to; null until the harness session is created. */
   sessionRowId: integer('session_row_id').references((): AnySQLiteColumn => sessions.id),
-  /** The exact prompt text sent to the harness; null until the prompt turn is sent. */
+  /** Legacy: the first prompt of Attempts that predate the Archive-only Resolved Prompt read (ADR-0047 s5). Never written now; the Archive owns every prompt. */
   prompt: text('prompt'),
   /** Worktree mode: the attempt's branch and the branch it was cut from. */
   branch: text('branch'),
