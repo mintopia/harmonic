@@ -455,6 +455,8 @@ export interface Workspace {
   driveContinueAttempts: number | null;
   /** Task Prompt override; `null` inherits `config.taskPrompt`. */
   taskPrompt: string | null;
+  /** Read-only restraint Prompt Fragment override; `null` inherits `config.promptFragments.readOnlyRestraint`. */
+  promptFragmentReadOnlyRestraint: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -1172,6 +1174,8 @@ export interface AppConfig {
   };
   /** The Task Prompt template for native Attempts, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
   taskPrompt: string;
+  /** Shared Prompt Fragments, referenced from prompts as `{fragment.<name>}`. */
+  promptFragments: { readOnlyRestraint: string };
   archive: { retain: { days: number | null; maxTotalMB: number | null } };
   /** S3 credentials arrive masked (`********`) when set; writing the mask back keeps the stored value. */
   export: {

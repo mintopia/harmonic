@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import type { AppConfig } from '../src/config.js';
+import { appConfigSchema, DEFAULT_PROMPT_FRAGMENTS, type AppConfig } from '../src/config.js';
+import { expandFragments } from '../src/execution/prompt-template.js';
 import type { WorkspaceRow } from '../src/db/schema.js';
-import { resolve, resolveCap, resolveVerifiers, resolveGuardrails, resolveDrive, resolvePauseMessage, resolveTaskPrompt } from '../src/domain/setting-override.js';
+import { resolve, resolveCap, resolveVerifiers, resolveGuardrails, resolveDrive, resolvePauseMessage, resolveTaskPrompt, resolvePromptFragments } from '../src/domain/setting-override.js';
 
 describe('Setting Override resolution (ADR-0012, issue #59)', () => {
   it('resolves the pause message from the Workspace override or global default', () => {
@@ -272,5 +273,28 @@ describe('staged verifier overlays (#523, ADR-0037)', () => {
     expect(resolveVerifiers(inherited, config).task.preMerge).toEqual({ commands: [command], critics: [critic] });
     expect(resolveVerifiers({ ...inherited, taskPreMergeCommands: JSON.stringify([{ kind: 'global', ref: command.id, enabled: false }]) }, config).task.preMerge).toEqual({ commands: [], critics: [critic] });
     expect(resolveVerifiers({ ...inherited, epicPreMergeCritics: JSON.stringify([{ kind: 'local', enabled: true, critic }]) }, config).epic.preMerge.critics).toEqual([critic]);
+  });
+});
+
+describe('Prompt Fragments', () => {
+  const config = { promptFragments: { readOnlyRestraint: 'GLOBAL RESTRAINT' } };
+
+  it('inherits the global fragment unless the Workspace overrides it', () => {
+    expect(resolvePromptFragments({ promptFragmentReadOnlyRestraint: null }, config).readOnlyRestraint).toBe('GLOBAL RESTRAINT');
+    expect(resolvePromptFragments(undefined, config).readOnlyRestraint).toBe('GLOBAL RESTRAINT');
+    expect(resolvePromptFragments({ promptFragmentReadOnlyRestraint: 'WS RESTRAINT' }, config).readOnlyRestraint).toBe('WS RESTRAINT');
+  });
+
+  it('is defined once in the baseline and expands in more than one prompt', () => {
+    const fragments = resolvePromptFragments(null, { promptFragments: DEFAULT_PROMPT_FRAGMENTS });
+    const a = expandFragments('Critic.\n{fragment.readOnlyRestraint}', fragments);
+    const b = expandFragments('Epic review: {fragment.readOnlyRestraint} {fragment.unknown}', fragments);
+    expect(a).toContain(DEFAULT_PROMPT_FRAGMENTS.readOnlyRestraint);
+    expect(b).toContain(DEFAULT_PROMPT_FRAGMENTS.readOnlyRestraint);
+    expect(b).toContain('{fragment.unknown}');
+  });
+
+  it('rejects an empty fragment at boot', () => {
+    expect(() => appConfigSchema.shape.promptFragments.parse({ readOnlyRestraint: '' })).toThrow();
   });
 });

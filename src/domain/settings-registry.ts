@@ -219,6 +219,13 @@ export const settingsRegistry = {
     label: 'Pause message',
     help: 'Message injected before a running Task pauses; inherits the global message unless overridden.',
   },
+  promptFragmentReadOnlyRestraint: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'prompts',
+    label: 'Read-only restraint',
+    help: 'Shared Prompt Fragment telling a read-only agent not to mutate anything; referenced from prompts as {fragment.readOnlyRestraint}. Inherits the global fragment when unset.',
+  },
   exportEnabled: {
     scope: 'overridable',
     control: 'toggle',

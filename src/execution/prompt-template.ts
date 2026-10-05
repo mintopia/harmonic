@@ -26,6 +26,14 @@ export function fillTemplate(template: string, fields: Record<string, string | n
   return template.replace(/\{([^{}]+)\}/g, (match, key: string) => (key in fields ? String(fields[key]) : match));
 }
 
+/** Expand `{fragment.<name>}` references in a template from the shared Prompt Fragments, leaving unknown names intact. */
+export function expandFragments(template: string, fragments: Record<string, string>): string {
+  return fillTemplate(
+    template,
+    Object.fromEntries(Object.entries(fragments).map(([name, text]) => [`fragment.${name}`, text])),
+  );
+}
+
 /**
  * Guidance appended to an agent turn whose worktree Harmonic has indexed as its
  * own jCodeMunch repo. Empty id ⇒ nothing rendered.

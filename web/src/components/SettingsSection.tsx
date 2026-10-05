@@ -249,6 +249,8 @@ const FIELD_SEGMENT_LABELS: Record<string, string> = {
   continuePrompt: 'Continue prompt',
   taskPrompt: 'Task prompt',
   pauseMessage: 'Pause message',
+  readOnlyRestraint: 'Read-only restraint',
+  promptFragmentReadOnlyRestraint: 'Read-only restraint',
 };
 
 function humanizeSegment(seg: string): string {

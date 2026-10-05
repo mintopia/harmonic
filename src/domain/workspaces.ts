@@ -106,6 +106,8 @@ export const workspaceOverridesSchema = z.object({
   /** Task Prompt override; null inherits `config.taskPrompt`. */
   taskPrompt: z.string().min(1).nullable().optional(),
   pauseMessage: z.string().min(1).nullable().optional(),
+  /** Read-only restraint Prompt Fragment override; null inherits `config.promptFragments.readOnlyRestraint`. */
+  promptFragmentReadOnlyRestraint: z.string().min(1).nullable().optional(),
   /** Export-on-terminal toggle override; null inherits `config.export.enabled`. */
   exportEnabled: z.boolean().nullable().optional(),
   /** Export directory override (absolute); null inherits `config.export.directory.path`. */
@@ -165,6 +167,7 @@ export const OVERRIDE_KEYS = [
   'driveContinueAttempts',
   'taskPrompt',
   'pauseMessage',
+  'promptFragmentReadOnlyRestraint',
   'exportEnabled',
   'exportDirectoryPath',
   'exportS3Endpoint',
@@ -255,6 +258,7 @@ export class WorkspaceService {
       driveContinueAttempts: o.driveContinueAttempts,
       taskPrompt: o.taskPrompt,
       pauseMessage: o.pauseMessage,
+      promptFragmentReadOnlyRestraint: o.promptFragmentReadOnlyRestraint,
       exportEnabled: o.exportEnabled,
       exportDirectoryPath: o.exportDirectoryPath,
       exportS3Endpoint: o.exportS3Endpoint,

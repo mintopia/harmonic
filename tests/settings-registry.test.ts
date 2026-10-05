@@ -148,6 +148,7 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
       'driveContinuePrompt',
       'taskPrompt',
       'pauseMessage',
+      'promptFragmentReadOnlyRestraint',
     ]);
   });
 

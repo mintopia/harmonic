@@ -692,6 +692,33 @@ const continuePromptField = prompt(
 );
 
 
+const readOnlyRestraintField = prompt(
+  'fragment-read-only-restraint',
+  {
+    id: 'settings-fragment-read-only-restraint',
+    label: 'Read-only restraint',
+    description: 'Referenced from prompts as {fragment.readOnlyRestraint}; defined once, never copied.',
+    errorKey: 'promptFragments.readOnlyRestraint',
+    get: (c) => c.promptFragments.readOnlyRestraint,
+    set: (c, v) => ({ ...c, promptFragments: { ...c.promptFragments, readOnlyRestraint: v } }),
+    placeholders: DRIVE_PLACEHOLDERS,
+    compile: compileDrivePreview,
+    textareaClass: `${field} min-h-24`,
+  },
+  {
+    key: 'promptFragmentReadOnlyRestraint',
+    id: 'workspace-fragment-read-only-restraint',
+    errorKey: 'promptFragmentReadOnlyRestraint',
+    description: 'Referenced from prompts as {fragment.readOnlyRestraint}; defined once, never copied.',
+    get: (w) => w.promptFragmentReadOnlyRestraint,
+    set: (w, v) => ({ ...w, promptFragmentReadOnlyRestraint: v }),
+    inherited: (c) => c.promptFragments.readOnlyRestraint,
+    placeholders: DRIVE_PLACEHOLDERS,
+    compile: compileDrivePreview,
+    textareaClass: `${field} min-h-24`,
+  },
+);
+
 const guardrailScalarFields: OverridableDescriptor[] = [
   {
     key: 'guardrailProgress',
@@ -1207,6 +1234,19 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
         {grid('flex flex-wrap items-start gap-x-8 gap-y-4', [driveMergeFate, driveContinueAttempts], ctx)}
       </div>
     ),
+  },
+
+  {
+    tab: 'prompts',
+    surfaces: BOTH,
+    title: 'Prompt fragments',
+    description: {
+      global:
+        'Named pieces of prompt text defined once and referenced from prompts as {fragment.<name>}. Edit a fragment here and every prompt that references it changes.',
+      workspace:
+        'Named pieces of prompt text shared across prompts. Each inherits the global fragment until overridden.',
+    },
+    body: (ctx) => renderField(readOnlyRestraintField, ctx),
   },
 
   {

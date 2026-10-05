@@ -115,6 +115,7 @@ export function WorkspaceSettingsPage({
         driveMergeFate: w.driveMergeFate,
         driveContinueAttempts: w.driveContinueAttempts,
         taskPrompt: w.taskPrompt,
+        promptFragmentReadOnlyRestraint: w.promptFragmentReadOnlyRestraint,
         excludedDirectories: w.excludedDirectories,
       });
       setPristine(updated);

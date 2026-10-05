@@ -70,6 +70,7 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   driveMergeFate: null,
   driveContinueAttempts: null,
   taskPrompt: null,
+  promptFragmentReadOnlyRestraint: null,
   createdAt: id,
   updatedAt: id,
 });
