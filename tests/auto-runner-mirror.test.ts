@@ -452,12 +452,17 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     await tasks.setState(occupant.id, 'working');
     const later = await directTask(busy, 'same context as occupant');
 
-    const { ar, started } = build(undefined, 1);
+    const history: Array<string | undefined> = [];
+    const { ar, started } = build(
+      { onSkipReasonChanged: (task) => history.push(ar.skipReasonFor(task.id) ?? '<cleared>') },
+      1,
+    );
     ar.poke();
     await vi.waitFor(() => expect(started).toContain(free.id));
-    await vi.waitFor(() => expect(ar.skipReasonFor(later.id)).toBeDefined());
+    await vi.waitFor(() => expect(ar.skipReasonFor(later.id)).toBe('at capacity'));
 
     expect(ar.skipReasonFor(later.id)).not.toContain('Work Context');
+    expect(history.at(-1)).toBe('at capacity');
   });
 
   it('reports only open blocker edges in a ready task dependency diagnostic', async () => {
