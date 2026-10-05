@@ -393,6 +393,8 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'isolationMode' | 'prio
   url: string | null;
   /** The parent Map's title, resolved from mapRef against the last poll's scan; null when unmapped or before a poll. */
   mapTitle: string | null;
+  /** The display name of the tracker a mirrored Task came from (e.g. GitHub); null on native Tasks or when the Workspace's tracker is unresolved. */
+  trackerLabel: string | null;
   /** The latest attempt's branch (worktree mode only); null in direct mode or before any attempt. */
   branch: string | null;
   /** The latest attempt's `git diff --stat`, snapshotted at settle; null until then or in direct mode. */
@@ -480,6 +482,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListR
     cost: null,
     url: ticket.url,
     mapTitle: null,
+    trackerLabel: null,
     branch: null,
     stat: null,
     runStartedAt: null,
@@ -534,6 +537,7 @@ export function taskToApiDto(
     hasCandidate: boolean;
     url: string | null;
     mapTitle: string | null;
+    trackerLabel: string | null;
     skipReason: string | null;
     contextWindow: number | null;
   },
@@ -553,6 +557,7 @@ export function taskToApiDto(
     cost: sumCosts(runs.map((run) => parseCost(run.cost))),
     url: resolved.url,
     mapTitle: resolved.mapTitle,
+    trackerLabel: resolved.trackerLabel,
     branch: runs.at(-1)?.branch ?? null,
     stat: runs.at(-1)?.stat ?? null,
     runStartedAt: running?.startedAt ?? null,
