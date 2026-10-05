@@ -2430,6 +2430,17 @@
             ],
             "example": "Wayfinder"
           },
+          "trackerLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "GitHub"
+          },
           "branch": {
             "anyOf": [
               {
@@ -2598,6 +2609,7 @@
           "cost",
           "url",
           "mapTitle",
+          "trackerLabel",
           "branch",
           "stat",
           "runStartedAt",
@@ -2952,6 +2964,17 @@
             ],
             "example": "Wayfinder"
           },
+          "trackerLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "GitHub"
+          },
           "branch": {
             "anyOf": [
               {
@@ -3119,6 +3142,7 @@
           "cost",
           "url",
           "mapTitle",
+          "trackerLabel",
           "branch",
           "stat",
           "runStartedAt",
@@ -3458,6 +3482,17 @@
             ],
             "example": "Wayfinder"
           },
+          "trackerLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "GitHub"
+          },
           "branch": {
             "anyOf": [
               {
@@ -3627,6 +3662,7 @@
           "cost",
           "url",
           "mapTitle",
+          "trackerLabel",
           "branch",
           "stat",
           "runStartedAt",
@@ -11092,6 +11128,17 @@
             ],
             "example": "Wayfinder"
           },
+          "trackerLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "GitHub"
+          },
           "branch": {
             "anyOf": [
               {
@@ -11260,6 +11307,7 @@
           "cost",
           "url",
           "mapTitle",
+          "trackerLabel",
           "branch",
           "stat",
           "runStartedAt",
@@ -11616,6 +11664,17 @@
             ],
             "example": "Wayfinder"
           },
+          "trackerLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "GitHub"
+          },
           "branch": {
             "anyOf": [
               {
@@ -11783,6 +11842,7 @@
           "cost",
           "url",
           "mapTitle",
+          "trackerLabel",
           "branch",
           "stat",
           "runStartedAt",
@@ -12124,6 +12184,17 @@
             ],
             "example": "Wayfinder"
           },
+          "trackerLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "GitHub"
+          },
           "branch": {
             "anyOf": [
               {
@@ -12293,6 +12364,7 @@
           "cost",
           "url",
           "mapTitle",
+          "trackerLabel",
           "branch",
           "stat",
           "runStartedAt",

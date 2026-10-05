@@ -36,6 +36,7 @@ const task = (id: number, state: TaskState = 'ready', extra: Partial<Task> = {})
   mapRef: null,
   url: null,
   mapTitle: null,
+  trackerLabel: null,
   branch: null,
   stat: null,
   runStartedAt: null,

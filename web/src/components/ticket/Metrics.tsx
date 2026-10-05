@@ -116,6 +116,21 @@ export function Properties({ task, allTasks, workspaceName }: { task: Task; allT
         <DependsOn task={task} allTasks={allTasks} />
       </Fact>
       <Fact label="Created">{created}</Fact>
+      {task.origin === 'mirrored' && task.trackerLabel && (
+        <Fact label="Tracker">
+          {task.url ? (
+            <a href={task.url} target="_blank" rel="noopener noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-accent">
+              {task.trackerLabel}
+              {task.trackerRef ? ` #${task.trackerRef}` : ''}
+            </a>
+          ) : (
+            <>
+              {task.trackerLabel}
+              {task.trackerRef ? <span className="font-data text-muted"> #{task.trackerRef}</span> : null}
+            </>
+          )}
+        </Fact>
+      )}
     </dl>
   );
 }

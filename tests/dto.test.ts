@@ -370,6 +370,7 @@ describe('taskToApiDto', () => {
     hasCandidate: true,
     url: 'https://tracker.example/issues/1',
     mapTitle: 'Some Map',
+    trackerLabel: 'GitHub',
     skipReason: 'capacity',
     contextWindow: 200_000,
   };
@@ -385,6 +386,7 @@ describe('taskToApiDto', () => {
     const dto = taskToApiDto(taskWithDeps(), [], resolved);
     expect(dto.url).toBe(resolved.url);
     expect(dto.mapTitle).toBe(resolved.mapTitle);
+    expect(dto.trackerLabel).toBe(resolved.trackerLabel);
     expect(dto.skipReason).toBe(resolved.skipReason);
     expect(dto.contextWindow).toBe(resolved.contextWindow);
     expect(dto.toolCount).toBe(resolved.toolCount);

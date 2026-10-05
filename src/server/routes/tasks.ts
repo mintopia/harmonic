@@ -196,6 +196,8 @@ const taskSchema = taskWithDepsSchema
     url: z.string().nullable().meta({ example: 'https://github.com/mintopia/harmonic/issues/35' }),
     /** The parent Map's title (resolved from mapRef, last poll); null when unmapped or before a poll. */
     mapTitle: z.string().nullable().meta({ example: 'Wayfinder' }),
+    /** The display name of the tracker a mirrored Task came from; null on native Tasks or an unresolved tracker. */
+    trackerLabel: z.string().nullable().meta({ example: 'GitHub' }),
     /** The latest Attempt's branch (worktree mode only); null in direct mode or before any Attempt. */
     branch: z.string().nullable().meta({ example: 'agent/4821-rate-limiting' }),
     /** The latest Attempt's `git diff --numstat` (additions⇥deletions⇥path per line),

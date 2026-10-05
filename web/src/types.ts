@@ -620,6 +620,8 @@ export interface Task {
   url: string | null;
   /** The parent Map's title, resolved from mapRef; null when unmapped or before a poll. */
   mapTitle: string | null;
+  /** The display name of the tracker a mirrored Task came from; null on native Tasks or an unresolved tracker. */
+  trackerLabel: string | null;
   /** The latest run's branch (worktree mode only); null in direct mode or before any run. */
   branch: string | null;
   /** The latest run's `git diff --stat`, snapshotted at merging; null until then or in direct mode. */
