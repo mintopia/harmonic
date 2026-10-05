@@ -2,7 +2,7 @@
 
 A web application running inside a Coder workspace that executes autonomous
 agent Tasks by driving agent Harnesses (Claude, Codex, Copilot) over ACP.
-See `CONTEXT.md` for the domain glossary.
+See `GLOSSARY.md` for the domain glossary.
 
 ## House rules
 
@@ -78,7 +78,7 @@ Default vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, 
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Single-context: `GLOSSARY.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
 The ADR-0001 implementation epic is complete. `docs/adr/README.md` indexes
 current decisions and their amendments; later ADRs take precedence only for
