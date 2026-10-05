@@ -8,6 +8,7 @@ import { firstPatternError, normalizeWorkspaceExport } from '../archive-export-m
 import { SettingsForm } from './SettingsForm';
 import type { AppConfig } from '../types';
 import type { WorkspaceRenderCtx } from './settings-schema';
+import { PROMPT_FRAGMENT_OVERRIDE_KEYS } from '../../../src/domain/prompt-fragments.js';
 import { workspaceTabs, type SettingTab } from '../../../src/domain/settings-registry.js';
 
 /**
@@ -115,7 +116,7 @@ export function WorkspaceSettingsPage({
         driveMergeFate: w.driveMergeFate,
         driveContinueAttempts: w.driveContinueAttempts,
         taskPrompt: w.taskPrompt,
-        promptFragmentReadOnlyRestraint: w.promptFragmentReadOnlyRestraint,
+        ...Object.fromEntries(PROMPT_FRAGMENT_OVERRIDE_KEYS.map((key) => [key, w[key]])),
         excludedDirectories: w.excludedDirectories,
       });
       setPristine(updated);

@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { card, field, labelType } from '../ui';
+import { PROMPT_FRAGMENTS, PROMPT_FRAGMENT_NAMES, promptFragmentOverrideKey } from '../../../src/domain/prompt-fragments.js';
 import type { LabeledPreview, Placeholder } from '../prompt-preview-model';
 
 export function SettingsSection({
@@ -249,12 +250,16 @@ const FIELD_SEGMENT_LABELS: Record<string, string> = {
   continuePrompt: 'Continue prompt',
   taskPrompt: 'Task prompt',
   pauseMessage: 'Pause message',
-  readOnlyRestraint: 'Read-only restraint',
   criticRevisionDiff: 'Critic revision block',
   criticRevisionIdentical: 'Critic revision block (no change)',
   criticRevisionAlone: 'Critic revision block (no base)',
   criticVerdictContract: 'Critic verdict contract',
-  promptFragmentReadOnlyRestraint: 'Read-only restraint',
+  ...Object.fromEntries(
+    PROMPT_FRAGMENT_NAMES.flatMap((name) => [
+      [name, PROMPT_FRAGMENTS[name].label],
+      [promptFragmentOverrideKey(name), PROMPT_FRAGMENTS[name].label],
+    ]),
+  ),
 };
 
 function humanizeSegment(seg: string): string {

@@ -1,6 +1,7 @@
 /* eslint-disable */
 import { parse } from 'yaml';
 import baselineYaml from '../../../src/baseline.yaml?raw';
+import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../../../src/domain/prompt-fragments.js';
 import type {
   TaskExportStatus,
   AppConfig,
@@ -105,7 +106,7 @@ const workspace = {
   driveMergeFate: null,
   driveContinueAttempts: null,
   taskPrompt: null,
-  promptFragmentReadOnlyRestraint: null,
+  ...NO_PROMPT_FRAGMENT_OVERRIDES,
   createdAt: T0 - 30 * 24 * 3600_000,
   updatedAt: T0,
 } satisfies Workspace;

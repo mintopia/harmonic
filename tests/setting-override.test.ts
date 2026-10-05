@@ -295,6 +295,6 @@ describe('Prompt Fragments', () => {
   });
 
   it('rejects an empty fragment at boot', () => {
-    expect(() => appConfigSchema.shape.promptFragments.parse({ readOnlyRestraint: '' })).toThrow();
+    expect(() => appConfigSchema.shape.promptFragments.parse({ ...DEFAULT_PROMPT_FRAGMENTS, readOnlyRestraint: '' })).toThrow();
   });
 });

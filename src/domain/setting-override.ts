@@ -12,6 +12,12 @@ import {
   type BudgetGuardrail,
   type MergeFate,
 } from '../config.js';
+import {
+  PROMPT_FRAGMENT_NAMES,
+  promptFragmentOverrideKey,
+  type PromptFragmentOverrides,
+  type PromptFragments,
+} from './prompt-fragments.js';
 import { isOverridable, type SettingKey } from './settings-registry.js';
 
 /**
@@ -225,15 +231,16 @@ export function resolvePauseMessage(
 
 /** Resolve the Prompt Fragments a Workspace's prompts reference, each `workspace ?? global`. */
 export function resolvePromptFragments(
-  ws: Pick<WorkspaceRow, 'promptFragmentReadOnlyRestraint'> | null | undefined,
+  ws: Partial<PromptFragmentOverrides> | null | undefined,
   config: Pick<AppConfig, 'promptFragments'>,
 ): AppConfig['promptFragments'] {
   return {
     ...config.promptFragments,
-    readOnlyRestraint: resolveScoped(
-      'promptFragmentReadOnlyRestraint',
-      ws?.promptFragmentReadOnlyRestraint,
-      config.promptFragments.readOnlyRestraint,
-    ),
+    ...(Object.fromEntries(
+      PROMPT_FRAGMENT_NAMES.map((name) => {
+        const key = promptFragmentOverrideKey(name);
+        return [name, resolveScoped(key, ws?.[key], config.promptFragments[name])];
+      }),
+    ) as PromptFragments),
   };
 }

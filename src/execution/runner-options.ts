@@ -1,5 +1,6 @@
 import type { TrackerRef } from '../tracker/adapter.js';
 import type { TaskArchive } from '../archive/task-archive.js';
+import type { PromptFragmentOverrideKey } from '../domain/prompt-fragments.js';
 import type { AgentMessageStore } from '../domain/agent-messages.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { TailerCadence } from './live-usage-tailer.js';
@@ -88,7 +89,7 @@ export interface RunnerOptions {
         | 'contextReuseTokenLimit'
         | 'taskPrompt'
         | 'pauseMessage'
-        | 'promptFragmentReadOnlyRestraint'
+        | PromptFragmentOverrideKey
         | 'agentMessagesEnabled'
       > &
         Partial<Pick<WorkspaceRow, 'workingDir'>>)

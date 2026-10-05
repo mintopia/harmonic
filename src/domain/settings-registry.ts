@@ -1,3 +1,5 @@
+import { PROMPT_FRAGMENT_NAMES, PROMPT_FRAGMENTS, promptFragmentOverrideKey, type PromptFragmentOverrideKey } from './prompt-fragments.js';
+
 /** Whether a setting can be overridden per Workspace, or is instance-wide only. */
 export type SettingScope = 'global-only' | 'overridable';
 
@@ -14,6 +16,19 @@ export interface SettingSpec {
   readonly label: string;
   readonly help: string;
 }
+
+const promptFragmentSettings = Object.fromEntries(
+  PROMPT_FRAGMENT_NAMES.map((name) => [
+    promptFragmentOverrideKey(name),
+    {
+      scope: 'overridable',
+      control: 'text',
+      tab: 'prompts',
+      label: PROMPT_FRAGMENTS[name].label,
+      help: `${PROMPT_FRAGMENTS[name].help} Inherits the global fragment when unset.`,
+    },
+  ]),
+) as Record<PromptFragmentOverrideKey, SettingSpec & { readonly scope: 'overridable' }>;
 
 export const settingsRegistry = {
   harness: {
@@ -219,13 +234,7 @@ export const settingsRegistry = {
     label: 'Pause message',
     help: 'Message injected before a running Task pauses; inherits the global message unless overridden.',
   },
-  promptFragmentReadOnlyRestraint: {
-    scope: 'overridable',
-    control: 'text',
-    tab: 'prompts',
-    label: 'Read-only restraint',
-    help: 'Shared Prompt Fragment telling a read-only agent not to mutate anything; referenced from prompts as {fragment.readOnlyRestraint}. Inherits the global fragment when unset.',
-  },
+  ...promptFragmentSettings,
   exportEnabled: {
     scope: 'overridable',
     control: 'toggle',

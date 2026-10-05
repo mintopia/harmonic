@@ -1,4 +1,5 @@
 import type { TrackerRef } from './types.js';
+import type { PromptFragmentOverrides } from '../../src/domain/prompt-fragments.js';
 import type {
   Attempt,
   ActivityProcess,
@@ -272,8 +273,7 @@ export const api = {
       driveMergeFate?: 'auto-merge' | 'open-PR' | 'artifact' | null;
       driveContinueAttempts?: number | null;
       taskPrompt?: string | null;
-      promptFragmentReadOnlyRestraint?: string | null;
-    },
+    } & Partial<PromptFragmentOverrides>,
   ) => request<Workspace>('PATCH', `/api/workspaces/${id}`, patch),
   // Deletes the Workspace and cascades its board; the server 204s (empty body,
   // handled by request's 204 branch). Deleting the last Workspace is allowed

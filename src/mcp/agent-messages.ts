@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { AgentMessageRecipient, TaskRow, TaskState } from '../db/schema.js';
 import { resolveAgentMessages } from '../domain/agent-messages.js';
 import { DomainError } from '../domain/errors.js';
+import { resolvePromptFragments } from '../domain/setting-override.js';
 import { deliverAgentMessage } from '../execution/agent-message-delivery.js';
 import type { AppContext } from '../server/app.js';
 import type { McpCaller } from './caller.js';
@@ -88,7 +89,11 @@ export function registerAgentMessageTools(server: McpServer, ctx: AppContext, ca
       );
       if (created.kind === 'capped') throw new DomainError('forbidden', `send cap of ${sendCap} messages per Attempt reached`);
       const { row, sent } = created;
-      const receipts = await deliverAgentMessage({ store: ctx.agentMessages, runner: ctx.runner }, row, task);
+      const receipts = await deliverAgentMessage(
+        { store: ctx.agentMessages, runner: ctx.runner, fragments: resolvePromptFragments(workspace, ctx.settingsStore.getGlobal()) },
+        row,
+        task,
+      );
       return { messageId: row.id, threadId: row.threadId, recipients: receipts, sendsRemaining: sendCap - sent };
     }),
   );

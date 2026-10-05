@@ -1,3 +1,4 @@
+import type { PromptFragmentName, PromptFragments } from '../domain/prompt-fragments.js';
 import type { TrackerRef } from '../tracker/adapter.js';
 /** The interpolation tokens a Drive-style prompt fills. `taskId`/`title`/
  * `description` are always populated — a native (non-mirrored) Task has no
@@ -34,13 +35,18 @@ export function expandFragments(template: string, fragments: Record<string, stri
   );
 }
 
+/** Render one Prompt Fragment: fragment references expand first, then the runtime fields fill in a single pass so their values are never re-expanded. */
+export function renderFragment(name: PromptFragmentName, fragments: PromptFragments, fields: Record<string, string | number> = {}): string {
+  return fillTemplate(expandFragments(fragments[name], fragments), fields);
+}
+
 /**
  * Guidance appended to an agent turn whose worktree Harmonic has indexed as its
  * own jCodeMunch repo. Empty id ⇒ nothing rendered.
  */
-export function codeIndexRepoGuidance(repoId: string): string {
+export function codeIndexRepoGuidance(repoId: string, fragments: PromptFragments): string {
   if (!repoId) return '';
-  return `\n\nCODE INDEX: this worktree is indexed as jCodeMunch repo \`${repoId}\`. If you use a code-index / jCodeMunch tool, pass \`${repoId}\` as the repo for every query. Do NOT resolve the repo by \`.\` or index path — that points at a different checkout of this repository, on another branch, WITHOUT the changes in this worktree, so it would show you stale code.`;
+  return `\n\n${renderFragment('codeIndexGuidance', fragments, { repoId })}`;
 }
 
 /** Map-Epic child→`wayfinder`; research→`research`; everything else→`implement`. */

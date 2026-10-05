@@ -6,6 +6,8 @@ import {
   type WorkspaceRenderCtx,
   type Surface,
 } from '../web/src/components/settings-schema.js';
+import { blankPromptFragments } from './prompt-fragment-fixtures.js';
+import { NO_PROMPT_FRAGMENT_OVERRIDES, PROMPT_FRAGMENT_NAMES } from '../src/domain/prompt-fragments.js';
 import type { AppConfig, Workspace } from '../web/src/types.js';
 
 function makeConfig(): AppConfig {
@@ -25,7 +27,7 @@ function makeConfig(): AppConfig {
     contextReuseTokenLimit: 100_000,
     editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
-    promptFragments: { readOnlyRestraint: '', criticRevisionIdentical: '', criticRevisionDiff: '', criticRevisionAlone: '', criticVerdictContract: '' },
+    promptFragments: blankPromptFragments(),
     archive: { retain: { days: null, maxTotalMB: null } },
     export: {
       enabled: false,
@@ -92,7 +94,7 @@ function makeWorkspace(): Workspace {
     driveMergeFate: null,
     driveContinueAttempts: null,
     taskPrompt: null,
-    promptFragmentReadOnlyRestraint: null,
+    ...NO_PROMPT_FRAGMENT_OVERRIDES,
     createdAt: 0,
     updatedAt: 0,
   };
@@ -174,5 +176,23 @@ describe('Settings schema field ids are unique (issue #472)', () => {
     const section = SETTINGS_SCHEMA.find((s) => s.title === 'Prompt fragments');
     expect(section?.tab).toBe('prompts');
     expect(section?.surfaces).toEqual(expect.arrayContaining(['global', 'workspace']));
+  });
+
+  it('renders an editable field for every Prompt Fragment on both surfaces', () => {
+    const section = SETTINGS_SCHEMA.find((s) => s.title === 'Prompt fragments')!;
+    const config = makeConfig();
+    const workspace = makeWorkspace();
+    const globalCtx: GlobalRenderCtx = {
+      surface: 'global', config, baseline: config, setConfig: () => {}, errors: {}, harnessPermissionModes: {},
+      channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
+    };
+    const workspaceCtx: WorkspaceRenderCtx = {
+      surface: 'workspace', config, workspace, pristineWorkspace: workspace, setWorkspace: () => {}, errors: {},
+      blockedByRunningTask: false, onRequestDelete: () => {},
+    };
+    for (const ctx of [globalCtx, workspaceCtx]) {
+      const fields = (renderSection(section, ctx).body as { props: { children: { key: string }[] } }).props.children;
+      expect(fields.map((f) => f.key)).toEqual(PROMPT_FRAGMENT_NAMES.map((name) => `fragment-${name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`));
+    }
   });
 });

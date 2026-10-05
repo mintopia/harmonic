@@ -1,4 +1,5 @@
 import type { TrackerResolveFailureCode } from '../../src/tracker/adapter.js';
+import type { CriticFragments, PromptFragmentOverrides, PromptFragments } from '../../src/domain/prompt-fragments.js';
 import type { Verdict } from '../../src/verification/critic-schema.js';
 
 /** The stored Ticket states; blocked-ness and agent-workability are derived, never stored. */
@@ -387,7 +388,7 @@ export type VerifyResult = { ok: true; identity: string } | { ok: false; reason:
 export type TrackerSource = 'configured' | 'detected' | 'code-repository';
 
 /** A Workspace: a named Working Directory, unique by absolute path. */
-export interface Workspace {
+export interface Workspace extends PromptFragmentOverrides {
   id: number;
   name: string;
   workingDir: string;
@@ -455,8 +456,6 @@ export interface Workspace {
   driveContinueAttempts: number | null;
   /** Task Prompt override; `null` inherits `config.taskPrompt`. */
   taskPrompt: string | null;
-  /** Read-only restraint Prompt Fragment override; `null` inherits `config.promptFragments.readOnlyRestraint`. */
-  promptFragmentReadOnlyRestraint: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -1175,13 +1174,7 @@ export interface AppConfig {
   /** The Task Prompt template for native Attempts, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
   taskPrompt: string;
   /** Shared Prompt Fragments, referenced from prompts as `{fragment.<name>}`. */
-  promptFragments: {
-    readOnlyRestraint: string;
-    criticRevisionIdentical: string;
-    criticRevisionDiff: string;
-    criticRevisionAlone: string;
-    criticVerdictContract: string;
-  };
+  promptFragments: PromptFragments & CriticFragments;
   archive: { retain: { days: number | null; maxTotalMB: number | null } };
   /** S3 credentials arrive masked (`********`) when set; writing the mask back keeps the stored value. */
   export: {

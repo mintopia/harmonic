@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { TrackingContext } from '../app.js';
 import type { WorkspaceRow } from '../../db/schema.js';
 import type { ResolvedTracker } from '../../tracker/adapter.js';
+import { PROMPT_FRAGMENT_OVERRIDE_KEYS, type PromptFragmentOverrideKey } from '../../domain/prompt-fragments.js';
 import { createWorkspaceInputSchema, updateWorkspaceInputSchema, codeRepositorySchema } from '../../domain/workspaces.js';
 import { configuredTrackerSchema } from '../../tracker/configured.js';
 import { triageLabelsOverrideSchema } from '../../tracker/triage-labels.js';
@@ -37,6 +38,10 @@ const resolvedTrackerSchema = z
   })
   .nullable()
   .meta({ description: 'The tracker this Workspace resolved (issue #83), or null when tracking is off.' });
+
+const promptFragmentOverrideResponseShape = Object.fromEntries(
+  PROMPT_FRAGMENT_OVERRIDE_KEYS.map((key) => [key, z.string().nullable().meta({ example: null })]),
+) as Record<PromptFragmentOverrideKey, z.ZodNullable<z.ZodString>>;
 
 /** A Workspace as the API serves it: the `WorkspaceRow` plus its `resolvedTracker`. */
 const workspaceSchema = z
@@ -85,8 +90,7 @@ const workspaceSchema = z
     driveContinueAttempts: z.number().nullable().meta({ example: null }),
     /** Task Prompt override; null inherits `config.taskPrompt`. */
     taskPrompt: z.string().nullable().meta({ example: null }),
-    /** Read-only restraint Prompt Fragment override; null inherits `config.promptFragments.readOnlyRestraint`. */
-    promptFragmentReadOnlyRestraint: z.string().nullable().meta({ example: null }),
+    ...promptFragmentOverrideResponseShape,
     exportEnabled: z.boolean().nullable().meta({ example: null }),
     exportDirectoryPath: z.string().nullable().meta({ example: null }),
     exportS3Endpoint: z.string().nullable().meta({ example: null }),
