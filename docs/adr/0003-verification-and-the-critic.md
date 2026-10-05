@@ -19,6 +19,12 @@ the whole-Epic-verify-without-resolve clause are replaced by staged Verification
 The in-place doctrine and verdict-attaches-to-Attempt rule below stand and
 extend to every stage.
 
+Amended by ADR-0047 (2026-10-05): the appended read-only restraint and the
+appended JSON verdict contract are now operator-editable Prompt Fragments, not
+Harmonic-owned literals. The verdict-attaches-to-Attempt rule and the
+malformed-output-is-`inconclusive` backstop below stand — the latter is what
+keeps the now-editable contract safe.
+
 ## The Verification gate
 
 Verification runs at the stages defined by ADR-0028:

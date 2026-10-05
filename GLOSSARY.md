@@ -753,6 +753,25 @@ no-issue variant never fires. Both bodies are editable with a live per-variant
 preview. Replaces the single Review (ADR-0028).
 _Avoid_: review, reviewer Task (the single-critic name, superseded)
 
+**Resolved Prompt**:
+The final text actually sent to a Session for one prompt turn — an operator
+template with its tokens filled and every Harmonic-appended Prompt Fragment
+concatenated. It is exactly what the transcript renders and the Archive keeps,
+and it is immutable once sent: editing the configured prompt changes only later
+turns (the settings "compiled preview" is the same assembly shown against sample
+tokens, not a record of what was sent).
+_Avoid_: compiled prompt (that is the settings preview), assembled prompt,
+final prompt
+
+**Prompt Fragment**:
+A named, individually-editable piece that composes into a Resolved Prompt — e.g.
+the critic's revision block, the read-only restraint, or the JSON verdict
+contract. Each is a setting (baseline default plus per-Workspace override,
+ADR-0022); a Fragment shared across prompts (the restraint) is defined once and
+reused rather than copied. Structural glue — ordering and whitespace — stays in
+code and is not a Fragment.
+_Avoid_: prompt piece, prompt section, snippet, segment
+
 **Continuation rule**:
 The deterministic choice at Attempt N+1: continue the prior Session (feedback
 appended) when its context usage is below the configured token limit and
@@ -954,7 +973,10 @@ uncapped output of every verify command, every prompt sent to any Session, and
 every operator input. Lives as files in the data directory, **never in the
 DB**, so it survives a database recreate and a Harness pruning its own logs.
 Kept raw (unredacted); it **outlives the Task** — Delete leaves it in place —
-and is removed only by the configured retention cap.
+and is removed only by the configured retention cap. By the **visibility rule**,
+anything Harmonic sends or runs is here and surfaceable in the transcript views:
+a Resolved Prompt, transcript, or command output that reached a Session but is
+absent from both is a bug — if it isn't here, it didn't happen (ADR-0047).
 _Avoid_: log, record, history, audit log
 
 **Export**:
