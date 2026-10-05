@@ -411,7 +411,6 @@ describe('task list parent filter — Epic children (ADR-0011, #411)', () => {
     parent: trackerRef(parentNum),
     blockedBy: [],
     blocking: [],
-    comments: [],
     isMap: false,
     url: `https://github.com/mintopia/harmonic/issues/${num}`,
   });

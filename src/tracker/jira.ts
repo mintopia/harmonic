@@ -73,9 +73,6 @@ const transitionsSchema = z.object({ transitions: z.array(transitionSchema).opti
 const statusOnlySchema = z.object({ fields: z.object({ status: statusSchema }) });
 const assigneeOnlySchema = z.object({ fields: z.object({ assignee: userSchema.nullish() }) });
 const searchSchema = z.object({ issues: z.array(issueSchema), total: z.number().optional(), nextPageToken: z.string().nullish() });
-const commentsSchema = z.object({
-  comments: z.array(z.object({ author: userSchema.optional(), body: z.string(), created: z.string() })).optional(),
-});
 
 type RawStatus = z.infer<typeof statusSchema>;
 type RawUser = z.infer<typeof userSchema>;
@@ -172,7 +169,6 @@ export function jiraAdapter(config: JiraConfig, client: RestClient, triageLabels
       parent: parent === null || parent === raw.key ? null : trackerRef(parent),
       blockedBy,
       blocking,
-      comments: [],
     };
   };
 
@@ -270,13 +266,7 @@ export function jiraAdapter(config: JiraConfig, client: RestClient, triageLabels
 
     async readTicket(ref: TicketRef) {
       const raw = await client.request('GET', `/issue/${ref.ref}?fields=${FIELDS}`, issueSchema);
-      const res = await client.request('GET', `/issue/${ref.ref}/comment`, commentsSchema);
-      return {
-        ...normalise(raw, new Map()),
-        comments: (res.comments ?? [])
-          .filter((c) => c.body)
-          .map((c) => ({ author: c.author?.displayName ?? c.author?.name ?? '', body: c.body, createdAt: c.created })),
-      };
+      return normalise(raw, new Map());
     },
 
     async claim(ticket: TicketRef) {

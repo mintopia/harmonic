@@ -23,7 +23,6 @@ const ticket = (number: number, assignees: string[] = []): Ticket => ({
   parent: null,
   blockedBy: [],
   blocking: [],
-  comments: [],
   isMap: false,
   url: `https://x/${number}`,
 });

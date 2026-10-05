@@ -157,7 +157,6 @@ const ticket = (over: Partial<Ticket> = {}): Ticket => ({
   closedAt: null,
   assignees: [],
   blocking: [],
-  comments: [],
   isMap: false,
   url: 'https://tracker.example/issues/100',
   ...over,

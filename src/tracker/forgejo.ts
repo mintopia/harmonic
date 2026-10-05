@@ -70,12 +70,6 @@ const containerSchema = z.object({
 });
 type RawContainer = z.infer<typeof containerSchema>;
 
-const commentSchema = z.object({
-  body: z.string(),
-  created_at: z.string(),
-  user: z.object({ login: z.string() }).nullish(),
-});
-
 const userSchema = z.object({ login: z.string() });
 
 const state = (s: string): TicketState => (s === 'closed' ? 'closed' : 'open');
@@ -116,7 +110,6 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
       closedAt: raw.closed_at ?? null,
       labels,
       assignees: (raw.assignees ?? []).map((a) => a.login),
-      comments: [],
       isMap: labels.includes(MAP_LABEL),
       url: raw.html_url,
     };
@@ -217,7 +210,6 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
         closedAt: null,
         labels: [EPIC_LABEL],
         assignees: [],
-        comments: [],
         isMap: false,
         url: c.raw.html_url ?? '',
         parent: null,
@@ -276,10 +268,9 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
       const self = trackerRef(raw.number);
       const open = raw.state !== 'closed';
       const toRef = (d: RawIssue): TicketRef => ({ ref: trackerRef(d.number), title: d.title, state: state(d.state) });
-      const [nativeBlockers, nativeBlocking, notes, parent] = await Promise.all([
+      const [nativeBlockers, nativeBlocking, parent] = await Promise.all([
         open ? nativeBlockedBy(raw.number) : [],
         open ? nativeBlocks(raw.number) : [],
-        client.paginate(`${repo}/issues/${raw.number}/comments`, PAGE_SIZE, commentSchema),
         parentOfIssue(raw),
       ]);
       const seen = new Set<TrackerRef>([self, ...nativeBlockers.map((d) => trackerRef(d.number))]);
@@ -297,7 +288,6 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
         parent,
         blockedBy: [...nativeBlockers.map(toRef), ...fromBody],
         blocking: nativeBlocking.map(toRef),
-        comments: notes.map((n) => ({ author: n.user?.login ?? '', body: n.body, createdAt: n.created_at })),
       };
     },
 

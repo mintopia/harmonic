@@ -10,7 +10,6 @@ const raw = (over: Record<string, unknown>) => ({
   closedAt: null,
   labels: [],
   assignees: [],
-  comments: [],
   parent: null,
   blockedBy: null,
   blocking: null,

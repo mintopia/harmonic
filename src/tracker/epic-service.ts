@@ -419,5 +419,5 @@ export class TrackerEpicService implements EpicService {
 }
 
 function historicalEpicTicket(epic: DerivedEpic): Ticket {
-  return { ref: epic.ref, title: epic.title, state: 'closed', labels: [], parent: null, blockedBy: [], body: '', createdAt: '', closedAt: null, assignees: [], blocking: [], comments: [], isMap: false, url: '' };
+  return { ref: epic.ref, title: epic.title, state: 'closed', labels: [], parent: null, blockedBy: [], body: '', createdAt: '', closedAt: null, assignees: [], blocking: [], isMap: false, url: '' };
 }

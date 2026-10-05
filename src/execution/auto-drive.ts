@@ -182,7 +182,8 @@ export class AutoDrive {
       const { title } = splitTitleBody(task.prompt);
       const ref = { ref: task.trackerRef, title, state: 'open' as const };
       // Closing an already-closed issue errors on some trackers (`gh issue close`).
-      if ((await adapter.readTicket(ref)).state === 'closed') return { ok: true };
+      const current = adapter.readState ? await adapter.readState(ref) : (await adapter.readTicket(ref)).state;
+      if (current === 'closed') return { ok: true };
       let commit: { oid: string; paths: string[] } | null = null;
       if (adapter.persistsInWorkingTree) {
         commit = await this.commitLifecycleWrite(task, ref, () => adapter.close!(ref, comment), comment);
