@@ -493,20 +493,20 @@ describe('epic-routes', () => {
           expect(res.status).toBe(403);
         });
 
-        it('denies a read-scoped key on GET /api/workspaces/:id/epics (operator required, not just read)', async () => {
+        it('lets a read-scoped key GET /api/workspaces/:id/epics', async () => {
           const { body } = await server.api('POST', '/api/keys', { name: 'viz', scope: 'read' });
           const res = await fetch(`${server.baseUrl}/api/workspaces/${(await defaultWorkspaceId())}/epics`, {
             headers: { authorization: `Bearer ${body.token}` },
           });
-          expect(res.status).toBe(403);
+          expect(res.status).toBe(200);
         });
 
-        it('denies a read-scoped key on GET /api/workspaces/:id/epics/:ref (operator required, not just read)', async () => {
+        it('lets a read-scoped key past the gate on GET /api/workspaces/:id/epics/:ref', async () => {
           const { body } = await server.api('POST', '/api/keys', { name: 'viz', scope: 'read' });
           const res = await fetch(`${server.baseUrl}/api/workspaces/${(await defaultWorkspaceId())}/epics/42`, {
             headers: { authorization: `Bearer ${body.token}` },
           });
-          expect(res.status).toBe(403);
+          expect(res.status).not.toBe(403);
         });
       });
     });

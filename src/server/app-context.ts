@@ -45,6 +45,8 @@ export interface AppOptions {
   configOverrides?: DeepPartial<AppConfig> | undefined;
   /** Set/update the operator password at boot; an empty string clears it (ungated). Undefined leaves it untouched. */
   password?: string | undefined;
+  /** Origins allowed to call the REST API cross-origin (`*` for any); empty or absent disables CORS. */
+  corsOrigins?: string[] | undefined;
   /** Test-only Runner cadence overrides; absent uses production defaults. */
   runnerTuning?: { spendGuardrail?: { pollMs?: number; graceMs?: number } } | undefined;
   /** Event-loop stall monitor overrides; `enabled: false` turns the probe off. */

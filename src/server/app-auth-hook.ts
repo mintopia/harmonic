@@ -25,7 +25,8 @@ export function scopedKeyAllowed(path: string): boolean {
 export function readScopeAllowed(path: string, method: string): boolean {
   if (method !== 'GET') return false;
   if (path === '/api/ws') return true;
-  if (/^\/api\/workspaces\/[^/]+\/epics(\/[^/]+)?$/.test(path)) return false;
+  if (path === '/api/workspaces') return true;
+  if (/^\/api\/workspaces\/[^/]+\/epics(\/[^/]+)?$/.test(path)) return true;
   if (/^\/api\/tasks\/[^/]+\/channels(\/|$)/.test(path)) return false;
   if (path === '/api/tasks' || path.startsWith('/api/tasks/')) return true;
   if (path.startsWith('/api/attempts')) return true;

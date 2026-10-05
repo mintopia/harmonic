@@ -158,7 +158,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     {
       schema: {
         tags: ['Workspaces'],
-        description: 'List Workspaces. Operator only; not reachable with an attempt-scoped Attempt Key.',
+        description: 'List Workspaces. Readable with a read-scoped key; not reachable with an attempt-scoped Attempt Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         querystring: paginationQuerySchema,
         response: { 200: workspacesListResponseSchema.describe('Every Workspace, oldest first.') },
