@@ -1835,6 +1835,10 @@
             ],
             "example": null
           },
+          "ticketClosePending": {
+            "type": "boolean",
+            "example": false
+          },
           "feedback": {
             "anyOf": [
               {
@@ -2062,6 +2066,7 @@
           "state",
           "escalationReason",
           "mergeStatus",
+          "ticketClosePending",
           "feedback",
           "continuationChoice",
           "origin",
@@ -2172,6 +2177,10 @@
               }
             ],
             "example": null
+          },
+          "ticketClosePending": {
+            "type": "boolean",
+            "example": false
           },
           "feedback": {
             "anyOf": [
@@ -2567,6 +2576,7 @@
           "state",
           "escalationReason",
           "mergeStatus",
+          "ticketClosePending",
           "feedback",
           "continuationChoice",
           "origin",
@@ -2690,6 +2700,10 @@
             ],
             "example": null
           },
+          "ticketClosePending": {
+            "type": "boolean",
+            "example": false
+          },
           "feedback": {
             "anyOf": [
               {
@@ -3083,6 +3097,7 @@
           "state",
           "escalationReason",
           "mergeStatus",
+          "ticketClosePending",
           "feedback",
           "continuationChoice",
           "origin",
@@ -3201,6 +3216,10 @@
               }
             ],
             "example": null
+          },
+          "ticketClosePending": {
+            "type": "boolean",
+            "example": false
           },
           "feedback": {
             "anyOf": [
@@ -3587,6 +3606,7 @@
           "state",
           "escalationReason",
           "mergeStatus",
+          "ticketClosePending",
           "feedback",
           "continuationChoice",
           "origin",
@@ -10474,6 +10494,10 @@
             ],
             "example": null
           },
+          "ticketClosePending": {
+            "type": "boolean",
+            "example": false
+          },
           "feedback": {
             "anyOf": [
               {
@@ -10702,6 +10726,7 @@
           "state",
           "escalationReason",
           "mergeStatus",
+          "ticketClosePending",
           "feedback",
           "continuationChoice",
           "origin",
@@ -10813,6 +10838,10 @@
               }
             ],
             "example": null
+          },
+          "ticketClosePending": {
+            "type": "boolean",
+            "example": false
           },
           "feedback": {
             "anyOf": [
@@ -11209,6 +11238,7 @@
           "state",
           "escalationReason",
           "mergeStatus",
+          "ticketClosePending",
           "feedback",
           "continuationChoice",
           "origin",
@@ -11333,6 +11363,10 @@
             ],
             "example": null
           },
+          "ticketClosePending": {
+            "type": "boolean",
+            "example": false
+          },
           "feedback": {
             "anyOf": [
               {
@@ -11727,6 +11761,7 @@
           "state",
           "escalationReason",
           "mergeStatus",
+          "ticketClosePending",
           "feedback",
           "continuationChoice",
           "origin",
@@ -11846,6 +11881,10 @@
               }
             ],
             "example": null
+          },
+          "ticketClosePending": {
+            "type": "boolean",
+            "example": false
           },
           "feedback": {
             "anyOf": [
@@ -12233,6 +12272,7 @@
           "state",
           "escalationReason",
           "mergeStatus",
+          "ticketClosePending",
           "feedback",
           "continuationChoice",
           "origin",

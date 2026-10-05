@@ -7,6 +7,8 @@ import { logger } from '../logger.js';
 
 const ticketGone = (err: unknown): boolean => /\b404\b|not found/i.test(errorMessage(err));
 
+export type TicketCloser = (task: TaskRow) => Promise<{ ok: true } | { ok: false; error: unknown }>;
+
 /** Owns the advisory tracker assignment for mirrored Tasks; every write is best-effort and idempotent, never a lock. */
 export class MirrorCoordinator {
   private adapter: TrackerAdapter | null = null;
@@ -17,6 +19,7 @@ export class MirrorCoordinator {
   constructor(
     private readonly tasks: TaskService,
     private readonly workspaceId: number,
+    private readonly closeTicket?: TicketCloser,
   ) {}
 
   /** Remember the adapter used for best-effort assignment writes. */
@@ -44,6 +47,12 @@ export class MirrorCoordinator {
     if (!adapter) return;
     let failed = 0;
     await forEachYielding(await this.tasks.list({ workspaceId: this.workspaceId }), async (task) => {
+      if (task.ticketClosePending && task.state === 'done' && this.closeTicket) {
+        const closed = await this.closeTicket(task);
+        if (closed.ok || ticketGone(closed.error)) await this.tasks.setTicketClosePending(task.id, false);
+        else failed++;
+        return;
+      }
       if (task.origin !== 'mirrored' || task.trackerRef == null) return;
       const ticket = ticketRef(task, task.trackerRef);
       if (task.state === 'working') {

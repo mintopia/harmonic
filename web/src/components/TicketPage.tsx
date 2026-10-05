@@ -13,7 +13,7 @@ import { LifecycleTimeline } from './ticket/LifecycleTimeline';
 import { runFailureBannerLabel, runForAttempt } from '../attempt-timeline-model';
 import { contentPanel, defaultSelection, harnessLabel, taskStats, type ContentSelection } from '../task-detail-model';
 import { isAtLiveEdge } from '../follow-tail-model';
-import { labelType, mergeStatusPill } from '../ui';
+import { labelType, mergeStatusPill, statePillShape } from '../ui';
 import { useScrollToPanel } from '../useScrollToPanel';
 import { useTicketAttempts } from './useTicketAttempts';
 import { useAttemptLogStream } from './useAttemptLogStream';
@@ -181,6 +181,14 @@ export function TicketPage({
                 <StatePill state={task.state} />
                 {task.mergeStatus && (
                   <span className={mergeStatusPill(task.mergeStatus)}>{task.mergeStatus.replace(/-/g, ' ')}</span>
+                )}
+                {task.ticketClosePending && (
+                  <span
+                    className={`${statePillShape} bg-await-tint text-await`}
+                    title="The merge succeeded but the tracker ticket could not be closed yet. Harmonic retries each poll."
+                  >
+                    ticket close pending
+                  </span>
                 )}
               </span>
             </div>

@@ -392,12 +392,13 @@ export class TurnCompletion {
     const outcome = noChange
       ? (await this.deps.autoDrive!.closeCompleted(task))
         ? 'completed'
-        : 'escalate'
+        : 'completed-close-pending'
       : await this.deps.autoDrive!.onCompleted(task, await this.deps.attempts.get(run.id));
     if (outcome === 'escalate') {
       record('lifecycle', { event: 'escalated', reason: 'merge fate could not be applied' });
       await this.deps.settleEscalated(task, run, 'merge fate could not be applied', patch);
     } else {
+      if (outcome === 'completed-close-pending') await this.deps.taskService.setTicketClosePending(task.id, true);
       await advanceTask('merging');
       await this.deps.settleAutoCompleted(task, run, { ...patch, ...diff });
     }
