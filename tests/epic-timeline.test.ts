@@ -14,7 +14,7 @@ const TASK_TIMELINE_EVENTS = [
 
 function epic(): Epic {
   return {
-    ref: 701,
+    ref: '701',
     title: 'Timeline',
     kind: 'spec',
     state: 'integrated',
@@ -55,7 +55,7 @@ describe('EpicTimeline', () => {
   });
 
   it('renders the epic events as a task-detail-style chronological timeline', () => {
-    const html = renderToStaticMarkup(createElement(EpicTimeline, { epic: epic() }));
+    const html = renderToStaticMarkup(createElement(EpicTimeline, { epic: epic(), workspaceId: 1 }));
     const taskHtml = renderToStaticMarkup(createElement(LifecycleTimeline, { events: TASK_TIMELINE_EVENTS, following: false, onToggleFollow: () => {} }));
 
     expect(html).toContain('aria-label="Chronological epic timeline"');

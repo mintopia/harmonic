@@ -1,64 +1,80 @@
 import type { TaskArchive } from '../archive/task-archive.js';
 import type { AppConfig } from '../config.js';
-import type { TaskRow, AttemptRow } from '../db/schema.js';
+import type { TaskRow, AttemptRow, WorkspaceRow } from '../db/schema.js';
+import type { AttemptStore } from '../domain/attempts.js';
 import { DomainError } from '../domain/errors.js';
-import { resolveVerifiers } from '../domain/setting-override.js';
+import { resolvePromptFragments, resolveVerifiers } from '../domain/setting-override.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
-import type { WorkspaceService } from '../domain/workspaces.js';
-import { attempted } from '../error-handling.js';
+import type { FireAndForget } from '../error-handling.js';
 import { indexWorktree } from '../execution/code-index.js';
 import { Git } from '../execution/git.js';
 import { driveFields } from '../execution/prompt-template.js';
-import type { SettingsStore } from '../server/settings-store.js';
-import { commandAttemptToInput, runCommandVerifier } from './command-verifier.js';
+import type { TranscriptCapture } from '../execution/transcript-capture.js';
+import type { PostMergeCheckResult } from '../execution/merge-policy.js';
+import { commandAttemptToInput, type CommandSpawn } from './command-verifier.js';
+import { runPostMergeCommands } from './post-merge-commands.js';
+import { NO_PROMPT_FRAGMENT_OVERRIDES, type PromptFragmentOverrideKey } from '../domain/prompt-fragments.js';
 import { criticAttemptToInput, runCritic, type CriticHarnessDrive } from './critic.js';
 
+type VerifierWorkspace = Pick<WorkspaceRow,
+  'taskPreMergeCommands' | 'taskPreMergeCritics' | 'taskPostMergeCommands' | 'taskPostMergeCritics' | 'epicPreMergeCommands' | 'epicPreMergeCritics' | PromptFragmentOverrideKey>;
+
+type PostMergeInput = {
+  task: TaskRow;
+  run: AttemptRow;
+  mergeOid: string;
+  baseDir: string;
+  verificationAttempt?: AttemptRow;
+  signal?: AbortSignal;
+  record?: (type: 'lifecycle', payload: unknown) => void;
+  onUpdate?: Parameters<typeof runCritic>[0]['onUpdate'];
+  urlFor?: (task: TaskRow) => string | null;
+};
+
 export function createPostMergeCheck(deps: {
-  workspaces: WorkspaceService;
-  settingsStore: SettingsStore;
+  getWorkspace: (workspaceId: number | null) => Promise<VerifierWorkspace | undefined>;
+  getConfig: () => AppConfig;
   verificationAttempts: VerificationAttemptStore;
-  criticDrive?: CriticHarnessDrive | undefined;
+  attempts: AttemptStore;
+  criticDrive: CriticHarnessDrive;
+  commandSpawn: CommandSpawn;
+  fireAndForget: FireAndForget;
   archive?: TaskArchive | undefined;
-}): (input: { task: TaskRow; run: AttemptRow; mergeOid: string; baseDir: string }) => Promise<{ pass: boolean; output: string }> {
-  const { workspaces, settingsStore, verificationAttempts, criticDrive, archive: taskArchive } = deps;
+  transcripts: TranscriptCapture;
+}): (input: PostMergeInput) => Promise<PostMergeCheckResult> {
+  const { getWorkspace, getConfig, verificationAttempts, attempts, criticDrive, commandSpawn, fireAndForget, archive: taskArchive, transcripts } = deps;
   return async ({
     task,
     run,
     mergeOid,
     baseDir,
-  }: {
-    task: TaskRow;
-    run: AttemptRow;
-    mergeOid: string;
-    baseDir: string;
+    verificationAttempt = run,
+    signal,
+    record,
+    onUpdate,
+    urlFor = () => null,
   }) => {
-    const workspaceId = task.workspaceId;
-    const resolvedWs =
-      workspaceId == null
-        ? null
-        : await attempted(() => workspaces.get(workspaceId), {
-            op: 'postMerge.resolveWorkspace',
-            level: 'error',
-            context: { taskId: task.id, attemptId: run.id, workspaceId },
-          });
-    const ws = resolvedWs?.ok === true ? resolvedWs.value : undefined;
+    const ws = await getWorkspace(task.workspaceId);
+    const config = getConfig();
     const { task: resolvedTask } = resolveVerifiers(
-      ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null },
-      settingsStore.getGlobal(),
+      ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null, ...NO_PROMPT_FRAGMENT_OVERRIDES },
+      config,
     );
     const { commands, critics } = resolvedTask.postMerge;
-    for (const command of commands) {
-      const outputLogPath = (await taskArchive?.verificationOutputLog(task, run.number, 'post-merge', command.id)) ?? null;
-      const cmdAttempt = await runCommandVerifier({
-        outputLogPath,
-        cwd: baseDir,
-        verifiedHeadOid: mergeOid,
-        command,
-        attributes: { 'task.id': task.id, 'attempt.id': run.id },
-      });
-      await verificationAttempts.append(run.id, commandAttemptToInput(cmdAttempt));
-      if (cmdAttempt.verdict !== 'pass') return { pass: false, output: cmdAttempt.output };
-    }
+    const commandResult = await runPostMergeCommands({
+      commands,
+      cwd: baseDir,
+      mergeOid,
+      commandSpawn,
+      signal,
+      attributes: { 'task.id': task.id, 'attempt.id': run.id },
+      outputLog: async (command) => (await taskArchive?.verificationOutputLog(task, run.number, 'post-merge', command.id)) ?? null,
+      onAttempt: async (cmdAttempt) => {
+        await verificationAttempts.append(verificationAttempt.id, commandAttemptToInput(cmdAttempt));
+        record?.('lifecycle', { event: 'verification', mechanism: 'command', verdict: cmdAttempt.verdict, summary: cmdAttempt.summary });
+      },
+    });
+    if (!commandResult.pass) return commandResult;
     // A merge with no first parent (root commit, or a rewritten history) just means no base-diff context for the critic; the critic falls back to its no-baseOid prompt.
     const baseOid = await Git.revParse(baseDir, `${mergeOid}^1`).catch(() => null);
     if (critics.length > 0) await indexWorktree(baseDir);
@@ -69,22 +85,39 @@ export function createPostMergeCheck(deps: {
         ...(configuredCritic.harness ? { harness: configuredCritic.harness } : {}),
       };
       const harnessId = critic.harness ?? task.harness;
-      const harness = settingsStore.getGlobal().harnesses[harnessId as keyof AppConfig['harnesses']];
+      const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
       if (!harness) throw new DomainError('validation', `critic harness '${harnessId}' is not configured`);
-      const archive = taskArchive?.criticStep(task, run.number, 'post-merge', `critic-${index + 1}`);
+      const stepId = `critic-${index + 1}`;
+      const archive = taskArchive?.criticStep(task, verificationAttempt.number, 'post-merge', stepId);
       const attempt = await runCritic({
         cwd: baseDir,
         verifiedHeadOid: mergeOid,
         ...(baseOid ? { baseOid } : {}),
         critic,
-        fields: driveFields(task, () => null),
+        fragments: resolvePromptFragments(ws, config),
+        timeoutMs: configuredCritic.timeoutSeconds * 1000,
+        fields: driveFields(task, urlFor),
         harness,
         harnessId,
         attributes: { 'task.id': task.id, 'attempt.id': run.id },
-        ...(criticDrive ? { drive: criticDrive } : {}),
+        drive: criticDrive,
         ...(archive ? { archive } : {}),
+        ...(onUpdate ? { onUpdate } : {}),
+        onAgentDurationMs: (ms: number) => attempts.addAgentDuration(run.id, ms),
       });
-      await verificationAttempts.append(run.id, criticAttemptToInput(attempt));
+      const persisted = await verificationAttempts.append(verificationAttempt.id, criticAttemptToInput(attempt));
+      const sessionId = attempt.sessionId;
+      if (sessionId) {
+        if (attempt.transcriptPath === null) {
+          fireAndForget(() => transcripts.captureCriticTranscript({
+            attemptId: persisted.id, sessionId, harnessId, sessionLogDir: harness.sessionLogDir,
+          }), { op: 'postMerge.captureCriticTranscript', level: 'warn', context: { attemptId: persisted.id } });
+        }
+        fireAndForget(() => transcripts.captureCriticUsage({
+          attemptId: persisted.id, sessionId, harnessId, cwd: baseDir,
+        }), { op: 'postMerge.captureCriticUsage', level: 'warn', context: { attemptId: persisted.id } });
+      }
+      record?.('lifecycle', { event: 'verification', mechanism: 'critic', verdict: attempt.verdict, summary: attempt.summary });
       return attempt;
     }));
     const output = criticAttempts

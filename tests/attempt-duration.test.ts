@@ -2,25 +2,25 @@ import { describe, expect, it } from 'vitest';
 import { activeExecutionDurationMs, durationPercentiles, percentile } from '../src/domain/attempt-duration.js';
 
 describe('activeExecutionDurationMs', () => {
-  it('measures agent-finish ts minus run start, excluding review-park + merging wait', () => {
-    expect(activeExecutionDurationMs({ startedAt: 1000, finishedAt: 9000, agentFinishTs: 4000 })).toBe(3000);
+  it('uses the sum of agent turns, excluding pause, verification, and merging', () => {
+    expect(activeExecutionDurationMs({ startedAt: 1000, finishedAt: 9000, agentDurationMs: 3000 })).toBe(3000);
   });
 
-  it('falls back to finished − started when there is no agent-finish fact', () => {
-    expect(activeExecutionDurationMs({ startedAt: 1000, finishedAt: 5000, agentFinishTs: null })).toBe(4000);
+  it('falls back to finished − started for historical rows without timing facts', () => {
+    expect(activeExecutionDurationMs({ startedAt: 1000, finishedAt: 5000, agentDurationMs: null })).toBe(4000);
   });
 
-  it('is null when the run has neither an agent-finish fact nor a finish time', () => {
-    expect(activeExecutionDurationMs({ startedAt: 1000, finishedAt: null, agentFinishTs: null })).toBeNull();
+  it('is null when a historical row has no finish time', () => {
+    expect(activeExecutionDurationMs({ startedAt: 1000, finishedAt: null, agentDurationMs: null })).toBeNull();
+    expect(activeExecutionDurationMs({ startedAt: 1000, finishedAt: null, agentDurationMs: 200 })).toBeNull();
   });
 
   it('is null (never negative) when a timestamp is out of order', () => {
-    expect(activeExecutionDurationMs({ startedAt: 5000, finishedAt: 9000, agentFinishTs: 1000 })).toBeNull();
-    expect(activeExecutionDurationMs({ startedAt: 5000, finishedAt: 1000, agentFinishTs: null })).toBeNull();
+    expect(activeExecutionDurationMs({ startedAt: 5000, finishedAt: 1000, agentDurationMs: null })).toBeNull();
   });
 
-  it('prefers the agent-finish fact even when a finish time is also present', () => {
-    expect(activeExecutionDurationMs({ startedAt: 0, finishedAt: 100, agentFinishTs: 40 })).toBe(40);
+  it('keeps a measured zero instead of using wall time', () => {
+    expect(activeExecutionDurationMs({ startedAt: 0, finishedAt: 100, agentDurationMs: 0 })).toBe(0);
   });
 });
 

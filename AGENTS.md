@@ -2,13 +2,17 @@
 
 A web application running inside a Coder workspace that executes autonomous
 agent Tasks by driving agent Harnesses (Claude, Codex, Copilot) over ACP.
-See `CONTEXT.md` for the domain glossary.
+See `GLOSSARY.md` for the domain glossary.
 
 ## House rules
 
  - Use subagents for tasks.
  - Use multiple subagents in parallel working as a team, with agent messaging
    to co-ordinate.
+ - A subagent whose result runs long writes it to a file under the session
+   scratchpad and sends only a one-line summary plus that path. Never paste full
+   reports, reviews, or findings into an agent message — they flood the lead's
+   context.
  - Subagents must use an appropriate model, defaults:
    - Explore, Coding, Code Reviews: Sonnet / Terra
    - Codebase Mapping: jcodemunch MCP and Sonnet / Terra
@@ -24,6 +28,8 @@ See `CONTEXT.md` for the domain glossary.
 
 While editing, run the relevant test file with `npx vitest run <file>`.
 Before the final test run, run `npm run typecheck` and `npm run lint`.
+If you changed a route or its zod schema, run `npm run docs:openapi` and commit
+the regenerated `website/src/openapi.json` — CI fails if the snapshot drifts.
 Run `npm test` once when the work is complete. It starts ACP harnesses and
 covers shared-lock integration cases, so it is slower than a focused test.
 
@@ -72,30 +78,22 @@ Default vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, 
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Single-context: `GLOSSARY.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
-The ADR set was **reset on 2026-08-28** to 12 definitive target-state ADRs
-(`docs/adr/README.md` has the old→new mapping; the pre-reset set lives at git
-tag `adr-reset-2026-08-28`). Until the ADR-0001 implementation epic ships,
-code, comments, migrations, and historical docs still cite pre-reset ADR
-numbers and vocabulary (Run, phases, candidate refs, leases): treat those as
-**legacy references into the archived set**, never as the current decision —
-where code and the ADRs disagree, the ADRs win.
+The ADR-0001 implementation epic is complete. `docs/adr/README.md` indexes
+current decisions and their amendments; later ADRs take precedence only for
+the clauses they explicitly replace. Pre-reset ADR numbers refer to the set
+archived at `adr-reset-2026-08-28`, not same-numbered current documents.
+Check the current decision and its amendments before treating old terminology
+or a historical review finding as unfinished work.
 
 ### Design context
 
-Strategic design context (register, users, personality, anti-references, design
-principles) lives in `PRODUCT.md`. The visual system spec is `DESIGN.md` — it
-describes **"Aurora"**, the system the UI actually ships (chosen and merged
-2026-07-16), so read it as current and binding, not aspirational. Read both
-before any frontend work.
-
-(This note used to say DESIGN.md described a "terminal-native redesign target,
-not the shipped zinc + amber UI". Both halves went stale two design iterations
-ago — terminal-native "Signal Console" was dropped for Aurora, and zinc + amber
-is long gone. Telling readers to distrust the spec is worse than saying nothing:
-if DESIGN.md and the code ever disagree again, that is a bug in one of them to
-be reconciled and written down, not a standing caveat to route around.)
+Before frontend work, read `PRODUCT.md` for users, product behavior, and design
+principles, and `DESIGN.md` for the current **Paper** visual system. The CSS
+tokens in `web/src/index.css` define its palette. Reconcile disagreements
+between the design documentation and shipped UI rather than treating the spec
+as aspirational. Execution behavior follows the current ADRs.
 
 ## Coding conventions
 

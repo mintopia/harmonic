@@ -1,4 +1,6 @@
+import { createContext, useContext } from "react";
 import type {
+  AppConfig,
   EpicCriticOverlayEntry,
   EpicVerificationCritic,
   TaskCriticOverlayEntry,
@@ -10,7 +12,7 @@ import {
   compileCriticPreview,
   compileEpicCriticPreview,
 } from "../prompt-preview-model";
-import { chip, field } from "../ui";
+import { chip, field, selectField } from "../ui";
 import { EntryList } from "./EntryList";
 import { Switch } from "./Switch";
 import { FieldError, PromptField, fieldLabel } from "./SettingsSection";
@@ -23,6 +25,14 @@ import {
   summarizeCritic,
   withMissingGlobals,
 } from "./verification-override-model";
+
+export const PromptFragmentsContext = createContext<AppConfig["promptFragments"] | null>(null);
+
+function usePromptFragments(): AppConfig["promptFragments"] {
+  const fragments = useContext(PromptFragmentsContext);
+  if (!fragments) throw new Error("critic previews need a PromptFragmentsContext provider");
+  return fragments;
+}
 
 const globalChip = `${chip} bg-raised text-muted`;
 
@@ -58,7 +68,7 @@ function CriticRuntimeFields({
         </label>
         <select
           id={`${idPrefix}-harness`}
-          className={field}
+          className={selectField}
           value={critic.harness ?? ""}
           onChange={(e) => onChange("harness", e.target.value)}
         >
@@ -181,7 +191,8 @@ function TaskCriticFields({
   harnessModels: Record<string, string[]>;
   set: (critic: TaskVerificationCritic) => void;
 }) {
-  const previews = compileCriticPreview(critic);
+  const fragments = usePromptFragments();
+  const previews = compileCriticPreview(critic, fragments);
   return (
     <>
       <CriticName
@@ -239,6 +250,7 @@ function EpicCriticFields({
   harnessModels: Record<string, string[]>;
   set: (critic: EpicVerificationCritic) => void;
 }) {
+  const fragments = usePromptFragments();
   return (
     <>
       <CriticName
@@ -259,7 +271,7 @@ function EpicCriticFields({
         value={critic.prompt}
         onChange={(prompt) => set(setEpicCriticField(critic, "prompt", prompt))}
         placeholders={DRIVE_PLACEHOLDERS}
-        preview={compileEpicCriticPreview(critic.prompt)}
+        preview={compileEpicCriticPreview(critic.prompt, fragments)}
         error={fieldErrors[`${errorPrefix}.${index}.prompt`]}
         rows={5}
       />

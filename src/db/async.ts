@@ -1,13 +1,11 @@
 import { createClient, type Client } from '@libsql/client';
 import { drizzle, type LibSQLDatabase } from 'drizzle-orm/libsql';
-import { isNull, eq } from 'drizzle-orm';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as schema from './schema.js';
 import { syncSchema } from './schema-sync.js';
 import { touchStartupProgress } from '../reliability/startup-progress.js';
-import { conversations, settings, tasks, workspaces } from './schema.js';
 import { readDatabaseIncomplete } from '../upgrade/boot-state.js';
 
 /** The libsql-backed Drizzle database; every `.get/.all/.run` is a Promise. */
@@ -115,53 +113,14 @@ export class AsyncDbHandle {
   }
 }
 
-type LegacyStoredConfig = {
-  tracker?: { enabled?: boolean; pollIntervalSeconds?: number };
-};
-
-const TRACKER_BACKFILL_KEY = 'trackerEnabledBackfilled';
-
-/**
- * Upgrade path for installs predating the Workspace model: fold legacy tracker settings and
- * orphaned Tasks/Conversations onto the oldest Workspace. A fresh install has no Workspace and is
- * left empty so first-run onboarding can prompt the operator to add one.
- */
-async function backfillWorkspaceAssociationsAsync(handle: AsyncDbHandle, onStep: () => void): Promise<void> {
-  await handle.write(async (db) => {
-    const workspace = await db.select().from(workspaces).orderBy(workspaces.id).get();
-    if (!workspace) return;
-
-    const backfilled = await db
-      .select()
-      .from(settings)
-      .where(eq(settings.key, TRACKER_BACKFILL_KEY))
-      .get();
-    if (!backfilled) {
-      const stored = await db.select().from(settings).where(eq(settings.key, 'config')).get();
-      const storedConfig = stored ? (JSON.parse(stored.value) as LegacyStoredConfig) : undefined;
-      if (storedConfig?.tracker?.enabled) {
-        await db
-          .update(workspaces)
-          .set({
-            trackerEnabled: true,
-            trackerPollIntervalSeconds: storedConfig.tracker.pollIntervalSeconds ?? 60,
-          })
-          .where(eq(workspaces.id, workspace.id))
-          .run();
-      }
-      await db.insert(settings).values({ key: TRACKER_BACKFILL_KEY, value: 'true' }).run();
-      onStep();
-    }
-
-    await db.update(tasks).set({ workspaceId: workspace.id }).where(isNull(tasks.workspaceId)).run();
-    onStep();
-    await db
-      .update(conversations)
-      .set({ workspaceId: workspace.id })
-      .where(isNull(conversations.workspaceId))
-      .run();
-    onStep();
-  });
+/** Seeds `agent_message_recipients` from existing messages the first time the table is empty; the store keeps it current afterwards. */
+async function backfillAgentMessageRecipients(client: Client): Promise<void> {
+  const seeded = await client.execute('select exists (select 1 from agent_message_recipients) as n');
+  if (Number(seeded.rows[0]?.n) === 1) return;
+  await client.execute(
+    `insert or ignore into agent_message_recipients (message_id, task_id, receipt)
+     select m.id, json_extract(r.value, '$.taskId'), json_extract(r.value, '$.receipt') from agent_messages m, json_each(m.recipients) r`,
+  );
 }
 
 /** Boot the async libsql DB: WAL, foreign keys off while the schema converges onto the baseline, `foreign_key_check`, then foreign keys on. */
@@ -192,6 +151,7 @@ export async function openAsyncDb(
   const db = drizzle(client, { schema });
   const baseline = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'drizzle', '0000_baseline.sql');
   await syncSchema(client, readFileSync(baseline, 'utf8'), () => touchStartupProgress(dataDir));
+  await backfillAgentMessageRecipients(client);
   touchStartupProgress(dataDir);
   const violations = await client.execute('PRAGMA foreign_key_check');
   if (violations.rows.length > 0) {
@@ -201,7 +161,6 @@ export async function openAsyncDb(
   }
   await client.execute('PRAGMA foreign_keys = ON');
   const handle = new AsyncDbHandle(db, client, options.queryTimeoutMs ?? DEFAULT_QUERY_TIMEOUT_MS);
-  await backfillWorkspaceAssociationsAsync(handle, () => touchStartupProgress(dataDir));
   touchStartupProgress(dataDir);
   return handle;
 }

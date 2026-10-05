@@ -1,7 +1,8 @@
 import { sql } from 'drizzle-orm';
 import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, check, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { Verdict } from '../verification/critic-schema.js';
-import type { TicketRef, TicketState } from '../tracker/adapter.js';
+import type { PromptFragmentOverrides } from '../domain/prompt-fragments.js';
+import type { TicketRef, TicketState, TrackerRef } from '../tracker/adapter.js';
 
 /** A Task is either authored here or a 1:1 projection of a tracker issue. */
 export const TASK_ORIGINS = ['native', 'mirrored'] as const;
@@ -14,7 +15,7 @@ export type WayfinderType = (typeof WAYFINDER_TYPES)[number];
 /** A mirrored issue's last successful scan, persisted verbatim; a field-for-field subset of the tracker `Ticket`. */
 export interface TrackerFacts {
   state: TicketState;
-  parent: number | null;
+  parent: TrackerRef | null;
   blockedBy: TicketRef[];
   labels: string[];
   title: string;
@@ -52,6 +53,7 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   harness: string | null; model: string | null; chatHarness: string | null; chatModel: string | null;
   isolationMode: string | null; priority: string | null;
   conflictResolveTurns: number | null; maxConcurrentAttempts: number | null; autoRunnerEnabled: boolean | null;
+  agentMessagesEnabled: boolean | null; agentMessagesSendCap: number | null;
   maxAttempts: number | null; contextReuseTokenLimit: number | null;
   taskPreMergeCommands: string | null; taskPreMergeCritics: string | null;
   taskPostMergeCommands: string | null; taskPostMergeCritics: string | null;
@@ -59,11 +61,14 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   guardrailBudget: string | null; guardrailProgress: boolean | null; toolTimeoutMinutes: number | null;
   drivePrompt: string | null; driveUnattendedReminder: string | null; driveContinuePrompt: string | null;
   driveMergeFate: string | null; driveContinueAttempts: number | null; taskPrompt: string | null; pauseMessage: string | null;
+  driveCommitNudge: string | null; mergeConflictPrompt: string | null; mergeEpicConflictPrompt: string | null;
+  mergeEpicRefreshPrompt: string | null; verifyEpicResolveSuffix: string | null;
   exportEnabled: boolean | null; exportDirectoryPath: string | null; exportRedactPatterns: string | null;
   exportS3Endpoint: string | null; exportS3Region: string | null; exportS3Bucket: string | null; exportS3Prefix: string | null;
   exportS3ForcePathStyle: boolean | null; exportS3AccessKeyId: string | null; exportS3SecretAccessKey: string | null;
-  exportIncludeStates: string | null; archiveRetentionDays: number | null; archiveRetentionMaxTotalMB: number | null;
-};
+  exportIncludeStates: string | null;
+  configuredTracker: string | null; codeRepository: 'github' | 'gitlab' | 'forgejo' | 'git' | null; triageLabels: string | null; archiveRetentionDays: number | null; archiveRetentionMaxTotalMB: number | null;
+} & PromptFragmentOverrides;
 
 /** `jobKey` is the job name plus optional Workspace id, so SQLite's NULL-distinct unique semantics can't duplicate global job rows. */
 export const scheduledJobs = sqliteTable('scheduled_jobs', {
@@ -107,7 +112,7 @@ export const tasks = sqliteTable('tasks', {
   continuationChoice: text('continuation_choice').$type<'full' | 'condensed'>(),
   origin: text('origin').$type<TaskOrigin>().notNull().default('native'),
   /** The mirrored issue's portable number; the upsert key. Null on native Tasks. */
-  trackerRef: integer('tracker_ref'),
+  trackerRef: text('tracker_ref').$type<TrackerRef>(),
   /** wayfinder (charting) | implement (build tickets). Derived from labels. */
   workflow: text('workflow').$type<Workflow>(),
   /** research/prototype/grilling/task; null for implement and native Tasks. */
@@ -116,14 +121,16 @@ export const tasks = sqliteTable('tasks', {
   escalationReason: text('escalation_reason'),
   /** Live merge indicator, orthogonal to `state`; null at rest. */
   mergeStatus: text('merge_status').$type<MergeStatus>(),
+  /** Merged, but the tracker ticket close failed and is outstanding. */
+  ticketClosePending: integer('ticket_close_pending', { mode: 'boolean' }).notNull().default(false),
   /** The parent Map issue's number, for the query-time Map rollup. Not a Dependency edge. */
-  mapRef: integer('map_ref'),
+  mapRef: text('map_ref').$type<TrackerRef>(),
   /** Null ⇒ resolved at spawn to the working dir's current branch. */
   baseBranch: text('base_branch'),
   /** The ticket's open/closed axis at last scan; null on native Tasks. Distinct from `state`, the Task's execution state. */
   trackerState: text('tracker_state').$type<TicketState>(),
   /** The ticket's parent pointer at last scan (the raw `#<n>` fact; `mapRef` is the derived Map rollup key). */
-  trackerParent: integer('tracker_parent'),
+  trackerParent: text('tracker_parent').$type<TrackerRef>(),
   trackerBlockedBy: text('tracker_blocked_by', { mode: 'json' }).$type<TicketRef[]>(),
   trackerLabels: text('tracker_labels', { mode: 'json' }).$type<string[]>(),
   /** The ticket's title at last scan, verbatim (`prompt` is the derived title+body blend). */
@@ -145,7 +152,7 @@ export const tasks = sqliteTable('tasks', {
 export const trackerDismissals = sqliteTable('tracker_dismissals', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   workspaceId: integer('workspace_id').references(() => workspaces.id),
-  trackerRef: integer('tracker_ref').notNull(),
+  trackerRef: text('tracker_ref').$type<TrackerRef>().notNull(),
   dismissedAt: integer('dismissed_at').notNull(),
 }, (t) => [
   uniqueIndex('tracker_dismissals_ws_ref_idx').on(t.workspaceId, t.trackerRef),
@@ -187,11 +194,13 @@ export const attempts = sqliteTable('attempts', {
   /** Exactly one owner: a Task, or a stored Epic identified by workspace and tracker refs. */
   taskId: integer('task_id').references(() => tasks.id),
   workspaceId: integer('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
-  epicRef: integer('epic_ref'),
+  epicRef: text('epic_ref').$type<TrackerRef>(),
   number: integer('number').notNull(),
   state: text('state').$type<AttemptState>().notNull().default('running'),
   startedAt: integer('started_at').notNull(),
   endedAt: integer('ended_at'),
+  /** Cumulative agent-turn duration; null when timing is missing or incomplete. */
+  agentDurationMs: integer('agent_duration_ms'),
   /** Feedback from the failure that led to the following attempt. */
   feedback: text('feedback'),
   continuation: text('continuation'),
@@ -202,7 +211,7 @@ export const attempts = sqliteTable('attempts', {
   sessionId: text('session_id'),
   /** The `sessions.id` this Attempt is bound to; null until the harness session is created. */
   sessionRowId: integer('session_row_id').references((): AnySQLiteColumn => sessions.id),
-  /** The exact prompt text sent to the harness; null until the prompt turn is sent. */
+  /** Legacy: the first prompt of Attempts that predate the Archive-only Resolved Prompt read (ADR-0047 s5). Never written now; the Archive owns every prompt. */
   prompt: text('prompt'),
   /** Worktree mode: the attempt's branch and the branch it was cut from. */
   branch: text('branch'),
@@ -233,6 +242,8 @@ export const attempts = sqliteTable('attempts', {
   priceTable: text('price_table'),
   /** Free-text detail behind {@link reason}; null while running or when the kind needs none. */
   detail: text('detail'),
+  /** The PR/MR the open-PR Merge Fate created for this Attempt's branch; null when none was opened (other fates, or a Code Repository that opens none). */
+  pullRequestUrl: text('pull_request_url'),
 }, (t) => [
   uniqueIndex('attempts_task_number_unique').on(t.taskId, t.number),
   uniqueIndex('attempts_epic_number_unique').on(t.workspaceId, t.epicRef, t.number),
@@ -243,7 +254,7 @@ export const attempts = sqliteTable('attempts', {
 ]);
 export type AttemptRow = typeof attempts.$inferSelect;
 export type TaskAttemptRow = AttemptRow & { taskId: number };
-export type EpicAttemptRow = AttemptRow & { taskId: null; workspaceId: number; epicRef: number };
+export type EpicAttemptRow = AttemptRow & { taskId: null; workspaceId: number; epicRef: TrackerRef };
 
 export function isTaskAttempt(attempt: AttemptRow): attempt is TaskAttemptRow {
   return attempt.taskId !== null;
@@ -313,6 +324,57 @@ export const taskEvents = sqliteTable(
   (t) => [index('task_events_task_id_idx').on(t.taskId)],
 );
 export type TaskEventRow = typeof taskEvents.$inferSelect;
+
+export const RECEIPT_STATES = ['queued', 'delivered', 'held', 'refused'] as const;
+export type ReceiptState = (typeof RECEIPT_STATES)[number];
+
+/** One recipient of an Agent Message and where its delivery stands. */
+export interface AgentMessageRecipient {
+  taskId: number;
+  receipt: ReceiptState;
+  /** Live delivery: injected mid-turn, or queued for the next turn. */
+  mode?: 'mid-turn' | 'next-turn';
+  deliveredAt?: number;
+  reason?: string;
+}
+
+/** An A2A-shaped message between two Task Attempts in one Workspace. Sender and recipient Task ids carry no FK so a Thread survives a participant's deletion; Workspace deletion cascades. `threadId` is the root message id, denormalised so Thread reads need no recursion. */
+export const agentMessages = sqliteTable(
+  'agent_messages',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: integer('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    role: text('role').$type<'agent'>().notNull(),
+    parts: text('parts', { mode: 'json' }).$type<{ kind: 'text'; text: string }[]>().notNull(),
+    replyTo: text('reply_to'),
+    threadId: text('thread_id').notNull(),
+    senderTaskId: integer('sender_task_id').notNull(),
+    senderAttemptId: integer('sender_attempt_id').notNull(),
+    recipients: text('recipients', { mode: 'json' }).$type<AgentMessageRecipient[]>().notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [
+    index('agent_messages_sender_attempt_idx').on(t.senderAttemptId),
+    index('agent_messages_thread_idx').on(t.threadId),
+    index('agent_messages_workspace_idx').on(t.workspaceId),
+  ],
+);
+export type AgentMessageRow = typeof agentMessages.$inferSelect;
+
+/** Index over `agent_messages.recipients` (the source of truth), kept in step by `AgentMessageStore`, so recipient lookups search an index instead of scanning `json_each`. No Task FK, like the JSON. */
+export const agentMessageRecipients = sqliteTable(
+  'agent_message_recipients',
+  {
+    messageId: text('message_id')
+      .notNull()
+      .references(() => agentMessages.id, { onDelete: 'cascade' }),
+    taskId: integer('task_id').notNull(),
+    receipt: text('receipt').$type<ReceiptState>().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.taskId, t.messageId] }), index('agent_message_recipients_task_receipt_idx').on(t.taskId, t.receipt)],
+);
 
 export const CONVERSATION_STATES = ['active', 'ended'] as const;
 export type ConversationState = (typeof CONVERSATION_STATES)[number];
@@ -459,12 +521,23 @@ export type TaskRow = Omit<
   conflictResolveTurns: number;
 };
 
+/** A named per-Workspace credential, AES-256-GCM encrypted with the instance key; `ciphertext` carries the auth tag, both columns are base64. */
+export const secrets = sqliteTable('secrets', {
+  workspaceId: integer('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  ciphertext: text('ciphertext').notNull(),
+  nonce: text('nonce').notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (t) => [primaryKey({ columns: [t.workspaceId, t.name] })]);
+export type SecretRow = typeof secrets.$inferSelect;
+
 /** Persisted facts for tracker containers that deliberately have no Task row, currently Maps. */
 export const trackerContainers = sqliteTable('tracker_containers', {
   workspaceId: integer('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
-  trackerRef: integer('tracker_ref').notNull(),
+  trackerRef: text('tracker_ref').$type<TrackerRef>().notNull(),
   trackerState: text('tracker_state').$type<TicketState>().notNull(),
-  trackerParent: integer('tracker_parent'),
+  trackerParent: text('tracker_parent').$type<TrackerRef>(),
   trackerBlockedBy: text('tracker_blocked_by', { mode: 'json' }).$type<TicketRef[]>().notNull(),
   trackerLabels: text('tracker_labels', { mode: 'json' }).$type<string[]>().notNull(),
   trackerTitle: text('tracker_title').notNull(),
@@ -485,13 +558,13 @@ export type EpicLifecycleState = (typeof EPIC_LIFECYCLE_STATES)[number];
 /** The leaf-most Epic as a stored resource, keyed `(workspaceId, trackerRef)`; survives the tracker issue closing, removed only on Dismiss. `mergeCommit`/`memberRefs` are null while live. */
 export const epics = sqliteTable('epics', {
   workspaceId: integer('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
-  trackerRef: integer('tracker_ref').notNull(),
+  trackerRef: text('tracker_ref').$type<TrackerRef>().notNull(),
   kind: text('kind').$type<StoredEpicKind>().notNull(),
   /** The integration merge-commit hash; null while live and on a no-op finish (branch already matched base). */
   mergeCommit: text('merge_commit'),
   state: text('state').$type<EpicLifecycleState>().notNull(),
   /** Member refs snapshotted at integration (JSON int array); null while live. */
-  memberRefs: text('member_refs', { mode: 'json' }).$type<number[]>(),
+  memberRefs: text('member_refs', { mode: 'json' }).$type<TrackerRef[]>(),
 }, (t) => [primaryKey({ columns: [t.workspaceId, t.trackerRef] })]);
 export type EpicRow = typeof epics.$inferSelect;
 
@@ -501,7 +574,7 @@ export type EpicRow = typeof epics.$inferSelect;
 export const epicMergeEvents = sqliteTable('epic_merge_events', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   workspaceId: integer('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
-  epicRef: integer('epic_ref').notNull(),
+  epicRef: text('epic_ref').$type<TrackerRef>().notNull(),
   seq: integer('seq').notNull(),
   ts: integer('ts').notNull(),
   /** JSON `EpicTimelineStep` payload. */
@@ -530,10 +603,10 @@ export const verificationAttempts = sqliteTable('verification_attempts', {
   summary: text('summary').notNull(),
   /** Raw verifier output (the critic's agent text), capped by the caller. */
   output: text('output').notNull(),
-  /** The exact prompt sent to the critic for this attempt (`buildCriticPrompt`);
-   * null for the command verifier and pre-feature rows. Persisted so Task
-   * detail's Review tab shows what actually went to the reviewer. */
-  prompt: text('prompt'),
+  /** Archive-relative key (under the Attempt's archive directory) of the complete, uncapped command output; null when `output` was not truncated, the log was not saved, or for a critic. */
+  fullOutputKey: text('full_output_key'),
+  /** Archive locator (relative to the Attempt's archive directory) of the critic's Resolved Prompt `prompt.md`; null for the command verifier, a critic run without an Archive, and pre-locator rows. The prompt text lives only in the Archive. */
+  promptKey: text('prompt_key'),
   /** Locator for the critic's native harness transcript; null for the command verifier or a harness with no native JSONL. Server-only. */
   transcriptPath: text('transcript_path'),
   /** The critic harness id that produced {@link transcriptPath}; may differ from the builder's. */

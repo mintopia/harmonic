@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { startServer, stubHarness, STUB_HARNESS, waitFor, type TestServer } from './helpers.js';
 import { workspaces } from '../src/db/schema.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 const tmpDirs: string[] = [];
@@ -51,8 +52,8 @@ describe('Codex afk permission model', () => {
     await server.close();
   });
 
-  const mirroredAfk = (trackerRef: number): MirrorInput => ({
-    trackerRef,
+  const mirroredAfk = (ref: number): MirrorInput => ({
+    trackerRef: trackerRef(ref),
     prompt: 'go',
     workflow: 'implement',
     wayfinderType: null,
@@ -115,8 +116,8 @@ describe('Codex afk full-access mode', () => {
     await server.close();
   });
 
-  const mirroredAfk = (trackerRef: number): MirrorInput => ({
-    trackerRef,
+  const mirroredAfk = (ref: number): MirrorInput => ({
+    trackerRef: trackerRef(ref),
     prompt: 'go',
     workflow: 'implement',
     wayfinderType: null,

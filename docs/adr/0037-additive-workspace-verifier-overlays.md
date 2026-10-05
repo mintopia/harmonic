@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-09-19
 
+Current status (2026-10-02): Additive, id-keyed Workspace verifier overlays are implemented. These rules replace whole-list Workspace replacement in ADR-0009/0022/0028.
+
 ## Context
 
 A Workspace's verifier lists (command verifiers and agent critics, per stage —

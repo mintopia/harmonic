@@ -1,38 +1,48 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { type AppConfig, type MergeFate } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow, StoredEpicKind } from '../db/schema.js';
-import { resolveTrackerAdapter, type TrackerAdapter, type TicketRef } from '../tracker/adapter.js';
+import { formatWorkspaceTrackerRef, resolveTrackerAdapter, workspaceTrackerSettings, type TrackerAdapter, type TicketRef, type WorkspaceTrackerSettings } from '../tracker/adapter.js';
+import type { FeatureIndex } from '../tracker/local-markdown.js';
+import { resolveRepositoryWithoutSecrets, type RepositoryResolver } from '../repository/resolve.js';
 import { resolveDrive, type ResolvedDrive } from '../domain/setting-override.js';
 import { driveFields, fillTemplate, splitTitleBody } from './prompt-template.js';
 import { Git } from './git.js';
 import { withBaseCheckoutLock } from './repo-lock.js';
 import { logger } from '../logger.js';
+import { errorMessage } from '../error-handling.js';
 
 type DriveWorkspace = Pick<
   WorkspaceRow,
   'drivePrompt' | 'driveUnattendedReminder' | 'driveContinuePrompt' | 'driveMergeFate' | 'driveContinueAttempts'
->;
+> &
+  Partial<Pick<WorkspaceRow, 'configuredTracker' | 'codeRepository'>>;
 
 /**
  * The auto-drive half of afk mirrored-Task execution: the Drive Prompt the
  * Runner injects, and what becomes of a clean completion (Merge Fate +
  * fallback-close). Absent on a native-only server.
  */
+const completionComment = (task: TaskRow): string => `Completed and merged by Harmonic (task ${task.id}).`;
+
 export class AutoDrive {
   constructor(
     private readonly getConfig: () => AppConfig,
     private readonly urlFor: (task: TaskRow) => string | null,
-    private readonly resolveAdapter: (repoRoot: string) => Promise<TrackerAdapter> = resolveTrackerAdapter,
+    private readonly resolveAdapter: (repoRoot: string, featureIndex?: FeatureIndex, workspace?: WorkspaceTrackerSettings) => Promise<TrackerAdapter> = resolveTrackerAdapter,
     /** Resolves a Task's Workspace so `drive.*` inherits its per-Workspace
      * overrides; absent → every field resolves the global default. */
     private readonly getWorkspace?: (workspaceId: number | null) => Promise<DriveWorkspace | undefined>,
     /** Resolves the stored `kind` of a Task's parent Epic (its `mapRef`); a Map
      * child drives `/wayfinder {mapRef}`. Absent → every child keeps its own drive. */
-    private readonly getEpicKind?: (workspaceId: number, ref: number) => Promise<StoredEpicKind | null>,
+    private readonly getEpicKind?: (workspaceId: number, ref: TrackerRef) => Promise<StoredEpicKind | null>,
     /** Notified on a genuine tracker close (not the no-op paths). `commit` is
      * the base-checkout commit for a file-backed tracker, else `null`. */
     private readonly onTicketClosed?: (task: TaskRow, commit: { oid: string; paths: string[] } | null) => void,
     /** Notified when a close attempt throws. */
     private readonly onTicketCloseFailed?: (task: TaskRow, error: unknown) => void,
+    private readonly resolveRepository: RepositoryResolver = resolveRepositoryWithoutSecrets,
+    /** Persists the PR/MR URL the open-PR fate created onto the Attempt that opened it. */
+    private readonly recordPullRequest?: (run: AttemptRow, url: string) => Promise<void>,
   ) {}
 
   /** The auto-driven path: a mirrored Task Harmonic runs unattended. */
@@ -94,33 +104,41 @@ export class AutoDrive {
    * only after verify + merge:
    *
    * - **auto-merge** — the Runner has already merged the verified branch, so
-   *   Harmonic closes the ticket. A close that fails Escalates.
+   *   Harmonic closes the ticket. A close that fails still completes (the merge
+   *   succeeded) and is retried each poll — `'completed-close-pending'`.
    * - **open-PR** — open a PR and leave the ticket **open**; the PR's own merge
-   *   closes the issue later. A PR that can't be created Escalates. A tracker
-   *   with no PR support degrades to artifact.
+   *   closes the issue later. A PR that can't be created Escalates. A repo
+   *   with no Code Repository adapter degrades to artifact.
    * - **artifact** (incl. research) — leave the branch and the ticket untouched.
    *
    * Returns `'completed'` once the fate has merged, or `'escalate'` when it
    * could not be applied.
    */
-  async onCompleted(task: TaskRow, run: AttemptRow): Promise<'completed' | 'escalate'> {
+  async onCompleted(task: TaskRow, run: AttemptRow): Promise<'completed' | 'completed-close-pending' | 'escalate'> {
     const worktree = task.isolationMode === 'worktree';
     const fate = await this.mergeFate(task);
 
     if (fate === 'open-PR') {
       if (worktree) {
-        const adapter = await this.resolveAdapter(task.workingDir);
-        if (adapter.openPR) {
+        const workspace = workspaceTrackerSettings(await this.getWorkspace?.(task.workspaceId));
+        const repository = await this.resolveRepository(task.workingDir, workspace);
+        if (repository) {
           const { title } = splitTitleBody(task.prompt);
+          let pullRequestUrl: string | null;
           try {
-            await adapter.openPR({
+            pullRequestUrl = await repository.openPR({
               branch: run.branch!,
               baseBranch: run.baseBranch!,
               title,
-              body: `Auto-driven by Harmonic for #${task.trackerRef}.`,
+              body: `Auto-driven by Harmonic for ${task.trackerRef == null ? `Task ${task.id}` : await formatWorkspaceTrackerRef(task.workingDir, workspace, task.trackerRef)}.`,
             });
           } catch {
             return 'escalate';
+          }
+          if (pullRequestUrl !== null) {
+            await this.recordPullRequest?.(run, pullRequestUrl).catch((err: unknown) => {
+              logger.warn(`[auto-drive] PR opened for task ${task.id} but its URL was not recorded: ${errorMessage(err)}`);
+            });
           }
           return 'completed';
         }
@@ -129,7 +147,7 @@ export class AutoDrive {
     }
 
     if (fate === 'auto-merge') {
-      return (await this.closeTicket(task)) ? 'completed' : 'escalate';
+      return (await this.closeTicket(task)) ? 'completed' : 'completed-close-pending';
     }
 
     return 'completed';
@@ -137,7 +155,7 @@ export class AutoDrive {
 
   /**
    * The auto-merge close step, for a path that already merged the branch
-   * elsewhere. Returns whether the close was issued (false ⇒ the caller Escalates).
+   * elsewhere. Returns whether the close was issued.
    */
   async closeCompleted(task: TaskRow): Promise<boolean> {
     return this.closeTicket(task);
@@ -148,15 +166,26 @@ export class AutoDrive {
    * failure returns false so the caller can record the infrastructure failure.
    * No tracker ref means nothing to close.
    */
-  async closeTicket(task: TaskRow, comment = `Completed and merged by Harmonic (task ${task.id}).`): Promise<boolean> {
-    if (task.trackerRef == null) return true;
+  async closeTicket(task: TaskRow, comment = completionComment(task)): Promise<boolean> {
+    const result = await this.attemptClose(task, comment);
+    if (!result.ok) this.onTicketCloseFailed?.(task, result.error);
+    return result.ok;
+  }
+
+  retryTicketClose(task: TaskRow): Promise<{ ok: true } | { ok: false; error: unknown }> {
+    return this.attemptClose(task, completionComment(task));
+  }
+
+  private async attemptClose(task: TaskRow, comment: string): Promise<{ ok: true } | { ok: false; error: unknown }> {
+    if (task.trackerRef == null) return { ok: true };
     try {
-      const adapter = await this.resolveAdapter(task.workingDir);
-      if (!adapter.close) return true;
+      const adapter = await this.resolveAdapter(task.workingDir, undefined, workspaceTrackerSettings(await this.getWorkspace?.(task.workspaceId)));
+      if (!adapter.close) return { ok: true };
       const { title } = splitTitleBody(task.prompt);
-      const ref = { number: task.trackerRef, title, state: 'open' as const };
+      const ref = { ref: task.trackerRef, title, state: 'open' as const };
       // Closing an already-closed issue errors on some trackers (`gh issue close`).
-      if ((await adapter.readTicket(ref)).state === 'closed') return true;
+      const current = adapter.readState ? await adapter.readState(ref) : (await adapter.readTicket(ref)).state;
+      if (current === 'closed') return { ok: true };
       let commit: { oid: string; paths: string[] } | null = null;
       if (adapter.persistsInWorkingTree) {
         commit = await this.commitLifecycleWrite(task, ref, () => adapter.close!(ref, comment), comment);
@@ -164,10 +193,9 @@ export class AutoDrive {
         await adapter.close(ref, comment);
       }
       this.onTicketClosed?.(task, commit);
-      return true;
-    } catch (err) {
-      this.onTicketCloseFailed?.(task, err);
-      return false;
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error };
     }
   }
 
@@ -191,7 +219,7 @@ export class AutoDrive {
       const oid = await Git.commitPaths(task.workingDir, paths, message);
       if (oid === null) return null;
       logger.info('tracker: committed lifecycle change to base', {
-        'tracker.ref': ref.number,
+        'tracker.ref': ref.ref,
         'tracker.paths': paths.length,
         'repo.dir': task.workingDir,
       });

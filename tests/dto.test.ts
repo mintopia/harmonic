@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { trackerRef } from '../src/tracker/adapter.js';
+import { epicListRowSchema, taskListRowSchema } from '../src/server/routes/tasks.js';
 import {
   summarize,
   firstLineTitle,
@@ -29,6 +31,7 @@ const attemptRow = (over: Partial<TaskAttemptRow> = {}): TaskAttemptRow => ({
   state: 'running',
   startedAt: 1_000,
   endedAt: null,
+  agentDurationMs: 0,
   feedback: null,
   continuation: null,
   reason: null,
@@ -43,6 +46,7 @@ const attemptRow = (over: Partial<TaskAttemptRow> = {}): TaskAttemptRow => ({
   stat: null,
   verifiedHeadOid: null,
   verifiedRef: null,
+  pullRequestUrl: null,
   startOid: null,
   usage: null,
   cost: null,
@@ -75,7 +79,7 @@ const taskRow = (over: Partial<TaskRow> = {}): TaskRow => ({
   workflow: null,
   wayfinderType: null,
   escalationReason: null,
-  mergeStatus: null,
+  mergeStatus: null, ticketClosePending: false,
   mapRef: null,
   baseBranch: null,
   trackerState: null,
@@ -115,9 +119,10 @@ const verificationAttemptRow = (over: Partial<VerificationAttemptRow> = {}): Ver
   verdict: 'pass',
   summary: '',
   output: '',
+  fullOutputKey: null,
   transcriptPath: null,
   harness: null,
-  prompt: null,
+  promptKey: null,
   usage: null,
   ...over,
 });
@@ -141,7 +146,7 @@ const conversationRow = (over: Partial<ConversationRow> = {}): ConversationRow =
 });
 
 const ticket = (over: Partial<Ticket> = {}): Ticket => ({
-  number: 100,
+  ref: trackerRef(100),
   title: 'A ticket',
   state: 'open',
   labels: [],
@@ -152,7 +157,6 @@ const ticket = (over: Partial<Ticket> = {}): Ticket => ({
   closedAt: null,
   assignees: [],
   blocking: [],
-  comments: [],
   isMap: false,
   url: 'https://tracker.example/issues/100',
   ...over,
@@ -325,6 +329,11 @@ describe('operationsToApi', () => {
 });
 
 describe('attemptToApiSummary', () => {
+  it('exposes the PR/MR URL the Attempt opened, null when none', () => {
+    expect(attemptToApiSummary(attemptRow({ pullRequestUrl: 'https://github.com/o/r/pull/9' }), 0).pullRequestUrl).toBe('https://github.com/o/r/pull/9');
+    expect(attemptToApiSummary(attemptRow(), 0).pullRequestUrl).toBeNull();
+  });
+
   it('collapses passed -> completed and escalated -> failed', () => {
     expect(attemptToApiSummary(attemptRow({ state: 'passed' }), 0).state).toBe('completed');
     expect(attemptToApiSummary(attemptRow({ state: 'escalated' }), 0).state).toBe('failed');
@@ -361,6 +370,7 @@ describe('taskToApiDto', () => {
     hasCandidate: true,
     url: 'https://tracker.example/issues/1',
     mapTitle: 'Some Map',
+    trackerLabel: 'GitHub',
     skipReason: 'capacity',
     contextWindow: 200_000,
   };
@@ -376,6 +386,7 @@ describe('taskToApiDto', () => {
     const dto = taskToApiDto(taskWithDeps(), [], resolved);
     expect(dto.url).toBe(resolved.url);
     expect(dto.mapTitle).toBe(resolved.mapTitle);
+    expect(dto.trackerLabel).toBe(resolved.trackerLabel);
     expect(dto.skipReason).toBe(resolved.skipReason);
     expect(dto.contextWindow).toBe(resolved.contextWindow);
     expect(dto.toolCount).toBe(resolved.toolCount);
@@ -403,7 +414,7 @@ describe('taskToApiDto', () => {
   it('strips the durable tracker-fact columns', () => {
     const task = taskWithDeps({
       trackerState: 'open',
-      trackerParent: 5,
+      trackerParent: trackerRef(5),
       trackerBlockedBy: [],
       trackerLabels: ['x'],
       trackerTitle: 'raw title',
@@ -466,13 +477,28 @@ describe('taskToApiDto', () => {
 
 describe('epicToListRow', () => {
   it('projects a Ticket onto a list row with isEpic/humanOnly set and identity fields threaded', () => {
-    const row = epicToListRow(ticket({ number: 42, title: 'The Epic', url: 'https://tracker.example/42' }), 9);
+    const row = epicToListRow(ticket({ ref: trackerRef(42), title: 'The Epic', url: 'https://tracker.example/42' }), 9);
     expect(row.isEpic).toBe(true);
     expect(row.humanOnly).toBe(true);
-    expect(row.id).toBe(42);
+    expect(row).not.toHaveProperty('id');
+    expect(row.trackerRef).toBe('42');
     expect(row.summary).toBe('The Epic');
     expect(row.url).toBe('https://tracker.example/42');
     expect(row.workspaceId).toBe(9);
+  });
+
+  it('gives no two Epic rows the same id', () => {
+    const rows = [epicToListRow(ticket({ ref: trackerRef(1) }), 1), epicToListRow(ticket({ ref: trackerRef(2) }), 1)];
+    const ids = rows.map((r) => (r as { id?: number }).id).filter((id) => id !== undefined);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual([]);
+  });
+
+  it('validates against epicListRowSchema, which rejects a row carrying id', () => {
+    const row = epicToListRow(ticket(), 1);
+    expect(epicListRowSchema.safeParse(row).success).toBe(true);
+    expect(epicListRowSchema.safeParse({ ...row, id: 0 }).success).toBe(false);
+    expect(taskListRowSchema.safeParse(row).success).toBe(false);
   });
 
   it('has no prompt key — it is a list row', () => {

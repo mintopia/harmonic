@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, afterAll, afterEach, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -8,6 +8,7 @@ import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-tr
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import {
   runCritic,
+  runTimedCriticDrive,
   createAcpCriticDrive,
   criticAttemptToInput,
   type CriticHarnessDrive,
@@ -22,7 +23,9 @@ import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
-import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { testSpawnProcessGroup, allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+
+const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
 
 const providers: NodeTracerProvider[] = [];
 
@@ -93,6 +96,7 @@ describe('runCritic (issue #136)', () => {
     const drive: CriticHarnessDrive = { run: async () => ({ output, permissionRequests: [] }) };
 
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: repo,
       verifiedHeadOid: oid,
       fields: FIELDS,
@@ -108,11 +112,37 @@ describe('runCritic (issue #136)', () => {
       summary: value.summary,
       output,
       prompt: expect.stringContaining('Review the diff.'),
+      promptKey: null,
       inputOid: oid,
       transcriptPath: null,
       harness: 'claude',
       sessionId: null,
     });
+  });
+
+  it('an edited Prompt Fragment reaches the prompt sent to the critic and persisted on the attempt', async () => {
+    const { repo, oid } = await makeCandidate('refs/harmonic/direct/attempt-critic-fragment');
+    let drivenPrompt = '';
+    const drive: CriticHarnessDrive = {
+      run: async (request) => {
+        drivenPrompt = request.prompt;
+        return { output: '{"verdict":"pass","summary":"ok"}', permissionRequests: [] };
+      },
+    };
+
+    const attempt = await runCritic({
+      fragments: { ...DEFAULT_PROMPT_FRAGMENTS, readOnlyRestraint: 'EDITED-RESTRAINT: touch nothing.' },
+      cwd: repo,
+      verifiedHeadOid: oid,
+      fields: FIELDS,
+      critic: { prompt: 'Review the diff.', model: 'stub-model' },
+      harness: FAKE_HARNESS,
+      harnessId: 'claude',
+      drive,
+    });
+
+    expect(drivenPrompt).toContain('EDITED-RESTRAINT: touch nothing.');
+    expect(attempt.prompt).toBe(drivenPrompt);
   });
 
   it('given the base revision, drives the in-place cwd and names both revisions in the prompt', async () => {
@@ -129,6 +159,7 @@ describe('runCritic (issue #136)', () => {
     };
 
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: repo,
       verifiedHeadOid: oid,
       baseOid,
@@ -160,6 +191,7 @@ describe('runCritic (issue #136)', () => {
     };
 
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: repo,
       verifiedHeadOid: oid,
       fields: FIELDS,
@@ -184,6 +216,7 @@ describe('runCritic (issue #136)', () => {
 
     const attempt = await parent.run(() =>
       runCritic({
+        fragments: DEFAULT_PROMPT_FRAGMENTS,
         cwd: repo,
         verifiedHeadOid: oid,
         fields: FIELDS,
@@ -217,6 +250,7 @@ describe('runCritic (issue #136)', () => {
     const drive: CriticHarnessDrive = { run: async () => ({ output: 'not json at all, just prose', permissionRequests: [] }) };
 
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: repo,
       verifiedHeadOid: oid,
       fields: FIELDS,
@@ -241,6 +275,7 @@ describe('runCritic (issue #136)', () => {
     };
 
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: repo,
       verifiedHeadOid: oid,
       fields: FIELDS,
@@ -266,6 +301,7 @@ describe('runCritic (issue #136)', () => {
     };
 
     await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: repo,
       verifiedHeadOid: oid,
       fields: FIELDS,
@@ -296,6 +332,7 @@ describe('runCritic (issue #136)', () => {
     };
 
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: repo,
       verifiedHeadOid: oid,
       fields: FIELDS,
@@ -313,6 +350,7 @@ describe('runCritic (issue #136)', () => {
     const drive: CriticHarnessDrive = { run: async () => ({ output: '{"verdict":"pass","summary":"clean"}', permissionRequests: [] }) };
 
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: repo,
       verifiedHeadOid: oid,
       fields: FIELDS,
@@ -337,6 +375,7 @@ describe('runCritic (issue #136)', () => {
       const drive: CriticHarnessDrive = { run: async () => ({ output: c.output, permissionRequests: [] }) };
 
       const attempt = await runCritic({
+        fragments: DEFAULT_PROMPT_FRAGMENTS,
         cwd: repo,
         verifiedHeadOid: oid,
         fields: FIELDS,
@@ -357,6 +396,7 @@ describe('runCritic (issue #136)', () => {
       run: async () => ({ output: '{"verdict":"fail","summary":"the diff drops a null check"}', permissionRequests: [] }),
     };
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: repo,
       verifiedHeadOid: oid,
       fields: FIELDS,
@@ -417,7 +457,7 @@ describe('createAcpCriticDrive (issue #136): the real ACP drive has builder-equi
   };
 
   it('registers no MCP servers, strips tracker credentials from the spawned env, and grants tool permission requests', async () => {
-    const drive = createAcpCriticDrive();
+    const drive = createAcpCriticDrive(testSpawnProcessGroup);
     const scenario = {
       echoSessionNew: true,
       echoEnv: ['HARMONIC_API_KEY', 'HARMONIC_MCP_URL'],
@@ -441,7 +481,7 @@ describe('createAcpCriticDrive (issue #136): the real ACP drive has builder-equi
   }, 20_000);
 
   it('rejects when the harness hangs past the timeout, without leaving the child alive', async () => {
-    const drive = createAcpCriticDrive();
+    const drive = createAcpCriticDrive(testSpawnProcessGroup);
     await expect(
       drive.run({
         harness,
@@ -453,4 +493,26 @@ describe('createAcpCriticDrive (issue #136): the real ACP drive has builder-equi
       }),
     ).rejects.toThrow(/timed out/i);
   }, 10_000);
+});
+
+describe('runTimedCriticDrive', () => {
+  const request = { harness: {}, harnessId: 'claude', model: 'm', cwd: '/tmp', prompt: 'p', timeoutMs: 1000 } as unknown as CriticDriveRequest;
+
+  it('does not let a failing duration write mask the drive error', async () => {
+    const drive: CriticHarnessDrive = { run: async () => { throw new Error('prompt failed'); } };
+    await expect(runTimedCriticDrive(drive, request, async () => { throw new Error('db down'); })).rejects.toThrow('prompt failed');
+  });
+
+  it('records the duration once when the drive reports it itself', async () => {
+    const record = vi.fn(async () => {});
+    const drive: CriticHarnessDrive = {
+      run: async (req) => {
+        await req.onAgentDurationMs?.(5);
+        return { output: '', permissionRequests: [], sessionId: null };
+      },
+    };
+    await runTimedCriticDrive(drive, request, record);
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith(5);
+  });
 });

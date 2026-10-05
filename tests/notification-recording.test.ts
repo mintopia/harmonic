@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { trackerRef } from '../src/tracker/adapter.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -93,7 +94,7 @@ describe('notification recording', () => {
       });
       await notifier.notify('export.failed', undefined, {
         workspaceId: 3,
-        export: { epicRef: 42, destination: 's3', disposition: 'done', error: 'AccessDenied', retry: 0, nextRetryAt: null },
+        export: { epicRef: trackerRef(42), destination: 's3', disposition: 'done', error: 'AccessDenied', retry: 0, nextRetryAt: null },
       });
       expect(recorded).toEqual([{ workspaceId: 3, taskId: null, severity: 'export', title: 'Export failed for Epic #42 — AccessDenied', detail: 's3' }]);
     });

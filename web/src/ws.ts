@@ -1,3 +1,4 @@
+import type { TrackerRef } from './types.js';
 import type {
   Attempt,
   Conversation,
@@ -40,6 +41,26 @@ export interface HostLoad {
   saturated: boolean;
 }
 
+/** What an export belongs to; parsed from the wire's nullable taskId/epicRef pair. */
+export type ExportOwner = { kind: 'task'; taskId: number } | { kind: 'epic'; epicRef: TrackerRef; workspaceId: number };
+
+interface ExportFailedWire extends Omit<Extract<ServerMessage, { type: 'export_failed' }>, 'owner'> {
+  taskId: number | null;
+  epicRef: TrackerRef | null;
+  workspaceId: number | null;
+}
+
+type WireMessage = Exclude<ServerMessage, { type: 'export_failed' }> | ExportFailedWire;
+
+export function parseServerMessage(wire: WireMessage): ServerMessage | null {
+  if (wire.type !== 'export_failed') return wire;
+  const { taskId, epicRef, workspaceId, ...rest } = wire;
+  if (taskId !== null) return { ...rest, owner: { kind: 'task', taskId } };
+  if (epicRef !== null && workspaceId !== null) return { ...rest, owner: { kind: 'epic', epicRef, workspaceId } };
+  console.warn('ws: dropping export_failed with no Task or Epic owner');
+  return null;
+}
+
 export type ServerMessage =
   | { type: 'attempt_event'; event: AttemptEvent }
   | { type: 'attempt_log_event'; event: AttemptLogEvent }
@@ -52,8 +73,9 @@ export type ServerMessage =
   | { type: 'task_removed'; id: number }
   // An Epic's integration merge advanced a step; the board refetches its epics
   // so the merge progress follows live (Epics carry no Attempt stream).
-  | { type: 'epic_changed'; workspaceId: number; epicRef: number }
-  | { type: 'epic_integrated'; workspaceId: number; epicRef: number }
+  | { type: 'epic_changed'; workspaceId: number; epicRef: TrackerRef }
+  | { type: 'epic_integrated'; workspaceId: number; epicRef: TrackerRef }
+  | { type: 'agent_messages_changed'; workspaceId: number }
   // Live AttemptSummary usage: the Activity view merges these deltas into its
   // rows so tokens/context/cost tick live. Sent to read keys too.
   | ({ type: 'attempt_usage' } & AttemptUsageEvent)
@@ -65,10 +87,8 @@ export type ServerMessage =
   // Sent to every client regardless of workspace; nextRetryAt is null when no further retry is scheduled.
   | {
       type: 'export_failed';
-      taskId: number | null;
-      epicRef: number | null;
-      workspaceId: number | null;
-      trackerRef: number | null;
+      owner: ExportOwner;
+      trackerRef: TrackerRef | null;
       destination: string;
       disposition: string;
       error: string;
@@ -164,7 +184,8 @@ function connect(): void {
     for (const listener of listeners) listener.onOpen?.(socket);
   };
   socket.onmessage = (ev) => {
-    const message: ServerMessage = JSON.parse(String(ev.data));
+    const message = parseServerMessage(JSON.parse(String(ev.data)));
+    if (message === null) return;
     updatePendingPermissions(message);
     for (const listener of listeners) listener.onMessage(message);
   };

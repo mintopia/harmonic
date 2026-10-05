@@ -4,8 +4,11 @@ import type { AppContext } from '../server/app.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES } from '../config.js';
 import { TASK_STATES } from '../db/schema.js';
 import { serializeAttempt } from '../domain/attempts.js';
-import { DomainError } from '../domain/errors.js';
 import { deleteTaskKeepingArchive, operatorReasonSchema, recordOperatorActionBestEffort, recordOperatorActionsBestEffort } from '../server/operator-inputs.js';
+
+import type { McpCaller } from './caller.js';
+import { registerAgentMessageTools } from './agent-messages.js';
+import { wrapAsync } from './tool-result.js';
 
 const taskId = { taskId: z.number().int().positive().describe('Task id') };
 
@@ -14,28 +17,8 @@ const taskId = { taskId: z.number().int().positive().describe('Task id') };
  * read access to Attempts and Attempt events. Built per request (stateless
  * streamable HTTP).
  */
-export function buildMcpServer(ctx: AppContext): McpServer {
+export function buildMcpServer(ctx: AppContext, caller: McpCaller): McpServer {
   const server = new McpServer({ name: 'harmonic', version: '0.1.0' });
-
-  const json = (value: unknown) => ({
-    content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],
-  });
-
-  const wrapAsync = <A, R>(fn: (args: A) => Promise<R>) => {
-    return async (args: A) => {
-      try {
-        return json(await fn(args));
-      } catch (err) {
-        if (err instanceof DomainError) {
-          return {
-            content: [{ type: 'text' as const, text: `Error (${err.code}): ${err.message}` }],
-            isError: true,
-          };
-        }
-        throw err;
-      }
-    };
-  };
 
   server.registerTool(
     'create_task',
@@ -206,6 +189,8 @@ export function buildMcpServer(ctx: AppContext): McpServer {
       return { acknowledged: true, running: ctx.runner.markEscalate(taskId, reason) };
     }),
   );
+
+  registerAgentMessageTools(server, ctx, caller);
 
   return server;
 }

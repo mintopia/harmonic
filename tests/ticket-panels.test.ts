@@ -10,6 +10,7 @@ import { cleanup, mountComponent } from './component-smoke-harness.js';
 afterEach(cleanup);
 
 const run: AttemptSummary = {
+  pullRequestUrl: null,
   id: 1,
   taskId: 1,
   number: 1,
@@ -59,7 +60,7 @@ describe('ticket panel components (issue #465)', () => {
       verdict: 'pass',
       summary: 'All tests passed.',
       output: '',
-      prompt: null,
+      promptLocator: null,
       harness: null,
       hasTranscript: false,
       outputTruncated: false,

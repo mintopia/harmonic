@@ -1,3 +1,4 @@
+import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../src/domain/prompt-fragments.js';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -8,13 +9,16 @@ import { type AppConfig, baselineConfig, type DeepPartial } from '../src/config.
 import { type AsyncDbHandle, openAsyncDb } from '../src/db/async.js';
 import { workspaces as workspacesTable } from '../src/db/schema.js';
 import { AttemptStore } from '../src/domain/attempts.js';
+import { SessionStore } from '../src/domain/sessions.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import type { EpicWorktreePool } from '../src/execution/epic-worktree-pool.js';
+import { TranscriptCapture } from '../src/execution/transcript-capture.js';
 import { EpicVerificationRunner } from '../src/tracker/epic-verification-runner.js';
 import type { CriticDriveRequest, CriticHarnessDrive } from '../src/verification/critic.js';
 import { createPostMergeCheck } from '../src/verification/post-merge-check.js';
-import { allWorkspaces, makeSettingsStore, seedWorkspace, startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
+import { executionPlumbing, allWorkspaces, makeSettingsStore, seedWorkspace, startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -165,22 +169,36 @@ describe('Critic Step archive wiring (#730)', () => {
       const archive = new TaskArchive({ dataDir: dir, ensureArchiveId: (id) => tasks.ensureArchiveId(id), workspaceName: async () => 'ws' });
       const task = await tasks.create({ prompt: 'post-merge', state: 'ready', workingDir: repoDir, isolationMode: 'direct' });
       const run = await attempts.create(task.id);
-      const ws = { taskPostMergeCommands: null, taskPostMergeCritics: JSON.stringify(twoCritics), taskPreMergeCommands: null, taskPreMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null };
+      const ws = { taskPostMergeCommands: null, taskPostMergeCritics: JSON.stringify(twoCritics.map((entry) => ({ ...entry, critic: { ...entry.critic, timeoutSeconds: 17 } }))), taskPreMergeCommands: null, taskPreMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null, ...NO_PROMPT_FRAGMENT_OVERRIDES };
+      const verificationAttempts = new VerificationAttemptStore(asyncDb);
+      const transcripts = new TranscriptCapture(new SessionStore(asyncDb), verificationAttempts, () => criticConfig(logDir));
+      const captureUsage = vi.spyOn(transcripts, 'captureCriticUsage');
+      const timeouts: number[] = [];
       const check = createPostMergeCheck({
-        workspaces: { get: async () => ws } as never,
-        settingsStore: { getGlobal: () => criticConfig(logDir) } as never,
-        verificationAttempts: new VerificationAttemptStore(asyncDb),
-        criticDrive: drive,
+        ...executionPlumbing(),
+        getWorkspace: async () => ws,
+        getConfig: () => criticConfig(logDir),
+        verificationAttempts,
+        attempts,
+        criticDrive: { run: (request) => { timeouts.push(request.timeoutMs); return drive.run(request); } },
         archive,
+        transcripts,
       });
 
       const result = await check({ task, run, mergeOid: git(repoDir, 'rev-parse', 'HEAD'), baseDir: repoDir });
 
       expect(result.pass).toBe(true);
+      expect(timeouts).toEqual([17_000, 17_000]);
+      expect(captureUsage).toHaveBeenCalledTimes(2);
+      transcripts.close();
       const postMerge = join(findDir(join(dir, 'archive'), `${task.id}-`), 'attempts', String(run.number), 'verification', 'post-merge');
       expect(readdirSync(postMerge).sort()).toEqual(['critic-1', 'critic-2']);
       expectStepTrio(join(postMerge, 'critic-1'), 'alpha');
       expectStepTrio(join(postMerge, 'critic-2'), 'beta');
+      const owner = (await tasks.get(task.id))!;
+      const rows = await verificationAttempts.list(run.id);
+      expect(rows.map((row) => row.promptKey).sort()).toEqual(['verification/post-merge/critic-1/prompt.md', 'verification/post-merge/critic-2/prompt.md']);
+      for (const row of rows) expect(await archive.readArchivedPrompt(owner, run.number, row.promptKey!)).toContain('review-');
     });
 
     it('writes Epic critic Steps keyed by the review Step id under epic-<ref>/attempts/<n>/verification/pre-merge', async () => {
@@ -188,24 +206,26 @@ describe('Critic Step archive wiring (#730)', () => {
       const settingsStore = await makeSettingsStore(dir);
       const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
       const epicAttempts = new AttemptStore(asyncDb);
+      const epicVerificationAttempts = new VerificationAttemptStore(asyncDb);
       const archive = new TaskArchive({ dataDir: dir, ensureArchiveId: (id) => tasks.ensureArchiveId(id), workspaceName: async () => 'ws' });
-      await tasks.syncEpics(wsRow.id, [{ ref: 77, kind: 'epic' }]);
+      await tasks.syncEpics(wsRow.id, [{ ref: trackerRef(77), kind: 'epic' }]);
       const workspace = { ...wsRow, epicPreMergeCommands: null, epicPreMergeCritics: JSON.stringify(twoCritics) };
       const runner = new EpicVerificationRunner({
+        commandSpawn: executionPlumbing().commandSpawn,
         workspace: workspace as never,
         getWorkspaces: async () => [workspace as never],
         getConfig: () => criticConfig(logDir),
         worktrees: { acquire: async () => repoDir, get: () => repoDir } as unknown as EpicWorktreePool,
         epicAttempts,
-        verificationAttemptStore: new VerificationAttemptStore(asyncDb),
+        verificationAttemptStore: epicVerificationAttempts,
         criticDrive: drive,
         archive,
       });
 
-      const decision = await runner.verify({ repoDir, epicRef: 77, verifiedHeadOid: git(repoDir, 'rev-parse', 'HEAD') });
+      const decision = await runner.verify({ repoDir, epicRef: trackerRef(77), verifiedHeadOid: git(repoDir, 'rev-parse', 'HEAD') });
 
       expect(decision.outcome).toBe('proceed');
-      const epicAttempt = (await epicAttempts.listForEpic({ workspaceId: wsRow.id, epicRef: 77 }))[0]!;
+      const epicAttempt = (await epicAttempts.listForEpic({ workspaceId: wsRow.id, epicRef: trackerRef(77) }))[0]!;
       const steps = (await epicAttempts.listSteps(epicAttempt.id)).filter((step) => step.type === 'review');
       expect(steps).toHaveLength(2);
       const preMerge = join(dir, 'archive', readdirSync(join(dir, 'archive'))[0]!, 'epic-77', 'attempts', String(epicAttempt.number), 'verification', 'pre-merge');
@@ -216,6 +236,9 @@ describe('Critic Step archive wiring (#730)', () => {
       expectStepTrio(byMarker.get('alpha')!, 'alpha');
       expectStepTrio(byMarker.get('beta')!, 'beta');
       expect(steps.every((step) => step.state === 'passed' && step.logLocator?.startsWith('verification_attempt:'))).toBe(true);
+      const rows = await epicVerificationAttempts.list(epicAttempt.id);
+      expect(rows.map((row) => row.promptKey).sort()).toEqual(steps.map((step) => `verification/pre-merge/${step.id}/prompt.md`).sort());
+      for (const row of rows) expect(await archive.readArchivedPrompt({ workspaceId: wsRow.id, epicRef: trackerRef(77) }, epicAttempt.number, row.promptKey!)).toContain('review-');
     });
 
     it('fails the Epic review Step instead of leaving it running when recording the critic throws', async () => {
@@ -223,11 +246,12 @@ describe('Critic Step archive wiring (#730)', () => {
       const settingsStore = await makeSettingsStore(dir);
       const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
       const epicAttempts = new AttemptStore(asyncDb);
-      await tasks.syncEpics(wsRow.id, [{ ref: 78, kind: 'epic' }]);
+      await tasks.syncEpics(wsRow.id, [{ ref: trackerRef(78), kind: 'epic' }]);
       const workspace = { ...wsRow, epicPreMergeCommands: null, epicPreMergeCritics: JSON.stringify(twoCritics) };
       const store = new VerificationAttemptStore(asyncDb);
       store.append = async () => { throw new Error('db down'); };
       const runner = new EpicVerificationRunner({
+        commandSpawn: executionPlumbing().commandSpawn,
         workspace: workspace as never,
         getWorkspaces: async () => [workspace as never],
         getConfig: () => criticConfig(logDir),
@@ -237,9 +261,9 @@ describe('Critic Step archive wiring (#730)', () => {
         criticDrive: drive,
       });
 
-      await runner.verify({ repoDir, epicRef: 78, verifiedHeadOid: git(repoDir, 'rev-parse', 'HEAD') }).catch(() => undefined);
+      await runner.verify({ repoDir, epicRef: trackerRef(78), verifiedHeadOid: git(repoDir, 'rev-parse', 'HEAD') }).catch(() => undefined);
 
-      const epicAttempt = (await epicAttempts.listForEpic({ workspaceId: wsRow.id, epicRef: 78 }))[0]!;
+      const epicAttempt = (await epicAttempts.listForEpic({ workspaceId: wsRow.id, epicRef: trackerRef(78) }))[0]!;
       await vi.waitFor(async () => {
         const steps = (await epicAttempts.listSteps(epicAttempt.id)).filter((step) => step.type === 'review');
         expect(steps.map((step) => [step.state, step.endedAt !== null])).toEqual([['failed', true], ['failed', true]]);

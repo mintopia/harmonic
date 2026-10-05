@@ -1,7 +1,12 @@
+import type { TrackerResolveFailureCode } from '../../src/tracker/adapter.js';
+import type { PromptFragmentOverrides, PromptFragments } from '../../src/domain/prompt-fragments.js';
 import type { Verdict } from '../../src/verification/critic-schema.js';
 
 /** The stored Ticket states; blocked-ness and agent-workability are derived, never stored. */
 export const TASK_STATES = ['draft', 'ready', 'working', 'paused', 'escalated', 'done', 'cancelled'] as const;
+/** An opaque tracker ticket ref (`185`, `PROJ-185`): never parse or do arithmetic on it; compare with ===. */
+export type TrackerRef = string;
+
 export type TaskState = (typeof TASK_STATES)[number];
 
 export interface UpdateState {
@@ -130,9 +135,10 @@ export interface VerificationAttempt {
   verdict: Verdict;
   summary: string;
   output: string;
-  /** The exact prompt sent to the critic for this attempt; null for a command
-   * verifier (which sends no prompt) and pre-feature rows. */
-  prompt: string | null;
+  /** Archive locator of the critic's Resolved Prompt — read it with
+   * `api.resolvedPrompt(attemptId, promptLocator)`; null for a command verifier
+   * and for rows with no archived prompt. */
+  promptLocator: string | null;
   /** The critic harness that drove this attempt (may differ from the builder's);
    * null for a command verifier or a pre-feature row. */
   harness: string | null;
@@ -185,12 +191,64 @@ export type TicketTimelineKind =
   | 'verification'
   | 'guardrail'
   | 'operator-reject'
+  | 'agent-message'
   | 'fact';
 
 /** One chronological audit record from the ticket-wide lifecycle projection. */
 export type TicketTimelineEvent = {
   [K in TicketTimelineKind]: { attemptId: number | null; ts: number; kind: K; data: unknown };
 }[TicketTimelineKind];
+
+export type AgentMessageReceipt = 'queued' | 'delivered' | 'held' | 'refused';
+
+export interface AgentMessageRecipient {
+  taskId: number;
+  receipt: AgentMessageReceipt;
+  mode?: 'mid-turn' | 'next-turn';
+  deliveredAt?: number;
+  reason?: string;
+  deleted: boolean;
+}
+
+export interface AgentMessage {
+  messageId: string;
+  role: string;
+  parts: { kind: 'text'; text: string }[];
+  replyTo: string | null;
+  threadId: string;
+  senderTaskId: number;
+  senderDeleted: boolean;
+  senderAttemptId: number;
+  senderAttemptNumber: number | null;
+  workspaceId: number;
+  createdAt: number;
+  recipients: AgentMessageRecipient[];
+}
+
+export interface AgentMessageThreadParticipant {
+  taskId: number;
+  title: string | null;
+  harness: string | null;
+  epicId: TrackerRef | null;
+  deleted: boolean;
+  model: string | null;
+  state: TaskState | null;
+  betweenAttempts: boolean;
+  attemptNumber: number | null;
+  sends: number;
+  sendCap: number;
+  lastMessageAt: number | null;
+}
+
+export interface AgentMessageThread {
+  threadId: string;
+  workspaceId: number;
+  workspaceName: string;
+  latestAt: number;
+  live: boolean;
+  messages: AgentMessage[];
+  participants: AgentMessageThreadParticipant[];
+}
 
 /** Tracker mirroring: a Task is authored here or a 1:1 projection of a tracker issue. */
 export type TaskOrigin = 'native' | 'mirrored';
@@ -214,11 +272,11 @@ export interface Cost {
  */
 export interface MapRollup {
   workspaceId: number;
-  ref: number;
+  ref: TrackerRef;
   title: string;
   url: string;
   /** Tracker refs of the mirrored Tasks under this Map. */
-  taskRefs: number[];
+  taskRefs: TrackerRef[];
   /** Task count per state present under this Map. */
   counts: Record<string, number>;
 }
@@ -291,11 +349,47 @@ export interface GitStatusEntry {
  * `ok` narrows which fields are present, matching the flat JSON on the wire.
  */
 export type ResolvedTracker =
-  | { ok: true; label: string; code: null; reason: null }
-  | { ok: false; label: null; code: string; reason: string };
+  | { ok: true; label: string; kind: string; source: TrackerSource; code: null; reason: null }
+  | { ok: false; label: null; kind: null; source: null; code: TrackerResolveFailureCode; reason: string };
+
+export interface JSONSchemaObject {
+  type?: string;
+  properties?: Record<string, JSONSchemaProperty>;
+  required?: string[];
+  [key: string]: unknown;
+}
+
+export interface JSONSchemaProperty {
+  type?: string | string[];
+  enum?: unknown[];
+  title?: string;
+  description?: string;
+  default?: unknown;
+  minimum?: number;
+  [key: string]: unknown;
+}
+
+export interface TrackerKindInfo {
+  id: string;
+  label: string;
+  secretNames: string[];
+  settingsSchema: JSONSchemaObject;
+  capabilities: Record<string, unknown>;
+}
+
+export type CodeRepositoryKind = 'github' | 'gitlab' | 'forgejo' | 'git';
+
+export interface TrackerDetection {
+  detectedTracker: { name: string; kind: string | null } | null;
+  detectedCodeRepository: CodeRepositoryKind | null;
+}
+
+export type VerifyResult = { ok: true; identity: string } | { ok: false; reason: string };
+
+export type TrackerSource = 'configured' | 'detected' | 'code-repository';
 
 /** A Workspace: a named Working Directory, unique by absolute path. */
-export interface Workspace {
+export interface Workspace extends PromptFragmentOverrides {
   id: number;
   name: string;
   workingDir: string;
@@ -318,6 +412,10 @@ export interface Workspace {
   conflictResolveTurns: number | null;
   maxConcurrentAttempts: number | null;
   autoRunnerEnabled: boolean | null;
+  agentMessagesEnabled: boolean | null;
+  agentMessagesSendCap: number | null;
+  /** Agent Messages on for this Workspace after Baseline → Global → Workspace resolution. */
+  effectiveAgentMessagesEnabled: boolean;
   /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: number | null;
   contextReuseTokenLimit: number | null;
@@ -343,6 +441,9 @@ export interface Workspace {
   exportS3SecretAccessKey: string | null;
   exportRedactPatterns: { id: string; regex: string }[] | null;
   exportIncludeStates: ExportState[] | null;
+  configuredTracker: { kind: string; settings?: Record<string, unknown> } | null;
+  codeRepository: 'github' | 'gitlab' | 'forgejo' | 'git' | null;
+  triageLabels: Partial<Record<'readyForAgent' | 'readyForHuman' | 'epic' | 'wayfinderMap', string>> | null;
   archiveRetentionDays: number | null;
   archiveRetentionMaxTotalMB: number | null;
   /** Tool-timeout override; `null` inherits `config.guardrails.toolTimeoutMinutes`. */
@@ -352,10 +453,17 @@ export interface Workspace {
   drivePrompt: string | null;
   driveUnattendedReminder: string | null;
   driveContinuePrompt: string | null;
+  driveCommitNudge: string | null;
   driveMergeFate: 'auto-merge' | 'open-PR' | 'artifact' | null;
   driveContinueAttempts: number | null;
   /** Task Prompt override; `null` inherits `config.taskPrompt`. */
   taskPrompt: string | null;
+  /** Pause message override; `null` inherits `config.pauseMessage`. */
+  pauseMessage: string | null;
+  mergeConflictPrompt: string | null;
+  mergeEpicConflictPrompt: string | null;
+  mergeEpicRefreshPrompt: string | null;
+  verifyEpicResolveSuffix: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -438,6 +546,14 @@ export interface BudgetGuardrail {
   costUsd: number | null;
 }
 
+/** An Epic container in the Tasks table: no Task id, keyed by `trackerRef`. */
+export type EpicListRow = Omit<Task, 'id' | 'prompt' | 'trackerRef'> & { trackerRef: TrackerRef };
+
+/** A Tasks-table item: a Task row (has `id`) or an Epic row (no `id`). */
+export type TaskListItem = Task | EpicListRow;
+
+export const isEpicListRow = (row: TaskListItem): row is EpicListRow => !('id' in row);
+
 export interface Task {
   id: number;
   /** The full prompt is served only on the item GET (`GET /api/tasks/:id`) and
@@ -479,6 +595,8 @@ export interface Task {
   escalationReason: string | null;
   /** Live merge indicator, orthogonal to `state`: 'merging' while the candidate merges onto base, 'resolving-conflicts' once that merge conflicts a human must settle; null at rest. */
   mergeStatus: MergeStatus | null;
+  /** Merged, but the tracker ticket close is outstanding. */
+  ticketClosePending: boolean;
   /** Feedback held for the next same-ticket Attempt, if any. */
   feedback: string | null;
   createdAt: number;
@@ -500,17 +618,19 @@ export interface Task {
   /** native = authored here; mirrored = a projection of a tracker issue. */
   origin: TaskOrigin;
   /** The mirrored issue's number; null on native Tasks. */
-  trackerRef: number | null;
+  trackerRef: TrackerRef | null;
   /** Mirrored role: which workflow the tracker labelled it; null on native Tasks. */
   workflow: Workflow | null;
   /** Mirrored role: the wayfinder decision kind; null on native/implement Tasks. */
   wayfinderType: WayfinderType | null;
   /** The parent Map's tracker ref; null when unmapped or native. */
-  mapRef: number | null;
+  mapRef: TrackerRef | null;
   /** The mirrored issue's tracker URL, from the last poll; null on native Tasks or before a poll. */
   url: string | null;
   /** The parent Map's title, resolved from mapRef; null when unmapped or before a poll. */
   mapTitle: string | null;
+  /** The display name of the tracker a mirrored Task came from; null on native Tasks or an unresolved tracker. */
+  trackerLabel: string | null;
   /** The latest run's branch (worktree mode only); null in direct mode or before any run. */
   branch: string | null;
   /** The latest run's `git diff --stat`, snapshotted at merging; null until then or in direct mode. */
@@ -564,11 +684,12 @@ export interface AttemptSummary {
   reason: string | null;
   stopReason: string | null;
   sessionId: string | null;
-  /** The exact prompt text sent to the harness for this Attempt; null for
-   * pre-feature Attempts and while an Attempt is still starting up. */
+  /** Legacy: the prompt stored on Attempts that predate the Archive-only Resolved Prompt read; null on every newer Attempt, whose prompts the transcript reads from the Archive. */
   prompt: string | null;
   branch: string | null;
   baseBranch: string | null;
+  /** The PR/MR the open-PR Merge Fate opened for this Attempt; null when none was opened. */
+  pullRequestUrl: string | null;
   usage: {
     totals: AttemptUsageTotals | null;
     models: Record<string, ModelUsage>;
@@ -602,7 +723,6 @@ export interface EpicAttempt {
   number: number;
   state: AttemptState;
   reason: string | null;
-  prompt: string | null;
   usage: AttemptUsage | null;
   cost: Cost | null;
   toolCalls: number;
@@ -612,6 +732,15 @@ export interface EpicAttempt {
   steps: Step[];
   /** Every command and critic record from this whole-Epic verification. */
   verificationAttempts: VerificationAttempt[];
+  /** Resolved Prompts this Attempt sent to Epic resolvers, oldest first. */
+  resolverPrompts: EpicResolverPrompt[];
+}
+
+export interface EpicResolverPrompt {
+  kind: 'merge-conflict' | 'verification' | 'refresh';
+  locator: string;
+  promptIndex: number;
+  ts: number;
 }
 
 /** A Task's continuation preview, as `GET
@@ -954,7 +1083,7 @@ export interface ActivityProcess {
   isolation: string;
   /** Epoch ms the process started; the client derives elapsed from it. */
   startedAt: number;
-  trackerRef: number | null;
+  trackerRef: TrackerRef | null;
   /** The mirrored issue's tracker URL — the row's ticket deep-link; null on native Tasks, Conversations, or before a poll. */
   trackerUrl: string | null;
   /** True when the Task is escalated — the "Needs you" signal; always false for a Conversation. */
@@ -999,7 +1128,7 @@ export interface TimelineAttempt {
   model: string;
   /** An AttemptState: 'running' | 'passed' | 'failed' | 'escalated' | 'cancelled'. */
   state: string;
-  trackerRef: number | null;
+  trackerRef: TrackerRef | null;
   startedAt: number;
   endedAt: number | null;
   /** Frozen Cost for a finished Attempt; null while running or when nothing was priceable. */
@@ -1032,10 +1161,11 @@ export interface AppConfig {
     model: string;
   };
   autoRunner: { enabled: boolean; maxConcurrentAttempts: number };
+  agentMessages: { enabled: boolean; sendCap: number };
   /** Per-stage command and critic verifier lists. */
   verify: {
     task: { preMerge: TaskVerificationStage; postMerge: TaskVerificationStage };
-    epic: { preMerge: EpicVerificationStage; resolvePrompt: string };
+    epic: { preMerge: EpicVerificationStage; resolvePrompt: string; resolveSuffix: string };
   };
   /** Attempt Guardrails: the global-default budget bounds, progress
    * toggle, and tool-timeout a Workspace inherits until it overrides them. */
@@ -1048,10 +1178,14 @@ export interface AppConfig {
     unattendedReminder: string;
     /** The re-prompt nudge sent when a turn ends without finish/escalate, with {taskId} placeholder. */
     continuePrompt: string;
+    /** Sent when an Attempt ends its turn with uncommitted changes. No placeholders. */
+    commitNudge: string;
     mergeFate: 'auto-merge' | 'open-PR' | 'artifact';
     /** How many times an Attempt that ended its turn without finish/escalate is re-prompted to continue before it is treated as unresolved and verified. 0 keeps single-turn behaviour. */
     continueAttempts: number;
   };
+  /** Merge-conflict resolver prompts, with {turn}/{taskBranch}/{baseBranch}/{paths}/{fragment.conflictResolution} placeholders. */
+  merge: { postMergeCheck: boolean; conflictPrompt: string; epicConflictPrompt: string; epicRefreshPrompt: string };
   /** Maximum implementation attempts before the ticket is escalated. */
   maxAttempts: number;
   /** Reuse a warm Session into the next attempt while its context occupancy stays
@@ -1062,6 +1196,9 @@ export interface AppConfig {
   };
   /** The Task Prompt template for native Attempts, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
   taskPrompt: string;
+  pauseMessage: string;
+  /** Shared Prompt Fragments, referenced from prompts as `{fragment.<name>}`. */
+  promptFragments: PromptFragments;
   archive: { retain: { days: number | null; maxTotalMB: number | null } };
   /** S3 credentials arrive masked (`********`) when set; writing the mask back keeps the stored value. */
   export: {

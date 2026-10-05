@@ -2,6 +2,7 @@
 
 Status: accepted
 Date: 2026-09-02
+Reconciled: 2026-10-02. Transition enforcement is implemented; the table includes ADR-0038 step-aware Accept.
 
 ## Context
 
@@ -10,18 +11,17 @@ and `cancelled`, ADR-0001) is mutated from many places: the operator actions
 (`promote`, `pause`, `resume`, `requeue`, `uncancel`, `cancel`, `complete`), the Attempt settle
 coordinator, the Auto-Runner, boot crash-recovery, and the escalation/accept
 flow. The operator-action methods each guard their entry state and throw
-`invalid_state` on a bad one. But the shared writer, `TaskService.setState`, is
-an **unguarded** write: it moves a Task from any state to any state, and the
-settle / requeue / auto-run paths all go through it with no from→to validation
-and no serialization between concurrent operations on the same Task.
+`invalid_state` on a bad one. Before this decision, the shared writer,
+`TaskService.setState`, was unguarded. Settle, requeue, and auto-run paths
+could bypass transition validation and interleave operations on one Task.
 
-This produced a real defect (task 452): an operator Accept began its merge — a
+Before implementation, this produced a real defect (task 452): an operator Accept began its merge — a
 slow, conflict-resolving merge under the Workspace mutex — while the verify path
 timed out and requeued the Task to `ready`. The two operations interleaved on
 one Task; the merge completed and recorded `merged`, but the Task was left
 `ready`: a merged branch behind an open ticket. Boot reconciliation now repairs
-the end-state (see crash-recovery), but the interleaving that caused it is still
-reachable at runtime, and nothing stops an illegal jump such as `done → ready`.
+the end-state (see crash-recovery), but the interleaving required the central transition validation and locking
+implemented by this decision.
 
 Harmonic is one Node process against local repositories for one operator
 (ADR-0001). The fix must therefore be in-process invariants, not the durable
@@ -40,7 +40,7 @@ single table and throw `invalid_state` on an illegal edge. Terminal states
 | draft     | ready, cancelled                            |
 | ready     | working, escalated, done, cancelled         |
 | working   | ready, escalated, done, cancelled, paused   |
-| escalated | ready, done, cancelled                      |
+| escalated | ready, working, done, cancelled                      |
 | paused    | working, cancelled                          |
 | done      | — (terminal)                                |
 | cancelled | ready                                       |
@@ -50,6 +50,9 @@ before the Task reached `done`; every other edge already has a caller. The
 `paused` state and its edges — `working → paused` on pause, `paused → working` on
 resume, `paused → cancelled` on operator Cancel — were added by ADR-0027; pause
 and resume are Task-mutating operations and take the per-Task lock below.)
+
+`escalated → working` supports step-aware Accept (ADR-0038). Same-state
+writes are idempotent.
 
 The one exception is the mirrored-Task tracker reopen (`upsertMirrored`): a
 re-opened tracker issue flips `done → ready` by a direct column write, outside

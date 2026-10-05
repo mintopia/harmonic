@@ -12,6 +12,8 @@ import { TaskArchive } from '../src/archive/task-archive.js';
 import { EXPORT_RETRY_DELAYS_MS, TaskExporter, type ExportFailure, type TaskExporterDeps } from '../src/archive/task-export.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import { emptyGitProvenance } from '../src/archive/git-provenance.js';
+import { BackgroundWork } from '../src/error-handling.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const TARBALL = /^(\d+)-(\d+-)?done-\d{8}T\d{6}\.\d{3}Z(-\d+)?\.tar\.gz$/;
 
@@ -43,14 +45,15 @@ describe('TaskExporter (#734)', () => {
 
   const exporter = (overrides: Partial<TaskExporterDeps> = {}): TaskExporter =>
     new TaskExporter({
+      fireAndForget: new BackgroundWork().fireAndForget,
       dataDir: dir,
       archive,
       version: '9.9.9',
       settings: async () => settingsFor(),
       epicSettings: async () => settingsFor(),
-      epicSnapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, members: [] }),
+      epicSnapshot: async () => ({ ticket: {}, timeline: {}, agentMessages: [], attemptCount: 0, members: [] }),
       workspaceName: async () => 'My Workspace',
-      snapshot: async () => ({ ticket: { title: 'Ticket title', id: task.id }, timeline: { events: [{ kind: 'fact' }] }, attemptCount: 1, git: emptyGitProvenance() }),
+      snapshot: async () => ({ ticket: { title: 'Ticket title', id: task.id }, timeline: { events: [{ kind: 'fact' }] }, agentMessages: [], attemptCount: 1, git: emptyGitProvenance() }),
       recordEpicStep: async () => undefined,
       recordFact: async (taskId, payload) => {
         facts.push({ taskId, payload: payload as Record<string, unknown> });
@@ -114,6 +117,7 @@ describe('TaskExporter (#734)', () => {
     try {
       expect(listAll(out)).toEqual([
         'README.md',
+        'agent-messages.json',
         'archive.json',
         'attempts/1/implementation/acp.jsonl',
         'attempts/1/implementation/native/x.jsonl',
@@ -142,6 +146,22 @@ describe('TaskExporter (#734)', () => {
       expect(Number.isNaN(Date.parse(manifest.exportedAt))).toBe(false);
       expect(readFileSync(join(out, 'README.md'), 'utf8')).toContain('Ticket title');
       expect(JSON.parse(readFileSync(join(out, 'archive.json'), 'utf8')).taskId).toBe(task.id);
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+
+  it('exports the Agent Messages the Task sent or received and documents the file in the README', async () => {
+    const messages = [
+      { messageId: 'm1', threadId: 'm1', senderTaskId: task.id, senderDeleted: false, recipients: [{ taskId: 99, receipt: 'delivered', deleted: true }] },
+    ];
+    await exporter({
+      snapshot: async () => ({ ticket: {}, timeline: {}, agentMessages: messages, attemptCount: 1, git: emptyGitProvenance() }),
+    }).run(task, 'done');
+    const out = extract(join(dest, 'my-workspace', tarballs()[0]!));
+    try {
+      expect(JSON.parse(readFileSync(join(out, 'agent-messages.json'), 'utf8'))).toEqual(messages);
+      expect(readFileSync(join(out, 'README.md'), 'utf8')).toMatch(/\| `agent-messages\.json` \|.*Agent Messages/);
     } finally {
       rmSync(out, { recursive: true, force: true });
     }
@@ -266,6 +286,7 @@ describe('TaskExporter (#734)', () => {
 
   it('trigger never throws and still exports in the background', async () => {
     const failing = new TaskExporter({
+      fireAndForget: new BackgroundWork().fireAndForget,
       dataDir: dir,
       archive,
       version: '1',
@@ -273,17 +294,18 @@ describe('TaskExporter (#734)', () => {
         throw new Error('settings boom');
       },
       epicSettings: async () => settingsFor(),
-      epicSnapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, members: [] }),
+      epicSnapshot: async () => ({ ticket: {}, timeline: {}, agentMessages: [], attemptCount: 0, members: [] }),
       workspaceName: async () => null,
-      snapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, git: emptyGitProvenance() }),
+      snapshot: async () => ({ ticket: {}, timeline: {}, agentMessages: [], attemptCount: 0, git: emptyGitProvenance() }),
       recordEpicStep: async () => undefined,
       recordFact: async () => undefined,
     });
     expect(() => failing.trigger(task, 'done')).not.toThrow();
 
     exporter().trigger(task, 'done');
-    for (let i = 0; i < 200 && tarballs().length === 0; i++) await new Promise((r) => setTimeout(r, 25));
+    for (let i = 0; i < 200 && facts.length === 0; i++) await new Promise((r) => setTimeout(r, 25));
     expect(tarballs()).toHaveLength(1);
+    expect(facts).toHaveLength(1);
   });
 
   it('exports nothing and records no Fact when the settings lookup rejects', async () => {
@@ -304,7 +326,7 @@ describe('TaskExporter (#734)', () => {
     const sut = exporter({
       snapshot: async () => {
         seen.push(++counter);
-        return { ticket: { value: counter }, timeline: {}, attemptCount: 1, git: emptyGitProvenance() };
+        return { ticket: { value: counter }, timeline: {}, agentMessages: [], attemptCount: 1, git: emptyGitProvenance() };
       },
     });
 
@@ -339,7 +361,7 @@ describe('TaskExporter (#734)', () => {
 
   it('includes the tracker reference in the filename', async () => {
     const now = new Date('2026-01-02T03:04:05.006Z');
-    await exporter({ now: () => now }).run({ ...task, trackerRef: 42 }, 'done');
+    await exporter({ now: () => now }).run({ ...task, trackerRef: trackerRef(42) }, 'done');
     expect(tarballs()).toEqual([`${task.id}-42-done-20260102T030405.006Z.tar.gz`]);
   });
 
@@ -398,11 +420,119 @@ describe('TaskExporter (#734)', () => {
       expect(outcome?.[0]?.status).toBe('failed');
     });
 
-    it('a build failure has nothing to retry and reports nextRetryAt null', async () => {
-      const outcome = await sut().run(task, 'done', Promise.reject(new Error('snapshot broke')));
+    it('a build failure keeps a rebuild sidecar and is retried 3x at +5m, +30m, +2h', async () => {
+      let broken = true;
+      const e = exporter({
+        now: () => new Date(clock),
+        onFailure: (f) => {
+          failures.push(f);
+        },
+        snapshot: async () => {
+          if (broken) throw new Error('snapshot broke');
+          return { ticket: { title: 'Ticket title', id: task.id }, timeline: {}, agentMessages: [], attemptCount: 1, git: emptyGitProvenance() };
+        },
+      });
+      const outcome = await e.run(task, 'done');
       expect(outcome?.[0]?.status).toBe('failed');
-      expect(failures[0]).toMatchObject({ retry: 0, nextRetryAt: null, error: 'snapshot broke' });
+      expect(failures[0]).toMatchObject({ retry: 0, nextRetryAt: new Date(T0 + 5 * MIN).toISOString(), error: 'snapshot broke' });
+      expect(sidecars()).toHaveLength(1);
+      expect(stagedTarballs()).toEqual([]);
+      expect([...(await e.pendingOwnerKeys())]).toEqual([`task:${task.id}`]);
+      await e.sweepStaging();
+      expect(sidecars()).toHaveLength(1);
+
+      clock = T0 + 5 * MIN;
+      await e.retryDue();
+      expect(failures[1]).toMatchObject({ retry: 1, nextRetryAt: new Date(T0 + 30 * MIN).toISOString() });
+      expect(sidecars()).toHaveLength(1);
+
+      broken = false;
+      heal();
+      clock = T0 + 30 * MIN;
+      await e.retryDue();
+      expect(failures).toHaveLength(2);
+      expect(sidecars()).toEqual([]);
       expect(staging()).toEqual([]);
+      expect(facts.at(-1)!.payload).toMatchObject({ status: 'succeeded', retry: 2 });
+      expect(readdirSync(join(blocked, 'my-workspace'))).toHaveLength(1);
+    });
+
+    it('a persistently failing build stops after 3 retries and clears staging', async () => {
+      const e = exporter({
+        now: () => new Date(clock),
+        onFailure: (f) => {
+          failures.push(f);
+        },
+        snapshot: async () => {
+          throw new Error('snapshot broke');
+        },
+      });
+      await e.run(task, 'done');
+      for (const at of [5, 30, 120]) {
+        clock = T0 + at * MIN;
+        await e.retryDue();
+      }
+      expect(failures.map((f) => f.retry)).toEqual([0, 1, 2, 3]);
+      expect(failures[3]!.nextRetryAt).toBeNull();
+      expect(staging()).toEqual([]);
+    });
+
+    it('keeps the valid destinations of a sidecar that also holds a malformed one', async () => {
+      const e = sut();
+      await e.run(task, 'done');
+      const [sidecar] = sidecars();
+      const path = join(dir, 'archive', '.staging', sidecar!);
+      const value = JSON.parse(readFileSync(path, 'utf8'));
+      value.destinations.push({ destination: 'directory', base: 'x', retries: 0, nextRetryAt: 'not a date' });
+      writeFileSync(path, JSON.stringify(value));
+
+      expect([...(await e.pendingOwnerKeys())]).toEqual([`task:${task.id}`]);
+      heal();
+      clock = T0 + 5 * MIN;
+      await e.retryDue();
+
+      expect(readdirSync(join(blocked, 'my-workspace'))).toHaveLength(1);
+      expect(staging()).toEqual([]);
+    });
+
+    it('a rebuild sidecar whose owner can no longer be resolved is dropped after 3 retries', async () => {
+      let gone = false;
+      const e = exporter({
+        now: () => new Date(clock),
+        settings: async () => {
+          if (gone) throw new Error('task deleted');
+          return settingsFor();
+        },
+        snapshot: async () => {
+          throw new Error('snapshot broke');
+        },
+      });
+      await e.run(task, 'done');
+      expect(sidecars()).toHaveLength(1);
+      gone = true;
+      for (const at of [5, 30, 120]) {
+        clock = T0 + at * MIN;
+        await e.retryDue();
+      }
+      expect(staging()).toEqual([]);
+    });
+
+    it('retries a sidecar written by v2.22.0 with a { task } shape', async () => {
+      const e = sut();
+      await e.run(task, 'done');
+      const [sidecar] = sidecars();
+      const path = join(dir, 'archive', '.staging', sidecar!);
+      const { owner, ...rest } = JSON.parse(readFileSync(path, 'utf8'));
+      writeFileSync(path, JSON.stringify({ task: owner.task, ...rest }));
+
+      expect([...(await e.pendingOwnerKeys())]).toEqual([`task:${task.id}`]);
+      heal();
+      clock = T0 + 5 * MIN;
+      await e.retryDue();
+
+      expect(staging()).toEqual([]);
+      expect(readdirSync(join(blocked, 'my-workspace'))).toHaveLength(1);
+      expect(facts.at(-1)!.payload).toMatchObject({ status: 'succeeded', retry: 1 });
     });
 
     it('does nothing before a retry is due', async () => {
@@ -594,7 +724,7 @@ describe('TaskExporter (#734)', () => {
         snapshot: async () => {
           const value = rowsGone ? 'after' : 'before';
           await new Promise((r) => setTimeout(r, 20));
-          return { ticket: { title: value }, timeline: { events: [value] }, attemptCount: 2, git: emptyGitProvenance() };
+          return { ticket: { title: value }, timeline: { events: [value] }, agentMessages: [], attemptCount: 2, git: emptyGitProvenance() };
         },
       });
       await sut.captureForDelete(task);
@@ -618,7 +748,7 @@ describe('TaskExporter (#734)', () => {
     });
 
     it('produces no Export when deleting a Task that never ran', async () => {
-      await exporter({ snapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, git: emptyGitProvenance() }) }).captureForDelete(task);
+      await exporter({ snapshot: async () => ({ ticket: {}, timeline: {}, agentMessages: [], attemptCount: 0, git: emptyGitProvenance() }) }).captureForDelete(task);
       await new Promise((r) => setTimeout(r, 100));
       expect(tarballs()).toEqual([]);
     });
@@ -629,7 +759,7 @@ describe('TaskExporter (#734)', () => {
       await exporter({
         snapshot: async () => {
           snapshots++;
-          return { ticket: {}, timeline: {}, attemptCount: 1, git: emptyGitProvenance() };
+          return { ticket: {}, timeline: {}, agentMessages: [], attemptCount: 1, git: emptyGitProvenance() };
         },
       }).captureForDelete(task);
       expect(snapshots).toBe(0);
@@ -680,7 +810,7 @@ describe('TaskExporter (#734)', () => {
 
     beforeEach(async () => {
       const log = await archive.verificationOutputLog(task, 1, 'pre-merge', 'test');
-      outputLog = log!;
+      outputLog = log!.path;
     });
 
     const exportedFile = (rel: string): { text: string; manifest: { redaction: { applied: boolean; matches: Record<string, number> } } } => {
@@ -729,7 +859,7 @@ describe('TaskExporter (#734)', () => {
 
     it('redacts the ticket and timeline documents too', async () => {
       await exporter({
-        snapshot: async () => ({ ticket: { title: `leak ${token}` }, timeline: { note: 'Bearer abcdefgh1jklmnopqr' }, attemptCount: 1, git: emptyGitProvenance() }),
+        snapshot: async () => ({ ticket: { title: `leak ${token}` }, timeline: { note: 'Bearer abcdefgh1jklmnopqr' }, agentMessages: [], attemptCount: 1, git: emptyGitProvenance() }),
       }).run(task, 'done');
       expect(exportedFile('ticket.json').text).toContain('leak [REDACTED:github-token]');
       const { text, manifest } = exportedFile('timeline.json');

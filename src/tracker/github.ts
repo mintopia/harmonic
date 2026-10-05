@@ -1,7 +1,11 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { logger } from '../logger.js';
-import { MAP_LABEL, type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
+import { z } from 'zod';
+import { parseBlockedByLines } from './relationships.js';
+import type { TrackerKind } from './kind.js';
+import { type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
+import { MAP_LABEL, type TrackerRef, trackerRef } from './ref.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -10,7 +14,7 @@ const SCAN_SAFETY_VALVE = 10_000;
 
 /** The `gh` fields that normalise straight onto a `Ticket` — one bulk read covers relationships. */
 const FIELDS =
-  'number,title,state,body,createdAt,closedAt,labels,assignees,comments,parent,blockedBy,blocking,url';
+  'number,title,state,body,createdAt,closedAt,labels,assignees,parent,blockedBy,blocking,url';
 
 /** Runs a `gh` subprocess in the repo (so `gh` infers the repo from its remote). Injectable for tests. */
 export type GhRunner = (args: string[], cwd: string) => Promise<string>;
@@ -48,7 +52,6 @@ interface RawIssue {
   closedAt: string | null;
   labels: Array<{ name: string }>;
   assignees: Array<{ login: string }>;
-  comments: Array<{ author: { login: string } | null; body: string; createdAt: string }>;
   parent: RawRef | null;
   blockedBy: { nodes: RawRef[] } | null;
   blocking: { nodes: RawRef[] } | null;
@@ -56,36 +59,20 @@ interface RawIssue {
 }
 
 const state = (s: string): TicketState => (s.toUpperCase() === 'CLOSED' ? 'closed' : 'open');
-const ref = (r: RawRef): TicketRef => ({ number: r.number, title: r.title, state: state(r.state) });
-
-/**
- * GitHub's native `blockedBy` is empty unless the repo enabled the dependency preview and the edges were
- * filed in the UI, so also read the "Blocked by" / "Depends on" body convention. The scan stops before a
- * "Blocks" clause on the same line so reverse edges never leak into `blockedBy`.
- */
-function parseBodyBlockers(body: string): number[] {
-  const out = new Set<number>();
-  for (const line of body.split('\n')) {
-    const m = /\b(?:blocked by|depends on)\b[:\s]*(.*)/i.exec(line);
-    if (!m) continue;
-    const clause = m[1]!.split(/\bblock(?:s|ing)\b/i)[0]!;
-    for (const h of clause.matchAll(/#(\d+)/g)) out.add(Number(h[1]));
-  }
-  return [...out];
-}
+const ref = (r: RawRef): TicketRef => ({ ref: trackerRef(r.number), title: r.title, state: state(r.state) });
 
 function normalise(raw: RawIssue): Ticket {
   const labels = (raw.labels ?? []).map((l) => l.name);
   const nativeBlockedBy = (raw.blockedBy?.nodes ?? []).map(ref);
-  const seen = new Set(nativeBlockedBy.map((r) => r.number));
+  const seen = new Set<TrackerRef>(nativeBlockedBy.map((r) => r.ref));
   const blockedBy = [
     ...nativeBlockedBy,
-    ...parseBodyBlockers(raw.body ?? '')
-      .filter((n) => n !== raw.number && !seen.has(n))
-      .map((n): TicketRef => ({ number: n, title: '', state: 'open' })),
+    ...parseBlockedByLines(raw.body ?? '')
+      .filter((n) => n !== raw.number && !seen.has(trackerRef(n)))
+      .map((n): TicketRef => ({ ref: trackerRef(n), title: '', state: 'open' })),
   ];
   return {
-    number: raw.number,
+    ref: trackerRef(raw.number),
     title: raw.title,
     state: state(raw.state),
     body: raw.body ?? '',
@@ -93,14 +80,9 @@ function normalise(raw: RawIssue): Ticket {
     closedAt: raw.closedAt ?? null,
     labels,
     assignees: (raw.assignees ?? []).map((a) => a.login),
-    parent: raw.parent?.number ?? null,
+    parent: raw.parent ? trackerRef(raw.parent.number) : null,
     blockedBy,
     blocking: (raw.blocking?.nodes ?? []).map(ref),
-    comments: (raw.comments ?? []).map((c) => ({
-      author: c.author?.login ?? '',
-      body: c.body,
-      createdAt: c.createdAt,
-    })),
     isMap: labels.includes(MAP_LABEL),
     url: raw.url,
   };
@@ -112,13 +94,18 @@ export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): Writ
 
   return {
     name: 'github',
+    scansOpenOnly: true,
+
+    async identify() {
+      return (await run(['api', 'user', '--jq', '.login'], repoRoot)).trim();
+    },
 
     async scan() {
       const raw = await json<RawIssue[]>([
         'issue',
         'list',
         '--state',
-        'all',
+        'open',
         '--limit',
         String(SCAN_SAFETY_VALVE),
         '--json',
@@ -131,31 +118,41 @@ export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): Writ
     },
 
     async readTicket(ref: TicketRef) {
-      return normalise(await json<RawIssue>(['issue', 'view', String(ref.number), '--json', FIELDS]));
+      return normalise(await json<RawIssue>(['issue', 'view', String(ref.ref), '--json', FIELDS]));
+    },
+
+    async readState(ref: TicketRef) {
+      return state((await json<Pick<RawIssue, 'state'>>(['issue', 'view', String(ref.ref), '--json', 'number,state'])).state);
     },
 
     async claim(ticket: TicketRef) {
-      await run(['issue', 'edit', String(ticket.number), '--add-assignee', '@me'], repoRoot);
+      await run(['issue', 'edit', String(ticket.ref), '--add-assignee', '@me'], repoRoot);
     },
 
     async release(ticket: TicketRef) {
-      await run(['issue', 'edit', String(ticket.number), '--remove-assignee', '@me'], repoRoot);
+      await run(['issue', 'edit', String(ticket.ref), '--remove-assignee', '@me'], repoRoot);
     },
 
     async close(ticket: TicketRef, comment: string) {
-      const args = ['issue', 'close', String(ticket.number)];
+      const args = ['issue', 'close', String(ticket.ref)];
       if (comment) args.push('--comment', comment);
       await run(args, repoRoot);
     },
 
     async reopen(ticket: TicketRef, comment: string) {
-      const args = ['issue', 'reopen', String(ticket.number)];
+      const args = ['issue', 'reopen', String(ticket.ref)];
       if (comment) args.push('--comment', comment);
       await run(args, repoRoot);
     },
-
-    async openPR({ branch, baseBranch, title, body }) {
-      await run(['pr', 'create', '--head', branch, '--base', baseBranch, '--title', title, '--body', body], repoRoot);
-    },
   };
 }
+
+export const githubKind: TrackerKind<Record<string, never>> = {
+  id: 'github',
+  label: 'GitHub',
+  settings: z.object({}).strict(),
+  secretNames: [],
+  capabilities: { close: true, reopen: true, claim: true, transition: false, epicSources: ['epic-label'] },
+  formatRef: (ref) => `#${ref}`,
+  create: ({ repoRoot, run }) => githubAdapter(repoRoot, run),
+};

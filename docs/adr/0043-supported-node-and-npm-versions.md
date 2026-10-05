@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-09-25
 
+Current status (2026-10-02): The declared Node/npm support policy is enforced by package metadata and the CI matrix. CI also runs lint before the coverage suite.
+
 ## Context
 
 Harmonic runs the host's **npm** at runtime — the in-place self-upgrade and

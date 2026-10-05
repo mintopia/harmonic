@@ -6,6 +6,7 @@ import {
   resolveActiveWorkspace,
   storeActiveWorkspaceId,
 } from '../web/src/workspace-model.js';
+import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../src/domain/prompt-fragments.js';
 import type { Workspace } from '../web/src/types.js';
 
 const memoryStorage = (initial: Record<string, string> = {}) => {
@@ -36,6 +37,9 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   conflictResolveTurns: null,
   maxConcurrentAttempts: null,
   autoRunnerEnabled: null,
+  agentMessagesEnabled: null,
+  agentMessagesSendCap: null,
+  effectiveAgentMessagesEnabled: false,
   taskPreMergeCommands: null,
   taskPreMergeCritics: null,
   taskPostMergeCommands: null,
@@ -55,6 +59,9 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   exportS3SecretAccessKey: null,
   exportRedactPatterns: null,
   exportIncludeStates: null,
+  configuredTracker: null,
+  codeRepository: null,
+  triageLabels: null,
   archiveRetentionDays: null,
   archiveRetentionMaxTotalMB: null,
   toolTimeoutMinutes: null,
@@ -64,6 +71,13 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   driveMergeFate: null,
   driveContinueAttempts: null,
   taskPrompt: null,
+  pauseMessage: null,
+  ...NO_PROMPT_FRAGMENT_OVERRIDES,
+  mergeConflictPrompt: null,
+  mergeEpicConflictPrompt: null,
+  mergeEpicRefreshPrompt: null,
+  verifyEpicResolveSuffix: null,
+  driveCommitNudge: null,
   createdAt: id,
   updatedAt: id,
 });

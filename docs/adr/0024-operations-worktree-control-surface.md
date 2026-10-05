@@ -7,6 +7,8 @@ than always instance-wide).
 Status: accepted
 Date: 2026-09-03
 
+Current status (2026-10-02): Worktree inventory, operator force-cleanup, and reconcile-on-demand are implemented. ADR-0039 also governs administrative worktree cleanup.
+
 Amends ADR-0010 (see "Amends" below).
 
 ## Context

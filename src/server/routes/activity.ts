@@ -4,9 +4,12 @@ import { z } from 'zod';
 import type { AppContext } from '../app.js';
 import { activityProcessSchema } from '../schemas.js';
 import { activitySnapshot } from '../serialize.js';
+import { resolveScoped } from '../../domain/setting-override.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
-const activityResponseSchema = listResponse('processes', activityProcessSchema);
+const activityResponseSchema = listResponse('processes', activityProcessSchema).extend({
+  agentMessagesEnabledInAnyWorkspace: z.boolean().meta({ example: false }),
+});
 
 export async function activityRoutes(fastify: FastifyInstance, ctx: AppContext): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
@@ -42,7 +45,11 @@ export async function activityRoutes(fastify: FastifyInstance, ctx: AppContext):
       const token = bearer ?? queryToken;
       const readOnly = (token ? await ctx.auth.verifyKey(token) : null)?.scope === 'read';
       const { items, total } = paginate(await activitySnapshot(ctx, !readOnly, workspaceId), { limit, offset });
-      return { processes: items, total };
+      const globalEnabled = ctx.settingsStore.getGlobal().agentMessages.enabled;
+      const agentMessagesEnabledInAnyWorkspace = (await ctx.workspaces.list())
+        .filter((ws) => workspaceId === undefined || ws.id === workspaceId)
+        .some((ws) => resolveScoped('agentMessagesEnabled', ws.agentMessagesEnabled, globalEnabled));
+      return { processes: items, total, agentMessagesEnabledInAnyWorkspace };
     },
   );
 }

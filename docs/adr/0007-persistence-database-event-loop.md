@@ -2,6 +2,8 @@
 
 Status: accepted
 Date: 2026-08-28
+Reconciled: 2026-10-02. Stats reads and aggregation run off-thread; managed-upgrade rollback and Archives follow ADR-0042/0044.
+
 Part of the 2026-08-28 ADR reset (see README.md).
 
 ## Async libsql, single writer
@@ -29,8 +31,9 @@ thread** (an `await` does not yield the loop), so:
 
 - **Heavy reads run on a worker thread** (`stats-reader` / `stats-worker`
   pattern): libsql in a worker blocks that worker, not the main loop. Cheap,
-  bounded queries stay on the main connection; the cure for a hot endpoint is
-  fewer queries, not worker-threading everything.
+  bounded queries stay on the main connection. Stats also parses Usage and computes
+  its aggregates in that worker; the HTTP thread receives the aggregate
+  result rather than scanning raw Attempt rows.
 - **Loops must yield**: any background loop or heavy in-request scan hands
   the loop back on a wall-clock budget (`forEachYielding` /
   `yieldToEventLoop`) rather than running to completion in one block.
@@ -59,9 +62,12 @@ Harmonic has one operator and no external consumers, so there are **no
 data-compatibility guarantees** across versions. A change SQLite cannot apply
 in place (a column type change, a new NOT NULL column without a default) fails
 the boot loudly and the data dir's `harmonic.db` is recreated from the baseline.
-Anything worth keeping across versions lives in git or the tracker, never only
-in the DB; execution history (attempts, usage snapshots, journals) is
-disposable by definition.
+Execution history remains disposable under schema incompatibility.
+Convergence runs transactionally; only a constraint violation triggers
+clean-break recreation. Lock, connection, and I/O errors roll back and fail
+startup without recreating the schema. Managed upgrades separately snapshot
+the DB for Boot Guard rollback (ADR-0042), and per-Task Archives preserve
+exportable execution evidence (ADR-0044).
 
 ## The DB stores aggregates, not event streams
 
@@ -89,10 +95,10 @@ unavailable".
 
 ## Consequences
 
-- The schema after the ADR-0001 implementation epic: `tasks`, `attempts` (the
+- The current schema after the completed ADR-0001 implementation epic: `tasks`, `attempts` (the
   single execution ledger), `sessions`, `conversations`/`conversation_events`,
   `task_dependencies`, `tracker_dismissals`, verification attempts, guardrail
-  events, the scheduled-jobs registry (ADR-0010), settings, usage/cost
+  events, stored Epics (ADR-0018), the scheduled-jobs registry (ADR-0010), settings, usage/cost
   columns — and none of the coordination tables the frozen-tree model needed
   (no leases, no turn queue, no merge journal, no execution chains).
 - Log-format coupling is the accepted cost of parse-on-demand: log shape is

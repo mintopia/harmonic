@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../types.js';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { Attempt, Task } from '../types';
@@ -12,7 +13,7 @@ import { LifecycleTimeline } from './ticket/LifecycleTimeline';
 import { runFailureBannerLabel, runForAttempt } from '../attempt-timeline-model';
 import { contentPanel, defaultSelection, harnessLabel, taskStats, type ContentSelection } from '../task-detail-model';
 import { isAtLiveEdge } from '../follow-tail-model';
-import { labelType, mergeStatusPill } from '../ui';
+import { labelType, mergeStatusPill, statePillShape } from '../ui';
 import { useScrollToPanel } from '../useScrollToPanel';
 import { useTicketAttempts } from './useTicketAttempts';
 import { useAttemptLogStream } from './useAttemptLogStream';
@@ -25,7 +26,7 @@ import { Description } from './ticket/Description';
 import { Metrics, Properties } from './ticket/Metrics';
 import { TaskProgressBar } from './ticket/TaskProgressBar';
 import { ExportPanel } from './ticket/ExportPanel';
-import { taskExportTarget } from './useTaskExport';
+import { taskExportTarget } from '../export-targets';
 import { ChangesPane, NoRunsYet } from './ticket/ChangesPane';
 import { AttemptsNav, PanelNav } from './ticket/AttemptsNav';
 import { AttemptPanel } from './ticket/AttemptPanel';
@@ -48,11 +49,11 @@ export function TicketPage({
   onClose: () => void;
   onOpenTask: (taskId: number) => void;
   /** Open this Ticket's parent Epic's summary page, from the title's Epic link. */
-  onOpenEpic?: (ref: number) => void;
+  onOpenEpic?: (ref: TrackerRef) => void;
   /** The Epic this Ticket belongs to, resolved by the caller from the derived
    * Epic model (rolls up nested containers to the top-level Epic); null when it
    * has none or its Epic isn't currently derived. */
-  parentEpicRef?: number | null;
+  parentEpicRef?: TrackerRef | null;
   error?: string | null;
   /** The rail selection — owned by the route so a refresh restores the panel. */
   selection: ContentSelection;
@@ -114,7 +115,7 @@ export function TicketPage({
 
   useEffect(() => {
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('dialog[open]')) onClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -172,14 +173,22 @@ export function TicketPage({
                 <span className="font-data text-[12.5px]">epic/{parentEpicRef ?? task.mapRef}</span>
               </button>
             )}
-            <div className="flex items-start gap-4 pb-1">
-              <h1 className="max-w-[680px] text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em]">
+            <div className="flex flex-wrap items-start gap-4 pb-1">
+              <h1 className="min-w-0 max-w-[680px] flex-1 text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em] [overflow-wrap:anywhere] max-sm:basis-full">
                 {cardTitle(task.summary)}
               </h1>
-              <span className="mt-2.5 flex items-center gap-1.5">
+              <span className="mt-2.5 flex shrink-0 items-center gap-1.5 max-sm:mt-0">
                 <StatePill state={task.state} />
                 {task.mergeStatus && (
                   <span className={mergeStatusPill(task.mergeStatus)}>{task.mergeStatus.replace(/-/g, ' ')}</span>
+                )}
+                {task.ticketClosePending && (
+                  <span
+                    className={`${statePillShape} bg-await-tint text-await`}
+                    title="The merge succeeded but the tracker ticket could not be closed yet. Harmonic retries each poll."
+                  >
+                    ticket close pending
+                  </span>
                 )}
               </span>
             </div>
@@ -196,9 +205,9 @@ export function TicketPage({
               </div>
             </div>
 
-            <TaskProgressBar task={task} attempts={runs} commandConfigured={commandConfigured} />
+            <TaskProgressBar task={task} attempts={runs} attemptDetails={attempts} commandConfigured={commandConfigured} />
 
-            <ExportPanel target={taskExportTarget(task.id)} state={task.state} refreshKey={timelineEvents.length} />
+            <ExportPanel target={taskExportTarget(task.id)} finished={task.state === 'done' || task.state === 'cancelled'} refreshKey={timelineEvents.length} />
 
             {task.skipReason && (
               <div className="mb-4 text-small text-muted">
@@ -318,6 +327,7 @@ export function TicketPage({
           <Gate
             model={gateModel}
             task={task}
+            failedStep={latestAttempt?.steps.slice().reverse().find((step) => step.state === 'failed')?.type ?? null}
             onEdit={(t) => {
               onClose();
               onEdit(t);

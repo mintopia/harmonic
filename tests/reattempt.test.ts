@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
+import { startServer, stubHarness, waitFor, type TestServer, withArchivedPrompt } from './helpers.js';
 
 describe('unified corrective attempts', () => {
   let server: TestServer;
@@ -55,8 +56,9 @@ describe('unified corrective attempts', () => {
 
     const runs = (await server.api('GET', `/api/tasks/${ticket.id}/attempts`)).body.attempts;
     expect(runs).toHaveLength(2);
-    expect(runs[1].prompt).toContain('Add the CSV header');
-    expect(runs[1].prompt).toContain('crash-before-response');
+    const retryPrompt = (await withArchivedPrompt(server, runs[1], 'Add the CSV header')).prompt;
+    expect(retryPrompt).toContain('Add the CSV header');
+    expect(retryPrompt).toContain('crash-before-response');
 
     const after = await server.api('GET', `/api/tasks/${ticket.id}`);
     expect(after.body.id).toBe(ticket.id);
@@ -70,11 +72,11 @@ describe('unified corrective attempts', () => {
     const workspaceId = (await server.app.ctx.tasks.get(seed.id)).workspaceId ?? undefined;
     const mirrored = await server.app.ctx.tasks.upsertMirrored(
       {
-        trackerRef: 55502,
+        trackerRef: trackerRef(55502),
         prompt: crashing,
         workflow: 'implement',
         wayfinderType: null,
-        mapRef: 77,
+        mapRef: trackerRef(77),
         closed: false,
       },
       workspaceId,
@@ -95,11 +97,11 @@ describe('unified corrective attempts', () => {
     });
 
     const after = await server.api('GET', `/api/tasks/${mirrored.id}`);
-    expect(after.body).toMatchObject({ id: mirrored.id, origin: 'mirrored', trackerRef: 55502, mapRef: 77, feedback: 'Keep the tracker link.' });
+    expect(after.body).toMatchObject({ id: mirrored.id, origin: 'mirrored', trackerRef: '55502', mapRef: '77', feedback: 'Keep the tracker link.' });
     const runs = (await server.api('GET', `/api/tasks/${mirrored.id}/attempts`)).body.attempts;
     expect(runs).toHaveLength(2);
-    const all = (await server.api('GET', '/api/tasks')).body.tasks as { trackerRef: number | null }[];
-    expect(all.filter((task) => task.trackerRef === 55502)).toHaveLength(1);
+    const all = (await server.api('GET', '/api/tasks')).body.tasks as { trackerRef: string | null }[];
+    expect(all.filter((task) => task.trackerRef === '55502')).toHaveLength(1);
     await waitFor(async () => ((await server.api('GET', `/api/tasks/${mirrored.id}`)).body.state === 'escalated' ? true : undefined));
   });
 

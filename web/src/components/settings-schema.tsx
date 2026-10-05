@@ -7,9 +7,20 @@ import {
   DRIVE_PLACEHOLDERS,
   TASK_ID_PLACEHOLDER,
   TASK_PLACEHOLDERS,
+  compileCriticFragmentPreview,
   compileDrivePreview,
+  compileFragmentsOnlyPreview,
+  compileFragmentPreview,
+  compileEpicRefreshPreview,
+  compileMergeConflictPreview,
+  COMMIT_NUDGE_PLACEHOLDERS,
+  MERGE_CONFLICT_PLACEHOLDERS,
+  EPIC_REFRESH_PLACEHOLDERS,
+  EPIC_RESOLVE_SUFFIX_PLACEHOLDERS,
   compileTaskIdPreview,
   compileTaskPreview,
+  fragmentPlaceholders,
+  type CriticRevisionVariant,
   type LabeledPreview,
   type Placeholder,
 } from '../prompt-preview-model';
@@ -19,14 +30,17 @@ import { OverrideField, type OverridableDescriptor } from './settings-override-f
 import { InheritField } from './InheritField';
 import { LayerField } from './LayerField';
 import { Switch } from './Switch';
+import { CodeRepositorySection, IssueTrackerSection, TriageLabelsSection } from './TrackerSettings';
 import { HarnessesSection } from './HarnessSettings';
 import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
 import { SecuritySection } from './SecuritySection';
 import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection } from './ArchiveExportSettings';
 import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './VerificationSettings';
+import { PROMPT_FRAGMENTS, PROMPT_FRAGMENT_NAMES, promptFragmentOverrideKey, type CriticFragmentName, type PromptFragmentName } from '../../../src/domain/prompt-fragments.js';
 import { settingsRegistry, type SettingKey, type SettingTab } from '../../../src/domain/settings-registry.js';
 import { WORKSPACE_COLORS } from '../../../src/domain/workspace-colors.js';
+import { resolvePromptFragments } from '../../../src/domain/setting-override.js';
 
 export type Surface = 'global' | 'workspace';
 
@@ -172,7 +186,7 @@ function OverridePrompt({
           value={value}
           onChange={onChange}
           placeholders={d.placeholders}
-          preview={d.compile(value, config)}
+          preview={d.compile(value, { ...config, promptFragments: resolvePromptFragments(workspace, config) })}
           error={errors[d.errorKey]}
           rows={d.rows}
           textareaClass={d.textareaClass}
@@ -506,12 +520,59 @@ const contextReuseTokenLimit = scalar(
   },
 );
 
+const agentMessagesEnabled = scalar(
+  registryField('agentMessagesEnabled', {
+    id: 'settings-agent-messages-enabled',
+    switchLabel: 'Let Attempts message each other',
+    errorKey: 'agentMessages.enabled',
+    get: (c) => c.agentMessages.enabled,
+    set: (c, raw) => ({ ...c, agentMessages: { ...c.agentMessages, enabled: Boolean(raw) } }),
+  }),
+  {
+    key: 'agentMessagesEnabled',
+    id: 'workspace-agent-messages-enabled',
+    errorKey: 'agentMessagesEnabled',
+    label: 'Enabled',
+    switchLabel: 'Let Attempts message each other',
+    get: (w) => w.agentMessagesEnabled,
+    set: (w, v) => ({ ...w, agentMessagesEnabled: typeof v === 'boolean' ? v : null }),
+    inherited: (c) => c.agentMessages.enabled,
+    format: (v) => (v ? 'On' : 'Off'),
+  },
+);
+
+const agentMessagesSendCap = scalar(
+  registryField('agentMessagesSendCap', {
+    id: 'settings-agent-messages-send-cap',
+    errorKey: 'agentMessages.sendCap',
+    min: 1,
+    widthClass: 'w-28',
+    get: (c) => c.agentMessages.sendCap,
+    set: (c, raw) => ({ ...c, agentMessages: { ...c.agentMessages, sendCap: Number(raw) } }),
+  }),
+  {
+    key: 'agentMessagesSendCap',
+    id: 'workspace-agent-messages-send-cap',
+    errorKey: 'agentMessagesSendCap',
+    get: (w) => w.agentMessagesSendCap,
+    set: (w, v) => ({ ...w, agentMessagesSendCap: typeof v === 'number' ? v : null }),
+    inherited: (c) => c.agentMessages.sendCap,
+    min: 1,
+  },
+);
+
+const MERGE_FATE_OPTIONS: FieldOption[] = [
+  { value: 'auto-merge', label: 'Merge automatically' },
+  { value: 'open-PR', label: 'Open a pull request' },
+  { value: 'artifact', label: 'Leave the branch' },
+];
+
 const driveMergeFate = scalar(
   registryField('driveMergeFate', {
     id: 'settings-merge-fate',
     errorKey: 'drive.mergeFate',
     get: (c) => c.drive.mergeFate,
-    options: () => toOptions(['auto-merge', 'open-PR', 'artifact']),
+    options: () => MERGE_FATE_OPTIONS,
     set: (c, raw) => ({ ...c, drive: { ...c.drive, mergeFate: raw as AppConfig['drive']['mergeFate'] } }),
   }),
   {
@@ -521,7 +582,7 @@ const driveMergeFate = scalar(
     get: (w) => w.driveMergeFate,
     set: (w, v) => ({ ...w, driveMergeFate: v as 'auto-merge' | 'open-PR' | 'artifact' | null }),
     inherited: (c) => c.drive.mergeFate,
-    options: () => toOptions(['auto-merge', 'open-PR', 'artifact']),
+    options: () => MERGE_FATE_OPTIONS,
   },
 );
 
@@ -567,6 +628,31 @@ const taskPromptField = prompt(
     placeholders: TASK_PLACEHOLDERS,
     compile: compileTaskPreview,
     textareaClass: `${field} min-h-36`,
+  },
+);
+
+const pauseMessageField = prompt(
+  'pause-message',
+  {
+    id: 'settings-pause-message',
+    label: 'Pause message',
+    errorKey: 'pauseMessage',
+    get: (c) => c.pauseMessage,
+    set: (c, v) => ({ ...c, pauseMessage: v }),
+    placeholders: [],
+    compile: compileFragmentsOnlyPreview,
+    textareaClass: `${field} min-h-24`,
+  },
+  {
+    key: 'pauseMessage',
+    id: 'workspace-pause-message',
+    errorKey: 'pauseMessage',
+    get: (w) => w.pauseMessage,
+    set: (w, v) => ({ ...w, pauseMessage: v }),
+    inherited: (c) => c.pauseMessage,
+    placeholders: [],
+    compile: compileFragmentsOnlyPreview,
+    textareaClass: `${field} min-h-24`,
   },
 );
 
@@ -649,6 +735,192 @@ const continuePromptField = prompt(
   },
 );
 
+
+const kebab = (name: string): string => name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+
+const CRITIC_PREVIEW_VARIANT: Partial<Record<CriticFragmentName, CriticRevisionVariant>> = {
+  criticRevisionIdentical: 'identical',
+  criticRevisionAlone: 'alone',
+  criticWorkingTreeNote: 'dirty',
+};
+
+/** A critic fragment previews as the whole critic prompt it lands in, with the text being edited swapped in. */
+function criticFragmentPreview(name: PromptFragmentName) {
+  if (!name.startsWith('critic')) return undefined;
+  const variant = CRITIC_PREVIEW_VARIANT[name as CriticFragmentName] ?? 'diff';
+  return (text: string, c: Pick<AppConfig, 'promptFragments'>) => compileCriticFragmentPreview({ ...c.promptFragments, [name]: text }, variant);
+}
+
+const promptFragmentFields = PROMPT_FRAGMENT_NAMES.map((name) => {
+  const spec = PROMPT_FRAGMENTS[name];
+  const required = spec.required.map((token) => `{${token}}`).join(' ');
+  const description = `${spec.help}${required ? ` Must keep ${required}.` : ''}`;
+  const key = promptFragmentOverrideKey(name);
+  const placeholders = fragmentPlaceholders(name);
+  const compile = criticFragmentPreview(name) ?? compileFragmentPreview(name);
+  const textareaClass = `${field} min-h-24`;
+  return prompt(
+    `fragment-${kebab(name)}`,
+    {
+      id: `settings-fragment-${kebab(name)}`,
+      label: spec.label,
+      description,
+      errorKey: `promptFragments.${name}`,
+      get: (c) => c.promptFragments[name],
+      set: (c, v) => ({ ...c, promptFragments: { ...c.promptFragments, [name]: v } }),
+      placeholders,
+      compile,
+      textareaClass,
+    },
+    {
+      key,
+      id: `workspace-fragment-${kebab(name)}`,
+      errorKey: key,
+      description,
+      get: (w) => w[key],
+      set: (w, v) => ({ ...w, [key]: v }),
+      inherited: (c) => c.promptFragments[name],
+      placeholders,
+      compile,
+      textareaClass,
+    },
+  );
+});
+
+const commitNudgeField = prompt(
+  'commit-nudge',
+  {
+    id: 'settings-commit-nudge',
+    label: 'Commit nudge',
+    description: 'Sent when an Attempt finishes its turn with uncommitted changes. No placeholders.',
+    errorKey: 'drive.commitNudge',
+    get: (c) => c.drive.commitNudge,
+    set: (c, v) => ({ ...c, drive: { ...c.drive, commitNudge: v } }),
+    placeholders: COMMIT_NUDGE_PLACEHOLDERS,
+    compile: compileFragmentsOnlyPreview,
+    textareaClass: `${field} min-h-24`,
+  },
+  {
+    key: 'driveCommitNudge',
+    id: 'workspace-commit-nudge',
+    errorKey: 'driveCommitNudge',
+    description: 'Sent when an Attempt finishes its turn with uncommitted changes. No placeholders.',
+    get: (w) => w.driveCommitNudge,
+    set: (w, v) => ({ ...w, driveCommitNudge: v }),
+    inherited: (c) => c.drive.commitNudge,
+    placeholders: COMMIT_NUDGE_PLACEHOLDERS,
+    compile: compileFragmentsOnlyPreview,
+    textareaClass: `${field} min-h-24`,
+  },
+);
+
+const mergeConflictPromptField = prompt(
+  'merge-conflict-prompt',
+  {
+    id: 'settings-merge-conflict-prompt',
+    label: 'Merge conflict resolver',
+    description: 'Opens each turn of the agent that resolves a Task merge conflict.',
+    errorKey: 'merge.conflictPrompt',
+    get: (c) => c.merge.conflictPrompt,
+    set: (c, v) => ({ ...c, merge: { ...c.merge, conflictPrompt: v } }),
+    placeholders: MERGE_CONFLICT_PLACEHOLDERS,
+    compile: compileMergeConflictPreview,
+    textareaClass: `${field} min-h-36`,
+  },
+  {
+    key: 'mergeConflictPrompt',
+    id: 'workspace-merge-conflict-prompt',
+    errorKey: 'mergeConflictPrompt',
+    description: 'Opens each turn of the agent that resolves a Task merge conflict.',
+    get: (w) => w.mergeConflictPrompt,
+    set: (w, v) => ({ ...w, mergeConflictPrompt: v }),
+    inherited: (c) => c.merge.conflictPrompt,
+    placeholders: MERGE_CONFLICT_PLACEHOLDERS,
+    compile: compileMergeConflictPreview,
+    textareaClass: `${field} min-h-36`,
+  },
+);
+
+const epicConflictPromptField = prompt(
+  'epic-conflict-prompt',
+  {
+    id: 'settings-epic-conflict-prompt',
+    label: 'Epic merge conflict resolver',
+    description: 'Opens each turn of the agent that resolves an Epic integration merge conflict.',
+    errorKey: 'merge.epicConflictPrompt',
+    get: (c) => c.merge.epicConflictPrompt,
+    set: (c, v) => ({ ...c, merge: { ...c.merge, epicConflictPrompt: v } }),
+    placeholders: MERGE_CONFLICT_PLACEHOLDERS,
+    compile: compileMergeConflictPreview,
+    textareaClass: `${field} min-h-36`,
+  },
+  {
+    key: 'mergeEpicConflictPrompt',
+    id: 'workspace-epic-conflict-prompt',
+    errorKey: 'mergeEpicConflictPrompt',
+    description: 'Opens each turn of the agent that resolves an Epic integration merge conflict.',
+    get: (w) => w.mergeEpicConflictPrompt,
+    set: (w, v) => ({ ...w, mergeEpicConflictPrompt: v }),
+    inherited: (c) => c.merge.epicConflictPrompt,
+    placeholders: MERGE_CONFLICT_PLACEHOLDERS,
+    compile: compileMergeConflictPreview,
+    textareaClass: `${field} min-h-36`,
+  },
+);
+
+const epicRefreshPromptField = prompt(
+  'epic-refresh-prompt',
+  {
+    id: 'settings-epic-refresh-prompt',
+    label: 'Epic refresh resolver',
+    description: 'Sent to the agent that resolves a conflict when the Epic integration branch is refreshed from the default branch.',
+    errorKey: 'merge.epicRefreshPrompt',
+    get: (c) => c.merge.epicRefreshPrompt,
+    set: (c, v) => ({ ...c, merge: { ...c.merge, epicRefreshPrompt: v } }),
+    placeholders: EPIC_REFRESH_PLACEHOLDERS,
+    compile: compileEpicRefreshPreview,
+    textareaClass: `${field} min-h-36`,
+  },
+  {
+    key: 'mergeEpicRefreshPrompt',
+    id: 'workspace-epic-refresh-prompt',
+    errorKey: 'mergeEpicRefreshPrompt',
+    description: 'Sent to the agent that resolves a conflict when the Epic integration branch is refreshed from the default branch.',
+    get: (w) => w.mergeEpicRefreshPrompt,
+    set: (w, v) => ({ ...w, mergeEpicRefreshPrompt: v }),
+    inherited: (c) => c.merge.epicRefreshPrompt,
+    placeholders: EPIC_REFRESH_PLACEHOLDERS,
+    compile: compileEpicRefreshPreview,
+    textareaClass: `${field} min-h-36`,
+  },
+);
+
+const epicResolveSuffixField = prompt(
+  'epic-resolve-suffix',
+  {
+    id: 'settings-epic-resolve-suffix',
+    label: 'Epic verification resolver suffix',
+    description: 'Appended to the Epic resolve prompt (set on the Verification tab) when the agent fixes a failing Epic verification.',
+    errorKey: 'verify.epic.resolveSuffix',
+    get: (c) => c.verify.epic.resolveSuffix,
+    set: (c, v) => ({ ...c, verify: { ...c.verify, epic: { ...c.verify.epic, resolveSuffix: v } } }),
+    placeholders: EPIC_RESOLVE_SUFFIX_PLACEHOLDERS,
+    compile: compileMergeConflictPreview,
+    textareaClass: `${field} min-h-24`,
+  },
+  {
+    key: 'verifyEpicResolveSuffix',
+    id: 'workspace-epic-resolve-suffix',
+    errorKey: 'verifyEpicResolveSuffix',
+    description: 'Appended to the Epic resolve prompt when the agent fixes a failing Epic verification.',
+    get: (w) => w.verifyEpicResolveSuffix,
+    set: (w, v) => ({ ...w, verifyEpicResolveSuffix: v }),
+    inherited: (c) => c.verify.epic.resolveSuffix,
+    placeholders: EPIC_RESOLVE_SUFFIX_PLACEHOLDERS,
+    compile: compileMergeConflictPreview,
+    textareaClass: `${field} min-h-24`,
+  },
+);
 
 const guardrailScalarFields: OverridableDescriptor[] = [
   {
@@ -798,32 +1070,6 @@ function WorkspaceGuardrails({ ctx }: { ctx: WorkspaceRenderCtx }) {
   );
 }
 
-const RESOLVE_FAILURE_LABEL: Record<string, string> = {
-  'no-declaration': 'No tracker declared',
-  unsupported: 'Unsupported tracker',
-  misconfigured: 'Tracker misconfigured',
-};
-
-function ResolvedTrackerValue({ workspace }: { workspace: Workspace }) {
-  const resolved = workspace.resolvedTracker;
-  if (!resolved) {
-    return (
-      <p className="pt-1 text-small text-muted">
-        {workspace.trackerEnabled ? 'Resolving…' : 'Enable mirroring to resolve the tracker.'}
-      </p>
-    );
-  }
-  if (resolved.ok) {
-    return <p className="pt-1 font-medium text-ink">{resolved.label}</p>;
-  }
-  const friendly = (resolved.code && RESOLVE_FAILURE_LABEL[resolved.code]) ?? 'Cannot resolve tracker';
-  return (
-    <p className="pt-1 text-fail" title={resolved.reason ?? undefined}>
-      {friendly}
-    </p>
-  );
-}
-
 function WorkspaceIdentity({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace, errors } = ctx;
   return (
@@ -955,41 +1201,6 @@ function hslToHex(hue: number, saturation: number, lightness: number): string {
   return `#${channel(red)}${channel(green)}${channel(blue)}`.toUpperCase();
 }
 
-function WorkspaceTracker({ ctx }: { ctx: WorkspaceRenderCtx }) {
-  const { workspace, pristineWorkspace, errors } = ctx;
-  return (
-    <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
-      <div>
-        <span className={fieldLabel}>Enabled</span>
-        <div className="pt-1">
-          <Switch
-            checked={workspace.trackerEnabled}
-            onChange={(trackerEnabled) => ctx.setWorkspace({ ...workspace, trackerEnabled })}
-          >
-            Mirror tracker issues onto the board
-          </Switch>
-        </div>
-      </div>
-      <div>
-        <label className={fieldLabel} htmlFor="workspace-poll-interval">Poll interval (seconds)</label>
-        <input
-          id="workspace-poll-interval"
-          type="number"
-          min={5}
-          className={`${field} w-28 tabular-nums`}
-          value={workspace.trackerPollIntervalSeconds}
-          onChange={(e) => ctx.setWorkspace({ ...workspace, trackerPollIntervalSeconds: Number(e.target.value) })}
-        />
-        <FieldError message={errors['trackerPollIntervalSeconds']} />
-      </div>
-      <div>
-        <span className={fieldLabel}>Resolved tracker</span>
-        <ResolvedTrackerValue workspace={pristineWorkspace} />
-      </div>
-    </div>
-  );
-}
-
 function WorkspaceExcludedFolders({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace } = ctx;
   const [value, setValue] = useState('');
@@ -1075,14 +1286,6 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   {
     tab: 'general',
     surfaces: ['workspace'],
-    title: 'Tracker mirroring',
-    description:
-      'Poll this Workspace’s issue tracker and mirror its issues onto the board as Tasks. Needs docs/agents/issue-tracker.md in the repo and gh (GitHub) auth.',
-    body: (ctx) => (ctx.surface === 'workspace' ? <WorkspaceTracker ctx={ctx} /> : null),
-  },
-  {
-    tab: 'general',
-    surfaces: ['workspace'],
     title: 'Excluded folders',
     description:
       "Folders shown greyed in the Files view and skipped by the live watcher — seeded with the usual build and dependency directories. Right-click a folder in the Files tree to toggle it, or manage the list here.",
@@ -1134,6 +1337,21 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
       grid(
         ctx.surface === 'global' ? 'flex flex-wrap items-start gap-x-8 gap-y-4' : 'flex flex-col gap-4 sm:max-w-md',
         [autoRunnerEnabled, hostCeiling, concurrencyCap],
+        ctx,
+      ),
+  },
+  {
+    tab: 'execution',
+    surfaces: BOTH,
+    title: 'Agent Messages',
+    description: {
+      global: 'Lets Attempts send each other Agent Messages, up to the send cap per Attempt. Workspaces can override both.',
+      workspace: 'Whether Attempts here can send Agent Messages, and how many each may send. Both inherit the global defaults until overridden.',
+    },
+    body: (ctx) =>
+      grid(
+        ctx.surface === 'global' ? 'flex flex-wrap items-start gap-x-8 gap-y-4' : 'flex flex-col gap-4 sm:max-w-md',
+        [agentMessagesEnabled, agentMessagesSendCap],
         ctx,
       ),
   },
@@ -1215,12 +1433,79 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     },
     body: (ctx) => (
       <div className="flex flex-col gap-4">
-        {[drivePromptField, unattendedReminderField, continuePromptField].map((p) => renderField(p, ctx))}
+        {[drivePromptField, unattendedReminderField, continuePromptField, commitNudgeField].map((p) => renderField(p, ctx))}
         {grid('flex flex-wrap items-start gap-x-8 gap-y-4', [driveMergeFate, driveContinueAttempts], ctx)}
       </div>
     ),
   },
+  {
+    tab: 'prompts',
+    surfaces: BOTH,
+    title: 'Pause message',
+    description: {
+      global: 'Sent to a running Task when it is paused, asking the agent to finish its turn and wait.',
+      workspace: 'Sent to a running Task here when it is paused. Inherits the global message until overridden.',
+    },
+    body: (ctx) => renderField(pauseMessageField, ctx),
+  },
 
+  {
+    tab: 'prompts',
+    surfaces: BOTH,
+    title: 'Merge and Epic resolver prompts',
+    description: {
+      global:
+        'What Harmonic sends to the agents that resolve merge conflicts and Epic verification failures. Edits apply to the next resolver turn.',
+      workspace:
+        'What Harmonic sends to the agents that resolve merge conflicts and Epic verification failures here. Each field inherits the global default until overridden.',
+    },
+    body: (ctx) => (
+      <div className="flex flex-col gap-4">
+        {[mergeConflictPromptField, epicConflictPromptField, epicRefreshPromptField, epicResolveSuffixField].map((p) => renderField(p, ctx))}
+      </div>
+    ),
+  },
+
+  {
+    tab: 'prompts',
+    surfaces: BOTH,
+    wide: true,
+    title: 'Prompt fragments',
+    description: {
+      global:
+        'Named pieces of prompt text defined once and referenced from prompts as {fragment.<name>}. Edit a fragment here and every prompt that references it changes.',
+      workspace:
+        'Named pieces of prompt text shared across prompts. Each inherits the global fragment until overridden.',
+    },
+    body: (ctx) => (
+      <div className="grid items-start gap-4 xl:grid-cols-2">
+        {promptFragmentFields.map((f) => renderField(f, ctx))}
+      </div>
+    ),
+  },
+
+  {
+    tab: 'integrations',
+    surfaces: ['workspace'],
+    title: 'Issue Tracker',
+    description:
+      'Mirror this Workspace’s issue tracker onto the board as Tasks. The Configured Tracker wins over the repo’s docs/agents/issue-tracker.md, which wins over the Code Repository.',
+    body: (ctx) => (ctx.surface === 'workspace' ? <IssueTrackerSection ctx={ctx} /> : null),
+  },
+  {
+    tab: 'integrations',
+    surfaces: ['workspace'],
+    title: 'Code Repository',
+    description: 'The forge that hosts this Workspace’s branches, PRs/MRs and Merges. Detected from the origin remote unless overridden.',
+    body: (ctx) => (ctx.surface === 'workspace' ? <CodeRepositorySection ctx={ctx} /> : null),
+  },
+  {
+    tab: 'integrations',
+    surfaces: ['workspace'],
+    title: 'Triage Labels',
+    description: 'The label names the tracker uses for each role Harmonic acts on. Empty roles use the repo’s docs/agents/triage-labels.md, then the defaults.',
+    body: (ctx) => (ctx.surface === 'workspace' ? <TriageLabelsSection ctx={ctx} /> : null),
+  },
   {
     tab: 'integrations',
     surfaces: ['global'],

@@ -12,11 +12,12 @@ import { type MergePolicyDeps, type MergePolicyOutcome, type PostMergeCheckResul
 import { Runner } from '../src/execution/runner.js';
 import { type AttemptUsage } from '../src/execution/usage.js';
 import { type SettingsStore } from '../src/server/settings-store.js';
-import { type Ticket, type TicketRef, type TrackerAdapter } from '../src/tracker/adapter.js';
+import { type Ticket, type TicketRef, type TrackerAdapter, trackerRef } from '../src/tracker/adapter.js';
 import { closeIntegratedEpic, recordAndCloseIntegratedEpic } from '../src/tracker/epic-close.js';
 import { TrackerPollerManager } from '../src/tracker/manager.js';
+import { TrackerEpicService } from '../src/tracker/epic-service.js';
 import { type VerificationDecision } from '../src/verification/combine.js';
-import { allWorkspaces, captureRunEnv, makeSettingsStore, startServer, stubHarness, type TestServer, seedWorkspace } from './helpers.js';
+import { executionPlumbing, allWorkspaces, captureRunEnv, makeSettingsStore, startServer, stubHarness, type TestServer, seedWorkspace } from './helpers.js';
 import { eq } from 'drizzle-orm';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -175,6 +176,7 @@ describe('epic-routes', () => {
 
       const makeRunner = (postMerge?: PostMergeHook): Runner =>
         new Runner(tasks, asyncDb, () => baselineConfig(), {
+          ...executionPlumbing(),
           worktreesDir: join(dir, 'worktrees'),
           criticDrive: { run: async () => ({ output: '', permissionRequests: [] }) },
           ...(postMerge ? { postMerge } : {}),
@@ -194,7 +196,7 @@ describe('epic-routes', () => {
         const outcome = await runner.mergeEpicIntegration({
           workspaceId: 1,
           repoDir: repo,
-          epicRef: 5,
+          epicRef: trackerRef(5),
           defaultBranch: 'develop',
           integrationBranch: 'epic/5',
           runPostMergeCheck: green,
@@ -217,7 +219,7 @@ describe('epic-routes', () => {
         const outcome = await runner.mergeEpicIntegration({
           workspaceId: 1,
           repoDir: repo,
-          epicRef: 5,
+          epicRef: trackerRef(5),
           defaultBranch: 'develop',
           integrationBranch: 'epic/5',
           runPostMergeCheck: async () => ({ pass: false, output: 'suite failed on the merged tip' }),
@@ -252,7 +254,7 @@ describe('epic-routes', () => {
         const outcome = await runner.mergeEpicIntegration({
           workspaceId: 1,
           repoDir: conflictRepo,
-          epicRef: 9,
+          epicRef: trackerRef(9),
           defaultBranch: 'develop',
           integrationBranch: 'epic/9',
           runPostMergeCheck: green,
@@ -340,7 +342,7 @@ describe('epic-routes', () => {
       const defaultWorkspaceId = async () => (await ctx().workspaces.list())[0]!.id;
 
       const epic = (over: Partial<Epic> = {}): Epic => ({
-        ref: 42,
+        ref: trackerRef(42),
         title: 'Parallel Epic operator UI',
         kind: 'spec',
         state: 'open',
@@ -351,7 +353,7 @@ describe('epic-routes', () => {
         dependsOn: [],
         members: [
           {
-            ref: 43,
+            ref: trackerRef(43),
             title: 'Member one',
             taskId: 7,
             state: 'completed',
@@ -360,9 +362,9 @@ describe('epic-routes', () => {
             ready: false,
             isolationMode: 'worktree',
           },
-          { ref: 44, title: 'Member two', taskId: null, state: null, escalated: false, mergeStatus: 'pending', ready: true, isolationMode: null },
+          { ref: trackerRef(44), title: 'Member two', taskId: null, state: null, escalated: false, mergeStatus: 'pending', ready: true, isolationMode: null },
         ],
-        ready: [44],
+        ready: [trackerRef(44)],
         integration: { branch: 'epic/42', exists: true, tip: 'a1b2c3d' },
         verification: { status: null, configured: false },
         integrate: { inFlight: false, held: null, phase: null },
@@ -410,7 +412,7 @@ describe('epic-routes', () => {
           const res = await server.api('GET', `/api/workspaces/${(await defaultWorkspaceId())}/epics/42`);
           expect(res.status).toBe(200);
           expect(res.body).toEqual(one);
-          expect(spy).toHaveBeenCalledWith((await defaultWorkspaceId()), 42);
+          expect(spy).toHaveBeenCalledWith((await defaultWorkspaceId()), '42');
         });
 
         it('404s when epicDetail resolves null (no such derived Epic)', async () => {
@@ -424,9 +426,9 @@ describe('epic-routes', () => {
           expect(res.status).toBe(404);
         });
 
-        it('400s on a non-numeric workspaceId or epicRef', async () => {
+        it('400s on a non-numeric workspaceId or an empty epicRef', async () => {
           expect((await server.api('GET', '/api/workspaces/abc/epics/42')).status).toBe(400);
-          expect((await server.api('GET', `/api/workspaces/${(await defaultWorkspaceId())}/epics/xyz`)).status).toBe(400);
+          expect((await server.api('GET', `/api/workspaces/${(await defaultWorkspaceId())}/epics/`)).status).toBe(400);
         });
       });
 
@@ -449,7 +451,7 @@ describe('epic-routes', () => {
           expect(res.body.total).toBe(1);
           expect(res.body.files).toHaveLength(1);
           expect(res.body.files[0]).toMatchObject({ path: 'feature.txt', status: 'A', additions: 1, deletions: 0 });
-          expect(spy).toHaveBeenCalledWith((await defaultWorkspaceId()), 42);
+          expect(spy).toHaveBeenCalledWith((await defaultWorkspaceId()), '42');
         });
 
         it('returns an empty files list, not an error, when epicDiff resolves the empty string (branchless/no-op Epic)', async () => {
@@ -464,9 +466,9 @@ describe('epic-routes', () => {
           expect(res.status).toBe(404);
         });
 
-        it('400s on a non-numeric workspaceId or epicRef', async () => {
+        it('400s on a non-numeric workspaceId or an empty epicRef', async () => {
           expect((await server.api('GET', '/api/workspaces/abc/epics/42/diff/files')).status).toBe(400);
-          expect((await server.api('GET', `/api/workspaces/${(await defaultWorkspaceId())}/epics/xyz/diff/files`)).status).toBe(400);
+          expect((await server.api('GET', `/api/workspaces/${(await defaultWorkspaceId())}/epics//diff/files`)).status).toBe(400);
         });
       });
 
@@ -545,7 +547,9 @@ describe('epic-routes', () => {
         tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
         workspaces = new WorkspaceService(asyncDb, settingsStore);
         wsId = (await workspaces.create({ name: 'WS', workingDir: repo, trackerEnabled: true })).id;
-        manager = new TrackerPollerManager(tasks, () => workspaces.list());
+        manager = new TrackerPollerManager(tasks, () => workspaces.list(), {
+          epicService: new TrackerEpicService(tasks, () => workspaces.list(), { fireAndForget: executionPlumbing().fireAndForget, integration: 'lifecycle-only' }),
+        });
       });
 
       afterEach(async () => {
@@ -556,21 +560,21 @@ describe('epic-routes', () => {
 
       it('an open Epic diffs the live base...epic/<ref> range, showing what the branch adds', async () => {
         const ref = 10;
-        git(repo, 'checkout', '-b', integrationBranchName(ref), 'main');
+        git(repo, 'checkout', '-b', integrationBranchName(trackerRef(ref)), 'main');
         writeFileSync(join(repo, 'feature.txt'), 'added by the epic\n');
         git(repo, 'add', '-A');
         git(repo, 'commit', '-m', 'add feature.txt');
         git(repo, 'checkout', 'main');
-        await tasks.syncEpics(wsId, [{ ref, kind: 'epic' }]);
+        await tasks.syncEpics(wsId, [{ ref: trackerRef(ref), kind: 'epic' }]);
 
-        const raw = await manager.epicDiff(wsId, ref);
+        const raw = await manager.epicDiff(wsId, trackerRef(ref));
         expect(raw).toContain('feature.txt');
         expect(raw).toContain('+added by the epic');
       });
 
       it('an integrated Epic diffs the frozen merge commit, surviving the branch\'s own retirement', async () => {
         const ref = 11;
-        const branch = integrationBranchName(ref);
+        const branch = integrationBranchName(trackerRef(ref));
         git(repo, 'checkout', '-b', branch, 'main');
         writeFileSync(join(repo, 'integrated.txt'), 'landed via the merge commit\n');
         git(repo, 'add', '-A');
@@ -580,40 +584,40 @@ describe('epic-routes', () => {
         const mergeCommit = git(repo, 'rev-parse', 'HEAD');
         git(repo, 'branch', '-D', branch);
 
-        await tasks.syncEpics(wsId, [{ ref, kind: 'epic' }]);
-        await tasks.markEpicIntegrated(wsId, ref, { mergeCommit, memberRefs: [] });
+        await tasks.syncEpics(wsId, [{ ref: trackerRef(ref), kind: 'epic' }]);
+        await tasks.markEpicIntegrated(wsId, trackerRef(ref), { mergeCommit, memberRefs: [] });
 
-        const raw = await manager.epicDiff(wsId, ref);
+        const raw = await manager.epicDiff(wsId, trackerRef(ref));
         expect(raw).toContain('integrated.txt');
         expect(raw).toContain('+landed via the merge commit');
       });
 
       it('a branchless/open Epic (no epic/<ref> branch ever cut) yields the empty string, not an error', async () => {
         const ref = 12;
-        await tasks.syncEpics(wsId, [{ ref, kind: 'epic' }]);
-        await expect(manager.epicDiff(wsId, ref)).resolves.toBe('');
+        await tasks.syncEpics(wsId, [{ ref: trackerRef(ref), kind: 'epic' }]);
+        await expect(manager.epicDiff(wsId, trackerRef(ref))).resolves.toBe('');
       });
 
       it('an integrated no-op Epic (branch already matched base, null merge commit) yields the empty string', async () => {
         const ref = 13;
-        await tasks.syncEpics(wsId, [{ ref, kind: 'epic' }]);
-        await tasks.markEpicIntegrated(wsId, ref, { mergeCommit: null, memberRefs: [] });
-        await expect(manager.epicDiff(wsId, ref)).resolves.toBe('');
+        await tasks.syncEpics(wsId, [{ ref: trackerRef(ref), kind: 'epic' }]);
+        await tasks.markEpicIntegrated(wsId, trackerRef(ref), { mergeCommit: null, memberRefs: [] });
+        await expect(manager.epicDiff(wsId, trackerRef(ref))).resolves.toBe('');
       });
 
       it('an Epic ref with no stored row at all still resolves the live range, and yields empty when the branch is absent', async () => {
-        await expect(manager.epicDiff(wsId, 999)).resolves.toBe('');
+        await expect(manager.epicDiff(wsId, trackerRef(999))).resolves.toBe('');
       });
 
       it('an unknown workspace yields the empty string rather than throwing', async () => {
-        await expect(manager.epicDiff(999_999, 1)).resolves.toBe('');
+        await expect(manager.epicDiff(999_999, trackerRef(1))).resolves.toBe('');
       });
     });
   });
 
   describe('epic-close', () => {
-    const ticket = (over: Partial<Ticket> & Pick<Ticket, 'number'>): Ticket => ({
-      title: `epic ${over.number}`,
+    const ticket = (over: Partial<Ticket> & Pick<Ticket, 'ref'>): Ticket => ({
+      title: `epic ${over.ref}`,
       state: 'open',
       body: '',
       createdAt: '2026-09-01T00:00:00Z',
@@ -623,14 +627,13 @@ describe('epic-routes', () => {
       parent: null,
       blockedBy: [],
       blocking: [],
-      comments: [],
       isMap: false,
-      url: `https://x/${over.number}`,
+      url: `https://x/${over.ref}`,
       ...over,
     });
 
     const writable = (state: Ticket['state'] = 'open') => {
-      const readTicket = vi.fn(async (r: TicketRef) => ticket({ number: r.number, state }));
+      const readTicket = vi.fn(async (r: TicketRef) => ticket({ ref: r.ref, state }));
       const close = vi.fn(async (_r: TicketRef, _comment: string) => {});
       const adapter = { name: 'stub', readTicket, close } as unknown as TrackerAdapter;
       return { adapter, readTicket, close };
@@ -639,22 +642,22 @@ describe('epic-routes', () => {
     describe('closeIntegratedEpic (#442)', () => {
       it('closes an open Epic issue via the writable adapter, with a comment', async () => {
         const { adapter, close } = writable('open');
-        await closeIntegratedEpic(adapter, 42);
+        await closeIntegratedEpic(adapter, trackerRef(42));
         expect(close).toHaveBeenCalledTimes(1);
-        expect(close).toHaveBeenCalledWith({ number: 42, title: '', state: 'open' }, expect.any(String));
+        expect(close).toHaveBeenCalledWith({ ref: '42', title: '', state: 'open' }, expect.any(String));
       });
 
       it('is idempotent: an already-closed issue is not re-closed', async () => {
         const { adapter, readTicket, close } = writable('closed');
-        await closeIntegratedEpic(adapter, 42);
+        await closeIntegratedEpic(adapter, trackerRef(42));
         expect(readTicket).toHaveBeenCalledTimes(1);
         expect(close).not.toHaveBeenCalled();
       });
 
       it('is a best-effort no-op on an inbound-only tracker (no close capability)', async () => {
-        const readTicket = vi.fn(async (r: TicketRef) => ticket({ number: r.number }));
+        const readTicket = vi.fn(async (r: TicketRef) => ticket({ ref: r.ref }));
         const adapter = { name: 'freeform', readTicket } as unknown as TrackerAdapter;
-        await expect(closeIntegratedEpic(adapter, 42)).resolves.toBeUndefined();
+        await expect(closeIntegratedEpic(adapter, trackerRef(42))).resolves.toBeUndefined();
         expect(readTicket).not.toHaveBeenCalled();
       });
     });
@@ -669,7 +672,7 @@ describe('epic-routes', () => {
         close.mockImplementation(async () => {
           order.push('close');
         });
-        await recordAndCloseIntegratedEpic({ epicRef: 42, settle, resolveAdapter: async () => adapter, onError: () => {} });
+        await recordAndCloseIntegratedEpic({ epicRef: trackerRef(42), settle, resolveAdapter: async () => adapter, onError: () => {} });
         expect(settle).toHaveBeenCalledTimes(1);
         expect(close).toHaveBeenCalledTimes(1);
         expect(order).toEqual(['settle', 'close']);
@@ -680,7 +683,7 @@ describe('epic-routes', () => {
         const onError = vi.fn<(msg: string) => void>();
         await expect(
           recordAndCloseIntegratedEpic({
-            epicRef: 42,
+            epicRef: trackerRef(42),
             settle,
             resolveAdapter: async () => {
               throw new Error('tracker unreachable');
@@ -698,7 +701,7 @@ describe('epic-routes', () => {
           throw new Error('db down');
         });
         await expect(
-          recordAndCloseIntegratedEpic({ epicRef: 42, settle, resolveAdapter: async () => adapter, onError: () => {} }),
+          recordAndCloseIntegratedEpic({ epicRef: trackerRef(42), settle, resolveAdapter: async () => adapter, onError: () => {} }),
         ).rejects.toThrow('db down');
         expect(close).not.toHaveBeenCalled();
       });
@@ -732,7 +735,7 @@ describe('epic-routes', () => {
       const seedEpicChildTask = async (mapRef: number, prompt = `epic ${mapRef} child`): Promise<number> => {
         const created = await server.api('POST', '/api/tasks', { prompt });
         const taskId = created.body.id as number;
-        await server.app.ctx.asyncDb.write((d) => d.update(tasks).set({ mapRef }).where(eq(tasks.id, taskId)).run());
+        await server.app.ctx.asyncDb.write((d) => d.update(tasks).set({ mapRef: trackerRef(mapRef) }).where(eq(tasks.id, taskId)).run());
         return taskId;
       };
 
@@ -746,7 +749,7 @@ describe('epic-routes', () => {
               workingDir: '/other-epic-workspace',
               state: 'ready',
               workspaceId,
-              mapRef,
+              mapRef: trackerRef(mapRef),
               createdAt: now,
               updatedAt: now,
             })
@@ -879,8 +882,8 @@ describe('epic-routes', () => {
 
       it('includes an Attempt owned directly by the Epic in its usage and cost rollup', async () => {
         const workspaceId = (await server.app.ctx.workspaces.list())[0]!.id;
-        await server.app.ctx.tasks.syncEpics(workspaceId, [{ ref: 777, kind: 'epic' }]);
-        const run = await server.app.ctx.attempts.createForEpic({ workspaceId, epicRef: 777 });
+        await server.app.ctx.tasks.syncEpics(workspaceId, [{ ref: trackerRef(777), kind: 'epic' }]);
+        const run = await server.app.ctx.attempts.createForEpic({ workspaceId, epicRef: trackerRef(777) });
         await server.app.ctx.attempts.update(run.id, {
           state: 'passed',
           endedAt: Date.now(),
@@ -899,8 +902,8 @@ describe('epic-routes', () => {
 
       it('returns an Epic-owned Attempt on the Epic timeline', async () => {
         const workspaceId = (await server.app.ctx.workspaces.list())[0]!.id;
-        await server.app.ctx.tasks.syncEpics(workspaceId, [{ ref: 778, kind: 'epic' }]);
-        const run = await server.app.ctx.attempts.createForEpic({ workspaceId, epicRef: 778 });
+        await server.app.ctx.tasks.syncEpics(workspaceId, [{ ref: trackerRef(778), kind: 'epic' }]);
+        const run = await server.app.ctx.attempts.createForEpic({ workspaceId, epicRef: trackerRef(778) });
         await server.app.ctx.attempts.update(run.id, {
           state: 'passed',
           endedAt: Date.now(),
@@ -965,8 +968,8 @@ describe('epic-routes', () => {
       });
 
       describe('validation', () => {
-        it('rejects a non-numeric :ref with a 400 validation envelope', async () => {
-          const res = await server.api('GET', '/api/epics/not-a-number/stats');
+        it('rejects an empty :ref with a 400 validation envelope', async () => {
+          const res = await server.api('GET', '/api/epics//stats');
           expect(res.status).toBe(400);
           expect(res.body).toMatchObject({ error: { code: 'validation' } });
         });
@@ -1017,7 +1020,7 @@ describe('epic-integrate-git', () => {
   const merged = (mergeOid = 'integrated-oid'): MergePolicyOutcome => ({ kind: 'merged', mergeOid });
 
   type VerifyFn = (args: { repoDir: string; verifiedHeadOid: string }) => Promise<VerificationDecision>;
-  type ResolveFn = (args: { repoDir: string; epicRef: number; verifiedHeadOid: string; verification: VerificationDecision }) => Promise<void>;
+  type ResolveFn = (args: { repoDir: string; epicRef: string; verifiedHeadOid: string; verification: VerificationDecision }) => Promise<void>;
 
   const build = (opts: {
     git?: FakeGit;
@@ -1027,22 +1030,22 @@ describe('epic-integrate-git', () => {
     now?: () => number;
     verifyBackoffMs?: number;
     operationTimeoutMs?: number;
-    onIntegrated?: (event: { epicRef: number }) => void;
-    epicState?: (epicRef: number) => Promise<'open' | 'integrating' | 'integrated' | null>;
-    onCompletedInPlace?: (event: { epicRef: number; baseBranch: string; leftBranch?: string }) => void;
+    onIntegrated?: (event: { epicRef: string }) => void;
+    epicState?: (epicRef: string) => Promise<'open' | 'integrating' | 'integrated' | null>;
+    onCompletedInPlace?: (event: { epicRef: string; baseBranch: string; leftBranch?: string }) => void;
   } = {}) => {
     const git = opts.git ?? new FakeGit();
     const verify = vi.fn<VerifyFn>(opts.verify ?? (async () => proceed));
     const resolve = opts.resolve && vi.fn<ResolveFn>(opts.resolve);
     const integrate = vi.fn<EpicIntegrate>(opts.integrate ?? (async () => merged()));
-    const retire = vi.fn(async (_ref: number) => {});
-    const escalate = vi.fn<(epicRef: number, reason: string) => void>();
-    const markIntegrating = vi.fn(async (_epicRef: number) => {});
-    const recordIntegration = vi.fn(async (_input: { epicRef: number; mergeCommit: string | null; memberRefs: number[] }) => {});
+    const retire = vi.fn(async (_ref: string) => {});
+    const escalate = vi.fn<(epicRef: string, reason: string) => void>();
+    const markIntegrating = vi.fn(async (_epicRef: string) => {});
+    const recordIntegration = vi.fn(async (_input: { epicRef: string; mergeCommit: string | null; memberRefs: string[] }) => {});
     const onError = vi.fn<(msg: string) => void>();
-    const onIntegrated = vi.fn<(event: { epicRef: number }) => void>(opts.onIntegrated);
-    const epicState = vi.fn<(epicRef: number) => Promise<'open' | 'integrating' | 'integrated' | null>>(opts.epicState ?? (async () => 'open'));
-    const onCompletedInPlace = vi.fn<(event: { epicRef: number; baseBranch: string; leftBranch?: string }) => void>(opts.onCompletedInPlace);
+    const onIntegrated = vi.fn<(event: { epicRef: string }) => void>(opts.onIntegrated);
+    const epicState = vi.fn<(epicRef: string) => Promise<'open' | 'integrating' | 'integrated' | null>>(opts.epicState ?? (async () => 'open'));
+    const onCompletedInPlace = vi.fn<(event: { epicRef: string; baseBranch: string; leftBranch?: string }) => void>(opts.onCompletedInPlace);
     let t = 0;
     const coord = new EpicCoordinator({
       repoDir: '/repo',
@@ -1070,7 +1073,7 @@ describe('epic-integrate-git', () => {
   describe('EpicCoordinator', () => {
     it('is a noop when the integration branch is gone (already integrated/retired)', async () => {
       const { coord, verify, integrate } = build({ git: new FakeGit(new Set()) });
-      const out = await coord.submit({ ref: 42, members: members('completed') });
+      const out = await coord.submit({ ref: trackerRef(42), members: members('completed') });
       expect(out).toEqual({ status: 'noop', reason: expect.any(String) });
       expect(verify).not.toHaveBeenCalled();
       expect(integrate).not.toHaveBeenCalled();
@@ -1081,40 +1084,40 @@ describe('epic-integrate-git', () => {
         const git = new FakeGit(new Set());
         const branchExists = vi.spyOn(git, 'branchExists');
         const { coord, verify, integrate, recordIntegration, onIntegrated, onCompletedInPlace } = build({ git });
-        const out = await coord.submit({ ref: 42, members: members('completed', 'completed'), memberRefs: [1, 2], inPlace: true });
+        const out = await coord.submit({ ref: trackerRef(42), members: members('completed', 'completed'), memberRefs: [trackerRef(1), trackerRef(2)], inPlace: true });
         expect(out).toEqual({ status: 'integrated', oid: 'oid-develop' });
         expect(verify).not.toHaveBeenCalled();
         expect(integrate).not.toHaveBeenCalled();
         expect(branchExists).not.toHaveBeenCalled();
-        expect(recordIntegration).toHaveBeenCalledWith({ epicRef: 42, mergeCommit: null, memberRefs: [1, 2] });
-        expect(onIntegrated).toHaveBeenCalledWith({ epicRef: 42 });
-        expect(onCompletedInPlace).toHaveBeenCalledWith({ epicRef: 42, baseBranch: 'develop' });
+        expect(recordIntegration).toHaveBeenCalledWith({ epicRef: '42', mergeCommit: null, memberRefs: ['1', '2'] });
+        expect(onIntegrated).toHaveBeenCalledWith({ epicRef: '42' });
+        expect(onCompletedInPlace).toHaveBeenCalledWith({ epicRef: '42', baseBranch: 'develop' });
       });
 
       it('reports a leftover Integration branch untouched, via the target the caller already resolved', async () => {
         const { coord, integrate, onCompletedInPlace } = build({ git: new FakeGit(new Set(['epic/42'])) });
-        const out = await coord.submit({ ref: 42, members: members('completed'), memberRefs: [1], inPlace: true, leftBranch: 'epic/42' });
+        const out = await coord.submit({ ref: trackerRef(42), members: members('completed'), memberRefs: [trackerRef(1)], inPlace: true, leftBranch: 'epic/42' });
         expect(out.status).toBe('integrated');
         expect(integrate).not.toHaveBeenCalled();
-        expect(onCompletedInPlace).toHaveBeenCalledWith({ epicRef: 42, baseBranch: 'develop', leftBranch: 'epic/42' });
+        expect(onCompletedInPlace).toHaveBeenCalledWith({ epicRef: '42', baseBranch: 'develop', leftBranch: 'epic/42' });
       });
 
       it('waits while a member is still pending, never verifying', async () => {
         const { coord, verify } = build({ git: new FakeGit(new Set()) });
-        const out = await coord.submit({ ref: 42, members: members('completed', 'pending'), inPlace: true });
+        const out = await coord.submit({ ref: trackerRef(42), members: members('completed', 'pending'), inPlace: true });
         expect(out.status).toBe('waiting');
         expect(verify).not.toHaveBeenCalled();
       });
 
       it('holds the Epic open when a member is blocked', async () => {
         const { coord } = build({ git: new FakeGit(new Set()) });
-        const out = await coord.submit({ ref: 42, members: members('completed', 'blocked'), inPlace: true });
+        const out = await coord.submit({ ref: trackerRef(42), members: members('completed', 'blocked'), inPlace: true });
         expect(out.status).toBe('blocked');
       });
 
       it('is idempotent: a second poll after completion is a no-op, never a duplicate record', async () => {
         const { coord, recordIntegration } = build({ git: new FakeGit(new Set()), epicState: async () => 'integrated' });
-        const out = await coord.submit({ ref: 42, members: members('completed'), inPlace: true });
+        const out = await coord.submit({ ref: trackerRef(42), members: members('completed'), inPlace: true });
         expect(out).toEqual({ status: 'noop', reason: expect.any(String) });
         expect(recordIntegration).not.toHaveBeenCalled();
       });
@@ -1122,7 +1125,7 @@ describe('epic-integrate-git', () => {
 
     it('waits (no verify, no integrate) while a member is still pending', async () => {
       const { coord, verify, integrate } = build();
-      const out = await coord.submit({ ref: 42, members: members('completed', 'pending') });
+      const out = await coord.submit({ ref: trackerRef(42), members: members('completed', 'pending') });
       expect(out.status).toBe('waiting');
       expect(verify).not.toHaveBeenCalled();
       expect(integrate).not.toHaveBeenCalled();
@@ -1130,7 +1133,7 @@ describe('epic-integrate-git', () => {
 
     it('blocks (no verify, no integrate, no escalate) when a member cannot merge', async () => {
       const { coord, verify, integrate, escalate } = build();
-      const out = await coord.submit({ ref: 42, members: members('completed', 'blocked') });
+      const out = await coord.submit({ ref: trackerRef(42), members: members('completed', 'blocked') });
       expect(out.status).toBe('blocked');
       expect(verify).not.toHaveBeenCalled();
       expect(integrate).not.toHaveBeenCalled();
@@ -1139,26 +1142,26 @@ describe('epic-integrate-git', () => {
 
     it('integrates + retires only when all members completed AND verification proceeds', async () => {
       const { coord, verify, integrate, retire, escalate } = build();
-      const out = await coord.submit({ ref: 42, members: members('completed', 'completed') });
+      const out = await coord.submit({ ref: trackerRef(42), members: members('completed', 'completed') });
       expect(out).toEqual({ status: 'integrated', oid: 'integrated-oid' });
       expect(verify).toHaveBeenCalledWith(expect.objectContaining({ verifiedHeadOid: 'oid-epic-42' }));
-      expect(integrate).toHaveBeenCalledWith(expect.objectContaining({ repoDir: '/repo', epicRef: 42, defaultBranch: 'develop', integrationBranch: 'epic/42' }));
-      expect(retire).toHaveBeenCalledWith(42);
+      expect(integrate).toHaveBeenCalledWith(expect.objectContaining({ repoDir: '/repo', epicRef: '42', defaultBranch: 'develop', integrationBranch: 'epic/42' }));
+      expect(retire).toHaveBeenCalledWith('42');
       expect(escalate).not.toHaveBeenCalled();
     });
 
     it('persists integrating before whole-Epic verification begins', async () => {
       const { coord, markIntegrating, verify } = build();
-      await coord.submit({ ref: 42, members: members('completed') });
-      expect(markIntegrating).toHaveBeenCalledWith(42);
+      await coord.submit({ ref: trackerRef(42), members: members('completed') });
+      expect(markIntegrating).toHaveBeenCalledWith('42');
       expect(markIntegrating).toHaveBeenCalledBefore(verify);
     });
 
     it('records the real merge-commit + member snapshot on a successful integrate (#438)', async () => {
       const { coord, recordIntegration } = build();
-      const out = await coord.submit({ ref: 42, members: members('completed', 'completed'), memberRefs: [11, 12] });
+      const out = await coord.submit({ ref: trackerRef(42), members: members('completed', 'completed'), memberRefs: [trackerRef(11), trackerRef(12)] });
       expect(out).toEqual({ status: 'integrated', oid: 'integrated-oid' });
-      expect(recordIntegration).toHaveBeenCalledWith({ epicRef: 42, mergeCommit: 'integrated-oid', memberRefs: [11, 12] });
+      expect(recordIntegration).toHaveBeenCalledWith({ epicRef: '42', mergeCommit: 'integrated-oid', memberRefs: ['11', '12'] });
     });
 
     it('notifies clients only after recording the integrated Epic', async () => {
@@ -1170,9 +1173,9 @@ describe('epic-integrate-git', () => {
         order.push('recorded');
       });
 
-      await coord.submit({ ref: 42, members: members('completed') });
+      await coord.submit({ ref: trackerRef(42), members: members('completed') });
 
-      expect(onIntegrated).toHaveBeenCalledWith({ epicRef: 42 });
+      expect(onIntegrated).toHaveBeenCalledWith({ epicRef: '42' });
       expect(order).toEqual(['recorded', 'notified']);
     });
 
@@ -1180,17 +1183,17 @@ describe('epic-integrate-git', () => {
       const git = new FakeGit();
       git.setContained('epic/42');
       const { coord, integrate, recordIntegration } = build({ git });
-      const out = await coord.submit({ ref: 42, members: members('completed'), memberRefs: [7] });
+      const out = await coord.submit({ ref: trackerRef(42), members: members('completed'), memberRefs: [trackerRef(7)] });
       expect(out).toEqual({ status: 'integrated', oid: 'oid-epic-42' });
       expect(integrate).not.toHaveBeenCalled();
-      expect(recordIntegration).toHaveBeenCalledWith({ epicRef: 42, mergeCommit: null, memberRefs: [7] });
+      expect(recordIntegration).toHaveBeenCalledWith({ epicRef: '42', mergeCommit: null, memberRefs: ['7'] });
     });
 
     it('defers the branch retire when the integration record fails, so the next poll can re-settle (#438)', async () => {
       const git = new FakeGit();
       const { coord, retire, recordIntegration, onError } = build({ git });
       recordIntegration.mockRejectedValueOnce(new Error('db down'));
-      const out = await coord.submit({ ref: 42, members: members('completed'), memberRefs: [11] });
+      const out = await coord.submit({ ref: trackerRef(42), members: members('completed'), memberRefs: [trackerRef(11)] });
       expect(out).toEqual({ status: 'integrated', oid: 'integrated-oid' });
       expect(retire).not.toHaveBeenCalled();
       expect(onError).toHaveBeenCalledWith(expect.stringContaining('integration snapshot record failed'));
@@ -1198,18 +1201,18 @@ describe('epic-integrate-git', () => {
 
     it('escalates and never merges when the integrated whole fails verification', async () => {
       const { coord, integrate, retire, escalate } = build({ verify: async () => block });
-      const out = await coord.submit({ ref: 42, members: members('completed') });
+      const out = await coord.submit({ ref: trackerRef(42), members: members('completed') });
       expect(out.status).toBe('escalated');
       expect(integrate).not.toHaveBeenCalled();
       expect(retire).not.toHaveBeenCalled();
-      expect(escalate).toHaveBeenCalledWith(42, expect.stringContaining('verification'));
+      expect(escalate).toHaveBeenCalledWith('42', expect.stringContaining('verification'));
     });
 
     it('verifies before dispatching the resolver and does not merge on a failed verification', async () => {
       const { coord, verify, resolve, integrate, escalate } = build({ verify: async () => block, resolve: async () => {} });
-      const out = await coord.submit({ ref: 42, members: members('completed') });
+      const out = await coord.submit({ ref: trackerRef(42), members: members('completed') });
       expect(out).toEqual({ status: 'waiting', reason: 'whole-Epic verification failed; resolver dispatched' });
-      expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ epicRef: 42, verifiedHeadOid: 'oid-epic-42', verification: block }));
+      expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ epicRef: '42', verifiedHeadOid: 'oid-epic-42', verification: block }));
       if (!resolve) throw new Error('expected resolver');
       expect(verify.mock.invocationCallOrder[0]!).toBeLessThan(resolve.mock.invocationCallOrder[0]!);
       expect(integrate).not.toHaveBeenCalled();
@@ -1218,7 +1221,7 @@ describe('epic-integrate-git', () => {
 
     it('escalates on an inconclusive/escalate whole-Epic verdict (fail-safe)', async () => {
       const { coord, integrate, escalate } = build({ verify: async () => inconclusive });
-      const out = await coord.submit({ ref: 42, members: members('completed') });
+      const out = await coord.submit({ ref: trackerRef(42), members: members('completed') });
       expect(out.status).toBe('escalated');
       expect(integrate).not.toHaveBeenCalled();
       expect(escalate).toHaveBeenCalled();
@@ -1230,10 +1233,10 @@ describe('epic-integrate-git', () => {
           throw new Error('worktree add failed');
         },
       });
-      const out = await coord.submit({ ref: 42, members: members('completed') });
+      const out = await coord.submit({ ref: trackerRef(42), members: members('completed') });
       expect(out.status).toBe('escalated');
       expect(integrate).not.toHaveBeenCalled();
-      expect(escalate).toHaveBeenCalledWith(42, expect.stringContaining('could not run'));
+      expect(escalate).toHaveBeenCalledWith('42', expect.stringContaining('could not run'));
     });
 
     it('escalates and frees the in-flight guard when a verification hangs past the operation timeout', async () => {
@@ -1241,11 +1244,11 @@ describe('epic-integrate-git', () => {
         verify: () => new Promise<never>(() => {}), // never resolves
         operationTimeoutMs: 20,
       });
-      const out = await coord.submit({ ref: 42, members: members('completed') });
+      const out = await coord.submit({ ref: trackerRef(42), members: members('completed') });
       expect(out.status).toBe('escalated');
       expect(integrate).not.toHaveBeenCalled();
-      expect(escalate).toHaveBeenCalledWith(42, expect.stringContaining('timed out'));
-      expect(coord.isInFlight(42)).toBe(false);
+      expect(escalate).toHaveBeenCalledWith('42', expect.stringContaining('timed out'));
+      expect(coord.isInFlight(trackerRef(42))).toBe(false);
     });
 
     it('escalates when the integrate itself hangs past the operation timeout', async () => {
@@ -1253,36 +1256,36 @@ describe('epic-integrate-git', () => {
         integrate: () => new Promise<never>(() => {}), // never resolves
         operationTimeoutMs: 20,
       });
-      const out = await coord.submit({ ref: 42, members: members('completed') });
+      const out = await coord.submit({ ref: trackerRef(42), members: members('completed') });
       expect(out.status).toBe('escalated');
-      expect(escalate).toHaveBeenCalledWith(42, expect.stringContaining('could not run'));
-      expect(coord.isInFlight(42)).toBe(false);
+      expect(escalate).toHaveBeenCalledWith('42', expect.stringContaining('could not run'));
+      expect(coord.isInFlight(trackerRef(42))).toBe(false);
     });
 
     it('escalates when the integrate escalates (unresolved conflict / red post-merge check)', async () => {
       const { coord, retire, escalate } = build({
         integrate: async () => ({ kind: 'escalated', reason: 'conflict', message: 'a human needs to resolve them' }),
       });
-      const out = await coord.submit({ ref: 42, members: members('completed') });
+      const out = await coord.submit({ ref: trackerRef(42), members: members('completed') });
       expect(out.status).toBe('escalated');
       expect(retire).not.toHaveBeenCalled();
-      expect(escalate).toHaveBeenCalledWith(42, expect.stringContaining('conflict'));
+      expect(escalate).toHaveBeenCalledWith('42', expect.stringContaining('conflict'));
     });
 
     it('escalates (with the revert recorded) when the post-merge check is red', async () => {
       const { coord, escalate } = build({
         integrate: async () => ({ kind: 'escalated', reason: 'post-merge-red', message: 'the merge was discarded and the base is unchanged' }),
       });
-      const out = await coord.submit({ ref: 42, members: members('completed') });
+      const out = await coord.submit({ ref: trackerRef(42), members: members('completed') });
       expect(out.status).toBe('escalated');
-      expect(escalate).toHaveBeenCalledWith(42, expect.stringContaining('post-merge-red'));
+      expect(escalate).toHaveBeenCalledWith('42', expect.stringContaining('post-merge-red'));
     });
 
     it('defers (waiting, no integrate) when the default branch is detached', async () => {
       const git = new FakeGit();
       git.setDefaultBranch(null);
       const { coord, integrate } = build({ git });
-      const out = await coord.submit({ ref: 42, members: members('completed') });
+      const out = await coord.submit({ ref: trackerRef(42), members: members('completed') });
       expect(out.status).toBe('waiting');
       expect(integrate).not.toHaveBeenCalled();
     });
@@ -1300,7 +1303,7 @@ describe('epic-integrate-git', () => {
         escalate: vi.fn(),
         onError,
       });
-      const out = await coordWithBadRetire.submit({ ref: 42, members: members('completed') });
+      const out = await coordWithBadRetire.submit({ ref: trackerRef(42), members: members('completed') });
       expect(out.status).toBe('integrated');
       expect(onError).toHaveBeenCalledWith(expect.stringContaining('retire'));
     });
@@ -1310,11 +1313,11 @@ describe('epic-integrate-git', () => {
         const git = new FakeGit();
         git.setContained('epic/42');
         const { coord, verify, integrate, retire } = build({ git });
-        const out = await coord.submit({ ref: 42, members: members('completed', 'completed') });
+        const out = await coord.submit({ ref: trackerRef(42), members: members('completed', 'completed') });
         expect(out).toEqual({ status: 'integrated', oid: 'oid-epic-42' });
         expect(verify).not.toHaveBeenCalled();
         expect(integrate).not.toHaveBeenCalled();
-        expect(retire).toHaveBeenCalledWith(42);
+        expect(retire).toHaveBeenCalledWith('42');
       });
 
       it('stays a success when the retire of an already-contained branch fails (logged, non-fatal)', async () => {
@@ -1332,7 +1335,7 @@ describe('epic-integrate-git', () => {
           escalate: vi.fn(),
           onError,
         });
-        const out = await coord.submit({ ref: 42, members: members('completed') });
+        const out = await coord.submit({ ref: trackerRef(42), members: members('completed') });
         expect(out.status).toBe('integrated');
         expect(onError).toHaveBeenCalledWith(expect.stringContaining('already-contained'));
       });
@@ -1341,11 +1344,11 @@ describe('epic-integrate-git', () => {
         const git = new FakeGit();
         git.setContentContained('epic/42');
         const { coord, verify, integrate, retire } = build({ git });
-        const out = await coord.submit({ ref: 42, members: members('completed', 'completed') });
+        const out = await coord.submit({ ref: trackerRef(42), members: members('completed', 'completed') });
         expect(out).toEqual({ status: 'integrated', oid: 'oid-epic-42' });
         expect(verify).not.toHaveBeenCalled();
         expect(integrate).not.toHaveBeenCalled();
-        expect(retire).toHaveBeenCalledWith(42);
+        expect(retire).toHaveBeenCalledWith('42');
       });
 
       it('holds the tier-2 content check behind the backoff (not run every poll)', async () => {
@@ -1353,10 +1356,10 @@ describe('epic-integrate-git', () => {
         const git = new FakeGit();
         const isContentContained = vi.spyOn(git, 'isContentContained');
         const { coord } = build({ git, verify: async () => inconclusive, now: () => clock, verifyBackoffMs: 60_000 });
-        await coord.submit({ ref: 42, members: members('completed') });
+        await coord.submit({ ref: trackerRef(42), members: members('completed') });
         expect(isContentContained).toHaveBeenCalledTimes(1);
         clock = 30_000;
-        await coord.submit({ ref: 42, members: members('completed', 'completed') });
+        await coord.submit({ ref: trackerRef(42), members: members('completed', 'completed') });
         expect(isContentContained).toHaveBeenCalledTimes(1);
       });
 
@@ -1365,7 +1368,7 @@ describe('epic-integrate-git', () => {
         const git = new FakeGit();
         git.setContentContained('epic/42');
         const isContentContained = vi.spyOn(git, 'isContentContained');
-        const retire = vi.fn(async (_ref: number) => {
+        const retire = vi.fn(async (_ref: string) => {
           throw new Error('branch -d failed');
         });
         const onError = vi.fn<(msg: string) => void>();
@@ -1380,13 +1383,13 @@ describe('epic-integrate-git', () => {
           verifyBackoffMs: 60_000,
           onError,
         });
-        const first = await coord.submit({ ref: 42, members: members('completed') });
+        const first = await coord.submit({ ref: trackerRef(42), members: members('completed') });
         expect(first.status).toBe('integrated');
         expect(isContentContained).toHaveBeenCalledTimes(1);
         expect(retire).toHaveBeenCalledTimes(1);
         expect(onError).toHaveBeenCalledWith(expect.stringContaining('already-contained'));
         clock = 30_000;
-        const second = await coord.submit({ ref: 42, members: members('completed') });
+        const second = await coord.submit({ ref: trackerRef(42), members: members('completed') });
         expect(second.status).toBe('waiting');
         expect(isContentContained).toHaveBeenCalledTimes(1);
         expect(retire).toHaveBeenCalledTimes(1);
@@ -1395,24 +1398,24 @@ describe('epic-integrate-git', () => {
       it('retains the last verification verdict on the containment fast-path (read-model consistency, #218)', async () => {
         const git = new FakeGit();
         const { coord } = build({ git });
-        await coord.submit({ ref: 42, members: members('completed') });
-        expect(coord.verificationStatus(42)).toBe('pass');
+        await coord.submit({ ref: trackerRef(42), members: members('completed') });
+        expect(coord.verificationStatus(trackerRef(42))).toBe('pass');
         git.setContained('epic/42');
-        const out = await coord.submit({ ref: 42, members: members('completed') });
+        const out = await coord.submit({ ref: trackerRef(42), members: members('completed') });
         expect(out.status).toBe('integrated');
-        expect(coord.verificationStatus(42)).toBe('pass');
+        expect(coord.verificationStatus(trackerRef(42))).toBe('pass');
       });
 
       it('auto-retires an already-contained branch even if it was previously escalated (clears the sticky hold)', async () => {
         const git = new FakeGit();
         const { coord, verify, retire } = build({ git, verify: async () => block });
-        const first = await coord.submit({ ref: 42, members: members('completed') });
+        const first = await coord.submit({ ref: trackerRef(42), members: members('completed') });
         expect(first.status).toBe('escalated');
         expect(retire).not.toHaveBeenCalled();
         git.setContained('epic/42');
-        const out = await coord.submit({ ref: 42, members: members('completed') });
+        const out = await coord.submit({ ref: trackerRef(42), members: members('completed') });
         expect(out).toEqual({ status: 'integrated', oid: 'oid-epic-42' });
-        expect(retire).toHaveBeenCalledWith(42);
+        expect(retire).toHaveBeenCalledWith('42');
         expect(verify).toHaveBeenCalledTimes(1);
       });
     });
@@ -1421,10 +1424,10 @@ describe('epic-integrate-git', () => {
       it('defers a repeat verify+integrate within the backoff window (no re-burn)', async () => {
         let clock = 0;
         const { coord, verify } = build({ verify: async () => inconclusive, now: () => clock, verifyBackoffMs: 60_000 });
-        const first = await coord.submit({ ref: 42, members: members('completed') });
+        const first = await coord.submit({ ref: trackerRef(42), members: members('completed') });
         expect(first.status).toBe('escalated');
         clock = 30_000;
-        const second = await coord.submit({ ref: 42, members: members('completed', 'completed') });
+        const second = await coord.submit({ ref: trackerRef(42), members: members('completed', 'completed') });
         expect(second.status).toBe('waiting');
         expect(verify).toHaveBeenCalledTimes(1);
       });
@@ -1432,9 +1435,9 @@ describe('epic-integrate-git', () => {
       it('allows the next verify+integrate once the backoff window elapses', async () => {
         let clock = 0;
         const { coord, verify } = build({ verify: async () => inconclusive, now: () => clock, verifyBackoffMs: 60_000 });
-        await coord.submit({ ref: 42, members: members('completed') });
+        await coord.submit({ ref: trackerRef(42), members: members('completed') });
         clock = 60_001;
-        await coord.submit({ ref: 42, members: members('completed', 'completed') });
+        await coord.submit({ ref: trackerRef(42), members: members('completed', 'completed') });
         expect(verify).toHaveBeenCalledTimes(2);
       });
 
@@ -1443,7 +1446,7 @@ describe('epic-integrate-git', () => {
     describe('sticky escalation (level-trigger terminal guard)', () => {
       it('does not re-run Verification or re-escalate on repeated polls once escalated for the same member state', async () => {
         const { coord, verify, escalate } = build({ verify: async () => block });
-        const target = { ref: 42, members: members('completed', 'completed') };
+        const target = { ref: trackerRef(42), members: members('completed', 'completed') };
         const first = await coord.submit(target);
         expect(first.status).toBe('escalated');
         const second = await coord.submit(target);
@@ -1456,22 +1459,22 @@ describe('epic-integrate-git', () => {
 
       it('re-attempts once the member-state signature changes', async () => {
         const { coord, verify } = build({ verify: async () => block });
-        await coord.submit({ ref: 42, members: members('completed', 'completed') });
+        await coord.submit({ ref: trackerRef(42), members: members('completed', 'completed') });
         expect(verify).toHaveBeenCalledTimes(1);
-        await coord.submit({ ref: 42, members: members('completed', 'completed', 'completed') });
+        await coord.submit({ ref: trackerRef(42), members: members('completed', 'completed', 'completed') });
         expect(verify).toHaveBeenCalledTimes(2);
       });
 
       it('clears the hold when the integration branch is gone, then starts clean', async () => {
         const git = new FakeGit(new Set(['epic/42']));
         const { coord, verify } = build({ git, verify: async () => block });
-        await coord.submit({ ref: 42, members: members('completed') });
+        await coord.submit({ ref: trackerRef(42), members: members('completed') });
         expect(verify).toHaveBeenCalledTimes(1);
         git.branches.delete('epic/42');
-        const gone = await coord.submit({ ref: 42, members: members('completed') });
+        const gone = await coord.submit({ ref: trackerRef(42), members: members('completed') });
         expect(gone.status).toBe('noop');
         git.branches.add('epic/42');
-        await coord.submit({ ref: 42, members: members('completed') });
+        await coord.submit({ ref: trackerRef(42), members: members('completed') });
         expect(verify).toHaveBeenCalledTimes(2);
       });
 
@@ -1480,25 +1483,25 @@ describe('epic-integrate-git', () => {
     describe('retained verification status (issue #178)', () => {
       it('is null before any attempt', () => {
         const { coord } = build();
-        expect(coord.verificationStatus(42)).toBeNull();
+        expect(coord.verificationStatus(trackerRef(42))).toBeNull();
       });
 
       it('is pass after a successful merge', async () => {
         const { coord } = build();
-        await coord.submit({ ref: 42, members: members('completed', 'completed') });
-        expect(coord.verificationStatus(42)).toBe('pass');
+        await coord.submit({ ref: trackerRef(42), members: members('completed', 'completed') });
+        expect(coord.verificationStatus(trackerRef(42))).toBe('pass');
       });
 
       it('is fail after a blocking verdict', async () => {
         const { coord } = build({ verify: async () => block });
-        await coord.submit({ ref: 42, members: members('completed') });
-        expect(coord.verificationStatus(42)).toBe('fail');
+        await coord.submit({ ref: trackerRef(42), members: members('completed') });
+        expect(coord.verificationStatus(trackerRef(42))).toBe('fail');
       });
 
       it('is fail after an inconclusive verdict', async () => {
         const { coord } = build({ verify: async () => inconclusive });
-        await coord.submit({ ref: 42, members: members('completed') });
-        expect(coord.verificationStatus(42)).toBe('fail');
+        await coord.submit({ ref: trackerRef(42), members: members('completed') });
+        expect(coord.verificationStatus(trackerRef(42))).toBe('fail');
       });
 
       it('is fail after the verification harness throws', async () => {
@@ -1507,8 +1510,8 @@ describe('epic-integrate-git', () => {
             throw new Error('boom');
           },
         });
-        await coord.submit({ ref: 42, members: members('completed') });
-        expect(coord.verificationStatus(42)).toBe('fail');
+        await coord.submit({ ref: trackerRef(42), members: members('completed') });
+        expect(coord.verificationStatus(trackerRef(42))).toBe('fail');
       });
 
       it('is pending while a verify is in flight, then pass once it resolves', async () => {
@@ -1520,22 +1523,22 @@ describe('epic-integrate-git', () => {
             return proceed;
           },
         });
-        const submitted = coord.submit({ ref: 42, members: members('completed') });
+        const submitted = coord.submit({ ref: trackerRef(42), members: members('completed') });
         await new Promise((r) => setTimeout(r, 0));
-        expect(coord.verificationStatus(42)).toBe('pending');
+        expect(coord.verificationStatus(trackerRef(42))).toBe('pending');
         release();
         await submitted;
-        expect(coord.verificationStatus(42)).toBe('pass');
+        expect(coord.verificationStatus(trackerRef(42))).toBe('pass');
       });
 
       it('clears to null once the integration branch is gone', async () => {
         const git = new FakeGit(new Set(['epic/42']));
         const { coord } = build({ git });
-        await coord.submit({ ref: 42, members: members('completed') });
-        expect(coord.verificationStatus(42)).toBe('pass');
+        await coord.submit({ ref: trackerRef(42), members: members('completed') });
+        expect(coord.verificationStatus(trackerRef(42))).toBe('pass');
         git.branches.delete('epic/42');
-        await coord.submit({ ref: 42, members: members('completed') });
-        expect(coord.verificationStatus(42)).toBeNull();
+        await coord.submit({ ref: trackerRef(42), members: members('completed') });
+        expect(coord.verificationStatus(trackerRef(42))).toBeNull();
       });
     });
 
@@ -1548,8 +1551,8 @@ describe('epic-integrate-git', () => {
           return proceed;
         },
       });
-      const first = coord.submit({ ref: 42, members: members('completed') });
-      const second = await coord.submit({ ref: 42, members: members('completed') });
+      const first = coord.submit({ ref: trackerRef(42), members: members('completed') });
+      const second = await coord.submit({ ref: trackerRef(42), members: members('completed') });
       expect(second).toEqual({ status: 'busy' });
       release();
       expect((await first).status).toBe('integrated');

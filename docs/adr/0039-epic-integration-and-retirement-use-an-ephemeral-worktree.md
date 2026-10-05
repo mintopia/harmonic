@@ -4,6 +4,11 @@ Status: accepted
 Date: 2026-09-22
 Amended: 2026-09-22 (base-checkout sync rule; direct-mode Epics)
 
+Current status (2026-10-02): `src/execution/merge-policy.ts` creates the
+ephemeral operation worktree and passes its path to the post-merge callback.
+`src/tracker/epic-integration-runner.ts` runs all post-merge commands in that
+same worktree, preserving artifacts between commands until the operation ends.
+
 Amends ADR-0001's "One merge policy, everywhere" rule for the epic to default-branch path.
 
 ## Context
@@ -86,10 +91,11 @@ covered by this decision. Task and Epic integration therefore share both the
 merge policy in ADR-0001 and the checkout-isolation rule here.
 
 The ephemeral worktree is an administrative operation site, not a detached
-verification environment. Verification still follows ADR-0028: it runs in the
-live worktree at the target commit when one exists. The epic-to-default
-post-merge check has no live target checkout, so it runs in the ephemeral
-operation worktree and records its result there.
+verification environment. Pre-merge Verification still runs in the live Task
+or Epic worktree (ADR-0028). Task-to-Epic and Epic-to-default post-merge checks
+run in their respective merge operation worktrees, where each merge result is
+built. Ordered commands in a check share that worktree, so later commands see
+earlier commands' artifacts before the result is published.
 
 ## Consequences
 

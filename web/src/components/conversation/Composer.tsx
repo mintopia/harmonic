@@ -11,6 +11,16 @@ import { providerLabel } from '../TaskIdentity';
 import { commandPickerState } from './command-picker-model.js';
 
 const fieldLabel = `mb-1 block ${labelType} text-muted`;
+const draftKey = (workspaceId: number | null) => `harmonic.conversation-draft.${workspaceId ?? 'global'}`;
+const loadDraft = (key: string) => {
+  try { return sessionStorage.getItem(key) ?? ''; } catch { return ''; }
+};
+const saveDraft = (key: string, value: string) => {
+  try {
+    if (value) sessionStorage.setItem(key, value);
+    else sessionStorage.removeItem(key);
+  } catch {}
+};
 
 export function ContextMeter({ conversation, onOpen }: { conversation: Conversation; onOpen?: () => void }) {
   const context = formatContextUsage(computeContextUsage(conversation));
@@ -64,6 +74,7 @@ export function ContextMeter({ conversation, onOpen }: { conversation: Conversat
 export function Composer({
   config,
   workspace,
+  draftWorkspaceId = workspace?.id ?? null,
   conversation,
   events,
   expanded,
@@ -72,6 +83,7 @@ export function Composer({
 }: {
   config: AppConfig;
   workspace: Workspace | null;
+  draftWorkspaceId?: number | null;
   conversation: Conversation | null;
   events: ConversationEvent[];
   expanded: boolean;
@@ -84,7 +96,8 @@ export function Composer({
   const [harness, setHarness] = useState(workspace?.chatHarness ?? config.chat.harness);
   const [model, setModel] = useState(workspace?.chatModel ?? config.chat.model);
   const [permissionMode, setPermissionMode] = useState<Conversation['permissionMode']>('ask');
-  const [text, setText] = useState('');
+  const key = draftKey(draftWorkspaceId);
+  const [text, setText] = useState(() => conversation === null ? loadDraft(key) : '');
   const [busy, setBusy] = useState(false);
   const [queued, setQueued] = useState(false);
   const [caret, setCaret] = useState(0);
@@ -130,10 +143,12 @@ export function Composer({
   const send = async () => {
     const trimmed = text.trim();
     if (!trimmed || busy) return;
+    const sentText = text;
     setBusy(true);
     try {
       const result = await onSend({ harness, model, permissionMode }, trimmed);
-      setText('');
+      setText((current) => current === sentText ? '' : current);
+      if (conversation === null && loadDraft(key) === sentText) saveDraft(key, '');
       if (result.queued) {
         setQueued(true);
         if (queuedTimer.current) clearTimeout(queuedTimer.current);
@@ -181,6 +196,7 @@ export function Composer({
     const next = `${text.slice(0, picker.start)}${prefix}${command.name} ${text.slice(picker.end)}`;
     const nextCaret = picker.start + prefix.length + command.name.length + 1;
     setText(next);
+    if (conversation === null) saveDraft(key, next);
     setCaret(nextCaret);
     setDismissedPicker(null);
     requestAnimationFrame(() => {
@@ -291,6 +307,7 @@ export function Composer({
           }
           onChange={(e) => {
             setText(e.target.value);
+            if (conversation === null) saveDraft(key, e.target.value);
             setCaret(e.target.selectionStart);
             setHighlight(-1);
             setDismissedPicker(null);

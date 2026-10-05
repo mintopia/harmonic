@@ -1,37 +1,35 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { Git } from './git.js';
-import { fireAndForget, reportFailure } from '../error-handling.js';
-import { driveFields } from './prompt-template.js';
-import { indexWorktree } from './code-index.js';
+import { reportFailure } from '../error-handling.js';
 import type { AppConfig } from '../config.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
-import { resolveVerifiers } from '../domain/setting-override.js';
-import { DomainError } from '../domain/errors.js';
 import type { AttemptStore } from '../domain/attempts.js';
-import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
-import type { EpicMergeEventStore } from '../domain/epic-merge-events.js';
-import type { TaskArchive } from '../archive/task-archive.js';
-import type { TranscriptCapture } from './transcript-capture.js';
-import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
-import { createAcpCriticDrive, runCritic, criticAttemptToInput } from '../verification/critic.js';
-import { combineVerdicts } from '../verification/combine.js';
+import type { EpicMergeEventStore, EpicTimelineStep } from '../domain/epic-merge-events.js';
+import { runTimedCriticDrive } from '../verification/critic.js';
+import type { createPostMergeCheck } from '../verification/post-merge-check.js';
 import { integrationBranchName } from './epic-coordinator.js';
 import { logger } from '../logger.js';
 import { startOperation } from '../telemetry/operations.js';
-import { runMergePolicy, type MergePolicyDeps, type MergePolicyOutcome, type MergeStepEvent, type PostMergeCheckResult } from './merge-policy.js';
+import { runMergePolicy, type MergePolicyDeps, type MergePolicyOutcome, type PostMergeCheckResult } from './merge-policy.js';
 import type { RunnerOptions } from './runner.js';
+import type { RunnerEvents } from './runner-options.js';
+import type { TaskArchive } from '../archive/task-archive.js';
+import { resolveMergePrompts } from '../domain/setting-override.js';
+import { expandFragments, fillTemplate } from './prompt-template.js';
 
 export const RESOLVE_TURN_TIMEOUT_MS = 10 * 60 * 1000;
 
-/** The shared body of a conflict-resolution turn prompt: the unmerged-paths list plus resolution instructions, appended after a caller-supplied intro. */
-function conflictResolutionPrompt(intro: string, ctx: { baseBranch: string; taskBranch: string; unmergedPaths: string[]; baseDir: string }): string {
-  return (
-    intro +
-    ctx.unmergedPaths.map((path) => `- ${path}`).join('\n') +
-    `\n\nThis checkout (\`${ctx.baseDir}\`) has \`${ctx.baseBranch}\` checked out with that merge in progress — conflict ` +
-    `markers are present in the listed paths. Resolve the conflicts so the result keeps both \`${ctx.baseBranch}\`'s and ` +
-    `\`${ctx.taskBranch}\`'s work, then \`git add\` the resolved paths. Do not run \`git commit\`, do not create or switch ` +
-    `branches, do not push, and do not change anything beyond what resolving this merge requires.`
-  );
+type ConflictCtx = { turn: number; baseBranch: string; taskBranch: string; unmergedPaths: string[]; baseDir: string };
+
+/** Render a conflict-resolution turn prompt from its configured template, expanding Prompt Fragments and filling the merge placeholders. */
+export function renderConflictPrompt(template: string, fragments: Record<string, string>, ctx: ConflictCtx): string {
+  return fillTemplate(expandFragments(template, fragments), {
+    turn: ctx.turn,
+    taskBranch: ctx.taskBranch,
+    baseBranch: ctx.baseBranch,
+    baseDir: ctx.baseDir,
+    paths: ctx.unmergedPaths.map((path) => `- ${path}`).join('\n'),
+  });
 }
 
 /**
@@ -63,7 +61,7 @@ export class EpicBaseNotReady extends Error {
 export interface EpicIntegrationMergeInput {
   workspaceId: number;
   repoDir: string;
-  epicRef: number;
+  epicRef: TrackerRef;
   defaultBranch: string;
   integrationBranch: string;
   runPostMergeCheck: (mergeOid: string, baseDir: string) => Promise<PostMergeCheckResult>;
@@ -72,12 +70,12 @@ export interface EpicIntegrationMergeInput {
 export interface MergeCoordinatorDeps {
   getConfig: () => AppConfig;
   attempts: AttemptStore;
-  verificationAttempts: VerificationAttemptStore;
   epicMergeEvents: EpicMergeEventStore;
-  transcripts: TranscriptCapture;
-  getWorkspace: RunnerOptions['getWorkspace'];
   criticDrive: RunnerOptions['criticDrive'];
   archive?: TaskArchive | undefined;
+  onAttemptEvent?: RunnerEvents['onAttemptEvent'];
+  getWorkspace?: RunnerOptions['getWorkspace'];
+  postMergeCheck: ReturnType<typeof createPostMergeCheck>;
   postMerge: RunnerOptions['postMerge'];
   urlFor: (task: TaskRow) => string | null;
   listWorkingTasks: () => Promise<TaskRow[]>;
@@ -86,7 +84,7 @@ export interface MergeCoordinatorDeps {
   criticUpdateRelay: (attemptId: number) => (update: { sessionUpdate: string; [key: string]: unknown }) => void;
   recordRunEvent: (task: TaskRow, run: AttemptRow, type: 'lifecycle', payload: unknown) => void;
   settleEscalated: (task: TaskRow, run: AttemptRow, reason: string, patch: Partial<AttemptRow>) => Promise<void>;
-  onEpicMergeStep: (payload: { workspaceId: number; epicRef: number }) => void;
+  onEpicMergeStep: (payload: { workspaceId: number; epicRef: TrackerRef }) => void;
 }
 
 export class MergeCoordinator {
@@ -202,6 +200,7 @@ export class MergeCoordinator {
    */
   async mergeEpicIntegration(input: EpicIntegrationMergeInput): Promise<MergePolicyOutcome> {
     const config = this.deps.getConfig();
+    const epicAttempt = (await this.deps.attempts.listForEpic({ workspaceId: input.workspaceId, epicRef: input.epicRef })).at(-1);
     const host = (await this.deps.listWorkingTasks()).find((task) => task.baseBranch === input.integrationBranch);
     const harnessId = host?.harness ?? config.defaults.harness;
     const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
@@ -210,20 +209,25 @@ export class MergeCoordinator {
       resolveConflictTurn: async (ctx) => {
         try {
           if (!harness) return;
-          const drive = this.deps.criticDrive ?? createAcpCriticDrive();
-          const prompt = conflictResolutionPrompt(
-            `## Epic integration merge conflict resolution (turn ${ctx.turn})\n` +
-              `Merging the Epic integration branch \`${ctx.taskBranch}\` into \`${ctx.baseBranch}\` conflicted in:\n`,
-            ctx,
-          );
-          await drive.run({
+          const drive = this.deps.criticDrive;
+          const merge = resolveMergePrompts(await this.deps.getWorkspace?.(input.workspaceId), config);
+          const prompt = renderConflictPrompt(merge.epicConflictPrompt, merge.fragments, ctx);
+          const archived = await this.deps.archive?.appendResolutionPrompt({ workspaceId: input.workspaceId, epicRef: input.epicRef }, epicAttempt?.number ?? 1, 'epic-conflict', ctx.turn, prompt);
+          if (epicAttempt) await this.recordEpicEvent(epicAttempt.id, { event: 'merge-conflict-resolve', turn: ctx.turn, ...archived });
+          else if (archived) persistStep({ step: 'resolver-prompt', kind: 'merge-conflict', turn: ctx.turn, attempt: 1, ...archived });
+          const request = {
             harness,
             harnessId,
             model,
             cwd: ctx.baseDir,
             prompt,
             timeoutMs: RESOLVE_TURN_TIMEOUT_MS,
-          });
+          };
+          if (epicAttempt) {
+            await runTimedCriticDrive(drive, request, (ms) => this.deps.attempts.addAgentDuration(epicAttempt.id, ms));
+          } else {
+            await drive.run(request);
+          }
         } catch (err) {
           reportFailure(err, {
             op: 'runner.mergeEpicIntegration.resolveConflictTurn',
@@ -246,7 +250,7 @@ export class MergeCoordinator {
       onStep: (step) => persistStep(step),
     };
     let persistChain: Promise<unknown> = Promise.resolve();
-    const persistStep = (step: MergeStepEvent): void => {
+    const persistStep = (step: EpicTimelineStep): void => {
       persistChain = persistChain
         .then(async () => {
           await this.deps.epicMergeEvents.append(input.workspaceId, input.epicRef, step);
@@ -271,6 +275,14 @@ export class MergeCoordinator {
     return outcome;
   }
 
+  private async recordEpicEvent(attemptId: number, payload: Record<string, unknown>): Promise<void> {
+    try {
+      this.deps.onAttemptEvent?.(await this.deps.attempts.appendEvent(attemptId, { type: 'lifecycle', payload }));
+    } catch (err) {
+      logger.warn('epic attempt event failed', { attemptId, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   mergePolicyDeps(
     task: TaskRow,
     run: AttemptRow,
@@ -286,20 +298,19 @@ export class MergeCoordinator {
           const harnessId = task.harness;
           const harness = config.harnesses[harnessId as keyof typeof config.harnesses];
           if (!harness) return;
-          const drive = this.deps.criticDrive ?? createAcpCriticDrive();
-          const prompt = conflictResolutionPrompt(
-            `## Merge conflict resolution (turn ${ctx.turn})\n` +
-              `Merging \`${ctx.taskBranch}\` into \`${ctx.baseBranch}\` conflicted in:\n`,
-            ctx,
-          );
-          await drive.run({
+          const drive = this.deps.criticDrive;
+          const merge = resolveMergePrompts(await this.deps.getWorkspace?.(task.workspaceId), config);
+          const prompt = renderConflictPrompt(merge.conflictPrompt, merge.fragments, ctx);
+          const archived = await this.deps.archive?.appendResolutionPrompt(task, run.number, 'task-conflict', ctx.turn, prompt);
+          record('lifecycle', { event: 'merge-conflict-resolve', turn: ctx.turn, ...archived });
+          await runTimedCriticDrive(drive, {
             harness,
             harnessId,
             model: task.model,
             cwd: ctx.baseDir,
             prompt,
             timeoutMs: RESOLVE_TURN_TIMEOUT_MS,
-          });
+          }, (ms) => this.deps.attempts.addAgentDuration(run.id, ms));
         } catch (err) {
           reportFailure(err, {
             op: 'runner.mergeDeps.resolveConflictTurn',
@@ -317,92 +328,17 @@ export class MergeCoordinator {
           });
         }
       },
-      runPostMergeCheck: async (mergeOid, baseDir) => {
-        const config = this.deps.getConfig();
-        const ws = await this.deps.getWorkspace?.(task.workspaceId);
-        const { task: resolvedTask } = resolveVerifiers(
-          ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null },
-          config,
-        );
-        const { commands, critics } = resolvedTask.postMerge;
-        const timelineAttempt = await this.deps.latestAttemptFor(task);
-        for (const command of commands) {
-          const outputLogPath = (await this.deps.archive?.verificationOutputLog(task, run.number, 'post-merge', command.id)) ?? null;
-          const attempt = await runCommandVerifier({
-            outputLogPath,
-            cwd: baseDir,
-            verifiedHeadOid: mergeOid,
-            command,
-            signal,
-            attributes: { 'task.id': task.id, 'attempt.id': run.id },
-          });
-          await this.deps.verificationAttempts.append(timelineAttempt.id, commandAttemptToInput(attempt));
-          record('lifecycle', { event: 'verification', mechanism: 'command', verdict: attempt.verdict, summary: attempt.summary });
-          if (attempt.verdict !== 'pass') return { pass: false, output: attempt.output };
-        }
-        const baseOid = await Git.revParse(baseDir, `${mergeOid}^1`).catch(() => null);
-        if (critics.length > 0) await indexWorktree(baseDir);
-        const criticAttempts = await Promise.all(critics.map(async (configuredCritic, index) => {
-          const critic = {
-            prompt: task.trackerRef == null ? configuredCritic.noIssuePrompt : configuredCritic.issuePrompt,
-            model: configuredCritic.model,
-            ...(configuredCritic.harness ? { harness: configuredCritic.harness } : {}),
-          };
-          const criticHarnessId = critic.harness ?? task.harness;
-          const criticHarness = config.harnesses[criticHarnessId as keyof typeof config.harnesses];
-          if (!criticHarness) {
-            throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
-          }
-          const archive = this.deps.archive?.criticStep(task, timelineAttempt.number, 'post-merge', `critic-${index + 1}`);
-          const attempt = await runCritic({
-            cwd: baseDir,
-            verifiedHeadOid: mergeOid,
-            ...(baseOid ? { baseOid } : {}),
-            critic,
-            timeoutMs: configuredCritic.timeoutSeconds * 1000,
-            fields: driveFields(task, this.deps.urlFor),
-            harness: criticHarness,
-            harnessId: criticHarnessId,
-            attributes: { 'task.id': task.id, 'attempt.id': run.id },
-            ...(this.deps.criticDrive ? { drive: this.deps.criticDrive } : {}),
-            ...(archive ? { archive } : {}),
-            onUpdate: this.deps.criticUpdateRelay(run.id),
-          });
-          const persisted = await this.deps.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
-          const criticSessionId = attempt.sessionId;
-          if (criticSessionId) {
-            if (attempt.transcriptPath === null) {
-              fireAndForget(() => this.deps.transcripts.captureCriticTranscript({
-                attemptId: persisted.id,
-                sessionId: criticSessionId,
-                harnessId: criticHarnessId,
-                sessionLogDir: criticHarness.sessionLogDir,
-              }), { op: 'merge.captureCriticTranscript', level: 'warn', context: { attemptId: persisted.id } });
-            }
-            fireAndForget(() => this.deps.transcripts.captureCriticUsage({
-              attemptId: persisted.id,
-              sessionId: criticSessionId,
-              harnessId: criticHarnessId,
-              cwd: baseDir,
-            }), { op: 'merge.captureCriticUsage', level: 'warn', context: { attemptId: persisted.id } });
-          }
-          record('lifecycle', { event: 'verification', mechanism: 'critic', verdict: attempt.verdict, summary: attempt.summary });
-          return attempt;
-        }));
-        const decision = combineVerdicts(criticAttempts.map((attempt) => ({ verifier: attempt.verifier, verdict: attempt.verdict })));
-        if (decision.outcome === 'proceed') return { pass: true, output: '' };
-        return {
-          pass: false,
-          output: criticAttempts
-            .map((attempt, index) => [attempt, index] as const)
-            .filter(([attempt]) => attempt.verdict !== 'pass')
-            .map(([attempt, index]) => [
-              `Task critic ${index + 1} (${attempt.verdict}): ${attempt.summary}`,
-              attempt.output,
-            ].filter(Boolean).join('\n'))
-            .join('\n\n'),
-        };
-      },
+      runPostMergeCheck: async (mergeOid, baseDir) => this.deps.postMergeCheck({
+        task,
+        run,
+        mergeOid,
+        baseDir,
+        verificationAttempt: await this.deps.latestAttemptFor(task),
+        signal,
+        record,
+        urlFor: this.deps.urlFor,
+        onUpdate: this.deps.criticUpdateRelay(run.id),
+      }),
       escalate: async (reason) => {
         await this.deps.settleEscalated(task, run, reason, patch);
       },

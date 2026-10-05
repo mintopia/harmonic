@@ -1,8 +1,20 @@
 import type { TicketTimelineEvent } from './types.js';
 import { exportFactRows } from './task-export-model.js';
+import { harnessLabel } from './task-detail-model.js';
 import { mergeStepRow, type MergeStepEvent } from './merge-progress-model.js';
+import { epicLabel, issueRef, taskKey, taskLabel } from './id-format.js';
 
-export type LifecycleTimelineTone = 'neutral' | 'running' | 'passed' | 'failed' | 'awaiting';
+export type LifecycleTimelineTone = 'neutral' | 'running' | 'passed' | 'failed' | 'awaiting' | 'sent' | 'received';
+
+export type ReceiptPillTone = 'done' | 'ready' | 'paused' | 'fail';
+
+export interface AgentMessageRowView {
+  peer: string;
+  epic: string | null;
+  receipt: { label: string; tone: ReceiptPillTone };
+  preview: string | null;
+  href: string;
+}
 
 export interface LifecycleTimelineRow {
   id: string;
@@ -14,6 +26,7 @@ export interface LifecycleTimelineRow {
    * issue closed), RUNNING (a live Attempt), VERIFY / CRITIC (a verification
    * pass), EXPORT (an Export build or delivery) — or null. */
   tag: string | null;
+  message?: AgentMessageRowView;
 }
 
 type RowCore = Pick<LifecycleTimelineRow, 'label' | 'detail' | 'tone' | 'tag'>;
@@ -88,7 +101,13 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
     case 'escalated': {
       const gate = text(payload?.gate);
       const label =
-        gate === 'conflict' ? 'Escalated — merge conflict' : gate === 'post-merge-red' ? 'Escalated — post-merge check failed' : 'Escalated → awaiting review';
+        gate === 'conflict'
+          ? 'Escalated — merge conflict'
+          : gate === 'post-merge-red'
+            ? 'Escalated — post-merge check failed'
+            : gate === 'write-failed'
+              ? 'Escalated — base update failed'
+              : 'Escalated → awaiting review';
       return { label, detail: clip(text(payload?.reason)), tone: 'awaiting', tag: null };
     }
     case 'merge-step': {
@@ -151,11 +170,11 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
       const paths = payload?.paths;
       const fileCount = Array.isArray(paths) ? paths.length : null;
       const detail = oid ? `Committed ${shortOid(oid)} to the base checkout${fileCount !== null ? ` (${fileCount === 1 ? '1 file' : `${fileCount} files`})` : ''}` : null;
-      return { label: ref ? `Issue #${ref} closed` : 'Issue closed', detail, tone: 'passed', tag: 'GITHUB' };
+      return { label: ref ? `Issue ${issueRef(ref)} closed` : 'Issue closed', detail, tone: 'passed', tag: 'GITHUB' };
     }
     case 'ticket-close-failed': {
       const ref = text(payload?.trackerRef);
-      return { label: ref ? `Issue #${ref} could not be closed` : 'Issue could not be closed', detail: text(payload?.error), tone: 'failed', tag: 'GITHUB' };
+      return { label: ref ? `Issue ${issueRef(ref)} could not be closed` : 'Issue could not be closed', detail: text(payload?.error), tone: 'failed', tag: 'GITHUB' };
     }
     case 'retired': {
       const worktree = text(payload?.worktree);
@@ -219,6 +238,49 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
   }
 }
 
+const RECEIPT_PILL: Record<string, { label: string; tone: ReceiptPillTone }> = {
+  delivered: { label: 'delivered mid-turn', tone: 'done' },
+  queued: { label: 'queued — next turn', tone: 'ready' },
+  held: { label: 'held — next Attempt', tone: 'paused' },
+  refused: { label: 'refused', tone: 'fail' },
+};
+
+function hourMinute(at: number): string {
+  return new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function agentMessageRow(data: Record<string, unknown> | null): Omit<LifecycleTimelineRow, 'id' | 'at'> {
+  const sent = text(data?.direction) === 'sent';
+  const peerId = num(data?.peerTaskId);
+  const harness = text(data?.peerHarness);
+  const peer = `${sent ? 'to' : 'from'} ${peerId !== null ? taskKey(peerId) : 'a Task'}${harness ? ` · ${harnessLabel(harness)}` : ''}`;
+  const receipt = RECEIPT_PILL[text(data?.receipt) ?? ''] ?? { label: text(data?.receipt) ?? 'unknown', tone: 'ready' as const };
+  const workspaceId = num(data?.workspaceId);
+  const thread = text(data?.threadId);
+  const base = workspaceId !== null ? `/workspace/${workspaceId}/activity` : '/activity';
+  const reason = text(data?.reason);
+  const replyToAt = num(data?.replyToAt);
+  const sendNumber = num(data?.sendNumber);
+  const sendCap = num(data?.sendCap);
+  const context = data?.isReply === true ? (sent ? `Reply to ${peerId !== null ? taskLabel(peerId) : 'a Task'}` : replyToAt !== null ? `Reply to your message of ${hourMinute(replyToAt)}` : 'Reply to your message') : sent ? 'New Thread' : null;
+  const detail =
+    receipt.tone === 'fail' && reason
+      ? reason
+      : sent && text(data?.receipt) === 'held'
+        ? `${peerId !== null ? taskLabel(peerId) : 'The recipient'} is ready between Attempts`
+        : sent && sendNumber !== null
+          ? [context, `send ${sendNumber}${sendCap !== null ? ` of ${sendCap}` : ''} this Attempt`].filter(Boolean).join(' · ')
+          : context;
+  const epic = text(data?.epic) ?? (num(data?.epic) !== null ? String(data?.epic) : null);
+  return {
+    label: sent ? 'Agent Message sent' : 'Agent Message received',
+    detail,
+    tone: sent ? 'sent' : 'received',
+    tag: null,
+    message: { peer, epic: epic !== null ? epicLabel(epic) : null, receipt, preview: clip(text(data?.preview), 200), href: thread ? `${base}?thread=${encodeURIComponent(thread)}` : base },
+  };
+}
+
 /** A merge sub-step whose terminal outcome the high-level `merged`/`escalated`
  * lifecycle event already renders (and which also fires from non-merge paths):
  * drop the granular twin so the timeline shows the outcome once. */
@@ -253,6 +315,8 @@ export function lifecycleTimelineRows(events: TicketTimelineEvent[]): LifecycleT
         const n = num(data?.attempt);
         return { ...base, label: 'Operator rejected with guidance', detail: clip(text(data?.feedback)) ?? (n !== null ? `Attempt ${n}` : null), tone: 'awaiting', tag: null };
       }
+      case 'agent-message':
+        return { ...base, ...agentMessageRow(data) };
       case 'lifecycle': {
         const payload = record(data?.payload);
         if (payload !== null && text(payload.event) === 'export') {
@@ -267,7 +331,7 @@ export function lifecycleTimelineRows(events: TicketTimelineEvent[]): LifecycleT
         if (text(data?.type) === 'task-created') {
           const ref = text(data?.trackerRef);
           const ws = text(data?.workspace);
-          const detail = ref ? `Imported from issue #${ref}${ws ? ` · queued to ${ws}` : ''}` : ws ? `Queued to ${ws}` : null;
+          const detail = ref ? `Imported from issue ${issueRef(ref)}${ws ? ` · queued to ${ws}` : ''}` : ws ? `Queued to ${ws}` : null;
           return { ...base, label: 'Task created', detail, tone: 'neutral', tag: 'GITHUB' };
         }
         const type = text(data?.type);

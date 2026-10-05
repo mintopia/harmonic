@@ -3,6 +3,8 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../web/src/App.js';
+import { blankPromptFragments } from './prompt-fragment-fixtures.js';
+import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../src/domain/prompt-fragments.js';
 import type { AppConfig, Conversation, UpdateState, Workspace } from '../web/src/types.js';
 
 class IdleWebSocket {
@@ -40,13 +42,17 @@ function makeConfig(): AppConfig {
     defaults: { harness: 'claude', isolationMode: 'direct', priority: 'normal', conflictResolveTurns: 2 },
     chat: { harness: 'claude', model: 'claude-sonnet-4-6' },
     autoRunner: { enabled: false, maxConcurrentAttempts: 2 },
-    verify: { task: { preMerge: { commands: [], critics: [] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.' } },
+    agentMessages: { enabled: false, sendCap: 10 },
+    verify: { task: { preMerge: { commands: [], critics: [] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.', resolveSuffix: '' } },
     guardrails: { budget: { wallClockMinutes: 60, tokens: null, costUsd: null }, progress: false, toolTimeoutMinutes: 10 },
-    drive: { prompt: '', unattendedReminder: '', continuePrompt: '', mergeFate: 'auto-merge', continueAttempts: 0 },
+    drive: { prompt: '', unattendedReminder: '', continuePrompt: '', commitNudge: '', mergeFate: 'auto-merge', continueAttempts: 0 },
     maxAttempts: 3,
     contextReuseTokenLimit: 100_000,
     editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
+    pauseMessage: 'Pause.',
+    promptFragments: blankPromptFragments(),
+    merge: { postMergeCheck: true, conflictPrompt: '', epicConflictPrompt: '', epicRefreshPrompt: '' },
     archive: { retain: { days: null, maxTotalMB: null } },
     export: {
       enabled: false,
@@ -76,6 +82,9 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     conflictResolveTurns: null,
     maxConcurrentAttempts: null,
     autoRunnerEnabled: null,
+    agentMessagesEnabled: null,
+    agentMessagesSendCap: null,
+    effectiveAgentMessagesEnabled: false,
     maxAttempts: null,
     contextReuseTokenLimit: null,
     taskPreMergeCommands: null,
@@ -97,6 +106,9 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     exportS3SecretAccessKey: null,
     exportRedactPatterns: null,
     exportIncludeStates: null,
+    configuredTracker: null,
+    codeRepository: null,
+    triageLabels: null,
     archiveRetentionDays: null,
     archiveRetentionMaxTotalMB: null,
     toolTimeoutMinutes: null,
@@ -106,6 +118,13 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     driveMergeFate: null,
     driveContinueAttempts: null,
     taskPrompt: null,
+    pauseMessage: null,
+    ...NO_PROMPT_FRAGMENT_OVERRIDES,
+    mergeConflictPrompt: null,
+    mergeEpicConflictPrompt: null,
+    mergeEpicRefreshPrompt: null,
+    verifyEpicResolveSuffix: null,
+    driveCommitNudge: null,
     createdAt: 0,
     updatedAt: 0,
     ...overrides,

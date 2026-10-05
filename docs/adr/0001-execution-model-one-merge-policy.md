@@ -2,9 +2,13 @@
 
 Status: accepted
 Date: 2026-08-28
-Part of the 2026-08-28 ADR reset (see README.md). Target-state: until the
-implementation epic for this ADR ships, code, tables, and API fields still carry
-pre-reset vocabulary (Run, phases, candidate refs) — this ADR wins.
+Reconciled: 2026-10-02. Execution teardown shipped; later merge, pause, Epic and escalation refinements are incorporated below.
+
+Part of the 2026-08-28 ADR reset (see README.md). Implemented by
+[epic #390](https://github.com/mintopia/harmonic/issues/390), closed 2026-08-29.
+Current refinements: ADR-0018/0023 for stored Epics, ADR-0027 for pause,
+ADR-0028/0037 for staged Verification, ADR-0038 for escalation, and
+ADR-0039/0040 for merge placement and publication.
 
 ## Context
 
@@ -42,10 +46,11 @@ This ADR is the definitive statement of the execution model.
 Harmonic runs as **one Node process against local repositories for one
 operator** — many Workspaces, each its own repository (ADR-0009). Anything
 justified only by concurrent uncoordinated writers — durable leases,
-heartbeats, TTLs, compare-and-swap refs, crash-journaled merge operations,
+heartbeats, TTLs, freshness-gated compare-and-swap protocols, crash-journaled merge operations,
 idempotency keys — is out of scope by decision, not omission. Crash recovery
 may rely on git's own idempotence and on rebuilding in-memory state from the DB
-at boot.
+at boot. ADR-0040 permits an atomic ref-update guard solely to prevent a
+publication race; a mismatch causes a re-merge, never a freshness failure.
 
 ## Vocabulary
 
@@ -55,8 +60,9 @@ at boot.
   execution noun: it carries the session, usage, guardrail scoping, transcript
   locator, and its timeline. Run, Phase, Candidate, and Self-heal are deleted
   concepts.
-- **Step** — one row of an Attempt's timeline: Implementation Step, one
-  Verification Step per configured command (ordered, fail-fast), Review Step.
+- **Step** — one row of an Attempt's timeline. Task pipeline stages are
+  rebase, implementation, verification, and review (ADR-0038). Named
+  commands and critics have individual Verification Attempt records.
 - Task states: `draft → ready → working → done`, plus `escalated` and
   `cancelled` (and `paused`, an operator execution freeze added by ADR-0027).
   Blocked-ness and agent-workability are **derived**, never stored. There is no *failed* state (failure is an Attempt-level fact; a Task
@@ -72,7 +78,7 @@ at boot.
    label (ADR-0004). A Task is *ready* when its blockers are closed and it is
    agent-workable.
 2. **Scheduler** picks ready Tasks in dependency order, up to the configured
-   concurrency caps (Workspace cap under the Machine Ceiling, ADR-0009). At
+   concurrency caps (Workspace cap under the Host Ceiling, ADR-0009). At
    most one active execution per work context (working directory + branch),
    enforced as a **scheduler pick predicate** — the pre-reset lease machinery
    (`work_context_leases`, heartbeats, TTLs, `suspect`) is deleted.
@@ -94,46 +100,42 @@ at boot.
    worktree, retire the Session.
 
 Session continuation at Attempt N+1 is deterministic (ADR-0005): continue the
-prior Session iff its context usage is below `contextReuseThreshold` and it is
+prior Session iff its context usage is below `contextReuseTokenLimit` and it is
 warm; otherwise a fresh Session seeded by the condensed continuation plus the
 feedback. The repo is the diff — no diff payload is passed.
 
 ### One merge policy, everywhere
 
-When the critic passes, the task branch merges into its base under a single
-**in-process mutex per Workspace repository** (a variable, not a table):
+Task and Epic integration use `runMergePolicy`. ADR-0039 and ADR-0040 refine
+the original locked-merge design into this sequence:
 
-1. Acquire the mutex for the target base branch's repository.
-2. `git merge --no-ff <task-branch>` — an ordinary merge commit. The merge
-   commit reconciles the trees; base movement since verification is irrelevant
-   and is never detected, classified, or alarmed.
-3. On textual conflict: a bounded number of agentic resolve turns
-   (`merge.conflictResolveTurns`), then escalate with plain-language messaging,
-   never a raw git conflict dump.
-4. **Post-merge check**: run the deterministic verify commands once on the
-   merged base tip, still under the mutex.
-   - Green → done. Release the mutex.
-   - Red → `git revert -m 1` the merge commit, release the mutex, escalate the
-     task with the failing output. The base is never left red, and siblings
-     never merge onto a red base.
+1. Snapshot the base tip and build an ordinary `git merge --no-ff` in an
+   ephemeral administrative worktree. Agentic conflict resolution is bounded
+   and runs outside the repository mutex.
+2. Run the configured post-merge check in that same worktree. A failing check
+   records a post-merge-red escalation; the failed build is discarded without
+   publication.
+   Sequential commands share their files and artifacts.
+3. Acquire the repository mutex and reconcile a moved base with the original
+   build. A clean reconcile keeps the original verdict; it does not repeat
+   verification. A textual conflict or rewound base takes ADR-0040's bounded
+   rebuild path.
+4. Publish with an atomic ref update against the tip just reconciled. A write
+   race rereads and reconciles again, rather than treating normal base movement
+   as stale work.
+5. If the target is checked out in the operator's base checkout, synchronize
+   changed paths while preserving local edits, then retire the temporary
+   worktree (ADR-0039).
 
-This one policy applies to **every** path: automated task merges, operator
-Accept (which runs this same merge — no special rebase mode; on an escalated
-candidate that was never blessed by a passing verifier it re-verifies against a
-refreshed index first, ADR-0002, and Force-Accept skips that re-verify),
-develop → epic refreshes, and epic → develop integration. There is no freshness
-gate, no re-verification on base movement, no CAS, no retry bound, no merge
-train, and no carry-forward verdict, because nothing needs carrying.
+Automated Task completion, final-Step Accept, Epic refresh, and Epic
+integration share the merge policy. Earlier-Step Accept advances the pipeline
+under ADR-0038. There is no freshness gate, merge train, or carry-forward
+verdict. Verification verdicts attach to the Attempt, not to a SHA.
 
-**Why this is safe enough**: the branch was verified by the script and reviewed
-by the critic; the post-merge check catches semantic collisions between
-concurrently merged work on the actual merged tree — which is *more* than the
-frozen-tree model checked, since it verifies what the base really becomes; and
-`git revert` of a merge commit costs seconds. Pre-merge serialisability bought
-nothing that the post-merge check does not, at quadratic cost.
-
-**Verification verdicts attach to the Attempt, not to a SHA.** A verdict is
-never invalidated by movement elsewhere in the repository.
+The accepted concurrency tradeoff is explicit: a clean reconciliation onto a
+base that moved after the build check is not checked again. A semantic clash
+introduced solely by that reconciliation can therefore pass publication;
+ADR-0040 records this choice. A rebuild does run its own post-merge check.
 
 ### Epics
 
@@ -141,9 +143,9 @@ never invalidated by movement elsewhere in the repository.
   members fork off it (per-Task `baseBranch`) and merge into it by the policy
   above. Direct-mode members commit in place like any direct Task, and an Epic
   whose members are all direct has no integration branch: it completes in
-  place when every member is done (ADR-0039). The
-  Epic is derived from the tracker's parent/child structure (ADR-0004);
-  Harmonic authors no Epic structure and stores no grouping entity.
+  place when every member is done (ADR-0039). Epic membership comes from the tracker's parent/child structure (ADR-0004).
+  Harmonic stores leaf-most Epic lifecycle and integration facts
+  (ADR-0018/0023), but authors no tracker grouping structure.
 - Develop is merged into live epic branches on advance, quietly; a refresh that
   cannot complete is recorded and retried on the next trigger, never raised as
   an operator hold. (A cheap ancestor check before integration keeps the
@@ -151,7 +153,7 @@ never invalidated by movement elsewhere in the repository.
   default branch.)
 - When all members are done, whole-Epic verify runs on the integration branch,
   then the epic merges into develop by the same policy (merge commit,
-  post-merge check, revert on red). The branch then retires and is deleted.
+  post-merge check, discard on red). The branch then retires and is deleted.
 - Partial failure blocks the whole Epic: an escalated member holds the epic's
   integration until an operator acts.
 
@@ -198,18 +200,13 @@ detected from the agent's own working directory, not from watching refs
   scheduler predicate), Run phases and candidate capture, epic-refresh
   operator holds, and branch-sniffing isolation checks. Estimated ~9–11k LOC
   plus the dedicated test files.
-- Schema migration: `runs` folds into `attempts`; historical Run rows are
-  re-keyed as Attempts (read-only history preserved). This is the riskiest
-  step of the implementation epic and goes last, after the code that read
-  those tables is gone.
-- Accepted cost: the merge mutex is held through the post-merge check, so
-  merges serialise for the duration of the verify commands. Merges are rare
-  relative to task duration; a slow suite can set `merge.postMergeCheck: off`
-  (the branch was already script- and critic-verified) and rely on the next
-  task's pre-merge verification to surface breakage.
-- Accepted risk: between a merge and a red post-merge revert, the base briefly
-  contains the broken merge. Nothing else can merge meanwhile (mutex), and the
-  revert is automatic.
+- The completed schema teardown replaced `runs` with `attempts` under the
+  clean-break policy. Historical Run rows were discarded, not migrated or
+  re-keyed (epic #390, child #388).
+- Conflict resolution and build verification occur outside the repository
+  mutex; reconciliation and publication serialize per repository (ADR-0040).
+- A red build check is not published. Clean reconciliation can introduce an
+  unchecked semantic collision with intervening work, as accepted above.
 - History is no longer linear: bases gain merge commits. This is the trade
   that dissolves the contention loop.
 - Process rule, recorded so it outlives the week: an adversarial plan review

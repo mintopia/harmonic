@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
@@ -11,12 +11,13 @@ import { AttemptStore } from '../src/domain/attempts.js';
 import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
 import { CrashRecoveryCoordinator } from '../src/execution/crash-recovery.js';
 import { Git } from '../src/execution/git.js';
-import { readProcStartToken } from '../src/execution/process-reaper.js';
-import { ProcessGroupJournal } from '../src/execution/process-groups.js';
+import { isEphemeralMergeWorktree } from '../src/execution/ephemeral-merge-worktree.js';
 import type { TaskRow, AttemptRow } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import { yieldToEventLoop } from '../src/reliability/yield.js';
+import { trackerRef } from '../src/tracker/adapter.js';
+import { logger } from '../src/logger.js';
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
@@ -94,13 +95,14 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
   it('completes a crashed worktree Run whose branch already landed in its base: re-runs the post-merge check and settles it green, idempotently on a second reconcile', async () => {
     const { task, run, baseBranch } = await seedAlreadyMergedOrphan();
     const baseTip = await Git.revParse(repo, baseBranch);
-    const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
+    const runPostMergeCheck = vi.fn(async (_args: { baseDir: string }) => ({ pass: true, output: '' }));
     const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck });
 
     await coord.reconcile();
 
     expect(runPostMergeCheck).toHaveBeenCalledTimes(1);
-    expect(runPostMergeCheck).toHaveBeenCalledWith({ task: expect.objectContaining({ id: task.id }), run: expect.objectContaining({ id: run.id }), mergeOid: baseTip, baseDir: repo });
+    expect(runPostMergeCheck).toHaveBeenCalledWith({ task: expect.objectContaining({ id: task.id }), run: expect.objectContaining({ id: run.id }), mergeOid: baseTip, baseDir: expect.not.stringMatching(new RegExp(`^${repo}$`)) });
+    expect(isEphemeralMergeWorktree(runPostMergeCheck.mock.calls[0]![0].baseDir)).toBe(true);
     const settled = await attempts.get(run.id);
     expect(settled.state).toBe('passed');
     expect((await tasks.get(task.id)).state).toBe('done');
@@ -114,7 +116,12 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
   it('reverts a crashed merge whose post-merge check now fails, and escalates the task — idempotently on a second reconcile', async () => {
     const { task, run, baseBranch } = await seedAlreadyMergedOrphan();
     const preRevertTip = await Git.revParse(repo, baseBranch);
-    const runPostMergeCheck = vi.fn(async () => ({ pass: false, output: 'lint failed: feature.txt' }));
+    let checkedIn = '';
+    const runPostMergeCheck = vi.fn(async ({ baseDir }: { baseDir: string }) => {
+      checkedIn = baseDir;
+      expect(existsSync(join(baseDir, 'feature.txt'))).toBe(true);
+      return { pass: false, output: 'lint failed: feature.txt' };
+    });
     const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck });
 
     await coord.reconcile();
@@ -130,10 +137,52 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     const revertedTip = await Git.revParse(repo, baseBranch);
     expect(revertedTip).not.toBe(preRevertTip);
     expect(existsSync(join(repo, 'feature.txt'))).toBe(false);
+    expect(isEphemeralMergeWorktree(checkedIn)).toBe(true);
+    expect(existsSync(checkedIn)).toBe(false);
+    expect(git(repo, 'status', '--porcelain')).toBe('');
+    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe(baseBranch);
 
     await coord.reconcile();
     expect(runPostMergeCheck).toHaveBeenCalledTimes(1);
     expect(await Git.revParse(repo, baseBranch)).toBe(revertedTip);
+  });
+
+  it('escalates without touching the base when the red merge cannot be reverted', async () => {
+    const { task, run, baseBranch } = await seedAlreadyMergedOrphan();
+    const tip = await Git.revParse(repo, baseBranch);
+    const runPostMergeCheck = vi.fn(async ({ baseDir }: { baseDir: string }) => {
+      writeFileSync(join(baseDir, 'feature.txt'), 'dirtied by the check\n');
+      return { pass: false, output: 'lint failed' };
+    });
+    const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck });
+
+    await coord.reconcile();
+
+    expect((await attempts.get(run.id)).state).toBe('escalated');
+    expect((await tasks.get(task.id)).escalationReason).toContain('could not be reverted');
+    expect(await Git.revParse(repo, baseBranch)).toBe(tip);
+    expect(git(repo, 'status', '--porcelain')).toBe('');
+  });
+
+  it.each(['commit', 'merge'] as const)('does not check or revert a later base %s when recovering an already merged task', async (advance) => {
+    const { task, run, baseBranch } = await seedAlreadyMergedOrphan();
+    if (advance === 'merge') git(repo, 'checkout', '-b', 'other-branch');
+    commit(repo, 'later.txt', 'later work\n', 'later work');
+    if (advance === 'merge') {
+      git(repo, 'checkout', baseBranch);
+      git(repo, 'merge', '--no-ff', '-m', 'merge other-branch', 'other-branch');
+    }
+    const laterTip = await Git.revParse(repo, baseBranch);
+    const runPostMergeCheck = vi.fn(async () => ({ pass: false, output: 'later commit fails' }));
+    const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck });
+
+    await coord.reconcile();
+
+    expect(runPostMergeCheck).not.toHaveBeenCalled();
+    expect(await Git.revParse(repo, baseBranch)).toBe(laterTip);
+    expect(existsSync(join(repo, 'later.txt'))).toBe(true);
+    expect((await attempts.get(run.id)).state).toBe('passed');
+    expect((await tasks.get(task.id)).state).toBe('done');
   });
 
   it('leaves a crashed worktree Run whose branch never landed as an ordinary interrupted orphan, never consulting the post-merge check', async () => {
@@ -147,6 +196,19 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     const interrupted = await attempts.get(run.id);
     expect(interrupted.state).toBe('failed');
     expect(interrupted.reason).toBe('process-death');
+  });
+
+  it('does not mistake a fast-forwarded branch for a published task merge', async () => {
+    const { run } = await seedUnmergedOrphan();
+    git(repo, 'merge', '--ff-only', run.branch!);
+    const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
+    const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck });
+
+    await coord.reconcile();
+
+    expect(runPostMergeCheck).not.toHaveBeenCalled();
+    expect((await attempts.get(run.id)).state).toBe('failed');
+    expect((await attempts.get(run.id)).reason).toBe('process-death');
   });
 
   it('marks a generic (non-worktree) interrupted Run interrupted, never consulting the post-merge check or git', async () => {
@@ -165,8 +227,8 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
   it('settles an interrupted Epic Attempt and notifies the Epic reconciler so its next poll can retry verification', async () => {
     const workspaces = new WorkspaceService(asyncDb, settingsStore);
     const workspace = await workspaces.create({ name: 'Epic recovery', workingDir: repo });
-    await tasks.syncEpics(workspace.id, [{ ref: 42, kind: 'epic' }]);
-    const attempt = await attempts.createForEpic({ workspaceId: workspace.id, epicRef: 42 });
+    await tasks.syncEpics(workspace.id, [{ ref: trackerRef(42), kind: 'epic' }]);
+    const attempt = await attempts.createForEpic({ workspaceId: workspace.id, epicRef: trackerRef(42) });
     const onEpicAttemptInterrupted = vi.fn();
     const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, {
       runPostMergeCheck: async () => ({ pass: true, output: '' }),
@@ -176,7 +238,7 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     await coord.reconcile();
 
     expect(await attempts.get(attempt.id)).toMatchObject({ state: 'failed', reason: 'process-death' });
-    expect(onEpicAttemptInterrupted).toHaveBeenCalledWith(expect.objectContaining({ id: attempt.id, workspaceId: workspace.id, epicRef: 42 }));
+    expect(onEpicAttemptInterrupted).toHaveBeenCalledWith(expect.objectContaining({ id: attempt.id, workspaceId: workspace.id, epicRef: '42' }));
   });
 
   it('leaves a paused Task paused while marking its interrupted Run failed', async () => {
@@ -194,42 +256,37 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     expect((await tasks.get(created.id)).state).toBe('paused');
   });
 
-  it('reaps a journaled orphan process group and marks its Run interrupted', async () => {
-    const created = await tasks.create({ prompt: 'direct mode', state: 'ready', workingDir: repo, isolationMode: 'direct' });
+  it('warns and runs no post-merge check for an ancestor branch with no merge commit (fast-forward)', async () => {
+    const branch = 'ff-branch';
+    git(repo, 'checkout', '-b', branch);
+    commit(repo, 'ff.txt', 'work\n', 'ff work');
+    git(repo, 'checkout', 'main');
+    git(repo, 'merge', '--ff-only', branch);
+    const created = await tasks.create({ prompt: 'ff', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
     await tasks.setState(created.id, 'working');
-    const run = await attempts.create(created.id);
-    const child: ChildProcess = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1e9)'], { detached: true });
-    const pid = child.pid!;
-    try {
-      const processGroups = new ProcessGroupJournal(asyncDb);
-      await processGroups.record(pid, 'orphan harness');
-      const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
-      const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck, processGroups });
+    const run = await attempts.update((await attempts.create(created.id)).id, { branch, baseBranch: 'main' });
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
+    const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck });
 
-      await coord.reconcile();
+    await coord.reconcile();
 
-      expect(readProcStartToken(pid)).toBeNull();
-      expect(await attempts.get(run.id)).toMatchObject({ state: 'failed', reason: 'process-death' });
-    } finally {
-      try {
-        process.kill(-pid, 'SIGKILL');
-      } catch {
-        /* already reaped */
-      }
-    }
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no merge commit'), expect.objectContaining({ attemptId: run.id }));
+    expect(runPostMergeCheck).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
-  it('uses the injected isMerged seam instead of spawning git when supplied', async () => {
-    const { run } = await seedUnmergedOrphan();
-    const isMerged = vi.fn(async () => true);
+  it('uses the injected isMerged seam to reject recovery when supplied', async () => {
+    const { run } = await seedAlreadyMergedOrphan();
+    const isMerged = vi.fn(async () => false);
     const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
     const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck, isMerged });
 
     await coord.reconcile();
 
-    expect(isMerged).toHaveBeenCalledWith(repo, 'main', 'never-merged-branch');
-    expect(runPostMergeCheck).toHaveBeenCalledTimes(1);
-    expect((await attempts.get(run.id)).state).toBe('passed');
+    expect(isMerged).toHaveBeenCalledWith(repo, 'main', 'run-branch');
+    expect(runPostMergeCheck).not.toHaveBeenCalled();
+    expect((await attempts.get(run.id)).state).toBe('failed');
   });
 
   it('yields while reconciling a large backlog of running orphans', async () => {

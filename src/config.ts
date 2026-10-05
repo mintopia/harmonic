@@ -5,7 +5,19 @@ import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 import { z } from 'zod';
+import { verdictContractError } from './verification/critic-schema.js';
 import { isModelPriced, pricesForHarness } from './domain/pricing.js';
+import {
+  PROMPT_FRAGMENT_NAMES,
+  PROMPT_FRAGMENTS,
+  missingPromptFragmentTokens,
+  unknownFragmentRefs,
+  unknownFragmentIssues,
+  UNKNOWN_FRAGMENT_MESSAGE,
+  promptFragmentOverrideKey,
+  type PromptFragmentName,
+  type PromptFragmentOverrideKey,
+} from './domain/prompt-fragments.js';
 
 export const HARNESS_IDS = ['claude', 'codex', 'copilot', 'opencode'] as const;
 export type HarnessId = (typeof HARNESS_IDS)[number];
@@ -18,6 +30,34 @@ export type Priority = (typeof PRIORITIES)[number];
 
 export const MERGE_FATES = ['auto-merge', 'open-PR', 'artifact'] as const;
 export type MergeFate = (typeof MERGE_FATES)[number];
+
+/** A Prompt Fragment's text: its `{fragment.<name>}` references must all name a Prompt Fragment, so none can reach the agent literally. */
+export function fragmentTemplateSchema(example: string): z.ZodString {
+  return z
+    .string()
+    .min(1)
+    .refine((text) => unknownFragmentRefs(text).length === 0, { message: UNKNOWN_FRAGMENT_MESSAGE })
+    .meta({ example });
+}
+
+export function promptFragmentSchema(name: PromptFragmentName): z.ZodString {
+  const required = PROMPT_FRAGMENTS[name].required;
+  return fragmentTemplateSchema(PROMPT_FRAGMENTS[name].label)
+    .refine((text) => missingPromptFragmentTokens(name, text).length === 0, {
+      message: `must contain ${required.map((token) => `{${token}}`).join(' ')}`,
+    })
+    .refine((text) => name !== 'criticVerdictContract' || verdictContractError(text) === undefined, {
+      message: 'must ask the critic for a JSON object with a "verdict" key and a "summary" key; without it every critic run is inconclusive',
+    });
+}
+
+export const promptFragmentsShape = Object.fromEntries(
+  PROMPT_FRAGMENT_NAMES.map((name) => [name, promptFragmentSchema(name)]),
+) as Record<PromptFragmentName, z.ZodString>;
+
+export const promptFragmentOverrideShape = Object.fromEntries(
+  PROMPT_FRAGMENT_NAMES.map((name) => [promptFragmentOverrideKey(name), promptFragmentSchema(name).nullable().optional()]),
+) as Record<PromptFragmentOverrideKey, z.ZodOptional<z.ZodNullable<z.ZodString>>>;
 
 export const modelPriceSchema = z.object({
   input: z.number().nonnegative().meta({ example: 3 }),
@@ -262,6 +302,11 @@ export const appConfigSchema = z.object({
     enabled: z.boolean().meta({ example: true }),
     maxConcurrentAttempts: z.number().int().min(1).meta({ example: 3 }),
   }),
+  /** `enabled` turns Agent Messages on (off by default); `sendCap` bounds how many one Attempt may send. A Workspace stores `null` to inherit either. */
+  agentMessages: z.object({
+    enabled: z.boolean().meta({ example: false }),
+    sendCap: z.number().int().min(1).meta({ example: 10 }),
+  }),
   /** Maximum failed implementation attempts before the ticket is escalated. */
   maxAttempts: z.number().int().min(1).meta({ example: 2 }),
   /** Reuse a warm Session into Attempt N+1 while its context occupancy stays
@@ -281,10 +326,13 @@ export const appConfigSchema = z.object({
     continuePrompt: z.string().meta({ example: 'Continue Task {taskId}.' }),
     mergeFate: z.enum(MERGE_FATES).meta({ example: 'auto-merge' }),
     continueAttempts: z.number().int().min(0).meta({ example: 10 }),
+    commitNudge: z.string().min(1).meta({ example: 'Commit the completed work now, then finish.' }),
   }),
   /** Operator-editable wrapper around a native Task's prompt (`{prompt}`, `{id}`, `{workingDir}`, `{harness}`, `{model}`); defaults to bare `{prompt}`. */
   taskPrompt: z.string().meta({ example: 'Work on {prompt}.' }),
   pauseMessage: z.string().min(1).meta({ example: 'Please finish the current turn, then pause and wait for further instructions.' }),
+  /** Named pieces of prompt text defined once and referenced from prompts as `{fragment.<name>}`. */
+  promptFragments: z.object(promptFragmentsShape),
   /** End a Conversation with no Turn for this many minutes; 0 disables. Fractional values are allowed. */
   conversationIdleTimeoutMinutes: z.number().nonnegative().meta({ example: 30 }),
   /** Trailing debounce for Working Directory watcher events. */
@@ -292,11 +340,14 @@ export const appConfigSchema = z.object({
   /** Ordered verifier lists for each Task and Epic verification stage. */
   verify: z.object({
     task: z.object({ preMerge: taskVerificationStageSchema, postMerge: taskVerificationStageSchema }),
-    epic: z.object({ preMerge: epicVerificationStageSchema, resolvePrompt: z.string().min(1) }),
+    epic: z.object({ preMerge: epicVerificationStageSchema, resolvePrompt: z.string().min(1), resolveSuffix: z.string().min(1).meta({ example: 'Work in the checked-out integration branch `{branch}`.' }) }),
   }),
-  /** `postMergeCheck` runs the verification commands on the merged base tip; the off-switch for slow suites. */
+  /** `postMergeCheck` runs the verification commands on the merged base tip; the off-switch for slow suites. `conflictPrompt`/`epicConflictPrompt` open a conflict-resolution turn (`{turn}`, `{taskBranch}`, `{baseBranch}`, `{paths}`, `{fragment.conflictResolution}`). */
   merge: z.object({
     postMergeCheck: z.boolean(),
+    conflictPrompt: z.string().min(1).meta({ example: '## Merge conflict resolution (turn {turn})\n{paths}' }),
+    epicRefreshPrompt: z.string().min(1).meta({ example: '## Epic integration refresh\nMerging {defaultBranch} into {branch} conflicted:\n{detail}' }),
+    epicConflictPrompt: z.string().min(1).meta({ example: '## Epic integration merge conflict resolution (turn {turn})\n{paths}' }),
   }),
   /**
    * `budget` = the wall-clock/token/cost caps; `progress` toggles the stall/loop detector;
@@ -339,6 +390,7 @@ export const appConfigSchema = z.object({
     }),
   }),
 }).superRefine((config, ctx) => {
+  for (const issue of unknownFragmentIssues(config)) ctx.addIssue({ code: 'custom', ...issue });
   for (const [id, harness] of Object.entries(config.harnesses)) {
     if (harness.models.length > 0 && !harness.models.some((model) => model.id === harness.defaultModel)) {
       ctx.addIssue({

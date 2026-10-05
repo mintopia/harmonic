@@ -13,10 +13,12 @@ import {
   trackerDismissals,
   sessions,
   scheduledJobs,
+  secrets,
   type WorkspaceRow,
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
-import { EXPORT_STATES, exportDirectoryPathSchema, exportS3EndpointSchema, redactPatternsSchema } from '../config.js';
+import { PROMPT_FRAGMENT_OVERRIDE_KEYS, unknownWorkspaceFragmentIssues, type PromptFragmentOverrides } from './prompt-fragments.js';
+import { EXPORT_STATES, exportDirectoryPathSchema, exportS3EndpointSchema, promptFragmentOverrideShape, redactPatternsSchema } from '../config.js';
 import { DomainError } from './errors.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
 import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
@@ -27,6 +29,10 @@ import {
   budgetGuardrailSchema,
   MERGE_FATES,
 } from '../config.js';
+import { configuredTrackerSchema } from '../tracker/configured.js';
+import { triageLabelsOverrideSchema } from '../tracker/triage-labels.js';
+
+export const codeRepositorySchema = z.enum(['github', 'gitlab', 'forgejo', 'git']);
 
 export const DEFAULT_EXCLUDED_DIRECTORIES = ['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.turbo', 'out', 'target'] as const;
 export { WORKSPACE_COLORS, WORKSPACE_BADGE_INK };
@@ -72,6 +78,8 @@ export const workspaceOverridesSchema = z.object({
   conflictResolveTurns: z.number().int().min(0).nullable().optional().meta({ example: 2 }),
   maxConcurrentAttempts: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   autoRunnerEnabled: z.boolean().nullable().optional().meta({ example: true }),
+  agentMessagesEnabled: z.boolean().nullable().optional().meta({ example: true }),
+  agentMessagesSendCap: z.number().int().min(1).nullable().optional().meta({ example: 10 }),
   maxAttempts: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   contextReuseTokenLimit: z.number().int().min(0).nullable().optional().meta({ example: 200_000 }),
   taskPreMergeCommands: verificationCommandOverrideSchema.nullable().optional(),
@@ -99,6 +107,17 @@ export const workspaceOverridesSchema = z.object({
   /** Task Prompt override; null inherits `config.taskPrompt`. */
   taskPrompt: z.string().min(1).nullable().optional(),
   pauseMessage: z.string().min(1).nullable().optional(),
+  ...promptFragmentOverrideShape,
+  /** Commit nudge override; null inherits `config.drive.commitNudge`. */
+  driveCommitNudge: z.string().min(1).nullable().optional(),
+  /** Task merge-conflict prompt override; null inherits `config.merge.conflictPrompt`. */
+  mergeConflictPrompt: z.string().min(1).meta({ example: '## Merge conflict resolution (turn {turn})' }).nullable().optional(),
+  /** Epic integration merge-conflict prompt override; null inherits `config.merge.epicConflictPrompt`. */
+  mergeEpicConflictPrompt: z.string().min(1).meta({ example: '## Epic integration merge conflict resolution (turn {turn})' }).nullable().optional(),
+  /** Epic integration refresh prompt override; null inherits `config.merge.epicRefreshPrompt`. */
+  mergeEpicRefreshPrompt: z.string().min(1).meta({ example: '## Epic integration refresh' }).nullable().optional(),
+  /** Epic verification resolver suffix override; null inherits `config.verify.epic.resolveSuffix`. */
+  verifyEpicResolveSuffix: z.string().min(1).meta({ example: 'Work in the checked-out integration branch `{branch}`.' }).nullable().optional(),
   /** Export-on-terminal toggle override; null inherits `config.export.enabled`. */
   exportEnabled: z.boolean().nullable().optional(),
   /** Export directory override (absolute); null inherits `config.export.directory.path`. */
@@ -114,9 +133,17 @@ export const workspaceOverridesSchema = z.object({
   exportRedactPatterns: redactPatternsSchema.nullable().optional().meta({ example: [{ id: 'internal-host', regex: 'corp\\.example\\.internal' }] }),
   /** Dispositions-to-export override; null inherits `config.export.includeStates`. */
   exportIncludeStates: z.array(z.enum(EXPORT_STATES)).nullable().optional().meta({ example: ['done'] }),
+  /** Explicit issue tracker; null falls back to the repo's declaration, then the code repository. */
+  configuredTracker: configuredTrackerSchema.nullable().optional(),
+  /** Code-repository kind override; null detects it from the git remote. */
+  codeRepository: codeRepositorySchema.nullable().optional().meta({ example: 'github' }),
+  /** Triage Label overrides per role; null inherits the repo's role table, then the defaults. */
+  triageLabels: triageLabelsOverrideSchema.nullable().optional(),
   /** Archive retention overrides; a null field inherits `config.archive.retain`. */
   archiveRetentionDays: z.number().int().positive().nullable().optional().meta({ example: 90 }),
   archiveRetentionMaxTotalMB: z.number().positive().nullable().optional().meta({ example: 2048 }),
+}).superRefine((overrides, ctx) => {
+  for (const issue of unknownWorkspaceFragmentIssues(overrides)) ctx.addIssue({ code: 'custom', ...issue });
 });
 export type WorkspaceOverrides = z.infer<typeof workspaceOverridesSchema>;
 
@@ -132,6 +159,8 @@ export const OVERRIDE_KEYS = [
   'conflictResolveTurns',
   'maxConcurrentAttempts',
   'autoRunnerEnabled',
+  'agentMessagesEnabled',
+  'agentMessagesSendCap',
   'maxAttempts',
   'contextReuseTokenLimit',
   'taskPreMergeCommands',
@@ -150,6 +179,12 @@ export const OVERRIDE_KEYS = [
   'driveContinueAttempts',
   'taskPrompt',
   'pauseMessage',
+  ...PROMPT_FRAGMENT_OVERRIDE_KEYS,
+  'driveCommitNudge',
+  'mergeConflictPrompt',
+  'mergeEpicConflictPrompt',
+  'mergeEpicRefreshPrompt',
+  'verifyEpicResolveSuffix',
   'exportEnabled',
   'exportDirectoryPath',
   'exportS3Endpoint',
@@ -161,6 +196,9 @@ export const OVERRIDE_KEYS = [
   'exportS3SecretAccessKey',
   'exportRedactPatterns',
   'exportIncludeStates',
+  'configuredTracker',
+  'codeRepository',
+  'triageLabels',
   'archiveRetentionDays',
   'archiveRetentionMaxTotalMB',
 ] as const;
@@ -177,7 +215,10 @@ export interface WorkspaceSettingsStore {
 
 export const updateWorkspaceInputSchema = createWorkspaceInputSchema
   .partial()
-  .extend({ ...workspaceOverridesSchema.shape, color: workspaceColorSchema.optional() });
+  .extend({ ...workspaceOverridesSchema.shape, color: workspaceColorSchema.optional() })
+  .superRefine((input, ctx) => {
+    for (const issue of unknownWorkspaceFragmentIssues(input)) ctx.addIssue({ code: 'custom', ...issue });
+  });
 export type UpdateWorkspaceInput = z.infer<typeof updateWorkspaceInputSchema>;
 
 /** The given Workspace, or the earliest-created one when `id` is omitted — the default-Workspace fallback. */
@@ -217,6 +258,8 @@ export class WorkspaceService {
       conflictResolveTurns: o.conflictResolveTurns,
       maxConcurrentAttempts: o.maxConcurrentAttempts,
       autoRunnerEnabled: o.autoRunnerEnabled,
+      agentMessagesEnabled: o.agentMessagesEnabled,
+      agentMessagesSendCap: o.agentMessagesSendCap,
       maxAttempts: o.maxAttempts,
       contextReuseTokenLimit: o.contextReuseTokenLimit,
       taskPreMergeCommands: o.taskPreMergeCommands != null ? JSON.stringify(o.taskPreMergeCommands) : null,
@@ -235,6 +278,12 @@ export class WorkspaceService {
       driveContinueAttempts: o.driveContinueAttempts,
       taskPrompt: o.taskPrompt,
       pauseMessage: o.pauseMessage,
+      ...(Object.fromEntries(PROMPT_FRAGMENT_OVERRIDE_KEYS.map((key) => [key, o[key]])) as PromptFragmentOverrides),
+      driveCommitNudge: o.driveCommitNudge,
+      mergeConflictPrompt: o.mergeConflictPrompt,
+      mergeEpicConflictPrompt: o.mergeEpicConflictPrompt,
+      mergeEpicRefreshPrompt: o.mergeEpicRefreshPrompt,
+      verifyEpicResolveSuffix: o.verifyEpicResolveSuffix,
       exportEnabled: o.exportEnabled,
       exportDirectoryPath: o.exportDirectoryPath,
       exportS3Endpoint: o.exportS3Endpoint,
@@ -246,6 +295,9 @@ export class WorkspaceService {
       exportS3SecretAccessKey: o.exportS3SecretAccessKey,
       exportRedactPatterns: o.exportRedactPatterns != null ? JSON.stringify(o.exportRedactPatterns) : null,
       exportIncludeStates: o.exportIncludeStates != null ? JSON.stringify(o.exportIncludeStates) : null,
+      configuredTracker: o.configuredTracker != null ? JSON.stringify(o.configuredTracker) : null,
+      codeRepository: o.codeRepository,
+      triageLabels: o.triageLabels != null ? JSON.stringify(o.triageLabels) : null,
       archiveRetentionDays: o.archiveRetentionDays,
       archiveRetentionMaxTotalMB: o.archiveRetentionMaxTotalMB,
     };
@@ -364,6 +416,7 @@ export class WorkspaceService {
         await tx.delete(conversationEvents).where(inArray(conversationEvents.conversationId, convIds)).run();
         await tx.delete(conversations).where(inArray(conversations.id, convIds)).run();
       }
+      await tx.delete(secrets).where(eq(secrets.workspaceId, id)).run();
       await tx.delete(sessions).where(eq(sessions.workspaceId, id)).run();
       await tx.delete(scheduledJobs).where(eq(scheduledJobs.workspaceId, id)).run();
       await tx.delete(trackerDismissals).where(eq(trackerDismissals.workspaceId, id)).run();

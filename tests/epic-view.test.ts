@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { composeEpicView, type EpicFacts, type EpicMeta } from '../src/domain/epic-view.js';
 import type { DerivedEpic } from '../src/domain/epic-derivation.js';
 import type { TaskRow } from '../src/db/schema.js';
+import { trackerRef, type TrackerRef } from '../src/tracker/adapter.js';
 
 const derived = (over: Partial<DerivedEpic> = {}): DerivedEpic => ({
-  ref: 10,
+  ref: trackerRef(10),
   title: 'Spec',
-  members: [11, 12, 13],
-  ready: [13],
+  members: [trackerRef(11), trackerRef(12), trackerRef(13)],
+  ready: [trackerRef(13)],
   ...over,
 });
 
@@ -44,13 +45,13 @@ const noMeta: EpicMeta = { description: '', createdAt: 0, baseBranch: null, depe
 
 describe('composeEpicView', () => {
   it('maps a done member Task to mergeStatus completed, folds it in, and preserves its raw state', () => {
-    const memberTasks = new Map<number, TaskRow>([[11, task({ id: 101, trackerRef: 11, state: 'done' })]]);
-    const titleByRef = new Map([[11, 'Member eleven']]);
+    const memberTasks = new Map<TrackerRef, TaskRow>([[trackerRef(11), task({ id: 101, trackerRef: trackerRef(11), state: 'done' })]]);
+    const titleByRef = new Map([[trackerRef(11), 'Member eleven']]);
     const epic = composeEpicView(derived(), memberTasks, titleByRef, noFacts, noMeta);
 
-    const m11 = epic.members.find((m) => m.ref === 11);
+    const m11 = epic.members.find((m) => m.ref === '11');
     expect(m11).toEqual({
-      ref: 11,
+      ref: '11',
       title: 'Member eleven',
       taskId: 101,
       state: 'done',
@@ -63,10 +64,10 @@ describe('composeEpicView', () => {
   });
 
   it('maps an escalated member to mergeStatus blocked', () => {
-    const memberTasks = new Map<number, TaskRow>([[12, task({ id: 102, trackerRef: 12, state: 'escalated', escalationReason: 'escalated to human: attempt 3 of 3 failed' })]]);
+    const memberTasks = new Map<TrackerRef, TaskRow>([[trackerRef(12), task({ id: 102, trackerRef: trackerRef(12), state: 'escalated', escalationReason: 'escalated to human: attempt 3 of 3 failed' })]]);
     const epic = composeEpicView(derived(), memberTasks, new Map(), noFacts, noMeta);
 
-    const m12 = epic.members.find((m) => m.ref === 12);
+    const m12 = epic.members.find((m) => m.ref === '12');
     expect(m12?.mergeStatus).toBe('blocked');
     expect(m12?.escalated).toBe(true);
     expect(epic.foldedCount).toBe(0);
@@ -74,9 +75,9 @@ describe('composeEpicView', () => {
 
   it('maps an unmirrored member (no matching Task row) to pending, null taskId/state, empty title', () => {
     const epic = composeEpicView(derived(), new Map(), new Map(), noFacts, noMeta);
-    const m13 = epic.members.find((m) => m.ref === 13);
+    const m13 = epic.members.find((m) => m.ref === '13');
     expect(m13).toEqual({
-      ref: 13,
+      ref: '13',
       title: '',
       taskId: null,
       state: null,
@@ -88,20 +89,20 @@ describe('composeEpicView', () => {
   });
 
   it('flags only ready-frontier refs as ready:true and echoes the ready list ascending', () => {
-    const epic = composeEpicView(derived({ members: [11, 12, 13], ready: [11, 13] }), new Map(), new Map(), noFacts, noMeta);
+    const epic = composeEpicView(derived({ members: [trackerRef(11), trackerRef(12), trackerRef(13)], ready: [trackerRef(11), trackerRef(13)] }), new Map(), new Map(), noFacts, noMeta);
     expect(epic.members.map((m) => ({ ref: m.ref, ready: m.ready }))).toEqual([
-      { ref: 11, ready: true },
-      { ref: 12, ready: false },
-      { ref: 13, ready: true },
+      { ref: '11', ready: true },
+      { ref: '12', ready: false },
+      { ref: '13', ready: true },
     ]);
-    expect(epic.ready).toEqual([11, 13]);
+    expect(epic.ready).toEqual(['11', '13']);
   });
 
   it('foldedCount counts only completed members; memberCount is the full member list length', () => {
-    const memberTasks = new Map<number, TaskRow>([
-      [11, task({ id: 1, trackerRef: 11, state: 'done' })],
-      [12, task({ id: 2, trackerRef: 12, state: 'done' })],
-      [13, task({ id: 3, trackerRef: 13, state: 'working' })],
+    const memberTasks = new Map<TrackerRef, TaskRow>([
+      [trackerRef(11), task({ id: 1, trackerRef: trackerRef(11), state: 'done' })],
+      [trackerRef(12), task({ id: 2, trackerRef: trackerRef(12), state: 'done' })],
+      [trackerRef(13), task({ id: 3, trackerRef: trackerRef(13), state: 'working' })],
     ]);
     const epic = composeEpicView(derived(), memberTasks, new Map(), noFacts, noMeta);
     expect(epic.foldedCount).toBe(2);
@@ -151,63 +152,63 @@ describe('composeEpicView', () => {
 
   it('carries ref/title from the DerivedEpic and kind from the meta record', () => {
     const epic = composeEpicView(
-      derived({ ref: 42, title: 'Map it', members: [], ready: [] }),
+      derived({ ref: trackerRef(42), title: 'Map it', members: [], ready: [] }),
       new Map(),
       new Map(),
       noFacts,
       { ...noMeta, kind: 'map' },
     );
-    expect(epic.ref).toBe(42);
+    expect(epic.ref).toBe('42');
     expect(epic.title).toBe('Map it');
     expect(epic.kind).toBe('map');
   });
 
   it('carries the container-ticket meta (description, createdAt, dependsOn) and derives updatedAt from the latest member activity (ADR-0017)', () => {
-    const memberTasks = new Map<number, TaskRow>([
-      [11, task({ id: 1, trackerRef: 11, updatedAt: 500 })],
-      [12, task({ id: 2, trackerRef: 12, updatedAt: 900 })],
+    const memberTasks = new Map<TrackerRef, TaskRow>([
+      [trackerRef(11), task({ id: 1, trackerRef: trackerRef(11), updatedAt: 500 })],
+      [trackerRef(12), task({ id: 2, trackerRef: trackerRef(12), updatedAt: 900 })],
     ]);
-    const epic = composeEpicView(derived({ members: [11, 12], ready: [] }), memberTasks, new Map(), noFacts, {
+    const epic = composeEpicView(derived({ members: [trackerRef(11), trackerRef(12)], ready: [] }), memberTasks, new Map(), noFacts, {
       description: 'The epic body.',
       createdAt: 1_700_000_000_000,
       baseBranch: 'develop',
-      dependsOn: [7, 3],
+      dependsOn: [trackerRef(7), trackerRef(3)],
       kind: 'spec',
       state: 'open',
     });
     expect(epic.description).toBe('The epic body.');
     expect(epic.createdAt).toBe(1_700_000_000_000);
-    expect(epic.dependsOn).toEqual([7, 3]);
+    expect(epic.dependsOn).toEqual(['7', '3']);
     expect(epic.updatedAt).toBe(900);
   });
 
   it('leaves updatedAt null when no member is mirrored', () => {
-    const epic = composeEpicView(derived({ members: [11], ready: [] }), new Map(), new Map(), noFacts, noMeta);
+    const epic = composeEpicView(derived({ members: [trackerRef(11)], ready: [] }), new Map(), new Map(), noFacts, noMeta);
     expect(epic.updatedAt).toBeNull();
   });
 
   it('carries a member\'s resolved isolationMode, and null for an unmirrored one', () => {
-    const memberTasks = new Map<number, TaskRow>([[11, task({ id: 1, trackerRef: 11, isolationMode: 'direct' })]]);
-    const epic = composeEpicView(derived({ members: [11, 12], ready: [] }), memberTasks, new Map(), noFacts, noMeta);
-    expect(epic.members.find((m) => m.ref === 11)?.isolationMode).toBe('direct');
-    expect(epic.members.find((m) => m.ref === 12)?.isolationMode).toBeNull();
+    const memberTasks = new Map<TrackerRef, TaskRow>([[trackerRef(11), task({ id: 1, trackerRef: trackerRef(11), isolationMode: 'direct' })]]);
+    const epic = composeEpicView(derived({ members: [trackerRef(11), trackerRef(12)], ready: [] }), memberTasks, new Map(), noFacts, noMeta);
+    expect(epic.members.find((m) => m.ref === '11')?.isolationMode).toBe('direct');
+    expect(epic.members.find((m) => m.ref === '12')?.isolationMode).toBeNull();
   });
 
   it('inPlace is true whenever every member is direct, whether or not a leftover Integration branch exists', () => {
-    const direct = new Map<number, TaskRow>([
-      [11, task({ id: 1, trackerRef: 11, isolationMode: 'direct' })],
-      [12, task({ id: 2, trackerRef: 12, isolationMode: 'direct' })],
+    const direct = new Map<TrackerRef, TaskRow>([
+      [trackerRef(11), task({ id: 1, trackerRef: trackerRef(11), isolationMode: 'direct' })],
+      [trackerRef(12), task({ id: 2, trackerRef: trackerRef(12), isolationMode: 'direct' })],
     ]);
-    const inPlaceEpic = composeEpicView(derived({ members: [11, 12], ready: [] }), direct, new Map(), noFacts, noMeta);
+    const inPlaceEpic = composeEpicView(derived({ members: [trackerRef(11), trackerRef(12)], ready: [] }), direct, new Map(), noFacts, noMeta);
     expect(inPlaceEpic.inPlace).toBe(true);
 
-    const mixed = new Map<number, TaskRow>([
-      [11, task({ id: 1, trackerRef: 11, isolationMode: 'direct' })],
-      [12, task({ id: 2, trackerRef: 12, isolationMode: 'worktree' })],
+    const mixed = new Map<TrackerRef, TaskRow>([
+      [trackerRef(11), task({ id: 1, trackerRef: trackerRef(11), isolationMode: 'direct' })],
+      [trackerRef(12), task({ id: 2, trackerRef: trackerRef(12), isolationMode: 'worktree' })],
     ]);
-    expect(composeEpicView(derived({ members: [11, 12], ready: [] }), mixed, new Map(), noFacts, noMeta).inPlace).toBe(false);
+    expect(composeEpicView(derived({ members: [trackerRef(11), trackerRef(12)], ready: [] }), mixed, new Map(), noFacts, noMeta).inPlace).toBe(false);
 
     const existingBranch: EpicFacts = { ...noFacts, integration: { branch: 'epic/10', exists: true, tip: 'abc' } };
-    expect(composeEpicView(derived({ members: [11, 12], ready: [] }), direct, new Map(), existingBranch, noMeta).inPlace).toBe(true);
+    expect(composeEpicView(derived({ members: [trackerRef(11), trackerRef(12)], ready: [] }), direct, new Map(), existingBranch, noMeta).inPlace).toBe(true);
   });
 });

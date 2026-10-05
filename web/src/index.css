@@ -52,7 +52,7 @@
   --hm-on-fail: #ffffff;
   --hm-blocked: #5b616a;
   --hm-blocked-tint: #ecedea;
-  --hm-paused: #2f7fc9;
+  --hm-paused: #205f99;
   --hm-paused-dot: #2f7fc9;
   --hm-paused-tint: #cde4fb;
   --hm-tool: #077067;
@@ -73,6 +73,10 @@
   --hm-shadow-float: 0 8px 20px rgb(23 26 34 / 0.12), 0 24px 60px rgb(23 26 34 / 0.16);
   --hm-shadow-bar: 0 16px 44px rgb(27 30 36 / 0.16), 0 0 0 1px var(--hm-hairline);
   --hm-shadow-btn: 0 1px 2px rgb(13 114 113 / 0.32);
+
+  --hm-id-1: #7f3471;
+  --hm-id-2: #575b00;
+  --hm-id-3: #006386;
 }
 
 :root[data-theme='dark'] {
@@ -146,6 +150,10 @@
   --hm-shadow-float: 0 12px 40px rgb(0 0 0 / 0.55);
   --hm-shadow-bar: 0 0 0 1px var(--hm-edge), 0 14px 40px rgb(0 0 0 / 0.5);
   --hm-shadow-btn: none;
+
+  --hm-id-1: #c877b7;
+  --hm-id-2: #92992b;
+  --hm-id-3: #009fc4;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -220,6 +228,10 @@
     --hm-shadow-float: 0 12px 40px rgb(0 0 0 / 0.55);
     --hm-shadow-bar: 0 0 0 1px var(--hm-edge), 0 14px 40px rgb(0 0 0 / 0.5);
     --hm-shadow-btn: none;
+
+    --hm-id-1: #c877b7;
+    --hm-id-2: #92992b;
+    --hm-id-3: #009fc4;
   }
 }
 
@@ -270,6 +282,9 @@
   --color-tool: var(--hm-tool);
   --color-tool-dot: var(--hm-tool-dot);
   --color-tool-tint: var(--hm-tool-tint);
+  --color-id-1: var(--hm-id-1);
+  --color-id-2: var(--hm-id-2);
+  --color-id-3: var(--hm-id-3);
   --color-syntax-comment: var(--hm-syntax-comment);
   --color-syntax-keyword: var(--hm-syntax-keyword);
   --color-syntax-title: var(--hm-syntax-title);
@@ -314,9 +329,18 @@
   --text-data: 0.8125rem;
   --text-data--line-height: 1.5;
 
-  --breakpoint-rail: 900px;
+  --text-micro: 0.6875rem;
+
+  --tracking-caps: 0.09em;
+  --tracking-caps-tight: 0.06em;
+
 
   --ease-out-quint: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* static: useRailBreakpoint reads this at runtime, so it must always be emitted. */
+@theme static {
+  --breakpoint-rail: 900px;
 }
 
 .bold-wash.ready { background-color: var(--hm-ready-tint); }

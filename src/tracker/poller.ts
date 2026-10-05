@@ -1,8 +1,10 @@
 import type { TaskService } from '../domain/tasks.js';
 import type { TaskRow } from '../db/schema.js';
-import type { ResolvedTracker, Ticket, TrackerAdapter } from './adapter.js';
+import type { ResolvedTracker, Ticket, TrackerAdapter, TrackerRef } from './adapter.js';
 import { resolutionFailure, resolutionSuccess, resolveTrackerAdapter } from './adapter.js';
+import { safeErrorReason } from './rest-client.js';
 import { mirrorScan } from './mirror.js';
+import { ClosedRefResolver } from './closed-refs.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import { InFlight } from '../reliability/in-flight.js';
 import { persistedTickets } from './persisted.js';
@@ -24,8 +26,8 @@ export interface EpicIntegrationSync {
 /** One Workspace's tracker mirroring poll loop; its lifecycle is owned by {@link TrackerPollerManager}. */
 export class TrackerPoller {
   private timer: NodeJS.Timeout | undefined;
-  private urlByRef = new Map<number, string>();
-  private titleByRef = new Map<number, string>();
+  private urlByRef = new Map<TrackerRef, string>();
+  private titleByRef = new Map<TrackerRef, string>();
 
   constructor(
     private readonly tasks: TaskService,
@@ -41,10 +43,13 @@ export class TrackerPoller {
     private readonly epics?: EpicIntegrationSync,
     /** `reconcileOnPoll` false ⇒ Epics reconcile through the global Scheduler Job instead. See `workStartAllowed` in tracker/manager.ts. */
     private readonly opts: { reconcileOnPoll?: boolean; yieldOptions?: YieldOptions; workStartAllowed?: () => boolean | Promise<boolean> } = {},
-  ) {}
+  ) {
+    this.closedRefs = new ClosedRefResolver(opts.yieldOptions ? { yieldOptions: opts.yieldOptions } : {});
+  }
 
   private readonly pollGate = singleFlight(() => this.pollOnce());
   private readonly inFlight = new InFlight();
+  private readonly closedRefs: ClosedRefResolver;
 
   poll(): Promise<void> {
     return this.inFlight.track(this.pollGate());
@@ -72,15 +77,23 @@ export class TrackerPoller {
     this.onResolved(resolutionSuccess(adapter));
     poll.update({ 'tracker.name': adapter.name });
     const observedAt = Date.now();
-    const tickets = await adapter.scan();
+    const scanned = await adapter.scan();
+    const rows = adapter.scansOpenOnly ? await this.tasks.list({ workspaceId: this.workspaceId }) : [];
+    const tickets = await this.closedRefs.complete(
+      adapter,
+      scanned,
+      rows.flatMap((task) => (task.origin === 'mirrored' && task.trackerRef !== null && task.state !== 'done' && task.state !== 'cancelled' ? [task.trackerRef] : [])),
+      adapter.scansOpenOnly ? await persistedTickets(rows, []) : [],
+    );
     poll.update({ 'tracker.ticket.count': tickets.length });
     this.urlByRef = new Map();
     this.titleByRef = new Map();
-    const closedRefs = new Set<number>();
+    await forEachYielding(rows, (task) => {
+      if (task.trackerRef !== null && task.trackerUrl !== null) this.urlByRef.set(task.trackerRef, task.trackerUrl);
+    }, this.opts.yieldOptions);
     await forEachYielding(tickets, (ticket) => {
-      this.urlByRef.set(ticket.number, ticket.url);
-      this.titleByRef.set(ticket.number, ticket.title);
-      if (ticket.state === 'closed') closedRefs.add(ticket.number);
+      this.urlByRef.set(ticket.ref, ticket.url);
+      this.titleByRef.set(ticket.ref, ticket.title);
     }, this.opts.yieldOptions);
     await this.mirror?.observe(adapter);
     const mirrored = await mirrorScan(this.tasks, tickets, this.workspaceId, {
@@ -100,19 +113,19 @@ export class TrackerPoller {
         reconcile.end();
       } catch (err) {
         reconcile.fail(err);
-        this.onError(`epic integration reconcile failed: ${String(err)}`);
+        this.onError(`epic integration reconcile failed: ${safeErrorReason(err)}`);
       }
     }
     await this.mirror?.reconcile();
   }
 
   /** The tracker URL for a mirrored Task's ref, from the last scan; null for native Tasks or before a poll. */
-  urlFor(ref: number | null): string | null {
+  urlFor(ref: TrackerRef | null): string | null {
     return ref === null ? null : (this.urlByRef.get(ref) ?? null);
   }
 
   /** The Map ticket's title for a mirrored Task's mapRef, from the last scan; null when unmapped or before a poll. */
-  titleForMap(ref: number | null): string | null {
+  titleForMap(ref: TrackerRef | null): string | null {
     return ref === null ? null : (this.titleByRef.get(ref) ?? null);
   }
 
@@ -123,20 +136,18 @@ export class TrackerPoller {
       logger.debug('epic integration reconcile skipped: work-start not allowed', { workspaceId: this.workspaceId });
       return;
     }
-    const persisted = await persistedTickets(
-      await this.tasks.list({ workspaceId: this.workspaceId }),
-      await this.tasks.listTrackerContainers(this.workspaceId),
-    );
-    const mirrored = (await this.tasks.list({ workspaceId: this.workspaceId })).filter((task) => task.origin === 'mirrored');
+    const rows = await this.tasks.list({ workspaceId: this.workspaceId });
+    const persisted = await persistedTickets(rows, await this.tasks.listTrackerContainers(this.workspaceId));
+    const mirrored = rows.filter((task) => task.origin === 'mirrored');
     await this.epics.reconcile(persisted, mirrored);
   }
 
   /** Begin polling on the interval and fire one poll immediately. Idempotent. */
   start(): void {
     if (this.timer) return;
-    this.timer = setInterval(() => void this.poll().catch((err) => this.onError(String(err))), this.pollIntervalMs);
+    this.timer = setInterval(() => void this.poll().catch((err) => this.onError(safeErrorReason(err))), this.pollIntervalMs);
     this.timer.unref?.();
-    void this.poll().catch((err) => this.onError(String(err)));
+    void this.poll().catch((err) => this.onError(safeErrorReason(err)));
   }
 
   /** Stop the interval, then wait out any poll already in flight. */

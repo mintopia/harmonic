@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../types.js';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, ApiError } from '../api';
 import { subscribe } from '../ws';
@@ -9,7 +10,8 @@ import { epicLifecycleSteps } from '../epic-model';
 import type { Stats } from '../stats-model';
 import { epicUsageSummary, tokenBarSegments, tokenBarEmpty, rowCost } from '../epic-summary-model';
 import { formatCost } from '../cost';
-import { issueRef, ticketRowId } from '../id-format.js';
+import { issueRef } from '../id-format.js';
+import { TicketRowId } from './TicketRowId';
 import { toastError } from '../toast';
 import { cardTitle } from '../board-sections-model';
 import {
@@ -40,8 +42,10 @@ import { ChangedFilesNav, changedFileKind } from './ticket/ChangedFilesNav';
 import { Fact } from './Fact';
 import { CriticSessions } from './ticket/Verification';
 import { ExportPanel } from './ticket/ExportPanel';
-import { epicExportTarget } from './useTaskExport';
+import { epicExportTarget } from '../export-targets';
 import { EpicTimeline } from './EpicTimeline';
+import { ResolvedPromptInline } from './ticket/ResolvedPromptInline';
+import { EPIC_RESOLVER_LABEL } from '../epic-timeline-model';
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
 
@@ -81,7 +85,7 @@ function Description({ text }: { text: string }) {
   );
 }
 
-function DependsOn({ refs }: { refs: number[] }) {
+function DependsOn({ refs }: { refs: TrackerRef[] }) {
   if (refs.length === 0) return <span className="text-faint">—</span>;
   return (
     <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-data">
@@ -237,7 +241,7 @@ function EpicVerificationOutput({ attempts }: { attempts: VerificationAttempt[] 
   );
 }
 
-function EpicAttemptsTimeline({ attempts }: { attempts: EpicAttempt[] }) {
+export function EpicAttemptsTimeline({ attempts }: { attempts: EpicAttempt[] }) {
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
@@ -260,6 +264,11 @@ function EpicAttemptsTimeline({ attempts }: { attempts: EpicAttempt[] }) {
                 <span className="text-data text-faint tabular-nums">{attempt.usage.totals.totalTokens.toLocaleString()} tokens</span>
               )}
               {attempt.reason && <p className="w-full text-small text-muted">{attempt.reason}</p>}
+              {attempt.resolverPrompts.map((prompt) => (
+                <div key={`${prompt.locator}:${prompt.promptIndex}`} className="w-full">
+                  <ResolvedPromptInline owner={{ attemptId: attempt.id }} locator={prompt.locator} index={prompt.promptIndex} label={EPIC_RESOLVER_LABEL[prompt.kind]} className="mt-1" />
+                </div>
+              ))}
               <EpicVerificationOutput attempts={attempt.verificationAttempts} />
             </li>
           ))}
@@ -406,7 +415,7 @@ function ChildRow({
       <div role="cell" className="flex items-center justify-end gap-1.5 whitespace-nowrap tabular-nums text-muted max-md:col-start-1 max-md:row-start-1 max-md:justify-start">
         <span aria-hidden="true" className={stateDot(child.state)} />
         <span className="sr-only">Id: </span>
-        {ticketRowId(child.id, child.trackerRef)}
+        <TicketRowId task={child} />
       </div>
       <div role="cell" className="min-w-0 pr-2 max-md:col-span-2 max-md:row-start-2 max-md:pr-0">
         <span title={child.summary} className="block truncate text-ink max-md:whitespace-normal max-md:overflow-visible max-md:font-medium">
@@ -565,7 +574,7 @@ export function EpicStepper({ epic }: { epic: Epic }) {
             </div>
             <div className="contents max-md:flex max-md:min-w-0 max-md:flex-col">
               <span className={`text-[12px] font-semibold leading-tight ${step.disabled ? 'text-faint' : STEP_LABEL_TONE[step.state]}`}>{step.label}</span>
-              <span className="truncate text-[10.5px] leading-tight text-faint max-md:max-w-none md:max-w-[10rem]" title={step.sublabel}>
+              <span className="line-clamp-2 break-words text-[10.5px] leading-tight text-faint max-md:max-w-none md:max-w-[10rem]" title={step.sublabel}>
                 {step.sublabel}
               </span>
             </div>
@@ -584,7 +593,7 @@ export function EpicPage({
   selection,
   onSelect,
 }: {
-  epicRef: number;
+  epicRef: TrackerRef;
   workspaceId: number;
   onClose: () => void;
   onOpenTask: (taskId: number) => void;
@@ -773,9 +782,9 @@ export function EpicPage({
                     )}
                   </section>
 
-                  {epic && <div className="mb-6"><EpicTimeline epic={epic} /></div>}
+                  {epic && <div className="mb-6"><EpicTimeline epic={epic} workspaceId={workspaceId} /></div>}
 
-                  {epic && <ExportPanel target={epicExportTarget(workspaceId, epicRef)} state={epic.state === 'integrated' ? 'done' : epic.state} refreshKey={refreshKey} />}
+                  {epic && <ExportPanel target={epicExportTarget(workspaceId, epicRef)} finished={epic.state === 'integrated'} refreshKey={refreshKey} />}
 
                   <div className="mb-6">
                     <div className={`${sectionCaps} mb-3`}>Usage &amp; statistics</div>

@@ -16,6 +16,8 @@ whole instance:
 
 - the harnesses and their models (see [Harnesses](/harmonic/run/harnesses/)),
 - model prices (so cost is accurate),
+- prompts and prompt fragments (how Harmonic talks to agents and how agents
+  talk to each other),
 - the verification checks that run before a merge (commands and named
   critics, in the order you set),
 - notification channels,
@@ -26,8 +28,10 @@ whole instance:
 **Per workspace** — things about one repo:
 
 - its name and folder,
-- whether its tracker is on and how often it polls,
+- whether its tracker is on and how often it polls, which tracker it uses,
+  which forge hosts its code, and its [triage labels](#integrations),
 - whether the Auto-Runner is on for it,
+- whether agents may send each other messages, and how many each may send,
 - and its defaults for new tickets (harness, model,
   [isolation](/harmonic/work/branches-and-worktrees/), priority) and how
   many agents it may run at once.
@@ -48,6 +52,81 @@ bulk changes easy:
 
 You can adjust a ticket's settings right up until it starts running, so
 you can re-point something that's still waiting in the queue.
+
+## Prompts
+
+The **Prompts** tab holds the prompts and prompt fragments Harmonic sends when
+it runs work. Most fields can be overridden per Workspace. A Workspace field
+reads *Inherited from global default* until you set its own value. Editing a
+prompt or fragment affects the next time Harmonic sends it. A prompt already
+sent is not rewritten; you can read it on the Task page (see
+[Reviewing and merging](/harmonic/work/reviewing-and-merging/)).
+
+### Task prompt
+
+Wraps a native Task's own prompt before it goes to the agent. Placeholders are
+filled per Task, and the default, a bare `{prompt}`, sends the prompt as
+written. Mirrored tickets use the Drive prompt instead.
+
+### Drive prompt
+
+The prompt Harmonic sends when it runs a mirrored ticket unattended. The same
+section holds these fields:
+
+- **Unattended reminder**: appended to every auto-driven turn.
+- **Continue prompt**: the re-prompt sent when a turn ends without the task
+  finishing.
+- **Commit nudge**: sent when an Attempt ends its turn with uncommitted changes.
+- **Merge fate**: what happens to completed work. The options are
+  **Merge automatically** (the default, merges the branch), **Open a pull
+  request** (leaves the ticket open) and **Leave the branch** (for you or CI to
+  pick up).
+- **Continue attempts**: how many times Harmonic re-prompts an unfinished
+  Attempt before treating it as unresolved.
+
+### Pause message
+
+Sent to a running Task when you pause it, asking the agent to finish its turn
+and wait.
+
+### Prompt fragments
+
+Named pieces of prompt text, defined once and referenced from other prompts as
+`{fragment.<name>}`. Each fragment shows its own description and the
+placeholders it accepts. Some placeholders must stay in the text, and the page
+tells you which. The fragments are:
+
+- **Read-only restraint**, **Conflict resolution**, **Operator message**,
+  **Self-heal**, **Prior session**, **Rebase conflict** and **Code index
+  guidance**.
+- **Peer messages section**, **Peer message entry**, **Peer line** and
+  **Live peer message**, which shape how Attempts see each other's messages.
+- **Critic role**, **Critic security notice**, **Critic ticket pointer**,
+  **Critic instructions pointer**, **Critic specification (ticket)**, **Critic
+  specification (instructions)**, **Critic uncommitted changes note**, the
+  three **Critic revision block** variants and **Critic verdict contract**,
+  which shape what a Critic is told and the reply it must give.
+- **Failing Epic verification**, which describes a failed Epic verification to
+  the agent fixing it.
+
+If a fragment edit is rejected, the page tells you what the text must still
+contain.
+
+### Merge and Epic resolver prompts
+
+What Harmonic sends to the agents that resolve merge conflicts and Epic
+verification failures:
+
+- **Merge conflict resolver**: opens each turn that resolves a Task merge
+  conflict.
+- **Epic merge conflict resolver**: opens each turn that resolves an Epic
+  integration merge conflict.
+- **Epic refresh resolver**: sent when the Epic integration branch is
+  refreshed from the default branch and conflicts.
+- **Epic verification resolver suffix**: appended to the Epic resolve prompt
+  when the agent fixes a failing Epic verification.
+
+Edits apply to the next resolver turn.
 
 ## How much runs at once
 
@@ -72,6 +151,98 @@ Harmonic shows a running dollar **cost** on every agent's work, based on a
 price per model. It already knows the models the built-in harnesses use.
 If you add a model it doesn't have a price for, add that price too;
 otherwise its work shows as cost-incomplete rather than a misleading zero.
+
+## Integrations
+
+A Workspace's **Integrations** tab has three sections: **Issue Tracker**,
+**Code Repository** and **Triage Labels**. Each is per Workspace; there is
+nothing to set globally.
+
+### Issue Tracker
+
+The section starts with an **Enabled** switch (*Mirror tracker issues onto the
+board*) and a **Poll interval (seconds)**, which can't go below 5.
+
+Harmonic resolves a Workspace's tracker in this order. The **Resolved** line
+at the bottom shows the result, for example *Resolved: Jira via Configured*:
+
+1. **Configured**: the tracker you pick here.
+2. **Detected**: the one named in the repo's `docs/agents/issue-tracker.md`.
+3. **Code Repository**: the forge hosting the code, when it is also an
+   issue tracker.
+
+If no tracker is found, the line reads *No Tracker declared*, *Unsupported
+Tracker* or *Tracker misconfigured*. While Enabled is off, it reads *Enable
+mirroring to resolve the tracker*.
+
+**Configured Tracker** starts on *Inherit (automatic)*, which uses the repo's
+declaration. Otherwise pick GitHub, GitLab, Forgejo, Jira or Local Markdown.
+Fields below change with the choice; required ones are marked *(required)*.
+
+- **GitHub** has no fields. It uses the `gh` login already on the host.
+- **GitLab** has one optional field, **Project**, which defaults to the
+  repo's `origin` remote. It uses the `glab` login on the host.
+- **Local Markdown** has one field, **Folder**, the folder in the repo that
+  holds the Markdown tickets. It defaults to `.scratch`.
+- **Forgejo** needs **Base URL** and **Repository (owner/name)**. **Epic
+  source** chooses where Epics come from: labelled issues or
+  Milestones, with labelled issues as the default. **Token Secret name** is
+  the Secret that holds the API token and defaults to `FORGEJO_TOKEN`.
+- **Jira** needs **Base URL**, **Auth mode** and **Project key**. Cloud signs
+  in with an email and API token, so Cloud also needs **Email**. Data Center
+  uses a personal access token. The optional fields are **Extra JQL**,
+  **Pickup status**, **Done status** and **Reopen status**. **Token Secret
+  name** is the Secret that holds the token and defaults to `JIRA_TOKEN`.
+
+Forgejo and Jira show a **Secret** row for their token. It reads **Set** or
+**Not set**. Use **Set** (or **Replace** when one exists) to type the value
+and **Save**, or **Clear** to remove it. Secrets are write-only and take effect
+immediately without the settings save bar. Each Secret is scoped to its
+Workspace.
+
+Secrets are encrypted with an instance-level key held in the data directory
+(`secret.key`). Back up the data directory with your database to preserve
+these credentials; losing the key file makes stored Secrets unreadable.
+
+**Verify tracker** checks the connection and reports *Verified as* the
+account, or the error. Disabled while you have unsaved edits; save first.
+
+### Code Repository
+
+The forge that hosts branches, pull requests and merges. **Detected** shows
+what Harmonic found from `origin`, or *None detected from the origin remote*. **Override** starts on
+*Automatic*; pick GitHub, GitLab, Forgejo or git to choose. **Verify
+repository** reports *Reachable on* the forge or the error; disabled while you
+have unsaved edits.
+
+- **GitHub**, **GitLab** and **Forgejo** open PRs and merge them. GitHub and
+  GitLab use the `gh` or `glab` login already on the host. Forgejo uses the
+  Workspace Secret named by a Forgejo Configured Tracker on the same host,
+  otherwise the Secret `FORGEJO_TOKEN`, which this card offers to set when no
+  Forgejo tracker is configured.
+- **git** is push-only: Harmonic pushes the branch but does not open a PR or merge.
+  Use it for a host with no pull-request API.
+
+The Code Repository can differ from the tracker, for example Jira issues with
+code on GitHub.
+
+### Triage Labels
+
+The label names your tracker uses for each role Harmonic acts on: **Ready for
+agent**, **Ready for human**, **Epic** and **Wayfinder map**. Leave a field
+empty to inherit it from the repo's `docs/agents/triage-labels.md`, then the
+defaults shown as placeholders.
+
+## Agent Messages
+
+Agents in the same Workspace can message each other. Off by default. Turn it on
+and set caps on the **Execution** tab under **Agent Messages**.
+
+- **Let Attempts message each other**: on/off switch.
+- **Send cap**: how many messages one Attempt may send. Default 10, minimum 1.
+
+Set both globally, then override either per Workspace; a Workspace shows the global value until you override it. For what operators
+see when messaging is on, see [Agent Messages](/harmonic/work/agent-messages/).
 
 ## Archive & Export
 
@@ -125,8 +296,8 @@ are masked and never shown again; use the replace control to change them.
 *Wrote and removed probe object* or the error. Save your changes first; the
 button is disabled while there are unsaved edits.
 
-Failed deliveries retry after 5 minutes, 30 minutes and 2 hours. After that,
-use **Export again** on the ticket page.
+Failed deliveries and failed Export builds retry after 5 minutes, 30 minutes
+and 2 hours. After that, use **Export again** on the ticket page.
 
 ### Redaction patterns
 
@@ -146,4 +317,5 @@ Redaction only applies to Exports. The Archive on disk stays raw.
 
 - [Feeding it work](/harmonic/work/feeding-it-work/)
 - [Notifications](/harmonic/work/notifications/)
+- [Agent Messages](/harmonic/work/agent-messages/)
 - [Archive & export](/harmonic/work/archive-and-export/)

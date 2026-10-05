@@ -49,8 +49,13 @@ export class RunControl {
    * its Attempt is no longer steerable.
    */
   async steer(taskId: number, text: string): Promise<boolean> {
+    return (await this.steerWithMode(taskId, text)) !== null;
+  }
+
+  /** Like {@link steer} but reports the mode; `onDelivered` fires when a queued text is sent, `onDropped` if the run ends first. */
+  async steerWithMode(taskId: number, text: string, onDelivered?: () => void, onDropped?: () => void): Promise<'mid-turn' | 'next-turn' | null> {
     const active = this.deps.activeRuns.forTask(taskId);
-    if (!active || !active.steerable) return false;
+    if (!active || !active.steerable) return null;
     // ACP `promptRequired`: an idle session must not start an untracked turn.
     if (!active.idle && active.steerSupported !== false) {
       try {
@@ -60,7 +65,7 @@ export class RunControl {
           const event = await this.deps.attempts.appendEvent(active.attemptId, { type: 'lifecycle', payload: { event: 'steer_injected', text } });
           this.deps.events.onAttemptEvent?.(event);
           this.deps.emitSteerLog({ attemptId: active.attemptId, text, queued: false });
-          return true;
+          return 'mid-turn';
         }
         // Outcome 'promptRequired': the turn ended before the RPC; nothing ran.
         active.steerSupported = true;
@@ -69,12 +74,12 @@ export class RunControl {
         active.steerSupported = false;
       }
     }
-    if (!active.steerable) return false;
-    active.steerQueue.push(text);
+    if (!active.steerable) return null;
+    active.steerQueue.push({ text, onDelivered, onDropped });
     const event = await this.deps.attempts.appendEvent(active.attemptId, { type: 'lifecycle', payload: { event: 'steer_queued', text } });
     this.deps.events.onAttemptEvent?.(event);
     this.deps.emitSteerLog({ attemptId: active.attemptId, text, queued: true });
-    return true;
+    return 'next-turn';
   }
 
   /** A Task with no ActiveRun and no drive loop in flight: nothing will ever honour a

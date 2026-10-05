@@ -1,25 +1,32 @@
 # Harmonic
 
-Point Harmonic at your issue tracker and it works through your backlog on
-its own. Write a spec, break it into tickets, and Harmonic runs the ready
-ones out to merged code: for each ticket it starts a coding agent,
-implements the change, has the work reviewed, and merges the branch,
-handing a ticket back only when it needs a human. You watch a board and a
-timeline of everything the fleet has run, and step in only when a ticket
+Point Harmonic at your issue tracker (GitHub, GitLab, Forgejo, Jira or local
+Markdown files) and it works through your backlog on its own. Choose the
+tracker, the code host and your triage labels per Workspace under Settings →
+Integrations; see [Settings](https://mintopia.github.io/harmonic/run/settings/#integrations). Forgejo and Jira require a stored Secret for API access. The code
+host can be GitHub, GitLab, Forgejo, or a generic git push-only remote. Write
+a spec, break it into tickets, and Harmonic runs the ready ones out to merged
+code: for each ticket it starts a coding agent, implements the change, runs
+your configured verification, and merges the branch when using worktree
+isolation, handing a ticket back only when it needs a human. You watch a board
+and a timeline of everything the fleet has run, and step in only when a ticket
 needs you.
 
 It's built to run alongside **Matt Pocock's Skills**, which turn a spec
 into labelled tickets in your tracker; Harmonic is the layer that runs
 them. It drives agent harnesses (Claude Code, Codex, Copilot, OpenCode)
 over [ACP](https://agentclientprotocol.com), so they're interchangeable
-with no vendor lock-in. You can also queue a one-off task by hand, with a
-review gate you accept or reject before anything merges.
+with no vendor lock-in. You can also queue a one-off task by hand. Tasks
+finish automatically after configured verification; work that needs a human
+is escalated for you to resolve. Agents working in the same Workspace can
+also message each other, which you can read but not join; see
+[Agent Messages](https://mintopia.github.io/harmonic/work/agent-messages/).
 
 **Full documentation:** https://mintopia.github.io/harmonic
 
 ## Run
 
-Needs Node.js 22+ and git — 2.38+ recommended so Harmonic can reconcile a
+Needs Node.js 22 or later (22, 24 and 26 are tested) and git — 2.38+ recommended so Harmonic can reconcile a
 moved base branch without rebuilding the merge; an older git still works, it
 just rebuilds on every base advance instead.
 
@@ -147,10 +154,17 @@ exposing it on your network.
 git clone https://github.com/mintopia/harmonic
 cd harmonic
 npm install
-npm run dev        # serve from source (tsx)
-npm test           # vitest suite
-npm run typecheck
+npm run dev        # backend on http://127.0.0.1:4701, restarts on source changes
 ```
+
+In a second terminal, run `npm run dev:web`, then open
+http://127.0.0.1:5173. Vite updates the frontend as you edit and proxies API,
+WebSocket, and MCP requests to the development backend. Backend restarts
+interrupt in-flight work, so use development tasks while editing.
+
+Development state lives in `~/.harmonic-dev`, separate from the installed
+application's `~/.harmonic`. Both development servers bind to localhost,
+and their ports let you keep the installed application running on 4700.
 
 While you work, run the relevant test file with `npx vitest run <file>`.
 Before the final test run, use `npm run typecheck` and `npm run lint`. Run

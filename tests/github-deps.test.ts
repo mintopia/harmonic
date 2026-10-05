@@ -10,7 +10,6 @@ const raw = (over: Record<string, unknown>) => ({
   closedAt: null,
   labels: [],
   assignees: [],
-  comments: [],
   parent: null,
   blockedBy: null,
   blocking: null,
@@ -23,12 +22,12 @@ const scanning = (issues: unknown[]) => githubAdapter('/repo', async () => JSON.
 describe('GitHub adapter — body-line dependency fallback (issue #46 regression)', () => {
   it('parses "Depends on: T1 (#47)" into blockedBy, ignoring a "Part of #46" prefix', async () => {
     const [t] = await scanning([raw({ number: 48, body: 'Part of #46. Depends on: T1 (#47). Ref: ADR 0009.' })]).scan();
-    expect(t!.blockedBy.map((b) => b.number)).toEqual([47]);
+    expect(t!.blockedBy.map((b) => b.ref)).toEqual(['47']);
   });
 
   it('parses a "Blocked by: #47, #49" line into multiple edges', async () => {
     const [t] = await scanning([raw({ number: 50, body: 'Blocked by: #47, #49' })]).scan();
-    expect(t!.blockedBy.map((b) => b.number).sort((a, b) => a - b)).toEqual([47, 49]);
+    expect(t!.blockedBy.map((b) => b.ref).sort((a, b) => Number(a) - Number(b))).toEqual(['47', '49']);
   });
 
   it('merges native edges with body edges, dedupes, and excludes self-reference', async () => {
@@ -39,7 +38,7 @@ describe('GitHub adapter — body-line dependency fallback (issue #46 regression
         blockedBy: { nodes: [{ number: 47, title: 'x', state: 'OPEN' }, { number: 48, title: 'y', state: 'OPEN' }] },
       }),
     ]).scan();
-    expect(t!.blockedBy.map((b) => b.number).sort((a, b) => a - b)).toEqual([47, 48]);
+    expect(t!.blockedBy.map((b) => b.ref).sort((a, b) => Number(a) - Number(b))).toEqual(['47', '48']);
   });
 
   it('a line with no dependency keyword yields no edges', async () => {
@@ -58,6 +57,6 @@ describe('GitHub adapter — body-line dependency fallback (issue #46 regression
     const [t] = await scanning([
       raw({ number: 65, body: 'Part of #70. Depends on: #59. Blocks: #64.' }),
     ]).scan();
-    expect(t!.blockedBy.map((b) => b.number)).toEqual([59]);
+    expect(t!.blockedBy.map((b) => b.ref)).toEqual(['59']);
   });
 });

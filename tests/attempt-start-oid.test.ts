@@ -10,7 +10,7 @@ import { AttemptStore } from '../src/domain/attempts.js';
 import { SessionStore } from '../src/domain/sessions.js';
 import { WorkspaceProvisioner } from '../src/execution/workspace-provisioner.js';
 import type { MergeCoordinator } from '../src/execution/merge-coordinator.js';
-import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { executionPlumbing, allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
@@ -56,6 +56,7 @@ describe('Attempt start captures startOid', () => {
       attempts,
       sessionStore: new SessionStore(asyncDb),
       mergeCoordinator: { resolveBaseBranch: async () => 'main' } as unknown as MergeCoordinator,
+      spawnProcessGroup: executionPlumbing().spawnProcessGroup,
       autoDrive: undefined,
       sessionRetirement: undefined,
       events: {},

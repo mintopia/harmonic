@@ -39,7 +39,7 @@ const updateStateSchema = z.object({
 });
 
 function assertPackaged(distributionMode: AppContext['distributionMode']): void {
-  if (distributionMode !== 'packaged') throw new DomainError('invalid_state', 'in-place upgrades are only available for packaged instances');
+  if (distributionMode !== 'packaged') throw new DomainError('not_packaged', 'in-place upgrades are only available for packaged instances');
 }
 
 export async function updateRoutes(

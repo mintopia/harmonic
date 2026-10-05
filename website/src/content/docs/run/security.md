@@ -48,3 +48,17 @@ See [CLI](/harmonic/run/cli/) and
 [Configuration](/harmonic/run/configuration/) for the `--password` and
 `--host` options, and [Settings & overrides](/harmonic/run/settings/) for
 in-app Permission Rules.
+
+## Secret key backup
+
+Workspace tokens for Forgejo and Jira are encrypted with an instance key
+stored in `secret.key` in the data directory. If the data directory is lost or
+corrupted, back up this file along with the database to recover. If the key
+file is lost, all stored tokens become unreadable.
+
+## Server error references
+
+When an unexpected server error occurs, the web UI shows a message like
+`internal server error (ref abc123def456)`. Search the Harmonic log (usually
+`~/.harmonic/harmonic.log` or `journalctl -u harmonic`) for that ref ID to
+find the logged error with its full stack trace.

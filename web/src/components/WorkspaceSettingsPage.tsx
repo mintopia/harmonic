@@ -8,6 +8,7 @@ import { firstPatternError, normalizeWorkspaceExport } from '../archive-export-m
 import { SettingsForm } from './SettingsForm';
 import type { AppConfig } from '../types';
 import type { WorkspaceRenderCtx } from './settings-schema';
+import { workspaceSavePatch } from '../workspace-save-model';
 import { workspaceTabs, type SettingTab } from '../../../src/domain/settings-registry.js';
 
 /**
@@ -66,52 +67,7 @@ export function WorkspaceSettingsPage({
     }
     const w = normalizeWorkspaceExport(local);
     try {
-      const updated = await api.updateWorkspace(w.id, {
-        name: w.name,
-        color: w.color,
-        trackerEnabled: w.trackerEnabled,
-        trackerPollIntervalSeconds: w.trackerPollIntervalSeconds,
-        harness: w.harness,
-        model: w.model,
-        chatHarness: w.chatHarness,
-        chatModel: w.chatModel,
-        isolationMode: w.isolationMode,
-        priority: w.priority,
-        conflictResolveTurns: w.conflictResolveTurns,
-        maxConcurrentAttempts: w.maxConcurrentAttempts,
-        autoRunnerEnabled: w.autoRunnerEnabled,
-        maxAttempts: w.maxAttempts,
-        contextReuseTokenLimit: w.contextReuseTokenLimit,
-        taskPreMergeCommands: w.taskPreMergeCommands,
-        taskPreMergeCritics: w.taskPreMergeCritics,
-        taskPostMergeCommands: w.taskPostMergeCommands,
-        taskPostMergeCritics: w.taskPostMergeCritics,
-        epicPreMergeCommands: w.epicPreMergeCommands,
-        epicPreMergeCritics: w.epicPreMergeCritics,
-        guardrailBudget: w.guardrailBudget,
-        guardrailProgress: w.guardrailProgress,
-        exportEnabled: w.exportEnabled,
-        exportDirectoryPath: w.exportDirectoryPath,
-        exportS3Endpoint: w.exportS3Endpoint,
-        exportS3Region: w.exportS3Region,
-        exportS3Bucket: w.exportS3Bucket,
-        exportS3Prefix: w.exportS3Prefix,
-        exportS3ForcePathStyle: w.exportS3ForcePathStyle,
-        exportS3AccessKeyId: w.exportS3AccessKeyId,
-        exportS3SecretAccessKey: w.exportS3SecretAccessKey,
-        exportRedactPatterns: w.exportRedactPatterns,
-        exportIncludeStates: w.exportIncludeStates,
-        archiveRetentionDays: w.archiveRetentionDays,
-        archiveRetentionMaxTotalMB: w.archiveRetentionMaxTotalMB,
-        toolTimeoutMinutes: w.toolTimeoutMinutes,
-        drivePrompt: w.drivePrompt,
-        driveUnattendedReminder: w.driveUnattendedReminder,
-        driveContinuePrompt: w.driveContinuePrompt,
-        driveMergeFate: w.driveMergeFate,
-        driveContinueAttempts: w.driveContinueAttempts,
-        taskPrompt: w.taskPrompt,
-        excludedDirectories: w.excludedDirectories,
-      });
+      const updated = await api.updateWorkspace(w.id, workspaceSavePatch(w));
       setPristine(updated);
       setLocal(updated);
       onSaved(updated);

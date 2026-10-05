@@ -1,3 +1,4 @@
+import { baselineConfig } from '../src/config.js';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +12,8 @@ import {
   resetCodeIndexAvailabilityForTest,
 } from '../src/execution/code-index.js';
 
+const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
+
 const FAKE_CLI = `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -23,11 +26,11 @@ process.exit(0);
 
 describe('codeIndexRepoGuidance (pure prompt fragment)', () => {
   it('renders nothing for an empty repo id', () => {
-    expect(codeIndexRepoGuidance('')).toBe('');
+    expect(codeIndexRepoGuidance('', { ...DEFAULT_PROMPT_FRAGMENTS })).toBe('');
   });
 
   it('names the repo id and forbids resolving the repo by `.`', () => {
-    const block = codeIndexRepoGuidance('local/run-7-abc123');
+    const block = codeIndexRepoGuidance('local/run-7-abc123', { ...DEFAULT_PROMPT_FRAGMENTS });
     expect(block).toContain('local/run-7-abc123');
     expect(block).toMatch(/do not resolve the repo by `\.`/i);
     expect(block).toMatch(/stale code/i);

@@ -4,6 +4,7 @@ import { SettingsStore } from './settings-store.js';
 import { TaskService } from '../domain/tasks.js';
 import { AttemptStore } from '../domain/attempts.js';
 import { TaskEventStore } from '../domain/task-events.js';
+import { AgentMessageStore } from '../domain/agent-messages.js';
 import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { ConversationStore } from '../domain/conversations.js';
 import { WorkspaceService } from '../domain/workspaces.js';
@@ -11,23 +12,27 @@ import { PermissionRuleStore } from '../domain/permission-rules.js';
 import { SessionStore } from '../domain/sessions.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
+import { SecretService } from '../secrets/secret-service.js';
+import { loadSecretKey } from '../secrets/secret-key.js';
 import { logger } from '../logger.js';
 import { ChannelService } from '../notifications/channels.js';
 import { NotificationStore } from '../notifications/notification-store.js';
 import { Notifier } from '../notifications/notifier.js';
 import { AuthService } from './auth.js';
 import { EventBus } from './bus.js';
-import { fireAndForget } from '../error-handling.js';
+import type { FireAndForget } from '../error-handling.js';
 
 export interface Stores {
   settingsStore: SettingsStore;
   workspaces: WorkspaceService;
   channels: ChannelService;
+  secrets: SecretService;
   notifier: Notifier;
   notifications: NotificationStore;
   tasks: TaskService;
   attempts: AttemptStore;
   taskEvents: TaskEventStore;
+  agentMessages: AgentMessageStore;
   epicMergeEvents: EpicMergeEventStore;
   guardrailEvents: GuardrailEventStore;
   verificationAttempts: VerificationAttemptStore;
@@ -41,12 +46,14 @@ export interface CreateStoresDeps {
   opts: Pick<AppOptions, 'dataDir' | 'configOverrides' | 'password'>;
   asyncDb: AsyncDbHandle;
   bus: EventBus;
+  fireAndForget: FireAndForget;
 }
 
-export async function createStores({ opts, asyncDb, bus }: CreateStoresDeps): Promise<Stores> {
+export async function createStores({ opts, asyncDb, bus, fireAndForget }: CreateStoresDeps): Promise<Stores> {
   const settingsStore = await SettingsStore.create(opts.dataDir, opts.configOverrides);
   const workspaces = new WorkspaceService(asyncDb, settingsStore);
   const channels = new ChannelService(asyncDb);
+  const secrets = new SecretService(asyncDb, loadSecretKey(opts.dataDir));
   const notifications = new NotificationStore(asyncDb, {
     created: (row) => bus.emit('notification_created', row),
     read: (ids) => bus.emit('notifications_read', { ids }),
@@ -71,9 +78,11 @@ export async function createStores({ opts, asyncDb, bus }: CreateStoresDeps): Pr
   );
   const attempts = new AttemptStore(asyncDb);
   const taskEvents = new TaskEventStore(asyncDb);
+  const agentMessages = new AgentMessageStore(asyncDb, (workspaceId) => bus.emit('agent_messages_changed', { workspaceId }));
   const epicMergeEvents = new EpicMergeEventStore(asyncDb);
   const guardrailEvents = new GuardrailEventStore(asyncDb);
   const verificationAttempts = new VerificationAttemptStore(asyncDb);
+  await verificationAttempts.backfillFullOutputKeys();
   const conversations = new ConversationStore(asyncDb, (conversation) => bus.emit('conversation_changed', conversation));
   const permissionRules = new PermissionRuleStore(asyncDb);
   const auth = new AuthService(asyncDb);
@@ -86,11 +95,13 @@ export async function createStores({ opts, asyncDb, bus }: CreateStoresDeps): Pr
     settingsStore,
     workspaces,
     channels,
+    secrets,
     notifier,
     notifications,
     tasks,
     attempts,
     taskEvents,
+    agentMessages,
     epicMergeEvents,
     guardrailEvents,
     verificationAttempts,

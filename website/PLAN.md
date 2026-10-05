@@ -9,7 +9,7 @@ Decision recorded in [ADR 0013](../docs/adr/0013-astro-starlight-for-the-docs-si
 ## Tooling & hosting
 
 - **Astro Starlight** in this `website/` directory.
-- Content **reuses** existing sources: `README.md`, `CONTEXT.md`, `PRODUCT.md`,
+- Content **reuses** existing sources: `README.md`, `GLOSSARY.md`, `PRODUCT.md`,
   `docs/**`, the ADRs.
 - Published to **GitHub Pages** via a `.github/workflows` action on push to `main`.
 - **Theme — light-touch Aurora**: accent cobalt `#2563EB` (light) / `#6E8BFF`
@@ -57,7 +57,7 @@ Decision recorded in [ADR 0013](../docs/adr/0013-astro-starlight-for-the-docs-si
 16. **CLI reference** — commands + options.
 17. **Configuration** — options + environment variables.
 18. **API reference** — OpenAPI-generated (see above).
-19. **Glossary** — from `CONTEXT.md`.
+19. **Glossary** — from `GLOSSARY.md`.
 
 ## Page 7 detail — the mattpocock skills integration
 
@@ -85,4 +85,4 @@ Tasks**, and for auto-run work injects the skill's slash-command (`/research`,
 ## Out of scope
 
 - Creating issues / slicing tickets / the build itself — handled via `/to-tickets`.
-- No `CONTEXT.md` changes: the docs consume the glossary, they do not extend it.
+- No `GLOSSARY.md` changes: the docs consume the glossary, they do not extend it.

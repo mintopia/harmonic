@@ -1,6 +1,6 @@
 // Explicit .js extensions: this module is shared with the node-side test
 // project, whose nodenext resolution requires them (Vite maps .js → .ts).
-import type { Task } from './types.js';
+import type { TaskListItem } from './types.js';
 import { request } from './api.js';
 
 /** Rows the table requests per page: the server slices the page and
@@ -46,6 +46,6 @@ export function tasksQuery(q: TableQuery): string {
  * non-OK response throws with the server's real message — the same
  * error path every other call in `api.ts` takes. Returns the page plus the
  * server's filtered `total`, which drives the pager. */
-export async function fetchTasks(q: TableQuery): Promise<{ tasks: Task[]; total: number }> {
-  return request<{ tasks: Task[]; total: number }>('GET', `/api/tasks?${tasksQuery(q)}`);
+export async function fetchTasks(q: TableQuery): Promise<{ tasks: TaskListItem[]; total: number }> {
+  return request<{ tasks: TaskListItem[]; total: number }>('GET', `/api/tasks?${tasksQuery(q)}`);
 }

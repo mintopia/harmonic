@@ -1,7 +1,11 @@
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { basename, join } from 'node:path';
+import { basename, isAbsolute, join } from 'node:path';
+import { z } from 'zod';
+import { parseBlockedByField } from './relationships.js';
+import type { TrackerKind } from './kind.js';
 import { type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
+import { type TrackerRef, trackerRef } from './ref.js';
 
 /** A `**Status:**` word that means the ticket is done. */
 const CLOSED_STATUS = /\b(done|closed|complete|completed|merged|shipped)\b/i;
@@ -65,31 +69,35 @@ export function localMarkdownAdapter(
     name: 'local-markdown',
     persistsInWorkingTree: true,
 
+    async identify() {
+      return 'local files';
+    },
+
     async scan() {
       return synthesise(await parseAll(dir, opts.featureIndex));
     },
 
     async readTicket(ref: TicketRef) {
-      const found = (await synthesise(await parseAll(dir, opts.featureIndex))).find((t) => t.number === ref.number);
-      if (!found) throw new Error(`local-markdown: no ticket #${ref.number} under ${dir}`);
+      const found = (await synthesise(await parseAll(dir, opts.featureIndex))).find((t) => t.ref === ref.ref);
+      if (!found) throw new Error(`local-markdown: no ticket #${ref.ref} under ${dir}`);
       return found;
     },
 
     async claim() {},
     async release() {},
     async close(ticket) {
-      return { changedPaths: [await writeStatus(dir, ticket.number, 'closed', opts.featureIndex)] };
+      return { changedPaths: [await writeStatus(dir, ticket.ref, 'closed', opts.featureIndex)] };
     },
     async reopen(ticket) {
-      return { changedPaths: [await writeStatus(dir, ticket.number, 'open', opts.featureIndex)] };
+      return { changedPaths: [await writeStatus(dir, ticket.ref, 'open', opts.featureIndex)] };
     },
 
   };
 }
 
 /** Persist one lifecycle state through the adapter-owned Status field; returns the ticket file's absolute path so the caller can commit it. */
-async function writeStatus(root: string, ticketNumber: number, status: string, featureIndex?: FeatureIndex): Promise<string> {
-  const ticket = (await parseAll(root, featureIndex)).find((parsed) => parsed.id === ticketNumber && !parsed.isMap);
+async function writeStatus(root: string, ticketNumber: TrackerRef, status: string, featureIndex?: FeatureIndex): Promise<string> {
+  const ticket = (await parseAll(root, featureIndex)).find((parsed) => trackerRef(parsed.id) === ticketNumber && !parsed.isMap);
   if (!ticket) throw new Error(`local-markdown: no ticket #${ticketNumber} under ${root}`);
   const raw = await readFile(ticket.path, 'utf8');
   const field = `**Status:** ${status}`;
@@ -211,10 +219,7 @@ function parse(raw: string, id: number, path: string, mtime: string, parent: num
         ? 'closed'
         : 'open';
 
-  const blockedLine = raw.match(/^\s*\*\*Blocked by:\*\*\s*(.+?)\s*$/im)?.[1] ?? '';
-  const blockedBy = /\bnone\b/i.test(blockedLine)
-    ? []
-    : [...blockedLine.matchAll(/\d+/g)].map((m) => base + parseInt(m[0]!, 10));
+  const blockedBy = parseBlockedByField(raw).map((n) => base + n);
 
   return {
     id,
@@ -262,7 +267,7 @@ function synthesise(files: Parsed[]): Ticket[] {
   const byId = new Map(files.map((f) => [f.id, f]));
   const ref = (id: number): TicketRef | null => {
     const f = byId.get(id);
-    return f ? { number: f.id, title: f.title, state: f.state } : null;
+    return f ? { ref: trackerRef(f.id), title: f.title, state: f.state } : null;
   };
   const blockedBy = new Map<number, Set<number>>(
     files.map((f) => [f.id, new Set(f.blockedBy.filter((b) => byId.has(b)))]),
@@ -272,7 +277,7 @@ function synthesise(files: Parsed[]): Ticket[] {
   const refs = (ids: Set<number>): TicketRef[] => [...ids].map(ref).filter((r): r is TicketRef => r !== null);
 
   return files.map((f) => ({
-    number: f.id,
+    ref: trackerRef(f.id),
     title: f.title,
     state: f.state,
     body: f.body,
@@ -280,11 +285,24 @@ function synthesise(files: Parsed[]): Ticket[] {
     closedAt: f.closedAt,
     labels: f.labels,
     assignees: [],
-    parent: f.parent !== null && byId.has(f.parent) ? f.parent : null,
+    parent: f.parent !== null && byId.has(f.parent) ? trackerRef(f.parent) : null,
     blockedBy: refs(blockedBy.get(f.id)!),
     blocking: refs(blocking.get(f.id)!),
-    comments: [],
     isMap: f.isMap,
     url: pathToFileURL(f.path).href,
   }));
 }
+
+export const localMarkdownKind: TrackerKind<{ path: string }> = {
+  id: 'local-markdown',
+  label: 'Local Markdown',
+  settings: z.object({ path: z.string().min(1).default('.scratch').meta({ title: 'Folder', description: 'The folder in the repository that holds the Markdown tickets.' }) }).strict(),
+  secretNames: [],
+  capabilities: { close: true, reopen: true, claim: false, transition: false, epicSources: ['spec'] },
+  formatRef: (ref) => `#${ref}`,
+  fromDeclaration: (doc) => ({ path: doc.match(/^\s*Path:\s*(.+?)\s*$/im)?.[1] }),
+  create: ({ settings, repoRoot, featureIndex }) =>
+    localMarkdownAdapter(isAbsolute(settings.path) ? settings.path : join(repoRoot, settings.path), {
+      ...(featureIndex && { featureIndex }),
+    }),
+};

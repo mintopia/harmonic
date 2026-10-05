@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { trackerRef } from '../src/tracker/adapter.js';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -14,6 +15,7 @@ import type { EpicExportStep } from '../src/domain/epic-merge-events.js';
 import { TaskExporter, type EpicExportSnapshot, type ExportFailure, type TaskExporterDeps } from '../src/archive/task-export.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import { emptyGitProvenance } from '../src/archive/git-provenance.js';
+import { BackgroundWork } from '../src/error-handling.js';
 
 const EPIC = 77;
 
@@ -46,12 +48,13 @@ describe('Epic Export (#739)', () => {
   const snapshot = (): EpicExportSnapshot => ({
     ticket: { title: 'Epic title', ref: EPIC },
     timeline: { events: [{ kind: 'integrated' }], attempts: [{ number: 1 }] },
-    attemptCount: 1,
-    members: [...members.map((task) => ({ ref: task.trackerRef!, task })), { ref: 999, task: null }],
+    agentMessages: [], attemptCount: 1,
+    members: [...members.map((task) => ({ ref: task.trackerRef!, task })), { ref: trackerRef(999), task: null }],
   });
 
   const exporter = (overrides: Partial<TaskExporterDeps> = {}): TaskExporter =>
     new TaskExporter({
+      fireAndForget: new BackgroundWork().fireAndForget,
       dataDir: dir,
       archive,
       version: '9.9.9',
@@ -59,7 +62,7 @@ describe('Epic Export (#739)', () => {
       epicSettings: async () => resolveExportSettings(config(dest, enabled), undefined),
       epicSnapshot: async () => snapshot(),
       workspaceName: async () => 'My Workspace',
-      snapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, git: emptyGitProvenance() }),
+      snapshot: async () => ({ ticket: {}, timeline: {}, agentMessages: [], attemptCount: 0, git: emptyGitProvenance() }),
       recordEpicStep: async () => undefined,
       recordFact: async () => undefined,
       ...overrides,
@@ -81,7 +84,7 @@ describe('Epic Export (#739)', () => {
     const second = await tasks.create({ prompt: 'member two', state: 'ready', workingDir: dir, isolationMode: 'direct' });
     workspaceId = first.workspaceId!;
     const tracked = async (task: TaskRow, ref: number, state: 'done' | 'working'): Promise<TaskRow> => {
-      await asyncDb.write((db) => db.update(tasksTable).set({ trackerRef: ref, state }).where(eq(tasksTable.id, task.id)).run());
+      await asyncDb.write((db) => db.update(tasksTable).set({ trackerRef: trackerRef(ref), state }).where(eq(tasksTable.id, task.id)).run());
       return tasks.get(task.id);
     };
     members = [await tracked(first, 11, 'done'), await tracked(second, 12, 'working')];
@@ -92,12 +95,12 @@ describe('Epic Export (#739)', () => {
     mkdirSync(join(memberDir, 'attempts', '1', 'implementation'), { recursive: true });
     writeFileSync(join(memberDir, 'attempts', '1', 'implementation', 'prompt.md'), 'MEMBER SECRET');
 
-    const epicDir = await archive.ensureEpic(workspaceId, EPIC);
+    const epicDir = await archive.ensureEpic(workspaceId, trackerRef(EPIC));
     const critic = join(epicDir, 'attempts', '1', 'verification', 'pre-merge', '5');
     mkdirSync(critic, { recursive: true });
     writeFileSync(join(critic, 'prompt.md'), 'critic prompt');
-    const log = await archive.epicVerificationOutputLog(workspaceId, EPIC, 1, 'cmd-test');
-    writeFileSync(log!, 'command output');
+    const log = await archive.epicVerificationOutputLog(workspaceId, trackerRef(EPIC), 1, 'cmd-test');
+    writeFileSync(log!.path, 'command output');
   });
 
   afterEach(async () => {
@@ -107,7 +110,7 @@ describe('Epic Export (#739)', () => {
 
   it('puts Epic Attempt verification and Critic outputs, timeline and referenced Members in the tarball', async () => {
     await archive.recordExport(members[0]!, { destination: 'directory', disposition: 'done', file: '/x/y/11-done-A.tar.gz', status: 'succeeded', at: 't' });
-    const outcome = await exporter().runEpic(workspaceId, EPIC, 'done');
+    const outcome = await exporter().runEpic(workspaceId, trackerRef(EPIC), 'done');
 
     expect(outcome?.map((o) => o.status)).toEqual(['succeeded']);
     const names = tarballs();
@@ -118,6 +121,7 @@ describe('Epic Export (#739)', () => {
     try {
       expect(listAll(out)).toEqual([
         'README.md',
+        'agent-messages.json',
         'archive.json',
         'attempts/1/verification/pre-merge/5/prompt.md',
         'attempts/1/verification/pre-merge/cmd-test/output.log',
@@ -129,11 +133,11 @@ describe('Epic Export (#739)', () => {
       expect(readFileSync(join(out, 'attempts/1/verification/pre-merge/cmd-test/output.log'), 'utf8')).toBe('command output');
       expect(JSON.parse(readFileSync(join(out, 'timeline.json'), 'utf8'))).toEqual({ events: [{ kind: 'integrated' }], attempts: [{ number: 1 }] });
       const manifest = JSON.parse(readFileSync(join(out, 'manifest.json'), 'utf8'));
-      expect(manifest).toMatchObject({ format: 'harmonic-epic-export', epicRef: EPIC, disposition: 'done', workspace: 'My Workspace', partial: false });
+      expect(manifest).toMatchObject({ format: 'harmonic-epic-export', epicRef: String(EPIC), disposition: 'done', workspace: 'My Workspace', partial: false });
       expect(manifest.members).toEqual([
-        { ref: 11, taskId: members[0]!.id, status: 'done', export: '11-done-A.tar.gz' },
-        { ref: 12, taskId: members[1]!.id, status: 'working', export: null },
-        { ref: 999, taskId: null, status: null, export: null },
+        { ref: '11', taskId: members[0]!.id, status: 'done', export: '11-done-A.tar.gz' },
+        { ref: '12', taskId: members[1]!.id, status: 'working', export: null },
+        { ref: '999', taskId: null, status: null, export: null },
       ]);
       expect(readFileSync(join(out, 'README.md'), 'utf8')).toContain('| #11 | done | `11-done-A.tar.gz` |');
       for (const file of listAll(out)) {
@@ -151,9 +155,9 @@ describe('Epic Export (#739)', () => {
 
   it('skips a repeated done Export for an Epic that already has a succeeded one', async () => {
     const ex = exporter();
-    expect((await ex.runEpic(workspaceId, EPIC, 'done'))?.[0]?.status).toBe('succeeded');
-    expect(await ex.runEpic(workspaceId, EPIC, 'done')).toBeNull();
-    ex.triggerEpic(workspaceId, EPIC, 'done');
+    expect((await ex.runEpic(workspaceId, trackerRef(EPIC), 'done'))?.[0]?.status).toBe('succeeded');
+    expect(await ex.runEpic(workspaceId, trackerRef(EPIC), 'done')).toBeNull();
+    ex.triggerEpic(workspaceId, trackerRef(EPIC), 'done');
     await new Promise((r) => setTimeout(r, 100));
     expect(tarballs()).toHaveLength(1);
   });
@@ -161,7 +165,7 @@ describe('Epic Export (#739)', () => {
   it('captures the snapshot synchronously at trigger time', async () => {
     let title = 'before';
     const ex = exporter({ epicSnapshot: async () => ({ ...snapshot(), ticket: { title } }) });
-    ex.triggerEpic(workspaceId, EPIC, 'done');
+    ex.triggerEpic(workspaceId, trackerRef(EPIC), 'done');
     title = 'after';
     for (let i = 0; i < 200 && tarballs().length === 0; i++) await new Promise((r) => setTimeout(r, 25));
     const out = extract(join(dest, 'my-workspace', tarballs()[0]!));
@@ -174,13 +178,13 @@ describe('Epic Export (#739)', () => {
 
   it('builds nothing when Export is disabled', async () => {
     enabled = false;
-    expect(await exporter().runEpic(workspaceId, EPIC, 'done')).toBeNull();
+    expect(await exporter().runEpic(workspaceId, trackerRef(EPIC), 'done')).toBeNull();
     expect(tarballs()).toEqual([]);
   });
 
   it('records a failed Export and does not throw when the snapshot fails', async () => {
     const failing = exporter({ epicSnapshot: async () => { throw new Error('snapshot boom'); } });
-    const outcome = await failing.runEpic(workspaceId, EPIC, 'done');
+    const outcome = await failing.runEpic(workspaceId, trackerRef(EPIC), 'done');
     expect(outcome).toMatchObject([{ status: 'failed', error: 'snapshot boom' }]);
     const history = JSON.parse(readFileSync(join(dir, 'archive', 'my-workspace', `epic-${EPIC}`, 'archive.json'), 'utf8')).exports;
     expect(history.at(-1)).toMatchObject({ status: 'failed' });
@@ -193,11 +197,11 @@ describe('Epic Export (#739)', () => {
     const ex = exporter({
       snapshot: async () => {
         await gate;
-        return { ticket: {}, timeline: {}, attemptCount: 0, git: emptyGitProvenance() };
+        return { ticket: {}, timeline: {}, agentMessages: [], attemptCount: 0, git: emptyGitProvenance() };
       },
     });
     ex.trigger(member, 'done');
-    ex.triggerEpic(workspaceId, EPIC, 'done');
+    ex.triggerEpic(workspaceId, trackerRef(EPIC), 'done');
     await new Promise((r) => setTimeout(r, 50));
     expect(tarballs()).toEqual([]);
     release();
@@ -244,13 +248,13 @@ describe('Epic Export (#739)', () => {
 
     it('records the failure, reports it for the Epic and retries to success once the Destination heals', async () => {
       const ex = sut();
-      const outcomes = await ex.runEpic(workspaceId, EPIC, 'done');
+      const outcomes = await ex.runEpic(workspaceId, trackerRef(EPIC), 'done');
       expect(outcomes?.map((o) => o.status)).toEqual(['failed']);
       expect(failures).toHaveLength(1);
-      expect(failures[0]).toMatchObject({ owner: { kind: 'epic', workspaceId, epicRef: EPIC }, destination: 'directory', retry: 0, nextRetryAt: new Date(clock + 5 * MIN).toISOString() });
+      expect(failures[0]).toMatchObject({ owner: { kind: 'epic', workspaceId, epicRef: String(EPIC) }, destination: 'directory', retry: 0, nextRetryAt: new Date(clock + 5 * MIN).toISOString() });
       expect(staging().filter((n) => n.endsWith('.pending.json'))).toHaveLength(1);
       expect([...(await ex.pendingOwnerKeys())]).toEqual([`epic:${workspaceId}:${EPIC}`]);
-      expect((await ex.epicStatus(workspaceId, EPIC)).latest?.destinations[0]).toMatchObject({ status: 'failed', retry: { count: 0, nextRetryAt: new Date(clock + 5 * MIN).toISOString(), exhausted: false } });
+      expect((await ex.epicStatus(workspaceId, trackerRef(EPIC))).latest?.destinations[0]).toMatchObject({ status: 'failed', retry: { count: 0, nextRetryAt: new Date(clock + 5 * MIN).toISOString(), exhausted: false } });
 
       rmSync(blocked, { force: true });
       mkdirSync(blocked);
@@ -271,16 +275,16 @@ describe('Epic Export (#739)', () => {
     it('exports again regardless of an earlier succeeded Export and downloads without recording', async () => {
       rmSync(blocked, { force: true });
       const ex = sut();
-      expect((await ex.runEpic(workspaceId, EPIC, 'done'))?.[0]?.status).toBe('succeeded');
+      expect((await ex.runEpic(workspaceId, trackerRef(EPIC), 'done'))?.[0]?.status).toBe('succeeded');
       clock += MIN;
-      expect((await ex.exportEpicAgain(workspaceId, EPIC))?.[0]?.status).toBe('succeeded');
+      expect((await ex.exportEpicAgain(workspaceId, trackerRef(EPIC)))?.[0]?.status).toBe('succeeded');
       expect(tarballs()).toHaveLength(2);
-      const download = await ex.buildEpicDownload(workspaceId, EPIC);
+      const download = await ex.buildEpicDownload(workspaceId, trackerRef(EPIC));
       expect(download.name).toMatch(new RegExp(`^epic-${EPIC}-done-`));
       expect(existsSync(download.path)).toBe(true);
       rmSync(download.path, { force: true });
       expect(history()).toHaveLength(2);
-      expect((await ex.epicStatus(workspaceId, EPIC)).earlier).toHaveLength(1);
+      expect((await ex.epicStatus(workspaceId, trackerRef(EPIC))).earlier).toHaveLength(1);
     });
   });
 });

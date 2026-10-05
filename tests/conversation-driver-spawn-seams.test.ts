@@ -13,6 +13,7 @@ import { DomainError } from '../src/domain/errors.js';
 import type { ConversationStore } from '../src/domain/conversations.js';
 import type { ConversationRow } from '../src/db/schema.js';
 import type { AppConfig, HarnessConfig } from '../src/config.js';
+import { BackgroundWork } from '../src/error-handling.js';
 
 class FakeHarnessChild extends EventEmitter {
   stdin = new PassThrough();
@@ -85,6 +86,7 @@ describe('ConversationDriver — spawning a harness through the injected seams',
     const driver = new ConversationDriver(fakeStore(row), fakeConfig({ claude: harnessConfig() }), {
       fs,
       processSpawn,
+      fireAndForget: new BackgroundWork().fireAndForget,
       timers,
     });
 
@@ -104,7 +106,7 @@ describe('ConversationDriver — spawning a harness through the injected seams',
   it('rejects with a validation error when the conversation harness is not configured, and never spawns a harness', async () => {
     const row = conversationRow({ harness: 'claude' });
     const { fs, processSpawn, timers } = fakeSeams();
-    const driver = new ConversationDriver(fakeStore(row), fakeConfig({}), { fs, processSpawn, timers });
+    const driver = new ConversationDriver(fakeStore(row), fakeConfig({}), { fs, processSpawn, timers, fireAndForget: new BackgroundWork().fireAndForget });
 
     let caught: unknown;
     try {
@@ -130,6 +132,7 @@ describe('ConversationDriver — spawning a harness through the injected seams',
     const driver = new ConversationDriver(fakeStore(row), fakeConfig({ claude: configuredHarness }), {
       fs,
       processSpawn,
+      fireAndForget: new BackgroundWork().fireAndForget,
       timers,
     });
 

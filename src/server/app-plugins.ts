@@ -28,7 +28,8 @@ export async function registerPlugins(app: App): Promise<void> {
     try {
       done(null, JSON.parse(text));
     } catch (err) {
-      done(err as Error, undefined);
+      const parseError = Object.assign(err instanceof Error ? err : new Error(String(err)), { statusCode: 400 });
+      done(parseError, undefined);
     }
   });
   const pkg = readPackageManifest();

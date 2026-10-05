@@ -1,4 +1,5 @@
-import { taskLabel } from './id-format.js';
+import { epicLabel, taskLabel } from './id-format.js';
+import type { ExportOwner } from './ws.js';
 import type { ExportDestinationKind, ExportDestinationStatus, ExportSummary, TaskExportAgainResult, TaskExportStatus } from './types.js';
 
 export const DESTINATION_LABEL: Record<ExportDestinationKind, string> = { directory: 'Directory', s3: 'S3' };
@@ -75,8 +76,7 @@ function retryText(retry: NonNullable<ExportDestinationStatus['retry']>, now: nu
   const upcoming = Math.min(retry.count + 1, retry.max);
   const at = retry.nextRetryAt === null ? Number.NaN : Date.parse(retry.nextRetryAt);
   if (Number.isNaN(at)) return { text: `Retry ${upcoming} of ${retry.max} pending`, exhausted: false };
-  const minutes = Math.max(0, Math.ceil((at - now) / 60_000));
-  return { text: `Retry ${upcoming} of ${retry.max} ${minutes === 0 ? 'due now' : `in ${formatMinutes(minutes)}`}`, exhausted: false };
+  return { text: `Retry ${upcoming} of ${retry.max} ${at <= now ? 'due now' : `at ${formatClock(at)}`}`, exhausted: false };
 }
 
 export function destinationRow(d: ExportDestinationStatus, now: number): DestinationRow {
@@ -180,8 +180,8 @@ function str(value: unknown): string | null {
 function failedRetrySentence(retry: number, nextRetryAt: string | null): string {
   const delay = RETRY_DELAY_MIN[retry];
   const parsed = nextRetryAt === null ? Number.NaN : Date.parse(nextRetryAt);
-  // Facts recorded before nextRetryAt existed only know the scheduled delay.
-  const when = Number.isNaN(parsed) ? (delay === undefined ? null : `in ${formatMinutes(delay)}`) : `at ${formatClock(parsed)}`;
+  const legacyRetryFromDelay = delay === undefined ? null : `in ${formatMinutes(delay)}`;
+  const when = Number.isNaN(parsed) ? legacyRetryFromDelay : `at ${formatClock(parsed)}`;
   if (retry === 0) return when === null ? `Retry 1 of ${RETRY_MAX}.` : `Retry 1 of ${RETRY_MAX} ${when}.`;
   const done = `Retry ${Math.min(retry, RETRY_MAX)} of ${RETRY_MAX}.`;
   return delay === undefined || when === null ? `${done} Retries exhausted.` : `${done} Next: retry ${retry + 1} of ${RETRY_MAX} ${when}.`;
@@ -191,9 +191,25 @@ function formatClock(ms: number): string {
   return new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
+export function exportOutcomeRow(payload: Record<string, unknown>): ExportFactRow {
+  const destination = destinationLabel(str(payload.destination) ?? 'destination');
+  if (payload.status !== 'failed') {
+    return { label: `Export delivered · ${destination}`, detail: str(payload.file), tone: 'passed', tag: 'EXPORT' };
+  }
+  const { code, rest } = splitExportError(str(payload.error));
+  const retry = typeof payload.retry === 'number' ? payload.retry : 0;
+  const sentence = failedRetrySentence(retry, str(payload.nextRetryAt));
+  const cause = clipText(rest);
+  return {
+    label: `Export failed · ${destination}${code ? ` — ${code}` : ''}`,
+    detail: cause ? `${cause.replace(/\.$/, '')}. ${sentence}` : sentence,
+    tone: 'failed',
+    tag: 'EXPORT',
+  };
+}
+
 /** Timeline rows for one recorded `export` lifecycle fact; the first fact of a build is preceded by an "Export built" row. */
 export function exportFactRows(payload: Record<string, unknown>, builtAlreadyShown: boolean): ExportFactRow[] {
-  const destination = destinationLabel(str(payload.destination) ?? 'destination');
   const rows: ExportFactRow[] = [];
   const name = str(payload.name);
   const builtAt = str(payload.builtAt);
@@ -205,31 +221,18 @@ export function exportFactRows(payload: Record<string, unknown>, builtAlreadySho
     const parts = [name, formatBytes(typeof payload.bytes === 'number' ? payload.bytes : null), redactions?.label ?? null].filter((p): p is string => p !== null);
     rows.push({ label: 'Export built', detail: parts.join(' · '), tone: 'neutral', tag: 'EXPORT', ...(Number.isNaN(parsed) ? {} : { at: parsed }) });
   }
-  if (payload.status === 'failed') {
-    const { code, rest } = splitExportError(str(payload.error));
-    const retry = typeof payload.retry === 'number' ? payload.retry : 0;
-    const sentence = failedRetrySentence(retry, str(payload.nextRetryAt));
-    const cause = clipText(rest);
-    rows.push({
-      label: `Export failed · ${destination}${code ? ` — ${code}` : ''}`,
-      detail: cause ? `${cause.replace(/\.$/, '')}. ${sentence}` : sentence,
-      tone: 'failed',
-      tag: 'EXPORT',
-    });
-  } else {
-    rows.push({ label: `Export delivered · ${destination}`, detail: str(payload.file), tone: 'passed', tag: 'EXPORT' });
-  }
+  rows.push(exportOutcomeRow(payload));
   return rows;
 }
 
 function exportRetryText(retry: number, nextRetryAt: string | null): string {
-  if (nextRetryAt === null) return retry === 0 ? 'not retried' : 'retries exhausted';
-  const minutes = Math.max(1, Math.round((Date.parse(nextRetryAt) - Date.now()) / 60_000));
-  return minutes >= 120 ? `retrying in ${Math.round(minutes / 60)} h` : `retrying in ${minutes} min`;
+  const at = nextRetryAt === null ? Number.NaN : Date.parse(nextRetryAt);
+  if (Number.isNaN(at)) return retry === 0 ? 'not retried' : 'retries exhausted';
+  return `retrying at ${formatClock(at)}`;
 }
 
 /** Toast text for a pushed `export_failed`: names the Task or Epic that was being exported. */
-export function exportFailedMessage(msg: { taskId: number | null; epicRef: number | null; destination: string; retry: number; nextRetryAt: string | null }): string {
-  const subject = msg.taskId !== null ? taskLabel(msg.taskId) : `Epic #${msg.epicRef}`;
+export function exportFailedMessage(msg: { owner: ExportOwner; destination: string; retry: number; nextRetryAt: string | null }): string {
+  const subject = msg.owner.kind === 'task' ? taskLabel(msg.owner.taskId) : epicLabel(msg.owner.epicRef);
   return `Export of ${subject} to ${destinationLabel(msg.destination)} failed — ${exportRetryText(msg.retry, msg.nextRetryAt)}`;
 }

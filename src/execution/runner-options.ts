@@ -1,4 +1,7 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import type { TaskArchive } from '../archive/task-archive.js';
+import type { PromptFragmentOverrideKey } from '../domain/prompt-fragments.js';
+import type { AgentMessageStore } from '../domain/agent-messages.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { TailerCadence } from './live-usage-tailer.js';
 import type { GitCircuitBreaker } from './git-failure.js';
@@ -9,6 +12,9 @@ import type { PersistedAttemptEvent } from '../domain/attempts.js';
 import type { LiveAttemptEvent } from './live-events.js';
 import type { AttemptUsageSnapshot } from './usage.js';
 import { type CriticHarnessDrive } from '../verification/critic.js';
+import type { CommandSpawn } from '../verification/command-verifier.js';
+import type { SpawnProcessGroup } from './process-groups.js';
+import type { FireAndForget } from '../error-handling.js';
 
 export interface RunnerEvents {
   /** Fired after every run event is persisted (live streaming hook). */
@@ -28,7 +34,7 @@ export interface RunnerEvents {
   onStepChanged?: (taskId: number) => void;
   /** Fired after each Epic integration-merge step is persisted, so the Epic's
    * merge progress can follow live (Epics have no Attempt row to stream). */
-  onEpicMergeStep?: (payload: { workspaceId: number; epicRef: number }) => void;
+  onEpicMergeStep?: (payload: { workspaceId: number; epicRef: TrackerRef }) => void;
   /** Fired after a Task-level lifecycle event (no owning Attempt) is
    * persisted, so the ticket timeline can follow live. */
   onTaskEvent?: (taskId: number) => void;
@@ -41,6 +47,8 @@ export interface TaskEventAppender {
 }
 
 export interface RunnerOptions {
+  /** Held Agent Messages injected at Attempt start. */
+  agentMessages?: AgentMessageStore;
   archive?: TaskArchive;
   isGloballyPaused?: () => boolean;
   onGloballyPaused?: (taskId: number) => Promise<void>;
@@ -81,13 +89,22 @@ export interface RunnerOptions {
         | 'contextReuseTokenLimit'
         | 'taskPrompt'
         | 'pauseMessage'
+        | PromptFragmentOverrideKey
+        | 'agentMessagesEnabled'
+        | 'driveCommitNudge'
+        | 'mergeConflictPrompt'
+        | 'mergeEpicConflictPrompt'
+        | 'mergeEpicRefreshPrompt'
+        | 'verifyEpicResolveSuffix'
       > &
         Partial<Pick<WorkspaceRow, 'workingDir'>>)
     | undefined
   >;
-  /** Injectable agent-critic drive; absent → the real drive spawns the
-   * builder's configured harness as a contained read-only reviewer. */
-  criticDrive?: CriticHarnessDrive | undefined;
+  /** The agent-critic drive; the real one spawns the builder's configured harness as a contained read-only reviewer. */
+  criticDrive: CriticHarnessDrive;
+  commandSpawn: CommandSpawn;
+  spawnProcessGroup: SpawnProcessGroup;
+  fireAndForget: FireAndForget;
   /** Session retirement hook; absent → Sessions are never retired. */
   sessionRetirement?: SessionRetirementHook;
   onFailedAttemptRequeued?: (task: TaskRow, reason: string) => void;

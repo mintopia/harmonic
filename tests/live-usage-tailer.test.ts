@@ -3,6 +3,7 @@ import { LiveUsageTailer } from '../src/execution/live-usage-tailer.js';
 import { activityLine, type AttemptUsageSnapshot } from '../src/execution/usage.js';
 import { currentTurnEvents } from '../src/domain/replay-quarantine.js';
 import type { QuarantinableEvent } from '../src/domain/replay-quarantine.js';
+import { BackgroundWork } from '../src/error-handling.js';
 
 const snap = (activity: string | null): AttemptUsageSnapshot => ({
   usage: { models: {}, totals: null, toolCalls: {}, source: 'session-log' },
@@ -20,7 +21,7 @@ describe('LiveUsageTailer cadence (ADR 0010)', () => {
     const emit = vi.fn();
     const persist = vi.fn();
     const tailer = new LiveUsageTailer(
-      { sample: async () => current, emit, persist },
+      { sample: async () => current, emit, persist }, new BackgroundWork().fireAndForget,
       { pushMs: 1000, persistMs: 10_000 },
     );
     tailer.start(1);
@@ -39,7 +40,7 @@ describe('LiveUsageTailer cadence (ADR 0010)', () => {
     vi.useFakeTimers();
     const emit = vi.fn();
     const persist = vi.fn();
-    const tailer = new LiveUsageTailer({ sample: async () => snap('done'), emit, persist }, { pushMs: 1000, persistMs: 10_000 });
+    const tailer = new LiveUsageTailer({ sample: async () => snap('done'), emit, persist }, new BackgroundWork().fireAndForget, { pushMs: 1000, persistMs: 10_000 });
     tailer.start(1);
     await tailer.stop(1);
     expect(emit).toHaveBeenCalledTimes(1);
@@ -52,7 +53,7 @@ describe('LiveUsageTailer cadence (ADR 0010)', () => {
     vi.useFakeTimers();
     const emit = vi.fn();
     const persist = vi.fn();
-    const tailer = new LiveUsageTailer({ sample: async () => null, emit, persist }, { pushMs: 1000, persistMs: 10_000 });
+    const tailer = new LiveUsageTailer({ sample: async () => null, emit, persist }, new BackgroundWork().fireAndForget, { pushMs: 1000, persistMs: 10_000 });
     tailer.start(1);
     await vi.advanceTimersByTimeAsync(30_000);
     await tailer.stop(1);
@@ -68,7 +69,7 @@ describe('LiveUsageTailer cadence (ADR 0010)', () => {
       calls++;
       return new Promise<AttemptUsageSnapshot>((r) => (resolve = r));
     });
-    const tailer = new LiveUsageTailer({ sample, emit: vi.fn(), persist: vi.fn() }, { pushMs: 1000, persistMs: 10_000 });
+    const tailer = new LiveUsageTailer({ sample, emit: vi.fn(), persist: vi.fn() }, new BackgroundWork().fireAndForget, { pushMs: 1000, persistMs: 10_000 });
     tailer.start(1);
     await vi.advanceTimersByTimeAsync(3_000);
     expect(calls).toBe(1);
@@ -150,7 +151,7 @@ describe('replay quarantine at the live-usage boundary (issue #144)', () => {
     const emit = vi.fn();
     const persist = vi.fn();
     const tailer = new LiveUsageTailer(
-      { sample: async () => sampleFromLog(allReplay), emit, persist },
+      { sample: async () => sampleFromLog(allReplay), emit, persist }, new BackgroundWork().fireAndForget,
       { pushMs: 1000, persistMs: 10_000 },
     );
     tailer.start(1);

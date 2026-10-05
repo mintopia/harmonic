@@ -3,7 +3,7 @@ import { api, ApiError } from './api';
 import { boardSections } from './board-sections-model';
 import { debounce } from './debounce';
 import type { Epic } from './epic-model';
-import { taskLabel } from './id-format.js';
+import { epicLabel, taskLabel } from './id-format.js';
 import { exportFailedMessage } from './task-export-model.js';
 import {
   advanceReviewAnnouncements,
@@ -87,6 +87,9 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
   const updateRequest = useRef(0);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
+  const [workspacesError, setWorkspacesError] = useState<string | null>(null);
+  const [workspaceRetryKey, setWorkspaceRetryKey] = useState(0);
+  const retryWorkspaces = useCallback(() => setWorkspaceRetryKey((key) => key + 1), []);
   const [epics, setEpics] = useState<Epic[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [refreshingTracker, setRefreshingTracker] = useState(false);
@@ -95,14 +98,30 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
   const [taskNotFound, setTaskNotFound] = useState(false);
 
   const failStreak = useRef(0);
+  const taskRequest = useRef(0);
+  const epicRequest = useRef(0);
+  const currentWorkspaceId = useRef<number | null>(null);
+  useEffect(() => {
+    currentWorkspaceId.current = authed ? activeWorkspaceId : null;
+    taskRequest.current += 1;
+    epicRequest.current += 1;
+    return () => {
+      currentWorkspaceId.current = null;
+      taskRequest.current += 1;
+      epicRequest.current += 1;
+    };
+  }, [authed, activeWorkspaceId]);
   const refresh = useCallback(async () => {
-    if (activeWorkspaceId === null) return;
+    if (activeWorkspaceId === null || activeWorkspaceId !== currentWorkspaceId.current) return;
+    const request = ++taskRequest.current;
     try {
       const tasks = await fetchOpenTasks(apiImpl, activeWorkspaceId);
+      if (request !== taskRequest.current || activeWorkspaceId !== currentWorkspaceId.current) return;
       setTasks(tasks);
       failStreak.current = 0;
       setError(null);
     } catch (e) {
+      if (request !== taskRequest.current || activeWorkspaceId !== currentWorkspaceId.current) return;
       failStreak.current += 1;
       if (failStreak.current >= 2) setError(e instanceof Error ? e.message : String(e));
     }
@@ -116,28 +135,42 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
   }, [apiImpl]);
 
   const refreshEpics = useCallback(async () => {
-    if (activeWorkspaceId === null) return;
+    if (activeWorkspaceId === null || activeWorkspaceId !== currentWorkspaceId.current) return;
+    const request = ++epicRequest.current;
     try {
-      setEpics(await fetchAllEpics(apiImpl, activeWorkspaceId));
+      const epics = await fetchAllEpics(apiImpl, activeWorkspaceId);
+      if (request === epicRequest.current && activeWorkspaceId === currentWorkspaceId.current) setEpics(epics);
     } catch (error) {
-      console.warn('refreshEpics: fetch failed, keeping last-known epics', error);
+      if (request === epicRequest.current && activeWorkspaceId === currentWorkspaceId.current) {
+        console.warn('refreshEpics: fetch failed, keeping last-known epics', error);
+      }
     }
   }, [activeWorkspaceId, apiImpl]);
 
   useLiveEffect((live) => {
     if (!authed) return;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryDelay = 2_000;
     apiImpl.config().then((next) => live() && setConfig(next), (error) => live() && toastError(error));
     apiImpl
       .globalPause()
       .then(({ paused }) => live() && setGlobalPaused(paused))
       .catch((error) => live() && console.warn('useAppSync: initial globalPause fetch failed', error));
-    apiImpl.workspaces().then(({ workspaces }) => {
+    const loadWorkspaces = () => apiImpl.workspaces().then(({ workspaces }) => {
       if (!live()) return;
       setWorkspaces(workspaces);
       setWorkspacesLoaded(true);
+      setWorkspacesError(null);
       if (route.scope.kind === 'workspace') setActiveWorkspaceId(route.scope.workspaceId);
-    }, (error) => live() && toastError(error));
-  }, [authed, route.scope, apiImpl]);
+    }, (error) => {
+      if (!live()) return;
+      setWorkspacesError(error instanceof Error ? error.message : String(error));
+      retryTimer = setTimeout(loadWorkspaces, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, 30_000);
+    });
+    loadWorkspaces();
+    return () => { if (retryTimer !== undefined) clearTimeout(retryTimer); };
+  }, [authed, route.scope, apiImpl, workspaceRetryKey]);
 
   useLiveEffect((live) => {
     if (!authed) return;
@@ -150,8 +183,9 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
           setUpdate(next);
           timer = setTimeout(load, next.armedVersion === null ? 15_000 : 1_000);
         },
-        () => {
+        (error) => {
           if (!live() || request !== updateRequest.current) return;
+          if (error instanceof ApiError && error.code === 'not_packaged') return;
           timer = setTimeout(load, 1_000);
         },
       );
@@ -210,7 +244,7 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
         debouncedRefreshEpics();
       }
       if (msg.type === 'epic_integrated' && msg.workspaceId === activeWorkspaceId) {
-        toastSuccess(`Epic #${msg.epicRef} merged`);
+        toastSuccess(`${epicLabel(msg.epicRef)} merged`);
         debouncedRefreshEpics();
       }
       if (msg.type === 'task_removed') {
@@ -349,6 +383,8 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
     workspaces,
     setWorkspaces,
     workspacesLoaded,
+    workspacesError,
+    retryWorkspaces,
     update,
     updatePending,
     changeUpdate,

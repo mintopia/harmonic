@@ -2,6 +2,10 @@
 
 Status: accepted
 Date: 2026-09-15
+Current status (2026-10-02): ADR-0042 now governs install detection, the
+versioned `app/current` layout, init.d relaunch, and boot rollback. The
+original init.d and systemd upgrade paths below are historical where they
+conflict with ADR-0042.
 Amended 2026-09-16: the systemd unit sets `WorkingDirectory=<data-dir>`, and a
 fresh install seeds no Workspace (first-run onboarding adds the first one) — see
 "The systemd backend hands restart to the supervisor" and "No default Workspace

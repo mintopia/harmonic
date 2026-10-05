@@ -13,6 +13,8 @@ export const btnGhost =
 
 export const btnQuiet = 'inline-flex min-h-11 items-center font-medium text-muted transition-colors duration-150 hover:text-ink';
 
+export const btnQuietInk = 'inline-flex min-h-11 shrink-0 items-center font-medium text-ink transition-colors duration-150';
+
 /** A ≥44×44px touch target: expand the *hit area* to the accessible
  * minimum while the visual stays as compact as the layout wants. `touchTarget`
  * centres a bounded control (a segmented pill, a Stop/Grant button);
@@ -373,6 +375,7 @@ export const PHASE_NODE_STYLES = {
   current: 'border-transparent bg-accent text-on-accent',
   awaiting: 'border-transparent bg-await text-on-await',
   pending: 'border-edge text-faint',
+  skipped: 'border-edge text-faint',
   failed: 'border-transparent bg-fail-tint text-fail',
 } as const;
 export type PhaseNodeVisual = keyof typeof PHASE_NODE_STYLES;

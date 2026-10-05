@@ -2,8 +2,9 @@
 
 Status: accepted
 Date: 2026-09-01
+Reconciled: 2026-10-02. Epic #444 is closed. Grades and findings below record the original review, not an open backlog.
 
-Tracked in GitHub epic **#444** ("Code & architecture review remediation"); the
+Completed in GitHub epic **#444** ("Code & architecture review remediation"); the
 child tickets below are its sub-issues.
 
 ## Context
@@ -16,7 +17,7 @@ standalone HTML artifact and is **not** part of the repository, so this ADR is
 the durable in-repo record of its findings and what we decided to do about
 them.
 
-The read, by area:
+Historical grades at the review date, before remediation:
 
 | Area | Grade | Summary |
 |---|---|---|
@@ -53,7 +54,7 @@ does not re-flag them as unseen. If the deployment model changes (shared or
 multi-tenant operation), they should be reopened: clamp `Path:` to the repo
 root, and build the critic env from an explicit allowlist.
 
-## Remediation scope (epic #444 children)
+## Completed remediation scope (epic #444 children)
 
 Architecture:
 

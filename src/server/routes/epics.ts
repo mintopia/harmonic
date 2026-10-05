@@ -3,7 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { AppContext } from '../app.js';
 import { DomainError } from '../../domain/errors.js';
-import { attemptUsageSchema, costSchema, errorResponse } from '../schemas.js';
+import { attemptUsageSchema, costSchema, errorResponse, trackerRefParam } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import type { Epic } from '../../domain/epic-view.js';
 import { diffFilesResponseSchema } from './diff.js';
@@ -14,7 +14,7 @@ import { ATTEMPT_STATES } from '../../db/schema.js';
 /** Path params for a whole-Epic action: the owning Workspace and the Epic's tracker ref. */
 const epicParamsSchema = z.object({
   workspaceId: z.coerce.number().int().meta({ example: 1 }),
-  epicRef: z.coerce.number().int().meta({ example: 42 }),
+  epicRef: trackerRefParam('42'),
 });
 
 /** Path params for the read endpoints: the owning Workspace only (`GET …/epics`). */
@@ -40,7 +40,7 @@ const epicListQuerySchema = paginationQuerySchema.extend({
  */
 const epicMemberSchema = z
   .object({
-    ref: z.number().int().meta({ example: 4821 }),
+    ref: z.string().min(1).meta({ example: '4821' }),
     title: z.string().meta({ example: 'Wire the peek modal' }),
     taskId: z.number().int().nullable().meta({ example: 12 }),
     state: z.string().nullable().meta({ example: 'working' }),
@@ -88,7 +88,7 @@ const mergeStepSchema = z
     z.object({ step: z.literal('completed-in-place'), baseBranch: z.string(), leftBranch: z.string().optional() }),
     z.object({ step: z.literal('reconciled'), fromBase: z.string(), toBase: z.string(), mergeOid: z.string() }),
     z.object({ step: z.literal('rebuilding'), fromBase: z.string(), toBase: z.string(), paths: z.array(z.string()) }),
-    z.object({ step: z.literal('escalated'), reason: z.enum(['conflict', 'post-merge-red', 'target-advanced']), message: z.string() }),
+    z.object({ step: z.literal('escalated'), reason: z.enum(['conflict', 'post-merge-red', 'write-failed', 'target-advanced']), message: z.string() }),
   ])
   .meta({ id: 'MergeStepEvent' });
 
@@ -100,6 +100,14 @@ const epicTimelineStepSchema = z
     z.object({ step: z.literal('export-built'), disposition: z.string(), name: z.string(), bytes: z.number().int(), partial: z.boolean() }),
     z.object({ step: z.literal('export-delivered'), destination: z.enum(['directory', 's3']), file: z.string(), retry: z.number().int() }),
     z.object({ step: z.literal('export-failed'), destination: z.enum(['directory', 's3']), error: z.string(), retry: z.number().int(), nextRetryAt: z.string().nullable() }),
+    z.object({
+      step: z.literal('resolver-prompt'),
+      kind: z.enum(['merge-conflict', 'refresh']),
+      turn: z.number().int().optional(),
+      attempt: z.number().int().positive(),
+      locator: z.string(),
+      promptIndex: z.number().int().nonnegative(),
+    }),
   ])
   .meta({ id: 'EpicTimelineStep' });
 
@@ -109,7 +117,7 @@ const epicTimelineEventSchema = z
 
 const epicSchema = z
   .object({
-    ref: z.number().int().meta({ example: 42 }),
+    ref: z.string().min(1).meta({ example: '42' }),
     title: z.string().meta({ example: 'Parallel Epic operator UI' }),
     kind: z.enum(['map', 'spec']),
     state: z.enum(['open', 'integrating', 'integrated']),
@@ -117,9 +125,9 @@ const epicSchema = z
     createdAt: z.number().int().meta({ example: 1_756_000_000_000 }),
     updatedAt: z.number().int().nullable().meta({ example: 1_756_100_000_000 }),
     baseBranch: z.string().nullable().meta({ example: 'develop' }),
-    dependsOn: z.array(z.number().int()),
+    dependsOn: z.array(z.string()),
     members: z.array(epicMemberSchema),
-    ready: z.array(z.number().int()),
+    ready: z.array(z.string()),
     integration: epicIntegrationSchema,
     verification: epicVerificationSchema,
     integrate: epicIntegrateStateSchema,
@@ -143,7 +151,7 @@ const verificationAttemptSchema = z.object({
   verdict: z.enum(['pass', 'fail', 'inconclusive']),
   summary: z.string(),
   output: z.string(),
-  prompt: z.string().nullable(),
+  promptLocator: z.string().nullable(),
   harness: z.string().nullable(),
   hasTranscript: z.boolean(),
   outputTruncated: z.boolean(),
@@ -155,7 +163,6 @@ const epicAttemptSchema = z
     number: z.number().int().positive(),
     state: z.enum(ATTEMPT_STATES),
     reason: z.string().nullable(),
-    prompt: z.string().nullable(),
     usage: attemptUsageSchema.nullable(),
     cost: costSchema.nullable(),
     toolCalls: z.number().int().nonnegative(),
@@ -175,6 +182,12 @@ const epicAttemptSchema = z
       endedAt: z.number().int().nullable(),
     })),
     verificationAttempts: z.array(verificationAttemptSchema),
+    resolverPrompts: z.array(z.object({
+      kind: z.enum(['merge-conflict', 'verification', 'refresh']),
+      locator: z.string(),
+      promptIndex: z.number().int().nonnegative(),
+      ts: z.number().int(),
+    })),
   })
   .meta({ id: 'EpicAttempt' });
 
@@ -274,7 +287,40 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
-      return epicAttemptTimelineToApi(ctx, req.params);
+      return epicAttemptTimelineToApi(ctx, { workspaceId: req.params.workspaceId, epicRef: req.params.epicRef });
+    },
+  );
+
+  app.get(
+    '/workspaces/:workspaceId/epics/:epicRef/resolved-prompt',
+    {
+      schema: {
+        tags: ['Epics'],
+        description:
+          "Read an Epic's Resolved Prompt from the Task Archive by Attempt number and Attempt-relative locator, as text/plain. Serves prompts archived before the Epic had an Attempt row (under Attempt 1). 404 when the archived prompt is absent.",
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: epicParamsSchema,
+        querystring: z.object({
+          attempt: z.coerce.number().int().positive().describe('Epic-local Attempt number the prompt was archived under.'),
+          locator: z.string().min(1).describe('Archive locator of the prompt file, relative to the Attempt directory.'),
+          index: z.coerce.number().int().min(0).optional().describe('0-based index of one prompt within the file; omit to return the whole file.'),
+        }),
+        response: {
+          200: z.any().describe('The archived prompt text exactly as sent, or only the `index`-th prompt when `index` is given.'),
+          404: errorResponse('No Workspace has that id, or no archived Resolved Prompt at the locator.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      await ctx.workspaces.assertExists(req.params.workspaceId);
+      const text = await ctx.archive.readResolvedPrompt(
+        { workspaceId: req.params.workspaceId, epicRef: req.params.epicRef },
+        req.query.attempt,
+        req.query.locator,
+        req.query.index,
+      );
+      if (text === null) throw new DomainError('not_found', `no archived resolved prompt for epic ${req.params.epicRef} at that locator/index`);
+      return reply.header('content-type', 'text/plain; charset=utf-8').send(text);
     },
   );
 

@@ -2,6 +2,7 @@ import type { AcpInitializeResult } from '../acp/driver.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { AttemptRow, SessionRow, TaskRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
+import type { PromptFragments } from '../domain/prompt-fragments.js';
 import { resolveScoped } from '../domain/setting-override.js';
 import {
   decideAttemptContinuation,
@@ -12,7 +13,8 @@ import {
 } from '../domain/session-continuation.js';
 import { assessResumeEligibility, sessionFacts, type ResumeEnvironment } from '../domain/session-resume.js';
 import type { SessionStore } from '../domain/sessions.js';
-import { bestEffort, fireAndForget, orFallback, reportFailure } from '../error-handling.js';
+import { bestEffort, orFallback, reportFailure, type FireAndForget } from '../error-handling.js';
+import { renderFragment } from './prompt-template.js';
 import { adapterFor, adapterVersion } from './harness/registry.js';
 import { repoKey } from './repo-lock.js';
 import type { TranscriptCapture } from './transcript-capture.js';
@@ -49,6 +51,7 @@ export class SessionContinuation {
     private readonly usage: { latestSnapshot: (attemptId: number) => Promise<AttemptUsageSnapshot | null> },
     private readonly getLastTurnContextTokens: (attemptId: number) => number | undefined,
     private readonly dispatchCwd: (task: TaskRow) => string,
+    private readonly fireAndForget: FireAndForget,
   ) {}
 
   async resolveContinuationSource(
@@ -142,7 +145,7 @@ export class SessionContinuation {
     });
   }
 
-  async condensedContext(run: AttemptRow): Promise<string | null> {
+  async condensedContext(run: AttemptRow, fragments: PromptFragments): Promise<string | null> {
     const sessionRowId = run.sessionRowId;
     if (sessionRowId === null) return null;
     const session = await orFallback(() => this.sessionStore.get(sessionRowId), {
@@ -153,18 +156,18 @@ export class SessionContinuation {
     if (!session) return null;
     const current = await this.attempts.get(run.id);
     const events = await this.attempts.listEvents(run.id);
-    return [
-      '## Prior session (condensed)',
-      'This attempt starts a fresh Session under the deterministic continuation rule.',
-      `Prior Session: ${session.harness} / ${session.model} / ${session.harnessSessionId}`,
-      `Verified head: ${current.verifiedHeadOid ?? '(none produced)'}`,
-      `Attempt events: ${events.length}.`,
-    ].join('\n');
+    return renderFragment('priorSession', fragments, {
+      harness: session.harness,
+      model: session.model,
+      sessionId: session.harnessSessionId,
+      head: current.verifiedHeadOid ?? '(none produced)',
+      events: events.length,
+    });
   }
 
   async persistSession(harnessSessionId: string, ctx: PersistSessionContext): Promise<void> {
     const { task, run, harness, workspace, mcpServers, attemptAtStart } = ctx;
-    fireAndForget(() => this.attempts.update(run.id, { sessionId: harnessSessionId }), {
+    this.fireAndForget(() => this.attempts.update(run.id, { sessionId: harnessSessionId }), {
       op: 'runner.persistSession.bindSessionId',
       level: 'warn',
       context: { attemptId: run.id, harnessSessionId },
@@ -188,12 +191,12 @@ export class SessionContinuation {
         now: Date.now(),
       });
       ctx.setSessionRowId(session.id);
-      fireAndForget(() => this.attempts.update(run.id, { sessionRowId: session.id }), {
+      this.fireAndForget(() => this.attempts.update(run.id, { sessionRowId: session.id }), {
         op: 'runner.persistSession.bindSessionRow',
         level: 'error',
         context: { attemptId: run.id, sessionRowId: session.id },
       });
-      fireAndForget(
+      this.fireAndForget(
         async () => {
           const steps = await this.attempts.listSteps(attemptAtStart.id);
           const implementation = steps.find((row) => row.type === 'implementation' && row.state === 'running');
@@ -206,7 +209,7 @@ export class SessionContinuation {
         },
       );
       if (transcriptPath === null && transcriptResolver) {
-        fireAndForget(() => this.transcripts.captureSessionTranscript({ sessionId: harnessSessionId, sessionRowId: session.id, sessionLogDir: harness.sessionLogDir, transcriptResolver }), {
+        this.fireAndForget(() => this.transcripts.captureSessionTranscript({ sessionId: harnessSessionId, sessionRowId: session.id, sessionLogDir: harness.sessionLogDir, transcriptResolver }), {
           op: 'runner.persistSession.captureTranscript',
           level: 'warn',
           context: { sessionRowId: session.id },

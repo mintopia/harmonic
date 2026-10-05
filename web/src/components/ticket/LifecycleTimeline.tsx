@@ -1,9 +1,12 @@
-import { lifecycleTimelineRows, type LifecycleTimelineTone } from '../../lifecycle-timeline-model.js';
+import { lifecycleTimelineRows, type LifecycleTimelineTone, type ReceiptPillTone } from '../../lifecycle-timeline-model.js';
+import { eventCount } from '../../id-format.js';
 import type { TicketTimelineEvent } from '../../types.js';
 import { card, railSectionCount } from '../../ui.js';
 import { FollowTail } from './FollowTail';
 
-const CAPS = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
+const CAPS = 'text-label font-bold uppercase tracking-caps text-faint';
+const TAG = 'rounded-lg bg-raised px-1.5 py-px text-label font-bold uppercase tracking-caps-tight text-muted';
+const PILL_SHAPE = 'whitespace-nowrap rounded-full px-2 py-0.5 text-label font-semibold uppercase leading-[1.2] tracking-caps-tight';
 
 const DOT: Record<LifecycleTimelineTone, string> = {
   neutral: 'bg-edge',
@@ -11,6 +14,15 @@ const DOT: Record<LifecycleTimelineTone, string> = {
   passed: 'bg-merged-dot',
   failed: 'bg-fail-dot',
   awaiting: 'bg-await-dot',
+  sent: 'bg-accent',
+  received: 'bg-ready',
+};
+
+const PILL: Record<ReceiptPillTone, string> = {
+  done: 'bg-done-tint text-done',
+  ready: 'bg-ready-tint text-ready',
+  paused: 'bg-paused-tint text-paused',
+  fail: 'bg-fail-tint text-fail',
 };
 
 const WORD: Record<LifecycleTimelineTone, string> = {
@@ -19,6 +31,8 @@ const WORD: Record<LifecycleTimelineTone, string> = {
   passed: 'text-merged',
   failed: 'text-fail',
   awaiting: 'text-await',
+  sent: 'text-accent',
+  received: 'text-ready',
 };
 
 function clockTime(at: number): string {
@@ -51,7 +65,7 @@ export function LifecycleTimeline({
         <div className="flex items-center justify-between gap-4 border-b border-hairline px-5 py-3">
           <div className="flex items-baseline gap-2.5">
             <span className={CAPS}>Lifecycle</span>
-            <span className={railSectionCount}>{events.length} events</span>
+            <span className={railSectionCount}>{eventCount(events.length)}</span>
           </div>
           <FollowTail following={following} onToggle={onToggleFollow} />
         </div>
@@ -63,7 +77,7 @@ export function LifecycleTimeline({
               <li key={row.id} className="grid grid-cols-[64px_minmax(0,1fr)] gap-x-3">
                 <time
                   dateTime={new Date(row.at).toISOString()}
-                  className="pt-0.5 text-right font-data text-[11px] leading-[1.35] tabular-nums text-faint"
+                  className="pt-0.5 text-right font-data text-micro leading-[1.35] tabular-nums text-faint"
                 >
                   {clockTime(row.at)}
                 </time>
@@ -76,13 +90,31 @@ export function LifecycleTimeline({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={`text-small font-semibold ${WORD[row.tone]}`}>{row.label}</span>
                     {row.tag && (
-                      <span className="rounded-[4px] bg-raised px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.05em] text-muted">
-                        {row.tag}
-                      </span>
+                      <span className={TAG}>{row.tag}</span>
+                    )}
+                    {row.message && (
+                      <>
+                        <span className={`${PILL_SHAPE} bg-accent-tint text-accent`}>{row.message.peer}</span>
+                        {row.message.epic && (
+                          <span className={`${PILL_SHAPE} bg-await-tint text-await`}>{row.message.epic}</span>
+                        )}
+                        <span className={`${PILL_SHAPE} ${PILL[row.message.receipt.tone]}`}>{row.message.receipt.label}</span>
+                      </>
                     )}
                   </div>
-                  {row.detail && (
-                    <p className="mt-0.5 whitespace-pre-wrap break-words text-small text-muted">{row.detail}</p>
+                  {row.message?.preview && (
+                    <p className="mt-1.5 max-w-[68ch] break-words border-l-2 border-edge py-0.5 pl-2.5 text-small text-ink">{row.message.preview}</p>
+                  )}
+                  {(row.detail || row.message) && (
+                    <p className="mt-0.5 whitespace-pre-wrap break-words text-small text-muted">
+                      {row.detail}
+                      {row.detail && row.message ? ' · ' : ''}
+                      {row.message && (
+                        <a href={row.message.href} className="font-semibold text-accent no-underline hover:underline">
+                          View Thread →
+                        </a>
+                      )}
+                    </p>
                   )}
                 </div>
               </li>

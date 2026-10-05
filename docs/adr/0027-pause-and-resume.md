@@ -2,6 +2,10 @@
 
 Status: accepted
 Date: 2026-09-05
+
+Current status (2026-10-02): Pause and warm/cold resume are implemented.
+ADR-0038 later changed escalation Reject to create a fresh Attempt; the
+same-Attempt resume described below still applies to Pause and Steer.
 Extends ADR-0001 (execution model, lifecycle states) and ADR-0002 (escalation
 surface). Builds on the Session continuation machinery of ADR-0005.
 

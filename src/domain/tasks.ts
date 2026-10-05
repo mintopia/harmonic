@@ -1,3 +1,4 @@
+import { trackerRef, type TrackerRef } from '../tracker/adapter.js';
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNotNull, isNull, notInArray, or } from 'drizzle-orm';
 import { z } from 'zod';
@@ -34,6 +35,7 @@ import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { orderEligibleWorkYielding } from './work-ordering.js';
 import { mirroredAgentEligible } from './agent-workable.js';
+import { DEFAULT_TRIAGE_LABELS, loadTriageLabels, storedTriageLabels, type TriageLabels } from '../tracker/triage-labels.js';
 import { withTaskLock } from './task-lock.js';
 import type { StoredEpicRecord } from './epic-derivation.js';
 import { TaskBlockerGraph } from './task-blocker-graph.js';
@@ -121,7 +123,7 @@ export const taskListQuerySchema = z.object({
   priority: csvEnum(PRIORITIES, 'high'),
   /** An Epic's children: the tasks whose `trackerParent` is this Epic ref.
    * Pair with `workspaceId` to scope a ref that overlaps across repos. */
-  parent: z.coerce.number().int().positive().optional().meta({ example: 42 }),
+  parent: z.string().min(1).optional().meta({ example: 42 }),
   /** Server-side search: case-insensitive substring over the prompt and (for
    * mirrored Tasks) the tracker title. Blank/whitespace matches every Task. */
   q: z.string().optional().meta({ example: 'rate limiting' }),
@@ -138,7 +140,7 @@ export interface TaskListQuery {
   harness?: string | string[] | undefined;
   priority?: string | string[] | undefined;
   /** An Epic's children: Tasks whose `trackerParent` is this Epic ref. */
-  parent?: number | undefined;
+  parent?: string | undefined;
   q?: string | undefined;
   sortBy?: 'createdAt' | 'updatedAt' | 'priority' | 'cost' | undefined;
   order?: 'asc' | 'desc' | undefined;
@@ -153,15 +155,15 @@ function filterList<T>(v: T | T[] | undefined): T[] {
  * is handled by the caller) falls back to creation, then id. */
 export function compareListRows(
   sortBy: string,
-  a: { priority: string; createdAt: number; updatedAt: number; id: number },
-  b: { priority: string; createdAt: number; updatedAt: number; id: number },
+  a: { priority: string; createdAt: number; updatedAt: number; id?: number },
+  b: { priority: string; createdAt: number; updatedAt: number; id?: number },
 ): number {
   const rank: Record<string, number> = { high: 0, normal: 1, low: 2 };
   return sortBy === 'priority'
     ? (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || a.createdAt - b.createdAt
     : sortBy === 'updatedAt'
-      ? a.updatedAt - b.updatedAt || a.id - b.id
-      : a.createdAt - b.createdAt || a.id - b.id;
+      ? a.updatedAt - b.updatedAt || (a.id ?? 0) - (b.id ?? 0)
+      : a.createdAt - b.createdAt || (a.id ?? 0) - (b.id ?? 0);
 }
 
 /** A task plus its dependency context, as the API serves it. */
@@ -243,6 +245,8 @@ function trackerFactColumns(facts: TrackerFacts) {
   };
 }
 
+type TriageLabelsByWorkspace = ReadonlyMap<number, TriageLabels>;
+
 export class TaskService {
   private readonly blockerGraph: TaskBlockerGraph;
   private readonly mirror: TaskMirror;
@@ -313,13 +317,23 @@ export class TaskService {
     };
   }
 
-  private agentWorkable(task: TaskRow, openBlockerCount: number, containerRefs: ReadonlySet<string>): boolean {
-    return openBlockerCount === 0 && !this.humanOnly(task, containerRefs);
+  private agentWorkable(task: TaskRow, openBlockerCount: number, containerRefs: ReadonlySet<string>, triage: TriageLabelsByWorkspace): boolean {
+    return openBlockerCount === 0 && !this.humanOnly(task, containerRefs, triage);
   }
 
-  private humanOnly(task: TaskRow, containerRefs: ReadonlySet<string>): boolean {
+  private humanOnly(task: TaskRow, containerRefs: ReadonlySet<string>, triage: TriageLabelsByWorkspace): boolean {
     if (task.origin !== 'mirrored') return false;
-    return !mirroredAgentEligible(task.trackerLabels ?? [], task.wayfinderType, this.isContainer(task, containerRefs));
+    const labels = (task.workspaceId == null ? undefined : triage.get(task.workspaceId)) ?? DEFAULT_TRIAGE_LABELS;
+    return !mirroredAgentEligible(task.trackerLabels ?? [], task.wayfinderType, this.isContainer(task, containerRefs), labels);
+  }
+
+  private async triageLabels(workspaceId?: number): Promise<TriageLabelsByWorkspace> {
+    const byWorkspace = new Map<number, TriageLabels>();
+    await forEachYielding(await this.getWorkspaces(), async (workspace) => {
+      if (workspaceId !== undefined && workspace.id !== workspaceId) return;
+      byWorkspace.set(workspace.id, await loadTriageLabels(workspace.workingDir, storedTriageLabels(workspace.triageLabels)));
+    });
+    return byWorkspace;
   }
 
   private isContainer(task: TaskRow, containerRefs: ReadonlySet<string>): boolean {
@@ -444,7 +458,7 @@ export class TaskService {
 
   /** Has this (workspaceId, trackerRef) been Dismissed? Consulted before
    * mirroring a ticket, so a re-poll can't resurrect a Task an operator deleted. */
-  async isDismissed(workspaceId: number, trackerRef: number): Promise<boolean> {
+  async isDismissed(workspaceId: number, trackerRef: TrackerRef): Promise<boolean> {
     const row = await this.db.read((db) =>
       db
         .select({ id: trackerDismissals.id })
@@ -456,7 +470,7 @@ export class TaskService {
   }
 
   /** Remove any dismissal tombstone for a ref: a recognised container must never stay dismissed. */
-  async clearDismissal(workspaceId: number, trackerRef: number): Promise<void> {
+  async clearDismissal(workspaceId: number, trackerRef: TrackerRef): Promise<void> {
     await this.db.write((db) =>
       db
         .delete(trackerDismissals)
@@ -468,9 +482,9 @@ export class TaskService {
   /** Replace the persisted non-Task containers for one successful tracker scan. */
   async syncTrackerContainers(
     workspaceId: number,
-    containers: Array<{ trackerRef: number; facts: TrackerFacts }>,
+    containers: Array<{ trackerRef: TrackerRef; facts: TrackerFacts }>,
   ): Promise<void> {
-    const refs: number[] = [];
+    const refs: TrackerRef[] = [];
     await forEachYielding(containers, (container) => {
       refs.push(container.trackerRef);
     });
@@ -512,7 +526,7 @@ export class TaskService {
   }
 
   /** The stored Epic `kind` for a ref in a Workspace, or null when no spine row exists. */
-  async epicKind(workspaceId: number, ref: number): Promise<StoredEpicKind | null> {
+  async epicKind(workspaceId: number, ref: TrackerRef): Promise<StoredEpicKind | null> {
     const row = await this.db.read((db) =>
       db
         .select({ kind: epics.kind })
@@ -524,7 +538,7 @@ export class TaskService {
   }
 
   /** The stored Epic lifecycle `state` for a ref in a Workspace, or null when no spine row exists. */
-  async epicState(workspaceId: number, ref: number): Promise<EpicLifecycleState | null> {
+  async epicState(workspaceId: number, ref: TrackerRef): Promise<EpicLifecycleState | null> {
     const row = await this.db.read((db) =>
       db
         .select({ state: epics.state })
@@ -543,8 +557,8 @@ export class TaskService {
    */
   async markEpicIntegrated(
     workspaceId: number,
-    trackerRef: number,
-    snapshot: { mergeCommit: string | null; memberRefs: number[] },
+    trackerRef: TrackerRef,
+    snapshot: { mergeCommit: string | null; memberRefs: TrackerRef[] },
   ): Promise<void> {
     await this.db.write(async (db) => {
       await db
@@ -556,7 +570,7 @@ export class TaskService {
   }
 
   /** Mark the durable Epic as passing through its whole-Epic verification and merge gate. */
-  async markEpicIntegrating(workspaceId: number, trackerRef: number): Promise<void> {
+  async markEpicIntegrating(workspaceId: number, trackerRef: TrackerRef): Promise<void> {
     await this.db.write(async (db) => {
       await db
         .update(epics)
@@ -589,7 +603,7 @@ export class TaskService {
         : filterList(query.state).length > 0
           ? inArray(tasks.state, filterList(query.state))
           : undefined,
-      query.parent !== undefined ? eq(tasks.trackerParent, query.parent) : undefined,
+      query.parent !== undefined ? eq(tasks.trackerParent, trackerRef(query.parent)) : undefined,
     ].filter((f) => f !== undefined);
     const [rawRows, workspaceRows] = await Promise.all([
       this.db.read((db) =>
@@ -662,10 +676,11 @@ export class TaskService {
       completedIds.add(task.id);
     });
     const containerRefs = await this.containerRefs(workspaceId);
+    const triage = await this.triageLabels(workspaceId);
     const nodes: OrderedEligibleTask[] = [];
     await forEachYielding(candidates, (task) => {
       const blockedBy = (blockersByTaskId.get(task.id) ?? []).filter((id) => !completedIds.has(id));
-      if (!this.agentWorkable(task, blockedBy.length, containerRefs)) return;
+      if (!this.agentWorkable(task, blockedBy.length, containerRefs, triage)) return;
       nodes.push({
         ...task,
         blockedBy,
@@ -750,6 +765,13 @@ export class TaskService {
       }
       return this.setState(id, 'ready');
     });
+  }
+
+  async setTicketClosePending(id: number, pending: boolean): Promise<TaskRow> {
+    const row = await this.db.write((db) =>
+      db.update(tasks).set({ ticketClosePending: pending, updatedAt: Date.now() }).where(eq(tasks.id, id)).returning().get(),
+    );
+    return await this.changed(row!);
   }
 
   /**
@@ -940,6 +962,10 @@ export class TaskService {
     }
   }
 
+  doneMirroredIdsByRef(workspaceId: number, refs: TrackerRef[]): Promise<Map<TrackerRef, number>> {
+    return this.mirror.doneMirroredIdsByRef(workspaceId, refs);
+  }
+
   /**
    * Set a mirrored Task's dependency edges to exactly `dependsOnIds` — the
    * tracker's `blockedBy` projected onto real edges — then re-derive
@@ -990,7 +1016,7 @@ export class TaskService {
    * so it stays re-derivable as a container. Deferred while the row is still
    * `working`; a later poll removes it once it settles.
    */
-  async demoteMirroredToContainer(workspaceId: number, trackerRef: number): Promise<void> {
+  async demoteMirroredToContainer(workspaceId: number, trackerRef: TrackerRef): Promise<void> {
     await this.mirror.demoteMirroredToContainer(workspaceId, trackerRef);
   }
 
@@ -1059,14 +1085,15 @@ export class TaskService {
     const depStates = await Promise.all(dependsOn.map(async (depId) => (await this.get(depId)).state));
     const openBlockerCount = depStates.filter((state) => state !== 'done').length;
     const containerRefs = await this.containerRefs(task.workspaceId ?? undefined);
+    const triage = await this.triageLabels(task.workspaceId ?? undefined);
     return {
       ...task,
       dependsOn,
       dependents: await this.dependents(task.id),
       blockedOnFailed: task.state === 'ready' && depStates.some((s) => s === 'escalated' || s === 'cancelled'),
       openBlockerCount,
-      agentWorkable: this.agentWorkable(task, openBlockerCount, containerRefs),
-      humanOnly: this.humanOnly(task, containerRefs),
+      agentWorkable: this.agentWorkable(task, openBlockerCount, containerRefs, triage),
+      humanOnly: this.humanOnly(task, containerRefs, triage),
       isEpic: this.isEpic(task, containerRefs),
       overrides: this.overridesOf(await this.getRaw(task.id)),
     };
@@ -1080,7 +1107,7 @@ export class TaskService {
         : filterList(query.state).length > 0
           ? inArray(tasks.state, filterList(query.state))
           : undefined,
-      query.parent !== undefined ? eq(tasks.trackerParent, query.parent) : undefined,
+      query.parent !== undefined ? eq(tasks.trackerParent, trackerRef(query.parent)) : undefined,
     ].filter((f) => f !== undefined);
     const [rawRows, workspaceRows] = await Promise.all([
       this.db.read((db) =>
@@ -1142,14 +1169,15 @@ export class TaskService {
     }
     for (const edge of dependentRows) dependents.get(edge.dependsOnId)?.push(edge.taskId);
     const containerRefs = await this.containerRefs(query.workspaceId);
+    const triage = await this.triageLabels(query.workspaceId);
     return listed.map((task) => ({
       ...task,
       dependsOn: dependsOn.get(task.id) ?? [],
       dependents: dependents.get(task.id) ?? [],
       blockedOnFailed: task.state === 'ready' && failedDependencies.has(task.id),
       openBlockerCount: openBlockerCounts.get(task.id) ?? 0,
-      agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0, containerRefs),
-      humanOnly: this.humanOnly(task, containerRefs),
+      agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0, containerRefs, triage),
+      humanOnly: this.humanOnly(task, containerRefs, triage),
       isEpic: this.isEpic(task, containerRefs),
       overrides: this.overridesOf(rawById.get(task.id) ?? task),
     }));

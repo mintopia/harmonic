@@ -1,7 +1,7 @@
-import { killProcessGroup, spawnProcessGroup } from '../execution/process-groups.js';
+import { killProcessGroup, type SpawnProcessGroup } from '../execution/process-groups.js';
 import { access } from 'node:fs/promises';
 import type { Attributes, SpanContext } from '@opentelemetry/api';
-import type { HarnessConfig } from '../config.js';
+import type { AppConfig, HarnessConfig } from '../config.js';
 import { AcpDriver, type AcpInitializeResult } from '../acp/driver.js';
 import { parsePermissionRequest, type PermissionRequest } from '../acp/permission-request.js';
 import { adapterFor } from '../execution/harness/registry.js';
@@ -47,11 +47,41 @@ export interface CriticDriveRequest {
   onSessionCreated?: (sessionId: string, initialize: AcpInitializeResult) => Promise<void> | void;
   /** Reload this prior ACP session instead of starting a fresh one. */
   continueSessionId?: string;
+  /** Elapsed ACP prompt time; the real drive reports zero if startup fails before a prompt. */
+  onAgentDurationMs?: (durationMs: number) => Promise<void>;
 }
 
 /** The injectable seam between {@link runCritic} and an actual harness spawn. */
 export interface CriticHarnessDrive {
   run(req: CriticDriveRequest): Promise<CriticDriveResult>;
+}
+
+export async function runTimedCriticDrive(
+  drive: CriticHarnessDrive,
+  req: CriticDriveRequest,
+  record: (durationMs: number) => Promise<void>,
+): Promise<CriticDriveResult> {
+  const started = performance.now();
+  let recorded = false;
+  try {
+    return await drive.run({
+      ...req,
+      onAgentDurationMs: async (ms) => {
+        recorded = true;
+        await record(ms);
+      },
+    });
+  } finally {
+    if (!recorded) await recordDurationBestEffort(record, Math.round(performance.now() - started));
+  }
+}
+
+async function recordDurationBestEffort(record: ((durationMs: number) => Promise<void>) | undefined, durationMs: number): Promise<void> {
+  try {
+    await record?.(durationMs);
+  } catch (err) {
+    logger.warn('critic: recording agent duration failed', { error: err instanceof Error ? err.message : String(err) });
+  }
 }
 
 function criticSpawnEnv(
@@ -72,7 +102,7 @@ function criticSpawnEnv(
 }
 
 /** The real critic drive: one ACP review turn with no MCP servers and the builder's unattended session mode; any permission request is granted. */
-export function createAcpCriticDrive(): CriticHarnessDrive {
+export function createAcpCriticDrive(spawnProcessGroup: SpawnProcessGroup): CriticHarnessDrive {
   return {
     async run(req: CriticDriveRequest): Promise<CriticDriveResult> {
       const env = criticSpawnEnv(req.harness, req.harnessId, req.model, req.cwd);
@@ -111,6 +141,7 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
       const kill = (): void => killProcessGroup(child);
 
       let timer: NodeJS.Timeout | undefined;
+      let agentTimingRecorded = false;
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
           kill();
@@ -137,12 +168,20 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
           await Promise.race([driver.setMode(mode), timeout]);
         }
 
-        const promptResult = await Promise.race([driver.prompt([{ type: 'text', text: req.prompt }]), timeout]);
+        const promptStarted = performance.now();
+        let promptResult: Awaited<ReturnType<AcpDriver['prompt']>>;
+        try {
+          promptResult = await Promise.race([driver.prompt([{ type: 'text', text: req.prompt }]), timeout]);
+        } finally {
+          agentTimingRecorded = true;
+          await recordDurationBestEffort(req.onAgentDurationMs, Math.round(performance.now() - promptStarted));
+        }
         return { output, permissionRequests, sessionId: sessionId ?? null, ...(promptResult.usage ? { usage: promptResult.usage } : {}) };
       } finally {
         if (timer) clearTimeout(timer);
         driver.dispose();
         kill();
+        if (!agentTimingRecorded) await recordDurationBestEffort(req.onAgentDurationMs, 0);
       }
     },
   };
@@ -158,12 +197,12 @@ export interface RunCriticArgs {
   /** True when the worktree still carries uncommitted work pending a pre-merge commit. */
   dirty?: boolean;
   critic: { prompt: string; model: string; harness?: string };
+  fragments: AppConfig['promptFragments'];
   /** The Drive-Prompt interpolation tokens filled into the operator's review prompt. */
   fields: DriveFields;
   harness: HarnessConfig;
   harnessId: string;
-  /** Injectable drive seam; defaults to {@link createAcpCriticDrive}. */
-  drive?: CriticHarnessDrive;
+  drive: CriticHarnessDrive;
   /** Hard bound on the single prompt turn; generous default for a review. */
   timeoutMs?: number;
   parent?: SpanContext;
@@ -174,6 +213,7 @@ export interface RunCriticArgs {
   /** Receives the prompt, the ACP update stream and the native transcript for the Archive. */
   archive?: StepArchiveWriter;
   transcriptRetryDelaysMs?: number[];
+  onAgentDurationMs?: (durationMs: number) => Promise<void>;
 }
 
 export interface CriticAttempt {
@@ -185,6 +225,8 @@ export interface CriticAttempt {
   /** The exact prompt sent to the critic (`buildCriticPrompt`), persisted so the
    * Review tab can show what the reviewer was actually asked. */
   prompt: string;
+  /** Archive locator of the Resolved Prompt, only when the archive write succeeded. */
+  promptKey: string | null;
   /** The candidate OID this attempt verified. */
   inputOid: string;
   /** The critic's native transcript locator and the harness that wrote it; both null when unresolved. */
@@ -252,7 +294,7 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
 }
 
 async function runCriticArchived(args: RunCriticArgs, archive: StepArchiveWriter | undefined): Promise<CriticAttempt> {
-  const drive = args.drive ?? createAcpCriticDrive();
+  const drive = args.drive;
   const timeoutMs = args.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   let verdict: Verdict = 'inconclusive';
@@ -264,11 +306,12 @@ async function runCriticArchived(args: RunCriticArgs, archive: StepArchiveWriter
   const prompt = buildCriticPrompt({
     operatorPrompt: args.critic.prompt,
     fields: args.fields,
+    fragments: args.fragments,
     verifiedHeadOid: args.verifiedHeadOid,
     ...(args.baseOid ? { baseOid: args.baseOid } : {}),
     ...(args.dirty ? { dirty: args.dirty } : {}),
   });
-  archive?.appendPrompt(prompt);
+  const promptKey = archive && (await archive.appendPrompt(prompt)) !== null ? archive.promptLocator : null;
   const onUpdate =
     archive || args.onUpdate
       ? (update: { sessionUpdate: string; [key: string]: unknown }): void => {
@@ -277,7 +320,7 @@ async function runCriticArchived(args: RunCriticArgs, archive: StepArchiveWriter
         }
       : undefined;
   try {
-    const result = await drive.run({
+    const request: CriticDriveRequest = {
       harness: args.harness,
       harnessId: args.harnessId,
       model: args.critic.model,
@@ -285,7 +328,10 @@ async function runCriticArchived(args: RunCriticArgs, archive: StepArchiveWriter
       prompt,
       timeoutMs,
       ...(onUpdate ? { onUpdate } : {}),
-    });
+    };
+    const result = args.onAgentDurationMs
+      ? await runTimedCriticDrive(drive, request, args.onAgentDurationMs)
+      : await drive.run(request);
     output = result.output;
     sessionId = result.sessionId ?? null;
     usage = result.usage;
@@ -315,6 +361,7 @@ async function runCriticArchived(args: RunCriticArgs, archive: StepArchiveWriter
     summary,
     output,
     prompt,
+    promptKey,
     inputOid: args.verifiedHeadOid,
     transcriptPath,
     harness: args.harnessId,
@@ -331,8 +378,8 @@ export function criticAttemptToInput(attempt: CriticAttempt): VerificationAttemp
     verdict: attempt.verdict,
     summary: attempt.summary,
     output: attempt.output,
-    prompt: attempt.prompt,
     transcriptPath: attempt.transcriptPath,
     harness: attempt.harness,
+    promptKey: attempt.promptKey,
   };
 }

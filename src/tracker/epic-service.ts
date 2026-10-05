@@ -8,7 +8,7 @@ import { composeEpicView, type Epic, type EpicFacts, type EpicMeta, type EpicTim
 import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { GitError } from '../domain/errors.js';
-import { fireAndForget, orFallback } from '../error-handling.js';
+import { orFallback, type FireAndForget } from '../error-handling.js';
 import { resolveRepositoryDefaultBranch } from '../execution/branch-merge.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import {
@@ -20,7 +20,7 @@ import {
   reduceMemberState,
   type EpicIntegrateOutcome,
   type EpicRefreshResolveDispatchOutcome,
-  type EpicRefreshTarget,
+  type EpicRefreshResolveTarget,
   type EpicResolve,
 } from '../execution/epic-coordinator.js';
 import type { MemberMergeState } from '../domain/epic-integrate-decision.js';
@@ -28,6 +28,7 @@ import { isMergeStep } from '../domain/epic-merge-events.js';
 import { EpicWorktreePool } from '../execution/epic-worktree-pool.js';
 import { Git } from '../execution/git.js';
 import type { CriticHarnessDrive } from '../verification/critic.js';
+import type { CommandSpawn } from '../verification/command-verifier.js';
 import type { TaskArchive } from '../archive/task-archive.js';
 import type { MergePolicyOutcome, PostMergeCheckResult } from '../execution/merge-policy.js';
 import { logger } from '../logger.js';
@@ -36,14 +37,15 @@ import { recordAndCloseIntegratedEpic } from './epic-close.js';
 import { EpicVerificationRunner } from './epic-verification-runner.js';
 import { EpicResolutionRunner } from './epic-resolution-runner.js';
 import { EpicIntegrationRunner } from './epic-integration-runner.js';
-import type { Ticket, TrackerAdapter } from './adapter.js';
-import { resolveTrackerAdapter } from './adapter.js';
+import type { Ticket, TrackerAdapter, TrackerRef } from './adapter.js';
+import { formatTrackerRef } from './kinds.js';
+import { effectiveTrackerKind, resolveTrackerAdapter, workspaceTrackerSettings, type WorkspaceTrackerSettings } from './adapter.js';
 import type { FeatureIndex } from './local-markdown.js';
 import { persistedTickets } from './persisted.js';
 
 export type EpicResolutionDispatch = (input: {
   workspaceId: number;
-  epicRef: number;
+  epicRef: TrackerRef;
   title?: string;
   body?: string;
   url?: string;
@@ -58,7 +60,7 @@ export type EpicResolutionDispatch = (input: {
 export type MergeEpicIntegration = (input: {
   workspaceId: number;
   repoDir: string;
-  epicRef: number;
+  epicRef: TrackerRef;
   defaultBranch: string;
   integrationBranch: string;
   runPostMergeCheck: (mergeOid: string, baseDir: string) => Promise<PostMergeCheckResult>;
@@ -68,28 +70,35 @@ export type { EpicIntegrateOutcome };
 export interface EpicService {
   startWorkspace(workspace: WorkspaceRow): EpicIntegrationSync;
   stopWorkspace(workspaceId: number): void;
-  rejectEpic(workspaceId: number, epicRef: number, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null>;
+  rejectEpic(workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null>;
   epicBaseNotReady(task: TaskRow): Promise<boolean>;
   refreshAfterDefaultBranchAdvance(workingDir: string, defaultBranch: string): Promise<void>;
   listEpics(workspaceId: number): Promise<Epic[]>;
   listEpicTickets(workspaceId: number): Promise<Ticket[]>;
-  epicDetail(workspaceId: number, epicRef: number): Promise<Epic | null>;
-  epicDiff(workspaceId: number, epicRef: number): Promise<string>;
+  epicDetail(workspaceId: number, epicRef: TrackerRef): Promise<Epic | null>;
+  epicDiff(workspaceId: number, epicRef: TrackerRef): Promise<string>;
 }
 
 interface WorkspaceEpicEntry { epics: EpicLifecycle; epicIntegrate?: EpicCoordinator }
 
-/** Whole-Epic verification/integration/resolution stay dormant until both `getConfig` and `mergeEpicIntegration` are supplied. */
+/** Everything whole-Epic verification, integration and resolution need; supplied together or not at all. */
+export interface EpicIntegrationWiring {
+  getConfig: () => Pick<AppConfig, 'verify' | 'maxAttempts' | 'defaults' | 'harnesses' | 'promptFragments'>;
+  mergeEpicIntegration: MergeEpicIntegration;
+  criticDrive: CriticHarnessDrive;
+  commandSpawn: CommandSpawn;
+}
+
 export interface TrackerEpicServiceOptions {
-  resolveAdapter?: (repoRoot: string, featureIndex?: FeatureIndex) => Promise<TrackerAdapter>;
+  /** `'lifecycle-only'` runs Epic branch lifecycle with no whole-Epic verification or integration. */
+  integration: EpicIntegrationWiring | 'lifecycle-only';
+  resolveAdapter?: (repoRoot: string, featureIndex?: FeatureIndex, workspace?: WorkspaceTrackerSettings) => Promise<TrackerAdapter>;
   onError?: (message: string) => void;
-  getConfig?: (() => Pick<AppConfig, 'verify' | 'maxAttempts' | 'defaults' | 'harnesses'>) | undefined;
   operations?: EpicOperations;
-  mergeEpicIntegration?: MergeEpicIntegration | undefined;
   dispatchRefreshResolution?: (
-    target: EpicRefreshTarget,
+    target: EpicRefreshResolveTarget,
     detail: string,
-    escalate: (epicRef: number, reason: string) => void,
+    escalate: (epicRef: TrackerRef, reason: string) => void,
     retry: () => Promise<unknown>,
   ) => Promise<EpicRefreshResolveDispatchOutcome>;
   epicMergeEvents?: EpicMergeEventStore | undefined;
@@ -97,25 +106,24 @@ export interface TrackerEpicServiceOptions {
   dispatchEpicResolution?: EpicResolutionDispatch | undefined;
   worktreesDir?: string | undefined;
   onEpicAttemptChanged?: ((attempt: EpicAttemptRow) => void) | undefined;
-  onEpicMergeStep?: ((payload: { workspaceId: number; epicRef: number }) => void) | undefined;
-  onEpicIntegrated?: ((payload: { workspaceId: number; epicRef: number }) => void) | undefined;
+  onEpicMergeStep?: ((payload: { workspaceId: number; epicRef: TrackerRef }) => void) | undefined;
+  onEpicIntegrated?: ((payload: { workspaceId: number; epicRef: TrackerRef }) => void) | undefined;
   verificationAttemptStore?: VerificationAttemptStore | undefined;
-  criticDrive?: CriticHarnessDrive | undefined;
+  fireAndForget: FireAndForget;
   archive?: TaskArchive | undefined;
 }
 
 export class TrackerEpicService implements EpicService {
   private readonly entries = new Map<number, WorkspaceEpicEntry>();
 
-  private readonly resolveAdapter: (repoRoot: string, featureIndex?: FeatureIndex) => Promise<TrackerAdapter>;
+  private readonly resolveAdapter: (repoRoot: string, featureIndex?: FeatureIndex, workspace?: WorkspaceTrackerSettings) => Promise<TrackerAdapter>;
   private readonly onError: (message: string) => void;
-  private readonly getConfig: TrackerEpicServiceOptions['getConfig'];
+  private readonly integration: TrackerEpicServiceOptions['integration'];
   private readonly operations: EpicOperations;
-  private readonly mergeEpicIntegration: TrackerEpicServiceOptions['mergeEpicIntegration'];
   private readonly dispatchRefreshResolution: (
-    target: EpicRefreshTarget,
+    target: EpicRefreshResolveTarget,
     detail: string,
-    escalate: (epicRef: number, reason: string) => void,
+    escalate: (epicRef: TrackerRef, reason: string) => void,
     retry: () => Promise<unknown>,
   ) => Promise<EpicRefreshResolveDispatchOutcome>;
   private readonly epicMergeEvents: TrackerEpicServiceOptions['epicMergeEvents'];
@@ -126,19 +134,18 @@ export class TrackerEpicService implements EpicService {
   private readonly onEpicMergeStep: TrackerEpicServiceOptions['onEpicMergeStep'];
   private readonly onEpicIntegrated: TrackerEpicServiceOptions['onEpicIntegrated'];
   private readonly verificationAttemptStore: TrackerEpicServiceOptions['verificationAttemptStore'];
-  private readonly criticDrive: TrackerEpicServiceOptions['criticDrive'];
+  private readonly fireAndForget: FireAndForget;
   private readonly archive: TrackerEpicServiceOptions['archive'];
 
   constructor(
     private readonly tasks: TaskService,
     private readonly getWorkspaces: () => Promise<WorkspaceRow[]>,
-    options: TrackerEpicServiceOptions = {},
+    options: TrackerEpicServiceOptions,
   ) {
     this.resolveAdapter = options.resolveAdapter ?? resolveTrackerAdapter;
     this.onError = options.onError ?? logger.error;
-    this.getConfig = options.getConfig;
+    this.integration = options.integration;
     this.operations = options.operations ?? new EpicOperations();
-    this.mergeEpicIntegration = options.mergeEpicIntegration;
     this.dispatchRefreshResolution = options.dispatchRefreshResolution ?? (async () => ({ status: 'dispatched' }));
     this.epicMergeEvents = options.epicMergeEvents;
     this.epicAttempts = options.epicAttempts;
@@ -148,12 +155,12 @@ export class TrackerEpicService implements EpicService {
     this.onEpicMergeStep = options.onEpicMergeStep;
     this.onEpicIntegrated = options.onEpicIntegrated;
     this.verificationAttemptStore = options.verificationAttemptStore;
-    this.criticDrive = options.criticDrive;
+    this.fireAndForget = options.fireAndForget;
     this.archive = options.archive;
   }
 
   startWorkspace(workspace: WorkspaceRow): EpicIntegrationSync {
-    const epics = new EpicLifecycle(this.tasks, workspace.workingDir, Git, this.onError);
+    const epics = new EpicLifecycle(this.tasks, workspace.workingDir, this.fireAndForget, Git, this.onError);
     epics.attachWorkspace(workspace.id);
     epics.attachOperations(this.operations);
     epics.attachIntegrationBranchRetired(async ({ epicRef, branch, baseBranch }) => {
@@ -174,8 +181,8 @@ export class TrackerEpicService implements EpicService {
       this.onEpicMergeStep?.({ workspaceId: workspace.id, epicRef });
     });
     const entry: WorkspaceEpicEntry = { epics };
-    const { getConfig, mergeEpicIntegration } = this;
-    if (getConfig && mergeEpicIntegration) {
+    if (this.integration !== 'lifecycle-only') {
+      const { getConfig, mergeEpicIntegration, criticDrive, commandSpawn } = this.integration;
       const worktrees = new EpicWorktreePool({ workspaceId: workspace.id, worktreesDir: this.worktreesDir });
       const verification = new EpicVerificationRunner({
         workspace,
@@ -185,16 +192,20 @@ export class TrackerEpicService implements EpicService {
         epicAttempts: this.epicAttempts,
         verificationAttemptStore: this.verificationAttemptStore,
         onEpicAttemptChanged: this.onEpicAttemptChanged,
-        criticDrive: this.criticDrive,
+        criticDrive,
+        commandSpawn,
         archive: this.archive,
       });
       const integration = new EpicIntegrationRunner({
         workspace,
-        worktreesDir: this.worktreesDir,
         worktrees,
         epics,
         mergeEpicIntegration,
-        resolveWorkspaceVerifiers: () => verification.resolveWorkspaceVerifiers(),
+        epicAttempts: this.epicAttempts,
+        verificationAttemptStore: this.verificationAttemptStore,
+        archive: this.archive,
+        commandSpawn,
+        resolvePostMergeCommands: async () => (await verification.resolveWorkspaceVerifiers()).epic.preMerge.commands,
       });
       const { epicAttempts, dispatchEpicResolution } = this;
       const resolution = epicAttempts && dispatchEpicResolution
@@ -215,7 +226,7 @@ export class TrackerEpicService implements EpicService {
         onCompletedInPlace: ({ epicRef, baseBranch, leftBranch }) => {
           if (!this.epicMergeEvents) return;
           const events = this.epicMergeEvents;
-          fireAndForget(async () => {
+          this.fireAndForget(async () => {
             await events.append(workspace.id, epicRef, { step: 'completed-in-place', baseBranch, ...(leftBranch !== undefined ? { leftBranch } : {}) });
             this.onEpicMergeStep?.({ workspaceId: workspace.id, epicRef });
           }, { op: 'epicService.recordCompletedInPlace', level: 'error', context: { workspaceId: workspace.id, epicRef } });
@@ -224,12 +235,12 @@ export class TrackerEpicService implements EpicService {
       entry.epicIntegrate = epicIntegrate;
       epics.attachIntegrateTrigger(epicIntegrate);
     }
-    const noteRefreshBehind = (ref: number, reason: string): void => {
+    const noteRefreshBehind = (ref: TrackerRef, reason: string): void => {
       if (entry.epicIntegrate) entry.epicIntegrate.recordRefreshBehind(ref, reason);
       else logger.debug(`epic ${ref} integration refresh behind develop (retrying): ${reason}`);
     };
     const refresh = new EpicRefresh({
-      dispatchResolve: (target, detail) => this.dispatchRefreshResolution(target, detail, noteRefreshBehind, () => refresh.refresh(target)),
+      dispatchResolve: (target, detail) => this.dispatchRefreshResolution({ ...target, workspaceId: workspace.id }, detail, noteRefreshBehind, () => refresh.refresh(target)),
       escalate: noteRefreshBehind,
     });
     epics.attachRefreshTrigger(refresh);
@@ -237,23 +248,23 @@ export class TrackerEpicService implements EpicService {
     return epics;
   }
 
-  private escalateEpicIntegration(epicRef: number, reason: string): void {
+  private escalateEpicIntegration(epicRef: TrackerRef, reason: string): void {
     this.onError(`epic ${epicRef} whole-Epic integrate escalated: ${reason}`);
   }
 
-  private recordEpicIntegration(workspace: WorkspaceRow, { epicRef, mergeCommit, memberRefs }: { epicRef: number; mergeCommit: string | null; memberRefs: number[] }): Promise<void> {
+  private recordEpicIntegration(workspace: WorkspaceRow, { epicRef, mergeCommit, memberRefs }: { epicRef: TrackerRef; mergeCommit: string | null; memberRefs: TrackerRef[] }): Promise<void> {
     return recordAndCloseIntegratedEpic({
       epicRef,
       settle: () => this.tasks.markEpicIntegrated(workspace.id, epicRef, { mergeCommit, memberRefs }),
-      resolveAdapter: () => this.resolveAdapter(workspace.workingDir, (slug) => this.tasks.mdFeatureIndex(workspace.id, slug)),
+      resolveAdapter: () => this.resolveAdapter(workspace.workingDir, (slug) => this.tasks.mdFeatureIndex(workspace.id, slug), workspaceTrackerSettings(workspace)),
       onError: this.onError,
     });
   }
 
   stopWorkspace(workspaceId: number): void { this.entries.delete(workspaceId); }
 
-  private async currentMemberStates(workspaceId: number, memberRefs: readonly number[]): Promise<MemberMergeState[]> {
-    const byRef = new Map<number, TaskRow>();
+  private async currentMemberStates(workspaceId: number, memberRefs: readonly TrackerRef[]): Promise<MemberMergeState[]> {
+    const byRef = new Map<TrackerRef, TaskRow>();
     for (const row of await this.tasks.list({ workspaceId })) if (row.trackerRef != null) byRef.set(row.trackerRef, row);
     return Promise.all(memberRefs.map(async (ref) => {
       const task = byRef.get(ref);
@@ -261,7 +272,7 @@ export class TrackerEpicService implements EpicService {
     }));
   }
 
-  async rejectEpic(workspaceId: number, epicRef: number, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null> {
+  async rejectEpic(workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null> {
     const entry = this.entries.get(workspaceId);
     const coordinator = entry?.epicIntegrate;
     if (!entry || !coordinator || !this.epicAttempts) return null;
@@ -301,29 +312,29 @@ export class TrackerEpicService implements EpicService {
   }
 
   async listEpics(workspaceId: number): Promise<Epic[]> {
-    const { mirrored, tickets, rows } = await this.epicData(workspaceId);
+    const { mirrored, tickets, rows, formatRef } = await this.epicData(workspaceId);
     const rowByRef = new Map(rows.map((row) => [row.trackerRef, row] as const));
     const baseBranch = await this.epicBaseBranch(workspaceId);
     const configured = await this.verificationConfigured(workspaceId);
-    return Promise.all(this.surfacedEpics(rows, tickets, mirrored, false).map((epic) => this.composeOne(workspaceId, epic, tickets, mirrored, baseBranch, rowByRef, configured)));
+    return Promise.all(this.surfacedEpics(rows, tickets, mirrored, false, formatRef).map((epic) => this.composeOne(workspaceId, epic, tickets, mirrored, baseBranch, rowByRef, configured)));
   }
 
   async listEpicTickets(workspaceId: number): Promise<Ticket[]> {
-    const { mirrored, tickets, rows } = await this.epicData(workspaceId);
-    const byRef = new Map(tickets.map((ticket) => [ticket.number, ticket]));
-    return this.surfacedEpics(rows, tickets, mirrored, true).map((epic) => byRef.get(epic.ref) ?? historicalEpicTicket(epic));
+    const { mirrored, tickets, rows, formatRef } = await this.epicData(workspaceId);
+    const byRef = new Map(tickets.map((ticket) => [ticket.ref, ticket]));
+    return this.surfacedEpics(rows, tickets, mirrored, true, formatRef).map((epic) => byRef.get(epic.ref) ?? historicalEpicTicket(epic));
   }
 
-  async epicDetail(workspaceId: number, epicRef: number): Promise<Epic | null> {
-    const { mirrored, tickets, rows } = await this.epicData(workspaceId);
+  async epicDetail(workspaceId: number, epicRef: TrackerRef): Promise<Epic | null> {
+    const { mirrored, tickets, rows, formatRef } = await this.epicData(workspaceId);
     const row = rows.find((candidate) => candidate.trackerRef === epicRef);
     if (!row) return null;
-    const epic = this.isHistorical(row) ? this.storedToDerived(row, tickets, mirrored) : this.liveEpics(tickets, mirrored).get(epicRef);
+    const epic = this.isHistorical(row) ? this.storedToDerived(row, tickets, mirrored, formatRef) : this.liveEpics(tickets, mirrored).get(epicRef);
     if (!epic) return null;
     return this.composeOne(workspaceId, epic, tickets, mirrored, await this.epicBaseBranch(workspaceId), new Map(rows.map((item) => [item.trackerRef, item] as const)), await this.verificationConfigured(workspaceId));
   }
 
-  async epicDiff(workspaceId: number, epicRef: number): Promise<string> {
+  async epicDiff(workspaceId: number, epicRef: TrackerRef): Promise<string> {
     const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId);
     if (!workspace) return '';
     const row = (await this.tasks.listStoredEpics(workspaceId)).find((candidate) => candidate.trackerRef === epicRef);
@@ -355,38 +366,40 @@ export class TrackerEpicService implements EpicService {
 
   private async epicData(workspaceId: number) {
     const mirrored = (await this.tasks.listWithDeps({ workspaceId })).filter((task) => task.origin === 'mirrored');
-    return { mirrored, tickets: await persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId)), rows: await this.tasks.listStoredEpics(workspaceId) };
+    const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId);
+    const kindId = workspace ? await effectiveTrackerKind(workspace.workingDir, workspaceTrackerSettings(workspace)) : null;
+    return { mirrored, tickets: await persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId)), rows: await this.tasks.listStoredEpics(workspaceId), formatRef: (ref: TrackerRef) => formatTrackerRef(kindId, ref) };
   }
-  private liveEpics(tickets: Ticket[], mirrored: TaskWithDeps[]): Map<number, DerivedEpic> {
-    const readiness = new Map<number, { agentWorkable: boolean }>();
+  private liveEpics(tickets: Ticket[], mirrored: TaskWithDeps[]): Map<TrackerRef, DerivedEpic> {
+    const readiness = new Map<TrackerRef, { agentWorkable: boolean }>();
     for (const task of mirrored) if (task.trackerRef !== null) readiness.set(task.trackerRef, { agentWorkable: task.agentWorkable });
     return new Map(deriveLeafEpics(tickets, readiness, { includeClosed: true }).map((epic) => [epic.ref, epic] as const));
   }
-  private surfacedEpics(rows: EpicRow[], tickets: Ticket[], mirrored: TaskWithDeps[], includeHistorical: boolean): DerivedEpic[] {
-    const live = this.liveEpics(tickets, mirrored); const ticketByRef = new Map(tickets.map((ticket) => [ticket.number, ticket])); const epics: DerivedEpic[] = [];
+  private surfacedEpics(rows: EpicRow[], tickets: Ticket[], mirrored: TaskWithDeps[], includeHistorical: boolean, formatRef: (ref: TrackerRef) => string): DerivedEpic[] {
+    const live = this.liveEpics(tickets, mirrored); const ticketByRef = new Map(tickets.map((ticket) => [ticket.ref, ticket])); const epics: DerivedEpic[] = [];
     for (const row of rows) {
-      if (this.isHistorical(row)) { if (includeHistorical) epics.push(this.storedToDerived(row, tickets, mirrored)); }
+      if (this.isHistorical(row)) { if (includeHistorical) epics.push(this.storedToDerived(row, tickets, mirrored, formatRef)); }
       else if (row.state !== 'integrated' && ticketByRef.get(row.trackerRef)?.state === 'open') {
         const epic = live.get(row.trackerRef); if (epic) epics.push(epic);
       } else if (row.state !== 'integrated' && ticketByRef.get(row.trackerRef)?.state === 'closed') {
-        epics.push(this.storedToDerived(row, tickets, mirrored));
+        epics.push(this.storedToDerived(row, tickets, mirrored, formatRef));
       }
     }
-    return epics.sort((a, b) => a.ref - b.ref);
+    return epics;
   }
   private isHistorical(row: EpicRow): boolean { return row.state === 'integrated' && row.memberRefs !== null; }
-  private storedToDerived(row: EpicRow, tickets: Ticket[], mirrored: TaskRow[]): DerivedEpic {
-    const ticket = tickets.find((candidate) => candidate.number === row.trackerRef);
-    return { ref: row.trackerRef, title: ticket?.title ?? mirrored.find((task) => task.trackerRef === row.trackerRef)?.trackerTitle ?? `Epic #${row.trackerRef}`, body: ticket?.body ?? '', url: ticket?.url ?? '', members: [...(row.memberRefs ?? [])].sort((a, b) => a - b), ready: [] };
+  private storedToDerived(row: EpicRow, tickets: Ticket[], mirrored: TaskRow[], formatRef: (ref: TrackerRef) => string): DerivedEpic {
+    const ticket = tickets.find((candidate) => candidate.ref === row.trackerRef);
+    return { ref: row.trackerRef, title: ticket?.title ?? mirrored.find((task) => task.trackerRef === row.trackerRef)?.trackerTitle ?? `Epic ${formatRef(row.trackerRef)}`, body: ticket?.body ?? '', url: ticket?.url ?? '', members: [...(row.memberRefs ?? [])], ready: [] };
   }
-  private async composeOne(workspaceId: number, epic: DerivedEpic, tickets: Ticket[], mirrored: TaskRow[], baseBranch: string | null, rows: ReadonlyMap<number, EpicRow>, configured: boolean): Promise<Epic> {
-    const titles = new Map(tickets.map((ticket) => [ticket.number, ticket.title])); const tasks = new Map<number, TaskRow>();
+  private async composeOne(workspaceId: number, epic: DerivedEpic, tickets: Ticket[], mirrored: TaskRow[], baseBranch: string | null, rows: ReadonlyMap<TrackerRef, EpicRow>, configured: boolean): Promise<Epic> {
+    const titles = new Map(tickets.map((ticket) => [ticket.ref, ticket.title])); const tasks = new Map<TrackerRef, TaskRow>();
     for (const task of mirrored) if (task.trackerRef !== null) tasks.set(task.trackerRef, task);
-    const ticket = tickets.find((candidate) => candidate.number === epic.ref); const row = rows.get(epic.ref);
-    const meta: EpicMeta = { description: ticket?.body ?? '', createdAt: ticket ? Date.parse(ticket.createdAt) || 0 : 0, baseBranch, dependsOn: (ticket?.blockedBy ?? []).map((blocker) => blocker.number).sort((a, b) => a - b), kind: row?.kind === 'map' ? 'map' : 'spec', state: row?.state ?? 'open' };
+    const ticket = tickets.find((candidate) => candidate.ref === epic.ref); const row = rows.get(epic.ref);
+    const meta: EpicMeta = { description: ticket?.body ?? '', createdAt: ticket ? Date.parse(ticket.createdAt) || 0 : 0, baseBranch, dependsOn: (ticket?.blockedBy ?? []).map((blocker) => blocker.ref), kind: row?.kind === 'map' ? 'map' : 'spec', state: row?.state ?? 'open' };
     return composeEpicView(epic, tasks, titles, await this.epicFacts(workspaceId, epic.ref, configured), meta);
   }
-  private async epicFacts(workspaceId: number, epicRef: number, configured: boolean): Promise<EpicFacts> {
+  private async epicFacts(workspaceId: number, epicRef: TrackerRef, configured: boolean): Promise<EpicFacts> {
     const branch = integrationBranchName(epicRef); const integrate = this.entries.get(workspaceId)?.epicIntegrate;
     const integration = integrate ? await integrate.integrationFacts(epicRef) : { exists: false, tip: null };
     const timelineEvents: EpicTimelineEvent[] = this.epicMergeEvents
@@ -396,15 +409,15 @@ export class TrackerEpicService implements EpicService {
     const currentIntegration = lastStartedIndex === -1 ? timelineEvents : timelineEvents.slice(lastStartedIndex);
     const mergeSteps = currentIntegration.map((event) => event.step).filter(isMergeStep);
     const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId);
-    const verifiers = workspace && this.getConfig ? resolveVerifiers(workspace, this.getConfig()).epic.preMerge : { commands: [], critics: [] };
+    const verifiers = workspace && this.integration !== 'lifecycle-only' ? resolveVerifiers(workspace, this.integration.getConfig()).epic.preMerge : { commands: [], critics: [] };
     const status = integrate?.verificationStatus(epicRef) ?? null;
     const labels = [...verifiers.commands.map((command) => [command.command, ...command.args].join(' ')), ...verifiers.critics.map((_, index) => `Critic ${index + 1}`)];
     return { integration: { branch, ...integration }, verification: { status, configured, stages: [{ label: 'Epic pre-merge', status, verifiers: labels }] }, integrate: { inFlight: integrate?.isInFlight(epicRef) ?? false, held: integrate?.heldReason(epicRef) ?? null, phase: integrate?.activePhase(epicRef) ?? null }, mergeSteps, timelineEvents };
   }
   private async epicBaseBranch(workspaceId: number): Promise<string | null> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return workspace ? resolveRepositoryDefaultBranch(workspace.workingDir).catch(() => null) : null; }
-  private async verificationConfigured(workspaceId: number): Promise<boolean> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return !!workspace && !!this.getConfig && resolveVerifiers(workspace, this.getConfig()).epic.preMerge.commands.length > 0; }
+  private async verificationConfigured(workspaceId: number): Promise<boolean> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return !!workspace && this.integration !== 'lifecycle-only' && resolveVerifiers(workspace, this.integration.getConfig()).epic.preMerge.commands.length > 0; }
 }
 
 function historicalEpicTicket(epic: DerivedEpic): Ticket {
-  return { number: epic.ref, title: epic.title, state: 'closed', labels: [], parent: null, blockedBy: [], body: '', createdAt: '', closedAt: null, assignees: [], blocking: [], comments: [], isMap: false, url: '' };
+  return { ref: epic.ref, title: epic.title, state: 'closed', labels: [], parent: null, blockedBy: [], body: '', createdAt: '', closedAt: null, assignees: [], blocking: [], isMap: false, url: '' };
 }

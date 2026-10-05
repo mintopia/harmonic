@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDaySeries, type DaySeriesRun } from '../src/server/stats-series.js';
+import { buildDaySeries, type DaySeriesRun } from '../src/domain/stats-series.js';
 import type { AttemptUsage } from '../src/execution/usage.js';
 import type { Cost } from '../src/domain/pricing.js';
 

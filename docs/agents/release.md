@@ -23,6 +23,14 @@ accrues on `develop`. To ship what's on `develop`:
    Only touch it if the PR is left open (a conflict, or auto-merge is off) —
    then merge it yourself.
 
+## Publishing a develop build
+
+To publish the current `develop` as a prerelease: `gh workflow run release.yml --ref develop`.
+It runs the CI matrix, then publishes `X.Y.(Z+1)-develop.<run>.g<sha>` to the
+`develop` dist-tag; it never moves `latest`. Users install it with
+`npm i @mintopia/harmonic@develop`. Self-upgrade only follows `latest`
+(`src/upgrade/update-check.ts`), so existing installs do not pick it up.
+
 ## Gotchas
 
 - **Let release-please own the version and the tag.** Never hand-edit

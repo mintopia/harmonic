@@ -5,7 +5,7 @@ import { attemptEvents } from '../src/db/schema.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { type MirrorInput, TaskService } from '../src/domain/tasks.js';
 import { type SettingsStore } from '../src/server/settings-store.js';
-import { type Ticket, type TrackerAdapter } from '../src/tracker/adapter.js';
+import { type Ticket, type TrackerAdapter, trackerRef } from '../src/tracker/adapter.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
 import { TrackerPoller } from '../src/tracker/poller.js';
 import { allWorkspaces, makeSettingsStore, startServer, stubHarness, type TestServer, seedWorkspace } from './helpers.js';
@@ -133,7 +133,7 @@ describe('ticket-timeline-route', () => {
 
 describe('ticket-closed-while-working', () => {
   const mirrored = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput => ({
-    trackerRef: ref,
+    trackerRef: trackerRef(ref),
     prompt: `ticket ${ref}\n\nbody`,
     workflow: 'implement',
     wayfinderType: null,
@@ -143,7 +143,7 @@ describe('ticket-closed-while-working', () => {
   });
 
   const ticket = (over: Partial<Ticket>): Ticket => ({
-    number: 7,
+    ref: trackerRef(7),
     title: 'A ticket',
     state: 'open',
     body: '',
@@ -154,29 +154,28 @@ describe('ticket-closed-while-working', () => {
     parent: null,
     blockedBy: [],
     blocking: [],
-    comments: [],
     isMap: false,
     url: 'https://x/7',
     ...over,
   });
 
   function writeSpy(tickets: () => Ticket[]) {
-    const calls = { reopen: [] as number[], close: [] as number[], claim: [] as number[], release: [] as number[] };
+    const calls = { reopen: [] as string[], close: [] as string[], claim: [] as string[], release: [] as string[] };
     const adapter: TrackerAdapter = {
       name: 'fake',
       scan: async () => tickets(),
-      readTicket: async (ref) => tickets().find((t) => t.number === ref.number) ?? ticket({ number: ref.number }),
+      readTicket: async (ref) => tickets().find((t) => t.ref === ref.ref) ?? ticket({ ref: ref.ref }),
       claim: async (t) => {
-        calls.claim.push(t.number);
+        calls.claim.push(t.ref);
       },
       release: async (t) => {
-        calls.release.push(t.number);
+        calls.release.push(t.ref);
       },
       close: async (t) => {
-        calls.close.push(t.number);
+        calls.close.push(t.ref);
       },
       reopen: async (t) => {
-        calls.reopen.push(t.number);
+        calls.reopen.push(t.ref);
       },
     };
     return { adapter, calls };
@@ -205,7 +204,7 @@ describe('ticket-closed-while-working', () => {
     });
 
     it('the poll leaves the working Task alone and writes nothing back to the tracker', async () => {
-      let current = [ticket({ number: 7 })];
+      let current = [ticket({ ref: trackerRef(7) })];
       const { adapter, calls } = writeSpy(() => current);
       const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
       await poller.poll();
@@ -213,7 +212,7 @@ describe('ticket-closed-while-working', () => {
       await tasks.setState(task.id, 'working');
       await runs.create(task.id);
 
-      current = [ticket({ number: 7, state: 'closed', closedAt: '2026-08-07T01:00:00Z' })];
+      current = [ticket({ ref: trackerRef(7), state: 'closed', closedAt: '2026-08-07T01:00:00Z' })];
       await poller.poll();
 
       expect((await tasks.get(task.id)).state).toBe('working');
@@ -230,7 +229,7 @@ describe('ticket-closed-while-working', () => {
       expect((await tasks.withDeps(await tasks.get(dependent.id))).agentWorkable).toBe(false);
       await tasks.setState(blocker.id, 'working');
 
-      await mirrorScan(tasks, [ticket({ number: 1, state: 'closed', closedAt: '2026-08-07T01:00:00Z' })], wsId);
+      await mirrorScan(tasks, [ticket({ ref: trackerRef(1), state: 'closed', closedAt: '2026-08-07T01:00:00Z' })], wsId);
 
       expect((await tasks.get(blocker.id)).state).toBe('working');
       expect((await tasks.withDeps(await tasks.get(dependent.id))).openBlockerCount).toBe(1);
@@ -242,7 +241,7 @@ describe('ticket-closed-while-working', () => {
       const dependent = await tasks.create({ prompt: 'dependent', state: 'ready' });
       await tasks.addDependency(dependent.id, blocker.id);
 
-      await mirrorScan(tasks, [ticket({ number: 1, state: 'closed', closedAt: '2026-08-07T01:00:00Z' })], wsId);
+      await mirrorScan(tasks, [ticket({ ref: trackerRef(1), state: 'closed', closedAt: '2026-08-07T01:00:00Z' })], wsId);
 
       expect((await tasks.get(blocker.id)).state).toBe('done');
       expect((await tasks.withDeps(await tasks.get(dependent.id))).openBlockerCount).toBe(0);
@@ -253,7 +252,7 @@ describe('ticket-closed-while-working', () => {
       const task = await tasks.upsertMirrored(mirrored(9));
       await tasks.escalate(task.id, 'escalated to human: attempt 2 of 2 failed');
 
-      await mirrorScan(tasks, [ticket({ number: 9, state: 'closed', closedAt: '2026-08-07T01:00:00Z' })], wsId);
+      await mirrorScan(tasks, [ticket({ ref: trackerRef(9), state: 'closed', closedAt: '2026-08-07T01:00:00Z' })], wsId);
 
       expect(await tasks.get(task.id)).toMatchObject({ state: 'escalated', escalationReason: 'escalated to human: attempt 2 of 2 failed' });
     });

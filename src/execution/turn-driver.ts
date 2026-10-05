@@ -1,13 +1,13 @@
 import type { ChildProcess } from 'node:child_process';
 import { GitError } from '../domain/errors.js';
-import { bestEffort, fireAndForget } from '../error-handling.js';
+import { bestEffort, type FireAndForget } from '../error-handling.js';
 import { classifyGitFailure, type GitCircuitBreaker } from './git-failure.js';
 import { adapterFor } from './harness/registry.js';
 import type { LiveUsageTailer } from './live-usage-tailer.js';
 import type { UsageSampler } from './usage-sampler.js';
 import { GuardrailSupervisor } from './guardrail-supervisor.js';
 import { ActiveRuns, type ActiveRun } from './active-runs.js';
-import { codeIndexRepoGuidance, promptForTask } from './prompt-template.js';
+import { codeIndexRepoGuidance, promptForTask, renderFragment } from './prompt-template.js';
 import { indexWorktree } from './code-index.js';
 import type { VerificationCoordinator } from './verification-coordinator.js';
 import type { AutoDrive } from './auto-drive.js';
@@ -20,13 +20,17 @@ import { repoKey } from './repo-lock.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { SettleProjection, DispositionKind } from '../domain/attempt-settle.js';
 import type { TaskService } from '../domain/tasks.js';
-import { resolveScoped, resolveTaskPrompt } from '../domain/setting-override.js';
+import type { PromptFragments } from '../domain/prompt-fragments.js';
+import { resolvePromptFragments, resolveScoped, resolveTaskPrompt } from '../domain/setting-override.js';
+import { resolveAgentMessages } from '../domain/agent-messages.js';
 import { SessionContinuation, type PersistSessionContext } from './session-continuation.js';
 import { MergeCoordinator, BaseBranchUnresolved, EpicBaseNotReady } from './merge-coordinator.js';
 import type { RunBoundaryResult } from './run-control.js';
 import type { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { logger } from '../logger.js';
 import type { SpanContext } from '@opentelemetry/api';
+import type { AgentMessageRow } from '../db/schema.js';
+import { peerMessagesSection } from './agent-message-delivery.js';
 import type { RunnerEvents, RunnerOptions, Workspace } from './runner.js';
 import { TurnListeners, TurnState } from './turn-listeners.js';
 import type { TaskArchive } from '../archive/task-archive.js';
@@ -66,6 +70,7 @@ export interface TurnDriverDeps {
   attempts: AttemptStore;
   sessionStore: SessionStore;
   guardrailEvents: GuardrailEventStore;
+  fireAndForget: FireAndForget;
   usage: UsageSampler;
   tailer: LiveUsageTailer;
   getConfig: () => AppConfig;
@@ -80,6 +85,7 @@ export interface TurnDriverDeps {
   autoDrive: AutoDrive | undefined;
   keys: RunnerOptions['keys'];
   getWorkspace: RunnerOptions['getWorkspace'];
+  agentMessages: RunnerOptions['agentMessages'];
   postMerge: RunnerOptions['postMerge'];
   gitBreaker: GitCircuitBreaker | undefined;
   onGloballyPaused: ((taskId: number) => Promise<void>) | undefined;
@@ -129,6 +135,7 @@ export class TurnDriver {
       autoDrive: deps.autoDrive,
       taskService: deps.taskService,
       getConfig: deps.getConfig,
+      getWorkspace: deps.getWorkspace,
       postMerge: deps.postMerge,
       isShuttingDown: deps.isShuttingDown,
       settleEscalated: deps.settleEscalated,
@@ -187,7 +194,7 @@ export class TurnDriver {
         output: outcome.output,
         attempt: attemptNumber - 1,
         continuation,
-        condensedContext: continuation.path === 'new-session-condensed' ? await this.deps.sessionContinuation.condensedContext(run) : null,
+        condensedContext: continuation.path === 'new-session-condensed' ? await this.deps.sessionContinuation.condensedContext(run, resolvePromptFragments(await this.deps.getWorkspace?.(task.workspaceId), this.deps.getConfig())) : null,
       };
       }
     } finally {
@@ -268,7 +275,7 @@ export class TurnDriver {
         await finalize();
         return { kind: 'terminal' };
       }
-      const { promptText, operatorSeed } = await this.initializeTurn({
+      const { promptText, operatorSeed, heldMessages } = await this.initializeTurn({
         task,
         run,
         harness,
@@ -284,8 +291,10 @@ export class TurnDriver {
         opensAttempt,
         record,
       });
+      const messageStore = this.deps.agentMessages;
       const driven = await this.completion.drivePromptCycle({
         task, driver, active, guardrails, listeners, autoDriven, promptText, operatorSeed, record,
+        onFirstPrompt: messageStore && heldMessages.length > 0 ? () => messageStore.markDelivered(heldMessages, task.id) : undefined,
       });
       escalating = driven.escalating;
       if (active.externallySettled) {
@@ -427,7 +436,7 @@ export class TurnDriver {
       }
       return { ok: true, workspace, mcpServers, child, stderr, rebaseConflict };
     } catch (err) {
-      fireAndForget(() => this.deps.keys?.revoke(run.id), { op: 'runner.revokeKeyOnStartError', level: 'error', context: { attemptId: run.id, taskId: task.id } });
+      this.deps.fireAndForget(() => this.deps.keys?.revoke(run.id), { op: 'runner.revokeKeyOnStartError', level: 'error', context: { attemptId: run.id, taskId: task.id } });
       if (err instanceof EpicBaseNotReady) {
         await this.deps.coordinateSettle(task, run, 'failed', {
           runState: 'failed',
@@ -519,7 +528,7 @@ export class TurnDriver {
     };
     this.deps.activeRuns.set(run.id, active);
     turn.toolCallFlushTimer = setInterval(() => {
-      fireAndForget(() => flushToolCalls(), { op: 'runner.flushToolCalls.interval', level: 'warn', context: { attemptId: run.id } });
+      this.deps.fireAndForget(() => flushToolCalls(), { op: 'runner.flushToolCalls.interval', level: 'warn', context: { attemptId: run.id } });
     }, 10_000);
     turn.toolCallFlushTimer.unref?.();
     const guardrails = new GuardrailSupervisor(
@@ -530,6 +539,7 @@ export class TurnDriver {
         sampleSnapshot: (attemptId) => this.deps.usage.sampleSnapshot(attemptId),
         spendPollMs: this.deps.spendPollMs,
         spendGraceMs: this.deps.spendGraceMs,
+        fireAndForget: this.deps.fireAndForget,
       },
       {
         taskId: task.id,
@@ -549,7 +559,7 @@ export class TurnDriver {
         isSettled: () => active.externallySettled,
         isFinishing: () => active.agentFinished || active.escalateReason != null,
         hasPendingSteer: () => active.steerQueue.length > 0,
-        pushSteer: (text) => active.steerQueue.push(text),
+        pushSteer: (text) => active.steerQueue.push({ text }),
       },
     );
     active.guardrails = guardrails;
@@ -570,8 +580,9 @@ export class TurnDriver {
       turn.clearTimer();
       await bestEffort(() => flushToolCalls(), { op: 'runner.finalize.flushToolCalls', level: 'warn', context: { attemptId: run.id } });
       this.deps.usage.dropReader(run.id);
+      for (const entry of active.steerQueue.splice(0)) entry.onDropped?.();
       this.deps.kill(active);
-      fireAndForget(() => this.deps.keys?.revoke(run.id), { op: 'runner.revokeKeyOnFinalize', level: 'error', context: { attemptId: run.id, taskId: task.id } });
+      this.deps.fireAndForget(() => this.deps.keys?.revoke(run.id), { op: 'runner.revokeKeyOnFinalize', level: 'error', context: { attemptId: run.id, taskId: task.id } });
       await bestEffort(() => this.deps.finalizeWorkspace(task, run, attemptNumber, workspace), {
         op: 'runner.finalize.finalizeWorkspace',
         level: 'error',
@@ -606,7 +617,7 @@ export class TurnDriver {
      * from a manual resume/steer-continue reusing an already-open Attempt's row. */
     opensAttempt: boolean;
     record: RunEventRecorder;
-  }): Promise<{ promptText: string; operatorSeed: string | undefined }> {
+  }): Promise<{ promptText: string; operatorSeed: string | undefined; heldMessages: AgentMessageRow[] }> {
     const {
       task,
       run,
@@ -722,11 +733,14 @@ export class TurnDriver {
         }
       }
     }
+    const workspaceRow = await this.deps.getWorkspace?.(task.workspaceId);
+    const fragments = resolvePromptFragments(workspaceRow, this.deps.getConfig());
+    const operatorSection = (seed: string) => renderFragment('operatorMessage', fragments, { seed });
     let promptText = autoDriven
       ? await this.deps.autoDrive!.prompt(task)
       : promptForTask(
           { ...task, workingDir: workspace.cwd },
-          resolveTaskPrompt(await this.deps.getWorkspace?.(task.workspaceId), this.deps.getConfig()),
+          resolveTaskPrompt(workspaceRow, this.deps.getConfig()),
         );
     const operatorSeed = this.deps.activeRuns.takePendingOperatorSeed(task.id);
     let condensed: string | null = null;
@@ -734,44 +748,59 @@ export class TurnDriver {
       if (run.sessionRowId !== null && !opensAttempt) {
         // Continuing an already-open Attempt (a manual resume/steer-continue):
         // continue-full already holds the full prior conversation.
-        promptText = `## Operator message\n\n${operatorSeed}`;
+        promptText = operatorSection(operatorSeed);
       } else if (run.sessionRowId !== null) {
         // This Attempt's own opening turn, even though it opportunistically bound a
         // warm Session (bindContinuationIfEligible): that memory belongs to an
         // earlier Attempt, not this one — still send the real instructions, with
         // the operator's message appended, not swapped in for them.
-        promptText = `${promptText}\n\n## Operator message\n\n${operatorSeed}`;
+        promptText = `${promptText}\n\n${operatorSection(operatorSeed)}`;
       } else {
         // Fresh Session: the agent needs some context, not just the bare message.
         const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
-        const priorContext = src ? await this.deps.sessionContinuation.condensedContext(src.prior) : null;
+        const priorContext = src ? await this.deps.sessionContinuation.condensedContext(src.prior, fragments) : null;
         promptText = priorContext
-          ? `${priorContext}\n\n## Operator message\n\n${operatorSeed}`
-          : `${promptText}\n\n## Operator message\n\n${operatorSeed}`;
+          ? `${priorContext}\n\n${operatorSection(operatorSeed)}`
+          : `${promptText}\n\n${operatorSection(operatorSeed)}`;
       }
     } else if (healCtx) {
-      promptText = `${promptText}\n\n## Previous attempt failed — fix required (self-heal ${healCtx.attempt})\n` +
-        `Your previous attempt did not pass:\n${healCtx.reason}\n\n${healCtx.output}\n\nFix the cause so the full verification suite passes, then finish.`;
+      promptText = `${promptText}\n\n${renderFragment('selfHeal', fragments, { attempt: healCtx.attempt, reason: healCtx.reason, output: healCtx.output })}`;
       condensed = healCtx.condensedContext ?? null;
       // A steer arriving exactly as a self-heal retry starts still reaches this turn.
       if (operatorSeed !== undefined) {
-        promptText = `${promptText}\n\n## Operator message\n\n${operatorSeed}`;
+        promptText = `${promptText}\n\n${operatorSection(operatorSeed)}`;
       }
     } else if (task.continuationChoice === 'condensed') {
       const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
-      condensed = src ? await this.deps.sessionContinuation.condensedContext(src.prior) : null;
+      condensed = src ? await this.deps.sessionContinuation.condensedContext(src.prior, fragments) : null;
     }
-    if (rebaseConflict) {
-      promptText =
-        `${promptText}\n\n## Rebase conflict — resolve first\n` +
-        `Harmonic rebased your branch onto its base. Your uncommitted changes from before the rebase were stashed and reapplied. ` +
-        `The rebase or the reapply stopped with conflicts left in this checkout. Inspect the conflicted files (\`git status\`), ` +
-        `resolve them, and stage them. If a rebase is still in progress, run \`git rebase --continue\`. Do not drop any stashes.`;
-    }
+    const peer = await this.peerContext(task, fragments);
+    if (peer.text) promptText = `${promptText}\n\n${peer.text}`;
+    if (rebaseConflict) promptText = `${promptText}\n\n${renderFragment('rebaseConflict', fragments)}`;
     if (condensed) promptText = `${promptText}\n\n${condensed}`;
-    if (codeIndexRepoId) promptText = `${promptText}${codeIndexRepoGuidance(codeIndexRepoId)}`;
-    await this.deps.attempts.update(run.id, { prompt: promptText });
-    return { promptText, operatorSeed };
+    if (codeIndexRepoId) promptText = `${promptText}${codeIndexRepoGuidance(codeIndexRepoId, fragments)}`;
+    return { promptText, operatorSeed, heldMessages: peer.held };
+  }
+
+  /** Held peer messages from the database (left held until the prompt is sent), plus the peer line, when Agent Messages are on. */
+  private async peerContext(task: TaskRow, fragments: PromptFragments): Promise<{ text: string; held: AgentMessageRow[] }> {
+    const store = this.deps.agentMessages;
+    if (!store) return { text: '', held: [] };
+    const workspace = await this.deps.getWorkspace?.(task.workspaceId);
+    const { enabled } = resolveAgentMessages(workspace, this.deps.getConfig().agentMessages);
+    if (!enabled) return { text: '', held: [] };
+    const held = await store.listHeld(task.id);
+    const parts: string[] = [];
+    if (held.length > 0) {
+      const harnesses = new Map<number, string>();
+      for (const id of new Set(held.map((m) => m.senderTaskId))) {
+        const sender = await this.deps.taskService.get(id).catch(() => null);
+        if (sender) harnesses.set(id, sender.harness);
+      }
+      parts.push(peerMessagesSection(held, (id) => harnesses.get(id) ?? 'agent', fragments));
+    }
+    parts.push(renderFragment('peerLine', fragments));
+    return { text: parts.join('\n\n'), held };
   }
 
 }

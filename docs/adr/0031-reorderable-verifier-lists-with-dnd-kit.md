@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-09-11
 
+Current status (2026-10-02): Named, ordered verifier lists are implemented. Workspace list inheritance follows the later additive-overlay decision in ADR-0037.
+
 ## Context
 
 The global and per-Workspace verification settings edit two ordered lists per

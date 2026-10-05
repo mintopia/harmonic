@@ -4,10 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { EpicBand } from '../web/src/components/Board.js';
 import { EpicIntegrationBar } from '../web/src/components/EpicIntegrationBar.js';
 import type { Epic, EpicMember } from '../web/src/epic-model.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 function epic(overrides: Partial<Epic> = {}): Epic {
   return {
-    ref: 424,
+    ref: trackerRef(424),
     title: 'Whole-Epic integration progress',
     kind: 'spec',
     state: 'open',
@@ -73,8 +74,8 @@ describe('EpicBand whole-Epic integration progress (issue #424)', () => {
 
   it('drives the bar off the server-authoritative read model, never re-derived from child states', () => {
     const merged: EpicMember[] = [
-      { ref: 1, title: 'a', taskId: 1, state: 'done', escalated: false, mergeStatus: 'completed', ready: false, isolationMode: 'worktree' },
-      { ref: 2, title: 'b', taskId: 2, state: 'done', escalated: false, mergeStatus: 'completed', ready: false, isolationMode: 'worktree' },
+      { ref: trackerRef(1), title: 'a', taskId: 1, state: 'done', escalated: false, mergeStatus: 'completed', ready: false, isolationMode: 'worktree' },
+      { ref: trackerRef(2), title: 'b', taskId: 2, state: 'done', escalated: false, mergeStatus: 'completed', ready: false, isolationMode: 'worktree' },
     ];
     const failing = renderToStaticMarkup(
       createElement(EpicIntegrationBar, {

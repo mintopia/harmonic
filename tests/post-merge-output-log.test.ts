@@ -4,13 +4,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { TaskService } from '../src/domain/tasks.js';
+import { AttemptStore } from '../src/domain/attempts.js';
+import { SessionStore } from '../src/domain/sessions.js';
+import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import { TaskArchive } from '../src/archive/task-archive.js';
+import { TranscriptCapture } from '../src/execution/transcript-capture.js';
 import { baselineConfig } from '../src/config.js';
 import { createPostMergeCheck } from '../src/verification/post-merge-check.js';
-import type { AttemptRow } from '../src/db/schema.js';
-import type { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
-import type { WorkspaceService } from '../src/domain/workspaces.js';
-import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { EpicIntegrationRunner } from '../src/tracker/epic-integration-runner.js';
+import { executionPlumbing, allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 describe('createPostMergeCheck archive output', () => {
   let dir: string;
@@ -39,24 +42,100 @@ describe('createPostMergeCheck archive output', () => {
     });
     const tasks = new TaskService(db, () => baselineConfig(), allWorkspaces(db, settings));
     const task = await tasks.create({ prompt: 'p' });
+    const attempts = new AttemptStore(db);
+    const run = await attempts.create(task.id);
+    const verificationAttempts = new VerificationAttemptStore(db);
     const archive = new TaskArchive({
       dataDir: dir,
       ensureArchiveId: (id) => tasks.ensureArchiveId(id),
       workspaceName: async () => null,
     });
     const check = createPostMergeCheck({
-      workspaces: { get: async () => undefined } as unknown as WorkspaceService,
-      settingsStore: settings,
-      verificationAttempts: { append: async () => ({ id: 1 }) } as unknown as VerificationAttemptStore,
+      ...executionPlumbing(),
+      getWorkspace: async () => undefined,
+      getConfig: () => settings.getGlobal(),
+      verificationAttempts,
+      attempts,
       archive,
+      transcripts: new TranscriptCapture(new SessionStore(db), verificationAttempts, () => settings.getGlobal()),
     });
 
     const detached = { ...task, workspaceId: null };
-    const result = await check({ task: detached, run: { id: 1, number: 3 } as AttemptRow, mergeOid: 'a'.repeat(40), baseDir: dir });
+    const result = await check({ task: detached, run, mergeOid: 'a'.repeat(40), baseDir: dir });
 
     expect(result.pass).toBe(true);
     const root = await archive.ensure(detached);
-    const log = readFileSync(join(root, 'attempts', '3', 'verification', 'post-merge', 'pm-echo', 'output.log'), 'utf8');
+    const log = readFileSync(join(root, 'attempts', String(run.number), 'verification', 'post-merge', 'pm-echo', 'output.log'), 'utf8');
     expect(log).toContain('post-merge-out');
+  });
+
+  it('keeps the server-local archive path out of the failing output that becomes the escalation text', async () => {
+    const settings = await makeSettingsStore(dir, {
+      verify: {
+        task: {
+          postMerge: {
+            commands: [{ id: 'pm-big', command: process.execPath, args: ['-e', "process.stdout.write('x'.repeat(250000)); process.exitCode = 1"], env: {}, timeoutSeconds: 30 }],
+          },
+        },
+      },
+    });
+    const tasks = new TaskService(db, () => baselineConfig(), allWorkspaces(db, settings));
+    const task = await tasks.create({ prompt: 'p' });
+    const attempts = new AttemptStore(db);
+    const run = await attempts.create(task.id);
+    const verificationAttempts = new VerificationAttemptStore(db);
+    const archive = new TaskArchive({ dataDir: dir, ensureArchiveId: (id) => tasks.ensureArchiveId(id), workspaceName: async () => null });
+    const check = createPostMergeCheck({
+      ...executionPlumbing(),
+      getWorkspace: async () => undefined,
+      getConfig: () => settings.getGlobal(),
+      verificationAttempts,
+      attempts,
+      archive,
+      transcripts: new TranscriptCapture(new SessionStore(db), verificationAttempts, () => settings.getGlobal()),
+    });
+
+    const result = await check({ task: { ...task, workspaceId: null }, run, mergeOid: 'a'.repeat(40), baseDir: dir });
+
+    expect(result.pass).toBe(false);
+    expect(result.output).toContain('truncated');
+    expect(result.output).not.toContain('output.log');
+    expect(result.output).not.toContain(dir);
+  });
+
+  it('archives full Epic post-merge command output and records a verification attempt on the Epic Attempt', async () => {
+    const settings = await makeSettingsStore(dir);
+    const tasks = new TaskService(db, () => baselineConfig(), allWorkspaces(db, settings));
+    const task = await tasks.create({ prompt: 'p' });
+    const attempts = new AttemptStore(db);
+    await tasks.syncEpics(1, [{ ref: trackerRef(7), kind: 'epic' }]);
+    const epicAttempt = await attempts.createForEpic({ workspaceId: 1, epicRef: trackerRef(7) });
+    const verificationAttempts = new VerificationAttemptStore(db);
+    const archive = new TaskArchive({ dataDir: dir, ensureArchiveId: (id) => tasks.ensureArchiveId(id), workspaceName: async () => null });
+    const command = { id: 'epic-echo', command: process.execPath, args: ['-e', "console.log('epic-post-merge-out')"], env: {}, timeoutSeconds: 30 };
+    const runner = new EpicIntegrationRunner({
+      commandSpawn: executionPlumbing().commandSpawn,
+      workspace: { id: 1, workingDir: dir },
+      worktrees: { release: async () => {} },
+      epics: { retireIntegrationBranch: async () => true },
+      epicAttempts: attempts,
+      verificationAttemptStore: verificationAttempts,
+      archive,
+      resolvePostMergeCommands: async () => [command],
+      mergeEpicIntegration: async (input) => {
+        const check = await input.runPostMergeCheck('a'.repeat(40), dir);
+        expect(check.pass).toBe(true);
+        return { kind: 'merged', mergeOid: 'a'.repeat(40) };
+      },
+    });
+
+    await runner.integrate({ repoDir: dir, epicRef: trackerRef(7), defaultBranch: 'main', integrationBranch: 'epic/7' });
+
+    const log = await archive.epicVerificationOutputLog(1, trackerRef(7), epicAttempt.number, 'epic-echo', 'post-merge');
+    expect(readFileSync(log!.path, 'utf8')).toContain('epic-post-merge-out');
+    const recorded = await verificationAttempts.list(epicAttempt.id);
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]).toMatchObject({ mechanism: 'command', verdict: 'pass' });
+    void task;
   });
 });

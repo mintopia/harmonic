@@ -3,9 +3,14 @@
 Status: accepted
 Date: 2026-09-22
 
+Current status (2026-10-02): `src/execution/merge-policy.ts` builds the merge
+off-lock and reconciles its result onto a moved base during publication. The
+CAS write in `publish` guards only the current ref update and retries on a
+miss; it does not invalidate the verdict.
+
 ## Context
 
-`CONTEXT.md`'s **Merge** entry and ADR-0001 describe one merge policy: under the
+`GLOSSARY.md`'s **Merge** entry and ADR-0001 describe one merge policy: under the
 per-Workspace-repository mutex, an ordinary merge commit of the ticket branch
 onto the base, then the deterministic verify commands once on the merged tip.
 The entry is explicit that **base movement since the verdict is irrelevant — the
@@ -84,9 +89,10 @@ re-verification retry loop.
 - Removes the `target-advanced` escalation path for ordinary concurrent merges;
   a moving base is reconciled, not rejected. `target-advanced` is kept only as
   a readable value for pre-ADR-0040 persisted rows; nothing emits it anymore.
-- Removes the `MAX_MERGE_ATTEMPTS` rebuild loop and the `casUpdateRef` SHA gate
-  from the task-merge path; the mutex plus the reconcile merge provide
-  correctness without a compare-and-swap.
+- Removes the `MAX_MERGE_ATTEMPTS` rebuild loop and the snapshot-SHA freshness
+  gate from the task-merge path. Publication still uses atomic `update-ref`
+  against the tip just read; a miss re-reads and reconciles without invalidating
+  the verdict.
 - Requires git ≥ 2.38 for the worktree-free reconcile; older git falls back to
   rebuilding on every base advance instead (bounded to 8, then escalates).
 - A reconcile conflict rebuilds at most twice before escalating.

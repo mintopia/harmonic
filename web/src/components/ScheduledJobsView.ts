@@ -10,7 +10,7 @@ import { subscribe } from '../ws.js';
 import { labelType, tableHeadRow, tableShell } from '../ui.js';
 import { useLiveEffect } from '../useLiveEffect.js';
 
-const STRIP = 'grid grid-cols-[minmax(10rem,1.5fr)_minmax(5rem,auto)_minmax(6rem,auto)_minmax(6rem,1fr)] items-center gap-x-4 px-4';
+const STRIP = 'grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(10rem,1.5fr)_minmax(5rem,auto)_minmax(6rem,auto)_minmax(6rem,1fr)] items-center gap-x-4 gap-y-1 px-4';
 
 function empty() {
   return createElement('span', { className: 'text-muted' }, '—');

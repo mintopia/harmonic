@@ -1,3 +1,4 @@
+import { BackgroundWork } from '../error-handling.js';
 import Fastify from 'fastify';
 import { join, resolve } from 'node:path';
 import { openAsyncDb } from '../db/async.js';
@@ -12,21 +13,13 @@ import { createStores } from './app-stores.js';
 import { createWorktreeServices } from './app-worktrees.js';
 import { createRuntime } from './app-runtime.js';
 import { registerAppJobs } from './app-jobs.js';
+import { registerAppExports } from './app-exports.js';
 import { registerBusListeners } from './app-bus-listeners.js';
 import { registerPlugins } from './app-plugins.js';
 import { registerAuthHook } from './app-auth-hook.js';
-import { registerRouteRecorder, registerErrorHandler } from './app-hooks.js';
+import { registerRouteRecorder, registerErrorHandler, registerServerErrorLogging, fastifyLogger } from './app-hooks.js';
 import { registerShutdown, registerStartup } from './app-lifecycle.js';
 import { registerRoutes } from './app-routes.js';
-import { TaskExporter } from '../archive/task-export.js';
-import { computeGitProvenance } from '../archive/git-provenance.js';
-import { Git } from '../execution/git.js';
-import { pruneArchives, type ArchiveRetention } from '../archive/archive-retention.js';
-import { workspaceSlug } from '../archive/task-archive.js';
-import { resolveExportSettings } from '../archive/export-settings.js';
-import type { TaskRow } from '../db/schema.js';
-import { epicAttemptTimelineToApi, taskToApi, ticketTimelineToApi } from './serialize.js';
-import { fireAndForget, orFallback } from '../error-handling.js';
 import {
   createAppContexts,
   type App,
@@ -54,6 +47,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const worktreesDir = join(opts.dataDir, 'worktrees');
   const managedWorktreesRoot = resolve(worktreesDir);
   const bus = new EventBus();
+  const background = new BackgroundWork();
+  const { fireAndForget } = background;
   const scheduler = new Scheduler(asyncDb, (jobs) => bus.emit('scheduled_jobs', jobs));
   const runningVersion = opts.version ?? readPackageManifest().version;
   const updateCheck = new UpdateCheck({
@@ -63,7 +58,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   });
   operationRegistry.setBus(bus);
 
-  const stores = await createStores({ opts, asyncDb, bus });
+  const stores = await createStores({ opts, asyncDb, bus, fireAndForget });
   const worktrees = createWorktreeServices({
     workspaces: stores.workspaces,
     tasks: stores.tasks,
@@ -82,6 +77,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     managedWorktreesRoot,
     distributionMode,
     runningVersion,
+    fireAndForget,
   });
 
   registerAppJobs(scheduler, {
@@ -102,9 +98,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     tasks: stores.tasks,
     attempts: stores.attempts,
     notifier: stores.notifier,
+    fireAndForget,
   });
 
   const ctx: AppContext = {
+    fireAndForget,
     distributionMode,
     runningVersion,
     installMode: opts.installMode ?? { kind: 'systemd' },
@@ -122,6 +120,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     tasks: stores.tasks,
     attempts: stores.attempts,
     taskEvents: stores.taskEvents,
+    agentMessages: stores.agentMessages,
     sessions: stores.sessions,
     runner: runtime.runner,
     conversations: stores.conversations,
@@ -137,6 +136,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     scheduler,
     auth: stores.auth,
     channels: stores.channels,
+    secrets: stores.secrets,
     notifier: stores.notifier,
     notifications: stores.notifications,
     bus,
@@ -150,105 +150,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   };
   const contexts = createAppContexts(ctx);
 
-  const exporter = new TaskExporter({
-    dataDir: opts.dataDir,
-    archive: runtime.archive,
-    version: runningVersion,
-    settings: async (task) => {
-      const workspace =
-        task.workspaceId === null
-          ? undefined
-          : await stores.workspaces.get(task.workspaceId);
-      return resolveExportSettings(stores.settingsStore.getGlobal(), workspace);
-    },
-    epicSettings: async (workspaceId) =>
-      resolveExportSettings(stores.settingsStore.getGlobal(), await stores.workspaces.get(workspaceId)),
-    epicSnapshot: async (workspaceId, epicRef) => {
-      const [detail, stored, timeline, workspaceTasks] = await Promise.all([
-        ctx.trackerManager.epicDetail(workspaceId, epicRef),
-        ctx.tasks.listStoredEpics(workspaceId),
-        epicAttemptTimelineToApi(ctx, { workspaceId, epicRef }),
-        ctx.tasks.list({ workspaceId }),
-      ]);
-      const row = stored.find((r) => r.trackerRef === epicRef);
-      const byRef = new Map<number, TaskRow>();
-      for (const t of workspaceTasks) if (t.trackerRef != null) byRef.set(t.trackerRef, t);
-      const members = (row?.memberRefs ?? []).map((ref) => ({ ref, task: byRef.get(ref) ?? null }));
-      return {
-        ticket: detail ?? { ref: epicRef, state: row?.state ?? null, mergeCommit: row?.mergeCommit ?? null },
-        timeline: { events: detail?.timelineEvents ?? [], ...timeline },
-        attemptCount: timeline.attempts.length,
-        members,
-      };
-    },
-    workspaceName: async (workspaceId) =>
-      (await orFallback(() => stores.workspaces.get(workspaceId), { op: 'export.workspaceName', context: { workspaceId } }, null))?.name ?? null,
-    snapshot: async (task) => {
-      const [ticket, timeline, taskAttempts] = await Promise.all([
-        taskToApi(ctx, await ctx.tasks.withDeps(task)),
-        ticketTimelineToApi(ctx, task.id),
-        stores.attempts.listForTask(task.id),
-      ]);
-      const [remoteUrl, currentBranch, facts] = await Promise.all([
-        orFallback(() => Git.originUrl(task.workingDir), { op: 'export.snapshot.originUrl', level: 'warn', context: { taskId: task.id } }, null),
-        orFallback(() => Git.symbolicBranch(task.workingDir), { op: 'export.snapshot.currentBranch', level: 'warn', context: { taskId: task.id } }, null),
-        orFallback(() => stores.attempts.listMergedFacts(taskAttempts.map((a) => a.id)), { op: 'export.snapshot.mergedFacts', level: 'warn', context: { taskId: task.id } }, [] as unknown[]),
-      ]);
-      return { ticket, timeline, attemptCount: taskAttempts.length, git: computeGitProvenance({ attempts: taskAttempts, facts, remoteUrl, taskBaseBranch: task.baseBranch, currentBranch }) };
-    },
-    recordEpicStep: async (workspaceId, epicRef, step) => {
-      await stores.epicMergeEvents.append(workspaceId, epicRef, step);
-      bus.emit('epic_changed', { workspaceId, epicRef });
-    },
-    recordFact: async (taskId, payload) => {
-      await stores.taskEvents.appendEvent(taskId, payload);
-      bus.emit('step_changed', { taskId });
-    },
-    onFailure: ({ owner, disposition, destination, error, retry, nextRetryAt }) => {
-      const task = owner.kind === 'task' ? owner.task : undefined;
-      const epicRef = owner.kind === 'epic' ? owner.epicRef : undefined;
-      const workspaceId = task ? task.workspaceId : owner.kind === 'epic' ? owner.workspaceId : null;
-      bus.emit('export_failed', { taskId: task?.id ?? null, epicRef: epicRef ?? null, workspaceId, trackerRef: task?.trackerRef ?? null, destination, disposition, error, retry, nextRetryAt });
-      fireAndForget(
-        () =>
-          stores.notifier.notify('export.failed', task, {
-            workspaceId,
-            export: { ...(epicRef === undefined ? {} : { epicRef }), destination, disposition, error, retry, nextRetryAt },
-          }),
-        { op: 'export.notifyFailure', level: 'warn', context: task ? { taskId: task.id } : { epicRef: epicRef! } },
-      );
-    },
-  });
-  scheduler.register({
-    name: 'Archive retention',
-    intervalMs: 60 * 60_000,
-    run: async () => {
-      const overrides = new Map<string, ArchiveRetention>();
-      for (const ws of await stores.workspaces.list()) {
-        overrides.set(workspaceSlug(ws.name, ws.id), { days: ws.archiveRetentionDays, maxTotalMB: ws.archiveRetentionMaxTotalMB });
-      }
-      await pruneArchives({
-        dataDir: opts.dataDir,
-        retention: () => stores.settingsStore.getGlobal().archive.retain,
-        workspaceRetention: (slug) => overrides.get(slug) ?? null,
-        pendingExports: () => exporter.pendingOwnerKeys(),
-        taskTerminalAt: async (taskId) => {
-          const task = await orFallback(() => ctx.tasks.get(taskId), { op: 'archive.retention.task', context: { taskId } }, null);
-          return task && (task.state === 'done' || task.state === 'cancelled') ? task.updatedAt : null;
-        },
-      });
-    },
-  });
-  scheduler.register({ name: 'Export retry', intervalMs: 60_000, run: () => exporter.retryDue() });
-  stores.tasks.setBeforeDelete((task) => exporter.captureForDelete(task));
-  bus.on('task_disposition', ({ task, disposition }) => exporter.trigger(task, disposition));
-  bus.on('epic_integrated', ({ workspaceId, epicRef }) => {
-    fireAndForget(() => runtime.archive.recordEpicDisposition(workspaceId, epicRef, 'done'), { op: 'archive.epicDisposition', level: 'warn', context: { workspaceId, epicRef } });
-    exporter.triggerEpic(workspaceId, epicRef, 'done');
-  });
-  fireAndForget(() => exporter.sweepStaging(), { op: 'export.sweepStaging', level: 'warn' });
+  const exporter = registerAppExports({ ctx, dataDir: opts.dataDir, epicMergeEvents: stores.epicMergeEvents });
 
-  const app = Fastify({ logger: false }) as unknown as App;
+  const app = Fastify({ loggerInstance: fastifyLogger() }) as unknown as App;
   app.decorate('ctx', ctx);
   const registeredRoutes: RegisteredRoute[] = [];
   app.decorate('registeredRoutes', registeredRoutes);
@@ -264,13 +168,14 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     hostLoad: runtime.hostLoad,
     workspaceWatcher: runtime.workspaceWatcher,
     statsReader,
-    processGroups: runtime.processGroups,
+    background,
     transcripts: runtime.transcripts,
     asyncDb,
   });
   await registerPlugins(app);
   registerAuthHook(app, stores.auth);
   registerErrorHandler(app);
+  registerServerErrorLogging(app);
   registerStartup(app, {
     runner: runtime.runner,
     conversationDriver: runtime.conversationDriver,

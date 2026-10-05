@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
+import { trackerRef } from '../src/tracker/adapter.js';
 import { createElement } from 'react';
 import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ExportPanel } from '../web/src/components/ticket/ExportPanel.js';
-import { epicExportTarget, taskExportTarget, type ExportTarget } from '../web/src/components/useTaskExport.js';
+import { epicExportTarget, taskExportTarget, type ExportTarget } from '../web/src/export-targets.js';
 import type { ExportSummary, TaskExportStatus } from '../web/src/types.js';
 import { cleanup, flush, mountComponent } from './component-smoke-harness.js';
 
@@ -41,8 +42,8 @@ function deps(over: Partial<ExportTarget> = {}): ExportTarget {
   };
 }
 
-async function mount(target: ExportTarget, state = 'done') {
-  return mountComponent(createElement(ExportPanel, { target, state, refreshKey: 0 }));
+async function mount(target: ExportTarget, finished = true) {
+  return mountComponent(createElement(ExportPanel, { target, finished, refreshKey: 0 }));
 }
 
 describe('ExportPanel', () => {
@@ -52,7 +53,7 @@ describe('ExportPanel', () => {
     expect(host.textContent).toContain('412-done.tar.gz');
     expect(host.textContent).toContain('Delivered');
     expect(host.textContent).toContain('AccessDenied: s3:PutObject');
-    expect(host.textContent).toContain('Retry 1 of 3 in 5 min');
+    expect(host.textContent).toMatch(/Retry 1 of 3 at \d{2}:\d{2}/);
     expect(host.querySelector('a[download]')?.getAttribute('href')).toBe('/api/tasks/7/export/download');
     expect(host.textContent).not.toContain('partial');
   });
@@ -66,7 +67,7 @@ describe('ExportPanel', () => {
 
   it('renders nothing for an unfinished Task and does not fetch', async () => {
     const load = vi.fn(async () => status());
-    const host = await mount(deps({ load }), 'working');
+    const host = await mount(deps({ load }), false);
 
     expect(host.querySelector('#export-panel')).toBeNull();
     expect(load).not.toHaveBeenCalled();
@@ -109,7 +110,7 @@ describe('ExportPanel', () => {
 
 describe('ExportPanel for an Epic', () => {
   it('reads the Epic endpoints, names the Epic, and downloads from the Epic route', async () => {
-    const epic = epicExportTarget(3, 42);
+    const epic = epicExportTarget(3, trackerRef(42));
     const host = await mount({ ...epic, load: async () => status({ latest: { ...latest, partial: true } }) });
 
     expect(host.querySelector('a[download]')?.getAttribute('href')).toBe('/api/workspaces/3/epics/42/export/download');
@@ -124,7 +125,7 @@ describe('ExportPanel for an Epic', () => {
       return new Response(JSON.stringify({ exportable: true, latest: null, earlier: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
     }) as typeof fetch;
     try {
-      const epic = epicExportTarget(3, 42);
+      const epic = epicExportTarget(3, trackerRef(42));
       await epic.load();
       await epic.exportAgain();
     } finally {

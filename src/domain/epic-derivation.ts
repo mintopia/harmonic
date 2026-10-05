@@ -1,20 +1,20 @@
-import { isEpicTypeContainer, type Ticket } from '../tracker/adapter.js';
+import { isEpicTypeContainer, type Ticket, type TrackerRef } from '../tracker/adapter.js';
 import type { StoredEpicKind } from '../db/schema.js';
 
 export interface DerivedEpic {
   /** The Epic ticket's tracker ref (its `number`). */
-  ref: number;
+  ref: TrackerRef;
   title: string;
   body?: string;
   url?: string;
   /** The member refs, ascending. */
-  members: number[];
+  members: TrackerRef[];
   /**
    * The ready frontier: members that carry `ready-for-agent`, are open, and
    * are free of any open blocker. Assignment is not an eligibility signal.
    * Ascending.
    */
-  ready: number[];
+  ready: TrackerRef[];
 }
 
 /** The task facts used to derive an Epic member's ready-frontier status. */
@@ -22,20 +22,20 @@ export interface EpicMemberReadiness {
   agentWorkable: boolean;
 }
 
-function isReady(child: Ticket, readinessByRef: ReadonlyMap<number, EpicMemberReadiness>): boolean {
-  return child.state === 'open' && readinessByRef.get(child.number)?.agentWorkable === true;
+function isReady(child: Ticket, readinessByRef: ReadonlyMap<TrackerRef, EpicMemberReadiness>): boolean {
+  return child.state === 'open' && readinessByRef.get(child.ref)?.agentWorkable === true;
 }
 
 interface TicketIndex {
-  byRef: Map<number, Ticket>;
-  containerRefs: Set<number>;
-  childrenOf: Map<number, Ticket[]>;
+  byRef: Map<TrackerRef, Ticket>;
+  containerRefs: Set<TrackerRef>;
+  childrenOf: Map<TrackerRef, Ticket[]>;
 }
 
 function indexTickets(tickets: Ticket[]): TicketIndex {
-  const byRef = new Map(tickets.map((t) => [t.number, t]));
-  const containerRefs = new Set(tickets.map((t) => t.parent).filter((p): p is number => p != null));
-  const childrenOf = new Map<number, Ticket[]>();
+  const byRef = new Map(tickets.map((t) => [t.ref, t]));
+  const containerRefs = new Set(tickets.map((t) => t.parent).filter((p): p is TrackerRef => p != null));
+  const childrenOf = new Map<TrackerRef, Ticket[]>();
   for (const t of tickets) {
     if (t.parent == null) continue;
     const siblings = childrenOf.get(t.parent);
@@ -48,15 +48,15 @@ function indexTickets(tickets: Ticket[]): TicketIndex {
 function toDerivedEpic(
   epic: Ticket,
   members: Ticket[],
-  readinessByRef: ReadonlyMap<number, EpicMemberReadiness>,
+  readinessByRef: ReadonlyMap<TrackerRef, EpicMemberReadiness>,
 ): DerivedEpic {
   return {
-    ref: epic.number,
+    ref: epic.ref,
     title: epic.title,
     body: epic.body,
     url: epic.url,
-    members: members.map((c) => c.number).sort((a, b) => a - b),
-    ready: members.filter((c) => isReady(c, readinessByRef)).map((c) => c.number).sort((a, b) => a - b),
+    members: members.map((c) => c.ref),
+    ready: members.filter((c) => isReady(c, readinessByRef)).map((c) => c.ref),
   };
 }
 
@@ -72,7 +72,7 @@ function leafMostContainers(
     if (!opts.includeClosed && container.state !== 'open') continue;
 
     const children = childrenOf.get(ref) ?? [];
-    if (children.some((c) => containerRefs.has(c.number))) continue;
+    if (children.some((c) => containerRefs.has(c.ref))) continue;
 
     out.push({ container, children });
   }
@@ -87,17 +87,16 @@ function leafMostContainers(
  */
 export function deriveLeafEpics(
   tickets: Ticket[],
-  readinessByRef: ReadonlyMap<number, EpicMemberReadiness> = new Map(),
+  readinessByRef: ReadonlyMap<TrackerRef, EpicMemberReadiness> = new Map(),
   opts: { includeClosed?: boolean } = {},
 ): DerivedEpic[] {
   return leafMostContainers(indexTickets(tickets), opts)
-    .map(({ container, children }) => toDerivedEpic(container, children, readinessByRef))
-    .sort((a, b) => a.ref - b.ref);
+    .map(({ container, children }) => toDerivedEpic(container, children, readinessByRef));
 }
 
 /** The stored-Epic spine record the scan lazy-upserts. */
 export interface StoredEpicRecord {
-  ref: number;
+  ref: TrackerRef;
   kind: StoredEpicKind;
 }
 
@@ -118,6 +117,5 @@ export function deriveStoredEpics(tickets: Ticket[]): StoredEpicRecord[] {
       ({ container, children }) =>
         children.length > 0 && (isEpicTypeContainer(container) || container.parent == null),
     )
-    .map(({ container }) => ({ ref: container.number, kind: storedEpicKind(container) }))
-    .sort((a, b) => a.ref - b.ref);
+    .map(({ container }) => ({ ref: container.ref, kind: storedEpicKind(container) }));
 }

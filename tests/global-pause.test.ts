@@ -14,6 +14,28 @@ describe('Global Pause (issue #505)', () => {
     await server.close();
   });
 
+  it('excludes paused time from a real Task agent turn', async () => {
+    expect((await server.api('POST', '/api/global-pause')).status).toBe(200);
+    const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({
+      delayMs: 70,
+      updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'done' } }],
+    }) });
+    const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+    expect(started.status).toBe(201);
+    expect((await server.app.ctx.attempts.get(started.body.id)).agentDurationMs).toBe(0);
+    const pausedAt = performance.now();
+    await new Promise((resolve) => setTimeout(resolve, 160));
+    const resumedAt = performance.now();
+    expect((await server.app.ctx.attempts.get(started.body.id)).agentDurationMs).toBe(0);
+
+    expect((await server.api('DELETE', '/api/global-pause')).status).toBe(200);
+    await waitFor(async () => (await server.app.ctx.tasks.get(created.body.id)).state === 'done' ? true : undefined);
+    const completedAt = performance.now();
+    const attempt = await server.app.ctx.attempts.get(started.body.id);
+    expect(attempt.agentDurationMs ?? 0).toBeGreaterThanOrEqual(60);
+    expect(completedAt - pausedAt - (attempt.agentDurationMs ?? 0)).toBeGreaterThanOrEqual(resumedAt - pausedAt - 10);
+  });
+
   it('freezes running work, pauses new manual starts, and resumes independently of the Auto-Runner master switch', async () => {
     const running = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ exit: 'hang' }) });
     const runningAttempt = await server.api('POST', `/api/tasks/${running.body.id}/run`);

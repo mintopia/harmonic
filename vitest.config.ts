@@ -27,6 +27,9 @@ const measuringCoverage = process.env.COVERAGE === '1';
 export default defineConfig({
   test: {
     ...shared,
+    // Machine-wide lock: refuse to start if another vitest run is live, so
+    // parallel test-running agents can't OOM the box (see tests/oom-guard.ts).
+    globalSetup: ['./tests/oom-guard.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text-summary', 'html'],

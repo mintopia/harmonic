@@ -6,10 +6,11 @@ import { EpicAttentionCard } from '../web/src/components/Board.js';
 import { EpicStepper } from '../web/src/components/EpicPage.js';
 import { epicLifecycleSteps } from '../web/src/epic-model.js';
 import type { Epic } from '../web/src/epic-model.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 function epic(overrides: Partial<Epic> = {}): Epic {
   return {
-    ref: 424,
+    ref: trackerRef(424),
     title: 'Held whole-Epic integration',
     kind: 'spec',
     state: 'open',

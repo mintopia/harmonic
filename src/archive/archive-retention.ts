@@ -1,3 +1,4 @@
+import { trackerRef, type TrackerRef } from '../tracker/adapter.js';
 import { readdir, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { logger } from '../logger.js';
@@ -25,7 +26,8 @@ export interface ArchivePruneDeps {
 
 interface Manifest {
   taskId?: number;
-  epicRef?: number;
+  /** Legacy manifests stored the ref as a number. */
+  epicRef?: TrackerRef | number;
   workspaceId?: number | null;
   dispositions?: { at?: string }[];
   deleted?: { at?: string };
@@ -74,18 +76,18 @@ function latestExportAt(exports: ExportRecord[]): number | null {
   return times.length > 0 ? Math.max(...times) : null;
 }
 
-function ownerKey(manifest: Manifest): string {
-  if (typeof manifest.epicRef === 'number' && typeof manifest.workspaceId === 'number') {
-    return exportOwnerKey({ kind: 'epic', workspaceId: manifest.workspaceId, epicRef: manifest.epicRef });
+function ownerKey(manifest: Manifest): string | null {
+  if (manifest.epicRef != null && typeof manifest.workspaceId === 'number') {
+    return exportOwnerKey({ kind: 'epic', workspaceId: manifest.workspaceId, epicRef: trackerRef(manifest.epicRef) });
   }
-  return exportOwnerKey({ kind: 'task', taskId: manifest.taskId ?? -1 });
+  return typeof manifest.taskId === 'number' ? exportOwnerKey({ kind: 'task', task: { id: manifest.taskId } }) : null;
 }
 
 async function terminalAt(manifest: Manifest, deps: ArchivePruneDeps): Promise<number | null> {
   const deletedAt = manifest.deleted ? Date.parse(manifest.deleted.at ?? '') : NaN;
   if (Number.isFinite(deletedAt)) return deletedAt;
   if (typeof manifest.taskId === 'number') return await deps.taskTerminalAt(manifest.taskId);
-  if (typeof manifest.epicRef === 'number') {
+  if (manifest.epicRef != null) {
     const stamped = Date.parse(manifest.dispositions?.[0]?.at ?? '');
     return Number.isFinite(stamped) ? stamped : null;
   }
@@ -141,7 +143,8 @@ export async function pruneArchives(deps: ArchivePruneDeps): Promise<number> {
       const manifest = JSON.parse(await readFile(join(dir, 'archive.json'), 'utf8')) as Manifest;
       const bytes = await directoryBytes(dir);
       const exports = manifest.exports ?? [];
-      const awaitingExport = pending.has(ownerKey(manifest));
+      const key = ownerKey(manifest);
+      const awaitingExport = key !== null && pending.has(key);
       const at = exportsSettled(exports) && !awaitingExport ? await terminalAt(manifest, deps) : null;
       const settled = at !== null && now - Math.max(at, latestExportAt(exports) ?? 0) >= EXPORT_GRACE_MS;
       candidates.push({ dir, pool, bytes, terminalAt: settled ? at : null });

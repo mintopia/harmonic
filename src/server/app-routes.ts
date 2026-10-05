@@ -1,3 +1,5 @@
+import { logger } from '../logger.js';
+import { errorMessage } from '../error-handling.js';
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
 import { join, dirname, sep } from 'node:path';
@@ -15,17 +17,21 @@ import { wsRoutes } from './ws.js';
 import { authRoutes } from './routes/auth.js';
 import { statsRoutes } from './routes/stats.js';
 import { activityRoutes } from './routes/activity.js';
+import { agentMessageRoutes } from './routes/agent-messages.js';
 import { timelineRoutes } from './routes/timeline.js';
 import { operationRoutes } from './routes/operations.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { channelRoutes } from './routes/channels.js';
 import { scheduledJobRoutes } from './routes/scheduled-jobs.js';
 import { worktreeRoutes } from './routes/worktrees.js';
+import { trackerSettingsRoutes } from './routes/tracker-settings.js';
+import { secretRoutes } from './routes/secrets.js';
 import { harnessRoutes } from './routes/harnesses.js';
 import { exportRoutes } from './routes/export.js';
 import { fsRoutes } from './routes/fs.js';
 import { openapiRoutes } from './routes/openapi.js';
 import { buildMcpServer } from '../mcp/server.js';
+import { resolveMcpCaller } from '../mcp/caller.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { updateRoutes } from './routes/update.js';
 import type { App, AppContext, AppContexts } from './app-context.js';
@@ -53,10 +59,13 @@ export async function registerRoutes(app: App, ctx: AppContext, contexts: AppCon
   await app.register((fastify) => authRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => statsRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => activityRoutes(fastify, ctx), { prefix: '/api' });
+  await app.register((fastify) => agentMessageRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => timelineRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => operationRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => scheduledJobRoutes(fastify, contexts.tracking), { prefix: '/api' });
   await app.register((fastify) => worktreeRoutes(fastify, contexts.execution), { prefix: '/api' });
+  await app.register((fastify) => secretRoutes(fastify, contexts.persistence), { prefix: '/api' });
+  await app.register((fastify) => trackerSettingsRoutes(fastify, contexts.tracking), { prefix: '/api' });
   await app.register(harnessRoutes, { prefix: '/api' });
   await app.register((fastify) => channelRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => notificationRoutes(fastify, contexts.persistence), { prefix: '/api' });
@@ -66,12 +75,21 @@ export async function registerRoutes(app: App, ctx: AppContext, contexts: AppCon
   await app.register(openapiRoutes, { prefix: '/api' });
 
   app.post('/mcp', { schema: { hide: true } }, async (req, reply) => {
-    const mcp = buildMcpServer(ctx);
+    const mcp = buildMcpServer(ctx, await resolveMcpCaller(ctx, req));
     // MCP SDK option/interface types don't satisfy this project's exactOptionalPropertyTypes; both casts erase that mismatch, not our types.
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined } as any);
     reply.hijack();
-    await mcp.connect(transport as any);
-    await transport.handleRequest(req.raw, reply.raw, req.body);
+    try {
+      await mcp.connect(transport as any);
+      await transport.handleRequest(req.raw, reply.raw, req.body);
+    } catch (err) {
+      logger.error(`mcp request failed: ${errorMessage(err)}`, { errorId: String(req.id), route: '/mcp', url: req.url, ...(err instanceof Error && err.stack ? { stack: err.stack } : {}) });
+      if (!reply.raw.headersSent) {
+        reply.raw.statusCode = 500;
+        reply.raw.setHeader('content-type', 'application/json');
+        reply.raw.end(JSON.stringify({ error: { code: 'internal', message: 'internal server error', id: String(req.id) } }));
+      } else reply.raw.destroy();
+    }
     reply.raw.on('close', () => {
       void transport.close();
       void mcp.close();

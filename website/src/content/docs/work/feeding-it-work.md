@@ -77,3 +77,20 @@ dropped. See
 picking those up, and
 [Reviewing & merging](/harmonic/work/reviewing-and-merging/) for what
 happens to the code when a ticket does pass.
+
+## How tasks and tickets are identified
+
+When you mirror a tracker issue, Harmonic creates a **Task** internally and
+keeps it in sync with the tracker issue. The two have separate identities so
+you can tell them apart:
+
+- **Task ID**: Shown as `T-174` in compact spaces (board cards, tables, graphs)
+  or just `Task 174` in prose.
+- **Tracker ref**: The issue's native reference in your tracker. GitHub, GitLab
+  and Forgejo show numeric refs as `#185`. Jira shows key-style refs like
+  `PROJ-185`. In a listing, both appear together as `#185 · T-174`.
+
+Tasks created by hand (not mirrored from a tracker) show only their Task ID.
+The details page always shows both when the task has a tracker issue. A
+**Tracker** fact shows the tracker's name and the issue number, and links to
+the issue when the issue has a URL.

@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import type { TaskState } from '../db/schema.js';
 
 /** The facet of a Task this decision reads. Structurally assignable from a
@@ -5,7 +6,7 @@ import type { TaskState } from '../db/schema.js';
 export interface DeletableTaskFacts {
   state: TaskState;
   origin: string;
-  trackerRef: number | null;
+  trackerRef: TrackerRef | null;
   workspaceId: number | null;
 }
 
@@ -15,7 +16,7 @@ export interface DeletionDecision {
   reason?: string;
   /** Set when `ok` is true and a mirrored ref must be tombstoned so a re-poll
    * can't resurrect it; null for a native Task or one with no tracker ref. */
-  tombstone: { workspaceId: number | null; trackerRef: number } | null;
+  tombstone: { workspaceId: number | null; trackerRef: TrackerRef } | null;
 }
 
 export function decideTaskDeletion(task: DeletableTaskFacts): DeletionDecision {

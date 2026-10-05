@@ -34,6 +34,8 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
     'priority',
     'maxConcurrentAttempts',
     'autoRunnerEnabled',
+    'agentMessagesEnabled',
+    'agentMessagesSendCap',
     'maxAttempts',
     'contextReuseTokenLimit',
     'taskPreMergeCommands',
@@ -146,11 +148,39 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
       'driveContinuePrompt',
       'taskPrompt',
       'pauseMessage',
+      'promptFragmentReadOnlyRestraint',
+      'promptFragmentConflictResolution',
+      'promptFragmentOperatorMessage',
+      'promptFragmentSelfHeal',
+      'promptFragmentPeerMessages',
+      'promptFragmentPeerMessage',
+      'promptFragmentPeerLine',
+      'promptFragmentPeerLiveMessage',
+      'promptFragmentRebaseConflict',
+      'promptFragmentPriorSession',
+      'promptFragmentCodeIndexGuidance',
+      'promptFragmentCriticRevisionIdentical',
+      'promptFragmentCriticRevisionDiff',
+      'promptFragmentCriticRevisionAlone',
+      'promptFragmentCriticTicketFirst',
+      'promptFragmentCriticInstructionsFirst',
+      'promptFragmentCriticSpecTicket',
+      'promptFragmentCriticSpecInstructions',
+      'promptFragmentCriticWorkingTreeNote',
+      'promptFragmentCriticRole',
+      'promptFragmentCriticSecurity',
+      'promptFragmentCriticVerdictContract',
+      'promptFragmentEpicFailingVerification',
+      'driveCommitNudge',
+      'mergeConflictPrompt',
+      'mergeEpicConflictPrompt',
+      'mergeEpicRefreshPrompt',
+      'verifyEpicResolveSuffix',
     ]);
   });
 
-  it('settingsForTab returns [] for tabs with no registry-declared fields', () => {
-    expect(settingsForTab('integrations')).toEqual([]);
+  it('settingsForTab returns only registry-declared fields per tab', () => {
+    expect(settingsForTab('integrations')).toEqual(['configuredTracker', 'codeRepository', 'triageLabels']);
     expect(settingsForTab('security')).toEqual([]);
   });
 
@@ -163,7 +193,7 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
   });
 
   it('workspaceTabs drops the tabs with no overridable field', () => {
-    expect(workspaceTabs().map((t) => t.id)).toEqual(['general', 'execution', 'verification', 'prompts', 'archive']);
+    expect(workspaceTabs().map((t) => t.id)).toEqual(['general', 'execution', 'verification', 'prompts', 'integrations', 'archive']);
   });
 
   it('a tab whose only field turns global-only drops off the Workspace surface', () => {
@@ -192,6 +222,14 @@ describe('resolveScoped — the scoped resolver reads scope from the registry', 
   it('treats a falsy-but-set overridable value as an override, not inherit', () => {
     expect(resolveScoped('maxAttempts', 0, 5)).toBe(0);
     expect(resolveScoped('autoRunnerEnabled', false, true)).toBe(false);
+  });
+
+  it('resolves Agent Messages Baseline → Global → Workspace: Global off + Workspace on is on, null inherits Global', () => {
+    expect(resolveScoped('agentMessagesEnabled', true, false)).toBe(true);
+    expect(resolveScoped('agentMessagesEnabled', false, true)).toBe(false);
+    expect(resolveScoped('agentMessagesEnabled', null, false)).toBe(false);
+    expect(resolveScoped('agentMessagesSendCap', 3, 10)).toBe(3);
+    expect(resolveScoped('agentMessagesSendCap', null, 10)).toBe(10);
   });
 
   it('a now-overridable setting lets the Workspace value win (toolTimeoutMinutes, #339)', () => {
@@ -244,7 +282,7 @@ describe('scope changes control live resolution (registry is the single authorit
   it('resolveVerifiers: a Workspace overlay is additive (local + globals); global-only ignores it (ADR-0037)', () => {
     const globalCommand = { id: 'g1', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
     const localCommand = { id: 'l1', command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
-    const config = { verify: { task: { preMerge: { commands: [globalCommand], critics: [] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve it.' } } } as never;
+    const config = { verify: { task: { preMerge: { commands: [globalCommand], critics: [] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve it.', resolveSuffix: 'Branch {branch}.' } } } as never;
     const ws = {
       // Overlay: one local verifier added; the global is unnamed, so it is appended enabled.
       taskPreMergeCommands: JSON.stringify([{ kind: 'local', enabled: true, command: localCommand }]),

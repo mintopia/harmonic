@@ -1,3 +1,5 @@
+import { PROMPT_FRAGMENT_NAMES, PROMPT_FRAGMENTS, promptFragmentOverrideKey, type PromptFragmentOverrideKey } from './prompt-fragments.js';
+
 /** Whether a setting can be overridden per Workspace, or is instance-wide only. */
 export type SettingScope = 'global-only' | 'overridable';
 
@@ -14,6 +16,19 @@ export interface SettingSpec {
   readonly label: string;
   readonly help: string;
 }
+
+const promptFragmentSettings = Object.fromEntries(
+  PROMPT_FRAGMENT_NAMES.map((name) => [
+    promptFragmentOverrideKey(name),
+    {
+      scope: 'overridable',
+      control: 'text',
+      tab: 'prompts',
+      label: PROMPT_FRAGMENTS[name].label,
+      help: `${PROMPT_FRAGMENTS[name].help} Inherits the global fragment when unset.`,
+    },
+  ]),
+) as Record<PromptFragmentOverrideKey, SettingSpec & { readonly scope: 'overridable' }>;
 
 export const settingsRegistry = {
   harness: {
@@ -71,6 +86,20 @@ export const settingsRegistry = {
     tab: 'execution',
     label: 'Auto-Runner enabled',
     help: 'Whether the Auto-Runner picks up ready Tasks in this Workspace.',
+  },
+  agentMessagesEnabled: {
+    scope: 'overridable',
+    control: 'toggle',
+    tab: 'execution',
+    label: 'Agent Messages enabled',
+    help: 'Whether Attempts in this Workspace can send Agent Messages to each other.',
+  },
+  agentMessagesSendCap: {
+    scope: 'overridable',
+    control: 'number',
+    tab: 'execution',
+    label: 'Agent Messages send cap',
+    help: 'How many Agent Messages one Attempt may send.',
   },
   maxAttempts: {
     scope: 'overridable',
@@ -160,7 +189,7 @@ export const settingsRegistry = {
     scope: 'overridable',
     control: 'text',
     tab: 'prompts',
-    label: 'Drive Prompt',
+    label: 'Drive prompt',
     help: 'Template Harmonic injects to auto-drive a mirrored Task; inherits the global Drive Prompt when unset.',
   },
   driveUnattendedReminder: {
@@ -195,7 +224,7 @@ export const settingsRegistry = {
     scope: 'overridable',
     control: 'text',
     tab: 'prompts',
-    label: 'Task Prompt',
+    label: 'Task prompt',
     help: "Template wrapping a native Task's own prompt; inherits the global Task Prompt when unset.",
   },
   pauseMessage: {
@@ -204,6 +233,42 @@ export const settingsRegistry = {
     tab: 'prompts',
     label: 'Pause message',
     help: 'Message injected before a running Task pauses; inherits the global message unless overridden.',
+  },
+  ...promptFragmentSettings,
+  driveCommitNudge: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'prompts',
+    label: 'Commit nudge',
+    help: 'Sent when an Attempt ends its turn with uncommitted changes, asking the agent to commit; inherits the global default when unset.',
+  },
+  mergeConflictPrompt: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'prompts',
+    label: 'Merge conflict resolver',
+    help: 'Opens a Task merge-conflict resolution turn ({turn}, {taskBranch}, {baseBranch}, {paths}, {fragment.conflictResolution}); inherits the global default when unset.',
+  },
+  mergeEpicConflictPrompt: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'prompts',
+    label: 'Epic merge conflict resolver',
+    help: 'Opens an Epic integration merge-conflict resolution turn ({turn}, {taskBranch}, {baseBranch}, {paths}, {fragment.conflictResolution}); inherits the global default when unset.',
+  },
+  mergeEpicRefreshPrompt: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'prompts',
+    label: 'Epic refresh resolver',
+    help: 'Opens the turn that resolves a conflicted Epic integration refresh ({defaultBranch}, {branch}, {detail}, {fragment.conflictResolution}); inherits the global default when unset.',
+  },
+  verifyEpicResolveSuffix: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'prompts',
+    label: 'Epic verification resolver suffix',
+    help: 'Closes the prompt that asks an agent to fix a failed Epic verification ({branch}, fragments such as {fragment.epicFailingVerification}); inherits the global default when unset.',
   },
   exportEnabled: {
     scope: 'overridable',
@@ -274,6 +339,27 @@ export const settingsRegistry = {
     tab: 'archive',
     label: 'Dispositions to export',
     help: 'Which terminal dispositions (done, cancelled, deleted) trigger an Export; inherits the global list when unset.',
+  },
+  configuredTracker: {
+    scope: 'overridable',
+    control: 'json',
+    tab: 'integrations',
+    label: 'Configured Tracker',
+    help: 'Explicit issue tracker as { kind, settings }; wins over the repo\'s issue-tracker declaration. Unset uses the declaration, then the code repository.',
+  },
+  codeRepository: {
+    scope: 'overridable',
+    control: 'select',
+    tab: 'integrations',
+    label: 'Code Repository',
+    help: 'The forge hosting this Workspace\'s code (github, gitlab, forgejo or plain git); unset detects it from the git remote.',
+  },
+  triageLabels: {
+    scope: 'overridable',
+    control: 'json',
+    tab: 'integrations',
+    label: 'Triage Labels',
+    help: 'Label names per role (readyForAgent, readyForHuman, epic, wayfinderMap); unset roles use the repo\'s role table, then the defaults.',
   },
   archiveRetentionDays: {
     scope: 'overridable',

@@ -6,7 +6,7 @@ import {
   reportAndRethrow,
   orFallback,
   bestEffort,
-  fireAndForget,
+  BackgroundWork,
 } from '../src/error-handling.js';
 
 describe('error-handling', () => {
@@ -149,8 +149,9 @@ describe('error-handling', () => {
     });
   });
 
-  describe('fireAndForget', () => {
+  describe('BackgroundWork', () => {
     it('does not throw or reject synchronously even when op rejects, and logs the rejection', async () => {
+      const { fireAndForget } = new BackgroundWork();
       let rejected = false;
       expect(() =>
         fireAndForget(async () => {
@@ -163,6 +164,43 @@ describe('error-handling', () => {
 
       expect(rejected).toBe(true);
       expect(errorSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('drains only its own work, never another instance\'s', async () => {
+      const mine = new BackgroundWork();
+      const theirs = new BackgroundWork();
+      let release!: () => void;
+      const blocked = new Promise<void>((resolve) => { release = resolve; });
+      theirs.fireAndForget(() => blocked, { op: 'other.app' });
+      let finished = false;
+      mine.fireAndForget(async () => { finished = true; }, { op: 'this.app' });
+
+      await mine.drain();
+
+      expect(finished).toBe(true);
+      let theirsDrained = false;
+      const pending = theirs.drain().then(() => { theirsDrained = true; });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(theirsDrained).toBe(false);
+      release();
+      await pending;
+      expect(theirsDrained).toBe(true);
+    });
+
+    it('drains work started by work that was already pending', async () => {
+      const work = new BackgroundWork();
+      let nested = false;
+      work.fireAndForget(async () => {
+        await new Promise((resolve) => setImmediate(resolve));
+        work.fireAndForget(async () => {
+          await new Promise((resolve) => setImmediate(resolve));
+          nested = true;
+        }, { op: 'nested' });
+      }, { op: 'outer' });
+
+      await work.drain();
+
+      expect(nested).toBe(true);
     });
   });
 });

@@ -11,17 +11,17 @@ import type {
   NotificationRow,
 } from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
+import type { PersistedAttemptEvent } from '../domain/attempts.js';
 import type { IsolationMode, Priority } from '../config.js';
-import type { Ticket } from '../tracker/adapter.js';
+import type { Ticket, TrackerRef } from '../tracker/adapter.js';
 import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
 import { worktreeId, type WorktreeInventoryEntry } from '../domain/worktree-inventory.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
-import { sumCosts, type Cost } from '../domain/pricing.js';
+import { parseCost, sumCosts, type Cost } from '../domain/pricing.js';
 import type { AttemptUsage, AttemptUsageSnapshot, ProcessTree } from '../execution/usage.js';
 import type { OperationEvent, OperationSnapshot } from '../telemetry/operations.js';
 import { z } from 'zod';
-import { splitFullOutputPath } from '../verification/command-verifier.js';
 import type { AdvertisedCommand } from '../execution/conversation-driver.js';
 import type { ResolvedGuardrails } from '../domain/setting-override.js';
 import { wallClockBudgetMs } from '../domain/guardrail-budget.js';
@@ -30,7 +30,7 @@ import { firstLineTitle } from '../domain/task-title.js';
 export { firstLineTitle, taskDisplayTitle } from '../domain/task-title.js';
 
 export const parseUsage = (raw: string | null): AttemptUsage | null => (raw ? (JSON.parse(raw) as AttemptUsage) : null);
-export const parseCost = (raw: string | null): Cost | null => (raw ? (JSON.parse(raw) as Cost) : null);
+export { parseCost };
 
 /** `workspaceId` is nullable only because SQLite can't ADD COLUMN NOT NULL without a default; every row has one at rest. */
 export const atRestWorkspaceId = (workspaceId: number | null): number => workspaceId!;
@@ -162,6 +162,7 @@ export type TicketTimelineKind =
   | 'verification'
   | 'guardrail'
   | 'operator-reject'
+  | 'agent-message'
   | 'fact';
 
 export interface ApiTicketTimelineEvent {
@@ -247,6 +248,8 @@ export type ApiAttemptSummary = {
   stat: string | null;
   verifiedHeadOid: string | null;
   verifiedRef: string | null;
+  /** The PR/MR the open-PR Merge Fate opened for this Attempt; null when none. */
+  pullRequestUrl: string | null;
   usage: AttemptUsage | null;
   cost: Cost | null;
   /** Total tool calls this Attempt's session made. */
@@ -266,7 +269,6 @@ export type ApiEpicAttempt = {
   number: number;
   state: AttemptRow['state'];
   reason: string | null;
-  prompt: string | null;
   usage: AttemptUsage | null;
   cost: Cost | null;
   toolCalls: number;
@@ -275,18 +277,39 @@ export type ApiEpicAttempt = {
   endedAt: number | null;
   steps: ApiStep[];
   verificationAttempts: ApiVerificationAttempt[];
+  /** Each Resolved Prompt this Epic Attempt sent to a resolver, read via `GET …/epics/:ref/resolved-prompt`. */
+  resolverPrompts: ApiEpicResolverPrompt[];
 };
 
-export type ApiVerificationAttempt = Omit<VerificationAttemptRow, 'transcriptPath' | 'usage'> & {
+export type ApiEpicResolverPrompt = {
+  kind: 'merge-conflict' | 'verification' | 'refresh';
+  locator: string;
+  promptIndex: number;
+  ts: number;
+};
+
+/** The archived resolver prompts among an Epic Attempt's lifecycle events, in order. */
+export function epicResolverPrompts(events: readonly PersistedAttemptEvent[]): ApiEpicResolverPrompt[] {
+  return events.flatMap<ApiEpicResolverPrompt>((event) => {
+    const payload = event.type === 'lifecycle' ? (event.payload as { event?: unknown; kind?: unknown; locator?: unknown; promptIndex?: unknown } | null) : null;
+    if (typeof payload?.locator !== 'string' || typeof payload.promptIndex !== 'number') return [];
+    if (payload.event === 'merge-conflict-resolve') return [{ kind: 'merge-conflict', locator: payload.locator, promptIndex: payload.promptIndex, ts: event.ts }];
+    if (payload.event === 'epic-resolve') return [{ kind: payload.kind === 'refresh' ? 'refresh' : 'verification', locator: payload.locator, promptIndex: payload.promptIndex, ts: event.ts }];
+    return [];
+  });
+}
+
+export type ApiVerificationAttempt = Omit<VerificationAttemptRow, 'transcriptPath' | 'usage' | 'fullOutputKey' | 'promptKey'> & {
+  /** Archive locator of the Resolved Prompt; read it with `GET /api/attempts/:attemptId/resolved-prompt?locator=`. */
+  promptLocator: string | null;
   hasTranscript: boolean;
   /** The command output was capped; the full text is at `GET /api/verification-attempts/:id/output`. */
   outputTruncated: boolean;
 };
 
 export function verificationAttemptToApi(row: VerificationAttemptRow): ApiVerificationAttempt {
-  const { transcriptPath: _transcriptPath, usage: _usage, ...attempt } = row;
-  const { output, fullOutputPath } = splitFullOutputPath(row.output);
-  return { ...attempt, output, outputTruncated: fullOutputPath !== null, hasTranscript: row.transcriptPath !== null };
+  const { transcriptPath: _transcriptPath, usage: _usage, fullOutputKey, promptKey, ...attempt } = row;
+  return { ...attempt, promptLocator: promptKey, outputTruncated: fullOutputKey !== null, hasTranscript: row.transcriptPath !== null };
 }
 
 function apiAttemptState(state: AttemptState): ApiAttemptSummary['state'] {
@@ -315,6 +338,7 @@ export function attemptToApiSummary(run: TaskAttemptRow, toolCalls: number, cont
     stat: run.stat,
     verifiedHeadOid: run.verifiedHeadOid,
     verifiedRef: run.verifiedRef,
+    pullRequestUrl: run.pullRequestUrl,
     usage: parseUsage(run.usage),
     cost: parseCost(run.cost),
     toolCalls,
@@ -331,13 +355,13 @@ export function epicAttemptToApi(
   toolCalls: number,
   stepRows: readonly StepRow[],
   verificationAttempts: readonly VerificationAttemptRow[],
+  events: readonly PersistedAttemptEvent[],
 ): ApiEpicAttempt {
   return {
     id: run.id,
     number: run.number,
     state: run.state,
     reason: run.detail ?? run.reason,
-    prompt: run.prompt,
     usage: parseUsage(run.usage),
     cost: parseCost(run.cost),
     toolCalls,
@@ -346,6 +370,7 @@ export function epicAttemptToApi(
     endedAt: run.endedAt,
     steps: stepRows.map(stepToApi),
     verificationAttempts: verificationAttempts.map(verificationAttemptToApi),
+    resolverPrompts: epicResolverPrompts(events),
   };
 }
 
@@ -391,6 +416,8 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'isolationMode' | 'prio
   url: string | null;
   /** The parent Map's title, resolved from mapRef against the last poll's scan; null when unmapped or before a poll. */
   mapTitle: string | null;
+  /** The display name of the tracker a mirrored Task came from (e.g. GitHub); null on native Tasks or when the Workspace's tracker is unresolved. */
+  trackerLabel: string | null;
   /** The latest attempt's branch (worktree mode only); null in direct mode or before any attempt. */
   branch: string | null;
   /** The latest attempt's `git diff --stat`, snapshotted at settle; null until then or in direct mode. */
@@ -420,6 +447,14 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'isolationMode' | 'prio
 /** Every {@link ApiTask} field except `prompt`; list surfaces render {@link ApiTask.summary} instead. */
 export type ApiTaskListRow = Omit<ApiTask, 'prompt'>;
 
+/** An Epic container in a Tasks list: it has no Task id, so it is keyed by `trackerRef`. */
+export type ApiEpicListRow = Omit<ApiTaskListRow, 'id' | 'trackerRef'> & { trackerRef: TrackerRef };
+
+/** A Tasks-list item: a Task row (has `id`) or an Epic row (no `id`). */
+export type ApiTaskListItem = ApiTaskListRow | ApiEpicListRow;
+
+export const isEpicListRow = (row: ApiTaskListItem): row is ApiEpicListRow => !('id' in row);
+
 const SUMMARY_MAX = 200;
 
 /** The prompt's first non-empty line, bounded to {@link SUMMARY_MAX}. */
@@ -434,10 +469,9 @@ export function toListRow({ prompt: _prompt, ...row }: ApiTask): ApiTaskListRow 
 }
 
 /** Project an Epic's container ticket into a Tasks-list row; only ref, title, url, and createdAt carry real data. */
-export function epicToListRow(ticket: Ticket, workspaceId: number): ApiTaskListRow {
+export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListRow {
   const created = Date.parse(ticket.createdAt) || 0;
   return {
-    id: ticket.number,
     workspaceId,
     harness: '',
     model: '',
@@ -449,10 +483,11 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiTaskListR
     state: 'ready',
     escalationReason: null,
     mergeStatus: null,
+    ticketClosePending: false,
     feedback: null,
     continuationChoice: null,
     origin: 'mirrored',
-    trackerRef: ticket.number,
+    trackerRef: ticket.ref,
     workflow: null,
     wayfinderType: null,
     mapRef: null,
@@ -470,6 +505,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiTaskListR
     cost: null,
     url: ticket.url,
     mapTitle: null,
+    trackerLabel: null,
     branch: null,
     stat: null,
     runStartedAt: null,
@@ -524,6 +560,7 @@ export function taskToApiDto(
     hasCandidate: boolean;
     url: string | null;
     mapTitle: string | null;
+    trackerLabel: string | null;
     skipReason: string | null;
     contextWindow: number | null;
   },
@@ -543,6 +580,7 @@ export function taskToApiDto(
     cost: sumCosts(runs.map((run) => parseCost(run.cost))),
     url: resolved.url,
     mapTitle: resolved.mapTitle,
+    trackerLabel: resolved.trackerLabel,
     branch: runs.at(-1)?.branch ?? null,
     stat: runs.at(-1)?.stat ?? null,
     runStartedAt: running?.startedAt ?? null,
@@ -586,7 +624,7 @@ export interface ApiActivityProcess {
   /** Epoch ms the process started; the client derives elapsed from it. */
   startedAt: number;
   /** The mirrored issue's tracker ref (an Attempt's Task); null on native Tasks and Conversations. */
-  trackerRef: number | null;
+  trackerRef: TrackerRef | null;
   /** The mirrored issue's tracker URL; null on native Tasks, Conversations, or before a poll. */
   trackerUrl: string | null;
   /** True when the Task is escalated; always false for a Conversation. */
@@ -643,7 +681,7 @@ export function epicAttemptProcessToApi(input: {
   run: AttemptRow;
   workspaceId: number;
   workspaceName: string;
-  epicRef: number;
+  epicRef: TrackerRef;
   harness: string;
   model: string;
   trackerUrl: string | null;

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { PageHeader } from './PageHeader';
-import { Tabs } from './Tabs';
+import { Tabs, panelId, tabId } from './Tabs';
 import { SettingsSection } from './SettingsSection';
 import { FloatingSaveBar } from './FloatingSaveBar';
 import { renderSection, sectionsForTab, type RenderCtx } from './settings-schema';
@@ -46,6 +46,7 @@ export function SettingsForm({
   headerActions?: ReactNode;
 }) {
   const sections = sectionsForTab(ctx.surface, tab);
+  const masonry = tab === 'prompts';
   const label = ctx.surface === 'workspace' ? 'Workspace settings sections' : 'Settings sections';
   return (
     <div>
@@ -56,10 +57,10 @@ export function SettingsForm({
       </div>
 
       <div
-        id={`settings-panel-${tab}`}
+        id={panelId(tab)}
         role="tabpanel"
-        aria-labelledby={`settings-tab-${tab}`}
-        className="mt-5 grid gap-4 xl:grid-cols-2 xl:items-start"
+        aria-labelledby={tabId(tab)}
+        className={`mt-5 grid min-w-0 grid-cols-1 gap-4 ${masonry ? 'xl:block xl:columns-2' : 'xl:grid-cols-2 xl:items-start'}`}
       >
         {sections.map((section) => {
           const { title: sectionTitle, description, body } = renderSection(section, { ...ctx, dirty });
@@ -68,7 +69,15 @@ export function SettingsForm({
               key={`${section.tab}:${sectionTitle}`}
               title={sectionTitle}
               description={description}
-              className={section.wide ? 'xl:col-span-2' : undefined}
+              className={
+                masonry
+                  ? section.wide
+                    ? 'xl:mb-4 xl:[column-span:all]'
+                    : 'xl:mb-4 xl:break-inside-avoid'
+                  : section.wide
+                    ? 'xl:col-span-2'
+                    : undefined
+              }
             >
               {body}
             </SettingsSection>

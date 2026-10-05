@@ -1,4 +1,4 @@
-import { killProcessGroup, spawnProcessGroup } from '../execution/process-groups.js';
+import { killProcessGroup, type SpawnProcessGroup } from '../execution/process-groups.js';
 import { createWriteStream, type WriteStream } from 'node:fs';
 import { join } from 'node:path';
 import type { Attributes, SpanContext } from '@opentelemetry/api';
@@ -18,24 +18,20 @@ export interface CommandAttempt {
   output: string;
   /** The candidate OID this attempt verified. */
   inputOid: string;
+  /** Archive key of the full output; null unless `output` was truncated and the log was fully written. */
+  fullOutputKey: string | null;
 }
 
-/** Combined stdout+stderr past this many characters is truncated. */
+/** Where a step's full output is written, and the Archive-relative key that locates it later. */
+export interface VerificationOutputLog {
+  path: string;
+  key: string;
+}
+
 export const OUTPUT_CHAR_CAP = 200_000;
 
-export function truncationMarker(elided: number, fullOutputPath?: string): string {
-  return fullOutputPath
-    ? `\n…[truncated ${elided} chars; full output: ${fullOutputPath}]…\n`
-    : `\n…[truncated ${elided} chars]…\n`;
-}
-
-const FULL_OUTPUT_MARKER = /(…\[truncated \d+ chars); full output: ([^\n]+?[\\/]output\.log)(\]…)/;
-
-/** Strips the server-side archive path from a truncation marker so it never reaches a client; returns it separately. */
-export function splitFullOutputPath(output: string): { output: string; fullOutputPath: string | null } {
-  const match = FULL_OUTPUT_MARKER.exec(output);
-  if (!match) return { output, fullOutputPath: null };
-  return { output: output.replace(FULL_OUTPUT_MARKER, '$1$3'), fullOutputPath: match[2]! };
+export function truncationMarker(elided: number): string {
+  return `\n…[truncated ${elided} chars]…\n`;
 }
 
 function isHighSurrogate(code: number): boolean {
@@ -49,13 +45,12 @@ function isLowSurrogate(code: number): boolean {
 export interface OutputPreview {
   append(chunk: string): void;
   text(): string;
-  /** Stop advertising the full-output file (it failed and is no longer complete). */
-  dropFullOutputPath(): void;
+  /** Whether more was appended than {@link text} can show. */
+  truncated(): boolean;
 }
 
 /** Bounded-memory head+tail preview of a stream; total length never exceeds `cap` once truncated. */
-export function createOutputPreview(cap: number, fullOutputPath?: string): OutputPreview {
-  let linkPath = fullOutputPath;
+export function createOutputPreview(cap: number): OutputPreview {
   const headCap = Math.floor(cap / 2);
   const tailCap = cap - headCap;
   let head = '';
@@ -75,16 +70,16 @@ export function createOutputPreview(cap: number, fullOutputPath?: string): Outpu
     },
     text() {
       if (total <= cap) return head + tail;
-      const avail = Math.max(0, cap - truncationMarker(total, linkPath).length);
+      const avail = Math.max(0, cap - truncationMarker(total).length);
       let headKeep = Math.min(head.length, Math.floor(avail / 2));
       if (isHighSurrogate(head.charCodeAt(headKeep - 1))) headKeep -= 1;
       const tailKeep = avail - headKeep;
       let tailText = tailKeep > 0 ? tail.slice(-tailKeep) : '';
       if (isLowSurrogate(tailText.charCodeAt(0))) tailText = tailText.slice(1);
-      return head.slice(0, headKeep) + truncationMarker(total - headKeep - tailText.length, linkPath) + tailText;
+      return head.slice(0, headKeep) + truncationMarker(total - headKeep - tailText.length) + tailText;
     },
-    dropFullOutputPath() {
-      linkPath = undefined;
+    truncated() {
+      return total > cap;
     },
   };
 }
@@ -103,6 +98,8 @@ export interface CommandSpawnResult {
   signal: NodeJS.Signals | null;
   /** Combined stdout+stderr preview (head + marker + tail) already capped by the spawner. */
   output: string;
+  /** Output was truncated and the full log was written without error. */
+  fullOutputSaved?: boolean | undefined;
 }
 
 export interface CommandSpawnRequest {
@@ -126,7 +123,7 @@ export interface CommandSpawn {
 }
 
 /** Exec the configured argv (never a shell string); never rejects — a spawn failure resolves with `spawnError` set. */
-export function createChildProcessSpawn(): CommandSpawn {
+export function createChildProcessSpawn(spawnProcessGroup: SpawnProcessGroup): CommandSpawn {
   return {
     run(req: CommandSpawnRequest): Promise<CommandSpawnResult> {
       return new Promise<CommandSpawnResult>((resolve) => {
@@ -134,8 +131,9 @@ export function createChildProcessSpawn(): CommandSpawn {
         delete env.HARMONIC_API_KEY;
         delete env.HARMONIC_MCP_URL;
 
-        const preview = createOutputPreview(req.outputCap, req.outputLogPath);
+        const preview = createOutputPreview(req.outputCap);
         let file: WriteStream | undefined;
+        let logComplete = req.outputLogPath !== undefined;
         let fileClosed: Promise<void> = Promise.resolve();
         if (req.outputLogPath) {
           const stream = createWriteStream(req.outputLogPath, { flags: 'w' });
@@ -152,7 +150,7 @@ export function createChildProcessSpawn(): CommandSpawn {
           stream.on('error', (error) => {
             logger.warn('verify output.log write failed; continuing without it', { error: error.message });
             file = undefined;
-            preview.dropFullOutputPath();
+            logComplete = false;
             stream.destroy();
             child.stdout?.resume();
             child.stderr?.resume();
@@ -201,7 +199,7 @@ export function createChildProcessSpawn(): CommandSpawn {
           const stream = file;
           file = undefined;
           if (stream && !stream.destroyed) stream.end();
-          void fileClosed.then(() => resolve({ ...result, output: preview.text() }));
+          void fileClosed.then(() => resolve({ ...result, output: preview.text(), fullOutputSaved: logComplete && preview.truncated() }));
         };
 
         child.stdout?.setEncoding('utf8');
@@ -251,16 +249,15 @@ export interface RunCommandVerifierArgs {
   command: VerificationCommand;
   /** Cancellation, wired to Runner shutdown; an abort kills the command child. */
   signal?: AbortSignal;
-  /** Injectable spawn seam; defaults to {@link createChildProcessSpawn}. */
-  spawn?: CommandSpawn;
+  spawn: CommandSpawn;
   /** Override the hard timeout (tests); defaults to `command.timeoutSeconds`. */
   timeoutMs?: number;
   parent?: SpanContext;
   attributes?: Attributes;
   /** Each output chunk as the command produces it, for a live progress view. */
   onOutput?: (chunk: string) => void;
-  /** Stream the full uncapped output here; forwarded to the spawner when set. */
-  outputLogPath?: string | null | undefined;
+  /** Stream the full uncapped output here; its path is forwarded to the spawner when set. */
+  outputLog?: VerificationOutputLog | null | undefined;
 }
 
 /** Run the command verifier in {@link RunCommandVerifierArgs.cwd} and resolve a {@link CommandAttempt}. Never throws for a verdict outcome. */
@@ -283,7 +280,7 @@ export async function runCommandVerifier(args: RunCommandVerifierArgs): Promise<
 }
 
 async function runCommandVerifierUnchecked(args: RunCommandVerifierArgs): Promise<CommandAttempt> {
-  const spawner = args.spawn ?? createChildProcessSpawn();
+  const spawner = args.spawn;
   const timeoutMs = args.timeoutMs ?? args.command.timeoutSeconds * 1000;
 
   const cwd = args.command.cwd ? join(args.cwd, args.command.cwd) : args.cwd;
@@ -293,11 +290,18 @@ async function runCommandVerifierUnchecked(args: RunCommandVerifierArgs): Promis
     timeoutMs,
     outputCap: OUTPUT_CHAR_CAP,
     signal: args.signal,
-    ...(args.outputLogPath ? { outputLogPath: args.outputLogPath } : {}),
+    ...(args.outputLog ? { outputLogPath: args.outputLog.path } : {}),
     ...(args.onOutput ? { onOutput: args.onOutput } : {}),
   });
   const mapped = exitCodeToVerdict(result);
-  return { verifier: 'command', verdict: mapped.verdict, summary: mapped.summary, output: result.output, inputOid: args.verifiedHeadOid };
+  return {
+    verifier: 'command',
+    verdict: mapped.verdict,
+    summary: mapped.summary,
+    output: result.output,
+    inputOid: args.verifiedHeadOid,
+    fullOutputKey: result.fullOutputSaved && args.outputLog ? args.outputLog.key : null,
+  };
 }
 
 export interface RunCommandVerifierDetachedArgs extends Omit<RunCommandVerifierArgs, 'cwd'> {
@@ -325,6 +329,7 @@ export async function runCommandVerifierDetached(args: RunCommandVerifierDetache
       summary: `command verifier could not check out the candidate: ${err instanceof Error ? err.message : String(err)}`,
       output: '',
       inputOid: args.verifiedHeadOid,
+      fullOutputKey: null,
     };
   }
 }
@@ -337,5 +342,6 @@ export function commandAttemptToInput(attempt: CommandAttempt): VerificationAtte
     verdict: attempt.verdict,
     summary: attempt.summary,
     output: attempt.output,
+    fullOutputKey: attempt.fullOutputKey,
   };
 }

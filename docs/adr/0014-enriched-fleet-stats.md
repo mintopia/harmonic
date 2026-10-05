@@ -2,6 +2,8 @@
 
 Status: accepted
 Date: 2026-08-31
+Reconciled: 2026-10-02. Fleet aggregates are implemented and computed by the Stats worker under ADR-0007/0008.
+
 Extends ADR-0008 (Usage, Cost, and Stats). The three locked formulas there
 (cache hit rate, active-execution duration, failure rate) are unchanged; this
 ADR adds task-grain and verification aggregates, a per-workspace grouping, and
@@ -9,11 +11,10 @@ one visual-encoding change. Visual source of truth: the Stats design canvas.
 
 ## Why extend, not replace
 
-Today's `/stats` route is attempt-scoped and already carries the honest KPI
+At the time of this decision, `/stats` was attempt-scoped and carried the honest KPI
 band, the per-day cost/token/attempt series, reliability, per-model, per-agent,
-and tool-token attribution. It misses the fleet views an operator most wants at
-a glance: how work *flows* (throughput and self-heal depth), how *verification*
-resolves, and *where the spend goes* by workspace. Those are new numbers that
+and tool-token attribution. The missing fleet views were how work *flows* (throughput and self-heal depth), how *verification*
+resolves, and *where the spend goes* by workspace. These numbers
 will be trusted and compared across ranges, so — as with ADR-0008's three — the
 formulas are fixed here rather than left to the render path.
 
@@ -44,7 +45,9 @@ inflate throughput or cost-per-task.
    pass, ADR-0003). Command verdicts are counted separately, never folded in.
 5. **Gate outcomes** — how settled Tasks left the merge gate: `auto-merged`,
    `escalated` (to human review), `reverted-on-red` (post-merge check failed,
-   ADR-0001), as rates over settled Tasks in range.
+   ADR-0001), as rates over settled Tasks in range. `reverted-on-red` remains
+   the shipped statistics label; the current merge policy discards an
+   unpublished failing merge rather than creating a revert commit.
 6. **Guardrail trips by dimension** — trip counts keyed by guardrail dimension
    (`tokens`, `wall-clock`, `cost`, `progress`, `tool-timeout`, ADR-0002). A trip
    counts once per Attempt that tripped it; an Attempt tripping two dimensions
@@ -95,7 +98,8 @@ headline figures are on. It is built from the existing per-day attempt count
 
 ## Consequences
 
-- The stats reader and route encode these formulas exactly; this ADR is the
+- The Stats worker reads and computes these aggregates; the route validates
+  and returns its result. These formulas are the contract; this ADR is the
   reference they cite, alongside ADR-0008 for the attempt-grain three.
 - The `/stats` response schema (zod, the OpenAPI source of truth per ADR-0011)
   grows the task-grain, verification, guardrail, and per-workspace fields; the

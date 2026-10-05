@@ -11,6 +11,8 @@ import { runCritic, type CriticHarnessDrive } from '../src/verification/critic.j
 import type { DriveFields } from '../src/execution/prompt-template.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
+const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
+
 const FIELDS: DriveFields = { taskId: '77', skill: '/implement', ref: '12', url: '', title: 'T', description: 'D' };
 
 describe('runCritic archive capture', () => {
@@ -70,6 +72,7 @@ describe('runCritic archive capture', () => {
     }, 150);
 
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: dir,
       verifiedHeadOid: 'abc',
       critic: { prompt: 'review it', model: 'stub-model' },
@@ -96,6 +99,7 @@ describe('runCritic archive capture', () => {
     const task = await tasks.create({ prompt: 'p' });
     const writer = archiveFor().criticStep(task, 1, 'post-merge', 'critic-2');
     const attempt = await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: dir,
       verifiedHeadOid: 'abc',
       critic: { prompt: 'review it', model: 'stub-model' },
@@ -112,5 +116,18 @@ describe('runCritic archive capture', () => {
     expect(existsSync(join(stepDir, 'prompt.md'))).toBe(true);
     expect(existsSync(join(stepDir, 'acp.jsonl'))).toBe(true);
     expect(existsSync(join(stepDir, 'native'))).toBe(false);
+  });
+
+  it('reports the prompt locator only when the prompt reached the archive', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const writer = archiveFor().criticStep(task, 1, 'pre-merge', 'critic-3');
+    const base = { fragments: DEFAULT_PROMPT_FRAGMENTS, cwd: dir, verifiedHeadOid: 'abc', critic: { prompt: 'review it', model: 'stub-model' }, fields: FIELDS, harness: harness(), harnessId: 'claude', drive, transcriptRetryDelaysMs: [1] };
+    const archived = await runCritic({ ...base, archive: writer });
+    expect(archived.promptKey).toBe('verification/pre-merge/critic-3/prompt.md');
+    expect(readFileSync(join(await writer.dir, 'prompt.md'), 'utf8')).toBe(archived.prompt);
+
+    const failing = { ...writer, appendPrompt: async () => null };
+    expect((await runCritic({ ...base, archive: failing })).promptKey).toBeNull();
+    expect((await runCritic(base)).promptKey).toBeNull();
   });
 });

@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import type { AppContext } from './app.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { AttemptRow, AttemptState, TaskAttemptRow, VerificationAttemptRow, StepType, ConversationRow } from '../db/schema.js';
@@ -5,6 +6,7 @@ import { attempts, steps, guardrailEvents, attemptEvents, isEpicAttempt, isTaskA
 import { and, desc, eq } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
+import { resolveAgentMessages } from '../domain/agent-messages.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
 import { costOfUsages, pricesForHarness, resolveContextWindowForHarness, withCriticContribution, type Cost } from '../domain/pricing.js';
 import { DomainError } from '../domain/errors.js';
@@ -152,6 +154,31 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
   await forEachYielding(guardrails, async ({ event }) => { add({ attemptId: event.attemptId, ts: event.ts, kind: 'guardrail', data: { dimension: event.dimension, limitValue: event.limitValue, observedValue: event.observedValue, configSource: event.configSource, payload: parsePayload(event.payload) } }, 2); });
   await forEachYielding(taskLevel, async (event) => { add({ attemptId: null, ts: event.ts, kind: 'lifecycle', data: { type: 'lifecycle', payload: event.payload } }, 3); });
 
+  const peers = new Map<number, { harness: string | null; epic: TrackerRef | null }>();
+  const peerOf = async (peerId: number) => {
+    if (!peers.has(peerId)) peers.set(peerId, await ctx.tasks.get(peerId).then((t) => ({ harness: t.harness ?? null, epic: t.trackerParent ?? null }), () => ({ harness: null, epic: null })));
+    return peers.get(peerId)!;
+  };
+  const { sendCap } = resolveAgentMessages(workspace, ctx.settingsStore.getGlobal().agentMessages);
+  const sendsByAttempt = new Map<number, number>();
+  await forEachYielding(await ctx.agentMessages.listForTask(atRestWorkspaceId(task.workspaceId), taskId), async (message) => {
+    const preview = message.parts.map((part) => part.text).join(' ');
+    const replyToAt = message.replyTo === null ? null : ((await ctx.agentMessages.get(message.replyTo))?.createdAt ?? null);
+    const common = { messageId: message.id, threadId: message.threadId, workspaceId: message.workspaceId, preview, isReply: message.replyTo !== null, replyToAt };
+    if (message.senderTaskId === taskId) {
+      const sendNumber = (sendsByAttempt.get(message.senderAttemptId) ?? 0) + 1;
+      sendsByAttempt.set(message.senderAttemptId, sendNumber);
+      for (const recipient of message.recipients) {
+        add({ attemptId: message.senderAttemptId, ts: message.createdAt, kind: 'agent-message', data: { ...common, direction: 'sent', peerTaskId: recipient.taskId, peerHarness: (await peerOf(recipient.taskId)).harness, receipt: recipient.receipt, reason: recipient.reason ?? null, sendNumber, sendCap, epic: null } }, 5);
+      }
+      return;
+    }
+    const mine = message.recipients.find((recipient) => recipient.taskId === taskId);
+    if (mine === undefined || mine.receipt === 'refused') return;
+    const sender = await peerOf(message.senderTaskId);
+    add({ attemptId: null, ts: message.createdAt, kind: 'agent-message', data: { ...common, direction: 'received', peerTaskId: message.senderTaskId, peerHarness: sender.harness, receipt: mine.receipt, reason: null, sendNumber: null, sendCap: null, epic: message.recipients.length > 1 ? sender.epic : null } }, 5);
+  });
+
   add({ attemptId: null, ts: task.createdAt, kind: 'fact', data: { type: 'task-created', trackerRef: task.trackerRef != null ? String(task.trackerRef) : null, workspace: workspace?.name ?? null } }, -1);
 
   return {
@@ -185,20 +212,21 @@ export async function attemptToApi(ctx: AppContext, run: AttemptRow): Promise<Ap
  * details are intentionally absent from this distinct owner projection. */
 export async function epicAttemptTimelineToApi(
   ctx: AppContext,
-  owner: { workspaceId: number; epicRef: number },
+  owner: { workspaceId: number; epicRef: TrackerRef },
 ): Promise<{ attempts: ApiEpicAttempt[] }> {
   const runs = await ctx.attempts.listForEpic(owner);
   return {
     attempts: await Promise.all(
       runs.map(async (run) => {
-        const [toolTotals, stepRows, verificationRows] = await Promise.all([
+        const [toolTotals, stepRows, verificationRows, events] = await Promise.all([
           ctx.attempts.listToolCalls(run.id),
           ctx.attempts.listSteps(run.id),
           ctx.verificationAttempts.list(run.id),
+          ctx.attempts.listEvents(run.id),
         ]);
         let toolCalls = 0;
         for (const count of toolTotals.values()) toolCalls += count;
-        return epicAttemptToApi(run, toolCalls, stepRows, verificationRows);
+        return epicAttemptToApi(run, toolCalls, stepRows, verificationRows, events);
       }),
     ),
   };
@@ -276,6 +304,7 @@ function taskToApiWithRuns(
     hasCandidate,
     url: ctx.trackerManager.urlFor(task.workspaceId, task.trackerRef),
     mapTitle: ctx.trackerManager.titleForMap(task.workspaceId, task.mapRef),
+    trackerLabel: task.origin === 'mirrored' ? ctx.trackerManager.trackerLabelFor(task.workspaceId) : null,
     skipReason: ctx.autoRunner.skipReasonFor(task.id) ?? null,
     contextWindow: contextWindowOf(ctx, task.model, task.harness),
   });
@@ -359,7 +388,7 @@ export interface TimelineAttemptApi {
   harness: string;
   model: string;
   state: AttemptState;
-  trackerRef: number | null;
+  trackerRef: TrackerRef | null;
   startedAt: number;
   endedAt: number | null;
   cost: Cost | null;

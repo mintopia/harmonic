@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Task, TaskState } from '../types';
 import type { Epic, EpicMember, MemberPipStatus } from '../epic-model';
 import { closedMembers, isEpicIntegrating, memberPipLabel, memberPipStatus } from '../epic-model';
@@ -10,7 +10,8 @@ import {
   type BlockerColumn,
   type PendingItem,
 } from '../board-sections-model';
-import { ticketRowId } from '../id-format.js';
+import { epicLabel, issueRef } from '../id-format.js';
+import { TicketRowId } from './TicketRowId';
 import { api } from '../api';
 import { subscribe } from '../ws';
 import { toastError } from '../toast';
@@ -41,10 +42,6 @@ import { PageHeader } from './PageHeader';
 /** The recorded trigger, without the settle fact's `escalated to human:` preamble. */
 export function escalationReasonText(reason: string): string {
   return reason.replace(/^escalated to human:\s*/i, '');
-}
-
-function rowId(task: Task): string {
-  return ticketRowId(task.id, task.trackerRef);
 }
 
 function Dot({ task }: { task: Task }) {
@@ -214,7 +211,7 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
         <div className="flex items-center gap-2">
           {task.mapRef != null && <span className={toolChip}>epic/{task.mapRef}</span>}
           <Dot task={task} />
-          <span className="font-data text-small text-faint">{rowId(task)}</span>
+          <span className="font-data text-small text-faint"><TicketRowId task={task} /></span>
           <span className="ml-auto flex items-center gap-1.5">
             {task.openBlockerCount > 0 && <BlockerBadge count={task.openBlockerCount} blockedOnFailed={task.blockedOnFailed} />}
             {task.mergeStatus === 'resolving-conflicts' ? (
@@ -324,14 +321,16 @@ export function EpicAttentionCard({ epic, onOpenEpic }: { epic: Epic; onOpenEpic
 function CardStrip({ count, children }: { count: number; children: React.ReactNode }) {
   const stripRef = useRef<HTMLDivElement>(null);
   const [more, setMore] = useState(0);
+  const measure = useCallback(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const right = strip.getBoundingClientRect().right;
+    setMore(Array.from(strip.children).filter((card) => card.getBoundingClientRect().right > right + 1).length);
+  }, []);
 
   useEffect(() => {
     const strip = stripRef.current;
     if (!strip) return;
-    const measure = () => {
-      const visibleCards = Math.max(1, Math.floor(strip.clientWidth / 432));
-      setMore(Math.max(0, count - visibleCards));
-    };
     measure();
     if (typeof ResizeObserver === 'undefined') {
       window.addEventListener('resize', measure);
@@ -340,19 +339,19 @@ function CardStrip({ count, children }: { count: number; children: React.ReactNo
     const observer = new ResizeObserver(measure);
     observer.observe(strip);
     return () => observer.disconnect();
-  }, [count]);
+  }, [count, measure]);
 
   return (
     <div className="relative">
-      <div ref={stripRef} data-board-layout="card-strip" className="flex gap-3 overflow-x-auto pb-2 pr-20 [scrollbar-width:thin] max-md:flex-col max-md:overflow-visible max-md:pr-0">
+      <div ref={stripRef} onScroll={measure} data-board-layout="card-strip" className="flex gap-3 overflow-x-auto pb-2 pr-20 [scrollbar-width:thin] max-md:flex-col max-md:overflow-visible max-md:pr-0">
         {children}
       </div>
       {more > 0 && (
         <>
           <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-canvas max-md:hidden" />
-          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-raised px-2 py-1 text-small font-medium text-muted max-md:hidden">
+          <button type="button" aria-label={`Show ${more} more cards`} onClick={() => stripRef.current?.scrollBy({ left: 432 })} className={`${HIT44} absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-raised px-2 py-1 text-small font-medium text-muted max-md:hidden`}>
             → {more} more
-          </span>
+          </button>
         </>
       )}
     </div>
@@ -540,7 +539,7 @@ export function EpicBand({
         <button
           type="button"
           onClick={() => onOpenEpic?.(epic)}
-          title={`Open Epic #${epic.ref}`}
+          title={`Open ${epicLabel(epic.ref)}`}
           className={`${touchTargetInline} min-w-0 flex-1 basis-full gap-2.5 text-left sm:basis-0`}
         >
           <EpicKindBadge epic={epic} />
@@ -559,7 +558,7 @@ export function EpicBand({
             <button
               type="button"
               aria-expanded={open}
-              aria-label={open ? `Collapse Epic #${epic.ref} members` : `Expand Epic #${epic.ref} members`}
+              aria-label={open ? `Collapse ${epicLabel(epic.ref)} members` : `Expand ${epicLabel(epic.ref)} members`}
               onClick={() => setOpen((v) => !v)}
               className={`${touchTargetInline} shrink-0`}
             >
@@ -679,7 +678,7 @@ function StatusPips({ epic }: { epic: Epic }) {
     >
       {epic.members.map((m) => {
         const status = memberPipStatus(m);
-        return <span key={m.ref} title={`#${m.ref} · ${memberPipLabel(status)}`} className={`h-2 w-3 rounded-[3px] ${PIP_FILL[status]}`} />;
+        return <span key={m.ref} title={`${issueRef(m.ref)} · ${memberPipLabel(status)}`} className={`h-2 w-3 rounded-[3px] ${PIP_FILL[status]}`} />;
       })}
     </span>
   );

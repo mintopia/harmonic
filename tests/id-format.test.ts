@@ -14,11 +14,18 @@ describe('id-format', () => {
   });
 
   it('reserves `#n` for a tracker issue ref (GitHub convention)', () => {
-    expect(issueRef(185)).toBe('#185');
+    expect(issueRef('185')).toBe('#185');
+  });
+
+  it('renders key-style refs unprefixed (Jira keys, Forgejo milestone refs)', () => {
+    expect(issueRef('PROJ-185')).toBe('PROJ-185');
+    expect(issueRef('milestone-3')).toBe('milestone-3');
+    expect(ticketIdentity(174, 'PROJ-185')).toBe('Task 174 · issue PROJ-185');
+    expect(ticketRowId(430, 'PROJ-185')).toBe('PROJ-185 · T-430');
   });
 
   it('shows both spaces disambiguated when a task mirrors an issue', () => {
-    expect(ticketIdentity(174, 185)).toBe('Task 174 · issue #185');
+    expect(ticketIdentity(174, '185')).toBe('Task 174 · issue #185');
   });
 
   it('shows only the task label when there is no tracker ref', () => {
@@ -27,7 +34,7 @@ describe('id-format', () => {
   });
 
   it('shows both ids compactly in a listing, tracker ref first', () => {
-    expect(ticketRowId(430, 436)).toBe('#436 · T-430');
+    expect(ticketRowId(430, '436')).toBe('#436 · T-430');
   });
 
   it('shows only the task key in a listing when there is no tracker ref', () => {

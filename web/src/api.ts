@@ -1,6 +1,9 @@
+import type { TrackerRef } from './types.js';
+import type { PromptFragmentOverrides } from '../../src/domain/prompt-fragments.js';
 import type {
   Attempt,
   ActivityProcess,
+  AgentMessageThread,
   AppConfig,
   ExportDestinationTestResult,
   ConfigLayers,
@@ -34,6 +37,9 @@ import type {
   EpicCriticOverlayEntry,
   VerifierStatus,
   Workspace,
+  TrackerKindInfo,
+  TrackerDetection,
+  VerifyResult,
   UpdateState,
   HarnessProvider,
   DiscoveredHarnessModel,
@@ -46,23 +52,39 @@ import type { Epic, EpicIntegrateOutcome } from './epic-model.js';
 import type { Stats } from './stats-model.js';
 import type { WorktreeInventoryEntry } from './worktree-inventory-model.js';
 
+/** Where a Resolved Prompt is archived: an Attempt by id, or an Epic's Attempt by number (an Epic may have no Attempt row). */
+export type ResolvedPromptOwner = { attemptId: number } | { workspaceId: number; epicRef: TrackerRef; attempt: number };
+
 export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public code: string | null = null,
+    public errorId: string | null = null,
   ) {
     super(message);
   }
 }
 
-export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function send(method: string, path: string, body?: unknown): Promise<{ res: Response; text: string }> {
   const res = await fetch(path, {
     method,
     ...(body === undefined
       ? {}
       : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
   });
-  const text = await res.text();
+  return { res, text: await res.text() };
+}
+
+function failure(method: string, path: string, res: Response, json: unknown): ApiError {
+  const fallback = `${method} ${path} failed (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`;
+  const envelope = json && typeof json === 'object' && 'error' in json ? (json as { error?: { message?: string; code?: string; id?: string } }).error : undefined;
+  const message = envelope?.message ?? fallback;
+  return new ApiError(res.status, envelope?.id ? `${message} (ref ${envelope.id})` : message, envelope?.code ?? null, envelope?.id ?? null);
+}
+
+export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const { res, text } = await send(method, path, body);
   let json: unknown = null;
   try {
     json = text ? JSON.parse(text) : null;
@@ -71,17 +93,30 @@ export async function request<T>(method: string, path: string, body?: unknown): 
     // surface that raw body to the operator.
     throw new ApiError(res.status, `${method} ${path} failed (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`);
   }
-  if (!res.ok) {
-    const message = json && typeof json === 'object' && 'error' in json ? (json as { error?: { message?: string } }).error?.message : undefined;
-    throw new ApiError(res.status, message ?? `${method} ${path} failed (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`);
-  }
+  if (!res.ok) throw failure(method, path, res, json);
   if (json === null && res.status !== 204) {
     throw new ApiError(res.status, `Empty response from ${method} ${path}`);
   }
   return json as T;
 }
 
+async function requestText(path: string, unavailable = 'Full output unavailable'): Promise<string> {
+  const { res, text } = await send('GET', path);
+  if (!res.ok) throw new ApiError(res.status, `${unavailable} (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`);
+  return text;
+}
+
 export const api = {
+  trackerKinds: () => request<{ kinds: TrackerKindInfo[] }>('GET', '/api/tracker-kinds'),
+  trackerDetection: (workspaceId: number) => request<TrackerDetection>('GET', `/api/workspaces/${workspaceId}/tracker-detection`),
+  verifyTracker: (workspaceId: number) => request<VerifyResult>('POST', `/api/workspaces/${workspaceId}/tracker/verify`),
+  verifyRepository: (workspaceId: number) => request<VerifyResult>('POST', `/api/workspaces/${workspaceId}/repository/verify`),
+  secretStatus: (workspaceId: number, name: string) =>
+    request<{ name: string; set: boolean }>('GET', `/api/workspaces/${workspaceId}/secrets/${encodeURIComponent(name)}`),
+  setSecret: (workspaceId: number, name: string, value: string) =>
+    request<unknown>('PUT', `/api/workspaces/${workspaceId}/secrets/${encodeURIComponent(name)}`, { value }),
+  clearSecret: (workspaceId: number, name: string) =>
+    request<unknown>('DELETE', `/api/workspaces/${workspaceId}/secrets/${encodeURIComponent(name)}`),
   harnessProviders: (harness: string) => request<{ providers: HarnessProvider[] }>('GET', `/api/harnesses/${encodeURIComponent(harness)}/providers`),
   harnessModels: (harness: string, provider: string) => request<{ models: DiscoveredHarnessModel[] }>('GET', `/api/harnesses/${encodeURIComponent(harness)}/models?provider=${encodeURIComponent(provider)}`),
   config: () => request<AppConfig>('GET', '/api/config'),
@@ -103,7 +138,7 @@ export const api = {
    * The response is the shared paginated envelope: the page under
    * `tasks` plus the filtered `total`. Pass `limit`/`offset` to page through it;
    * omit `limit` for the whole filtered list. */
-  tasks: ({ workspaceId, state, parent, limit, offset }: { workspaceId?: number; state?: 'open'; parent?: number; limit?: number; offset?: number } = {}) => {
+  tasks: ({ workspaceId, state, parent, limit, offset }: { workspaceId?: number; state?: 'open'; parent?: TrackerRef; limit?: number; offset?: number } = {}) => {
     const params = new URLSearchParams();
     if (workspaceId) params.set('workspaceId', String(workspaceId));
     if (state) params.set('state', state);
@@ -130,13 +165,19 @@ export const api = {
     if (workspaceId !== undefined) query.set('workspaceId', String(workspaceId));
     return request<Stats>('GET', `/api/stats?${query}`);
   },
-  activity: (workspaceId?: number) => request<{ processes: ActivityProcess[] }>('GET', workspaceId === undefined ? '/api/activity' : `/api/activity?workspaceId=${workspaceId}`),
+  activity: (workspaceId?: number) => request<{ processes: ActivityProcess[]; agentMessagesEnabledInAnyWorkspace: boolean }>('GET', workspaceId === undefined ? '/api/activity' : `/api/activity?workspaceId=${workspaceId}`),
+  agentMessageThreads: (params: { workspaceId?: number; epicId?: TrackerRef; taskId?: number; live?: boolean; limit?: number; offset?: number } = {}) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) if (value !== undefined) query.set(key, String(value));
+    const qs = query.toString();
+    return request<{ threads: AgentMessageThread[]; total: number; totalMessages: number }>('GET', qs ? `/api/agent-messages/threads?${qs}` : '/api/agent-messages/threads');
+  },
   timeline: (workspaceId: number | undefined, from: number, to: number) => {
     const query = new URLSearchParams({ from: String(from), to: String(to) });
     if (workspaceId !== undefined) query.set('workspaceId', String(workspaceId));
     return request<TimelineResponse>('GET', `/api/timeline?${query}`);
   },
-  epicStats: (epicRef: number, workspaceId: number) =>
+  epicStats: (epicRef: TrackerRef, workspaceId: number) =>
     request<Stats>('GET', `/api/epics/${epicRef}/stats?workspaceId=${workspaceId}`),
   createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready' }) =>
     request<Task>('POST', '/api/tasks', input),
@@ -201,6 +242,8 @@ export const api = {
       maxConcurrentAttempts?: number | null;
       autoRunnerEnabled?: boolean | null;
       maxAttempts?: number | null;
+      agentMessagesEnabled?: boolean | null;
+      agentMessagesSendCap?: number | null;
       contextReuseTokenLimit?: number | null;
       taskPreMergeCommands?: CommandOverlayEntry[] | null;
       taskPreMergeCritics?: TaskCriticOverlayEntry[] | null;
@@ -221,6 +264,9 @@ export const api = {
       exportS3SecretAccessKey?: string | null;
       exportRedactPatterns?: { id: string; regex: string }[] | null;
       exportIncludeStates?: ExportState[] | null;
+      configuredTracker?: Workspace['configuredTracker'];
+      codeRepository?: Workspace['codeRepository'];
+      triageLabels?: Workspace['triageLabels'];
       archiveRetentionDays?: number | null;
       archiveRetentionMaxTotalMB?: number | null;
       toolTimeoutMinutes?: number | null;
@@ -230,7 +276,7 @@ export const api = {
       driveMergeFate?: 'auto-merge' | 'open-PR' | 'artifact' | null;
       driveContinueAttempts?: number | null;
       taskPrompt?: string | null;
-    },
+    } & Partial<PromptFragmentOverrides>,
   ) => request<Workspace>('PATCH', `/api/workspaces/${id}`, patch),
   // Deletes the Workspace and cascades its board; the server 204s (empty body,
   // handled by request's 204 branch). Deleting the last Workspace is allowed
@@ -273,7 +319,7 @@ export const api = {
   removeDependency: (id: number, depId: number) =>
     request<Task>('DELETE', `/api/tasks/${id}/dependencies/${depId}`),
   continuationPreview: (id: number) => request<ContinuationPreview>('GET', `/api/tasks/${id}/continuation`),
-  rejectEpic: (workspaceId: number, epicRef: number, guidance: string, continuation: 'continue' | 'fresh') =>
+  rejectEpic: (workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh') =>
     request<EpicIntegrateOutcome>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/reject`, { guidance, continuation }),
   // The three escalation actions, escalated tickets only.
   // Accept merges the candidate as-is — the operator's judgement is the gate,
@@ -297,9 +343,9 @@ export const api = {
   taskExport: (id: number) => request<TaskExportStatus>('GET', `/api/tasks/${id}/export`),
   exportTaskAgain: (id: number) => request<TaskExportAgainResult>('POST', `/api/tasks/${id}/export`),
   taskExportDownloadUrl: (id: number) => `/api/tasks/${id}/export/download`,
-  epicExport: (workspaceId: number, epicRef: number) => request<TaskExportStatus>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/export`),
-  exportEpicAgain: (workspaceId: number, epicRef: number) => request<TaskExportAgainResult>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/export`),
-  epicExportDownloadUrl: (workspaceId: number, epicRef: number) => `/api/workspaces/${workspaceId}/epics/${epicRef}/export/download`,
+  epicExport: (workspaceId: number, epicRef: TrackerRef) => request<TaskExportStatus>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/export`),
+  exportEpicAgain: (workspaceId: number, epicRef: TrackerRef) => request<TaskExportAgainResult>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/export`),
+  epicExportDownloadUrl: (workspaceId: number, epicRef: TrackerRef) => `/api/workspaces/${workspaceId}/epics/${epicRef}/export/download`,
   taskUsage: (id: number) =>
     request<AttemptUsage & { cost: Cost | null; attemptCount: number }>('GET', `/api/tasks/${id}/usage`),
   attempt: (id: number) => request<AttemptSummary>('GET', `/api/attempts/${id}`),
@@ -315,11 +361,16 @@ export const api = {
   verificationAttempt: (id: number) =>
     request<{ output: string; summary: string; hasTranscript: boolean }>('GET', `/api/verification-attempts/${id}`),
   verificationOutputUrl: (id: number) => `/api/verification-attempts/${id}/output`,
-  verificationFullOutput: async (id: number): Promise<string> => {
-    const res = await fetch(`/api/verification-attempts/${id}/output`);
-    if (!res.ok) throw new ApiError(res.status, `Full output unavailable (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`);
-    return res.text();
+  resolvedPrompt: (owner: ResolvedPromptOwner, locator: string, index?: number) => {
+    const at = `locator=${encodeURIComponent(locator)}${index === undefined ? '' : `&index=${index}`}`;
+    return requestText(
+      'attemptId' in owner
+        ? `/api/attempts/${owner.attemptId}/resolved-prompt?${at}`
+        : `/api/workspaces/${owner.workspaceId}/epics/${owner.epicRef}/resolved-prompt?attempt=${owner.attempt}&${at}`,
+      'Sent prompt unavailable',
+    );
   },
+  verificationFullOutput: (id: number) => requestText(`/api/verification-attempts/${id}/output`),
   criticLog: (attemptId: number) =>
     request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number; fromArchive?: boolean } | { status: 'unavailable'; liveCursor: number }>(
       'GET',
@@ -396,11 +447,13 @@ export const api = {
     const base = `/api/workspaces/${workspaceId}/epics`;
     return request<{ epics: Epic[]; total: number }>('GET', query ? `${base}?${query}` : base);
   },
-  epic: (workspaceId: number, epicRef: number) =>
+  epic: (workspaceId: number, epicRef: TrackerRef) =>
     request<Epic>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}`),
-  epicAttempts: (workspaceId: number, epicRef: number) =>
+  attemptResolvedPrompts: (attemptId: number, locator: string) =>
+    request<{ prompts: string[] }>('GET', `/api/attempts/${attemptId}/resolved-prompt?locator=${encodeURIComponent(locator)}&segments=true`).then((r) => r.prompts),
+  epicAttempts: (workspaceId: number, epicRef: TrackerRef) =>
     request<{ attempts: EpicAttempt[] }>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/attempts`),
-  epicDiffFiles: (workspaceId: number, epicRef: number) =>
+  epicDiffFiles: (workspaceId: number, epicRef: TrackerRef) =>
     request<{ files: DiffFile[]; total: number }>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/diff/files`),
 
   // Derived Map rollup, paginated on the shared envelope

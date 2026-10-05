@@ -1,67 +1,48 @@
-import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
-import { promisify } from 'node:util';
+import { join } from 'node:path';
 
-const execFileAsync = promisify(execFile);
-
-async function gitlabRemote(repoRoot: string): Promise<string | null> {
-  let url: string;
-  try {
-    const { stdout } = await execFileAsync('git', ['-C', repoRoot, 'remote', 'get-url', 'origin']);
-    url = stdout.trim();
-  } catch {
-    // No `origin` remote (or `git` unavailable) just means the GitLab project can't be inferred; the caller falls back to requiring an explicit `Project:` line.
-    return null;
-  }
-  const m = url.match(/^(?:git@|(?:https?|ssh):\/\/(?:[^@/]+@)?)[^:/]+[:/](?:\d+\/)?(.+?)(?:\.git)?$/);
-  return m ? m[1]! : null;
-}
-import { githubAdapter } from './github.js';
-import { gitlabAdapter } from './gitlab.js';
-import { localMarkdownAdapter, type FeatureIndex } from './local-markdown.js';
+import { formatTrackerRef, trackerKindFor, TRACKER_KINDS } from './kinds.js';
+import type { TrackerHttp } from './kind.js';
+import { EPIC_LABEL, MAP_LABEL, type TrackerRef } from './ref.js';
+import { parseStoredJson } from './stored-json.js';
+import { loadTriageLabels, storedTriageLabels, type TriageLabels, type TriageLabelsOverride } from './triage-labels.js';
+import { forEachYielding } from '../reliability/yield.js';
+import type { SecretService } from '../secrets/secret-service.js';
+import { originRemote } from '../repository/remote.js';
+import type { FeatureIndex } from './local-markdown.js';
+import { configuredTrackerSchema, type ConfiguredTracker } from './configured.js';
+import { selectTracker, type TrackerSource } from './select.js';
+import { resolveCodeRepository } from '../repository/resolve.js';
+import type { RepositoryKind } from '../repository/detect.js';
 
 export type TicketState = 'open' | 'closed';
 
-/** The label that marks a wayfinder Map — convention on every tracker; `isMap` hides which. */
-export const MAP_LABEL = 'wayfinder:map';
-
-/** The label that marks a spec Epic — a container ticket, never mirrored as a work Task. */
-export const EPIC_LABEL = 'epic';
-
-export { READY_FOR_AGENT_LABEL, READY_FOR_HUMAN_LABEL } from '../domain/agent-workable.js';
+export { EPIC_LABEL, MAP_LABEL, trackerRef, type TrackerRef } from './ref.js';
 
 /** A directional edge target: the referenced ticket's portable identity + surface state. */
 export interface TicketRef {
-  number: number;
+  ref: TrackerRef;
   title: string;
   state: TicketState;
-}
-
-export interface TicketComment {
-  author: string;
-  body: string;
-  createdAt: string;
 }
 
 /** The tracker-identity fields every tracker record carries; {@link Ticket} and the stored Epic are siblings over this base. */
 export interface TrackerIdentity {
-  number: number;
+  ref: TrackerRef;
   title: string;
   state: TicketState;
   labels: string[];
-  parent: number | null;
+  parent: TrackerRef | null;
   blockedBy: TicketRef[];
 }
 
-/** The tracker-agnostic issue shape; `number` is the portable identity. `parent`/`blockedBy`/`blocking` are always populated and directional. */
+/** The tracker-agnostic issue shape; `ref` is the portable identity. `parent`/`blockedBy`/`blocking` are always populated and directional. */
 export interface Ticket extends TrackerIdentity {
   body: string;
   createdAt: string;
   closedAt: string | null;
   assignees: string[];
   blocking: TicketRef[];
-  comments: TicketComment[];
   isMap: boolean;
   url: string;
 }
@@ -85,10 +66,16 @@ export interface TrackerAdapter {
    * so the caller must commit the returned {@link TrackerLifecycleWrite.changedPaths}
    * onto the base branch. Remote trackers omit it. */
   readonly persistsInWorkingTree?: boolean;
-  /** Whole tracker, one read. Poll = call on an interval; frontier/board derive from the array. */
+  /** True when {@link scan} returns only open tickets; the poller then reads closed refs it still needs (mirrored Tasks, parents) via {@link readTicket}. */
+  readonly scansOpenOnly?: boolean;
+  /** Whole tracker, one read (open tickets only when {@link scansOpenOnly}). Poll = call on an interval; frontier/board derive from the array. */
   scan(): Promise<Ticket[]>;
+  /** The authenticated identity the tracker acts as; throws when credentials are missing or rejected. A tracker without identity omits this. */
+  identify?(): Promise<string>;
   /** Fresh single-ticket read for consumers that need current tracker details. */
   readTicket(ref: TicketRef): Promise<Ticket>;
+  /** Cheap state-only read for the pre-close check; omit to fall back to {@link readTicket}. */
+  readState?(ref: TicketRef): Promise<TicketState>;
   /** Advertise local ownership by assigning the ambient identity. Best-effort; never a lock. */
   claim(ticket: TicketRef): Promise<void>;
   /** Remove the advisory assignment when Harmonic hands the Task back. */
@@ -97,22 +84,12 @@ export interface TrackerAdapter {
   close?(ticket: TicketRef, comment: string): Promise<TrackerLifecycleWrite | void>;
   /** Re-open a ticket closed prematurely, with a comment. A tracker without lifecycle writes omits this. */
   reopen?(ticket: TicketRef, comment: string): Promise<TrackerLifecycleWrite | void>;
-  /** Open a PR from an Attempt's worktree branch; a tracker with no PR concept omits it (treated as artifact). */
-  openPR?(input: OpenPRInput): Promise<void>;
 }
 
 /** A tracker that supports Harmonic-owned lifecycle writes as well as inbound reads. */
 export interface WritableTrackerAdapter extends TrackerAdapter {
   close(ticket: TicketRef, comment: string): Promise<TrackerLifecycleWrite | void>;
   reopen(ticket: TicketRef, comment: string): Promise<TrackerLifecycleWrite | void>;
-}
-
-/** The open-PR Merge Fate's inputs. */
-export interface OpenPRInput {
-  branch: string;
-  baseBranch: string;
-  title: string;
-  body: string;
 }
 
 /**
@@ -137,30 +114,48 @@ export class TrackerResolutionError extends Error {
 
 /** The Resolved Tracker of a Workspace's repo: the adapter's label on success, or a coded reason it can't resolve. */
 export type ResolvedTracker =
-  | { ok: true; name: string; label: string }
+  | { ok: true; name: string; label: string; source: TrackerSource }
   | { ok: false; code: TrackerResolveFailureCode; reason: string };
-
-/** Human display labels for the internal adapter names (`github` → `GitHub`). */
-const TRACKER_LABELS: Record<string, string> = {
-  github: 'GitHub',
-  gitlab: 'GitLab',
-  'local-markdown': 'Local Markdown',
-};
 
 /** The display label for an adapter name, falling back to the raw name. */
 export function trackerLabel(name: string): string {
-  return TRACKER_LABELS[name] ?? name;
+  return TRACKER_KINDS.find((k) => k.id === name)?.label ?? name;
 }
 
-/** A resolved adapter as a successful {@link ResolvedTracker}. */
+const adapterSources = new WeakMap<TrackerAdapter, TrackerSource>();
+
+/** A resolved adapter as a successful {@link ResolvedTracker}; an adapter not built by {@link resolveTrackerAdapter} counts as detected. */
 export function resolutionSuccess(adapter: TrackerAdapter): ResolvedTracker & { ok: true } {
-  return { ok: true, name: adapter.name, label: trackerLabel(adapter.name) };
+  return { ok: true, name: adapter.name, label: trackerLabel(adapter.name), source: adapterSources.get(adapter) ?? 'detected' };
 }
 
 /** A resolution error as a failed {@link ResolvedTracker} — a {@link TrackerResolutionError}'s code, else `misconfigured`. */
 export function resolutionFailure(err: unknown): ResolvedTracker & { ok: false } {
   const code = err instanceof TrackerResolutionError ? err.code : 'misconfigured';
   return { ok: false, code, reason: err instanceof Error ? err.message : String(err) };
+}
+
+/** The per-Workspace inputs to tracker resolution that live outside the repo. */
+export interface WorkspaceTrackerSettings {
+  /** Whose Secrets the chosen kind reads; absent ⇒ none are revealed. */
+  workspaceId?: number | undefined;
+  configured?: ConfiguredTracker | null | undefined;
+  codeRepository?: RepositoryKind | null | undefined;
+  triageLabels?: TriageLabelsOverride | null | undefined;
+  /** Secret values by name, used as given and taking precedence over the Workspace's stored Secrets. */
+  secrets?: Readonly<Record<string, string>> | undefined;
+}
+
+/** A Workspace row's tracker-related overrides, parsed from its stored form. */
+export function workspaceTrackerSettings(
+  row: { id?: number; configuredTracker?: string | null; codeRepository?: RepositoryKind | null; triageLabels?: string | null } | undefined,
+): WorkspaceTrackerSettings {
+  return {
+    workspaceId: row?.id,
+    configured: parseStoredJson(configuredTrackerSchema, row?.configuredTracker, 'Configured Tracker'),
+    codeRepository: row?.codeRepository ?? null,
+    triageLabels: storedTriageLabels(row?.triageLabels),
+  };
 }
 
 /** The non-throwing sibling of {@link resolveTrackerAdapter}: a structured {@link ResolvedTracker}. */
@@ -175,41 +170,113 @@ export async function resolveTracker(
   }
 }
 
+export const declaredTrackerName = (doc: string): string | undefined => doc.match(/^#\s*Issue tracker:\s*(.+?)\s*$/m)?.[1];
+
+const defaultHttp: TrackerHttp = (url, init) => fetch(url, init);
+
+/** The tracker precedence applied to a Workspace's repo, without building an adapter: the chosen kind and the declaration it read. */
+async function selectWorkspaceTracker(repoRoot: string, workspace: WorkspaceTrackerSettings, origin: () => Promise<string | null>) {
+  const { configured } = workspace;
+  const docPath = join(repoRoot, 'docs/agents/issue-tracker.md');
+  let doc: string | null = null;
+  if (!configured) {
+    try {
+      doc = await readFile(docPath, 'utf8');
+    } catch {
+      doc = null;
+    }
+  }
+  const detectedName = doc ? declaredTrackerName(doc) : undefined;
+  const detectedKnown = detectedName ? selectTracker({ detectedName })?.source === 'detected' : false;
+  const codeRepository = configured || detectedKnown ? null : await resolveCodeRepository(repoRoot, workspace.codeRepository, undefined, origin);
+  return { selection: selectTracker({ configured, detectedName, codeRepository }), doc, docPath, detectedName };
+}
+
+/** The id of the tracker kind a Workspace's repo resolves to under the precedence (Configured, Detected, Code Repository); null when none. */
+export async function effectiveTrackerKind(repoRoot: string, workspace: WorkspaceTrackerSettings): Promise<string | null> {
+  return (await selectWorkspaceTracker(repoRoot, workspace, originRemote(repoRoot))).selection?.kindId ?? null;
+}
+
+/** A tracker ref as the Workspace's effective tracker kind writes it for a person. */
+export async function formatWorkspaceTrackerRef(repoRoot: string, workspace: WorkspaceTrackerSettings, ref: TrackerRef): Promise<string> {
+  return formatTrackerRef(await effectiveTrackerKind(repoRoot, workspace), ref);
+}
+
 /**
- * Resolve the repo's tracker from its `docs/agents/issue-tracker.md` declaration (`# Issue tracker: <name>`).
- * GitHub uses ambient `gh` auth. local-markdown reads an optional `Path: <dir>` line (default `.scratch`).
- * GitLab reads an optional `Project: <group/repo>` line, inferring it from the `origin` remote when absent;
- * auth and host come from the ambient `glab` CLI.
+ * Resolve a Workspace's tracker in precedence order: its Configured Tracker, else the repo's
+ * `docs/agents/issue-tracker.md` declaration (`# Issue tracker: <name>`), else the Code Repository when it is
+ * also a tracker. The chosen kind reads its settings from the Configured Tracker, the declaration, or the repo.
  */
 export async function resolveTrackerAdapter(
   repoRoot: string,
   featureIndex?: FeatureIndex,
+  workspace: WorkspaceTrackerSettings = {},
+  secretStore?: Pick<SecretService, 'reveal'>,
 ): Promise<TrackerAdapter> {
-  const docPath = join(repoRoot, 'docs/agents/issue-tracker.md');
-  let doc: string;
+  const { configured } = workspace;
+  const origin = originRemote(repoRoot);
+  const { selection, doc, docPath, detectedName } = await selectWorkspaceTracker(repoRoot, workspace, origin);
+  if (!selection) {
+    if (doc === null) throw new TrackerResolutionError('no-declaration', `No tracker declaration at ${docPath}`);
+    throw new TrackerResolutionError('unsupported', `Unsupported tracker "${detectedName ?? '(none)'}" in ${docPath}`);
+  }
+  const where = selection.source === 'detected' ? docPath : selection.source === 'configured' ? 'the Configured Tracker settings' : 'the Code Repository';
+  const kind = trackerKindFor(selection.kindId);
+  if (!kind) throw new TrackerResolutionError('unsupported', `Unsupported tracker "${selection.kindId}" in ${where}`);
   try {
-    doc = await readFile(docPath, 'utf8');
-  } catch {
-    throw new TrackerResolutionError('no-declaration', `No tracker declaration at ${docPath}`);
+    const raw = selection.source === 'configured' ? configured!.settings : await kind.fromDeclaration?.(doc ?? '', repoRoot, origin);
+    const settings = kind.settings.parse(raw ?? {});
+    const secrets = { ...(await revealSecrets(secretStore, workspace.workspaceId, kind.secretsFor?.(settings) ?? kind.secretNames)), ...workspace.secrets };
+    const triageLabels = await loadTriageLabels(repoRoot, workspace.triageLabels);
+    const created = kind.create({ settings, secrets, repoRoot, http: defaultHttp, triageLabels, ...(featureIndex && { featureIndex }) });
+    const adapter = withTriageRoles(created, triageLabels);
+    adapterSources.set(adapter, selection.source);
+    return adapter;
+  } catch (err) {
+    throw new TrackerResolutionError('misconfigured', `${err instanceof Error ? err.message : String(err)} in ${where}`);
   }
-  const name = doc.match(/^#\s*Issue tracker:\s*(.+?)\s*$/m)?.[1];
-  switch (name?.trim().toLowerCase().replace(/[\s_]+/g, '-')) {
-    case 'github':
-      return githubAdapter(repoRoot);
-    case 'local-markdown': {
-      const path = doc.match(/^\s*Path:\s*(.+?)\s*$/im)?.[1] ?? '.scratch';
-      return localMarkdownAdapter(isAbsolute(path) ? path : join(repoRoot, path), { ...(featureIndex && { featureIndex }) });
-    }
-    case 'gitlab': {
-      const project = doc.match(/^\s*Project:\s*(.+?)\s*$/im)?.[1] ?? (await gitlabRemote(repoRoot));
-      if (!project)
-        throw new TrackerResolutionError(
-          'misconfigured',
-          `GitLab tracker needs a "Project: <group/repo>" line in ${docPath} (or an origin remote)`,
-        );
-      return gitlabAdapter({ project, repoRoot });
-    }
-    default:
-      throw new TrackerResolutionError('unsupported', `Unsupported tracker "${name ?? '(none)'}" in ${docPath}`);
+}
+
+async function revealSecrets(
+  store: Pick<SecretService, 'reveal'> | undefined,
+  workspaceId: number | undefined,
+  names: readonly string[],
+): Promise<Record<string, string>> {
+  const revealed: Record<string, string> = {};
+  if (!store || workspaceId === undefined) return revealed;
+  for (const name of names) {
+    const value = await store.reveal(workspaceId, name);
+    if (value !== null) revealed[name] = value;
   }
+  return revealed;
+}
+
+export type TrackerResolver = (repoRoot: string, featureIndex?: FeatureIndex, workspace?: WorkspaceTrackerSettings) => Promise<TrackerAdapter>;
+
+/** A {@link TrackerResolver} that reveals the Workspace's own Secrets for the chosen kind. */
+export function createTrackerResolver(secretStore: Pick<SecretService, 'reveal'>): TrackerResolver {
+  return (repoRoot, featureIndex, workspace) => resolveTrackerAdapter(repoRoot, featureIndex, workspace, secretStore);
+}
+
+/** Reads the Workspace's `epic` and `wayfinderMap` Triage Labels into the canonical roles every consumer checks, so an override takes effect wherever those labels are read. */
+function withTriageRoles(adapter: TrackerAdapter, triage: TriageLabels): TrackerAdapter {
+  if (triage.epic === EPIC_LABEL && triage.wayfinderMap === MAP_LABEL) return adapter;
+  const canonical = (ticket: Ticket): Ticket => ({
+    ...ticket,
+    isMap: ticket.isMap || ticket.labels.includes(triage.wayfinderMap),
+    labels: ticket.labels.map((label) => (label === triage.epic ? EPIC_LABEL : label === triage.wayfinderMap ? MAP_LABEL : label)),
+  });
+  return {
+    ...adapter,
+    async scan() {
+      const tickets: Ticket[] = [];
+      await forEachYielding(await adapter.scan(), (ticket) => {
+        tickets.push(canonical(ticket));
+      });
+      return tickets;
+    },
+    async readTicket(ref) {
+      return canonical(await adapter.readTicket(ref));
+    },
+  };
 }

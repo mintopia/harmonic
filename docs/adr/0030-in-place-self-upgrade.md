@@ -2,10 +2,21 @@
 
 Status: accepted
 Date: 2026-09-10
-Implementation pending (epic to follow). Introduces the Update Check Scheduled
+Current status (2026-10-02): Implemented, with the installation, restart, and
+rollback path now governed by ADR-0042. Its install-mode rules supersede this
+ADR's global npm swap and standalone relauncher design. The steps below retain
+the original decision rationale; use ADR-0042 for current behavior.
+Introduces the Update Check Scheduled
 Job (ADR-0010), the Update Banner (ADR-0011), and a self-restart primitive on
 top of the daemon launch path (ADR-0012). Amends ADR-0006 (a restart-killed
 Conversation becomes resumable).
+
+The original distribution, swap, and failure-handling sections below are
+the original proposal. ADR-0042 is the operative install-mode, swap, restart,
+and rollback contract. In particular, foreground, npx, npm-global, and
+externally supervised installations show manual upgrade instructions; systemd
+and init.d managed installations stage under `<dataDir>/app/versions/` and use
+the boot guard.
 
 **Amended by ADR-0034**: when Harmonic runs under a systemd supervisor
 (`HARMONIC_MANAGED_BY=systemd`), the swap below hands the restart to the
@@ -30,7 +41,7 @@ manually stopping the daemon, running npm, and starting it again — with no
 in-product sense of when that is safe. We want an in-product update checker and a
 one-click upgrade that never interrupts running work and never loses data.
 
-## Distribution Mode gates the whole feature
+## Original distribution-mode gate (superseded by ADR-0042)
 
 An instance runs one of two ways: **packaged** (a global npm install, upgradable
 in place) or **source** (a git checkout, developer or self-hosted). Detected at
@@ -77,7 +88,7 @@ after the restart (see Consequences).
 **Cancel** at any point before the swap un-arms, clears the persisted intent, and
 **restores the master switch to its pre-arm value**.
 
-## The swap: install, then hand off to a relauncher
+## Original global-install swap (superseded by ADR-0042)
 
 When idle is reached:
 
@@ -93,7 +104,7 @@ race on the single-instance data-dir lock (ADR-0009). All on-disk state —
 `harmonic.db` and the worktrees under the data dir — is untouched; schema-sync
 converges the DB forward on boot (ADR-0007), so no migration step is needed.
 
-## Failure handling
+## Original failure handling (superseded by ADR-0042 rollback)
 
 If `npm i -g` fails, or the installed version does not match the target, the swap
 **aborts before the old process exits**: un-arm, restore the master switch,

@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { epicMergeEvents, type EpicMergeEventRow } from '../db/schema.js';
@@ -15,10 +16,20 @@ export type EpicExportStep =
   | { step: 'export-delivered'; destination: 'directory' | 's3'; file: string; retry: number }
   | { step: 'export-failed'; destination: 'directory' | 's3'; error: string; retry: number; nextRetryAt: string | null };
 
-export type EpicTimelineStep = MergeStepEvent | EpicBranchStep | EpicExportStep;
+/** A resolver prompt archived while the Epic had no Attempt row to record it on (archived under `attempt`). */
+export interface EpicResolverPromptStep {
+  step: 'resolver-prompt';
+  kind: 'merge-conflict' | 'refresh';
+  turn?: number;
+  attempt: number;
+  locator: string;
+  promptIndex: number;
+}
+
+export type EpicTimelineStep = MergeStepEvent | EpicBranchStep | EpicExportStep | EpicResolverPromptStep;
 
 export function isMergeStep(step: EpicTimelineStep): step is MergeStepEvent {
-  return !step.step.startsWith('branch-') && !step.step.startsWith('export-');
+  return !step.step.startsWith('branch-') && !step.step.startsWith('export-') && step.step !== 'resolver-prompt';
 }
 
 export interface PersistedEpicMergeEvent {
@@ -37,7 +48,7 @@ export class EpicMergeEventStore {
   constructor(private readonly db: AsyncDbHandle) {}
 
   /** Append one step, assigning the next monotonic `seq` (1-based). */
-  append(workspaceId: number, epicRef: number, step: EpicTimelineStep): Promise<PersistedEpicMergeEvent> {
+  append(workspaceId: number, epicRef: TrackerRef, step: EpicTimelineStep): Promise<PersistedEpicMergeEvent> {
     return this.db.write(async (db) => {
       const seq =
         ((
@@ -57,7 +68,7 @@ export class EpicMergeEventStore {
   }
 
   /** One Epic's steps in `seq` order. */
-  async list(workspaceId: number, epicRef: number): Promise<PersistedEpicMergeEvent[]> {
+  async list(workspaceId: number, epicRef: TrackerRef): Promise<PersistedEpicMergeEvent[]> {
     const rows = await this.db.read((db) =>
       db
         .select()

@@ -14,6 +14,7 @@ import type { MirrorInput } from '../src/domain/tasks.js';
 import type { TrackerFacts } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const agentFacts = (ref: number): TrackerFacts => ({
   state: 'open',
@@ -27,7 +28,7 @@ const agentFacts = (ref: number): TrackerFacts => ({
 });
 
 const mirroredAfk = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput => ({
-  trackerRef: ref,
+  trackerRef: trackerRef(ref),
   prompt: `ticket ${ref}`,
   workflow: 'implement',
   wayfinderType: null,
@@ -68,8 +69,8 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
     const assigned = await tasks.upsertMirrored(mirroredAfk(44));
     const failedClaim = await tasks.upsertMirrored(mirroredAfk(45));
 
-    const throwRefs = new Set([45]);
-    const claims: Array<{ ref: number | null; stateAtClaim: string }> = [];
+    const throwRefs = new Set(['45']);
+    const claims: Array<{ ref: string | null; stateAtClaim: string }> = [];
     const mirror: MirrorClaim = {
       advertiseClaim: async (t) => {
         claims.push({ ref: t.trackerRef, stateAtClaim: t.state });
@@ -107,7 +108,7 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
 
     expect(claims.length).toBeGreaterThan(0);
     for (const claim of claims) expect(claim.stateAtClaim).toBe('working');
-    expect(claims.map((claim) => claim.ref).sort()).toEqual([42, 44, 45]);
+    expect(claims.map((claim) => claim.ref).sort()).toEqual(['42', '44', '45']);
   });
 });
 
@@ -404,7 +405,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     rmSync(dir, { recursive: true, force: true });
   });
 
-  const build = (options?: AutoRunnerOptions) => {
+  const build = (options?: AutoRunnerOptions, ceiling = 10) => {
     const started: number[] = [];
     const runner = {
       escalateUnspawned: async () => {},
@@ -418,7 +419,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
       countRunning: () => started.length,
       countRunningByWorkspace: () => new Map<number, number>(),
     } as unknown as AttemptStore;
-    const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 10 } };
+    const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: ceiling } };
     const ar = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), options);
     return { ar, started };
   };
@@ -442,6 +443,26 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     expect((await tasks.get(blocked.id)).state).toBe('ready');
     expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task ${occupant.id} (working)`);
     expect(ar.skipReasonFor(free.id)).toBeUndefined();
+  });
+
+  it('stops the fill at the ceiling: later Tasks get no Work Context skip reason', async () => {
+    const free = await directTask(freshDir(), 'first');
+    const busy = freshDir();
+    const occupant = await directTask(busy, 'occupant');
+    await tasks.setState(occupant.id, 'working');
+    const later = await directTask(busy, 'same context as occupant');
+
+    const history: Array<string | undefined> = [];
+    const { ar, started } = build(
+      { onSkipReasonChanged: (task) => history.push(ar.skipReasonFor(task.id) ?? '<cleared>') },
+      1,
+    );
+    ar.poke();
+    await vi.waitFor(() => expect(started).toContain(free.id));
+    await vi.waitFor(() => expect(ar.skipReasonFor(later.id)).toBe('at capacity'));
+
+    expect(ar.skipReasonFor(later.id)).not.toContain('Work Context');
+    expect(history.at(-1)).toBe('at capacity');
   });
 
   it('reports only open blocker edges in a ready task dependency diagnostic', async () => {
@@ -549,5 +570,26 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     ar.poke();
     await vi.waitFor(() => expect(started).toContain(blocked.id));
     expect(ar.waitingSince(blocked.id)).toBeUndefined();
+  });
+
+  it('yields while scanning a long list of skipped candidates', async () => {
+    await directTask(freshDir(), 'candidate');
+    const candidate = (await tasks.orderedEligibleWork())[0];
+    if (!candidate) throw new Error('missing ready candidate');
+    vi.spyOn(tasks, 'list').mockResolvedValue([]);
+    vi.spyOn(tasks, 'orderedEligibleWork').mockResolvedValue(
+      Array.from({ length: 128 }, () => ({ ...candidate, state: 'working' })),
+    );
+    let now = 0;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => (now += 30));
+    let yielded = false;
+    setImmediate(() => { yielded = true; });
+    const { ar } = build();
+    try {
+      await ar['fillSlots'](new Map(), 10, () => { throw new Error('unexpected launch'); });
+    } finally {
+      clock.mockRestore();
+    }
+    expect(yielded).toBe(true);
   });
 });

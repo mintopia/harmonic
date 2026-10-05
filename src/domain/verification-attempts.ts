@@ -1,10 +1,12 @@
-import { asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, isNull, like, sql } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import {
+  settings,
   verificationAttempts,
   type VerificationAttemptRow,
   type VerificationMechanism,
 } from '../db/schema.js';
+import { forEachYielding, yieldToEventLoop } from '../reliability/yield.js';
 import type { Verdict } from '../verification/critic-schema.js';
 
 /** What `append` needs to persist one Verification attempt — everything on
@@ -15,9 +17,10 @@ export interface VerificationAttemptInput {
   verdict: Verdict;
   summary: string;
   output: string;
-  /** The exact prompt sent to the critic (`buildCriticPrompt`); null for the
-   * command verifier, which sends no prompt. */
-  prompt?: string | null;
+  /** Archive-relative key of the complete command output; see `verificationAttempts.fullOutputKey`. */
+  fullOutputKey?: string | null;
+  /** Archive locator of the critic's Resolved Prompt; see `verificationAttempts.promptKey`. */
+  promptKey?: string | null;
   /** Locator for the critic's native transcript + the harness that wrote it.
    * Both null for the command verifier and where no transcript was resolved. */
   transcriptPath?: string | null;
@@ -26,6 +29,11 @@ export interface VerificationAttemptInput {
    * via {@link VerificationAttemptStore.setUsage} once the session log settles. */
   usage?: string | null;
 }
+
+const LEGACY_FULL_OUTPUT_MARKER =
+  /(…\[truncated \d+ chars); full output: [^\n]*?[\\/](verification[\\/](?:pre-merge|post-merge)[\\/][^\\/\n]+[\\/]output\.log)(\]…)/;
+const FULL_OUTPUT_BACKFILL_KEY = 'migration.verification-full-output-keys';
+const BACKFILL_PAGE_SIZE = 100;
 
 /**
  * The Verification attempt log store: every verifier invocation against an
@@ -57,7 +65,8 @@ export class VerificationAttemptStore {
           verdict: attempt.verdict,
           summary: attempt.summary,
           output: attempt.output,
-          prompt: attempt.prompt ?? null,
+          fullOutputKey: attempt.fullOutputKey ?? null,
+          promptKey: attempt.promptKey ?? null,
           transcriptPath: attempt.transcriptPath ?? null,
           harness: attempt.harness ?? null,
           usage: attempt.usage ?? null,
@@ -81,6 +90,36 @@ export class VerificationAttemptStore {
     return this.db.write(async (db) => {
       await db.update(verificationAttempts).set({ usage }).where(eq(verificationAttempts.id, id)).run();
     });
+  }
+
+  /** One-time boot backfill (marked done in `settings`): rows that embedded the full-output path in `output` get it moved into `fullOutputKey`. Paged by id so output is only held a page at a time. */
+  async backfillFullOutputKeys(): Promise<void> {
+    const done = await this.db.read((db) => db.select({ value: settings.value }).from(settings).where(eq(settings.key, FULL_OUTPUT_BACKFILL_KEY)).get());
+    if (done) return;
+    let after = 0;
+    for (;;) {
+      const page = await this.db.read((db) =>
+        db
+          .select({ id: verificationAttempts.id, output: verificationAttempts.output })
+          .from(verificationAttempts)
+          .where(and(gt(verificationAttempts.id, after), isNull(verificationAttempts.fullOutputKey), eq(verificationAttempts.mechanism, 'command'), like(verificationAttempts.output, '%full output: %')))
+          .orderBy(asc(verificationAttempts.id))
+          .limit(BACKFILL_PAGE_SIZE)
+          .all(),
+      );
+      const last = page.at(-1);
+      if (!last) break;
+      await forEachYielding(page, async (row) => {
+        const match = LEGACY_FULL_OUTPUT_MARKER.exec(row.output);
+        if (!match) return;
+        const fullOutputKey = match[2]!.replaceAll('\\', '/');
+        const output = row.output.replace(LEGACY_FULL_OUTPUT_MARKER, '$1$3');
+        await this.db.write((db) => db.update(verificationAttempts).set({ output, fullOutputKey }).where(eq(verificationAttempts.id, row.id)).run());
+      });
+      after = last.id;
+      await yieldToEventLoop();
+    }
+    await this.db.write((db) => db.insert(settings).values({ key: FULL_OUTPUT_BACKFILL_KEY, value: 'done' }).onConflictDoNothing().run());
   }
 
   /** One attempt by id, or undefined. */

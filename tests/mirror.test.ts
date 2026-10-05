@@ -12,9 +12,10 @@ import { mirroredAgentEligible } from '../src/domain/agent-workable.js';
 import type { Ticket } from '../src/tracker/adapter.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
-  number: 100,
+  ref: trackerRef(100),
   title: 'A ticket',
   state: 'open',
   body: '',
@@ -25,7 +26,6 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
   parent: null,
   blockedBy: [],
   blocking: [],
-  comments: [],
   isMap: false,
   url: 'https://github.com/mintopia/harmonic/issues/100',
   ...over,
@@ -90,11 +90,11 @@ describe('mirrorScan upsert', () => {
 
   it('mirrors a fixture ticket into a ready mirrored Task, filling execution defaults', async () => {
     const [task] = await mscan([
-      ticket({ number: 42, title: 'Add rate limiting', body: 'per CONTEXT.md', labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(42), title: 'Add rate limiting', body: 'per CONTEXT.md', labels: ['ready-for-agent'] }),
     ]);
     expect(task).toMatchObject({
       origin: 'mirrored',
-      trackerRef: 42,
+      trackerRef: '42',
       workflow: 'implement',
       wayfinderType: null,
       state: 'ready',
@@ -105,7 +105,7 @@ describe('mirrorScan upsert', () => {
   });
 
   it('escalate records the reason on the ticket; requeue with guidance clears it and returns the ticket to ready', async () => {
-    const t = (await mscan([ticket({ number: 9, labels: ['ready-for-agent'] })]))[0]!;
+    const t = (await mscan([ticket({ ref: trackerRef(9), labels: ['ready-for-agent'] })]))[0]!;
     await tasks.escalate(t.id, 'escalated to human: attempt 2 of 2 failed');
     expect(await tasks.get(t.id)).toMatchObject({ state: 'escalated', escalationReason: 'escalated to human: attempt 2 of 2 failed' });
 
@@ -116,7 +116,7 @@ describe('mirrorScan upsert', () => {
   });
 
   it('is idempotent across re-polls: 1:1, updates in place, agent-workability follows the labels', async () => {
-    const t = ticket({ number: 7, labels: ['ready-for-agent'] });
+    const t = ticket({ ref: trackerRef(7), labels: ['ready-for-agent'] });
     const first = (await mscan([t]))[0]!;
     expect((await tasks.withDeps(first)).agentWorkable).toBe(true);
     const second = (await mscan([{ ...t, title: 'Retitled on the tracker', labels: ['ready-for-human'] }]))[0]!;
@@ -127,25 +127,25 @@ describe('mirrorScan upsert', () => {
   });
 
   it('derives humanOnly from the labels alone — a blocked ticket keeps its agent/human identity', async () => {
-    const blockedBy = [{ number: 1, title: 'blocker', state: 'open' as const }];
+    const blockedBy = [{ ref: trackerRef(1), title: 'blocker', state: 'open' as const }];
     const scanned = await mscan([
-      ticket({ number: 1, labels: ['ready-for-agent'] }),
-      ticket({ number: 2, labels: ['ready-for-agent'], blockedBy }),
-      ticket({ number: 3, labels: ['ready-for-human'], blockedBy }),
+      ticket({ ref: trackerRef(1), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(2), labels: ['ready-for-agent'], blockedBy }),
+      ticket({ ref: trackerRef(3), labels: ['ready-for-human'], blockedBy }),
     ]);
-    const byRef = (ref: number) => tasks.withDeps(scanned.find((t) => t.trackerRef === ref)!);
+    const byRef = (ref: number) => tasks.withDeps(scanned.find((t) => t.trackerRef === trackerRef(ref))!);
     expect(await byRef(1)).toMatchObject({ humanOnly: false, agentWorkable: true, openBlockerCount: 0 });
     expect(await byRef(2)).toMatchObject({ humanOnly: false, agentWorkable: false, openBlockerCount: 1 });
     expect(await byRef(3)).toMatchObject({ humanOnly: true, agentWorkable: false, openBlockerCount: 1 });
     expect((await tasks.listWithDeps({ workspaceId: wsId })).map((t) => [t.trackerRef, t.humanOnly])).toEqual([
-      [1, false],
-      [2, false],
-      [3, true],
+      ['1', false],
+      ['2', false],
+      ['3', true],
     ]);
   });
 
   it('re-poll never moves an escalated Task, even when the label still reads ready-for-agent', async () => {
-    const t = ticket({ number: 8, labels: ['ready-for-agent'] });
+    const t = ticket({ ref: trackerRef(8), labels: ['ready-for-agent'] });
     const first = (await mscan([t]))[0]!;
     await tasks.escalate(first.id, 'escalated to human: attempt 2 of 2 failed');
     const second = (await mscan([t]))[0]!;
@@ -155,158 +155,179 @@ describe('mirrorScan upsert', () => {
 
   it('closed ticket → done; open blocker → a real edge; Maps not mirrored', async () => {
     const results = await mscan([
-      ticket({ number: 1 }),
-      ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'open' }] }),
-      ticket({ number: 3, isMap: true, labels: ['wayfinder:map'] }),
+      ticket({ ref: trackerRef(1) }),
+      ticket({ ref: trackerRef(2), blockedBy: [{ ref: trackerRef(1), title: 'x', state: 'open' }] }),
+      ticket({ ref: trackerRef(3), isMap: true, labels: ['wayfinder:map'] }),
     ]);
     expect(results.map((t) => t.state)).toEqual(['ready', 'ready']);
     const [blocker, dependent] = results;
     expect(await tasks.dependsOn(dependent!.id)).toEqual([blocker!.id]);
     expect((await tasks.withDeps(await tasks.get(dependent!.id))).openBlockerCount).toBe(1);
-    expect((await tasks.list()).some((t) => t.trackerRef === 3)).toBe(false);
+    expect((await tasks.list()).some((t) => t.trackerRef === '3')).toBe(false);
   });
 
   it('partitions an `epic`-labelled ticket into containers, not work Tasks (ADR-0016)', async () => {
     const results = await mscan([
-      ticket({ number: 300, labels: ['epic', 'ready-for-agent'] }),
+      ticket({ ref: trackerRef(300), labels: ['epic', 'ready-for-agent'] }),
       ticket({
-        number: 301,
-        parent: 300,
+        ref: trackerRef(301),
+        parent: trackerRef(300),
         labels: ['ready-for-agent'],
-        blockedBy: [{ number: 300, title: 'spine', state: 'open' }],
+        blockedBy: [{ ref: trackerRef(300), title: 'spine', state: 'open' }],
       }),
     ]);
-    expect(results.map((t) => t.trackerRef)).toEqual([301]);
-    expect((await tasks.list()).some((t) => t.trackerRef === 300)).toBe(false);
-    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual([300]);
-    const child = results.find((t) => t.trackerRef === 301)!;
+    expect(results.map((t) => t.trackerRef)).toEqual(['301']);
+    expect((await tasks.list()).some((t) => t.trackerRef === '300')).toBe(false);
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual(['300']);
+    const child = results.find((t) => t.trackerRef === '301')!;
     expect(await tasks.dependsOn(child.id)).toEqual([]);
     expect(child.state).toBe('ready');
   });
 
   it('demotes an unlabelled structural Epic into a container, not a mirrored Task (issue #563)', async () => {
     const results = await mscan([
-      ticket({ number: 400, labels: ['ready-for-agent'] }),
-      ticket({ number: 401, parent: 400, labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(400), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(401), parent: trackerRef(400), labels: ['ready-for-agent'] }),
     ]);
 
-    expect(results.map((t) => t.trackerRef)).toEqual([401]);
-    expect((await tasks.list()).some((t) => t.trackerRef === 400)).toBe(false);
-    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual([400]);
+    expect(results.map((t) => t.trackerRef)).toEqual(['401']);
+    expect((await tasks.list()).some((t) => t.trackerRef === '400')).toBe(false);
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual(['400']);
   });
 
   it('a structural Epic parent is demoted, while its child remains agent-workable', async () => {
     const results = await mscan([
-      ticket({ number: 200, labels: ['ready-for-agent'] }),
-      ticket({ number: 201, parent: 200, labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(200), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(201), parent: trackerRef(200), labels: ['ready-for-agent'] }),
     ]);
-    const child = results.find((t) => t.trackerRef === 201)!;
-    expect(results.some((t) => t.trackerRef === 200)).toBe(false);
+    const child = results.find((t) => t.trackerRef === '201')!;
+    expect(results.some((t) => t.trackerRef === '200')).toBe(false);
     expect((await tasks.withDeps(child)).agentWorkable).toBe(true);
-    expect((await tasks.listTrackerContainers(wsId)).map((container) => container.trackerRef)).toContain(200);
+    expect((await tasks.listTrackerContainers(wsId)).map((container) => container.trackerRef)).toContain('200');
   });
 
   it('a nested container (has a parent AND children) is never agent-workable, but only the top-level one is an Epic (ADR-0016)', async () => {
     const results = await mscan([
-      ticket({ number: 300, labels: ['ready-for-agent'] }),
-      ticket({ number: 301, parent: 300, labels: ['ready-for-agent'] }),
-      ticket({ number: 302, parent: 301, labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(300), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(301), parent: trackerRef(300), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(302), parent: trackerRef(301), labels: ['ready-for-agent'] }),
     ]);
-    const byRefWith = async (ref: number) => tasks.withDeps(results.find((t) => t.trackerRef === ref)!);
+    const byRefWith = async (ref: number) => tasks.withDeps(results.find((t) => t.trackerRef === trackerRef(ref))!);
     expect(await byRefWith(300)).toMatchObject({ agentWorkable: false, humanOnly: true, isEpic: true });
     expect(await byRefWith(301)).toMatchObject({ agentWorkable: false, humanOnly: true, isEpic: false });
     expect(await byRefWith(302)).toMatchObject({ agentWorkable: true, humanOnly: false, isEpic: false });
   });
 
   it('an unlabelled parent that is momentarily childless is still not agent-workable (issue #229/#230)', async () => {
-    const [result] = await mscan([ticket({ number: 229, labels: [] })]);
-    expect(result).toMatchObject({ trackerRef: 229 });
+    const [result] = await mscan([ticket({ ref: trackerRef(229), labels: [] })]);
+    expect(result).toMatchObject({ trackerRef: '229' });
     expect((await tasks.withDeps(result!)).agentWorkable).toBe(false);
   });
 
   it('an Epic parent is never a blocker: a child "Blocked by" its parent gets no edge', async () => {
     const results = await mscan([
-      ticket({ number: 106, labels: ['epic'] }),
-      ticket({ number: 107, parent: 106, labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(106), labels: ['epic'] }),
+      ticket({ ref: trackerRef(107), parent: trackerRef(106), labels: ['ready-for-agent'] }),
       ticket({
-        number: 108,
-        parent: 106,
+        ref: trackerRef(108),
+        parent: trackerRef(106),
         labels: ['ready-for-agent'],
-        blockedBy: [{ number: 106, title: 'spine', state: 'open' }],
+        blockedBy: [{ ref: trackerRef(106), title: 'spine', state: 'open' }],
       }),
     ]);
-    const child = results.find((t) => t.trackerRef === 108)!;
+    const child = results.find((t) => t.trackerRef === '108')!;
     expect(await tasks.dependsOn(child.id)).toEqual([]);
     expect(child.state).toBe('ready');
   });
 
+  it('keeps the Dependency edge to a closed, done blocker the open-only scan no longer returns, without blocking', async () => {
+    await mscan([
+      ticket({ ref: trackerRef(1) }),
+      ticket({ ref: trackerRef(2), labels: ['ready-for-agent'], blockedBy: [{ ref: trackerRef(1), title: 'x', state: 'open' }] }),
+    ]);
+    await mscan([
+      ticket({ ref: trackerRef(1), state: 'closed', closedAt: '2026-08-07T01:00:00Z' }),
+      ticket({ ref: trackerRef(2), labels: ['ready-for-agent'], blockedBy: [{ ref: trackerRef(1), title: 'x', state: 'closed' }] }),
+    ]);
+    const blocker = (await tasks.list()).find((t) => t.trackerRef === '1')!;
+    expect(blocker.state).toBe('done');
+
+    const [dependent] = await mscan([
+      ticket({ ref: trackerRef(2), labels: ['ready-for-agent'], blockedBy: [{ ref: trackerRef(1), title: 'x', state: 'closed' }] }),
+    ]);
+    expect(await tasks.dependsOn(dependent!.id)).toEqual([blocker.id]);
+    expect(dependent!.state).toBe('ready');
+    const eligible = (await tasks.orderedEligibleWork(wsId)).find((t) => t.id === dependent!.id);
+    expect(eligible?.blockedBy).toEqual([]);
+  });
+
   it('a stale Epic→child blocking edge is removed on the next poll', async () => {
     await mscan([
-      ticket({ number: 106 }),
-      ticket({ number: 108, blockedBy: [{ number: 106, title: 'spine', state: 'open' }] }),
+      ticket({ ref: trackerRef(106) }),
+      ticket({ ref: trackerRef(108), blockedBy: [{ ref: trackerRef(106), title: 'spine', state: 'open' }] }),
     ]);
-    const before = (await tasks.list()).find((t) => t.trackerRef === 108)!;
+    const before = (await tasks.list()).find((t) => t.trackerRef === '108')!;
     expect(await tasks.dependsOn(before.id)).toHaveLength(1);
 
     const results = await mscan([
-      ticket({ number: 106 }),
-      ticket({ number: 107, parent: 106 }),
-      ticket({ number: 108, blockedBy: [{ number: 106, title: 'spine', state: 'open' }] }),
+      ticket({ ref: trackerRef(106) }),
+      ticket({ ref: trackerRef(107), parent: trackerRef(106) }),
+      ticket({ ref: trackerRef(108), blockedBy: [{ ref: trackerRef(106), title: 'spine', state: 'open' }] }),
     ]);
-    const child = results.find((t) => t.trackerRef === 108)!;
+    const child = results.find((t) => t.trackerRef === '108')!;
     expect(await tasks.dependsOn(child.id)).toEqual([]);
     expect(child.state).toBe('ready');
   });
 
   it('close-blocker → blocker done → dependent unblocks to ready', async () => {
     await mscan([
-      ticket({ number: 1 }),
-      ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'open' }] }),
+      ticket({ ref: trackerRef(1) }),
+      ticket({ ref: trackerRef(2), blockedBy: [{ ref: trackerRef(1), title: 'x', state: 'open' }] }),
     ]);
     const results = await mscan([
-      ticket({ number: 1, state: 'closed', closedAt: '2026-08-07T01:00:00Z' }),
-      ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'closed' }] }),
+      ticket({ ref: trackerRef(1), state: 'closed', closedAt: '2026-08-07T01:00:00Z' }),
+      ticket({ ref: trackerRef(2), blockedBy: [{ ref: trackerRef(1), title: 'x', state: 'closed' }] }),
     ]);
     expect(results.map((t) => t.state)).toEqual(['done', 'ready']);
   });
 
   it('a working Task whose own ticket closes stays working — never mirror-completed (issue #139)', async () => {
-    const [task] = await mscan([ticket({ number: 8, labels: ['ready-for-agent'] })]);
+    const [task] = await mscan([ticket({ ref: trackerRef(8), labels: ['ready-for-agent'] })]);
     await tasks.setState(task!.id, 'working');
-    const [after] = await mscan([ticket({ number: 8, state: 'closed', closedAt: '2026-08-07T01:00:00Z' })]);
+    const [after] = await mscan([ticket({ ref: trackerRef(8), state: 'closed', closedAt: '2026-08-07T01:00:00Z' })]);
     expect(after!.state).toBe('working');
   });
 
   it('done Task on a close-incapable (inbound-only) tracker stays done — no reopen re-run loop (issue #237)', async () => {
-    const [task] = await mscan([ticket({ number: 237, labels: ['ready-for-agent'] })]);
+    const [task] = await mscan([ticket({ ref: trackerRef(237), labels: ['ready-for-agent'] })]);
     await tasks.setState(task!.id, 'done');
 
     const held = await tasks.upsertMirrored(
-      toMirrorInput(ticket({ number: 237, labels: ['ready-for-agent'] }), false),
+      toMirrorInput(ticket({ ref: trackerRef(237), labels: ['ready-for-agent'] }), false),
       wsId,
     );
     expect(held.state).toBe('done');
 
     const reopened = await tasks.upsertMirrored(
-      toMirrorInput(ticket({ number: 237, labels: ['ready-for-agent'] }), true),
+      toMirrorInput(ticket({ ref: trackerRef(237), labels: ['ready-for-agent'] }), true),
       wsId,
     );
     expect(reopened.state).toBe('ready');
   });
 
   it('a pre-close poll snapshot does not reopen a just-merged Task; a genuinely later reopen still does (issue #484)', async () => {
-    const [task] = await mscan([ticket({ number: 484, labels: ['ready-for-agent'] })]);
+    const [task] = await mscan([ticket({ ref: trackerRef(484), labels: ['ready-for-agent'] })]);
     await tasks.setState(task!.id, 'done');
     const closedAt = (await tasks.get(task!.id)).updatedAt;
 
     const stale = await tasks.upsertMirrored(
-      toMirrorInput(ticket({ number: 484, labels: ['ready-for-agent'] }), true, closedAt - 1000),
+      toMirrorInput(ticket({ ref: trackerRef(484), labels: ['ready-for-agent'] }), true, closedAt - 1000),
       wsId,
     );
     expect(stale.state).toBe('done');
 
     const fresh = await tasks.upsertMirrored(
-      toMirrorInput(ticket({ number: 484, labels: ['ready-for-agent'] }), true, closedAt + 1000),
+      toMirrorInput(ticket({ ref: trackerRef(484), labels: ['ready-for-agent'] }), true, closedAt + 1000),
       wsId,
     );
     expect(fresh.state).toBe('ready');
@@ -314,88 +335,88 @@ describe('mirrorScan upsert', () => {
 
   it('reconcile never interrupts a running Run (nothing cascades)', async () => {
     const [, dependent] = await mscan([
-      ticket({ number: 1 }),
-      ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'open' }] }),
+      ticket({ ref: trackerRef(1) }),
+      ticket({ ref: trackerRef(2), blockedBy: [{ ref: trackerRef(1), title: 'x', state: 'open' }] }),
     ]);
     await tasks.setState(dependent!.id, 'working');
     const results = await mscan([
-      ticket({ number: 1, state: 'closed', closedAt: '2026-08-07T01:00:00Z' }),
-      ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'closed' }] }),
+      ticket({ ref: trackerRef(1), state: 'closed', closedAt: '2026-08-07T01:00:00Z' }),
+      ticket({ ref: trackerRef(2), blockedBy: [{ ref: trackerRef(1), title: 'x', state: 'closed' }] }),
     ]);
     expect(results[1]!.state).toBe('working');
   });
 
   it('a Dismissed ref is skipped on re-poll — deleting a mirrored Task does not resurrect it (issue #162)', async () => {
-    const [mirrored] = await mscan([ticket({ number: 55, labels: ['ready-for-agent'] })]);
+    const [mirrored] = await mscan([ticket({ ref: trackerRef(55), labels: ['ready-for-agent'] })]);
     expect(await tasks.list()).toHaveLength(1);
 
     await tasks.delete(mirrored!.id);
-    expect(await tasks.isDismissed(wsId, 55)).toBe(true);
+    expect(await tasks.isDismissed(wsId, trackerRef(55))).toBe(true);
 
-    const after = await mscan([ticket({ number: 55, labels: ['ready-for-agent'] })]);
+    const after = await mscan([ticket({ ref: trackerRef(55), labels: ['ready-for-agent'] })]);
     expect(after).toHaveLength(0);
     expect(await tasks.list()).toHaveLength(0);
   });
 
   it('demotes a mirrored work Task when its ticket becomes a container — removed with NO dismissal (ADR-0016, #417)', async () => {
-    const [mirrored] = await mscan([ticket({ number: 77, labels: ['ready-for-agent'] })]);
+    const [mirrored] = await mscan([ticket({ ref: trackerRef(77), labels: ['ready-for-agent'] })]);
     expect(mirrored!.origin).toBe('mirrored');
     expect(await tasks.list()).toHaveLength(1);
 
-    const after = await mscan([ticket({ number: 77, labels: ['epic', 'ready-for-agent'] })]);
+    const after = await mscan([ticket({ ref: trackerRef(77), labels: ['epic', 'ready-for-agent'] })]);
     expect(after).toHaveLength(0);
     expect(await tasks.list()).toHaveLength(0);
-    expect(await tasks.isDismissed(wsId, 77)).toBe(false);
-    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual([77]);
+    expect(await tasks.isDismissed(wsId, trackerRef(77))).toBe(false);
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual(['77']);
 
-    await mscan([ticket({ number: 77, labels: ['epic', 'ready-for-agent'] })]);
+    await mscan([ticket({ ref: trackerRef(77), labels: ['epic', 'ready-for-agent'] })]);
     expect(await tasks.list()).toHaveLength(0);
-    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual([77]);
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual(['77']);
   });
 
   it('a genuine operator Delete still tombstones — the contrast with demotion', async () => {
-    const [mirrored] = await mscan([ticket({ number: 78, labels: ['ready-for-agent'] })]);
+    const [mirrored] = await mscan([ticket({ ref: trackerRef(78), labels: ['ready-for-agent'] })]);
     await tasks.delete(mirrored!.id);
-    expect(await tasks.isDismissed(wsId, 78)).toBe(true);
-    expect(await mscan([ticket({ number: 78, labels: ['ready-for-agent'] })])).toHaveLength(0);
+    expect(await tasks.isDismissed(wsId, trackerRef(78))).toBe(true);
+    expect(await mscan([ticket({ ref: trackerRef(78), labels: ['ready-for-agent'] })])).toHaveLength(0);
     expect(await tasks.list()).toHaveLength(0);
   });
 
   it('clears a stale dismissal when a ref becomes a container — a tombstoned epic can never orphan its children (ADR-0016, #420)', async () => {
-    const [mirrored] = await mscan([ticket({ number: 408, labels: ['ready-for-agent'] })]);
+    const [mirrored] = await mscan([ticket({ ref: trackerRef(408), labels: ['ready-for-agent'] })]);
     await tasks.delete(mirrored!.id);
-    expect(await tasks.isDismissed(wsId, 408)).toBe(true);
+    expect(await tasks.isDismissed(wsId, trackerRef(408))).toBe(true);
 
     const results = await mscan([
-      ticket({ number: 408, labels: ['epic'] }),
-      ticket({ number: 409, parent: 408, labels: ['ready-for-agent'] }),
-      ticket({ number: 410, parent: 408, labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(408), labels: ['epic'] }),
+      ticket({ ref: trackerRef(409), parent: trackerRef(408), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(410), parent: trackerRef(408), labels: ['ready-for-agent'] }),
     ]);
 
-    expect(await tasks.isDismissed(wsId, 408)).toBe(false);
-    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual([408]);
-    expect(results.map((t) => t.trackerRef).sort((a, b) => (a ?? 0) - (b ?? 0))).toEqual([409, 410]);
+    expect(await tasks.isDismissed(wsId, trackerRef(408))).toBe(false);
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual(['408']);
+    expect(results.map((t) => t.trackerRef).sort((a, b) => Number(a ?? 0) - Number(b ?? 0))).toEqual(['409', '410']);
     expect(results.every((t) => t.state === 'ready')).toBe(true);
   });
 
   it('never demotes a working mirrored Task — a poll does not interrupt a live Attempt (ADR-0016)', async () => {
-    const [mirrored] = await mscan([ticket({ number: 79, labels: ['ready-for-agent'] })]);
+    const [mirrored] = await mscan([ticket({ ref: trackerRef(79), labels: ['ready-for-agent'] })]);
     await tasks.setState(mirrored!.id, 'working');
 
-    await mscan([ticket({ number: 79, labels: ['epic', 'ready-for-agent'] })]);
-    const still = (await tasks.list()).find((t) => t.trackerRef === 79);
+    await mscan([ticket({ ref: trackerRef(79), labels: ['epic', 'ready-for-agent'] })]);
+    const still = (await tasks.list()).find((t) => t.trackerRef === '79');
     expect(still?.state).toBe('working');
-    expect(await tasks.isDismissed(wsId, 79)).toBe(false);
-    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual([79]);
+    expect(await tasks.isDismissed(wsId, trackerRef(79))).toBe(false);
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual(['79']);
 
     await tasks.setState(still!.id, 'done');
-    await mscan([ticket({ number: 79, labels: ['epic', 'ready-for-agent'] })]);
-    expect((await tasks.list()).some((t) => t.trackerRef === 79)).toBe(false);
-    expect(await tasks.isDismissed(wsId, 79)).toBe(false);
+    await mscan([ticket({ ref: trackerRef(79), labels: ['epic', 'ready-for-agent'] })]);
+    expect((await tasks.list()).some((t) => t.trackerRef === '79')).toBe(false);
+    expect(await tasks.isDismissed(wsId, trackerRef(79))).toBe(false);
   });
 
   it('operator cannot add/remove an edge whose dependent is a mirrored Task', async () => {
-    const [mirrored] = await mscan([ticket({ number: 5, labels: ['ready-for-agent'] })]);
+    const [mirrored] = await mscan([ticket({ ref: trackerRef(5), labels: ['ready-for-agent'] })]);
     const native = await tasks.create({ prompt: 'native' });
     await expect(tasks.addDependency(mirrored!.id, native.id)).rejects.toThrow(/mirrored/);
     await expect(tasks.removeDependency(mirrored!.id, native.id)).rejects.toThrow(/mirrored/);
@@ -412,7 +433,7 @@ describe('durable tracker facts (issue #233)', () => {
   let wsId: number;
   const rawRow = async (ref: number) => {
     const row = await asyncDb.read((db) =>
-      db.select().from(tasksTable).where(eq(tasksTable.trackerRef, ref)).get(),
+      db.select().from(tasksTable).where(eq(tasksTable.trackerRef, trackerRef(ref))).get(),
     );
     if (!row) throw new Error(`missing mirrored task ${ref}`);
     return row;
@@ -432,13 +453,13 @@ describe('durable tracker facts (issue #233)', () => {
   });
 
   const rich = ticket({
-    number: 233,
+    ref: trackerRef(233),
     title: 'Persist tracker facts',
     body: 'the expand half',
     state: 'open',
-    parent: 229,
+    parent: trackerRef(229),
     labels: ['ready-for-agent', 'epic-member'],
-    blockedBy: [{ number: 230, title: 'eligibility', state: 'closed' }],
+    blockedBy: [{ ref: trackerRef(230), title: 'eligibility', state: 'closed' }],
     createdAt: '2026-08-20T09:30:00Z',
     url: 'https://github.com/mintopia/harmonic/issues/233',
   });
@@ -447,8 +468,8 @@ describe('durable tracker facts (issue #233)', () => {
     await mirrorScan(tasks, [rich], wsId);
     const row = await rawRow(233);
     expect(row.trackerState).toBe('open');
-    expect(row.trackerParent).toBe(229);
-    expect(row.trackerBlockedBy).toEqual([{ number: 230, title: 'eligibility', state: 'closed' }]);
+    expect(row.trackerParent).toBe('229');
+    expect(row.trackerBlockedBy).toEqual([{ ref: '230', title: 'eligibility', state: 'closed' }]);
     expect(row.trackerLabels).toEqual(['ready-for-agent', 'epic-member']);
     expect(row.trackerTitle).toBe('Persist tracker facts');
     expect(row.trackerBody).toBe('the expand half');
@@ -486,8 +507,8 @@ describe('durable tracker facts (issue #233)', () => {
     await seedWorkspace(asyncDb);
     const row = await rawRow(233);
     expect(row.trackerState).toBe('open');
-    expect(row.trackerParent).toBe(229);
-    expect(row.trackerBlockedBy).toEqual([{ number: 230, title: 'eligibility', state: 'closed' }]);
+    expect(row.trackerParent).toBe('229');
+    expect(row.trackerBlockedBy).toEqual([{ ref: '230', title: 'eligibility', state: 'closed' }]);
     expect(row.trackerTitle).toBe('Persist tracker facts');
     expect(row.trackerCreatedAt).toBe('2026-08-20T09:30:00Z');
   });
@@ -512,7 +533,7 @@ describe('durable tracker facts (issue #233)', () => {
   });
 
   it('removes a persisted Map container when the tracker no longer classifies it as a Map', async () => {
-    const map = ticket({ number: 19, isMap: true, labels: ['wayfinder:map'] });
+    const map = ticket({ ref: trackerRef(19), isMap: true, labels: ['wayfinder:map'] });
     await mirrorScan(tasks, [map], wsId);
     expect(await tasks.listTrackerContainers(wsId)).toHaveLength(1);
 
@@ -530,16 +551,16 @@ describe('deriveMaps (query-time rollup)', () => {
     const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     const wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
     const scan = [
-      ticket({ number: 19, isMap: true, title: 'Wayfinder', labels: ['wayfinder:map'] }),
-      ticket({ number: 30, parent: 19, labels: ['ready-for-agent'] }),
-      ticket({ number: 31, parent: 19, state: 'closed' }),
-      ticket({ number: 99, parent: null }),
+      ticket({ ref: trackerRef(19), isMap: true, title: 'Wayfinder', labels: ['wayfinder:map'] }),
+      ticket({ ref: trackerRef(30), parent: trackerRef(19), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(31), parent: trackerRef(19), state: 'closed' }),
+      ticket({ ref: trackerRef(99), parent: null }),
     ];
     const mirrored = await mirrorScan(tasks, scan, wsId);
     const maps = deriveMaps(scan, mirrored, wsId);
     expect(maps).toHaveLength(1);
-    expect(maps[0]).toMatchObject({ ref: 19, title: 'Wayfinder' });
-    expect(maps[0]!.taskRefs.sort()).toEqual([30, 31]);
+    expect(maps[0]).toMatchObject({ ref: '19', title: 'Wayfinder' });
+    expect(maps[0]!.taskRefs.sort()).toEqual(['30', '31']);
     expect(maps[0]!.counts).toEqual({ ready: 1, done: 1 });
     await asyncDb.close();
     rmSync(dir, { recursive: true, force: true });

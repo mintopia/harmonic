@@ -1,17 +1,18 @@
+import type { TrackerRef } from './adapter.js';
 import type { TaskArchive } from '../archive/task-archive.js';
 import type { AppConfig } from '../config.js';
 import { isEpicAttempt, type AttemptRow, type EpicAttemptRow, type WorkspaceRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { pricesForHarness, withCriticContribution } from '../domain/pricing.js';
-import { resolveVerifiers } from '../domain/setting-override.js';
+import { resolvePromptFragments, resolveVerifiers } from '../domain/setting-override.js';
 import { resolveRepositoryDefaultBranch } from '../execution/branch-merge.js';
 import { integrationBranchName } from '../execution/epic-coordinator.js';
 import type { EpicWorktreePool } from '../execution/epic-worktree-pool.js';
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
 import { Git } from '../execution/git.js';
 import { collectUsage } from '../execution/usage.js';
-import { commandAttemptToInput, type CommandAttempt } from '../verification/command-verifier.js';
+import { commandAttemptToInput, type CommandAttempt, type CommandSpawn } from '../verification/command-verifier.js';
 import { criticAttemptToInput, runCritic, type CriticHarnessDrive } from '../verification/critic.js';
 import type { EpicVerificationStage } from '../config.js';
 import type { VerificationDecision, VerifierVerdict } from '../verification/combine.js';
@@ -19,12 +20,13 @@ import type { VerificationDecision, VerifierVerdict } from '../verification/comb
 export interface EpicVerificationRunnerDeps {
   workspace: WorkspaceRow;
   getWorkspaces: () => Promise<WorkspaceRow[]>;
-  getConfig: () => Pick<AppConfig, 'verify' | 'maxAttempts' | 'defaults' | 'harnesses'>;
+  getConfig: () => Pick<AppConfig, 'verify' | 'maxAttempts' | 'defaults' | 'harnesses' | 'promptFragments'>;
   worktrees: EpicWorktreePool;
   epicAttempts?: AttemptStore | undefined;
   verificationAttemptStore?: VerificationAttemptStore | undefined;
   onEpicAttemptChanged?: ((attempt: EpicAttemptRow) => void) | undefined;
-  criticDrive?: CriticHarnessDrive | undefined;
+  criticDrive: CriticHarnessDrive;
+  commandSpawn: CommandSpawn;
   archive?: TaskArchive | undefined;
 }
 
@@ -34,19 +36,19 @@ export interface EpicVerificationRunnerDeps {
  * steps) when Attempt tracking is configured.
  */
 export class EpicVerificationRunner {
-  private readonly runningAttempts = new Map<number, EpicAttemptRow>();
+  private readonly runningAttempts = new Map<TrackerRef, EpicAttemptRow>();
 
   constructor(private readonly deps: EpicVerificationRunnerDeps) {}
 
-  getTrackedAttempt(epicRef: number): EpicAttemptRow | undefined {
+  getTrackedAttempt(epicRef: TrackerRef): EpicAttemptRow | undefined {
     return this.runningAttempts.get(epicRef);
   }
 
-  clearTrackedAttempt(epicRef: number): void {
+  clearTrackedAttempt(epicRef: TrackerRef): void {
     this.runningAttempts.delete(epicRef);
   }
 
-  worktreePath(epicRef: number): string | undefined {
+  worktreePath(epicRef: TrackerRef): string | undefined {
     return this.deps.worktrees.get(epicRef);
   }
 
@@ -55,7 +57,7 @@ export class EpicVerificationRunner {
     return resolveVerifiers(live, this.deps.getConfig());
   }
 
-  async verify({ repoDir, epicRef, verifiedHeadOid }: { repoDir: string; epicRef: number; verifiedHeadOid: string }): Promise<VerificationDecision> {
+  async verify({ repoDir, epicRef, verifiedHeadOid }: { repoDir: string; epicRef: TrackerRef; verifiedHeadOid: string }): Promise<VerificationDecision> {
     const { epicAttempts } = this.deps;
     const attempt = epicAttempts ? await epicAttempts.createForEpic({ workspaceId: this.deps.workspace.id, epicRef }) : undefined;
     const criticUsages: Parameters<typeof withCriticContribution>[2] = [];
@@ -70,8 +72,9 @@ export class EpicVerificationRunner {
         worktreePath,
         verifiedHeadOid,
         verifiers: (await this.resolveWorkspaceVerifiers()).epic.preMerge,
+        commandSpawn: this.deps.commandSpawn,
         ...(attempt && archive
-          ? { outputLogPath: (command: EpicVerificationStage['commands'][number]) => archive.epicVerificationOutputLog(attempt.workspaceId, epicRef, attempt.number, command.id) }
+          ? { outputLog: (command: EpicVerificationStage['commands'][number]) => archive.epicVerificationOutputLog(attempt.workspaceId, epicRef, attempt.number, command.id) }
           : {}),
         onCommand: (commandAttempt, command) => this.recordCommandStep(attempt, commandAttempt, command),
         runCritic: (args) => this.runEpicCritic({ repoDir, epicRef, attempt, criticUsages, ...args }),
@@ -126,7 +129,7 @@ export class EpicVerificationRunner {
 
   private async runEpicCritic({ repoDir, epicRef, attempt, criticUsages, cwd, verifiedHeadOid: criticHeadOid, critic }: {
     repoDir: string;
-    epicRef: number;
+    epicRef: TrackerRef;
     attempt: EpicAttemptRow | undefined;
     criticUsages: Parameters<typeof withCriticContribution>[2];
     cwd: string;
@@ -162,12 +165,14 @@ export class EpicVerificationRunner {
         verifiedHeadOid: criticHeadOid,
         ...(baseOid ? { baseOid } : {}),
         critic: { prompt: critic.prompt, model: critic.model, ...(critic.harness ? { harness: critic.harness } : {}) },
+        fragments: resolvePromptFragments(this.deps.workspace, config),
         timeoutMs: critic.timeoutSeconds * 1000,
         fields: { taskId: '', skill: '/implement', ref: String(epicRef), url: '', title: `Epic #${epicRef}`, description: '' },
         harness,
         harnessId,
-        ...(criticDrive ? { drive: criticDrive } : {}),
+        drive: criticDrive,
         ...(archive ? { archive } : {}),
+        ...(tracked ? { onAgentDurationMs: (ms: number) => tracked.epicAttempts.addAgentDuration(tracked.attempt.id, ms) } : {}),
       });
       const usage = collectUsage({
         harnessId,

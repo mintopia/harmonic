@@ -2,6 +2,7 @@
 
 Status: accepted
 Date: 2026-09-02
+Reconciled: 2026-10-02. Configuration layering is implemented; ADR-0025 adds OpenCode and ADR-0037 updates verifier inheritance.
 
 Amends ADR-0009 (see "Amends" below). This is the "separate planned config
 track" ADR-0021 deferred (0021, "Shipped config default values and the
@@ -81,7 +82,7 @@ Each harness carries a single **`cacheWarmSeconds`**. The per-model
 UI are **derived** at runtime (`lastActiveAt + cacheWarmSeconds`), never stored
 config — a different plan is one edit to the harness's number, not a schema
 branch. This matches the Session concept's existing per-Harness warm-window
-framing (CONTEXT.md).
+framing (GLOSSARY.md).
 
 ### 5. Modified state and revert, unified across both boundaries
 
@@ -97,9 +98,9 @@ button. Revert is **per-field**, plus a top-level "revert all to distributed".
 `models[]` (and the price / context overrides folded into it) is treated as
 **keyed by `id`**: the operator patch is per-id — add an id, override one field
 on a baseline id, or **tombstone** an id to remove it. New baseline models flow
-in automatically (not tombstoned). The command verifier keeps its ADR-0009
-list-grain whole-array override; `models[]` differs deliberately because its
-entries carry stable ids and must keep tracking baseline additions.
+in automatically (not tombstoned). ADR-0037 subsequently gives verifier
+lists stable ids and additive Workspace overlays too; an empty Workspace
+verifier list now inherits rather than replacing the global list.
 
 ### 7. Harness change resets the model to the new harness's default
 
@@ -119,7 +120,7 @@ cosmetic (the modified badge only) and never changes the effective value.
 ### 9. The harness set stays fixed
 
 Operators edit harness *config* (command, args, env, models, `cacheWarmSeconds`)
-but cannot add a harness: each of the three (`claude`, `codex`, `copilot`)
+but cannot add a harness: each supported harness (`claude`, `codex`, `copilot`, `opencode`)
 needs a code adapter. The harness set stays defined in code.
 
 ## Consequences
@@ -133,11 +134,11 @@ needs a code adapter. The harness set stays defined in code.
   stay in code on the new shape.
 - **A second YAML ships in-repo** (`baseline.yaml`), reversing ADR-0009's
   "no out-of-band seed"; that clause is amended here (below).
-- CONTEXT.md gains the **Baseline** layer (Setting Override), a **Model**
+- GLOSSARY.md gains the **Baseline** layer (Setting Override), a **Model**
   catalog entry, and the cache-window-on-harness clarification; the Session
   entry's warm-window framing is confirmed and names `cacheWarmSeconds`.
-- No code ships with this ADR; it records the decided shape for the config
-  track ADR-0021 deferred.
+- The configuration track deferred by ADR-0021 has shipped. ADR-0025 adds
+  OpenCode; ADR-0037 refines verifier-list inheritance.
 
 ## Amends
 

@@ -7,6 +7,7 @@ import { startServer, stubHarness, waitFor, seedLocalMarkdownTicket, type TestSe
 import { verificationCommandSchema } from '../src/config.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
 import { runMergePolicy } from '../src/execution/merge-policy.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const local = (command: ReturnType<typeof passingVerifier>) => [{ kind: 'local' as const, enabled: true, command }];
 
@@ -83,14 +84,17 @@ function lockWorktreeAdminVerifier(repo: string) {
   });
 }
 
+function restoreWorktreesDirIfLockedByAdminVerifier(dir: string): void {
+  try {
+    chmodSync(join(dir, '.git', 'worktrees'), 0o755);
+  } catch {
+    return;
+  }
+}
+
 afterAll(() => {
   for (const d of tmpDirs) {
-    const worktrees = join(d, '.git', 'worktrees');
-    try {
-      chmodSync(worktrees, 0o755);
-    } catch {
-      // Only repos the lock-admin verifier touched have a read-only worktrees dir.
-    }
+    restoreWorktreesDirIfLockedByAdminVerifier(d);
     rmSync(d, { recursive: true, force: true });
   }
 });
@@ -113,9 +117,9 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     await server.close();
   });
 
-  const mirroredAfk = (trackerRef: number): MirrorInput => ({
-    trackerRef,
-    prompt: `ticket ${trackerRef}\n\nbody`,
+  const mirroredAfk = (ref: number): MirrorInput => ({
+    trackerRef: trackerRef(ref),
+    prompt: `ticket ${ref}\n\nbody`,
     workflow: 'implement',
     wayfinderType: null,
     mapRef: null,

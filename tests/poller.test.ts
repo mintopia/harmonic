@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { trackerRef } from '../src/tracker/adapter.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,7 +26,7 @@ function installOperations() {
 }
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
-  number: 100,
+  ref: trackerRef(100),
   title: 'A ticket',
   state: 'open',
   body: '',
@@ -36,7 +37,6 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
   parent: null,
   blockedBy: [],
   blocking: [],
-  comments: [],
   isMap: false,
   url: 'https://github.com/mintopia/harmonic/issues/100',
   ...over,
@@ -57,6 +57,24 @@ function stubAdapter(tickets: Ticket[]) {
     reopen: async () => {},
   };
   return { adapter, scans: () => scans };
+}
+
+function openOnlyAdapter(open: Ticket[], byRef: Record<string, Ticket>) {
+  const reads: string[] = [];
+  const adapter: TrackerAdapter = {
+    name: 'stub',
+    scansOpenOnly: true,
+    scan: async () => open,
+    readTicket: async (r) => {
+      reads.push(r.ref);
+      return byRef[r.ref]!;
+    },
+    claim: async () => {},
+    release: async () => {},
+    close: async () => {},
+    reopen: async () => {},
+  };
+  return { adapter, reads };
 }
 
 describe('TrackerPoller.poll', () => {
@@ -83,8 +101,8 @@ describe('TrackerPoller.poll', () => {
 
   it('scans and mirrors 1:1 into its Workspace without scheduling work', async () => {
     const { adapter, scans } = stubAdapter([
-      ticket({ number: 42, title: 'Add rate limiting', labels: ['ready-for-agent'] }),
-      ticket({ number: 43, isMap: true, labels: ['wayfinder:map'] }),
+      ticket({ ref: trackerRef(42), title: 'Add rate limiting', labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(43), isMap: true, labels: ['wayfinder:map'] }),
     ]);
     const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
 
@@ -92,14 +110,78 @@ describe('TrackerPoller.poll', () => {
 
     expect(scans()).toBe(1);
     expect(await tasks.list()).toHaveLength(1);
-    expect((await tasks.list())[0]).toMatchObject({ origin: 'mirrored', trackerRef: 42, state: 'ready', workspaceId: wsId });
+    expect((await tasks.list())[0]).toMatchObject({ origin: 'mirrored', trackerRef: '42', state: 'ready', workspaceId: wsId });
+  });
+
+  it('settles a mirrored Task whose ticket left the open scan because it was closed', async () => {
+    const t42 = ticket({ ref: trackerRef(42), labels: ['ready-for-agent'] });
+    const open = [t42];
+    const { adapter, reads } = openOnlyAdapter(open, { '42': { ...t42, state: 'closed' } });
+    const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
+    await poller.poll();
+    expect((await tasks.list())[0]).toMatchObject({ trackerRef: '42', state: 'ready' });
+
+    open.length = 0;
+    await poller.poll();
+    expect((await tasks.list())[0]).toMatchObject({ trackerRef: '42', state: 'done' });
+    expect(reads).toEqual(['42']);
+
+    await poller.poll();
+    expect(reads).toEqual(['42']);
+  });
+
+  it('keeps the tracker link of a done Task whose closed ticket the open-only scan no longer returns', async () => {
+    const t42 = ticket({ ref: trackerRef(42), labels: ['ready-for-agent'], url: 'https://x/42' });
+    const open = [t42];
+    const { adapter } = openOnlyAdapter(open, { '42': { ...t42, state: 'closed' } });
+    const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
+    await poller.poll();
+    open.length = 0;
+    await poller.poll();
+    await poller.poll();
+
+    expect((await tasks.list())[0]).toMatchObject({ trackerRef: '42', state: 'done' });
+    expect(poller.urlFor(trackerRef(42))).toBe('https://x/42');
+  });
+
+  it('resolves a closed parent absent from the open scan once, keeping the Epic container', async () => {
+    const epic = ticket({ ref: trackerRef(10), title: 'Closed epic', state: 'closed', labels: ['epic'] });
+    const child = ticket({ ref: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] });
+    const { adapter, reads } = openOnlyAdapter([child], { '10': epic });
+    const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
+
+    await poller.poll();
+    await poller.poll();
+
+    expect(reads).toEqual(['10']);
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual(['10']);
+    expect((await tasks.list())[0]).toMatchObject({ trackerRef: '11', mapRef: '10' });
+    expect(poller.urlFor(trackerRef(10))).toBe(epic.url);
+  });
+
+  it('keeps an open label-less Epic a container after all its mirrored children closed', async () => {
+    const epic = ticket({ ref: trackerRef(10), title: 'Root epic' });
+    const child = ticket({ ref: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] });
+    const open = [epic, child];
+    const { adapter } = openOnlyAdapter(open, { '11': { ...child, state: 'closed' } });
+    const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
+    await poller.poll();
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual(['10']);
+
+    open.splice(1, 1);
+    await poller.poll();
+    await poller.poll();
+
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual(['10']);
+    expect((await tasks.list()).map((t) => t.trackerRef)).toEqual(['11']);
+    expect((await tasks.list())[0]).toMatchObject({ state: 'done' });
   });
 
   it('records each poll and its mirror work as linked Operations (issue #288)', async () => {
     const exporter = installOperations();
     const { adapter } = stubAdapter([
-      ticket({ number: 42, labels: ['ready-for-agent'] }),
-      ticket({ number: 43, labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(42), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(43), labels: ['ready-for-agent'] }),
     ]);
     const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
 
@@ -116,7 +198,7 @@ describe('TrackerPoller.poll', () => {
     });
     const mirrors = spans.filter((span) => span.name === 'harmonic.tracker.mirror.issue');
     expect(mirrors).toHaveLength(2);
-    expect(mirrors.map((span) => span.attributes['tracker.ref']).sort()).toEqual([42, 43]);
+    expect(mirrors.map((span) => span.attributes['tracker.ref']).sort()).toEqual(['42', '43']);
     expect(mirrors.every((span) => span.parentSpanContext?.spanId === poll.spanContext().spanId)).toBe(true);
   });
 
@@ -146,9 +228,9 @@ describe('TrackerPoller.poll', () => {
         maxConcurrent = Math.max(maxConcurrent, inScan);
         if (scans === 1) await gateFirst;
         inScan--;
-        return [ticket({ number: 9, labels: ['ready-for-agent'] })];
+        return [ticket({ ref: trackerRef(9), labels: ['ready-for-agent'] })];
       },
-      readTicket: async () => ticket({ number: 9 }),
+      readTicket: async () => ticket({ ref: trackerRef(9) }),
       claim: async () => {},
       release: async () => {},
       close: async () => {},
@@ -166,7 +248,7 @@ describe('TrackerPoller.poll', () => {
   });
 
   it('reports its Resolved Tracker each poll — success, then the failure when resolution breaks (issue #83)', async () => {
-    const { adapter } = stubAdapter([ticket({ number: 7, labels: ['ready-for-agent'] })]);
+    const { adapter } = stubAdapter([ticket({ ref: trackerRef(7), labels: ['ready-for-agent'] })]);
     let broken = false;
     const reported: Array<{ ok: boolean }> = [];
     const poller = new TrackerPoller(
@@ -184,7 +266,7 @@ describe('TrackerPoller.poll', () => {
     );
 
     await poller.poll();
-    expect(reported.at(-1)).toEqual({ ok: true, name: 'stub', label: 'stub' });
+    expect(reported.at(-1)).toEqual({ ok: true, name: 'stub', label: 'stub', source: 'detected' });
 
     broken = true;
     await expect(poller.poll()).rejects.toThrow(/declaration vanished/);
@@ -192,7 +274,7 @@ describe('TrackerPoller.poll', () => {
   });
 
   it('is idempotent across polls: re-poll upserts, never duplicates', async () => {
-    const { adapter } = stubAdapter([ticket({ number: 7, labels: ['ready-for-agent'] })]);
+    const { adapter } = stubAdapter([ticket({ ref: trackerRef(7), labels: ['ready-for-agent'] })]);
     const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
     await poller.poll();
     await poller.poll();
@@ -201,30 +283,30 @@ describe('TrackerPoller.poll', () => {
 
   it('caches presentation lookups for tracker urls and map titles (issue #35)', async () => {
     const { adapter } = stubAdapter([
-      ticket({ number: 19, isMap: true, title: 'Wayfinder', labels: ['wayfinder:map'] }),
-      ticket({ number: 30, parent: 19, labels: ['ready-for-agent'], url: 'https://x/30' }),
-      ticket({ number: 31, parent: 19, state: 'closed', closedAt: '2026-08-07T01:00:00Z' }),
+      ticket({ ref: trackerRef(19), isMap: true, title: 'Wayfinder', labels: ['wayfinder:map'] }),
+      ticket({ ref: trackerRef(30), parent: trackerRef(19), labels: ['ready-for-agent'], url: 'https://x/30' }),
+      ticket({ ref: trackerRef(31), parent: trackerRef(19), state: 'closed', closedAt: '2026-08-07T01:00:00Z' }),
     ]);
     const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
 
     await poller.poll();
 
-    expect(poller.urlFor(30)).toBe('https://x/30');
-    expect(poller.urlFor(999)).toBeNull();
+    expect(poller.urlFor(trackerRef(30))).toBe('https://x/30');
+    expect(poller.urlFor(trackerRef(999))).toBeNull();
     expect(poller.urlFor(null)).toBeNull();
-    expect(poller.titleForMap(19)).toBe('Wayfinder');
-    expect(poller.titleForMap(999)).toBeNull();
+    expect(poller.titleForMap(trackerRef(19))).toBe('Wayfinder');
+    expect(poller.titleForMap(trackerRef(999))).toBeNull();
     expect(poller.titleForMap(null)).toBeNull();
   });
 
   async function pollThenReWorking(finalState: 'open' | 'closed') {
-    const first = ticket({ number: 42, labels: ['ready-for-agent'] });
+    const first = ticket({ ref: trackerRef(42), labels: ['ready-for-agent'] });
     let current = first;
     const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => ({ ...stubAdapter([]).adapter, scan: async () => [current] }));
     await poller.poll();
     const task = (await tasks.list())[0]!;
     await tasks.setState(task.id, 'working');
-    current = ticket({ number: 42, labels: ['ready-for-agent'], state: finalState });
+    current = ticket({ ref: trackerRef(42), labels: ['ready-for-agent'], state: finalState });
     await poller.poll();
     return { taskId: task.id };
   }
@@ -240,14 +322,14 @@ describe('TrackerPoller.poll', () => {
   });
 
   it('a resting Task that closed is settled done by the upsert', async () => {
-    const { adapter } = stubAdapter([ticket({ number: 42, labels: ['ready-for-agent'] })]);
+    const { adapter } = stubAdapter([ticket({ ref: trackerRef(42), labels: ['ready-for-agent'] })]);
     let state: 'open' | 'closed' = 'open';
     const poller = new TrackerPoller(
       tasks,
       wsId,
       dir,
       60_000,
-      async () => ({ ...adapter, scan: async () => [ticket({ number: 42, labels: ['ready-for-agent'], state })] }),
+      async () => ({ ...adapter, scan: async () => [ticket({ ref: trackerRef(42), labels: ['ready-for-agent'], state })] }),
     );
     await poller.poll();
     state = 'closed';
@@ -262,7 +344,7 @@ describe('TrackerPoller.poll', () => {
       wsId,
       dir,
       60_000,
-      async () => ({ ...stubAdapter([]).adapter, scan: async () => [ticket({ number: 42, labels: ['ready-for-agent'], state })] }),
+      async () => ({ ...stubAdapter([]).adapter, scan: async () => [ticket({ ref: trackerRef(42), labels: ['ready-for-agent'], state })] }),
     );
 
     await poller.poll();
@@ -281,7 +363,7 @@ describe('TrackerPoller.poll', () => {
       wsId,
       dir,
       60_000,
-      async () => ({ ...stubAdapter([]).adapter, scan: async () => [ticket({ number: 42, labels, state })] }),
+      async () => ({ ...stubAdapter([]).adapter, scan: async () => [ticket({ ref: trackerRef(42), labels, state })] }),
     );
 
     await poller.poll();
@@ -294,14 +376,14 @@ describe('TrackerPoller.poll', () => {
 
   it('runs epic integration after mirroring without scheduling work (issue #159)', async () => {
     const exporter = installOperations();
-    const { adapter } = stubAdapter([ticket({ number: 42, labels: ['ready-for-agent'], assignees: ['someone'] })]);
-    const calls: Array<{ tickets: number[]; mirrored: Array<number | null> }> = [];
+    const { adapter } = stubAdapter([ticket({ ref: trackerRef(42), labels: ['ready-for-agent'], assignees: ['someone'] })]);
+    const calls: Array<{ tickets: string[]; mirrored: Array<string | null> }> = [];
     let persistedAssignees: string[] | undefined;
     const epics = {
-      reconcile: async (tickets: Ticket[], mirrored: { trackerRef: number | null }[]) => {
+      reconcile: async (tickets: Ticket[], mirrored: { trackerRef: string | null }[]) => {
         persistedAssignees = tickets[0]?.assignees;
         calls.push({
-          tickets: tickets.map((t) => t.number),
+          tickets: tickets.map((t) => t.ref),
           mirrored: mirrored.map((m) => m.trackerRef),
         });
       },
@@ -321,8 +403,8 @@ describe('TrackerPoller.poll', () => {
     await poller.poll();
 
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.tickets).toContain(42);
-    expect(calls[0]!.mirrored).toContain(42);
+    expect(calls[0]!.tickets).toContain('42');
+    expect(calls[0]!.mirrored).toContain('42');
     expect(persistedAssignees).toEqual([]);
     const spans = exporter.getFinishedSpans();
     const poll = spans.find((span) => span.name === 'harmonic.poll');
@@ -332,7 +414,7 @@ describe('TrackerPoller.poll', () => {
 
   it('swallows an epic integration failure, logs it, and never wedges the poll (issue #159)', async () => {
     const exporter = installOperations();
-    const { adapter } = stubAdapter([ticket({ number: 42, labels: ['ready-for-agent'] })]);
+    const { adapter } = stubAdapter([ticket({ ref: trackerRef(42), labels: ['ready-for-agent'] })]);
     const errors: string[] = [];
     const epics = {
       reconcile: async () => {
@@ -363,7 +445,7 @@ describe('TrackerPoller.poll', () => {
   });
 
   it('yields while re-mirroring a large backlog of working tickets that closed', async () => {
-    let current = Array.from({ length: 30 }, (_, index) => ticket({ number: index + 1, labels: ['ready-for-agent'] }));
+    let current = Array.from({ length: 30 }, (_, index) => ticket({ ref: trackerRef(index + 1), labels: ['ready-for-agent'] }));
     let tick = 0;
     let yields = 0;
     const order: string[] = [];

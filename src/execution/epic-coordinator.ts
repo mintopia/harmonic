@@ -1,10 +1,11 @@
+import { trackerRef, type TrackerRef } from '../tracker/adapter.js';
 import { Git } from './git.js';
 import { withEphemeralMergeWorktree } from './ephemeral-merge-worktree.js';
 import type { MergePolicyOutcome } from './merge-policy.js';
 import { decideEpicIntegrate, reduceMemberState, type MemberMergeState } from '../domain/epic-integrate-decision.js';
 import type { VerificationDecision } from '../verification/combine.js';
 import { logger } from '../logger.js';
-import { errorMessage, fireAndForget } from '../error-handling.js';
+import { errorMessage, type FireAndForget } from '../error-handling.js';
 import { EpicOperations } from './epic-operations.js';
 import type { TaskRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
@@ -49,27 +50,28 @@ export interface EpicGit {
 }
 
 /** The integration branch Harmonic cuts for an Epic, keyed by its tracker ref. */
-export function integrationBranchName(epicRef: number): string {
+export function integrationBranchName(epicRef: TrackerRef): string {
   return `epic/${epicRef}`;
 }
 
 /** The inverse of {@link integrationBranchName}, or `null` for a non-Epic branch. */
-export function parseIntegrationBranch(name: string | null | undefined): number | null {
+export function parseIntegrationBranch(name: string | null | undefined): TrackerRef | null {
   if (!name) return null;
-  const match = /^epic\/(\d+)$/.exec(name);
-  return match ? Number(match[1]) : null;
+  const match = /^epic\/([A-Za-z0-9._-]+)$/.exec(name);
+  const ref = match?.[1];
+  return ref && ref !== '.' && ref !== '..' ? trackerRef(ref) : null;
 }
 
 /** Run a whole-Epic Verification against the integration branch's tip OID and
  * fold the verifiers' verdicts into a single decision. */
-export type EpicVerify = (args: { repoDir: string; epicRef: number; verifiedHeadOid: string }) => Promise<VerificationDecision>;
+export type EpicVerify = (args: { repoDir: string; epicRef: TrackerRef; verifiedHeadOid: string }) => Promise<VerificationDecision>;
 
 /** Start the resolver only after an Epic verification fails.  The resolver owns
  * its own Attempt and leaves the integration branch ready for the next poll's
  * full verification pass. */
 export type EpicResolve = (args: {
   repoDir: string;
-  epicRef: number;
+  epicRef: TrackerRef;
   title?: string;
   body?: string;
   url?: string;
@@ -89,7 +91,7 @@ export type EpicResolve = (args: {
  * outcome is only `merged` or `escalated` (conflict / red post-merge check). */
 export type EpicIntegrate = (args: {
   repoDir: string;
-  epicRef: number;
+  epicRef: TrackerRef;
   defaultBranch: string;
   integrationBranch: string;
 }) => Promise<MergePolicyOutcome>;
@@ -103,7 +105,7 @@ export type EpicVerificationStatus = 'pass' | 'fail' | 'pending' | null;
 /** An Epic offered for a integrate attempt, reduced from the poll's derived Epic and
  * its members' mirrored Task states. */
 export interface EpicIntegrateTarget {
-  ref: number;
+  ref: TrackerRef;
   title?: string;
   body?: string;
   url?: string;
@@ -112,7 +114,7 @@ export interface EpicIntegrateTarget {
   members: MemberMergeState[];
   /** The Epic's member refs, snapshotted onto the stored Epic record at integration.
    * Absent ⇒ an empty snapshot. */
-  memberRefs?: number[];
+  memberRefs?: TrackerRef[];
   /** Every member is a direct-isolation mirrored Task: this Epic completes in
    * place rather than merging, whether or not a leftover `epic/<ref>` exists.
    * Defaults `false`. */
@@ -130,13 +132,13 @@ function withEpicTitle(title: string | undefined): { epicTitle?: string } {
  * hash (null for a no-op finish where the branch already matched base) and the
  * member-ref snapshot. */
 export type EpicRecordIntegration = (input: {
-  epicRef: number;
+  epicRef: TrackerRef;
   mergeCommit: string | null;
-  memberRefs: number[];
+  memberRefs: TrackerRef[];
 }) => Promise<void>;
 
 /** Persist the point at which the whole-Epic verification and merge gate starts. */
-export type EpicMarkIntegrating = (epicRef: number) => Promise<void>;
+export type EpicMarkIntegrating = (epicRef: TrackerRef) => Promise<void>;
 
 export type EpicIntegrateOutcome =
   | { status: 'integrated'; oid: string }
@@ -155,30 +157,30 @@ export class EpicCoordinator {
   private readonly verify: EpicVerify;
   private readonly resolve: EpicResolve | undefined;
   private readonly integrate: EpicIntegrate;
-  private readonly retire: (epicRef: number) => Promise<void>;
-  private readonly escalateFn: (epicRef: number, reason: string) => void;
+  private readonly retire: (epicRef: TrackerRef) => Promise<void>;
+  private readonly escalateFn: (epicRef: TrackerRef, reason: string) => void;
   private readonly onError: (msg: string) => void;
   private readonly operations: EpicOperations;
   private readonly recordIntegrationFn: EpicRecordIntegration | undefined;
   private readonly markIntegratingFn: EpicMarkIntegrating | undefined;
-  private readonly onIntegrated: ((event: { epicRef: number }) => void) | undefined;
-  private readonly epicStateFn: ((epicRef: number) => Promise<'open' | 'integrating' | 'integrated' | null>) | undefined;
-  private readonly onCompletedInPlace: ((event: { epicRef: number; baseBranch: string; leftBranch?: string }) => void) | undefined;
+  private readonly onIntegrated: ((event: { epicRef: TrackerRef }) => void) | undefined;
+  private readonly epicStateFn: ((epicRef: TrackerRef) => Promise<'open' | 'integrating' | 'integrated' | null>) | undefined;
+  private readonly onCompletedInPlace: ((event: { epicRef: TrackerRef; baseBranch: string; leftBranch?: string }) => void) | undefined;
 
-  private readonly inFlight = new Set<number>();
+  private readonly inFlight = new Set<TrackerRef>();
 
-  private readonly settledEscalated = new Map<number, string>();
+  private readonly settledEscalated = new Map<TrackerRef, string>();
 
-  private readonly lastVerification = new Map<number, Exclude<EpicVerificationStatus, null>>();
+  private readonly lastVerification = new Map<TrackerRef, Exclude<EpicVerificationStatus, null>>();
 
-  private readonly lastVerifyAttemptAt = new Map<number, number>();
+  private readonly lastVerifyAttemptAt = new Map<TrackerRef, number>();
 
-  private readonly resumes = new Map<number, { guidance: string; continuation: 'continue' | 'fresh'; continuationSessionId?: string; continuationSessionRowId?: number }>();
+  private readonly resumes = new Map<TrackerRef, { guidance: string; continuation: 'continue' | 'fresh'; continuationSessionId?: string; continuationSessionRowId?: number }>();
 
   /** The phase and start time of an in-flight attempt's current long operation,
    * so a stuck integrate surfaces as e.g. "verifying (18m)" rather than a bare,
    * unexplained "merging". Only meaningful while {@link inFlight} holds the ref. */
-  private readonly phaseInFlight = new Map<number, { phase: 'verifying' | 'merging'; since: number }>();
+  private readonly phaseInFlight = new Map<TrackerRef, { phase: 'verifying' | 'merging'; since: number }>();
 
   private readonly now: () => number;
   private readonly verifyBackoffMs: number;
@@ -196,9 +198,9 @@ export class EpicCoordinator {
     /** Merge the integration branch into the default branch under the one merge policy. */
     integrate: EpicIntegrate;
     /** Retire the integration branch after a successful integrate. */
-    retire: (epicRef: number) => Promise<void>;
+    retire: (epicRef: TrackerRef) => Promise<void>;
     /** Epic-level escalation surface (verify fail/inconclusive or integrate failure). */
-    escalate: (epicRef: number, reason: string) => void;
+    escalate: (epicRef: TrackerRef, reason: string) => void;
     /** Injected clock for the hard backoff; default `Date.now`. */
     now?: () => number;
     /** Minimum gap between whole-Epic verify+integrate attempts per Epic; default 60s. */
@@ -214,11 +216,11 @@ export class EpicCoordinator {
     /** Persist the non-terminal integrating lifecycle state before whole-Epic verification. */
     markIntegrating?: EpicMarkIntegrating;
     /** Notify clients after the integrated Epic has a durable record. */
-    onIntegrated?: (event: { epicRef: number }) => void;
+    onIntegrated?: (event: { epicRef: TrackerRef }) => void;
     /** The stored Epic lifecycle state, for `complete`'s idempotency check. */
-    epicState?: (epicRef: number) => Promise<'open' | 'integrating' | 'integrated' | null>;
+    epicState?: (epicRef: TrackerRef) => Promise<'open' | 'integrating' | 'integrated' | null>;
     /** Notify clients that an in-place Epic settled without an Integration branch. */
-    onCompletedInPlace?: (event: { epicRef: number; baseBranch: string; leftBranch?: string }) => void;
+    onCompletedInPlace?: (event: { epicRef: TrackerRef; baseBranch: string; leftBranch?: string }) => void;
   }) {
     this.repoDir = deps.repoDir;
     this.git = deps.git ?? Git;
@@ -411,45 +413,45 @@ export class EpicCoordinator {
   }
 
   /** Whether `epicRef` currently has a integrate attempt in flight. */
-  isInFlight(epicRef: number): boolean {
+  isInFlight(epicRef: TrackerRef): boolean {
     return this.inFlight.has(epicRef);
   }
 
   /** The current phase of an in-flight attempt and how long it has run, so a
    * stuck integrate is legible ("verifying" for 18m) instead of an opaque badge.
    * `null` when nothing is in flight or no long operation has begun this attempt. */
-  activePhase(epicRef: number): { phase: 'verifying' | 'merging'; sinceMs: number } | null {
+  activePhase(epicRef: TrackerRef): { phase: 'verifying' | 'merging'; sinceMs: number } | null {
     if (!this.inFlight.has(epicRef)) return null;
     const entry = this.phaseInFlight.get(epicRef);
     return entry ? { phase: entry.phase, sinceMs: this.now() - entry.since } : null;
   }
 
   /** The last retained whole-Epic Verification status for `epicRef`. */
-  verificationStatus(epicRef: number): EpicVerificationStatus {
+  verificationStatus(epicRef: TrackerRef): EpicVerificationStatus {
     return this.lastVerification.get(epicRef) ?? null;
   }
 
   /** Record that `epicRef`'s integration branch has fallen behind develop and a
    * refresh could not fast-forward it. A moving base is normal, never a failure:
    * logged quietly and retried on the next trigger, never raised as an operator hold. */
-  recordRefreshBehind(epicRef: number, reason: string): void {
+  recordRefreshBehind(epicRef: TrackerRef, reason: string): void {
     logger.debug(`epic ${epicRef} integration refresh behind develop (retrying): ${reason}`);
   }
 
   /** The hold reason if `epicRef` is currently held by the sticky-escalation guard, else `null`. */
-  heldReason(epicRef: number): string | null {
+  heldReason(epicRef: TrackerRef): string | null {
     return this.settledEscalated.has(epicRef) ? STICKY_ESCALATION_HOLD_REASON : null;
   }
 
   /** Reopen an operator-held Epic and carry its feedback into the next resolver turn. */
-  resume(epicRef: number, guidance: string, continuation: 'continue' | 'fresh', session?: { id: string; rowId: number }): void {
+  resume(epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh', session?: { id: string; rowId: number }): void {
     this.settledEscalated.delete(epicRef);
     this.lastVerifyAttemptAt.delete(epicRef);
     this.resumes.set(epicRef, { guidance, continuation, ...(session ? { continuationSessionId: session.id, continuationSessionRowId: session.rowId } : {}) });
   }
 
   /** The integration branch's existence and tip OID for `epicRef`; `tip:null` when the branch is absent. */
-  async integrationFacts(epicRef: number): Promise<{ exists: boolean; tip: string | null }> {
+  async integrationFacts(epicRef: TrackerRef): Promise<{ exists: boolean; tip: string | null }> {
     const branch = integrationBranchName(epicRef);
     const exists = await this.git.branchExists(this.repoDir, branch);
     if (!exists) return { exists: false, tip: null };
@@ -468,14 +470,14 @@ export class EpicCoordinator {
     return [...members].sort().join(',');
   }
 
-  private forget(ref: number): void {
+  private forget(ref: TrackerRef): void {
     this.settledEscalated.delete(ref);
     this.lastVerification.delete(ref);
     this.lastVerifyAttemptAt.delete(ref);
     this.resumes.delete(ref);
   }
 
-  private clearMergeGuards(ref: number): void {
+  private clearMergeGuards(ref: TrackerRef): void {
     this.settledEscalated.delete(ref);
     this.lastVerifyAttemptAt.delete(ref);
     this.resumes.delete(ref);
@@ -522,7 +524,7 @@ export class EpicCoordinator {
     }
   }
 
-  private async retireQuietly(ref: number, title: string | undefined, context: string): Promise<void> {
+  private async retireQuietly(ref: TrackerRef, title: string | undefined, context: string): Promise<void> {
     try {
       await this.operations.run({
         repoDir: this.repoDir,
@@ -539,9 +541,15 @@ export class EpicCoordinator {
 
 /** A live integration branch that must follow one observed default-branch advance. */
 export interface EpicRefreshTarget {
-  ref: number;
+  ref: TrackerRef;
+  workspaceId?: number | undefined;
   repoDir: string;
   defaultBranch: string;
+}
+
+/** A refresh target as dispatched to the corrective resolver, which archives its prompt under the owning Workspace. */
+export interface EpicRefreshResolveTarget extends EpicRefreshTarget {
+  workspaceId: number;
 }
 
 export type EpicRefreshOutcome =
@@ -556,13 +564,13 @@ export type EpicRefreshResolveDispatchOutcome =
 
 /** Refreshes a live integration branch after the default branch advances. */
 export class EpicRefresh {
-  private readonly resolving = new Set<number>();
+  private readonly resolving = new Set<TrackerRef>();
 
   constructor(private readonly deps: {
     git?: Pick<EpicGit, 'revParse'>;
     merge?: (args: MergeIntoBaseArgs) => Promise<MergeIntoBaseOutcome>;
     dispatchResolve: (target: EpicRefreshTarget, detail: string) => Promise<EpicRefreshResolveDispatchOutcome>;
-    escalate: (epicRef: number, reason: string) => void;
+    escalate: (epicRef: TrackerRef, reason: string) => void;
   }) {}
 
   refresh(target: EpicRefreshTarget): Promise<EpicRefreshOutcome> {
@@ -618,17 +626,18 @@ export interface EpicRefreshTrigger {
 
 /** Coordinates integration-branch creation, task bases, and poll-time triggers. */
 export class EpicLifecycle {
-  private readyMemberRefs = new Set<number>();
-  private leafEpicRefs = new Set<number>();
+  private readyMemberRefs = new Set<TrackerRef>();
+  private leafEpicRefs = new Set<TrackerRef>();
   private latestTickets: Ticket[] = [];
   private operations = new EpicOperations();
-  private onIntegrationBranchRetired: ((event: { epicRef: number; branch: string; baseBranch: string }) => Promise<void>) | undefined;
+  private onIntegrationBranchRetired: ((event: { epicRef: TrackerRef; branch: string; baseBranch: string }) => Promise<void>) | undefined;
   private onIntegrationBranchEvent: ((event: EpicBranchStep) => Promise<void> | void) | undefined;
   private workspaceId: number | undefined;
 
   constructor(
     private readonly tasks: TaskService,
     private readonly workingDir: string,
+    private readonly fireAndForget: FireAndForget,
     private readonly git: Pick<EpicGit, 'symbolicBranch' | 'branchExists' | 'revParse' | 'createBranch' | 'deleteBranch' | 'branchCheckedOutAt' | 'isAncestor'> = Git,
     private readonly onError: (msg: string) => void = logger.error,
     private epicIntegrate?: EpicIntegrateTrigger,
@@ -651,7 +660,7 @@ export class EpicLifecycle {
     this.operations = operations;
   }
 
-  attachIntegrationBranchRetired(listener: (event: { epicRef: number; branch: string; baseBranch: string }) => Promise<void>): void {
+  attachIntegrationBranchRetired(listener: (event: { epicRef: TrackerRef; branch: string; baseBranch: string }) => Promise<void>): void {
     this.onIntegrationBranchRetired = listener;
   }
 
@@ -674,14 +683,14 @@ export class EpicLifecycle {
    * `rows` should already be scoped to this Workspace: a tracker ref is only
    * unique within a repo, so an unscoped `rows` list could borrow another
    * Workspace's same-numbered issue. */
-  isInPlace(epicRef: number, rows: readonly TaskRow[], members: readonly number[] = this.membersOf(epicRef)): boolean {
+  isInPlace(epicRef: TrackerRef, rows: readonly TaskRow[], members: readonly TrackerRef[] = this.membersOf(epicRef)): boolean {
     if (members.length === 0) return false;
-    const byRef = new Map<number, TaskRow>();
+    const byRef = new Map<TrackerRef, TaskRow>();
     for (const row of rows) if (row.trackerRef != null) byRef.set(row.trackerRef, row);
     return members.every((ref) => byRef.get(ref)?.isolationMode === 'direct');
   }
 
-  private async refreshDriftedEpics(defaultBranch: string, epics: readonly { ref: number }[]): Promise<void> {
+  private async refreshDriftedEpics(defaultBranch: string, epics: readonly { ref: TrackerRef }[]): Promise<void> {
     if (!this.epicRefresh || epics.length === 0) return;
     const rows = await this.tasks.list(this.workspaceId == null ? undefined : { workspaceId: this.workspaceId });
     for (const epic of epics) {
@@ -690,7 +699,7 @@ export class EpicLifecycle {
       if (!(await this.git.branchExists(this.workingDir, branch))) continue;
       if (await this.git.isAncestor(this.workingDir, defaultBranch, branch)) continue;
       try {
-        const outcome = await this.epicRefresh.refresh({ ref: epic.ref, repoDir: this.workingDir, defaultBranch });
+        const outcome = await this.epicRefresh.refresh({ ref: epic.ref, workspaceId: this.workspaceId ?? undefined, repoDir: this.workingDir, defaultBranch });
         if (outcome.status !== 'refreshed') {
           const why = 'reason' in outcome ? outcome.reason : outcome.detail;
           logger.warn(`epic ${epic.ref} still behind ${defaultBranch} after refresh: ${outcome.status} (${why})`);
@@ -704,13 +713,13 @@ export class EpicLifecycle {
   async reconcile(tickets: Ticket[], mirrored: TaskRow[]): Promise<void> {
     this.latestTickets = tickets;
     const mirroredWithDeps = mirrored.length > 0 ? await this.tasks.listWithDeps({ workspaceId: mirrored[0]!.workspaceId ?? undefined }) : [];
-    const readinessByRef = new Map<number, { agentWorkable: boolean }>();
+    const readinessByRef = new Map<TrackerRef, { agentWorkable: boolean }>();
     for (const task of mirroredWithDeps) {
       if (task.origin === 'mirrored' && task.trackerRef !== null) readinessByRef.set(task.trackerRef, { agentWorkable: task.agentWorkable });
     }
     const epics = deriveLeafEpics(tickets, readinessByRef);
     this.leafEpicRefs = new Set(epics.map((epic) => epic.ref));
-    const readyRefs = new Set<number>();
+    const readyRefs = new Set<TrackerRef>();
     for (const epic of epics) for (const ref of epic.ready) readyRefs.add(ref);
     this.readyMemberRefs = readyRefs;
 
@@ -725,7 +734,7 @@ export class EpicLifecycle {
     }
     if (readyRefs.size === 0 && this.epicIntegrate === undefined) return;
 
-    const byRef = new Map<number, TaskRow>();
+    const byRef = new Map<TrackerRef, TaskRow>();
     for (const task of mirrored) if (task.trackerRef != null) byRef.set(task.trackerRef, task);
     const defaultBranch = await defaultBranchOnce();
     if (defaultBranch === null) return;
@@ -786,7 +795,7 @@ export class EpicLifecycle {
     }
   }
 
-  private async submitWholeEpicIntegrate(epic: DerivedEpic, byRef: ReadonlyMap<number, TaskRow>, inPlace: boolean): Promise<void> {
+  private async submitWholeEpicIntegrate(epic: DerivedEpic, byRef: ReadonlyMap<TrackerRef, TaskRow>, inPlace: boolean): Promise<void> {
     const trigger = this.epicIntegrate;
     if (!trigger) return;
     const members = await Promise.all(
@@ -797,7 +806,7 @@ export class EpicLifecycle {
     );
     const branch = integrationBranchName(epic.ref);
     const leftBranch = inPlace && (await this.git.branchExists(this.workingDir, branch)) ? branch : undefined;
-    fireAndForget(() => trigger
+    this.fireAndForget(() => trigger
       .submit({
         ref: epic.ref,
         title: epic.title,
@@ -811,7 +820,7 @@ export class EpicLifecycle {
       .catch((err) => this.onError(`epic ${epic.ref} whole-Epic integrate attempt failed: ${String(err)}`)), { op: 'epic.integrateTrigger', level: 'error', context: { epicRef: epic.ref } });
   }
 
-  membersOf(epicRef: number): number[] {
+  membersOf(epicRef: TrackerRef): TrackerRef[] {
     return deriveLeafEpics(this.latestTickets).find((epic) => epic.ref === epicRef)?.members ?? [];
   }
 
@@ -838,7 +847,7 @@ export class EpicLifecycle {
     }
   }
 
-  private async isLeafEpic(epicRef: number, workspaceId: number | null): Promise<boolean> {
+  private async isLeafEpic(epicRef: TrackerRef, workspaceId: number | null): Promise<boolean> {
     if (this.leafEpicRefs.has(epicRef)) return true;
     const listArg = workspaceId == null ? undefined : { workspaceId };
     const tickets = await persistedTickets(
@@ -862,7 +871,7 @@ export class EpicLifecycle {
     }
   }
 
-  async retireIntegrationBranch(epicRef: number): Promise<boolean> {
+  async retireIntegrationBranch(epicRef: TrackerRef): Promise<boolean> {
     const branch = integrationBranchName(epicRef);
     const defaultBranch = await this.git.symbolicBranch(this.workingDir);
     if (defaultBranch === null || !(await this.git.branchExists(this.workingDir, branch))) return false;

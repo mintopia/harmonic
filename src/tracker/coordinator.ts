@@ -1,11 +1,21 @@
-import type { TicketRef, TrackerAdapter } from './adapter.js';
+import type { TicketRef, TrackerAdapter, TrackerRef } from './adapter.js';
 import type { TaskRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
 import { forEachYielding } from '../reliability/yield.js';
-import { attempted, bestEffort, errorMessage } from '../error-handling.js';
+import { attempted, bestEffort } from '../error-handling.js';
+import { GhError } from './github.js';
+import { GlabError } from './gitlab.js';
+import { RestError, safeErrorReason } from './rest-client.js';
 import { logger } from '../logger.js';
 
-const ticketGone = (err: unknown): boolean => /\b404\b|not found/i.test(errorMessage(err));
+/** The tracker says the ticket does not exist: an HTTP 404, a CLI's HTTP 404 / unresolvable issue, or an adapter's own "no issue/ticket" error. */
+export function ticketGone(err: unknown): boolean {
+  if (err instanceof RestError) return err.status === 404;
+  if (err instanceof GhError || err instanceof GlabError) return /\bHTTP 404\b|Could not resolve to an Issue|\b404 (Issue )?Not Found\b/i.test(err.stderr);
+  return err instanceof Error && /^(Forgejo|GitLab|local-markdown): no (issue|ticket)\b/.test(err.message);
+}
+
+export type TicketCloser = (task: TaskRow) => Promise<{ ok: true } | { ok: false; error: unknown }>;
 
 /** Owns the advisory tracker assignment for mirrored Tasks; every write is best-effort and idempotent, never a lock. */
 export class MirrorCoordinator {
@@ -17,6 +27,7 @@ export class MirrorCoordinator {
   constructor(
     private readonly tasks: TaskService,
     private readonly workspaceId: number,
+    private readonly closeTicket?: TicketCloser,
   ) {}
 
   /** Remember the adapter used for best-effort assignment writes. */
@@ -44,6 +55,21 @@ export class MirrorCoordinator {
     if (!adapter) return;
     let failed = 0;
     await forEachYielding(await this.tasks.list({ workspaceId: this.workspaceId }), async (task) => {
+      if (task.ticketClosePending && task.state === 'done' && this.closeTicket) {
+        const closed = await this.closeTicket(task);
+        if (closed.ok || ticketGone(closed.error)) await this.tasks.setTicketClosePending(task.id, false);
+        else {
+          failed++;
+          logger.warn('tracker.reconcile: pending ticket close failed; will retry next poll', {
+            op: 'tracker.reconcile.close',
+            taskId: task.id,
+            workspaceId: this.workspaceId,
+            trackerRef: task.trackerRef ?? undefined,
+            error: safeErrorReason(closed.error),
+          });
+        }
+        return;
+      }
       if (task.origin !== 'mirrored' || task.trackerRef == null) return;
       const ticket = ticketRef(task, task.trackerRef);
       if (task.state === 'working') {
@@ -91,8 +117,8 @@ export class MirrorCoordinator {
   }
 }
 
-function ticketRef(task: TaskRow, number: number): TicketRef {
-  return { number, title: task.prompt, state: 'open' };
+function ticketRef(task: TaskRow, ref: TrackerRef): TicketRef {
+  return { ref, title: task.prompt, state: 'open' };
 }
 
 function handedBack(task: TaskRow): boolean {

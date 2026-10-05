@@ -4,7 +4,10 @@ import { z } from 'zod';
 import type { TrackingContext } from '../app.js';
 import type { WorkspaceRow } from '../../db/schema.js';
 import type { ResolvedTracker } from '../../tracker/adapter.js';
-import { createWorkspaceInputSchema, updateWorkspaceInputSchema } from '../../domain/workspaces.js';
+import { PROMPT_FRAGMENT_OVERRIDE_KEYS, type PromptFragmentOverrideKey } from '../../domain/prompt-fragments.js';
+import { createWorkspaceInputSchema, updateWorkspaceInputSchema, codeRepositorySchema } from '../../domain/workspaces.js';
+import { configuredTrackerSchema } from '../../tracker/configured.js';
+import { triageLabelsOverrideSchema } from '../../tracker/triage-labels.js';
 import { EXPORT_STATES, redactPatternsSchema } from '../../config.js';
 import {
   verificationCommandOverrideSchema,
@@ -17,6 +20,7 @@ import {
 import { forEachYielding } from '../../reliability/yield.js';
 import { requestActor } from '../operator-inputs.js';
 import type { AppContext } from '../app.js';
+import { resolveScoped } from '../../domain/setting-override.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
@@ -27,11 +31,17 @@ const resolvedTrackerSchema = z
   .object({
     ok: z.boolean().meta({ example: true }),
     label: z.string().nullable().meta({ example: 'GitHub' }),
+    kind: z.string().nullable().meta({ example: 'github' }),
+    source: z.enum(['configured', 'detected', 'code-repository']).nullable().meta({ example: 'detected' }),
     code: z.string().nullable().meta({ example: null }),
     reason: z.string().nullable().meta({ example: null }),
   })
   .nullable()
   .meta({ description: 'The tracker this Workspace resolved (issue #83), or null when tracking is off.' });
+
+const promptFragmentOverrideResponseShape = Object.fromEntries(
+  PROMPT_FRAGMENT_OVERRIDE_KEYS.map((key) => [key, z.string().nullable().meta({ example: null })]),
+) as Record<PromptFragmentOverrideKey, z.ZodNullable<z.ZodString>>;
 
 /** A Workspace as the API serves it: the `WorkspaceRow` plus its `resolvedTracker`. */
 const workspaceSchema = z
@@ -55,6 +65,10 @@ const workspaceSchema = z
     conflictResolveTurns: z.number().nullable().meta({ example: null }),
     maxConcurrentAttempts: z.number().nullable().meta({ example: null }),
     autoRunnerEnabled: z.boolean().nullable().meta({ example: null }),
+    agentMessagesEnabled: z.boolean().nullable().meta({ example: null }),
+    agentMessagesSendCap: z.number().nullable().meta({ example: null }),
+    /** Whether Agent Messages are on for this Workspace after Baseline → Global → Workspace resolution. */
+    effectiveAgentMessagesEnabled: z.boolean().meta({ example: false }),
     /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
     maxAttempts: z.number().nullable().meta({ example: null }),
     contextReuseTokenLimit: z.number().nullable().meta({ example: null }),
@@ -76,6 +90,17 @@ const workspaceSchema = z
     driveContinueAttempts: z.number().nullable().meta({ example: null }),
     /** Task Prompt override; null inherits `config.taskPrompt`. */
     taskPrompt: z.string().nullable().meta({ example: null }),
+    /** Pause message override; null inherits `config.pauseMessage`. */
+    pauseMessage: z.string().nullable().meta({ example: null }),
+    ...promptFragmentOverrideResponseShape,
+    /** Commit nudge override; null inherits `config.drive.commitNudge`. */
+    driveCommitNudge: z.string().nullable().meta({ example: null }),
+    /** Task merge-conflict prompt override; null inherits `config.merge.conflictPrompt`. */
+    mergeConflictPrompt: z.string().nullable().meta({ example: null }),
+    /** Epic integration merge-conflict prompt override; null inherits `config.merge.epicConflictPrompt`. */
+    mergeEpicConflictPrompt: z.string().nullable().meta({ example: null }),
+    mergeEpicRefreshPrompt: z.string().nullable().meta({ example: null }),
+    verifyEpicResolveSuffix: z.string().nullable().meta({ example: null }),
     exportEnabled: z.boolean().nullable().meta({ example: null }),
     exportDirectoryPath: z.string().nullable().meta({ example: null }),
     exportS3Endpoint: z.string().nullable().meta({ example: null }),
@@ -88,6 +113,9 @@ const workspaceSchema = z
     exportS3SecretAccessKey: z.string().nullable().meta({ example: null }),
     exportRedactPatterns: redactPatternsSchema.nullable().meta({ example: null }),
     exportIncludeStates: z.array(z.enum(EXPORT_STATES)).nullable().meta({ example: null }),
+    configuredTracker: configuredTrackerSchema.nullable().meta({ example: null }),
+    codeRepository: codeRepositorySchema.nullable().meta({ example: null }),
+    triageLabels: triageLabelsOverrideSchema.nullable().meta({ example: null }),
     archiveRetentionDays: z.number().nullable().meta({ example: null }),
     archiveRetentionMaxTotalMB: z.number().nullable().meta({ example: null }),
     createdAt: z.number().meta({ example: 1784030400000 }),
@@ -104,8 +132,8 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     r === null
       ? null
       : r.ok
-        ? { ok: true, label: r.label, code: null, reason: null }
-        : { ok: false, label: null, code: r.code, reason: r.reason };
+        ? { ok: true, label: r.label, kind: r.name, source: r.source, code: null, reason: null }
+        : { ok: false, label: null, kind: null, source: null, code: r.code, reason: r.reason };
 
   /** A Workspace row plus its live Resolved Tracker; JSON-text override columns parsed back to the shape a client PATCHes. */
   const serialize = (ws: WorkspaceRow) => ({
@@ -118,7 +146,10 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     epicPreMergeCritics: ws.epicPreMergeCritics ? JSON.parse(ws.epicPreMergeCritics) : null,
     exportRedactPatterns: ws.exportRedactPatterns ? JSON.parse(ws.exportRedactPatterns) : null,
     exportIncludeStates: ws.exportIncludeStates ? JSON.parse(ws.exportIncludeStates) : null,
+    configuredTracker: ws.configuredTracker ? JSON.parse(ws.configuredTracker) : null,
+    triageLabels: ws.triageLabels ? JSON.parse(ws.triageLabels) : null,
     guardrailBudget: ws.guardrailBudget ? JSON.parse(ws.guardrailBudget) : null,
+    effectiveAgentMessagesEnabled: resolveScoped('agentMessagesEnabled', ws.agentMessagesEnabled, ctx.settingsStore.getGlobal().agentMessages.enabled),
     resolvedTracker: serializeResolvedTracker(ctx.trackerManager.resolvedTracker(ws.id)),
   });
 

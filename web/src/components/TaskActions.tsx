@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api';
-import type { Task } from '../types';
-import { escalationActions, taskActions, type TaskAction } from '../task-actions-model';
+import type { Task, StepType } from '../types';
+import { acceptPresentation, acceptedOutcome, escalationActions, taskActions, type TaskAction } from '../task-actions-model';
 import { btnAccept, btnGhost, btnQuiet, btnQuietDestructive, btnReject } from '../ui';
 import { toastError, toastSuccess } from '../toast';
 import { RejectDialog } from './RejectDialog';
@@ -15,11 +15,13 @@ type Confirming = 'cancel' | 'complete' | 'close';
 
 export function TaskActions({
   task,
+  failedStep = null,
   variant,
   onEdit,
   onChanged,
 }: {
   task: Task;
+  failedStep?: StepType | null;
   variant: 'card' | 'footer';
   onEdit: (task: Task) => void;
   onChanged: () => void;
@@ -27,8 +29,6 @@ export function TaskActions({
   const [rejecting, setRejecting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirming, setConfirming] = useState<Confirming | null>(null);
-  // Accept merges synchronously in the request; without an immediate pending
-  // state the click looks inert until it resolves.
   const [accepting, setAccepting] = useState(false);
   const [pausing, setPausing] = useState(false);
   const [resumeOpen, setResumeOpen] = useState(false);
@@ -36,6 +36,7 @@ export function TaskActions({
 
   const actions = taskActions(task.state, task.wallClockDeadline);
   const escalation = escalationActions(task);
+  const accept = acceptPresentation(failedStep);
   // An Accept in flight (merging) is persisted on the Task, not just in this
   // component's `accepting` flag — so the actions stay disabled across a reload
   // or a leave-and-return, never handing the operator a second Accept/Reject
@@ -54,8 +55,8 @@ export function TaskActions({
 
   const onAccept = () => {
     setAccepting(true);
-    api.acceptTask(task.id).then(() => {
-      toastSuccess(`${taskLabel(task.id)} accepted — merging`);
+    api.acceptTask(task.id).then((updated) => {
+      toastSuccess(`${taskLabel(task.id)} accepted — ${acceptedOutcome(updated)}`);
       onChanged();
     }, toastError).finally(() => setAccepting(false));
   };
@@ -77,10 +78,10 @@ export function TaskActions({
   const button = (action: TaskAction) => {
     switch (action) {
       case 'accept': {
-        const label = variant === 'footer' ? 'Accept & merge' : 'Accept';
+        const label = variant === 'footer' ? accept.label : 'Accept';
         if (escalation && !escalation.accept) {
           return (
-            <button key={action} className={btnAccept} disabled title="Branch is empty — nothing to merge">
+            <button key={action} className={btnAccept} disabled title="No candidate commits to accept">
               {label}
             </button>
           );
@@ -185,6 +186,9 @@ export function TaskActions({
 
   return (
     <>
+      {task.state === 'escalated' && variant === 'footer' && (
+        <p className="text-small text-muted">{accept.description}</p>
+      )}
       <div className={container}>{ordered.map(button)}</div>
       {rejecting && (
         <RejectDialog

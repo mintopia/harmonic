@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { trackerRef } from '../src/tracker/adapter.js';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -8,6 +9,8 @@ import { tasks as tasksTable, workspaces } from '../src/db/schema.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { readTranscriptLog } from '../src/execution/transcript-log.js';
 import { TaskArchive } from '../src/archive/task-archive.js';
+import { promptTurn } from '../src/execution/turn-completion.js';
+import type { AcpDriver } from '../src/acp/driver.js';
 import { baselineConfig } from '../src/config.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -113,6 +116,117 @@ describe('TaskArchive', () => {
     expect(typeof lines[0].ts).toBe('number');
   });
 
+  it('reports each prompt\'s 0-based index, continuing across a reopened writer', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const first = archiveFor().implementationStep(task, 1);
+    expect(first.promptLocator).toBe('implementation/prompt.md');
+    expect([await first.appendPrompt('a'), await first.appendPrompt('b')]).toEqual([0, 1]);
+    await first.close();
+    const reopened = archiveFor().implementationStep(task, 1);
+    expect(await reopened.appendPrompt('c')).toBe(2);
+    await reopened.close();
+    expect(await reopened.appendPrompt('d')).toBeNull();
+    const read = (index: number) => archiveFor().readResolvedPrompt(task, 1, 'implementation/prompt.md', index);
+    expect(await Promise.all([0, 1, 2, 3].map(read))).toEqual(['a', 'b', 'c', null]);
+  });
+
+  it('reads each prompt back by index even when an earlier prompt contains the separator or multibyte text', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const prompts = ['ticket body\n\n---\n\nwith a rule — é', 'second', '\n\n---\n\n', 'last'];
+    const writer = archiveFor().implementationStep(task, 1);
+    const indexes = [];
+    for (const text of prompts) indexes.push(await writer.appendPrompt(text));
+    await writer.close();
+    expect(indexes).toEqual([0, 1, 2, 3]);
+    const reopened = archiveFor().implementationStep(task, 1);
+    expect(await reopened.appendPrompt('after reopen')).toBe(4);
+    await reopened.close();
+    const read = (index: number) => archiveFor().readResolvedPrompt(task, 1, 'implementation/prompt.md', index);
+    expect(await Promise.all([0, 1, 2, 3, 4, 5].map(read))).toEqual([...prompts, 'after reopen', null]);
+  });
+
+  describe('prompt sidecar degraded paths', () => {
+    const LOCATOR = 'implementation/prompt.md';
+    const SEP = '\n\n---\n\n';
+
+    it('numbers prompts after a legacy file with no sidecar from the legacy count, and reads every one back', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const dirPath = await archiveFor().ensure(task);
+      const stepPath = join(dirPath, 'attempts', '1', 'implementation');
+      mkdirSync(stepPath, { recursive: true });
+      writeFileSync(join(stepPath, 'prompt.md'), `legacy zero${SEP}legacy one`);
+      const writer = archiveFor().implementationStep(task, 1);
+      expect(await writer.appendPrompt('new two')).toBe(2);
+      expect(await writer.appendPrompt('new three')).toBe(3);
+      await writer.close();
+      const archive = archiveFor();
+      const read = (index: number) => archive.readResolvedPrompt(task, 1, LOCATOR, index);
+      expect(await Promise.all([0, 1, 2, 3, 4].map(read))).toEqual(['legacy zero', 'legacy one', 'new two', 'new three', null]);
+      expect(await archive.readArchivedPromptSegments(task, 1, LOCATOR)).toEqual(['legacy zero', 'legacy one', 'new two', 'new three']);
+    });
+
+    it('keeps later indexes aligned when a sidecar line was lost', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const writer = archiveFor().implementationStep(task, 1);
+      for (const text of ['zero', 'one\n\n---\n\nwith a rule', 'two']) await writer.appendPrompt(text);
+      await writer.close();
+      const sidecarPath = join(await writer.dir, 'prompt.index.jsonl');
+      const lines = readFileSync(sidecarPath, 'utf8').trim().split('\n');
+      writeFileSync(sidecarPath, `${lines[0]}\n${lines[2]}\n`);
+      const reopened = archiveFor().implementationStep(task, 1);
+      expect(await reopened.appendPrompt('three')).toBe(3);
+      await reopened.close();
+      const archive = archiveFor();
+      const read = (index: number) => archive.readResolvedPrompt(task, 1, LOCATOR, index);
+      expect(await Promise.all([0, 1, 2, 3].map(read))).toEqual(['zero', 'one\n\n---\n\nwith a rule', 'two', 'three']);
+      expect(await archive.readArchivedPromptSegments(task, 1, LOCATOR)).toEqual(['zero', 'one\n\n---\n\nwith a rule', 'two', 'three']);
+    });
+
+    it('falls back to separator splitting when the sidecar is corrupt, and still never reuses an index', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const writer = archiveFor().implementationStep(task, 1);
+      await writer.appendPrompt('zero');
+      await writer.appendPrompt('one');
+      await writer.close();
+      writeFileSync(join(await writer.dir, 'prompt.index.jsonl'), '{"index":0,"start":0,"length":9999}\nnot json\n');
+      const reopened = archiveFor().implementationStep(task, 1);
+      expect(await reopened.appendPrompt('two')).toBe(2);
+      await reopened.close();
+      expect(await archiveFor().readArchivedPromptSegments(task, 1, LOCATOR)).toEqual(['zero', 'one', 'two']);
+      expect(await archiveFor().readResolvedPrompt(task, 1, LOCATOR, 1)).toBe('one');
+    });
+
+    it('reads one prompt with a ranged read (sidecar chunk plus the prompt chunk), not the whole 300 KB file', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const writer = archiveFor().implementationStep(task, 1);
+      await writer.appendPrompt('small first');
+      await writer.appendPrompt('x'.repeat(300_000));
+      await writer.appendPrompt('small last');
+      await writer.close();
+      const chunks: number[] = [];
+      const yieldNow = async () => { chunks.push(1); };
+      expect(await archiveFor().readResolvedPrompt(task, 1, LOCATOR, 0, yieldNow)).toBe('small first');
+      expect(chunks).toHaveLength(2);
+      chunks.length = 0;
+      expect(await archiveFor().readResolvedPrompt(task, 1, LOCATOR, 2, yieldNow)).toBe('small last');
+      expect(chunks).toHaveLength(2);
+    });
+  });
+
+  it('appends a resolution prompt under the Attempt for a Task owner and an Epic owner', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const archive = archiveFor();
+    expect(await archive.appendResolutionPrompt(task, 2, 'task-conflict', 1, 'task resolver prompt')).toEqual({
+      locator: 'resolution/task-conflict-1/prompt.md',
+      promptIndex: 0,
+    });
+    expect(readFileSync(join(await archive.ensure(task), 'attempts', '2', 'resolution', 'task-conflict-1', 'prompt.md'), 'utf8')).toBe('task resolver prompt');
+    const owner = { workspaceId: 1, epicRef: trackerRef(9) };
+    await archive.appendResolutionPrompt(owner, 3, 'epic-resolve', 1, 'one');
+    expect(await archive.appendResolutionPrompt(owner, 3, 'epic-resolve', 1, 'two')).toEqual({ locator: 'resolution/epic-resolve-1/prompt.md', promptIndex: 1 });
+    expect(await archive.readArchivedPrompt(owner, 3, 'resolution/epic-resolve-1/prompt.md')).toBe('one\n\n---\n\ntwo');
+  });
+
   it('appends a later turn of the same Attempt to the existing prompt.md and acp.jsonl', async () => {
     const task = await tasks.create({ prompt: 'p' });
     const archive = archiveFor();
@@ -128,6 +242,35 @@ describe('TaskArchive', () => {
     expect(readFileSync(join(stepDir, 'prompt.md'), 'utf8')).toBe('first\n\n---\n\nsecond');
     const lines = readFileSync(join(stepDir, 'acp.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     expect(lines.map((l) => l.update.n)).toEqual([1, 2]);
+  });
+
+  it('archives every implementation prompt of a multi-turn Attempt (first, steer, continue, commit nudge) in order', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const archive = archiveFor();
+    const driver = { prompt: async () => ({ stopReason: 'end_turn' }) } as unknown as AcpDriver;
+    const turns = ['first prompt', 'steer: use the cache', 'continue the work', 'commit your changes'];
+    for (const text of turns) {
+      const step = archive.implementationStep(task, 1);
+      await promptTurn(driver, text, () => {}, step);
+      await step.close();
+    }
+    const prompt = await archive.readArchivedPrompt(task, 1, 'implementation/prompt.md');
+    expect(prompt).toBe(turns.join('\n\n---\n\n'));
+  });
+
+  it('records one prompt_sent marker per archived prompt, and none without an archive', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const archive = archiveFor();
+    const driver = { prompt: async () => ({ stopReason: 'end_turn' }) } as unknown as AcpDriver;
+    const recorded: unknown[] = [];
+    const step = archive.implementationStep(task, 1);
+    await promptTurn(driver, 'one', (_type, payload) => recorded.push(payload), step);
+    await promptTurn(driver, 'two', (_type, payload) => recorded.push(payload), step);
+    await step.close();
+    expect(recorded).toEqual([{ event: 'prompt_sent' }, { event: 'prompt_sent' }]);
+    const bare: unknown[] = [];
+    await promptTurn(driver, 'three', (_type, payload) => bare.push(payload));
+    expect(bare).toEqual([]);
   });
 
   it('copies the native transcript and subagent files', async () => {
@@ -194,12 +337,12 @@ describe('TaskArchive', () => {
 
     it('resolves under an epic root', async () => {
       const archive = archiveFor();
-      const owner = { workspaceId: 1, epicRef: 5 };
+      const owner = { workspaceId: 1, epicRef: trackerRef(5) };
       expect(await archive.archivedTranscript(owner, 1, 'verification', '/x/e.jsonl')).toBeNull();
       const src = join(dir, 'src');
       mkdirSync(src, { recursive: true });
       writeFileSync(join(src, 'e.jsonl'), 'e\n');
-      const writer = archive.epicCriticStep(1, 5, 1, 'critic-1');
+      const writer = archive.epicCriticStep(1, trackerRef(5), 1, 'critic-1');
       await writer.copyNative('claude', join(src, 'e.jsonl'));
       await writer.close();
       expect(await archive.archivedTranscript(owner, 1, 'verification', '/x/e.jsonl')).toBe(join(await writer.dir, 'native', 'e.jsonl'));
@@ -245,9 +388,9 @@ describe('TaskArchive', () => {
   it('creates a verification output.log directory per stage and step', async () => {
     const task = await tasks.create({ prompt: 'p' });
     const archive = archiveFor();
-    const path = await archive.verificationOutputLog(task, 2, 'post-merge', 'cmd-lint');
+    const log = await archive.verificationOutputLog(task, 2, 'post-merge', 'cmd-lint');
     const root = await archive.ensure(task);
-    expect(path).toBe(join(root, 'attempts', '2', 'verification', 'post-merge', 'cmd-lint', 'output.log'));
+    expect(log).toEqual({ path: join(root, 'attempts', '2', 'verification', 'post-merge', 'cmd-lint', 'output.log'), key: 'verification/post-merge/cmd-lint/output.log' });
     expect(existsSync(join(root, 'attempts', '2', 'verification', 'post-merge', 'cmd-lint'))).toBe(true);
   });
 
@@ -257,9 +400,10 @@ describe('TaskArchive', () => {
     const root = await archive.ensure(task);
     const stageDir = join(root, 'attempts', '1', 'verification', 'pre-merge');
     const ids = ['../../x', '', '.', '..', 'a/b', 'a-b'];
-    const paths = await Promise.all(ids.map((id) => archive.verificationOutputLog(task, 1, 'pre-merge', id)));
+    const logs = await Promise.all(ids.map((id) => archive.verificationOutputLog(task, 1, 'pre-merge', id)));
+    const paths = logs.map((log) => log?.path);
     for (const path of paths) {
-      expect(path).not.toBeNull();
+      expect(path).toBeDefined();
       expect(dirname(dirname(path!))).toBe(stageDir);
       expect(existsSync(dirname(path!))).toBe(true);
     }
@@ -306,22 +450,32 @@ describe('TaskArchive', () => {
     expect(froms(bDir)).toEqual(['b', 'b', 'b', 'b', 'b']);
   });
 
+  it('keeps an opaque epic ref with path separators inside the archive root', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const archive = archiveFor();
+    const d = await archive.ensureEpic(task.workspaceId!, trackerRef('../../escape'));
+    const root = join(dir, 'archive', 'default');
+    expect(dirname(d)).toBe(root);
+    expect(existsSync(join(d, 'archive.json'))).toBe(true);
+    expect(existsSync(join(dir, 'escape'))).toBe(false);
+  });
+
   it('creates an epic archive idempotently and lays out an epic critic step', async () => {
     const task = await tasks.create({ prompt: 'p' });
     const workspaceId = task.workspaceId!;
     const archive = archiveFor();
-    const [d1, d2] = await Promise.all([archive.ensureEpic(workspaceId, 42), archive.ensureEpic(workspaceId, 42)]);
+    const [d1, d2] = await Promise.all([archive.ensureEpic(workspaceId, trackerRef(42)), archive.ensureEpic(workspaceId, trackerRef(42))]);
     expect(d1).toBe(d2);
     expect(d1).toBe(join(dir, 'archive', 'default', 'epic-42'));
     const manifest = JSON.parse(readFileSync(join(d1, 'archive.json'), 'utf8'));
-    expect(manifest).toMatchObject({ epicRef: 42, workspace: 'Default', workspaceId, title: 'Epic #42', dispositions: [], exports: [] });
+    expect(manifest).toMatchObject({ epicRef: '42', workspace: 'Default', workspaceId, title: 'Epic #42', dispositions: [], exports: [] });
     expect(typeof manifest.createdAt).toBe('string');
     writeFileSync(join(d1, 'archive.json'), '{"custom":true}');
-    await archive.ensureEpic(workspaceId, 42);
+    await archive.ensureEpic(workspaceId, trackerRef(42));
     expect(readFileSync(join(d1, 'archive.json'), 'utf8')).toBe('{"custom":true}');
     expect(readdirSync(d1).filter((n) => n.endsWith('.tmp'))).toEqual([]);
 
-    const writer = archive.epicCriticStep(workspaceId, 42, 3, 'critic-x');
+    const writer = archive.epicCriticStep(workspaceId, trackerRef(42), 3, 'critic-x');
     writer.appendPrompt('epic prompt');
     writer.appendUpdate({ n: 1 });
     await writer.close();

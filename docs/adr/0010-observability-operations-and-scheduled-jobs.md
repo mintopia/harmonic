@@ -2,8 +2,10 @@
 
 Status: accepted
 Date: 2026-08-28
-Part of the 2026-08-28 ADR reset (see README.md). Target-state note: span
-names carrying pre-reset vocabulary are renamed with the ADR-0001 epic.
+Reconciled: 2026-10-02. Operations inventory follows ADR-0024; later jobs include updates and Archive retention.
+
+Part of the 2026-08-28 ADR reset (see README.md). Execution-model and
+merge instrumentation shipped with epic #390.
 
 **Amended by ADR-0024** (Operations worktree control surface): the
 flagged-worktrees list is replaced by a full worktree inventory plus operator
@@ -32,10 +34,12 @@ Three planes, all to stdout and OTLP/HTTP:
   histogram, recorded on span end, with a periodic in-memory summary.
 
 **Exhaustive logging is doctrine, kept and strengthened by owner decision: an
-action taken with no span or log entry is a defect.** Known gaps exist today
-and closing them is standing work — the new merge path (merge, conflict
-turns, post-merge check, revert) must be fully instrumented as part of the
-ADR-0001 epic.
+action taken with no span or log entry is a defect.** The merge path records merge, conflict-resolution turns, post-merge
+checks, and reverts. A newly discovered missing operation is a defect,
+not evidence that the completed ADR-0001 epic is still pending.
+
+Every harness and verify child process runs in its own process group,
+journaled at spawn so that boot can reap orphans left by a crash.
 
 Mechanics: hybrid AsyncLocalStorage plus explicitly-stored parent context for
 long-lived hierarchies; a custom `SpanProcessor` is the single fan-out point
@@ -87,6 +91,8 @@ terminal behaviour, and has **no lease, phase, or merge-journal dependency**:
   for operator disposition, never deleted** — a crash must not cost
   uncommitted work.
 - **Metrics summary** (the periodic reader).
+- **Update check** in packaged distributions (ADR-0030/0042).
+- **Archive retention** under its configured limits (ADR-0044).
 
 Retired with the reset, with named dispositions: the work-context-lease sweep
 (the lease concept is deleted; nothing replaces it) and the review-SLA sweep

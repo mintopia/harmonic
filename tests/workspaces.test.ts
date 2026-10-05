@@ -128,8 +128,25 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     expect(declared.status).toBe(201);
     expect(declared.body.resolvedTracker).toMatchObject({ ok: true, label: 'GitHub' });
 
+    expect(declared.body.resolvedTracker).toMatchObject({ kind: 'github', source: 'detected' });
+
     const fetched = await server.api('GET', `/api/workspaces/${declared.body.id}`);
-    expect(fetched.body.resolvedTracker).toMatchObject({ ok: true, label: 'GitHub' });
+    expect(fetched.body.resolvedTracker).toMatchObject({ ok: true, label: 'GitHub', kind: 'github', source: 'detected' });
+    expect(undeclared.body.resolvedTracker).toMatchObject({ kind: null, source: null });
+
+    const configured = await server.api('PATCH', `/api/workspaces/${declared.body.id}`, { configuredTracker: { kind: 'github' } });
+    expect(configured.status).toBe(200);
+    expect(configured.body.configuredTracker).toEqual({ kind: 'github' });
+    expect(configured.body.resolvedTracker).toMatchObject({ ok: true, kind: 'github', source: 'configured' });
+
+    const bad = await server.api('PATCH', `/api/workspaces/${declared.body.id}`, { configuredTracker: { kind: 'nope' } });
+    expect(bad.status).toBe(400);
+    const badRepo = await server.api('PATCH', `/api/workspaces/${declared.body.id}`, { codeRepository: 'bitbucket' });
+    expect(badRepo.status).toBe(400);
+
+    const cleared = await server.api('PATCH', `/api/workspaces/${declared.body.id}`, { configuredTracker: null });
+    expect(cleared.body.configuredTracker).toBeNull();
+    expect(cleared.body.resolvedTracker).toMatchObject({ source: 'detected' });
 
     rmSync(bare, { recursive: true, force: true });
     rmSync(repo, { recursive: true, force: true });
@@ -359,5 +376,28 @@ describe('Task/Conversation binding + scoping (issue #41)', () => {
     expect(patched.body.contextReuseTokenLimit).toBe(150_000);
     const fetched = await server.api('GET', `/api/workspaces/${workspaceA}`);
     expect(fetched.body.contextReuseTokenLimit).toBe(150_000);
+  });
+
+  it('reports effective Agent Messages per Workspace and whether any Workspace has them on', async () => {
+    const baseline = await server.api('GET', `/api/workspaces/${workspaceA}`);
+    expect(baseline.body.effectiveAgentMessagesEnabled).toBe(false);
+    expect((await server.api('GET', '/api/activity')).body.agentMessagesEnabledInAnyWorkspace).toBe(false);
+
+    const on = await server.api('PATCH', `/api/workspaces/${workspaceA}`, { agentMessagesEnabled: true, agentMessagesSendCap: 4 });
+    expect(on.status).toBe(200);
+    expect(on.body.effectiveAgentMessagesEnabled).toBe(true);
+    expect(on.body.agentMessagesSendCap).toBe(4);
+    expect((await server.api('GET', '/api/activity')).body.agentMessagesEnabledInAnyWorkspace).toBe(true);
+    expect((await server.api('GET', `/api/activity?workspaceId=${workspaceA}`)).body.agentMessagesEnabledInAnyWorkspace).toBe(true);
+    expect((await server.api('GET', `/api/activity?workspaceId=${workspaceA + 9999}`)).body.agentMessagesEnabledInAnyWorkspace).toBe(false);
+
+    await server.api('PATCH', `/api/workspaces/${workspaceA}`, { agentMessagesEnabled: null });
+    await server.api('PATCH', '/api/config', { agentMessages: { enabled: true } });
+    const inherited = await server.api('GET', `/api/workspaces/${workspaceA}`);
+    expect(inherited.body.effectiveAgentMessagesEnabled).toBe(true);
+    const off = await server.api('PATCH', `/api/workspaces/${workspaceA}`, { agentMessagesEnabled: false });
+    expect(off.body.effectiveAgentMessagesEnabled).toBe(false);
+
+    expect((await server.api('PATCH', `/api/workspaces/${workspaceA}`, { agentMessagesSendCap: 0 })).status).toBe(400);
   });
 });

@@ -57,7 +57,7 @@ export type MergeStepEvent =
   | { step: 'rebuilding'; fromBase: string; toBase: string; paths: string[] }
   // 'target-advanced' is kept here only to read pre-ADR-0040 persisted rows;
   // nothing emits it anymore (see MergePolicyOutcome, which never produces it).
-  | { step: 'escalated'; reason: 'conflict' | 'post-merge-red' | 'target-advanced'; message: string };
+  | { step: 'escalated'; reason: 'conflict' | 'post-merge-red' | 'write-failed' | 'target-advanced'; message: string };
 
 function emitStep(deps: MergePolicyDeps, event: MergeStepEvent): void {
   try {
@@ -84,7 +84,7 @@ export interface MergePolicyInput {
 
 export type MergePolicyOutcome =
   | { kind: 'merged'; mergeOid: string }
-  | { kind: 'escalated'; reason: 'conflict' | 'post-merge-red'; message: string };
+  | { kind: 'escalated'; reason: 'conflict' | 'post-merge-red' | 'write-failed'; message: string };
 
 function conflictMessage(taskBranch: string, baseBranch: string, conflictResolveTurns: number): string {
   if (conflictResolveTurns === 0) {
@@ -311,7 +311,7 @@ async function mergeUnderLock(input: MergePolicyInput, deps: MergePolicyDeps): P
     if (published.kind === 'published') return { kind: 'merged', mergeOid: published.mergeOid };
 
     if (published.kind === 'write-failed') {
-      return { kind: 'escalated', reason: 'conflict', message: `Couldn't update ${input.baseBranch}: ${published.detail}` };
+      return { kind: 'escalated', reason: 'write-failed', message: `Couldn't update ${input.baseBranch}: ${published.detail}` };
     }
 
     emitStep(deps, { step: 'rebuilding', fromBase: baseTipOid, toBase: published.currentTip, paths: published.paths });

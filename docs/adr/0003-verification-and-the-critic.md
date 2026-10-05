@@ -2,6 +2,8 @@
 
 Status: accepted
 Date: 2026-08-28
+Reconciled: 2026-10-02. Staged verifier lists follow ADR-0028/0037; merge-time checkout placement follows ADR-0039.
+
 Part of the 2026-08-28 ADR reset (see README.md). The in-place critic is
 implemented (#385): the provisioned checkout, its index management, the mutation
 fingerprint, and merge-cleanliness are gone; restraint is by prompt instruction.
@@ -17,14 +19,19 @@ the whole-Epic-verify-without-resolve clause are replaced by staged Verification
 The in-place doctrine and verdict-attaches-to-Attempt rule below stand and
 extend to every stage.
 
+Amended by ADR-0047 (2026-10-05): the appended read-only restraint and the
+appended JSON verdict contract are now operator-editable Prompt Fragments, not
+Harmonic-owned literals. The verdict-attaches-to-Attempt rule and the
+malformed-output-is-`inconclusive` backstop below stand — the latter is what
+keeps the now-editable contract safe.
+
 ## The Verification gate
 
-Before a Task's work merges, an optional Verification runs inside each
-Attempt: the deterministic **verify commands** (`verify.commands[]`, ordered,
-fail-fast, one Verification Step each), then the optional **critic** — a
-single review agent with configurable harness, model, and prompt, run only
-after all commands pass (gate-on-pass). Resolved as a global default with a
-per-Workspace override; zero verifiers configured means the gate passes.
+Verification runs at the stages defined by ADR-0028:
+`verify.task.preMerge`, `verify.task.postMerge`, and `verify.epic.preMerge`.
+Each stage runs ordered, fail-fast commands followed by parallel critics;
+all critics must pass. Global lists and id-keyed Workspace overlays resolve
+under ADR-0037. A stage with zero enabled verifiers passes.
 
 Any command fail, review reject, or review `inconclusive` is a **failed
 Attempt**: feedback flows into the next Attempt, counter +1. `inconclusive`
@@ -46,12 +53,12 @@ also means a command sees exactly what the agent produced, including any
 sibling checkouts the agent set up under the worktree — a detached checkout of
 the base tree alone would silently omit them.
 
-The lone exception is a Verification with **no live checkout at the target
-commit**: whole-Epic integration (a merged integration branch tip) and the
-crash-recovery post-merge check (a merge commit on the shared base). Those
-carve a disposable detached worktree for the run — running a mutating command
-directly in the shared base checkout is the one place isolation genuinely
-matters.
+Task and Epic post-merge commands run in the ephemeral administrative
+worktree already owned by the merge operation (ADR-0039). Commands in that
+stage share the checkout, so artifacts and mutations remain visible to later
+commands. They do not create a fresh checkout per verifier or mutate the
+operator's base checkout. The Epic-to-default-branch post-merge check reuses
+the `verify.epic.preMerge` commands and runs no critics.
 
 ## The critic is an independent, tool-enabled evaluator
 
@@ -61,7 +68,7 @@ The critic reviews the way a human reviewer would:
   branch. It reads the code itself — no injected diff, no delimiter/nonce
   machinery.
 - **Operator-authored, interpolated prompt.** The review note is the
-  operator's configured `verification.critic.prompt`, supporting the same
+  operator's configured critic entry, supporting the same
   `{skill}/{ref}/{url}/{title}/{body}` interpolation as the Drive Prompt, so
   it can name and reach the issue. Harmonic appends the restraint
   instruction and the strict JSON verdict contract; the settings UI shows the
@@ -77,10 +84,11 @@ The critic reviews the way a human reviewer would:
   critic can in principle dirty the worktree or run external tools; this is
   accepted by owner decision and made diagnosable — not prevented — by
   ADR-0010's logging doctrine (every critic turn is a logged Operation).
-- **It can never reach the tracker or the Harmonic API**: no Harmonic MCP
-  server, and tracker credentials (`HARMONIC_API_KEY` / `HARMONIC_MCP_URL`)
-  are stripped from its environment. It cannot `finish_task` or
-  `accept_task`; it only returns a verdict.
+- **Harmonic does not provide its MCP server or execution credentials to the
+  critic.** `HARMONIC_API_KEY` and `HARMONIC_MCP_URL` are stripped. Other
+  ambient environment credentials are inherited; this is the explicitly
+  accepted single-operator risk in ADR-0019, not a claim of network or
+  tracker isolation.
 - **Strict schema verdict.** Malformed output is `inconclusive`, which fails
   the Attempt.
 
@@ -123,14 +131,13 @@ is a loud, visible state on the settings surface, never a silent no-op.
   model.
 - The command verifier's disposable per-Attempt detached worktree is deleted;
   it runs in the builder worktree via the same cwd resolution as the critic.
-  `runCommandVerifierDetached` retains a detached checkout only for the
-  Epic-integration and crash-recovery post-merge surfaces, which have no live
-  checkout at the target commit.
+  Administrative post-merge checks reuse the merge operation worktree
+  (ADR-0039).
 - `skipped` vs `disabled` classification is a best-effort display
   reconciliation, not a persisted fact; if it misleads, persisting the
   resolved-verifier set onto the Attempt is the follow-up.
-- Subagent attribution is Claude-harness-specific today; other harnesses fall
-  back to the flat stream until a per-harness mapping is added.
+- Subagent attribution depends on the Harness Adapter's native log support.
+  Missing attribution falls back to a flat stream; it is never fabricated.
 
 ## Absorbed at the reset
 

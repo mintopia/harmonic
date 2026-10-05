@@ -8,6 +8,13 @@ export const criticVerdictSchema = z.object({
   verdict: z.enum(['pass', 'fail', 'inconclusive']),
   summary: z.string().min(1),
 });
+export function verdictContractError(contract: string): string | undefined {
+  const missing = ['verdict', 'summary'].filter((key) => !contract.includes(`"${key}"`));
+  return missing.length === 0
+    ? undefined
+    : `The verdict contract must ask the critic for a JSON object with ${missing.map((key) => `a "${key}" key`).join(' and ')}; without it every critic run is inconclusive.`;
+}
+
 export type ParsedCriticVerdict = z.infer<typeof criticVerdictSchema>;
 
 export type ParseCriticOutputResult =

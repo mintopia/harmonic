@@ -15,6 +15,7 @@ import { initializeTelemetry, resolveTelemetryOptions } from '../src/telemetry.j
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
 import { allWorkspaces, makeSettingsStore, seedLocalMarkdownTicket, startServer, stubHarness, seedWorkspace } from './helpers.js';
 import type { CriticHarnessDrive } from '../src/verification/critic.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const providers: NodeTracerProvider[] = [];
 
@@ -346,18 +347,18 @@ describe('Automated merge policy operations (issue #387)', () => {
         drive: { prompt: JSON.stringify({ writeFiles: { 'impl.txt': 'implementation\n' }, mcpFinish: true }) },
       });
 
-      const trackerRef = 999_001;
+      const ref = 999_001;
       const task = await server.app.ctx.tasks.upsertMirrored({
-        trackerRef,
-        prompt: `ticket ${trackerRef}\n\nbody`,
+        trackerRef: trackerRef(ref),
+        prompt: `ticket ${ref}\n\nbody`,
         workflow: 'implement',
         wayfinderType: null,
         mapRef: null,
         closed: false,
       });
-      seedLocalMarkdownTicket(task.workingDir, trackerRef, 'closed');
+      seedLocalMarkdownTicket(task.workingDir, ref, 'closed');
       execFileSync('git', ['-C', task.workingDir, 'add', '-A']);
-      execFileSync('git', ['-C', task.workingDir, 'commit', '-q', '-m', `ticket ${trackerRef}`]);
+      execFileSync('git', ['-C', task.workingDir, 'commit', '-q', '-m', `ticket ${ref}`]);
 
       await server.app.ctx.tasks.setState(task.id, 'working');
       const run = await server.app.ctx.runner.launchClaimed(task.id);

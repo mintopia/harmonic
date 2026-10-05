@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { trackerRef } from '../src/tracker/adapter.js';
 import { type AppConfig, type DeepPartial } from '../src/config.js';
-import { startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
+import { startServer, stubHarness, type TestServer, waitFor, withArchivedPrompt } from './helpers.js';
 import type { ActiveRuns } from '../src/execution/active-runs.js';
 
 /**
@@ -35,7 +36,7 @@ describe('operator seed on an Attempt that opens with a warm, opportunistically-
     const seed = (await server.api('POST', '/api/tasks', { prompt: 'workspace seed' })).body;
     const workspaceId = (await server.app.ctx.tasks.get(seed.id)).workspaceId ?? undefined;
     const mirrored = await server.app.ctx.tasks.upsertMirrored(
-      { trackerRef: 77001, prompt: 'ticket 77001\n\nfix the parser', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+      { trackerRef: trackerRef(77001), prompt: 'ticket 77001\n\nfix the parser', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
       workspaceId,
     );
     await server.api('POST', `/api/tasks/${mirrored.id}/run`);
@@ -57,7 +58,7 @@ describe('operator seed on an Attempt that opens with a warm, opportunistically-
 
     const latest = await waitFor(async () => {
       const all = await server.app.ctx.attempts.listForTask(mirrored.id);
-      const last = all.at(-1);
+      const last = await withArchivedPrompt(server, all.at(-1), 'focus on the tokenizer first');
       return all.length === runsBefore.length + 1 && last?.prompt ? last : undefined;
     });
 
@@ -68,5 +69,29 @@ describe('operator seed on an Attempt that opens with a warm, opportunistically-
     expect(latest.prompt).toContain('Running unattended');
     expect(latest.prompt).toContain('## Operator message');
     expect(latest.prompt).toContain('focus on the tokenizer first');
+    expect((await server.app.ctx.attempts.get(latest.id)).prompt).toBeNull();
+  });
+
+  it('renders the operator message through the edited Prompt Fragment', async () => {
+    const seed = (await server.api('POST', '/api/tasks', { prompt: 'workspace seed' })).body;
+    const workspaceId = (await server.app.ctx.tasks.get(seed.id)).workspaceId!;
+    await server.app.ctx.workspaces.update(workspaceId, { promptFragmentOperatorMessage: 'BOSS SAYS >> {seed}' });
+    try {
+      const mirrored = await server.app.ctx.tasks.upsertMirrored(
+        { trackerRef: trackerRef(77002), prompt: 'ticket 77002\n\nfix the lexer', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+        workspaceId,
+      );
+      const activeRuns = (server.app.ctx.runner as unknown as { activeRuns: ActiveRuns }).activeRuns;
+      activeRuns.setPendingOperatorSeed(mirrored.id, 'start with {braces}');
+      await server.api('POST', `/api/tasks/${mirrored.id}/run`);
+      const latest = await waitFor(async () => {
+        const last = await withArchivedPrompt(server, (await server.app.ctx.attempts.listForTask(mirrored.id)).at(-1), 'BOSS SAYS');
+        return last?.prompt ? last : undefined;
+      });
+      expect(latest.prompt).toContain('BOSS SAYS >> start with {braces}');
+      expect(latest.prompt).not.toContain('## Operator message');
+    } finally {
+      await server.app.ctx.workspaces.update(workspaceId, { promptFragmentOperatorMessage: null });
+    }
   });
 });

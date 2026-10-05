@@ -54,5 +54,5 @@
 **~2 days incl. tests.** Aesthetic stays restrained (Linear/terminal, DESIGN.md Signal Rule — state colours reserved for state).
 
 ## Post-sign-off housekeeping
-- Record the 6 metric definitions in `CONTEXT.md` (glossary).
+- Record the 6 metric definitions in `GLOSSARY.md` (glossary).
 - One ADR: "Stats metric definitions" (cache denominator, active-execution duration, failed-only rate) — hard to reverse, surprising, a real trade-off.

@@ -2,6 +2,8 @@
 
 Status: accepted
 Date: 2026-08-28
+Reconciled: 2026-10-02. Configuration layering and verifier overlays follow ADR-0022/0028/0037.
+
 Part of the 2026-08-28 ADR reset (see README.md).
 
 **Amended by ADR-0022** (config layering), by explicit owner override, on three
@@ -13,10 +15,9 @@ it; (2) "harnesses, model prices, `modelInfo` stay global" as separate keys —
 inline" display becomes the muted / modified / revert visual across a third
 (baseline) layer. Everything else here stands.
 
-**Terminology amended (2026-09-05)**, by explicit owner override: the **Machine
-Ceiling** is renamed the **Host Ceiling** — the glossary is the living source of
-truth. The body below keeps the original name as a record of the decision as
-made; the concept is unchanged.
+**Current refinements:** ADR-0028 replaces the single critic with stage
+lists; ADR-0037 makes Workspace verifier overrides additive and id-keyed.
+The concurrency term is **Host Ceiling** (renamed 2026-09-05).
 
 ## One instance, many Workspaces
 
@@ -30,15 +31,17 @@ history stays intact when a Workspace is renamed, repointed, or deleted.
 
 - **One Auto-Runner** walks all Workspaces — not one scheduler per Workspace
   racing on one DB. It honours each Workspace's concurrency cap under a
-  global **Machine Ceiling** (a Workspace override is clamped to the
+  global **Host Ceiling** (a Workspace override is clamped to the
   ceiling); total concurrency can never breach the ceiling.
 - Auto-Runner enable is per-Workspace, gated by a **global master switch**: a
-  Task runs only when the master is on and its Workspace is enabled — the
-  master is the one-click fleet-wide pause.
-- The firehose stays a single WebSocket; every payload carries `workspaceId`
-  and clients filter to the active Workspace.
-- Machine-level settings (harnesses, model prices, operator password,
-  notification channels, `modelInfo`) stay global.
+  Task is automatically picked only when the master is on and its Workspace is enabled; the
+  master controls automatic pickup. Fleet pause independently freezes
+  execution, including manual work (ADR-0027).
+- The firehose stays a single WebSocket. Workspace-scoped events carry
+  scope identity; Global views aggregate and Workspace views filter
+  (ADR-0033).
+- Harness configuration and per-harness model metadata stay global
+  (ADR-0022), as do operator credentials and notification-channel definitions.
 
 ## One scope-declaring settings schema
 
@@ -53,13 +56,13 @@ construction, not of keeping two forms in sync by hand.
   both directions — workspace-on beats global-off and vice versa. No
   cross-key master gate.
 - **Compound overrides decompose into independently-inheritable scalars.**
-  The critic is four fields (`reviewEnabled`, `reviewPrompt`, `reviewModel`,
-  `reviewHarness`); the drive block decomposes likewise. No `{off:true}`
-  sentinel, no ordering-sensitive union — that entire hazard class is
-  deleted, not patched.
-- **The command verifier overrides at the list grain**: inherit (`null`),
-  override (the workspace's own full array), or off (an explicit empty
-  array). No per-command inheritance.
+  Scalar Task and Drive settings inherit independently. Verification is
+  configured through the stage lists in ADR-0028 and overlays in ADR-0037;
+  the old `reviewEnabled`/`reviewPrompt`/`reviewModel`/`reviewHarness` fields
+  have been removed.
+- **Verifier overrides are id-keyed overlays** (ADR-0037): Workspace
+  entries may modify or disable inherited verifiers and add new ones.
+  An empty overlay inherits; it does not disable the global list.
 - **Task defaults resolve `Task ?? Workspace ?? global` on every read**,
   never snapshotted at creation — retargeting a board's model is one
   Workspace edit, while a pinned Task stays put. An execution reads its
@@ -77,15 +80,16 @@ construction, not of keeping two forms in sync by hand.
   Execution / Verification / Prompts / Integrations / Security); the
   workspace surface is the same renderer with the inherit layer on and
   global-only tabs hidden. Each field shows its resolved value and source
-  inline ("On · inherited from global"). All values flow through one
+  through muted inheritance, a modified marker, and per-field revert
+  (ADR-0022). All values flow through one
   buffered save bar; only genuine side-effect actions stay immediate.
 
 ## Configuration lives in a YAML file
 
 Configuration — the global settings and every Workspace's setting overrides —
 lives in a single `settings.yaml` in the data directory, beside `harmonic.db`
-(#391). It is the sole home of configuration; there is no out-of-band seed and
-no second copy in the DB. The settings API and UI read and write this file; a
+(#391). It stores sparse operator patches over the shipped `baseline.yaml`
+(ADR-0022); user-facing configuration is not duplicated in the DB. The settings API and UI read and write this file; a
 UI edit rewrites it. The DB keeps only Workspace *identity* (id, name, Working
 Directory, tracker settings) — the override values that were nullable columns
 on `workspaces` moved to the file, keyed by Workspace id, and the resolution
@@ -115,7 +119,7 @@ model is unchanged (`workspace ?? global` at read time; `null`/absent = inherit)
 - New overridable settings must be declared in the schema (and both WS/REST
   zod schemas, for parity tests) — the schema is where parity is enforced.
 - Execution-model bounds that survive the reset (`maxAttempts`,
-  `contextReuseThreshold`, `merge.conflictResolveTurns`,
+  `contextReuseTokenLimit`, `defaults.conflictResolveTurns`,
   `merge.postMergeCheck`, guardrail defaults) are ordinary overridable
   settings in this schema.
 

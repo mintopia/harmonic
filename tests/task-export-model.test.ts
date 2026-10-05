@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { exportAgainFeedback, exportFactRows, exportFailedMessage, exportPanelModel, formatBytes, redactionSummary, splitExportError } from '../web/src/task-export-model.js';
 import type { ExportDestinationStatus, ExportSummary, TaskExportStatus } from '../web/src/types.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const NOW = Date.parse('2026-09-30T11:50:00.000Z');
 
@@ -50,7 +51,7 @@ describe('export panel model', () => {
     const [dir, s3] = latest!.destinations;
 
     expect(dir).toMatchObject({ label: 'Directory', ok: true, statusLabel: 'Delivered', error: null, retryText: null });
-    expect(s3).toMatchObject({ label: 'S3', ok: false, statusLabel: 'Failed', error: 'AccessDenied: s3:PutObject', retryText: 'Retry 2 of 3 in 27 min', retryExhausted: false });
+    expect(s3).toMatchObject({ label: 'S3', ok: false, statusLabel: 'Failed', error: 'AccessDenied: s3:PutObject', retryText: `Retry 2 of 3 at ${new Date('2026-09-30T12:17:00.000Z').toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`, retryExhausted: false });
   });
 
   it('says retries are exhausted rather than scheduling another', () => {
@@ -109,16 +110,18 @@ describe('export helpers', () => {
 
 describe('exportFailedMessage', () => {
   const base = { destination: 's3', retry: 0, nextRetryAt: null };
+  const task = { kind: 'task', taskId: 412 } as const;
+  const epic = { kind: 'epic', epicRef: trackerRef(42), workspaceId: 1 } as const;
 
   it('names a Task by its label and an Epic by its ref, never "#null"', () => {
-    expect(exportFailedMessage({ ...base, taskId: 412, epicRef: null })).toBe('Export of Task 412 to S3 failed — not retried');
-    expect(exportFailedMessage({ ...base, taskId: null, epicRef: 42 })).toBe('Export of Epic #42 to S3 failed — not retried');
+    expect(exportFailedMessage({ ...base, owner: task })).toBe('Export of Task 412 to S3 failed — not retried');
+    expect(exportFailedMessage({ ...base, owner: epic })).toBe('Export of Epic #42 to S3 failed — not retried');
   });
 
   it('reports the pending retry or exhaustion', () => {
     const soon = new Date(Date.now() + 5 * 60_000).toISOString();
-    expect(exportFailedMessage({ ...base, taskId: null, epicRef: 42, retry: 0, nextRetryAt: soon })).toContain('retrying in 5 min');
-    expect(exportFailedMessage({ ...base, taskId: null, epicRef: 42, retry: 3 })).toContain('retries exhausted');
+    expect(exportFailedMessage({ ...base, owner: epic, retry: 0, nextRetryAt: soon })).toContain(`retrying at ${new Date(soon).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`);
+    expect(exportFailedMessage({ ...base, owner: epic, retry: 3 })).toContain('retries exhausted');
   });
 });
 

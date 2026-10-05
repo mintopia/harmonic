@@ -25,6 +25,15 @@ the code follows repo standards and whether it matches the originating spec.
 **Done when:** every confirmed finding is fixed or consciously waived, and the
 code still builds.
 
+**Raising issues.** Every finding that is not fixed in this prep becomes a GitHub
+issue, parented to the originating epic, with a Verify section. Label by who has
+to act next (see `docs/agents/triage-labels.md`):
+- `ready-for-agent` when the fix is fully specified and needs no human decision —
+  most review findings. The dogfood instance picking it up mid-prep is fine.
+- `needs-triage` only when a human must decide scope, priority, or whether to do
+  it at all. `needs-info` when the issue cannot be verified without something only
+  a human has (a live instance, credentials, a reproduction).
+
 ## 2. UI polish
 
 Run `/impeccable` over any changed frontend surface under `web/`. Skip this stage

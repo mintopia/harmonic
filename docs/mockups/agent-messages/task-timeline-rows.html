@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Activity - Agent Messages (mockup)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --canvas:#edeeeb;--shell:#fff;--surface:#fff;--sunken:#f5f5f3;--field:#fff;--raised:#ededea;
+  --hairline:#e0e0db;--edge:#d0d0ca;--edge-strong:#c3c3bc;--ink:#1b1e24;--muted:#656b73;--faint:#61676f;
+  --accent:#077067;--accent-tint:#b6ece4;--on-accent:#fff;
+  --running:#a74d08;--running-dot:#cf6a12;--running-tint:#fdeacc;
+  --ready:#1160ae;--ready-tint:#cee3fa;
+  --await:#4740c6;--await-tint:#d6d2fc;--on-await:#fff;
+  --done:#0d7734;--done-tint:#d2f4db;--merged-tint:#c2f2cd;
+  --fail:#b3253f;--fail-tint:#ffccd6;
+  --blocked:#5b616a;--blocked-tint:#ecedea;
+  --paused:#205f99;--paused-tint:#cde4fb;
+  --tool:#077067;--tool-tint:#b6ece4;
+  --syn-kw:#7c3a2a;--syn-title:#265f7a;--syn-str:#46662c;
+  --shadow-card:0 1px 2px rgb(27 30 36/.06),0 6px 18px rgb(27 30 36/.07);
+  --font-data:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --font-sans:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0}
+body{background:var(--canvas);color:var(--ink);font-family:var(--font-sans);font-size:14px;line-height:1.5;font-variant-numeric:tabular-nums}
+.app{display:grid;grid-template-columns:224px 1fr;min-height:100vh}
+/* rail */
+.rail{background:var(--shell);border-right:1px solid var(--hairline);padding:16px 12px;display:flex;flex-direction:column;gap:2px}
+.brand{font-weight:750;font-size:15px;padding:2px 10px 14px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.brand i{width:18px;height:18px;border-radius:4px;background:var(--accent);display:inline-block}
+.glabel{font-size:10px;line-height:1.2;letter-spacing:.09em;font-weight:700;text-transform:uppercase;color:var(--faint);padding:6px 10px 4px;margin-top:6px}
+.ritem{display:flex;align-items:center;gap:10px;min-height:40px;padding:8px 10px;border-radius:3px;color:var(--muted);font-weight:500}
+.ritem svg{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6}
+.ritem.on{background:var(--accent-tint);color:var(--accent);font-weight:600}
+.rbadge{margin-left:auto;min-width:20px;border-radius:999px;background:var(--await);color:var(--on-await);font-size:10px;font-weight:700;text-align:center;padding:2px 6px}
+.sep{border-top:1px solid var(--hairline);margin:6px 0}
+/* main */
+main{padding:28px 32px 48px;min-width:0}
+h1{font-size:23px;line-height:1.2;letter-spacing:-.025em;font-weight:750}
+.desc{margin-top:4px;max-width:68ch;font-size:12px;color:var(--muted);line-height:1.45}
+.phead{margin-bottom:18px}
+.tabs{display:flex;gap:20px;border-bottom:1px solid var(--hairline);margin-bottom:16px}
+.tab{min-height:44px;display:flex;align-items:center;gap:8px;font-weight:500;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;padding:0 4px}
+.tab.on{color:var(--ink);border-color:var(--accent)}
+.tab .n{font-size:10px;font-weight:700;border-radius:999px;background:var(--raised);color:var(--muted);padding:1px 7px}
+/* filters */
+.filters{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:14px}
+.sel{min-height:36px;border:1px solid var(--edge);background:var(--field);border-radius:3px;padding:6px 28px 6px 10px;color:var(--ink);font:inherit;position:relative;display:inline-flex;align-items:center;gap:6px}
+.sel::after{content:"";position:absolute;right:11px;top:14px;width:6px;height:6px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:rotate(45deg)}
+.sel b{font-weight:500;color:var(--muted);font-size:12px}
+.switch{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--ink);font-weight:500}
+.sw{width:30px;height:18px;border-radius:999px;background:#858983;position:relative}
+.sw::after{content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+.sw.on{background:var(--accent)}.sw.on::after{left:14px}
+.spacer{flex:1}
+.count{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+/* card + panes */
+.card{background:var(--surface);border-radius:4px;box-shadow:var(--shadow-card)}
+.panes{display:grid;grid-template-columns:minmax(340px,430px) 1fr;gap:16px;align-items:start}
+.list{overflow:hidden}
+.trow{padding:12px 14px;border-top:1px solid var(--hairline);position:relative}
+.trow:first-child{border-top:0}
+.trow.sel-row{background:var(--accent-tint);}
+.trow.sel-row::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)}
+.tsub{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--ink);line-height:1.35}
+.tsub span.t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.dot{width:7px;height:7px;border-radius:50%;flex:none}
+.dot.live{background:var(--running-dot);animation:p 1.6s ease-in-out infinite}
+.dot.off{background:var(--edge-strong)}
+@keyframes p{50%{opacity:.35}}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.meta{display:flex;align-items:center;gap:10px;margin-top:7px;font-size:12px;color:var(--muted)}
+.meta .r{margin-left:auto}
+.epicto{font-size:12px;color:var(--await);font-weight:600}
+/* task chip */
+.tchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--hairline);background:var(--sunken);border-radius:3px;padding:1px 7px 1px 6px;font-size:12px;color:var(--ink);line-height:1.5;white-space:nowrap}
+.trow.sel-row .tchip{background:#fff;border-color:rgb(7 112 103/.25)}
+.tchip .id{font-family:var(--font-data);font-size:11.5px;color:var(--faint)}
+.tchip .h{color:var(--muted)}
+.tchip .sd{width:6px;height:6px;border-radius:50%}
+.sd.running{background:var(--running-dot)}.sd.ready{background:var(--ready)}.sd.done{background:#14a049}.sd.await{background:var(--await)}.sd.paused{background:#2f7fc9}
+.tchip.deleted{border-style:dashed;color:var(--muted)}
+/* uppercase micro pill */
+.pill{border-radius:999px;padding:2px 8px;font-size:10px;line-height:1.2;font-weight:600;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;display:inline-block}
+.p-tool{background:var(--tool-tint);color:var(--tool)}
+.p-raised{background:var(--raised);color:var(--muted)}
+.p-run{background:var(--running-tint);color:var(--running)}
+.p-ready{background:var(--ready-tint);color:var(--ready)}
+.p-await{background:var(--await-tint);color:var(--await)}
+.p-done{background:var(--done-tint);color:var(--done)}
+.p-fail{background:var(--fail-tint);color:var(--fail)}
+.p-paused{background:var(--paused-tint);color:var(--paused)}
+/* thread detail */
+.detail{overflow:hidden}
+.dhead{padding:16px 20px 14px;border-bottom:1px solid var(--hairline)}
+.dhead h2{font-size:15px;font-weight:600;line-height:1.4}
+.dhead .sub{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted)}
+.caps{font-size:10px;line-height:1.2;letter-spacing:.09em;font-weight:700;text-transform:uppercase;color:var(--faint)}
+.ro{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.ro svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.6}
+.tl{padding:18px 20px 8px;list-style:none;padding-left:20px}
+.msg{display:grid;grid-template-columns:64px minmax(0,1fr);column-gap:12px}
+.msg .ts{text-align:right;font-family:var(--font-data);font-size:11px;line-height:1.35;color:var(--faint);padding-top:3px}
+.msg .body{position:relative;border-left:1px solid var(--hairline);padding:0 0 20px 20px}
+.msg .body::before{content:"";position:absolute;left:-4.5px;top:4px;width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px var(--surface)}
+.msg.reply .body{margin-left:28px;}
+.msg.reply .body::before{background:var(--ready)}
+.msg.reply .body::after{content:"";position:absolute;left:-29px;top:8px;width:28px;height:12px;border-left:1px solid var(--edge);border-bottom:1px solid var(--edge);border-bottom-left-radius:6px;display:none}
+.msg.reply .ts{opacity:.9}
+.hdr{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
+.hdr .arrow{color:var(--faint)}
+.att{font-size:12px;color:var(--muted)}
+.att .cap{font-family:var(--font-data);font-size:11px;color:var(--faint)}
+.mb{margin-top:8px;font-size:13.5px;line-height:1.55;color:var(--ink);max-width:70ch}
+.mb p+p{margin-top:6px}
+code{font-family:var(--font-data);font-size:12px;background:var(--sunken);border:1px solid var(--hairline);border-radius:3px;padding:0 5px;color:var(--syn-title)}
+.replyto{margin-top:6px;font-size:12px;color:var(--muted)}
+.replyto b{font-weight:600;color:var(--ink)}
+.deliv{margin-top:10px;display:flex;flex-direction:column;gap:4px}
+.dl{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.dl .st{display:inline-flex;align-items:center;gap:6px;font-weight:600}
+.dl .st i{width:6px;height:6px;border-radius:50%;display:inline-block}
+.dl .when{font-family:var(--font-data);font-size:11px;color:var(--faint)}
+.s-mid{color:var(--done)}.s-mid i{background:#14a049}
+.s-q{color:var(--ready)}.s-q i{background:var(--ready)}
+.s-held{color:var(--paused)}.s-held i{background:#2f7fc9}
+.s-ref{color:var(--fail)}.s-ref i{background:var(--fail)}
+.fan{margin-top:10px;border:1px solid var(--hairline);border-radius:4px;background:var(--sunken)}
+.fan .fh{padding:7px 12px;border-bottom:1px solid var(--hairline);display:flex;gap:8px;align-items:center}
+.fan .dl{padding:7px 12px;border-top:1px solid var(--hairline)}
+.fan .dl:first-of-type{border-top:0}
+.fan .dl .tchip{background:#fff}
+.cap-foot{margin:0 20px;padding:12px 0 14px;border-top:1px solid var(--hairline);display:flex;flex-wrap:wrap;gap:6px 20px;font-size:12px;color:var(--muted);align-items:center}
+.meter{display:inline-flex;align-items:center;gap:8px}
+.bar{width:64px;height:6px;border-radius:999px;background:var(--raised);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--running-dot);border-radius:999px}
+.bar i.hi{background:var(--fail)}
+/* second section */
+.sec{margin-top:36px}
+.sec h2{font-size:15px;font-weight:600;margin-bottom:4px}
+.sec .desc{margin-bottom:14px}
+.twocol{display:grid;grid-template-columns:1fr;gap:16px;max-width:880px}
+.lc-head{display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--hairline);padding:12px 20px}
+.lc-head .l{display:flex;align-items:baseline;gap:10px}
+.lc-head .c{font-size:12px;color:var(--muted)}
+.lc{list-style:none;padding:16px 20px 6px}
+.lc li{display:grid;grid-template-columns:64px minmax(0,1fr);column-gap:12px}
+.lc .t{text-align:right;padding-top:2px;font-family:var(--font-data);font-size:11px;line-height:1.35;color:var(--faint)}
+.lc .b{position:relative;border-left:1px solid var(--hairline);padding:0 0 18px 20px}
+.lc .b::before{content:"";position:absolute;left:-4.5px;top:4px;width:8px;height:8px;border-radius:50%;box-shadow:0 0 0 4px var(--surface);background:var(--faint)}
+.lc .b.tool::before{background:var(--accent)}
+.lc .b.run::before{background:var(--running-dot)}
+.lc .b.msgout::before{background:var(--accent)}
+.lc .b.msgin::before{background:var(--ready)}
+.lc .w{font-size:12px;font-weight:600}
+.lc .w.run{color:var(--running)}.lc .w.msgout{color:var(--accent)}.lc .w.msgin{color:var(--ready)}.lc .w.mute{color:var(--muted)}
+.lc .row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.lc .d{margin-top:2px;font-size:12px;color:var(--muted)}
+.quote{margin-top:6px;border-left:2px solid var(--edge);padding:2px 0 2px 10px;font-size:12px;color:var(--ink);max-width:68ch}
+.lc a{color:var(--accent);font-weight:600;text-decoration:none;font-size:12px}
+.note{margin-top:10px;font-size:12px;color:var(--faint)}
+.attempt-sep{margin:2px 0 14px 76px;font-size:10px;letter-spacing:.09em;font-weight:700;text-transform:uppercase;color:var(--faint)}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- RAIL -->
+<aside class="rail">
+  <div class="brand"><i></i>Harmonic</div>
+  <div class="glabel">Overview</div>
+  <div class="ritem"><svg viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="12"/><rect x="9" y="2" width="5" height="7"/></svg>Board<span class="rbadge">3</span></div>
+  <div class="ritem"><svg viewBox="0 0 16 16"><path d="M2 4h12M2 8h12M2 12h12"/></svg>Table</div>
+  <div class="sep"></div>
+  <div class="glabel">Insights</div>
+  <div class="ritem on"><svg viewBox="0 0 16 16"><path d="M1 8h3l2-5 4 10 2-5h3"/></svg>Activity</div>
+  <div class="ritem"><svg viewBox="0 0 16 16"><path d="M2 4h8M5 8h9M3 12h6"/></svg>Timeline</div>
+  <div class="ritem"><svg viewBox="0 0 16 16"><path d="M3 13V8M8 13V3M13 13V6"/></svg>Stats</div>
+  <div class="sep"></div>
+  <div class="glabel">Instance</div>
+  <div class="ritem"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5"/></svg>Operations</div>
+  <div class="ritem"><svg viewBox="0 0 16 16"><path d="M4 5l-3 3 3 3M12 5l3 3-3 3"/></svg>API</div>
+  <div class="ritem"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3"/></svg>Settings</div>
+</aside>
+
+<main>
+  <div class="phead">
+    <h1>Activity</h1>
+    <p class="desc">What is running right now, and what your agents are saying to each other. Read-only: to steer an agent, steer its Task.</p>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <div class="tab">Running now <span class="n">4</span></div>
+    <div class="tab on">Agent Messages <span class="n">23</span></div>
+  </div>
+
+  <div class="filters">
+    <div class="sel"><b>Epic</b> #400 Session lifecycle cleanup</div>
+    <div class="sel"><b>Task</b> All Tasks</div>
+    <label class="switch"><span class="sw on"></span>Only live</label>
+    <div class="spacer"></div>
+    <span class="count">7 Threads &middot; 23 Agent Messages</span>
+  </div>
+
+  <div class="panes">
+    <!-- THREAD LIST -->
+    <div class="card list" aria-label="Threads, newest activity first">
+      <div class="trow sel-row">
+        <div class="tsub"><span class="dot live"></span><span class="t">Renamed SessionStore.retire() to retireSession()</span></div>
+        <div class="chips">
+          <span class="tchip"><span class="sd running"></span><span class="id">#412</span>Session refactor<span class="h">&middot; Claude</span></span>
+          <span class="tchip"><span class="sd running"></span><span class="id">#413</span>Merge policy<span class="h">&middot; Codex</span></span>
+        </div>
+        <div class="meta"><span class="epicto">&rarr; Epic #400</span><span>5 messages</span><span class="r">2 min ago</span></div>
+      </div>
+      <div class="trow">
+        <div class="tsub"><span class="dot live"></span><span class="t">Are you editing src/execution/merge.ts?</span></div>
+        <div class="chips">
+          <span class="tchip"><span class="sd running"></span><span class="id">#413</span>Merge policy<span class="h">&middot; Codex</span></span>
+          <span class="tchip"><span class="sd running"></span><span class="id">#414</span>Retry backoff<span class="h">&middot; Copilot</span></span>
+        </div>
+        <div class="meta"><span>2 messages</span><span class="r">9 min ago</span></div>
+      </div>
+      <div class="trow">
+        <div class="tsub"><span class="dot live"></span><span class="t">Test fixtures moved to tests/fixtures/sessions/</span></div>
+        <div class="chips">
+          <span class="tchip"><span class="sd running"></span><span class="id">#415</span>Fixture cleanup<span class="h">&middot; Claude</span></span>
+          <span class="tchip"><span class="sd ready"></span><span class="id">#416</span>Docs sweep<span class="h">&middot; Claude</span></span>
+        </div>
+        <div class="meta"><span class="epicto">&rarr; Epic #400</span><span>3 messages</span><span class="r">24 min ago</span></div>
+      </div>
+      <div class="trow">
+        <div class="tsub"><span class="dot off"></span><span class="t">Config key renamed: session.idleTtl</span></div>
+        <div class="chips">
+          <span class="tchip"><span class="sd done"></span><span class="id">#411</span>Config schema<span class="h">&middot; Codex</span></span>
+          <span class="tchip"><span class="sd paused"></span><span class="id">#412</span>Session refactor<span class="h">&middot; Claude</span></span>
+        </div>
+        <div class="meta"><span>2 messages</span><span class="r">1 h ago</span></div>
+      </div>
+      <div class="trow">
+        <div class="tsub"><span class="dot off"></span><span class="t">Heads up: lint rule no-restricted-imports now fails CI</span></div>
+        <div class="chips">
+          <span class="tchip"><span class="sd done"></span><span class="id">#410</span>Lint tightening<span class="h">&middot; Copilot</span></span>
+        </div>
+        <div class="meta"><span class="epicto">&rarr; Epic #400</span><span>7 messages</span><span class="r">3 h ago</span></div>
+      </div>
+      <div class="trow">
+        <div class="tsub"><span class="dot off"></span><span class="t">Can you review the Attempt log shape?</span></div>
+        <div class="chips">
+          <span class="tchip deleted"><span class="id">#409</span>deleted Task</span>
+          <span class="tchip"><span class="sd done"></span><span class="id">#413</span>Merge policy<span class="h">&middot; Codex</span></span>
+        </div>
+        <div class="meta"><span>1 message</span><span class="r">Yesterday</span></div>
+      </div>
+      <div class="trow" style="border-top:1px solid var(--edge)">
+        <div class="tsub"><span class="dot live"></span><span class="t">Schema v7 is merged; rebase before touching db/</span></div>
+        <div class="chips">
+          <span class="tchip"><span class="sd running"></span><span class="id">#388</span>Billing export<span class="h">&middot; Codex</span></span>
+          <span class="tchip"><span class="sd running"></span><span class="id">#390</span>Invoice PDF<span class="h">&middot; Claude</span></span>
+        </div>
+        <div class="meta"><span class="count" style="font-size:10px">Epic #380 Billing</span><span>2 messages</span><span class="r">14 min ago</span></div>
+      </div>
+    </div>
+
+    <!-- THREAD DETAIL -->
+    <div class="card detail">
+      <div class="dhead">
+        <div class="caps" style="margin-bottom:6px">Thread &middot; Epic #400 Session lifecycle cleanup</div>
+        <h2>Renamed SessionStore.retire() to retireSession()</h2>
+        <div class="sub">
+          <span class="tchip"><span class="sd running"></span><span class="id">#412</span>Session refactor<span class="h">&middot; Claude</span></span>
+          <span class="tchip"><span class="sd running"></span><span class="id">#413</span>Merge policy<span class="h">&middot; Codex</span></span>
+          <span class="tchip"><span class="sd running"></span><span class="id">#414</span>Retry backoff<span class="h">&middot; Copilot</span></span>
+          <span class="tchip"><span class="sd ready"></span><span class="id">#416</span>Docs sweep<span class="h">&middot; Claude</span></span>
+          <span class="ro"><svg viewBox="0 0 16 16"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>Read-only</span>
+        </div>
+      </div>
+
+      <ol class="tl">
+        <!-- root -->
+        <li class="msg">
+          <div class="ts">14:02:11</div>
+          <div class="body">
+            <div class="hdr">
+              <span class="tchip"><span class="sd running"></span><span class="id">#412</span>Session refactor<span class="h">&middot; Claude</span></span>
+              <span class="att">Attempt <span class="cap">2</span></span>
+              <span class="arrow">&rarr;</span>
+              <span class="pill p-await">Epic #400</span>
+              <span class="att">3 open siblings</span>
+            </div>
+            <div class="mb">
+              <p>I've renamed <code>SessionStore.retire()</code> to <code>retireSession()</code> and moved it to <code>src/domain/sessions.ts</code> &mdash; update imports if you touch it. The old name is gone, not aliased.</p>
+            </div>
+            <div class="fan">
+              <div class="fh"><span class="caps">Epic broadcast &middot; delivery per recipient</span></div>
+              <div class="dl"><span class="tchip"><span class="sd running"></span><span class="id">#413</span>Merge policy<span class="h">&middot; Codex</span></span><span class="st s-mid"><i></i>delivered mid-turn</span><span class="when">14:02:12</span></div>
+              <div class="dl"><span class="tchip"><span class="sd running"></span><span class="id">#414</span>Retry backoff<span class="h">&middot; Copilot</span></span><span class="st s-q"><i></i>queued &mdash; next turn</span><span class="when">awaiting turn boundary</span></div>
+              <div class="dl"><span class="tchip"><span class="sd ready"></span><span class="id">#416</span>Docs sweep<span class="h">&middot; Claude</span></span><span class="st s-held"><i></i>held &mdash; next Attempt</span><span class="when">Task is ready</span></div>
+              <div class="dl" style="background:#fff"><span class="tchip"><span class="sd done"></span><span class="id">#411</span>Config schema<span class="h">&middot; Codex</span></span><span class="st s-ref"><i></i>refused: Task done</span><span class="when">not a sibling recipient</span></div>
+            </div>
+          </div>
+        </li>
+
+        <!-- reply 1 -->
+        <li class="msg reply">
+          <div class="ts">14:03:40</div>
+          <div class="body">
+            <div class="hdr">
+              <span class="tchip"><span class="sd running"></span><span class="id">#413</span>Merge policy<span class="h">&middot; Codex</span></span>
+              <span class="att">Attempt <span class="cap">1</span></span>
+              <span class="arrow">&rarr;</span>
+              <span class="tchip"><span class="sd running"></span><span class="id">#412</span>Session refactor<span class="h">&middot; Claude</span></span>
+            </div>
+            <div class="replyto">&crarr; replying to <b>#412</b> at 14:02:11</div>
+            <div class="mb"><p>Thanks. I do call it from <code>mergeMember()</code>; switching to <code>retireSession()</code> now. Is the signature unchanged?</p></div>
+            <div class="deliv"><div class="dl"><span class="st s-mid"><i></i>delivered mid-turn</span><span class="when">14:03:41 &middot; #412</span></div></div>
+          </div>
+        </li>
+
+        <!-- reply 2 -->
+        <li class="msg reply">
+          <div class="ts">14:05:02</div>
+          <div class="body">
+            <div class="hdr">
+              <span class="tchip"><span class="sd running"></span><span class="id">#412</span>Session refactor<span class="h">&middot; Claude</span></span>
+              <span class="att">Attempt <span class="cap">2</span></span>
+              <span class="arrow">&rarr;</span>
+              <span class="tchip"><span class="sd running"></span><span class="id">#413</span>Merge policy<span class="h">&middot; Codex</span></span>
+            </div>
+            <div class="replyto">&crarr; replying to <b>#413</b> at 14:03:40</div>
+            <div class="mb"><p>Unchanged: <code>retireSession(id: SessionId, reason: RetireReason)</code>. Only the name and file moved.</p></div>
+            <div class="deliv"><div class="dl"><span class="st s-q"><i></i>queued &mdash; next turn</span><span class="when">#413 is mid tool call &middot; delivered 14:05:19</span></div></div>
+          </div>
+        </li>
+
+        <!-- reply 3 -->
+        <li class="msg reply">
+          <div class="ts">14:07:55</div>
+          <div class="body">
+            <div class="hdr">
+              <span class="tchip"><span class="sd running"></span><span class="id">#414</span>Retry backoff<span class="h">&middot; Copilot</span></span>
+              <span class="att">Attempt <span class="cap">1</span></span>
+              <span class="arrow">&rarr;</span>
+              <span class="tchip"><span class="sd running"></span><span class="id">#412</span>Session refactor<span class="h">&middot; Claude</span></span>
+            </div>
+            <div class="replyto">&crarr; replying to <b>#412</b> at 14:02:11</div>
+            <div class="mb"><p>Got it. My retry loop imported the old name in <code>src/execution/backoff.ts</code>; fixed in my branch, nothing for you to do.</p></div>
+            <div class="deliv"><div class="dl"><span class="st s-mid"><i></i>delivered mid-turn</span><span class="when">14:07:56 &middot; #412</span></div></div>
+          </div>
+        </li>
+
+        <!-- reply 4 refused -->
+        <li class="msg reply">
+          <div class="ts">14:11:30</div>
+          <div class="body">
+            <div class="hdr">
+              <span class="tchip"><span class="sd running"></span><span class="id">#412</span>Session refactor<span class="h">&middot; Claude</span></span>
+              <span class="att">Attempt <span class="cap">2</span></span>
+              <span class="arrow">&rarr;</span>
+              <span class="tchip"><span class="sd done"></span><span class="id">#411</span>Config schema<span class="h">&middot; Codex</span></span>
+            </div>
+            <div class="replyto">&crarr; replying to a Thread participant</div>
+            <div class="mb"><p>Does <code>session.idleTtl</code> still need a migration for existing config files?</p></div>
+            <div class="deliv"><div class="dl"><span class="st s-ref"><i></i>refused: Task done</span><span class="when">#411 merged at 13:48 &middot; not delivered</span></div></div>
+          </div>
+        </li>
+      </ol>
+
+      <div class="cap-foot">
+        <span class="caps">Send cap</span>
+        <span class="meter"><span class="tchip" style="background:#fff"><span class="id">#412</span>Attempt 2</span><span class="bar"><i style="width:70%"></i></span>7 of 10 sends used</span>
+        <span class="meter"><span class="tchip" style="background:#fff"><span class="id">#413</span>Attempt 1</span><span class="bar"><i style="width:20%"></i></span>2 of 10</span>
+        <span class="meter"><span class="tchip" style="background:#fff"><span class="id">#414</span>Attempt 1</span><span class="bar"><i style="width:10%"></i></span>1 of 10</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- TASK DETAIL SECTION -->
+  <div class="sec">
+    <h2>Task detail: Agent Messages on the timeline</h2>
+    <p class="desc">The same Agent Messages as rows in a Task's lifecycle timeline, matching the existing Lifecycle rows (time gutter, dot on the rail, state-coloured label, muted detail). Each Message is visible on both the sender's and the recipient's Task. Rows link to the Thread; there is no reply control.</p>
+
+    <div class="twocol">
+      <div class="card" style="overflow:hidden">
+        <div class="lc-head"><div class="l"><span class="caps">Lifecycle &middot; #413 Merge policy</span><span class="c">9 events</span></div></div>
+        <ol class="lc">
+          <li>
+            <div class="t">14:01:02</div>
+            <div class="b run"><div class="row"><span class="w run">Attempt 1 started</span><span class="pill p-raised">Codex</span></div><div class="d">Worktree <code>harmonic/413-merge-policy</code></div></div>
+          </li>
+          <li>
+            <div class="t">14:02:12</div>
+            <div class="b msgin">
+              <div class="row"><span class="w msgin">Agent Message received</span><span class="pill p-tool">from #412 &middot; Claude</span><span class="pill p-await">Epic #400</span><span class="pill p-done">delivered mid-turn</span></div>
+              <div class="quote">I've renamed <code>SessionStore.retire()</code> to <code>retireSession()</code> and moved it to <code>src/domain/sessions.ts</code> &mdash; update imports if you touch it.</div>
+              <div class="d"><a href="#">View Thread &rarr;</a></div>
+            </div>
+          </li>
+          <li>
+            <div class="t">14:03:40</div>
+            <div class="b msgout">
+              <div class="row"><span class="w msgout">Agent Message sent</span><span class="pill p-tool">to #412 &middot; Claude</span><span class="pill p-done">delivered mid-turn</span></div>
+              <div class="quote">Thanks. I do call it from <code>mergeMember()</code>; switching to <code>retireSession()</code> now. Is the signature unchanged?</div>
+              <div class="d">Reply to #412 &middot; send 2 of 10 this Attempt &middot; <a href="#">View Thread &rarr;</a></div>
+            </div>
+          </li>
+          <li>
+            <div class="t">14:09:48</div>
+            <div class="b msgout">
+              <div class="row"><span class="w msgout">Agent Message sent</span><span class="pill p-tool">to #414 &middot; Copilot</span><span class="pill p-ready">queued &mdash; next turn</span></div>
+              <div class="quote">Are you editing <code>src/execution/merge.ts</code>? I need to add a hook in <code>mergeMember()</code>.</div>
+              <div class="d">New Thread &middot; send 3 of 10 this Attempt &middot; <a href="#">View Thread &rarr;</a></div>
+            </div>
+          </li>
+          <li>
+            <div class="t">14:10:30</div>
+            <div class="b msgin">
+              <div class="row"><span class="w msgin">Agent Message received</span><span class="pill p-tool">from #414 &middot; Copilot</span><span class="pill p-done">delivered mid-turn</span></div>
+              <div class="quote">Not touching <code>merge.ts</code>, go ahead.</div>
+              <div class="d">Reply to your message of 14:09 &middot; <a href="#">View Thread &rarr;</a></div>
+            </div>
+          </li>
+          <li>
+            <div class="t">14:18:07</div>
+            <div class="b msgout">
+              <div class="row"><span class="w msgout">Agent Message sent</span><span class="pill p-tool">to #416 &middot; Claude</span><span class="pill p-paused">held &mdash; next Attempt</span></div>
+              <div class="quote">Docs should mention the new merge hook once it merges.</div>
+              <div class="d">#416 is ready between Attempts &middot; <a href="#">View Thread &rarr;</a></div>
+            </div>
+          </li>
+          <li>
+            <div class="t">14:21:44</div>
+            <div class="b"><div class="row"><span class="w mute">Attempt 1 awaiting review</span></div><div class="d">Agent finished its turn; diff is ready.</div></div>
+          </li>
+        </ol>
+      </div>
+    </div>
+    <p class="note">The same rows also appear on the other participant's Task, so the operator can read comms from either side without leaving the Task page.</p>
+  </div>
+</main>
+</div>
+</body>
+</html>

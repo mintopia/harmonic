@@ -3,6 +3,11 @@
 Status: accepted
 Date: 2026-09-30
 
+Current status (2026-10-02): The file Archive and Export paths are implemented
+in `src/archive/task-archive.ts` and `src/archive/task-export.ts`. This ADR
+supersedes only ADR-0007's no-copy/no-retention clause; the database still
+stores aggregates and facts.
+
 ## Context
 
 An operator must be able to review, after the fact, everything that happened
@@ -96,6 +101,13 @@ Export. The Export carries no diff itself.
 The Export hook hangs off the Task's terminal transition
 (`attempt-settle.ts`) and the Delete path, not `postMerge`, which has five
 call sites and does not see cancellation.
+
+## Amendment (2026-10-03): Agent Messages in Export bundles
+
+Task and Epic Export bundles also contain `agent-messages.json`: the Agent
+Messages the Task (or the Epic's Members) sent or received, with recipients
+and receipts (ADR-0045). It has its own row in the bundle's `README.md` file
+table and is redacted like every other file in the Export.
 
 ## Consequences
 

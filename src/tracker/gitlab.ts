@@ -1,9 +1,18 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { logger } from '../logger.js';
-import { EPIC_LABEL, MAP_LABEL, type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
+import { z } from 'zod';
+import { parseBlockedBySection, parsePartOfParent } from './relationships.js';
+import type { TrackerKind } from './kind.js';
+import { type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
+import { EPIC_LABEL, MAP_LABEL, trackerRef } from './ref.js';
 
 const execFileAsync = promisify(execFile);
+
+function gitlabProject(url: string | null): string | null {
+  const m = url?.match(/^(?:git@|(?:https?|ssh):\/\/(?:[^@/]+@)?)[^:/]+[:/](?:\d+\/)?(.+?)(?:\.git)?$/);
+  return m ? m[1]! : null;
+}
 
 const SCAN_SAFETY_VALVE_PAGES = 100;
 
@@ -46,12 +55,6 @@ interface RawIssue {
   assignees: Array<{ id: number; username: string }>;
   web_url: string;
 }
-interface RawNote {
-  body: string;
-  system: boolean;
-  author: { username: string } | null;
-  created_at: string;
-}
 interface RawUser {
   id: number;
   username: string;
@@ -63,12 +66,12 @@ const state = (s: string): TicketState => (s === 'closed' ? 'closed' : 'open');
 /** Free-tier GitLab has no native Epics, so an `Epic:`-titled issue stands in for one (issue-as-epic convention). */
 const EPIC_TITLE = /^\s*epic\s*:/i;
 
-function normaliseBase(raw: RawIssue): Omit<Ticket, 'parent' | 'blockedBy' | 'blocking' | 'comments'> {
+function normaliseBase(raw: RawIssue): Omit<Ticket, 'parent' | 'blockedBy' | 'blocking'> {
   const rawLabels = raw.labels ?? [];
   const labels =
     EPIC_TITLE.test(raw.title) && !rawLabels.includes(EPIC_LABEL) ? [...rawLabels, EPIC_LABEL] : rawLabels;
   return {
-    number: raw.iid, // portable identity = the project-scoped iid, never the global id
+    ref: trackerRef(raw.iid), // portable identity = the project-scoped iid, never the global id
     title: raw.title,
     state: state(raw.state),
     body: raw.description ?? '',
@@ -81,33 +84,15 @@ function normaliseBase(raw: RawIssue): Omit<Ticket, 'parent' | 'blockedBy' | 'bl
   };
 }
 
-/**
- * Body-line relationships — GitLab's free tier has neither native sub-issues
- * (Epics/work-items are Premium+) nor `blocks`/`is_blocked_by` issue links
- * (also Premium+), so the description carries them: a `Part of [epic] #<n>`
- * line names the parent, and a `Blocked by` section names the dependencies.
- */
-function parseBody(desc: string): { parent: number | null; blockedBy: number[] } {
-  const parentMatch = desc.match(/^\s*Part of\b[^#\n]*#(\d+)/im);
-  return { parent: parentMatch ? Number(parentMatch[1]) : null, blockedBy: readBlockedBySection(desc) };
-}
-
-/** The `#<n>`s named in the `Blocked by` section: its heading/label line up to the blank line that ends the block. */
-function readBlockedBySection(desc: string): number[] {
-  const lines = desc.split('\n');
-  const start = lines.findIndex((l) => /^\s*#{0,6}\s*Blocked by\b/i.test(l));
-  if (start === -1) return [];
-  const block: string[] = [];
-  for (let i = start; i < lines.length && !(i > start && lines[i]!.trim() === ''); i++) block.push(lines[i]!);
-  return [...new Set([...block.join('\n').matchAll(/#(\d+)/g)].map((m) => Number(m[1])))];
-}
-
 function synthesise(raws: RawIssue[]): Ticket[] {
-  const parsed = raws.map((raw) => ({ raw, ...parseBody(raw.description ?? '') }));
+  const parsed = raws.map((raw) => {
+    const desc = raw.description ?? '';
+    return { raw, parent: parsePartOfParent(desc), blockedBy: parseBlockedBySection(desc) };
+  });
   const byId = new Map(parsed.map((p) => [p.raw.iid, p]));
   const mkRef = (iid: number): TicketRef | null => {
     const p = byId.get(iid);
-    return p ? { number: iid, title: p.raw.title, state: state(p.raw.state) } : null;
+    return p ? { ref: trackerRef(iid), title: p.raw.title, state: state(p.raw.state) } : null;
   };
   const blockedBy = new Map<number, Set<number>>(parsed.map((p) => [p.raw.iid, new Set(p.blockedBy)]));
   const blocking = new Map<number, Set<number>>(parsed.map((p) => [p.raw.iid, new Set<number>()]));
@@ -117,10 +102,9 @@ function synthesise(raws: RawIssue[]): Ticket[] {
 
   return parsed.map((p) => ({
     ...normaliseBase(p.raw),
-    parent: p.parent,
+    parent: p.parent === null ? null : trackerRef(p.parent),
     blockedBy: refs(blockedBy.get(p.raw.iid)!),
     blocking: refs(blocking.get(p.raw.iid)!),
-    comments: [], // ponytail: scan skips per-issue notes (N+1, no scan consumer reads them); readTicket fills them.
   }));
 }
 
@@ -181,42 +165,56 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
   return {
     name: 'gitlab',
 
+    async identify() {
+      return (await ensureMe()).username;
+    },
+
     scan: scanAll,
 
     async readTicket(ref: TicketRef) {
-      const found = (await scanAll()).find((t) => t.number === ref.number);
-      if (!found) throw new Error(`GitLab: no issue #${ref.number} in ${config.project}`);
-      const notes = await api<RawNote[]>(`${proj}/issues/${ref.number}/notes?per_page=100&sort=asc`);
-      return {
-        ...found,
-        comments: notes
-          .filter((n) => !n.system && n.body)
-          .map((n) => ({ author: n.author?.username ?? '', body: n.body, createdAt: n.created_at })),
-      };
+      const found = (await scanAll()).find((t) => t.ref === ref.ref);
+      if (!found) throw new Error(`GitLab: no issue #${ref.ref} in ${config.project}`);
+      return found;
     },
 
     async claim(ticket: TicketRef) {
       const uid = (await ensureMe()).id;
-      await reassign(ticket.number, (ids) => ids.add(uid));
+      await reassign(Number(ticket.ref), (ids) => ids.add(uid));
     },
 
     async release(ticket: TicketRef) {
       const uid = (await ensureMe()).id;
-      await reassign(ticket.number, (ids) => ids.delete(uid));
+      await reassign(Number(ticket.ref), (ids) => ids.delete(uid));
     },
 
     async close(ticket: TicketRef, comment: string) {
       if (comment) {
-        await api(`${proj}/issues/${ticket.number}/notes?body=${encodeURIComponent(comment)}`, 'POST');
+        await api(`${proj}/issues/${ticket.ref}/notes?body=${encodeURIComponent(comment)}`, 'POST');
       }
-      await api(`${proj}/issues/${ticket.number}?state_event=close`, 'PUT');
+      await api(`${proj}/issues/${ticket.ref}?state_event=close`, 'PUT');
     },
 
     async reopen(ticket: TicketRef, comment: string) {
       if (comment) {
-        await api(`${proj}/issues/${ticket.number}/notes?body=${encodeURIComponent(comment)}`, 'POST');
+        await api(`${proj}/issues/${ticket.ref}/notes?body=${encodeURIComponent(comment)}`, 'POST');
       }
-      await api(`${proj}/issues/${ticket.number}?state_event=reopen`, 'PUT');
+      await api(`${proj}/issues/${ticket.ref}?state_event=reopen`, 'PUT');
     },
   };
 }
+
+export const gitlabKind: TrackerKind<{ project?: string | undefined }> = {
+  id: 'gitlab',
+  label: 'GitLab',
+  settings: z.object({ project: z.string().min(1).optional().meta({ title: 'Project', description: 'The GitLab project as group/repo; defaults to the origin remote.' }) }).strict(),
+  secretNames: [],
+  capabilities: { close: true, reopen: true, claim: true, transition: false, epicSources: ['epic-label'] },
+  formatRef: (ref) => `#${ref}`,
+  fromDeclaration: async (doc, _repoRoot, origin) => ({
+    project: doc.match(/^\s*Project:\s*(.+?)\s*$/im)?.[1] ?? gitlabProject(await origin()) ?? undefined,
+  }),
+  create: ({ settings, repoRoot, run }) => {
+    if (!settings.project) throw new Error('GitLab tracker needs a "Project: <group/repo>" line (or an origin remote)');
+    return gitlabAdapter({ project: settings.project, repoRoot }, run);
+  },
+};

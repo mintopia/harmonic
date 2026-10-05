@@ -95,20 +95,25 @@ export async function bestEffort(op: () => unknown | Promise<unknown>, report: F
   return (await attempted(op, report)).ok;
 }
 
-const forgotten = new InFlight();
+/** Start `op` without awaiting it, logging any rejection. */
+export type FireAndForget = (op: () => unknown | Promise<unknown>, report: FailureReport) => void;
 
-/** Start `op` and return immediately, logging any rejection — the logged replacement for firing a promise and silently discarding its rejection. */
-export function fireAndForget(op: () => unknown | Promise<unknown>, report: FailureReport): void {
-  forgotten.add((async () => {
-    try {
-      await op();
-    } catch (err) {
-      reportFailure(err, report);
-    }
-  })(), report.op);
-}
+/** One app's fire-and-forget work, drained at that app's shutdown. */
+export class BackgroundWork {
+  private readonly inFlight = new InFlight();
 
-/** Settles once every {@link fireAndForget} op started so far (and any they start) has finished; shutdown awaits this before closing the DB. */
-export function drainFireAndForget(): Promise<void> {
-  return forgotten.drain();
+  readonly fireAndForget: FireAndForget = (op, report) => {
+    this.inFlight.add((async () => {
+      try {
+        await op();
+      } catch (err) {
+        reportFailure(err, report);
+      }
+    })(), report.op);
+  };
+
+  /** Settles once all started ops, and any they start, have finished. */
+  drain(): Promise<void> {
+    return this.inFlight.drain();
+  }
 }

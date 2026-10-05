@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { DEFAULT_EXCLUDED_DIRECTORIES, workspaceOverridesSchema, WorkspaceService } from '../src/domain/workspaces.js';
-import { verificationCommandSchema, taskVerificationCriticSchema, budgetGuardrailSchema } from '../src/config.js';
+import { baselineConfig, verificationCommandSchema, taskVerificationCriticSchema, budgetGuardrailSchema } from '../src/config.js';
+import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../src/domain/prompt-fragments.js';
 import { resolveVerifiers, resolveDrive } from '../src/domain/setting-override.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { makeSettingsStore, seedWorkspace } from './helpers.js';
@@ -38,6 +39,8 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(ws.priority).toBeNull();
     expect(ws.maxConcurrentAttempts).toBeNull();
     expect(ws.autoRunnerEnabled).toBeNull();
+    expect(ws.agentMessagesEnabled).toBeNull();
+    expect(ws.agentMessagesSendCap).toBeNull();
     expect(ws.taskPreMergeCommands).toBeNull();
     expect(ws.taskPreMergeCritics).toBeNull();
     expect(ws.taskPostMergeCommands).toBeNull();
@@ -141,6 +144,19 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(untouched.autoRunnerEnabled).toBe(false);
   });
 
+  it('stores, clears, and keeps distinct the Agent Messages overrides', async () => {
+    const ws = (await workspaces.list())[0]!;
+    const on = await workspaces.update(ws.id, { agentMessagesEnabled: true, agentMessagesSendCap: 3 });
+    expect(on.agentMessagesEnabled).toBe(true);
+    expect(on.agentMessagesSendCap).toBe(3);
+    const off = await workspaces.update(ws.id, { agentMessagesEnabled: false });
+    expect(off.agentMessagesEnabled).toBe(false);
+    expect(off.agentMessagesSendCap).toBe(3);
+    const cleared = await workspaces.update(ws.id, { agentMessagesEnabled: null, agentMessagesSendCap: null });
+    expect(cleared.agentMessagesEnabled).toBeNull();
+    expect(cleared.agentMessagesSendCap).toBeNull();
+  });
+
   it('sets explicit staged verifier overlays as JSON lists', async () => {
     const ws = (await workspaces.list())[0]!;
     const updated = await workspaces.update(ws.id, {
@@ -174,7 +190,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     const resolved = resolveVerifiers(updated, {
       verify: {
         task: { preMerge: { commands: [], critics: [{ id: 'critic-global', name: 'Test critic', issuePrompt: 'global issue review', noIssuePrompt: 'global Task review', model: 'claude-opus-5' }] }, postMerge: { commands: [], critics: [] } },
-        epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.' },
+        epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.', resolveSuffix: 'Branch {branch}.' },
       },
     } as any);
     expect(resolved.task.preMerge.critics).toEqual([]);
@@ -281,6 +297,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
         mergeFate: 'auto-merge',
         continueAttempts: 1,
       },
+      promptFragments: baselineConfig().promptFragments,
     } as any);
     expect(resolved.continueAttempts).toBe(0);
     expect(resolved.mergeFate).toBe('auto-merge');
@@ -308,6 +325,8 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       conflictResolveTurns: null,
       maxConcurrentAttempts: null,
       autoRunnerEnabled: null,
+      agentMessagesEnabled: null,
+      agentMessagesSendCap: null,
       maxAttempts: null,
       contextReuseTokenLimit: null,
       taskPreMergeCommands: null,
@@ -325,6 +344,12 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       driveMergeFate: null,
       driveContinueAttempts: null,
       taskPrompt: null,
+      ...NO_PROMPT_FRAGMENT_OVERRIDES,
+      driveCommitNudge: null,
+      mergeConflictPrompt: null,
+      mergeEpicConflictPrompt: null,
+      mergeEpicRefreshPrompt: null,
+      verifyEpicResolveSuffix: null,
       pauseMessage: null,
       exportEnabled: null,
       exportDirectoryPath: null,
@@ -337,6 +362,9 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       exportS3SecretAccessKey: null,
       exportRedactPatterns: null,
       exportIncludeStates: null,
+      configuredTracker: null,
+      codeRepository: null,
+      triageLabels: null,
       archiveRetentionDays: null,
       archiveRetentionMaxTotalMB: null,
     });

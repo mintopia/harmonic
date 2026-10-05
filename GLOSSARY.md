@@ -146,18 +146,62 @@ _Avoid_: cancel (Cancel keeps the record; Delete removes it).
 The database primary key of a Task — what `finish_task` / `escalate_task` take as `taskId` and `GET /api/tasks/:id` uses. Rendered `T-<id>` in compact identifier slots (board row, graph node, table cell) and `Task <id>` in prose and dialog titles, never a bare `#`. The formatter lives in `web/src/id-format.ts`.
 
 **Tracker ref**:
-The GitHub issue number a mirrored Task resolves — e.g. `#185`. Rendered `#<ref>`, distinct from task id (issue #192). It is what `/implement <N>` takes as the argument. Where both appear on the Ticket header, both show disambiguated: `Task 174 · issue #185`.
+The opaque, tracker-scoped key of the issue a mirrored Task resolves — a GitHub, GitLab, Forgejo or Local Markdown number (`185`) or a Jira key (`PROJ-185`). Harmonic never parses or orders it; only the owning tracker adapter knows its shape and how to render it (`#185`, `PROJ-185`). Distinct from task id (issue #192). It is what `/implement <ref>` takes as the argument. Where both appear on the Ticket header, both show disambiguated: `Task 174 · issue #185`.
+_Avoid_: issue number, ticket id
 
 ### Tracker mirroring
 
+**Code Repository**:
+Where a Workspace's branches, PRs/MRs and Merges go — **GitHub**, **GitLab**,
+**Forgejo**, or **git** (push-only for hosts with no PR API). Detected from the
+repo's `origin` remote (github.com, gitlab.com, otherwise a host that answers
+Forgejo's version endpoint or GitLab's web manifest); git is never detected and needs an explicit
+override. Overridable per Workspace. Independent of the Resolved Tracker: a Jira
+Workspace still has a Code Repository, and a Forgejo Workspace usually has the
+same host for both.
+_Avoid_: code host, git provider, remote
+
+**Configured Tracker**:
+The Workspace's explicit issue-tracker choice — a kind (**GitHub**, **GitLab**,
+**Forgejo**, **Jira**, **Local Markdown**) plus that kind's settings (host,
+project, auth mode, status transitions) — or unset. Always wins over the
+Detected Tracker when set.
+_Avoid_: tracker override, provider
+
+**Detected Tracker**:
+What the repo itself names in `docs/agents/issue-tracker.md`, read at poll
+time. Unset when the file is absent or names nothing Harmonic knows.
+_Avoid_: declared tracker, repo tracker
+
 **Resolved Tracker**:
-Which issue tracker a Workspace's repo declares — **GitHub**, **GitLab**, or
-**Local Markdown** — resolved from its `docs/agents/issue-tracker.md` at poll
-time, never auto-detected. Surfaced read-only on the Workspace so the operator
-can see what will be mirrored, or why nothing can be (no declaration, an
-unsupported name). A resolution failure stops the poll loop from starting
-rather than erroring every cycle.
-_Avoid_: detected tracker, tracker type, provider
+Which issue tracker a Workspace actually mirrors, and the settings that reach
+it. Resolved at poll time in strict precedence: Configured Tracker, else
+Detected Tracker, else the Code Repository when it is also an issue tracker
+(GitHub, GitLab, Forgejo), else none. Surfaced read-only on the Workspace
+together with which source won, so the operator can see what will be
+mirrored, or why nothing can be (nothing configured, detected, or inferable;
+an unsupported name; an unreachable host). The API's `resolvedTracker` reports
+the kind and the winning source (`configured`, `detected`, or
+`code-repository`). A resolution failure stops the
+poll loop from starting rather than erroring every cycle.
+_Avoid_: tracker type, provider
+
+**Triage Labels**:
+The label strings a Resolved Tracker uses for the roles Harmonic acts on —
+agent-ready, human-only, epic, wayfinder map. Resolved per Workspace in the
+same precedence shape as the tracker: the Workspace's explicit label settings,
+else the repo's `docs/agents/triage-labels.md` role table (canonical label in
+column one, this tracker's label in column two), else the instance defaults
+(`ready-for-agent`, `ready-for-human`, `epic`, `wayfinder:map`). Each role
+resolves independently.
+_Avoid_: hard-coded labels, label names
+
+**Secret**:
+A per-Workspace named credential (a Forgejo token, a Jira API token) stored
+encrypted at rest and never readable back through the API or UI — only
+"set" / "not set", replace, and clear. Tracker settings refer to a Secret by
+name; the Secret is what the adapter authenticates with.
+_Avoid_: token field, password, credential setting
 
 **Origin**:
 Whether a Task was authored in Harmonic (**native**) or is a 1:1 projection
@@ -179,12 +223,18 @@ Deleting a mirrored Task: the row and its Attempts/Usage/edges are removed AND a
 _Avoid_: cancel, delete (Dismiss is specifically the mirrored-Task delete that tombstones the ref).
 
 **Epic**:
-A parent tracker issue that groups typed child tickets — the unit a batch of
-related work shares. **Three kinds**: a **Map** (wayfinding children), a **Spec**
+A parent tracker container that groups typed child tickets — the unit a batch
+of related work shares. Usually an `epic`-labelled issue (GitHub, GitLab,
+Forgejo, Local Markdown) or a Jira issue of type Epic; a Forgejo Workspace may
+instead be set to treat each open Milestone as an Epic, with the
+issues it owns as the children. "Closes the tracker issue" below then means
+closing that Milestone. **Three kinds**: a **Map** (wayfinding children), a **Spec**
 (implementation children with a spec-shaped body), and a **plain Epic** (a bare
 parent/child grouping, neither Map nor Spec). Harmonic does not author Epics — it
-reads whatever parent/child structure the tracker holds (native sub-issues, or a
-body task-list / `Part of #<n>` line) and copes; setting the tickets up is the
+reads whatever parent/child structure the tracker holds — native first
+(sub-issues, Jira parent, Milestone membership), then a body
+task-list / `Part of #<n>` line as a second source, on every tracker — and
+copes; setting the tickets up is the
 operator's or an agent's job. The **leaf-most** Epic — the immediate parent of
 implementation Tasks — is the unit its children are scheduled and merged as a
 group by, and it is a **first-class stored resource** (ADR-0018): a durable
@@ -394,7 +444,7 @@ It is **active** while it can accept Turns; its warm harness process is spawned
 on the first Turn and kept across widget/socket close. A server restart makes
 an active Conversation cold, but it can resume its prior session; only an
 explicit end or idle timeout makes it **ended** and read-only.
-_Avoid_: chat (as the noun), session (ACP-overloaded), thread
+_Avoid_: chat (as the noun), session (ACP-overloaded), thread (a Thread groups Agent Messages)
 
 **Turn**:
 One operator message and the Harness's response to it within a Conversation
@@ -425,6 +475,37 @@ opens a picker above the field, filtered as the operator types; selecting one
 inserts `{prefix}{name} ` ready for arguments and never sends on its own. The raw
 text is forwarded to the Harness unchanged; Harmonic parses nothing.
 _Avoid_: command (bare — collides with Verification Command), skill, macro
+
+### Agent Messages
+
+**Agent Message**:
+A note one Agent sends to another Task in the same Workspace — the unit of
+agent-to-agent communication, motivated by Epic Members coordinating while they
+run in parallel, possibly on different Harnesses. Addressed to a **Task**, never
+to a Session or Agent: Harmonic delivers it to whichever Agent is live for that
+Task, or holds it until one is (a recipient between Attempts, *ready*,
+*paused*, or *escalated* receives it at the start of its next Attempt). Sending
+to a *draft*, *done*, or *cancelled* Task is refused. A sender may instead
+address **its Epic**, reaching every open sibling Member as one Agent Message.
+Always **one-way and asynchronous** — the sender never waits for a reply; a
+reply is simply another Agent Message that names the one it answers. Each
+Attempt may send only a bounded number (a Setting Override), so two agents
+cannot answer each other without end. Delivered to a live Agent over the
+steer channel, framed as coming from the peer Task so it never reads as an
+operator instruction. Every Agent Message is visible to the operator on both the
+sender's and the recipient's Task. **Optional and off by default** — a Setting
+Override (Baseline → Global → Workspace); where off, agents are not offered
+the ability at all. Shaped after A2A's Message so the Workspace can later be
+reachable by external A2A agents without remodelling.
+_Avoid_: message (bare — collides with Activity Event, Turn, Notification),
+peer message, steer (operator-only), mail, chat
+
+**Thread**:
+A root Agent Message plus every reply to it, transitively — the unit the
+operator reads agent-to-agent communication by. Read-only to the operator:
+steering a participant is still done by steering its Task. Survives a
+participant Task's deletion, showing that side as deleted.
+_Avoid_: exchange, conversation (an operator↔agent chat), channel
 
 ### Lifecycle
 
@@ -587,7 +668,7 @@ A Session moves `active → idle → retiring → retired`. Builder-worktree rem
 is owned by the **Task**, not the Session (ADR-0001):
 the per-Task worktree is retained across Attempts and removed only at the
 Task's terminal disposition (merged, or operator close/cancel).
-_Avoid_: thread, chat (the interactive sibling is a Conversation)
+_Avoid_: chat (the interactive sibling is a Conversation), thread (a Thread groups Agent Messages)
 
 **Working Directory**:
 The directory where a Task's Attempts execute — its Workspace's directory,
@@ -650,12 +731,12 @@ Verification** (`verify.epic.preMerge`). Each stage is a pair of lists —
 **verify commands** (ordered, fail-fast, one Verification Step each) that
 **gate** the **Critics** (parallel, all-must-pass, every critic's feedback
 collected before the retry). A stage with zero verifiers passes; resolved
-global default with **per-stage, per-list** Workspace override. Any command
+global default with **per-stage, id-keyed** Workspace verifier overlays (ADR-0037). Any command
 fail or critic reject/*inconclusive* is a **failed Attempt** — feedback into
 the next Attempt, counter +1 (ADR-0003, ADR-0028). The verdict attaches to the
 Attempt, never to a SHA (ADR-0001); Merge never re-checks it. Everything runs
-**in place** in the live worktree; the one detached check is the Epic's
-merge-to-default post-merge check.
+**in place** in the worktree for that stage. Post-merge commands share the
+administrative worktree where their merge was built (ADR-0039).
 _Avoid_: review gate (deleted), Review Task / single critic (superseded — a
 Critic is a listable verifier now), validation, lint, test (more than either)
 
@@ -672,13 +753,31 @@ no-issue variant never fires. Both bodies are editable with a live per-variant
 preview. Replaces the single Review (ADR-0028).
 _Avoid_: review, reviewer Task (the single-critic name, superseded)
 
+**Resolved Prompt**:
+The final text actually sent to a Session for one prompt turn — an operator
+template with its tokens filled and every Harmonic-appended Prompt Fragment
+concatenated. It is exactly what the transcript renders and the Archive keeps,
+and it is immutable once sent: editing the configured prompt changes only later
+turns (the settings "compiled preview" is the same assembly shown against sample
+tokens, not a record of what was sent).
+_Avoid_: compiled prompt (that is the settings preview), assembled prompt,
+final prompt
+
+**Prompt Fragment**:
+A named, individually-editable piece that composes into a Resolved Prompt — e.g.
+the critic's revision block, the read-only restraint, or the JSON verdict
+contract. Each is a setting (baseline default plus per-Workspace override,
+ADR-0022); a Fragment shared across prompts (the restraint) is defined once and
+reused rather than copied. Structural glue — ordering and whitespace — stays in
+code and is not a Fragment.
+_Avoid_: prompt piece, prompt section, snippet, segment
+
 **Continuation rule**:
 The deterministic choice at Attempt N+1: continue the prior Session (feedback
-appended) iff its context usage is below `contextReuseThreshold` (config,
-default 0.2) AND it is warm within a fixed per-Harness constant seeded from
-known provider cache TTLs; otherwise a fresh Session seeded by the condensed
-summary (issue #170 machinery) plus the feedback. The repo is the diff —
-nothing else is passed.
+appended) when its context usage is below the configured token limit and
+its cache is estimated warm under that Harness's configured warm window.
+Otherwise, start a fresh Session with the condensed continuation and feedback.
+Manual resume may explicitly load a cold Session (ADR-0027).
 _Avoid_: session reuse policy, cache gate
 
 **Usage**:
@@ -874,7 +973,10 @@ uncapped output of every verify command, every prompt sent to any Session, and
 every operator input. Lives as files in the data directory, **never in the
 DB**, so it survives a database recreate and a Harness pruning its own logs.
 Kept raw (unredacted); it **outlives the Task** — Delete leaves it in place —
-and is removed only by the configured retention cap.
+and is removed only by the configured retention cap. By the **visibility rule**,
+anything Harmonic sends or runs is here and surfaceable in the transcript views:
+a Resolved Prompt, transcript, or command output that reached a Session but is
+absent from both is a bug — if it isn't here, it didn't happen (ADR-0047).
 _Avoid_: log, record, history, audit log
 
 **Export**:
@@ -1099,26 +1201,26 @@ _Avoid_: alert, toast (the transient display, not the record), message
 A named, revocable bearer token for the REST API and MCP server, created
 and managed by the operator. Full scope by default (drives the whole fleet);
 a **read** scope mints a read-only variant. Listing keys shows both — never
-the ephemeral Run/Conversation Keys.
-_Avoid_: token (ambiguous with Run Key)
+the ephemeral Attempt/Conversation Keys.
+_Avoid_: token (ambiguous with Attempt Key)
 
 **Read Key**:
 A read-scoped API Key for a viz client: it may GET tasks, runs, and Maps and
 open the firehose WebSocket (filtered to task/run/run-event/run-usage — no
 Conversation or permission traffic), but every mutation and the operator surface (keys,
 config, channels, Conversations) is blocked. Operator-created and listed like
-a full API Key, unlike the ephemeral Run/Conversation Keys.
+a full API Key, unlike the ephemeral Attempt/Conversation Keys.
 _Avoid_: viz key, guest key
 
-**Run Key**:
+**Attempt Key**:
 An ephemeral bearer token Harmonic mints per execution and injects into the
 spawned Harness so agents reach MCP without setup. Deleted outright when
 the execution finishes (a startup sweep removes orphans); never listed or
-shown in the UI. (Renames to Attempt Key with the ADR-0001 epic.)
+shown in the UI.
 _Avoid_: scoped key, per-run API key
 
 **Conversation Key**:
-The Conversation analogue of a Run Key — an ephemeral bearer token minted
+The Conversation analogue of an Attempt Key — an ephemeral bearer token minted
 per Conversation and injected into its Harness (same `HARMONIC_API_KEY` /
 `HARMONIC_MCP_URL` mechanism) so the chatting agent can reach MCP (e.g.
 create Tasks mid-conversation). Deleted when the Conversation ends; the

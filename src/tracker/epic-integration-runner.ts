@@ -1,20 +1,26 @@
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import type { TrackerRef } from './adapter.js';
 import type { WorkspaceRow } from '../db/schema.js';
 import type { EpicLifecycle } from '../execution/epic-coordinator.js';
 import type { EpicWorktreePool } from '../execution/epic-worktree-pool.js';
 import type { PostMergeCheckResult, MergePolicyOutcome } from '../execution/merge-policy.js';
-import { runCommandVerifierDetached } from '../verification/command-verifier.js';
+import { commandAttemptToInput, type CommandSpawn } from '../verification/command-verifier.js';
+import { runPostMergeCommands } from '../verification/post-merge-commands.js';
+import type { AttemptStore } from '../domain/attempts.js';
+import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
+import type { TaskArchive } from '../archive/task-archive.js';
 import type { ResolvedVerifiers } from '../domain/setting-override.js';
 import type { MergeEpicIntegration } from './epic-service.js';
 
 export interface EpicIntegrationRunnerDeps {
-  workspace: WorkspaceRow;
-  worktreesDir?: string | undefined;
-  worktrees: EpicWorktreePool;
-  epics: EpicLifecycle;
+  workspace: Pick<WorkspaceRow, 'id' | 'workingDir'>;
+  worktrees: Pick<EpicWorktreePool, 'release'>;
+  epics: Pick<EpicLifecycle, 'retireIntegrationBranch'>;
   mergeEpicIntegration: MergeEpicIntegration;
-  resolveWorkspaceVerifiers: () => Promise<ResolvedVerifiers>;
+  epicAttempts?: Pick<AttemptStore, 'listForEpic'> | undefined;
+  verificationAttemptStore?: Pick<VerificationAttemptStore, 'append'> | undefined;
+  archive?: Pick<TaskArchive, 'epicVerificationOutputLog'> | undefined;
+  commandSpawn: CommandSpawn;
+  resolvePostMergeCommands: () => Promise<ResolvedVerifiers['epic']['preMerge']['commands']>;
 }
 
 /** Merges an Epic's integration branch into the default branch under the one merge policy. */
@@ -23,7 +29,7 @@ export class EpicIntegrationRunner {
 
   async integrate({ repoDir, epicRef, defaultBranch, integrationBranch }: {
     repoDir: string;
-    epicRef: number;
+    epicRef: TrackerRef;
     defaultBranch: string;
     integrationBranch: string;
   }): Promise<MergePolicyOutcome> {
@@ -41,22 +47,24 @@ export class EpicIntegrationRunner {
     }
   }
 
-  async retire(epicRef: number): Promise<void> {
+  async retire(epicRef: TrackerRef): Promise<void> {
     await this.deps.worktrees.release(this.deps.workspace.workingDir, epicRef);
     await this.deps.epics.retireIntegrationBranch(epicRef);
   }
 
-  private async runPostMergeCheck(epicRef: number, mergeOid: string, baseDir: string): Promise<PostMergeCheckResult> {
-    const stage = (await this.deps.resolveWorkspaceVerifiers()).epic.preMerge;
-    for (const command of stage.commands) {
-      const attempt = await runCommandVerifierDetached({
-        repoDir: baseDir,
-        worktreePath: join(this.deps.worktreesDir ?? tmpdir(), `epic-post-merge-${this.deps.workspace.id}-${epicRef}`),
-        verifiedHeadOid: mergeOid,
-        command,
-      });
-      if (attempt.verdict !== 'pass') return { pass: false, output: `${attempt.summary}\n${attempt.output}`.trim() };
-    }
-    return { pass: true, output: '' };
+  private async runPostMergeCheck(epicRef: TrackerRef, mergeOid: string, baseDir: string): Promise<PostMergeCheckResult> {
+    const { workspace, epicAttempts, verificationAttemptStore, archive } = this.deps;
+    const attempt = (await epicAttempts?.listForEpic({ workspaceId: workspace.id, epicRef }))?.at(-1);
+    return runPostMergeCommands({
+      commands: await this.deps.resolvePostMergeCommands(),
+      cwd: baseDir,
+      mergeOid,
+      commandSpawn: this.deps.commandSpawn,
+      outputLog: async (command) =>
+        (attempt ? await archive?.epicVerificationOutputLog(workspace.id, epicRef, attempt.number, command.id, 'post-merge') : null) ?? null,
+      onAttempt: async (commandAttempt) => {
+        if (attempt) await verificationAttemptStore?.append(attempt.id, commandAttemptToInput(commandAttempt));
+      },
+    });
   }
 }

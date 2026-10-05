@@ -1,3 +1,4 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { and, asc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import {
@@ -33,7 +34,7 @@ export interface AttemptGuardrailSnapshot {
 /** The durable identity of an Epic that owns an Attempt. */
 export interface EpicAttemptOwner {
   workspaceId: number;
-  epicRef: number;
+  epicRef: TrackerRef;
 }
 
 export interface StepInput {
@@ -106,7 +107,7 @@ export class AttemptStore {
         )?.n ?? 0) + 1;
       return db
         .insert(attempts)
-        .values({ taskId, number, ...values })
+        .values({ taskId, number, agentDurationMs: 0, ...values })
         .returning()
         .get();
     });
@@ -144,7 +145,7 @@ export class AttemptStore {
             .where(and(eq(attempts.workspaceId, owner.workspaceId), eq(attempts.epicRef, owner.epicRef)))
             .get()
         )?.n ?? 0) + 1;
-      return db.insert(attempts).values({ ...owner, number, ...values }).returning().get();
+      return db.insert(attempts).values({ ...owner, number, agentDurationMs: 0, ...values }).returning().get();
     });
     if (!isEpicAttempt(row)) throw new DomainError('not_found', `epic ${owner.workspaceId}/${owner.epicRef} attempt ownership was not persisted`);
     return row;
@@ -174,7 +175,7 @@ export class AttemptStore {
   async ensureForRun(taskId: number, number: number, startedAt: number): Promise<TaskAttemptRow> {
     const row = await this.db.write(async (db) => {
       const existing = await db.select().from(attempts).where(and(eq(attempts.taskId, taskId), eq(attempts.number, number))).get();
-      return existing ?? db.insert(attempts).values({ taskId, number, startedAt }).returning().get();
+      return existing ?? db.insert(attempts).values({ taskId, number, startedAt, agentDurationMs: 0 }).returning().get();
     });
     if (!isTaskAttempt(row)) throw new DomainError('not_found', `task ${taskId} attempt ownership was not persisted`);
     return row;
@@ -188,7 +189,7 @@ export class AttemptStore {
         .from(attempts)
         .where(and(eq(attempts.workspaceId, owner.workspaceId), eq(attempts.epicRef, owner.epicRef), eq(attempts.number, number)))
         .get();
-      return existing ?? db.insert(attempts).values({ ...owner, number, startedAt }).returning().get();
+      return existing ?? db.insert(attempts).values({ ...owner, number, startedAt, agentDurationMs: 0 }).returning().get();
     });
     if (!isEpicAttempt(row)) throw new DomainError('not_found', `epic ${owner.workspaceId}/${owner.epicRef} attempt ownership was not persisted`);
     return row;
@@ -247,6 +248,21 @@ export class AttemptStore {
     ) as Promise<AttemptRow>;
   }
 
+  async addAgentDuration(id: number, durationMs: number): Promise<void> {
+    await this.db.write((db) => db.update(attempts).set({
+      agentDurationMs: sql`CASE WHEN ${attempts.agentDurationMs} IS NULL THEN NULL ELSE ${attempts.agentDurationMs} + ${Math.max(0, durationMs)} END`,
+    }).where(eq(attempts.id, id)).run());
+  }
+
+  async measureAgentTurn<T>(id: number, turn: () => Promise<T>): Promise<T> {
+    const started = performance.now();
+    try {
+      return await turn();
+    } finally {
+      await this.addAgentDuration(id, Math.round(performance.now() - started));
+    }
+  }
+
   /** Write a final Usage and its Cost atomically. Once present, Cost never changes. */
   async updateWithFrozenCost(id: number, patch: Partial<AttemptRow>): Promise<AttemptRow> {
     return this.db.write(async (db) => {
@@ -290,7 +306,7 @@ export class AttemptStore {
       await this.db.write((db) =>
         db
           .update(attempts)
-          .set({ state: 'failed', reason: 'process-death', endedAt: Date.now() })
+          .set({ state: 'failed', reason: 'process-death', endedAt: Date.now(), agentDurationMs: null })
           .where(eq(attempts.id, attempt.id))
           .run(),
       );

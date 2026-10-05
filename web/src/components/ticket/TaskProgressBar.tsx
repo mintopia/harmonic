@@ -1,9 +1,10 @@
 import { Icon } from '../Icon';
-import type { AttemptSummary, Task } from '../../types';
+import type { Attempt, AttemptSummary, Task } from '../../types';
 import { card, PHASE_NODE_STYLES } from '../../ui';
 import { splitPathTail } from '../../path';
 import { taskLifecycle, type LifecycleStepKey, type LifecycleStepStatus } from '../../task-detail-model';
 import { sectionCaps } from './shared';
+import { issueRef } from '../../id-format';
 
 function stepGlyph(status: LifecycleStepStatus, index: number) {
   if (status === 'done') return <Icon name="check" className="size-3.5" />;
@@ -17,6 +18,7 @@ const STEP_LABEL_TONE: Record<LifecycleStepStatus, string> = {
   awaiting: 'text-await',
   pending: 'text-faint',
   failed: 'text-fail',
+  skipped: 'text-faint',
 };
 
 const STEP_STATUS_LABEL: Record<LifecycleStepStatus, string> = {
@@ -25,38 +27,38 @@ const STEP_STATUS_LABEL: Record<LifecycleStepStatus, string> = {
   awaiting: 'awaiting review',
   pending: 'pending',
   failed: 'failed',
+  skipped: 'skipped',
 };
 
 function stepCaption(key: LifecycleStepKey, status: LifecycleStepStatus, task: Task, attemptCount: number, disabled: boolean): string | null {
+  if (key === 'merge' && status === 'awaiting') return 'awaiting review';
+  if (key !== 'implementation' && task.isolationMode === 'direct') return 'direct mode';
   switch (key) {
     case 'worktree':
       return task.branch ? splitPathTail(task.branch).tail : null;
     case 'implementation':
       return attemptCount > 0 ? `${attemptCount} attempt${attemptCount === 1 ? '' : 's'}` : null;
     case 'merge':
-      return status === 'awaiting' ? 'awaiting review' : null;
+      return null;
     case 'postMergeCheck':
       return disabled ? 'not configured' : 'revert on red';
     case 'closeIssue':
-      return task.trackerRef != null ? `#${task.trackerRef}` : null;
+      return task.trackerRef != null ? issueRef(task.trackerRef) : 'no linked issue';
     case 'retire':
       return 'cleanup';
   }
 }
 
-function TaskProgressBar({ task, attempts, commandConfigured }: { task: Task; attempts: AttemptSummary[]; commandConfigured: boolean }) {
-  const { steps } = taskLifecycle(task.state, attempts, commandConfigured, task.mergeStatus);
+function TaskProgressBar({ task, attempts, attemptDetails, commandConfigured }: { task: Task; attempts: AttemptSummary[]; attemptDetails: Attempt[]; commandConfigured: boolean }) {
+  const { steps } = taskLifecycle(task, attempts, attemptDetails, commandConfigured);
   return (
-    <div className="mb-6 mt-1">
+    <div className="mb-6 mt-6">
       <div className={`mb-3 ${sectionCaps}`}>Task progress</div>
       <ol
         className={`${card} flex items-start px-[22px] py-5 max-md:flex-col max-md:items-stretch max-md:gap-3 max-md:px-4`}
         aria-label="Task progress"
       >
         {steps.map((step, i) => {
-          // `disabled` steps (e.g. an unconfigured post-merge check) are still
-          // reachable, not skipped, so their `status` alone — not `disabled` —
-          // decides whether a connector is solid.
           const leftConnectorSolid = i > 0 && steps[i - 1]?.status === 'done';
           const rightConnectorSolid = step.status === 'done';
           const caption = stepCaption(step.key, step.status, task, attempts.length, !!step.disabled);

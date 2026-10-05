@@ -16,6 +16,7 @@ export type IconName =
   | 'logout'
   | 'chevrons-left'
   | 'chevron-down'
+  | 'chevron-left'
   | 'sun'
   | 'moon'
   | 'circle-half'
@@ -43,6 +44,7 @@ export type IconName =
   | 'folder-plus'
   | 'save'
   | 'eye'
+  | 'agents'
   | 'undo'
   | 'github'
   | 'book'
@@ -129,6 +131,13 @@ const PATHS: Record<IconName, JSX.Element> = {
       <circle cx="8" cy="8" r="1.75" />
     </>
   ),
+  agents: (
+    <>
+      <circle cx="6" cy="6" r="2.5" />
+      <circle cx="11.5" cy="9" r="2" />
+      <path d="M1.5 13.5c.6-2.4 2.3-3.5 4.5-3.5s3.9 1.1 4.5 3.5" />
+    </>
+  ),
   undo: (
     <>
       <path d="M6.5 3.5 3 7l3.5 3.5" />
@@ -181,6 +190,7 @@ const PATHS: Record<IconName, JSX.Element> = {
   ),
   'chevrons-left': <path d="M8 4.5 4.5 8 8 11.5M12 4.5 8.5 8l3.5 3.5" />,
   'chevron-down': <path d="M4.5 6.25 8 9.75l3.5-3.5" />,
+  'chevron-left': <path d="M10 3 5 8l5 5" />,
   sun: (
     <>
       <circle cx="8" cy="8" r="2.75" />

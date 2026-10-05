@@ -6,7 +6,7 @@ import { VerificationAttemptStore } from '../src/domain/verification-attempts.js
 import { resetCodeIndexAvailabilityForTest } from '../src/execution/code-index.js';
 import { type Verdict } from '../src/verification/critic-schema.js';
 import { type CriticHarnessDrive } from '../src/verification/critic.js';
-import { startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
+import { startServer, stubHarness, type TestServer, waitFor, withArchivedPrompt } from './helpers.js';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -289,9 +289,29 @@ describe('verification-selfheal', () => {
 
       const attemptsAfter = await ticketAttempts(taskId);
       expect(attemptsAfter).toHaveLength(2);
-      expect(attemptsAfter[1]!.prompt).toContain('## Previous attempt failed — fix required (self-heal 1)');
-      expect(attemptsAfter[1]!.prompt).toContain('## Operator message');
-      expect(attemptsAfter[1]!.prompt).toContain('watch the whitespace');
+      const retryPrompt = (await withArchivedPrompt(server, attemptsAfter[1]))!.prompt;
+      expect(retryPrompt).toContain('## Previous attempt failed — fix required (self-heal 1)');
+      expect(retryPrompt).toContain('## Operator message');
+      expect(retryPrompt).toContain('watch the whitespace');
+    });
+
+    it('an edited self-heal Prompt Fragment reaches the retry prompt', async () => {
+      await server.app.ctx.workspaces.update(workspaceId, {
+        taskPreMergeCommands: localCommands(markerCommand('ok')),
+        promptFragmentSelfHeal: '## Previous attempt failed — REWORK (self-heal {attempt}) because {reason}. Output follows.\n{output}',
+      });
+      try {
+        const { taskId } = await runWorktreeTask({
+          turns: [{ writeFiles: { 'marker.txt': 'bad\n' } }, { writeFiles: { 'marker.txt': 'ok\n' } }],
+        });
+        await waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done' ? true : undefined));
+        const retry = (await ticketAttempts(taskId))[1]!;
+        const retryPrompt = (await withArchivedPrompt(server, retry))!.prompt;
+        expect(retryPrompt).toContain('REWORK (self-heal 1) because verifier command failed');
+        expect(retryPrompt).not.toContain('fix required');
+      } finally {
+        await server.app.ctx.workspaces.update(workspaceId, { promptFragmentSelfHeal: null });
+      }
     });
 
     async function implementationSession(attemptId: number) {
@@ -330,8 +350,9 @@ describe('verification-selfheal', () => {
       expect(second.id).toBe(first.id);
       expect(reloaded).toEqual([first.harnessSessionId]);
       expect(run.sessionId).toBe(first.harnessSessionId);
-      expect(run.prompt).toContain('## Previous attempt failed — fix required (self-heal 1)');
-      expect(run.prompt).not.toContain('## Prior session (condensed)');
+      const archived = (await withArchivedPrompt(server, run)).prompt;
+      expect(archived).toContain('## Previous attempt failed — fix required (self-heal 1)');
+      expect(archived).not.toContain('## Prior session (condensed)');
     });
 
     it('starts a condensed Session at/above the threshold: fresh session id, condensed section after the corrective feedback', async () => {
@@ -341,7 +362,7 @@ describe('verification-selfheal', () => {
       expect(second.harnessSessionId).not.toBe(first.harnessSessionId);
       expect(reloaded).toEqual([]);
       expect(run.sessionId).toBe(second.harnessSessionId);
-      const prompt = run.prompt!;
+      const prompt = (await withArchivedPrompt(server, run)).prompt!;
       expect(JSON.parse(prompt.split('\n\n## Previous attempt failed')[0]!)).toHaveProperty('turns');
       const verification = prompt.indexOf('## Previous attempt failed — fix required (self-heal 1)');
       const condensed = prompt.indexOf('## Prior session (condensed)');
@@ -457,6 +478,7 @@ describe('verification-critic', () => {
     let repoDir: string;
     let workspaceId: number;
     let criticResult: { verdict: Verdict; summary: string };
+    let reportedCriticDurationMs: number | null = null;
     let lastCriticHarnessId: string | undefined;
     let lastCriticCwd: string | undefined;
     let codeIndexDir: string;
@@ -465,6 +487,7 @@ describe('verification-critic', () => {
 
     const criticDrive: CriticHarnessDrive = {
       run: async (req) => {
+        if (reportedCriticDurationMs !== null) await req.onAgentDurationMs?.(reportedCriticDurationMs);
         lastCriticHarnessId = req.harnessId;
         lastCriticCwd = req.cwd;
         req.onUpdate?.({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'reviewing the change' } });
@@ -518,6 +541,7 @@ describe('verification-critic', () => {
     });
     beforeEach(async () => {
       criticResult = { verdict: 'pass', summary: 'the change matches the ticket' };
+      reportedCriticDurationMs = null;
       lastCriticHarnessId = undefined;
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'worktree',
@@ -582,6 +606,16 @@ describe('verification-critic', () => {
       ]);
       // ...and never leak into the builder's Implementation transcript stream.
       expect([...server.app.ctx.bus.replayAttemptLog({ attemptId, after: 0 })].some((e) => e.payload.sessionUpdate === 'tool_call' && e.payload.toolCallId === 'c1')).toBe(false);
+    });
+
+    it('adds a critic prompt duration to the builder duration exactly once', async () => {
+      reportedCriticDurationMs = 100_000;
+      await server.app.ctx.workspaces.update(workspaceId, critic());
+      const { taskId, attemptId } = await createAndRun();
+      await waitFor(async () => (await server.app.ctx.tasks.get(taskId)).state === 'done' ? true : undefined);
+      const duration = (await server.app.ctx.attempts.get(attemptId)).agentDurationMs;
+      expect(duration ?? -1).toBeGreaterThanOrEqual(100_000);
+      expect(duration ?? Infinity).toBeLessThan(200_000);
     });
 
     it('AC3: a failing critic records feedback on attempt 1 and escalates after attempt 2', async () => {

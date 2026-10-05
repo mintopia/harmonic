@@ -3,19 +3,19 @@ export interface RunTimings {
   startedAt: number;
   /** Attempt finish (epoch ms), or null while it has not settled. */
   finishedAt: number | null;
-  /** The `agent-finish/unresolved` timestamp (epoch ms), or null when the Attempt recorded none. */
-  agentFinishTs: number | null;
+  /** Persisted agent-turn duration, or null when timing is missing or incomplete. */
+  agentDurationMs: number | null;
 }
 
 /**
- * The Attempt's active-execution duration in ms — start to `agent-finish`,
- * falling back to `finished − started` — or null when it can't be measured
+ * The Attempt's active-execution duration in ms, falling back to
+ * `finished − started` when persisted timing is missing or incomplete — or null when it can't be measured
  * (no end timestamp, or a negative span). Never a fabricated 0.
  */
-export function activeExecutionDurationMs({ startedAt, finishedAt, agentFinishTs }: RunTimings): number | null {
-  const end = agentFinishTs ?? finishedAt;
-  if (end === null) return null;
-  const ms = end - startedAt;
+export function activeExecutionDurationMs({ startedAt, finishedAt, agentDurationMs }: RunTimings): number | null {
+  if (finishedAt === null) return null;
+  if (agentDurationMs !== null) return agentDurationMs;
+  const ms = finishedAt - startedAt;
   return ms >= 0 ? ms : null;
 }
 

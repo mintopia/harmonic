@@ -15,8 +15,9 @@ Export is off until you turn it on. See [Turn Export on](#turn-export-on).
 Harmonic starts an Archive for every task when the task is created. You
 don't need to configure anything. It holds:
 
-- the prompt sent to each agent, and everything the agent did, for the
-  implementation and for every Critic;
+- the **Resolved Prompt** sent to each agent (with all placeholders and
+  fragments expanded), and everything the agent did, for the implementation
+  and for every Critic;
 - a copy of each agent harness's own log, taken when its step ends;
 - the complete output of every verify command, with nothing cut;
 - everything you did to the task: steers, Accept, Reject with its reason,
@@ -78,7 +79,7 @@ a copy for you, so it doesn't show up under Destinations or Earlier Exports.
 ### When a delivery fails
 
 A failed Destination shows its error and the next retry, for example
-*Retry 2 of 3 in 27 min*. Harmonic retries on its own after 5 minutes, 30
+*Retry 2 of 3 at 15:30*. Harmonic retries on its own after 5 minutes, 30
 minutes and 2 hours. After the third failure the row reads **Retries
 exhausted**. Fix the problem, then use **Export again**.
 
@@ -86,7 +87,8 @@ A failure also raises a toast and sends an `export.failed` event to your
 [notification channels](/harmonic/work/notifications/).
 
 The ticket's Timeline records each step as its own event tagged **EXPORT**:
-the Export being built, each delivery, and each failure.
+the Export being built, each delivery, and each failure. If building the
+Export fails, Harmonic rebuilds it on the same schedule.
 
 ### Partial exports
 
@@ -111,6 +113,7 @@ Unpacked, it contains:
 | `ticket.json` | The task as Harmonic showed it at export time |
 | `timeline.json` | The task's Timeline: Attempts, verification, merge and other events |
 | `operator-inputs.json` | Everything you did to the task |
+| `agent-messages.json` | [Agent Messages](/harmonic/work/agent-messages/) the task's agent sent to or received from other tasks |
 | `manifest.json` | Export details: Harmonic version, disposition, file counts, redaction counts, whether it is partial, and git details |
 | `archive.json` | The Archive's identity and its Export history |
 | `attempts/` | One folder per Attempt: prompts, agent transcripts, harness logs, verify output and Critic runs |
@@ -135,7 +138,8 @@ Redaction only applies to Exports. The Archive on disk stays raw.
 When an Epic merges, Harmonic writes an Epic Export too, named
 `epic-<ref>-done-<timestamp>.tar.gz`. It holds the Epic's own verification
 and Critic runs and its Timeline, and lists its Members rather than copying
-their Exports.
+their Exports. It also holds an `agent-messages.json` with the
+[Agent Messages](/harmonic/work/agent-messages/) its Members sent or received.
 
 Epic Exports go to the same Destinations as task Exports, with the same
 retries and failure notifications. Once an Epic has merged, its page shows the

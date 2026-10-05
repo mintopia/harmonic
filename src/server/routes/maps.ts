@@ -14,11 +14,11 @@ import { listResponse, paginate, paginationQuerySchema } from '../pagination.js'
 const mapSchema = z
   .object({
     workspaceId: z.number().meta({ example: 1 }),
-    ref: z.number().meta({ example: 19 }),
+    ref: z.string().min(1).meta({ example: '19' }),
     title: z.string().meta({ example: 'Wayfinder' }),
     url: z.string().meta({ example: 'https://github.com/mintopia/harmonic/issues/19' }),
     /** Tracker refs of the mirrored Tasks under this Map. */
-    taskRefs: z.array(z.number()).meta({ example: [30, 35] }),
+    taskRefs: z.array(z.string()).meta({ example: ['30', '35'] }),
     /** Task count per state (the keys are TaskStates present under this Map). */
     counts: z.record(z.string(), z.number()).meta({ example: { ready: 1, completed: 1 } }),
   })
@@ -26,7 +26,7 @@ const mapSchema = z
 
 const mapsListResponseSchema = listResponse('maps', mapSchema);
 
-const refParamsSchema = z.object({ ref: z.coerce.number().int().meta({ example: 19 }) });
+const refParamsSchema = z.object({ ref: z.string().min(1).meta({ example: '19' }) });
 const workspaceQuerySchema = z.object({
   workspaceId: z.coerce.number().int().positive().optional().meta({ example: 1 }),
 });

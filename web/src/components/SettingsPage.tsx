@@ -6,6 +6,8 @@ import { changedChannelEvents, channelsDirty, toggleChannelEvent } from '../chan
 import { humanizeSaveError, parseFieldErrors } from './SettingsSection';
 import { firstPatternError, normalizeConfigExport } from '../archive-export-model';
 import { SettingsForm } from './SettingsForm';
+import { LoadError } from './LoadError';
+import { ConfirmDialog } from './ConfirmDialog';
 import type { GlobalRenderCtx } from './settings-schema';
 import { SETTING_TABS, type SettingTab } from '../../../src/domain/settings-registry.js';
 
@@ -26,27 +28,38 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [tab, setTab] = useState<SettingTab>('general');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [confirmingRevert, setConfirmingRevert] = useState(false);
+  const [revertError, setRevertError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.configLayers().then(({ baseline, global, harnessPermissionModes }) => {
-      setBaseline(baseline);
-      setPristine(global);
-      setLocal(global);
-      setHarnessPermissionModes(harnessPermissionModes);
+    let active = true;
+    const channelsLoad = api.channels().catch((e) => {
+      console.warn('failed to load channels', e);
+      return { channels: [] };
     });
-    api
-      .channels()
-      .then(({ channels }) => {
+    Promise.all([api.configLayers(), channelsLoad])
+      .then(([{ baseline, global, harnessPermissionModes }, { channels }]) => {
+        if (!active) return;
+        setBaseline(baseline);
+        setPristine(global);
+        setLocal(global);
+        setHarnessPermissionModes(harnessPermissionModes);
         setPristineChannels(channels);
         setLocalChannels(channels);
       })
-      .catch((e) => console.warn('failed to load channels', e));
-  }, []);
+      .catch((e) => {
+        if (active) setLoadError(e instanceof Error ? e.message : String(e));
+      });
+    return () => { active = false; };
+  }, [loadAttempt]);
 
-  if (!local || !pristine || !baseline) return null;
+  if (loadError) return <LoadError message={`settings: ${loadError}`} onRetry={() => { setLoadError(null); setLoadAttempt((n) => n + 1); }} />;
+  if (!local || !pristine || !baseline) return <p role="status" className="p-4 text-muted">Loading settings…</p>;
 
-  const dirty =
-    JSON.stringify(local) !== JSON.stringify(pristine) || channelsDirty(localChannels, pristineChannels);
+  const configDirty = JSON.stringify(local) !== JSON.stringify(pristine);
+  const dirty = configDirty || channelsDirty(localChannels, pristineChannels);
 
   const discard = () => {
     setLocal(pristine);
@@ -65,17 +78,25 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
       setSaving(false);
       return;
     }
+    let configSaved = false;
     try {
-      const updated = await api.replaceConfig(normalizeConfigExport(local));
-      setPristine(updated);
-      setLocal(updated);
+      if (configDirty) {
+        const updated = await api.replaceConfig(normalizeConfigExport(local));
+        setPristine(updated);
+        setLocal(updated);
+        onSaved(updated);
+        configSaved = true;
+      }
       let savedChannels = pristineChannels;
       for (const { id, events } of changedChannelEvents(localChannels, pristineChannels)) {
-        await api.updateChannel(id, { events });
+        try {
+          await api.updateChannel(id, { events });
+        } catch (e) {
+          throw new Error(`${configSaved ? 'Global settings were saved, but a notification channel failed to save.' : 'A notification channel failed to save.'} Retry to save the remaining channel changes: ${e instanceof Error ? e.message : String(e)}`);
+        }
         savedChannels = savedChannels.map((c) => (c.id === id ? { ...c, events } : c));
         setPristineChannels(savedChannels);
       }
-      onSaved(updated);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setError(humanizeSaveError(message));
@@ -86,15 +107,18 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
   };
 
   const revertAll = async () => {
+    setConfirmingRevert(false);
     setSaving(true);
     setError(null);
+    setRevertError(null);
+    setFieldErrors({});
     try {
       const updated = await api.revertConfig();
       setPristine(updated);
       setLocal(updated);
       onSaved(updated);
     } catch (e) {
-      setError(humanizeSaveError(e instanceof Error ? e.message : String(e)));
+      setRevertError(humanizeSaveError(e instanceof Error ? e.message : String(e)));
     } finally {
       setSaving(false);
     }
@@ -135,10 +159,24 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
       onSave={save}
       onDiscard={discard}
       headerActions={
-        <button type="button" className={btnGhost} disabled={saving} onClick={revertAll}>
+        <button type="button" className={btnGhost} disabled={saving} onClick={() => setConfirmingRevert(true)}>
           Revert all to distributed
         </button>
       }
-    />
+    >
+      {revertError && <p role="alert" className="mt-4 text-fail">{revertError}</p>}
+      {confirmingRevert && (
+        <ConfirmDialog
+          label="Reset global settings"
+          title="Revert all global settings?"
+          confirmLabel="Revert all to distributed"
+          tone="danger"
+          onConfirm={revertAll}
+          onCancel={() => setConfirmingRevert(false)}
+        >
+          <p>This immediately resets global settings to the distributed defaults. Workspaces that inherit these settings will use the defaults too. Unsaved global setting changes will be discarded.</p>
+        </ConfirmDialog>
+      )}
+    </SettingsForm>
   );
 }

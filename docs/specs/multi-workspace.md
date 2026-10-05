@@ -1,6 +1,6 @@
 # Spec: Multiple Workspaces in a single instance
 
-Design settled via `/grill-with-docs`. Domain: [CONTEXT.md](../../CONTEXT.md)
+Design settled via `/grill-with-docs`. Domain: [GLOSSARY.md](../../GLOSSARY.md)
 (**Workspace**, **Host Ceiling**). Decision: [ADR-0008](../adr/0008-workspaces-in-a-single-instance.md).
 
 ## Model (settled)

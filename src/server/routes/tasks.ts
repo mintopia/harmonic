@@ -27,9 +27,8 @@ import { readTranscriptLog, withOperatorMessages, type OperatorMessage, type Tra
 import { adapterFor } from '../../execution/harness/registry.js';
 import { attemptTimelineToApi, attemptToApi, taskToApi, tasksToApi, ticketTimelineToApi, verifierStatusesToApi } from '../serialize.js';
 import { atRestWorkspaceId, costOfAttempts, epicToListRow, verificationAttemptToApi } from '../dto.js';
-import type { ApiTaskListRow } from '../dto.js';
+import type { ApiTaskListItem } from '../dto.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, attemptUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
-import { splitFullOutputPath } from '../../verification/command-verifier.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import { diffFilesResponseSchema } from './diff.js';
 import { deleteTaskKeepingArchive, operatorReasonSchema, recordOperatorActionBestEffort, recordOperatorActionsBestEffort, requestActor } from '../operator-inputs.js';
@@ -145,19 +144,21 @@ const taskWithDepsSchema = z
     escalationReason: z.string().nullable().meta({ example: null }),
     /** Live merge indicator, orthogonal to `state`: 'merging' while the candidate merges onto base, 'resolving-conflicts' once that merge conflicts; null at rest. */
     mergeStatus: z.enum(MERGE_STATUSES).nullable().meta({ example: null }),
+    /** True while the Task is merged but its tracker ticket close is outstanding. */
+    ticketClosePending: z.boolean().meta({ example: false }),
     feedback: z.string().nullable().meta({ example: null }),
     /** 'full' resumes the same Session, 'condensed' starts fresh; null before any continuation (⇒ full). */
     continuationChoice: z.enum(['full', 'condensed']).nullable().meta({ example: null }),
     /** 'native' (authored here) | 'mirrored' (1:1 tracker projection). */
     origin: z.enum(TASK_ORIGINS).meta({ example: 'native' }),
     /** The mirrored issue's number; null on native Tasks. */
-    trackerRef: z.number().nullable().meta({ example: null }),
+    trackerRef: z.string().nullable().meta({ example: null }),
     /** 'wayfinder' | 'implement'; null on native Tasks. */
     workflow: z.enum(WORKFLOWS).nullable().meta({ example: null }),
     /** 'research'|'prototype'|'grilling'|'task'; null for implement and native. */
     wayfinderType: z.enum(WAYFINDER_TYPES).nullable().meta({ example: null }),
     /** The parent Map issue's number (query-time Map rollup); null off-Map or native. */
-    mapRef: z.number().nullable().meta({ example: null }),
+    mapRef: z.string().nullable().meta({ example: null }),
     createdAt: z.number().meta({ example: 1784030400000 }),
     updatedAt: z.number().meta({ example: 1784032260000 }),
     dependsOn: z.array(z.number()).meta({ example: [4818] }),
@@ -195,6 +196,8 @@ const taskSchema = taskWithDepsSchema
     url: z.string().nullable().meta({ example: 'https://github.com/mintopia/harmonic/issues/35' }),
     /** The parent Map's title (resolved from mapRef, last poll); null when unmapped or before a poll. */
     mapTitle: z.string().nullable().meta({ example: 'Wayfinder' }),
+    /** The display name of the tracker a mirrored Task came from; null on native Tasks or an unresolved tracker. */
+    trackerLabel: z.string().nullable().meta({ example: 'GitHub' }),
     /** The latest Attempt's branch (worktree mode only); null in direct mode or before any Attempt. */
     branch: z.string().nullable().meta({ example: 'agent/4821-rate-limiting' }),
     /** The latest Attempt's `git diff --numstat` (additions⇥deletions⇥path per line),
@@ -224,9 +227,16 @@ const taskSchema = taskWithDepsSchema
   .meta({ id: 'Task' });
 
 /** The full task shape minus `prompt`; list surfaces render `summary` instead. */
-const taskListRowSchema = taskSchema.omit({ prompt: true }).meta({ id: 'TaskListRow' });
+export const taskListRowSchema = taskSchema.omit({ prompt: true }).meta({ id: 'TaskListRow' });
 
-const tasksListResponseSchema = listResponse('tasks', taskListRowSchema);
+/** An Epic container row on the unfiltered list (`epics=true`): no Task id, keyed by `trackerRef`; a row carrying `id` is rejected. */
+export const epicListRowSchema = taskListRowSchema
+  .omit({ id: true, trackerRef: true })
+  .extend({ trackerRef: z.string().meta({ example: '42' }) })
+  .strict()
+  .meta({ id: 'EpicListRow' });
+
+const tasksListResponseSchema = listResponse('tasks', z.union([taskListRowSchema, epicListRowSchema]));
 
 /** An Attempt as the REST API and WebSocket both serve it (serialize.ts `ApiAttempt`). */
 const attemptSchema = z
@@ -250,6 +260,8 @@ const attemptSchema = z
     /** The verified head OID and the private ref it is pinned to; null when no verified head was produced. */
     verifiedHeadOid: z.string().nullable().meta({ example: '0f758cd2200565e7605902a86c2827c65ad25ce0' }),
     verifiedRef: z.string().nullable().meta({ example: 'refs/harmonic/direct/attempt-9137' }),
+    /** The PR/MR the open-PR Merge Fate opened for this Attempt; null when none was opened (other fates, or a Code Repository that opens none). */
+    pullRequestUrl: z.string().nullable().meta({ example: 'https://github.com/mintopia/harmonic/pull/812' }),
     usage: attemptUsageSchema.nullable(),
     /** Total tool calls this Attempt's session made. */
     toolCalls: z.number().meta({ example: 63 }),
@@ -281,7 +293,7 @@ const eventsListResponseSchema = listResponse('events', attemptEventSchema);
 const ticketTimelineEventSchema = z.object({
   attemptId: z.number().nullable(),
   ts: z.number(),
-  kind: z.enum(['attempt-started', 'attempt-finished', 'lifecycle', 'verification', 'guardrail', 'operator-reject', 'fact']),
+  kind: z.enum(['attempt-started', 'attempt-finished', 'lifecycle', 'verification', 'guardrail', 'operator-reject', 'agent-message', 'fact']),
   data: z.unknown(),
 });
 const ticketTimelineResponseSchema = listResponse('events', ticketTimelineEventSchema);
@@ -326,10 +338,10 @@ const verificationAttemptSchema = z.object({
   verdict: z.enum(['pass', 'fail', 'inconclusive']).meta({ example: 'pass' }),
   /** Short human summary of the outcome. */
   summary: z.string().meta({ example: 'all checks passed' }),
-  /** Raw verifier output, caller-capped. */
+  /** Raw verifier output, capped to a head and tail with the elided middle marked. The full text, when kept, is reported by `outputTruncated`. */
   output: z.string().meta({ example: '' }),
-  /** The exact prompt sent to the critic; null for a command verifier. */
-  prompt: z.string().nullable().meta({ example: null }),
+  /** Archive locator of the critic's Resolved Prompt, read with `GET /api/attempts/:attemptId/resolved-prompt?locator=`; null for a command verifier or an older row. */
+  promptLocator: z.string().nullable().meta({ example: 'verification/pre-merge/12/prompt.md' }),
   /** The critic harness that produced the transcript; null for a command verifier or an older row. */
   harness: z.string().nullable().meta({ example: 'claude' }),
   /** Whether a critic transcript is available; fetch the parsed log from `GET /api/verification-attempts/:id/log`. */
@@ -361,7 +373,7 @@ const diffResponseSchema = z.object({
 const filterEmpty = (value: string | readonly unknown[] | undefined): boolean =>
   value === undefined || (Array.isArray(value) && value.length === 0);
 
-function sortListRows(rows: ApiTaskListRow[], sortBy: string | undefined, order: string | undefined): ApiTaskListRow[] {
+function sortListRows(rows: ApiTaskListItem[], sortBy: string | undefined, order: string | undefined): ApiTaskListItem[] {
   if (!sortBy) return rows;
   const dir = order === 'desc' ? -1 : 1;
   return rows.sort((a, b) => {
@@ -416,7 +428,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       const taskRows = await tasksToApi(ctx, await ctx.tasks.listWithDeps(query));
       const needle = query.q?.trim().toLowerCase();
       const epicTickets = query.workspaceId == null ? [] : await ctx.trackerManager.listEpicTickets(query.workspaceId);
-      const epicRefs = new Set(epicTickets.map((ticket) => ticket.number));
+      const epicRefs = new Set(epicTickets.map((ticket) => ticket.ref));
       const nonDriverTaskRows = taskRows.filter((task) => task.trackerRef == null || !epicRefs.has(task.trackerRef));
       const wantEpics =
         epics === 'true' && query.workspaceId != null && filterEmpty(query.state) && filterEmpty(query.harness) && filterEmpty(query.priority);
@@ -1126,14 +1138,49 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req, reply) => {
       const attempt = await ctx.verificationAttempts.get(req.params.id);
       if (!attempt) throw new DomainError('not_found', `verification attempt ${req.params.id} not found`);
-      const location = /verification[\\/](pre-merge|post-merge)[\\/]([^\\/]+)[\\/]output\.log$/.exec(splitFullOutputPath(attempt.output).fullOutputPath ?? '');
       const run = await ctx.attempts.get(attempt.attemptId).catch(() => null);
       const owner = run ? await archiveOwner(run) : null;
-      const file = location && run && owner ? await ctx.archive.archivedVerificationOutput(owner, run.number, location[1] as 'pre-merge' | 'post-merge', location[2]!) : null;
+      const file = attempt.fullOutputKey && run && owner ? await ctx.archive.archivedVerificationOutput(owner, run.number, attempt.fullOutputKey) : null;
       if (!file) throw new DomainError('not_found', `no archived full output for verification attempt ${attempt.id}`);
       const stream = createReadStream(file);
       reply.raw.once('close', () => stream.destroy());
       return reply.header('content-type', 'text/plain; charset=utf-8').send(stream);
+    },
+  );
+
+  app.get(
+    '/attempts/:id/resolved-prompt',
+    {
+      schema: {
+        tags: ['Attempts'],
+        description:
+          "Read a Resolved Prompt from the Task Archive by its Attempt-relative locator (e.g. `verification/pre-merge/<stepId>/prompt.md` or `implementation/prompt.md`), as text/plain. The file is read on demand off the event loop; nothing is stored in the database. With `segments=true` it returns JSON `{ prompts }`, one string per turn, sliced from the step's offset index so prompts containing horizontal rules stay whole (archives written before the index existed fall back to splitting on the separator). 404 when the Attempt or the archived prompt is absent.",
+        params: idParamsSchema,
+        querystring: z.object({
+          locator: z.string().min(1).describe('Archive locator of the prompt file, relative to the Attempt directory.'),
+          segments: z.enum(['true', 'false']).optional().describe('When `true`, return the prompts of the step as a JSON array instead of the joined text.'),
+          index: z.coerce.number().int().min(0).optional().describe('0-based index of one prompt within the file; omit to return the whole file. Cannot be combined with `segments=true`.'),
+        }).refine((query) => !(query.segments === 'true' && query.index !== undefined), {
+          message: '`index` cannot be combined with `segments=true`',
+          path: ['index'],
+        }),
+        response: {
+          200: z.any().describe('Plain text: the archived prompt exactly as sent (only the `index`-th prompt when `index` is given); multiple prompts joined by a horizontal rule. With `segments=true`: JSON `{ prompts: string[] }`, one entry per prompt sent.'),
+          404: errorResponse('No such Attempt, or no archived Resolved Prompt at the locator.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const run = await ctx.attempts.get(req.params.id).catch(() => null);
+      const owner = run ? await archiveOwner(run) : null;
+      if (req.query.segments === 'true') {
+        const prompts = run && owner ? await ctx.archive.readArchivedPromptSegments(owner, run.number, req.query.locator) : null;
+        if (prompts === null) throw new DomainError('not_found', `no archived resolved prompt for attempt ${req.params.id} at that locator`);
+        return { prompts };
+      }
+      const text = run && owner ? await ctx.archive.readResolvedPrompt(owner, run.number, req.query.locator, req.query.index) : null;
+      if (text === null) throw new DomainError('not_found', `no archived resolved prompt for attempt ${req.params.id} at that locator/index`);
+      return reply.header('content-type', 'text/plain; charset=utf-8').send(text);
     },
   );
 

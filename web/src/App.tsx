@@ -1,3 +1,4 @@
+import type { TrackerRef } from './types.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import { formatCost } from './cost';
@@ -76,6 +77,8 @@ export function App() {
     workspaces,
     setWorkspaces,
     workspacesLoaded,
+    workspacesError,
+    retryWorkspaces,
     update,
     updatePending,
     changeUpdate,
@@ -134,7 +137,7 @@ export function App() {
   // An Epic's click target (ADR-0017): the Tasks-list Epic row, the Board band
   // header, and a Ticket's parent-Epic link all open the Epic summary page
   // at /epic/:ref, clearing any focused Ticket.
-  const openEpicByRef = (ref: number) => navigate({ ...route, epic: ref, task: null, panel: NO_SELECTION });
+  const openEpicByRef = (ref: TrackerRef) => navigate({ ...route, epic: ref, task: null, panel: NO_SELECTION });
   const pickConversation = useCallback(
     (conversationId: number | null) => navigate({ ...route, conversation: conversationId }),
     [navigate, route],
@@ -207,6 +210,11 @@ export function App() {
       panel: NO_SELECTION,
       file: null,
     });
+    setMenuOpen(false);
+  };
+
+  const openGlobalSettings = () => {
+    navigate({ ...scopeSwitchRoute(route, { kind: 'global' }), view: 'settings' });
     setMenuOpen(false);
   };
 
@@ -300,7 +308,7 @@ export function App() {
         onClose={() => setMenuOpen(false)}
         instanceName={instanceName}
         workspaces={workspaces}
-        activeWorkspaceId={activeWorkspaceId}
+        activeWorkspaceId={scopeWorkspaceId}
         onSwitch={switchWorkspace}
         onGlobal={switchGlobal}
         onCreated={handleWorkspaceCreated}
@@ -325,7 +333,7 @@ export function App() {
           onGlobalPauseChange: setFleetPaused,
           onRefreshTracker: refreshTracker,
           onThemeCycle: cycleTheme,
-          onSettingsClick: () => pickView('settings'),
+          onSettingsClick: openGlobalSettings,
           onLogout: logout,
           onOpenAbout: () => setAboutOpen(true),
           onOpenActivity: openGlobalActivity,
@@ -353,7 +361,7 @@ export function App() {
           onGlobalPauseChange={setFleetPaused}
           onRefreshTracker={refreshTracker}
           onThemeCycle={cycleTheme}
-          onSettingsClick={() => pickView('settings')}
+          onSettingsClick={openGlobalSettings}
           onLogout={logout}
           onNewTask={() => setEditing('new')}
           onOpenAbout={() => setAboutOpen(true)}
@@ -425,6 +433,8 @@ export function App() {
           taskNotFound={taskNotFound}
           epics={epics}
           error={error}
+          workspacesError={workspacesError}
+          onRetryWorkspaces={retryWorkspaces}
           showRunHint={showRunHint}
           dismissRunHint={dismissRunHint}
           showEscalationHint={showEscalationHint}

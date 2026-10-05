@@ -6,17 +6,18 @@ import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { DomainError } from '../src/domain/errors.js';
 import { EscalationService } from '../src/domain/escalation.js';
-import { type MergeEffectExec } from '../src/domain/merge.js';
+import { type MergeEffectExec, ticketCloseEffect } from '../src/domain/merge.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import { type SettingsStore } from '../src/server/settings-store.js';
 import { type Verdict } from '../src/verification/critic-schema.js';
 import { type CriticDriveRequest, type CriticHarnessDrive } from '../src/verification/critic.js';
-import { allWorkspaces, makeSettingsStore, startServer, stubHarness, type TestServer, waitFor, seedWorkspace } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, startServer, stubHarness, type TestServer, waitFor, seedWorkspace, withArchivedPrompt } from './helpers.js';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 describe('escalation', () => {
   describe('escalation: the disposition actions (direct mode)', () => {
@@ -118,8 +119,9 @@ describe('escalation', () => {
       ]);
       const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
       expect(runs).toHaveLength(2);
-      expect(runs[1].prompt).toContain('Do not crash; write the CSV header first.');
-      expect(runs[1].prompt).toContain('crash-before-response');
+      const retryPrompt = (await withArchivedPrompt(server, runs[1], 'Do not crash; write the CSV header first.')).prompt;
+      expect(retryPrompt).toContain('Do not crash; write the CSV header first.');
+      expect(retryPrompt).toContain('crash-before-response');
     });
 
     it('Reject without start requeues to ready and records the guidance, but does not force-start', async () => {
@@ -150,7 +152,7 @@ describe('escalation', () => {
       const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
       expect(runs).toHaveLength(1);
       expect(runs[0]!.branch).toBe(branch);
-      expect(runs[0].prompt).not.toContain('Feedback from the previous attempt');
+      expect((await withArchivedPrompt(server, runs[0])).prompt).not.toContain('Feedback from the previous attempt');
       expect((await timeline(taskId)).find((attempt) => attempt.number === 1)!.feedback).toBe(feedbackBefore);
 
       expect((await server.api('POST', `/api/tasks/${taskId}/run`)).status).toBe(201);
@@ -186,7 +188,7 @@ describe('escalation', () => {
         });
         const workspaceId = (await escServer.app.ctx.workspaces.list())[0]!.id;
         const mirrored = await escServer.app.ctx.tasks.upsertMirrored(
-          { trackerRef: 31_401, prompt: 'ticket 31401', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+          { trackerRef: trackerRef(31_401), prompt: 'ticket 31401', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
           workspaceId,
         );
         expect((await escServer.api('POST', `/api/tasks/${mirrored.id}/run`)).status).toBe(201);
@@ -323,6 +325,27 @@ describe('escalation-service', () => {
         expect((err as DomainError).message).toContain('no candidate to accept');
         expect((await tasks.get(task.id)).state).toBe('escalated');
         expect(resumed).toEqual([]);
+      });
+
+      it('a failed ticket close after a successful merge still settles the ticket done (ADR-0048)', async () => {
+        const { task } = await escalated();
+        let merged = false;
+        effects = [
+          { effect: 'target-ref', idempotencyKey: 'main<-branch', expected: {}, apply: async () => { merged = true; return { ok: true, observed: {} }; } },
+          ticketCloseEffect('1', async () => false, async () => { await tasks.setTicketClosePending(task.id, true); }),
+        ];
+
+        const accepted = await service.accept(task.id);
+
+        expect(merged).toBe(true);
+        expect(accepted).toMatchObject({ state: 'done', ticketClosePending: true });
+      });
+
+      it('a successful ticket close leaves ticketClosePending false', async () => {
+        const { task } = await escalated();
+        effects = [ticketCloseEffect('1', async () => true, async () => { await tasks.setTicketClosePending(task.id, true); })];
+
+        expect(await service.accept(task.id)).toMatchObject({ state: 'done', ticketClosePending: false });
       });
 
       it('a failed merging effect surfaces its detail and leaves the ticket escalated with nothing further applied', async () => {
@@ -624,7 +647,7 @@ describe('escalation-routes', () => {
         const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
         expect(runs).toHaveLength(3);
         expect(runs[2].number).toBe(3);
-        expect(runs[2].prompt).toContain('The timeout is intentional');
+        expect((await withArchivedPrompt(server, runs[2], 'The timeout is intentional')).prompt).toContain('The timeout is intentional');
         expect(branch).toBe(`harmonic/task-${taskId}`);
         expect(runs[2].branch).toBe(branch);
         expect(runs[0].branch).toBe(branch);

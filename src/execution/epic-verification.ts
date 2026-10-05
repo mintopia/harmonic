@@ -1,4 +1,4 @@
-import { runCommandVerifier, type CommandAttempt } from '../verification/command-verifier.js';
+import { runCommandVerifier, type CommandAttempt, type CommandSpawn, type VerificationOutputLog } from '../verification/command-verifier.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
 import type { EpicVerificationStage } from '../config.js';
 
@@ -20,6 +20,7 @@ export async function verifyEpicIntegration(args: {
   /** The integration branch tip OID to Verify. */
   verifiedHeadOid: string;
   verifiers: EpicVerificationStage;
+  commandSpawn: CommandSpawn;
   /** Runs a configured critic in the same live Epic worktree as the commands. */
   runCritic: EpicCriticRunner;
   /** Records each command result for the Epic Attempt timeline. */
@@ -27,17 +28,18 @@ export async function verifyEpicIntegration(args: {
   /** Cancellation, wired to server shutdown; an abort kills the verifier child. */
   signal?: AbortSignal;
   /** Where a command's combined output is persisted, or null to skip. */
-  outputLogPath?: (command: EpicVerificationStage['commands'][number]) => Promise<string | null>;
+  outputLog?: (command: EpicVerificationStage['commands'][number]) => Promise<VerificationOutputLog | null>;
 }): Promise<VerificationDecision> {
   const verdicts: VerifierVerdict[] = [];
 
   for (const command of args.verifiers.commands) {
-    const outputLogPath = (await args.outputLogPath?.(command)) ?? null;
+    const outputLog = (await args.outputLog?.(command)) ?? null;
     const attempt = await runCommandVerifier({
-      outputLogPath,
+      outputLog,
       cwd: args.worktreePath,
       verifiedHeadOid: args.verifiedHeadOid,
       command,
+      spawn: args.commandSpawn,
       ...(args.signal ? { signal: args.signal } : {}),
     });
     await args.onCommand?.(attempt, command);

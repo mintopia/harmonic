@@ -1,5 +1,6 @@
+import type { TrackerRef } from '../tracker/adapter.js';
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { taskDependencies, tasks, type RawTaskRow, type TaskRow, type TaskState, type TrackerFacts, type WayfinderType, type Workflow, type WorkspaceRow } from '../db/schema.js';
 import { decideTaskDeletion, type DeletionDecision } from './task-deletion.js';
@@ -7,11 +8,11 @@ import type { TaskBlockerGraph } from './task-blocker-graph.js';
 import { logger } from '../logger.js';
 
 export interface MirrorInput {
-  trackerRef: number;
+  trackerRef: TrackerRef;
   prompt: string;
   workflow: Workflow;
   wayfinderType: WayfinderType | null;
-  mapRef: number | null;
+  mapRef: TrackerRef | null;
   closed: boolean;
   trackerCanClose?: boolean;
   facts?: TrackerFacts;
@@ -23,7 +24,7 @@ export interface TaskMirrorOptions {
   resolveWorkspace: (workspaceId?: number) => Promise<WorkspaceRow>;
   changed: (task: RawTaskRow) => Promise<TaskRow>;
   get: (id: number) => Promise<TaskRow>;
-  clearDismissal: (workspaceId: number, trackerRef: number) => Promise<void>;
+  clearDismissal: (workspaceId: number, trackerRef: TrackerRef) => Promise<void>;
   removeTaskCascade: (id: number, tombstone: DeletionDecision['tombstone']) => Promise<void>;
   blockerGraph: TaskBlockerGraph;
 }
@@ -103,6 +104,18 @@ export class TaskMirror {
     return row ? this.options.changed(row) : undefined;
   }
 
+  /** Ids of this Workspace's done mirrored Tasks for `refs`, so a blocker absent from the open scan keeps its Dependency edge for display; a done blocker never blocks scheduling. */
+  async doneMirroredIdsByRef(workspaceId: number, refs: TrackerRef[]): Promise<Map<TrackerRef, number>> {
+    if (refs.length === 0) return new Map();
+    const rows = await this.db.read((db) =>
+      db.select({ id: tasks.id, trackerRef: tasks.trackerRef }).from(tasks)
+        .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.origin, 'mirrored'), eq(tasks.state, 'done'), inArray(tasks.trackerRef, refs))).all(),
+    );
+    const byRef = new Map<TrackerRef, number>();
+    for (const row of rows) if (row.trackerRef !== null) byRef.set(row.trackerRef, row.id);
+    return byRef;
+  }
+
   async reconcileMirroredDeps(taskId: number, dependsOnIds: number[]): Promise<void> {
     const desired = new Set(dependsOnIds.filter((id) => id !== taskId));
     const current = new Set(await this.options.blockerGraph.dependsOn(taskId));
@@ -116,7 +129,7 @@ export class TaskMirror {
     await this.options.blockerGraph.rederiveBlocked(taskId);
   }
 
-  async demoteMirroredToContainer(workspaceId: number, trackerRef: number): Promise<void> {
+  async demoteMirroredToContainer(workspaceId: number, trackerRef: TrackerRef): Promise<void> {
     await this.options.clearDismissal(workspaceId, trackerRef);
     const row = await this.db.read((db) => db.select({ id: tasks.id, state: tasks.state, origin: tasks.origin, trackerRef: tasks.trackerRef, workspaceId: tasks.workspaceId }).from(tasks).where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.trackerRef, trackerRef))).get());
     if (!row || !decideTaskDeletion(row).ok) return;

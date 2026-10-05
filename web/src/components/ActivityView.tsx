@@ -11,9 +11,13 @@ import {
   selectField,
   touchTarget,
 } from "../ui";
+import { AgentMessagesTab } from "./AgentMessagesTab";
 import { EmptyState } from "./EmptyState";
 import { LoadError } from "./LoadError";
 import { PageHeader } from "./PageHeader";
+import { Tabs, panelId, tabId } from "./Tabs";
+import { parseActivityTab, resolveActivityTab, type ActivityTab } from "../agent-messages-model";
+import { useAgentMessageThreads } from "../useAgentMessageThreads";
 import {
   activitySummary,
   activityWorkspaces,
@@ -287,6 +291,11 @@ export function ActivityView({ config, workspaceId = null }: { config: AppConfig
   useEffect(() => {
     setProcesses(null);
   }, [workspaceId]);
+  const reloadActivity = activity.reload;
+  const messagesEnabled = activity.data?.agentMessagesEnabledInAnyWorkspace === true;
+  const [selectedTab, setTab] = useState<ActivityTab>("running");
+  const tab = resolveActivityTab(selectedTab, messagesEnabled);
+  const messages = useAgentMessageThreads(workspaceId, messagesEnabled);
 
   useLiveEffect(() => {
     const unsubscribe = subscribe((message) => {
@@ -322,11 +331,11 @@ export function ActivityView({ config, workspaceId = null }: { config: AppConfig
                 ),
             ) ?? current,
         );
-    }, activity.reload);
-    return () => {
-      unsubscribe();
-    };
-  }, [workspaceId, activity.reload]);
+    }, () => {
+      reloadActivity();
+    });
+    return unsubscribe;
+  }, [workspaceId, reloadActivity]);
   if (processes === null)
     return (
       <div>
@@ -353,101 +362,136 @@ export function ActivityView({ config, workspaceId = null }: { config: AppConfig
   const lanes = fleetLanes(filterActivity(processes, activeFilter));
   return (
     <div>
-      <PageHeader title="Activity" description={description} />
-      {activity.error && (
-        <div className="mb-5">
-          <LoadError message={activity.error} onRetry={activity.reload} />
+      <PageHeader
+        title="Activity"
+        description={messagesEnabled ? "What is running right now, and what your agents are saying to each other." : description}
+      />
+      {messagesEnabled && (
+        <div className="mb-4">
+          <Tabs
+            label="Activity views"
+            active={tab}
+            onChange={(id) => setTab(parseActivityTab(id))}
+            tabs={[
+              { id: "running", label: "Running now", count: summary.agentCount },
+              { id: "messages", label: "Agent Messages", count: messages.totalMessages },
+            ]}
+          />
         </div>
       )}
-      <div className={`${card} mb-5 flex flex-wrap gap-x-10 gap-y-4 p-5`}>
-        <Stat label="Agents" value={String(summary.agentCount)} />
-        <Stat label="Subagents" value={String(summary.subagentCount)} />
-        <Stat
-          label="Cost"
-          value={formatCost(summary.cost) ?? "—"}
-          tone={summary.cost ? "text-ink" : "text-muted"}
+      {messagesEnabled && tab === "messages" ? (
+        <AgentMessagesTab
+          global={workspaceId === null}
+          view={messages.view}
+          optionThreads={messages.optionThreads}
+          filter={messages.filter}
+          onFilterChange={messages.setFilter}
+          error={messages.error}
+          onRetry={messages.retry}
+          onLoadMore={messages.loadMore}
         />
-        <Stat
-          label="Fleet tok/s"
-          value={compact.format(Math.round(summary.tokensPerSecond))}
-        />
-        <Stat
-          label="Host ceiling"
-          value={`${summary.ceiling.running}/${summary.ceiling.max}`}
-          tone={
-            summary.ceiling.running >= summary.ceiling.max
-              ? "text-running"
-              : "text-ink"
-          }
-        />
-      </div>
-      {processes.length === 0 ? (
-        <EmptyState title="Nothing running">
-          No Attempts or Conversations are in flight right now.
-        </EmptyState>
       ) : (
-        <>
-          <div className="mb-4 flex flex-wrap items-center gap-3">
-            <TypeSegments
-              value={filter.type}
-              onChange={(type) =>
-                setFilter((current) => ({ ...current, type }))
-              }
-            />
-            {workspaceId === null && workspaces.length > 1 && (
-              <select
-                aria-label="Filter by workspace"
-                className={selectField}
-                value={activeFilter.workspaceId ?? ""}
-                onChange={(event) =>
-                  setFilter((current) => ({
-                    ...current,
-                    workspaceId:
-                      event.target.value === ""
-                        ? null
-                        : Number(event.target.value),
-                  }))
-                }
-              >
-                <option value="">All workspaces</option>
-                {workspaces.map((workspace) => (
-                  <option key={workspace.id} value={workspace.id}>
-                    {workspace.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <div className="flex-1" />
-            <span className={`${labelType} text-muted`}>
-              {lanes.length} {lanes.length === 1 ? "lane" : "lanes"}
-            </span>
-          </div>
-          {lanes.length === 0 ? (
-            <EmptyState title="Nothing matches">
-              Widen the type or Workspace to see the rest of the fleet.
-            </EmptyState>
-          ) : (
-            <div
-              className={`${card} overflow-x-auto`}
-              aria-label="Live Agent lanes"
-            >
-              <div className="grid grid-cols-[minmax(12rem,1fr)_minmax(14rem,1.4fr)_5.5rem_5rem_minmax(6rem,0.7fr)] gap-4 px-4 py-2.5 text-label text-muted">
-                <span>Agent</span>
-                <span>Context</span>
-                <span className="text-right">Tokens</span>
-                <span className="text-right">Cost</span>
-                <span className="text-right">Last tool</span>
-              </div>
-              {lanes.map((lane) => (
-                <Lane
-                  key={`${lane.process.type}-${lane.process.attemptId ?? lane.process.conversationId}-${lane.node?.id ?? "root"}`}
-                  {...lane}
-                  config={config}
-                />
-              ))}
+        <div
+          {...(messagesEnabled
+            ? { role: "tabpanel", id: panelId("running"), "aria-labelledby": tabId("running") }
+            : {})}
+        >
+          {activity.error && (
+            <div className="mb-5">
+              <LoadError message={activity.error} onRetry={activity.reload} />
             </div>
           )}
-        </>
+          <div className={`${card} mb-5 flex flex-wrap gap-x-10 gap-y-4 p-5`}>
+            <Stat label="Agents" value={String(summary.agentCount)} />
+            <Stat label="Subagents" value={String(summary.subagentCount)} />
+            <Stat
+              label="Cost"
+              value={formatCost(summary.cost) ?? "—"}
+              tone={summary.cost ? "text-ink" : "text-muted"}
+            />
+            <Stat
+              label="Fleet tok/s"
+              value={compact.format(Math.round(summary.tokensPerSecond))}
+            />
+            <Stat
+              label="Host ceiling"
+              value={`${summary.ceiling.running}/${summary.ceiling.max}`}
+              tone={
+                summary.ceiling.running >= summary.ceiling.max
+                  ? "text-running"
+                  : "text-ink"
+              }
+            />
+          </div>
+          {processes.length === 0 ? (
+            <EmptyState title="Nothing running">
+              No Attempts or Conversations are in flight right now.
+            </EmptyState>
+          ) : (
+            <>
+              <div className="mb-4 flex flex-wrap items-center gap-3">
+                <TypeSegments
+                  value={filter.type}
+                  onChange={(type) =>
+                    setFilter((current) => ({ ...current, type }))
+                  }
+                />
+                {workspaceId === null && workspaces.length > 1 && (
+                  <select
+                    aria-label="Filter by workspace"
+                    className={selectField}
+                    value={activeFilter.workspaceId ?? ""}
+                    onChange={(event) =>
+                      setFilter((current) => ({
+                        ...current,
+                        workspaceId:
+                          event.target.value === ""
+                            ? null
+                            : Number(event.target.value),
+                      }))
+                    }
+                  >
+                    <option value="">All workspaces</option>
+                    {workspaces.map((workspace) => (
+                      <option key={workspace.id} value={workspace.id}>
+                        {workspace.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <div className="flex-1" />
+                <span className={`${labelType} text-muted`}>
+                  {lanes.length} {lanes.length === 1 ? "lane" : "lanes"}
+                </span>
+              </div>
+              {lanes.length === 0 ? (
+                <EmptyState title="Nothing matches">
+                  Widen the type or Workspace to see the rest of the fleet.
+                </EmptyState>
+              ) : (
+                <div
+                  className={`${card} overflow-x-auto`}
+                  aria-label="Live Agent lanes"
+                >
+                  <div className="grid grid-cols-[minmax(12rem,1fr)_minmax(14rem,1.4fr)_5.5rem_5rem_minmax(6rem,0.7fr)] gap-4 px-4 py-2.5 text-label text-muted">
+                    <span>Agent</span>
+                    <span>Context</span>
+                    <span className="text-right">Tokens</span>
+                    <span className="text-right">Cost</span>
+                    <span className="text-right">Last tool</span>
+                  </div>
+                  {lanes.map((lane) => (
+                    <Lane
+                      key={`${lane.process.type}-${lane.process.attemptId ?? lane.process.conversationId}-${lane.node?.id ?? "root"}`}
+                      {...lane}
+                      config={config}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
       )}
     </div>
   );

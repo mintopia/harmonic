@@ -7,11 +7,15 @@ import {
   compileCriticPreview,
   compileDrivePreview,
   compileEpicCriticPreview,
+  compileEpicRefreshPreview,
+  compileCriticFragmentPreview,
   compileEpicResolvePreview,
   compileTaskIdPreview,
   compileTaskPreview,
 } from '../web/src/prompt-preview-model.js';
 import { baselineConfig } from '../src/config.js';
+
+const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
 
 describe('prompt-preview-model (settings compiled preview)', () => {
   it('offers the core Task-identity tokens plus {skill} for a native Task critic (no ticket ref/url)', () => {
@@ -24,7 +28,7 @@ describe('prompt-preview-model (settings compiled preview)', () => {
   });
 
   it('compileDrivePreview fills the Drive tokens with sample values', () => {
-    const out = compileDrivePreview('task {taskId}: issue {ref} — {title} ({url}) via {skill}: {description}');
+    const out = compileDrivePreview('task {taskId}: issue {ref} — {title} ({url}) via {skill}: {description}', baselineConfig());
     expect(out).toBe(
       `task ${SAMPLE_DRIVE_FIELDS.taskId}: issue ${SAMPLE_DRIVE_FIELDS.ref} — ${SAMPLE_DRIVE_FIELDS.title} (${SAMPLE_DRIVE_FIELDS.url}) via ${SAMPLE_DRIVE_FIELDS.skill}: ${SAMPLE_DRIVE_FIELDS.description}`,
     );
@@ -32,7 +36,7 @@ describe('prompt-preview-model (settings compiled preview)', () => {
   });
 
   it('compileTaskIdPreview fills {taskId}', () => {
-    expect(compileTaskIdPreview('Task {taskId} running unattended')).toBe(`Task ${SAMPLE_TASK_ID} running unattended`);
+    expect(compileTaskIdPreview('Task {taskId} running unattended', baselineConfig())).toBe(`Task ${SAMPLE_TASK_ID} running unattended`);
   });
 
   it('compileTaskPreview fills the task-prompt tokens', () => {
@@ -47,7 +51,7 @@ describe('prompt-preview-model (settings compiled preview)', () => {
     const [mirrored, native] = compileCriticPreview({
       issuePrompt: 'Review issue {ref}: {title}.',
       noIssuePrompt: 'Review task {taskId} — {title} via {skill}.',
-    });
+    }, DEFAULT_PROMPT_FRAGMENTS);
     if (!mirrored || !native) throw new Error('expected two compiled variants');
 
     expect(mirrored.label).toMatch(/mirrored/i);
@@ -69,7 +73,7 @@ describe('prompt-preview-model (settings compiled preview)', () => {
   });
 
   it('compiles an Epic critic against its ticket context', () => {
-    const out = compileEpicCriticPreview('Review Epic {ref}: {title}.');
+    const out = compileEpicCriticPreview('Review Epic {ref}: {title}.', DEFAULT_PROMPT_FRAGMENTS);
 
     expect(out).toContain(`Review Epic ${SAMPLE_DRIVE_FIELDS.ref}: ${SAMPLE_DRIVE_FIELDS.title}.`);
     expect(out).toContain('the referenced ticket');
@@ -78,9 +82,26 @@ describe('prompt-preview-model (settings compiled preview)', () => {
 
   it('matches the Epic resolver prompt and offers its supported tokens', () => {
     expect(EPIC_RESOLVE_PLACEHOLDERS.map((p) => p.token)).toEqual(['{title}', '{description}', '{ref}', '{url}']);
-    expect(compileEpicResolvePreview('Fix {ref}: {title} — {description}')).toContain(
+    expect(compileEpicResolvePreview('Fix {ref}: {title} — {description}', 'Work in {branch}.', DEFAULT_PROMPT_FRAGMENTS)).toContain(
       `Fix ${SAMPLE_DRIVE_FIELDS.ref}: ${SAMPLE_DRIVE_FIELDS.title} — ${SAMPLE_DRIVE_FIELDS.description}`,
     );
-    expect(compileEpicResolvePreview('Fix {ref}.')).toContain('## Failing Epic verification');
+    expect(compileEpicResolvePreview('Fix {ref}.', 'Work in {branch}.', DEFAULT_PROMPT_FRAGMENTS)).toContain('## Failing Epic verification');
+    expect(compileEpicResolvePreview('Fix {ref}.', 'Stay on {branch}.', DEFAULT_PROMPT_FRAGMENTS)).toContain(`Stay on epic/${SAMPLE_DRIVE_FIELDS.ref}.`);
+    expect(compileEpicResolvePreview('Fix.', '{fragment.readOnlyRestraint} on {branch}', { ...DEFAULT_PROMPT_FRAGMENTS, readOnlyRestraint: 'LOOK ONLY', epicFailingVerification: 'FAILED: {reason}' })).toBe(
+      `Fix.\n\nFAILED: Example verifier feedback.\n\nLOOK ONLY on epic/${SAMPLE_DRIVE_FIELDS.ref}`,
+    );
+  });
+
+  it('previews the Epic refresh prompt with fragments expanded and the Epic branch as the checkout', () => {
+    const out = compileEpicRefreshPreview('Merging {defaultBranch} into {branch}: {detail}\n{fragment.conflictResolution}', {
+      promptFragments: { ...DEFAULT_PROMPT_FRAGMENTS, conflictResolution: 'in {baseDir}: keep {baseBranch} and {taskBranch}' },
+    });
+    expect(out).toBe('Merging develop into epic/example: Both branches changed src/app.ts.\nin /repo: keep epic/example and develop');
+  });
+
+  it('previews a critic fragment inside the whole critic prompt, including the uncommitted-changes variant', () => {
+    const fragments = { ...DEFAULT_PROMPT_FRAGMENTS, criticWorkingTreeNote: 'DIRTY against {base}' };
+    expect(compileCriticFragmentPreview(fragments, 'dirty')).toContain('DIRTY against ba5e');
+    expect(compileCriticFragmentPreview(fragments, 'diff')).not.toContain('DIRTY against');
   });
 });

@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { card, field, labelType } from '../ui';
+import { PROMPT_FRAGMENTS, PROMPT_FRAGMENT_NAMES, promptFragmentOverrideKey } from '../../../src/domain/prompt-fragments.js';
 import type { LabeledPreview, Placeholder } from '../prompt-preview-model';
 
 export function SettingsSection({
@@ -25,7 +26,7 @@ export function SettingsSection({
 export const fieldLabel = `mb-1.5 block ${labelType} text-muted`;
 
 const chipBase =
-  'rounded-md border px-1.5 py-1 font-data text-small leading-none transition-colors focus:outline-none focus-visible:border-accent';
+  'rounded-md border px-1.5 py-1.5 font-data text-small leading-none transition-colors focus:outline-none focus-visible:border-accent';
 
 /** The always-available Task-identity tokens ({@link Placeholder.core}) render
  * first in the accent voice; context tokens follow after a hairline. Clicking a
@@ -39,6 +40,7 @@ export function PlaceholderChips({
   onInsert: (token: string) => void;
 }) {
   const core = placeholders.filter((p) => p.core);
+  if (placeholders.length === 0) return null;
   const context = placeholders.filter((p) => !p.core);
   const chip = (p: Placeholder) => (
     <button
@@ -236,6 +238,7 @@ const FIELD_SEGMENT_LABELS: Record<string, string> = {
   noIssuePrompt: 'No-issue prompt',
   maxConcurrentAttempts: 'Concurrency cap',
   maxAttempts: 'Attempt limit',
+  agentMessagesSendCap: 'Send cap',
   contextReuseTokenLimit: 'Context reuse limit',
   wallClockMinutes: 'Wall-clock (min)',
   costUsd: 'Cost cap (USD)',
@@ -248,6 +251,16 @@ const FIELD_SEGMENT_LABELS: Record<string, string> = {
   continuePrompt: 'Continue prompt',
   taskPrompt: 'Task prompt',
   pauseMessage: 'Pause message',
+  criticRevisionDiff: 'Critic revision block',
+  criticRevisionIdentical: 'Critic revision block (no change)',
+  criticRevisionAlone: 'Critic revision block (no base)',
+  criticVerdictContract: 'Critic verdict contract',
+  ...Object.fromEntries(
+    PROMPT_FRAGMENT_NAMES.flatMap((name) => [
+      [name, PROMPT_FRAGMENTS[name].label],
+      [promptFragmentOverrideKey(name), PROMPT_FRAGMENTS[name].label],
+    ]),
+  ),
 };
 
 function humanizeSegment(seg: string): string {

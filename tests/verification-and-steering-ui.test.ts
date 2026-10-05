@@ -7,6 +7,7 @@ import type { AttemptSummary, VerificationAttempt, VerifierStatus } from '../web
 import { cleanup, mountComponent } from './component-smoke-harness.js';
 
 const run: AttemptSummary = {
+  pullRequestUrl: null,
   id: 1,
   taskId: 1,
   number: 1,
@@ -33,7 +34,7 @@ const commandAttempt: VerificationAttempt = {
   verdict: 'pass',
   summary: 'Command passed.',
   output: 'stdout survives verification completion',
-  prompt: null,
+  promptLocator: null,
   harness: null,
   hasTranscript: false,
   outputTruncated: false,

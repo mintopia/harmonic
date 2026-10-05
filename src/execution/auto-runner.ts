@@ -369,20 +369,23 @@ export class AutoRunner {
       });
     }
 
-    for (const task of ordered) {
-      if (running >= ceiling) break;
-      if (!this.slotCandidate(task, { skip, workspacesById, runningByWorkspace, ceiling, occupied, epicGate })) {
-        continue;
+    let stopped = false;
+    await forEachYielding(ordered, async (task) => {
+      if (stopped) return;
+      if (running >= ceiling) {
+        stopped = true;
+        return;
       }
+      if (!this.slotCandidate(task, { skip, workspacesById, runningByWorkspace, ceiling, occupied, epicGate })) return;
       const started = await this.startPicked(task, skip, tickParent);
-      if (!started) continue;
+      if (!started) return;
       running += 1;
       if (task.workspaceId != null) {
         runningByWorkspace.set(task.workspaceId, (runningByWorkspace.get(task.workspaceId) ?? 0) + 1);
       }
       const key = directContextKey(task);
       if (key && !occupied.has(key)) occupied.set(key, { ...task, state: 'working' });
-    }
+    });
 
     await forEachYielding(this.contextWaitingSince.keys(), (taskId) => {
       if (!this.schedulerSkipReasons.has(taskId)) this.contextWaitingSince.delete(taskId);

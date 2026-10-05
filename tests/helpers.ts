@@ -6,13 +6,17 @@ import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { buildApp, type App } from '../src/server/app.js';
 import type { AppConfig, DeepPartial, HarnessId } from '../src/config.js';
-import type { CriticHarnessDrive } from '../src/verification/critic.js';
+import { createAcpCriticDrive, type CriticHarnessDrive } from '../src/verification/critic.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { settings, workspaces } from '../src/db/schema.js';
 import type { ScheduledJobRegistration } from '../src/scheduler/scheduler.js';
 import type { DistributionMode } from '../src/distribution-mode.js';
 import { SettingsStore } from '../src/server/settings-store.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
+import { BackgroundWork } from '../src/error-handling.js';
+import { spawn } from 'node:child_process';
+import { signalProcessGroup, type SpawnProcessGroup } from '../src/execution/process-groups.js';
+import { createChildProcessSpawn } from '../src/verification/command-verifier.js';
 
 /**
  * Build the one `SettingsStore` a hand-built-service test should share for its
@@ -424,4 +428,27 @@ export async function startServer(
       rmSync(workspaceDir, { recursive: true, force: true });
     },
   };
+}
+
+export const testSpawnProcessGroup: SpawnProcessGroup = (command, args, options) => {
+  const child = spawn(command, args, { ...options, detached: true });
+  child.once('exit', () => { if (child.pid !== undefined) signalProcessGroup(child.pid, 'SIGKILL'); });
+  return child;
+};
+
+export function executionPlumbing() {
+  return {
+    fireAndForget: new BackgroundWork().fireAndForget,
+    spawnProcessGroup: testSpawnProcessGroup,
+    commandSpawn: createChildProcessSpawn(testSpawnProcessGroup),
+    criticDrive: createAcpCriticDrive(testSpawnProcessGroup),
+  };
+}
+
+/** The Attempt row with `prompt` filled from the Archive's latest Resolved Prompt for its implementation step (the latest one containing `containing`, when given) — the DB no longer stores prompts (ADR-0047 s5). */
+export async function withArchivedPrompt<T extends { taskId: number | null; number: number; prompt: string | null } | undefined>(server: TestServer, run: T, containing?: string): Promise<T extends undefined ? undefined : NonNullable<T>> {
+  if (!run || run.taskId === null) return run as never;
+  const task = await server.app.ctx.tasks.get(run.taskId);
+  const prompts = await server.app.ctx.archive.readArchivedPromptSegments(task, run.number, 'implementation/prompt.md');
+  return { ...run, prompt: (containing === undefined ? prompts?.at(-1) : prompts?.findLast((prompt) => prompt.includes(containing))) ?? null } as never;
 }

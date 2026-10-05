@@ -2,6 +2,7 @@
 
 Status: accepted
 Date: 2026-08-30
+Reconciled: 2026-10-02. Release automation is implemented; supported toolchain versions follow ADR-0043.
 
 ## Context
 
@@ -69,6 +70,17 @@ source of truth release-please advances.
   merge push as the fallback). Without it `develop` drifts a release behind
   every cut. A back-merge PR left open (conflict, or auto-merge disabled) is
   merged by hand.
+
+## Amendment (2026-10-03): Manual develop prerelease
+
+`release.yml` also accepts `workflow_dispatch`. Run on the `develop` ref only,
+it tests via ci.yml and publishes a prerelease to the `develop` dist-tag
+(`X.Y.(Z+1)-develop.<run>.g<sha>`); it never moves `latest`. It is manual rather
+than per-push so every published version is a deliberate choice and the registry
+does not collect a version per Merge. The jobs stay in `release.yml` because the
+trusted publisher is bound to that filename. Published prerelease versions are
+permanent, and the next-patch base sorts above the current release but below a
+future one. Self-upgrade follows `latest` only, so these builds are opt-in.
 
 ## Supersedes
 

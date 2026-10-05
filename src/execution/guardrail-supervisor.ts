@@ -22,7 +22,7 @@ import {
 } from '../domain/guardrail-tool-timeout.js';
 import { totalTokensOf, type AttemptUsageSnapshot } from './usage.js';
 import { costOfUsages, type PriceTable } from '../domain/pricing.js';
-import { fireAndForget } from '../error-handling.js';
+import type { FireAndForget } from '../error-handling.js';
 
 /** The single nudge the progress Guardrail delivers through the steer channel
  * on a first detected stall before it trips. */
@@ -42,6 +42,7 @@ export interface GuardrailDeps {
   sampleSnapshot: (attemptId: number) => Promise<AttemptUsageSnapshot | null>;
   spendPollMs: number;
   spendGraceMs: number;
+  fireAndForget: FireAndForget;
 }
 
 /** The per-turn seam back into the drive loop's live state: which Attempt is
@@ -129,7 +130,7 @@ export class GuardrailSupervisor {
     const remaining = Math.max(0, wallClockBudgetMs(this.budget) - (Date.now() - this.startedAt));
     this.wallClockTimer = setTimeout(() => {
       this.wallClockTimer = null;
-      fireAndForget(() => this.evaluateWallClock(), { op: 'guardrail.evaluateWallClock', level: 'error', context: { attemptId: this.turn.attemptId } });
+      this.deps.fireAndForget(() => this.evaluateWallClock(), { op: 'guardrail.evaluateWallClock', level: 'error', context: { attemptId: this.turn.attemptId } });
     }, remaining);
     this.wallClockTimer.unref?.();
   }
@@ -170,7 +171,7 @@ export class GuardrailSupervisor {
     this.spendTimer = setInterval(() => {
       if (this.spendSampling) return;
       this.spendSampling = true;
-      fireAndForget(() => this.evaluateSpend().finally(() => {
+      this.deps.fireAndForget(() => this.evaluateSpend().finally(() => {
         this.spendSampling = false;
       }), { op: 'guardrail.evaluateSpend', level: 'error', context: { attemptId: this.turn.attemptId } });
     }, this.deps.spendPollMs);
@@ -181,7 +182,7 @@ export class GuardrailSupervisor {
   armToolTimeout(): void {
     if (!this.toolTimeoutMs) return;
     const period = Math.max(1_000, Math.min(this.toolTimeoutMs, 30_000));
-    this.toolTimeoutTimer = setInterval(() => fireAndForget(() => this.evaluateToolTimeout(), { op: 'guardrail.evaluateToolTimeout', level: 'error', context: { attemptId: this.turn.attemptId } }), period);
+    this.toolTimeoutTimer = setInterval(() => this.deps.fireAndForget(() => this.evaluateToolTimeout(), { op: 'guardrail.evaluateToolTimeout', level: 'error', context: { attemptId: this.turn.attemptId } }), period);
     this.toolTimeoutTimer.unref?.();
   }
 

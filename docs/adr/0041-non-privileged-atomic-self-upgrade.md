@@ -3,6 +3,10 @@
 Status: accepted
 Date: 2026-09-22
 
+Current status (2026-10-02): ADR-0042 supersedes verification after the
+symlink flip and the standalone relauncher rule below. It adds pre-flip
+verification, a database snapshot, and a boot guard with rollback.
+
 Amends ADR-0030 (in-place self-upgrade) and ADR-0034 (supervised service).
 Amended by ADR-0042 (install modes, boot guard, and rollback).
 

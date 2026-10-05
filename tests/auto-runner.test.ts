@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { RunControl } from '../src/execution/run-control.js';
 
 const slowScenario = (ms: number) =>
   JSON.stringify({
@@ -30,6 +31,22 @@ describe('auto-runner', () => {
     const updated = await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
     expect(updated.status).toBe(200);
     expect(updated.body.autoRunner.enabled).toBe(true);
+  });
+
+  it('settles an attempt if launch fails after creating it', async () => {
+    const task = await server.api('POST', '/api/tasks', {
+      prompt: 'launch failure',
+      workingDir: mkdtempSync(join(tmpdir(), 'harmonic-ar-launch-')),
+    });
+    await server.app.ctx.tasks.setState(task.body.id, 'working');
+    vi.spyOn(RunControl.prototype, 'checkRunBoundary').mockRejectedValueOnce(new Error('boundary unavailable'));
+
+    await expect(server.app.ctx.runner.launchClaimed(task.body.id)).rejects.toThrow('boundary unavailable');
+
+    expect(await server.app.ctx.attempts.listForTask(task.body.id)).toMatchObject([
+      { state: 'failed', reason: 'failed', detail: 'boundary unavailable' },
+    ]);
+    expect(await server.app.ctx.attempts.countRunning()).toBe(0);
   });
 
   it('starts ready tasks in priority-then-FIFO order, one at a time by default', async () => {

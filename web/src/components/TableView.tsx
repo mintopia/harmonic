@@ -1,6 +1,7 @@
+import type { TrackerRef } from '../types.js';
 import { useEffect, useState } from 'react';
 import { formatCost } from '../cost';
-import type { Task, Workspace } from '../types';
+import { isEpicListRow, type EpicListRow, type Task, type TaskListItem, type Workspace } from '../types';
 import { TASK_STATES } from '../types';
 import { TABLE_HARNESSES, TABLE_PRIORITIES, type TableFilters, type SortKey } from '../router-model';
 import {
@@ -19,7 +20,8 @@ import { toastError } from '../toast';
 import { PageHeader } from './PageHeader';
 import { fetchTasks, TABLE_PAGE_SIZE } from '../table-model';
 import { excludeEpicDrivers, type Epic } from '../epic-model';
-import { issueRef, ticketRowId } from '../id-format.js';
+import { issueRef } from '../id-format.js';
+import { TicketRowId } from './TicketRowId';
 import { EmptyState } from './EmptyState';
 import { FilterSelect } from './FilterSelect';
 import { ModelLabel, ProviderChip, TaskIdentity } from './TaskIdentity';
@@ -50,13 +52,13 @@ export function TableView({
   epics: Epic[];
   onOpen: (task: Task) => void;
   /** Opens the Board focused on an epic's summary panel, keyed by tracker ref. */
-  onOpenEpic: (ref: number) => void;
+  onOpenEpic: (ref: TrackerRef) => void;
   /** Filter/sort selection — lives in the URL, owned by App. */
   filters: TableFilters;
   onFiltersChange: (next: TableFilters) => void;
   onNewTask: () => void;
 }) {
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<TaskListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -139,7 +141,7 @@ export function TableView({
         <span aria-hidden="true" className={stateDot(task.state)} />
         {workspace && <WorkspaceBadge workspace={workspace} label={`Workspace: ${workspace.name}`} />}
         <span className="sr-only">Id: </span>
-        {ticketRowId(task.id, task.trackerRef)}
+        <TicketRowId task={task} />
       </div>
       <div role="cell" className="flex min-w-0 items-center gap-2 pr-2 max-md:col-span-2 max-md:row-start-2 max-md:pr-0">
         <div className="min-w-0 flex-1">
@@ -190,19 +192,19 @@ export function TableView({
     );
   };
 
-  const renderEpicRow = (task: Task) => (
+  const renderEpicRow = (task: EpicListRow) => (
     <div
-      key={`epic-${task.trackerRef ?? task.id}`}
+      key={`epic-${task.trackerRef}`}
       role="row"
       className={`${GRID} min-h-11 cursor-pointer py-2 transition-colors duration-150 hover:bg-raised/50 max-md:py-3`}
-      onClick={() => onOpenEpic(task.trackerRef ?? task.id)}
+      onClick={() => onOpenEpic(task.trackerRef)}
     >
       <div role="cell" className="flex items-center justify-end gap-1.5 whitespace-nowrap tabular-nums text-muted max-md:col-start-1 max-md:row-start-1 max-md:justify-start">
         <span className={`${chip} shrink-0 bg-accent-tint text-accent`}>
           <span className="sr-only">Epic: </span>epic
         </span>
         <span className="sr-only">Issue: </span>
-        {issueRef(task.trackerRef ?? task.id)}
+        {issueRef(task.trackerRef)}
       </div>
       <div role="cell" className="flex min-w-0 items-center gap-2 pr-2 max-md:col-span-2 max-md:row-start-2 max-md:pr-0">
         <div className="min-w-0 flex-1">
@@ -212,7 +214,7 @@ export function TableView({
             className="block w-full cursor-pointer truncate text-left text-ink max-md:whitespace-normal max-md:overflow-visible max-md:font-medium"
             onClick={(e) => {
               e.stopPropagation();
-              onOpenEpic(task.trackerRef ?? task.id);
+              onOpenEpic(task.trackerRef);
             }}
           >
             {task.summary}
@@ -241,6 +243,36 @@ export function TableView({
       <div role="cell" className="hidden text-right tabular-nums text-faint lg:block">
         <span className="sr-only">Updated: </span>
         {fmtTime(task.updatedAt)}
+      </div>
+    </div>
+  );
+
+  const pagination = pageCount > 1 && (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <span className="text-small tabular-nums text-muted">
+        {total === 0 ? 0 : (currentPage - 1) * TABLE_PAGE_SIZE + 1}–
+        {(currentPage - 1) * TABLE_PAGE_SIZE + pageTasks.length} of {total}
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className={btnGhost}
+          disabled={currentPage <= 1}
+          onClick={() => setPage(currentPage - 1)}
+        >
+          Prev
+        </button>
+        <span className="text-small tabular-nums text-muted">
+          Page {currentPage} of {pageCount}
+        </span>
+        <button
+          type="button"
+          className={btnGhost}
+          disabled={currentPage >= pageCount}
+          onClick={() => setPage(currentPage + 1)}
+        >
+          Next
+        </button>
       </div>
     </div>
   );
@@ -293,6 +325,8 @@ export function TableView({
         />
       </div>
 
+      <div className="mb-3 md:hidden">{pagination}</div>
+
       <div className={`${tableShell} relative`} aria-busy={loading} role="table" aria-label="Tasks">
         {loading && (
           <div
@@ -324,7 +358,7 @@ export function TableView({
         </div>
 
         <div role="rowgroup" className="divide-y divide-hairline">
-          {pageTasks.map((t) => (t.isEpic ? renderEpicRow(t) : renderRow(t)))}
+          {pageTasks.map((t) => (isEpicListRow(t) ? renderEpicRow(t) : renderRow(t)))}
         </div>
 
         {!loading && total === 0 && (
@@ -363,35 +397,7 @@ export function TableView({
         )}
       </div>
 
-      {pageCount > 1 && (
-        <div className="mt-3 flex items-center justify-between gap-2">
-          <span className="text-small tabular-nums text-muted">
-            {total === 0 ? 0 : (currentPage - 1) * TABLE_PAGE_SIZE + 1}–
-            {(currentPage - 1) * TABLE_PAGE_SIZE + pageTasks.length} of {total}
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className={btnGhost}
-              disabled={currentPage <= 1}
-              onClick={() => setPage(currentPage - 1)}
-            >
-              Prev
-            </button>
-            <span className="text-small tabular-nums text-muted">
-              Page {currentPage} of {pageCount}
-            </span>
-            <button
-              type="button"
-              className={btnGhost}
-              disabled={currentPage >= pageCount}
-              onClick={() => setPage(currentPage + 1)}
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      )}
+      <div className="mt-3">{pagination}</div>
     </div>
   );
 }

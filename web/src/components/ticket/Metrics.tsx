@@ -5,7 +5,7 @@ import { changedFilesFromNumstat } from '../../attempt-rail-model';
 import { sumCosts } from '../../activity-model';
 import { Icon } from '../Icon';
 import { Fact } from '../Fact';
-import { harnessLabel } from '../../task-detail-model';
+import { harnessLabel, pullRequestLink } from '../../task-detail-model';
 import { wallClockRemaining } from '../../wall-clock-model';
 
 export function fmtDur(ms: number): string {
@@ -60,6 +60,15 @@ export function Metrics({
   ];
   const remaining = task.wallClockDeadline != null ? wallClockRemaining(task.wallClockDeadline, now) : null;
   if (remaining) items.push(['Time left', remaining.label, remaining.overdue]);
+  const pullRequest = pullRequestLink(runs);
+  if (pullRequest !== null) {
+    items.push([
+      'PR / MR',
+      <a key="pull-request" href={pullRequest} target="_blank" rel="noreferrer" aria-label="Open the PR / MR (opens in a new tab)" className="text-[13px] font-semibold text-accent underline-offset-2 hover:underline">
+        Open
+      </a>,
+    ]);
+  }
   return (
     <div className="mb-[18px] flex flex-wrap gap-y-3 tabular-nums">
       {remaining && (
@@ -107,6 +116,21 @@ export function Properties({ task, allTasks, workspaceName }: { task: Task; allT
         <DependsOn task={task} allTasks={allTasks} />
       </Fact>
       <Fact label="Created">{created}</Fact>
+      {task.origin === 'mirrored' && task.trackerLabel && (
+        <Fact label="Tracker">
+          {task.url ? (
+            <a href={task.url} target="_blank" rel="noopener noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-accent">
+              {task.trackerLabel}
+              {task.trackerRef ? ` #${task.trackerRef}` : ''}
+            </a>
+          ) : (
+            <>
+              {task.trackerLabel}
+              {task.trackerRef ? <span className="font-data text-muted"> #{task.trackerRef}</span> : null}
+            </>
+          )}
+        </Fact>
+      )}
     </dl>
   );
 }

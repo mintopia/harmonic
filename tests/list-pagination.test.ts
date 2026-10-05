@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { startServer, stubHarness, type TestServer } from './helpers.js';
 import type { Epic } from '../src/domain/epic-view.js';
 import type { DerivedMap } from '../src/tracker/mirror.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 describe('list endpoint pagination envelope', () => {
   let server: TestServer;
@@ -63,7 +64,7 @@ describe('derived-rollup pagination (epics, maps)', () => {
   });
 
   const epic = (ref: number, title = `Epic ${ref}`): Epic => ({
-    ref,
+    ref: trackerRef(ref),
     title,
     kind: 'spec',
     state: 'open',
@@ -86,7 +87,7 @@ describe('derived-rollup pagination (epics, maps)', () => {
 
   const map = (ref: number, workspaceId: number, title = `Map ${ref}`): DerivedMap => ({
     workspaceId,
-    ref,
+    ref: trackerRef(ref),
     title,
     url: `https://example.test/${ref}`,
     taskRefs: [],
@@ -122,7 +123,7 @@ describe('derived-rollup pagination (epics, maps)', () => {
 
     const res = await server.api('GET', `/api/workspaces/${workspaceId}/epics?q=operator`);
     expect(res.body.total).toBe(2);
-    expect(res.body.epics.map((e: Epic) => e.ref)).toEqual([1, 3]);
+    expect(res.body.epics.map((e: Epic) => e.ref)).toEqual(['1', '3']);
 
     const blank = await server.api('GET', `/api/workspaces/${workspaceId}/epics?q=%20`);
     expect(blank.body.total).toBe(3);
@@ -172,7 +173,7 @@ describe('derived-rollup pagination (epics, maps)', () => {
 
     const res = await server.api('GET', '/api/maps?q=wayfinder');
     expect(res.body.total).toBe(2);
-    expect(res.body.maps.map((m: DerivedMap) => m.ref)).toEqual([1, 3]);
+    expect(res.body.maps.map((m: DerivedMap) => m.ref)).toEqual(['1', '3']);
 
     const page = await server.api('GET', '/api/maps?q=wayfinder&limit=1&offset=1');
     expect(page.body).toEqual({ maps: [map(3, workspaceId, 'Wayfinder redesign')], total: 2 });

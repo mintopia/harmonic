@@ -2,8 +2,9 @@
 
 Status: accepted
 Date: 2026-09-02
+Reconciled: 2026-10-02. Epic #460 is closed. Grades and scope below are historical; later decisions govern configuration and upgrades.
 
-Tracked in GitHub epic **#460** ("Code, architecture & product review (2)
+Completed in GitHub epic **#460** ("Code, architecture & product review (2)
 remediation"); the child tickets **#461–#473** are its native sub-issues.
 
 ## Context
@@ -16,7 +17,7 @@ definitive ADRs, and the public docs. As with ADR-0019, the review report is a
 standalone HTML artifact and is **not** in the repository, so this ADR is the
 durable in-repo record.
 
-Grades by area:
+Historical grades at the review date, before remediation:
 
 | Area | Grade | Note |
 |---|---|---|
@@ -66,13 +67,15 @@ shared or multi-tenant deployment model) still stands.
 config/auth track) and the sub-390px mobile Tasks-table layout (`PRODUCT.md`
 frames Harmonic as a desktop side-monitor tool).
 
-**Schema-sync keeps the ADR-0007 clean-break policy** (#471): no database
-backup is introduced. A destructive schema convergence runs in one transaction
-and, on failure, rolls back to the loud clean-break recreate; it logs the
-dropped objects by name. A backup/rollback scheme, if ever wanted, is a
-separate ADR.
+**Schema-sync keeps the ADR-0007 clean-break policy** (#471): this
+remediation introduced no database backup. ADR-0042 later added a pre-upgrade
+snapshot for managed-install rollback. A destructive schema convergence runs in one transaction
+and rolls back on failure. Current schema-sync recreates only for
+constraint violations, preserving data on transient errors; it logs the
+dropped objects by name. Managed-upgrade snapshot and rollback guarantees
+are defined separately by ADR-0042.
 
-## Remediation scope (epic #460 children)
+## Completed remediation scope (epic #460 children)
 
 Architecture:
 

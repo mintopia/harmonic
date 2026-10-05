@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-09-15
 
+Current status (2026-10-02): Global scope and path-based routing are implemented. Global Settings uses `/settings`; Workspace Settings uses `/workspace/:id/settings`.
+
 Refines: 0011-web-ui-and-api-conventions.md (retires the implicit `?view=`
 scheme; changes the Workspace-wide search and `workspaceId`-required list rules
 for Global scope), 0024-operations-worktree-control-surface.md and
@@ -37,7 +39,7 @@ A view runs in one of two **Scopes**: **Workspace** (the default — each page r
 only the active Workspace) or **Global** (pages aggregate across all Workspaces).
 Scope is chosen in the Workspace switcher, where **Global** is a peer entry above
 the Workspace rows; the switcher button reads "Global" when active. Scope drives
-which navigation rail and which pages are shown. See CONTEXT.md.
+which navigation rail and which pages are shown. See GLOSSARY.md.
 
 ### 2. Routing is path-based; scope is implicit in the path
 

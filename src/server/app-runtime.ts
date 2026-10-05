@@ -3,14 +3,15 @@ import type { AsyncDbHandle } from '../db/async.js';
 import { dropIndexForPath } from '../execution/code-index.js';
 import { Git } from '../execution/git.js';
 import { BranchRetirementCoordinator } from '../execution/branch-retirement.js';
-import type { MergeEffectExec } from '../domain/merge.js';
+import { type MergeEffectExec, ticketCloseEffect } from '../domain/merge.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import { CrashRecoveryCoordinator } from '../execution/crash-recovery.js';
 import { Runner } from '../execution/runner.js';
 import { TaskArchive } from '../archive/task-archive.js';
+import { backfillCriticPromptKeys } from '../archive/critic-prompt-backfill.js';
 import { TranscriptCapture } from '../execution/transcript-capture.js';
 import { EpicOperations } from '../execution/epic-operations.js';
-import { ConversationDriver } from '../execution/conversation-driver.js';
+import { ConversationDriver, createHarnessProcessSpawn } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
 import { GlobalPause } from '../execution/global-pause.js';
 import { GitCircuitBreaker } from '../execution/git-failure.js';
@@ -18,8 +19,10 @@ import { EventLoopMonitor } from '../reliability/event-loop-monitor.js';
 import { HostLoadSampler } from '../host-load.js';
 import { WorkspaceWatcher } from '../domain/workspace-watcher.js';
 import { logger } from '../logger.js';
-import { attachProcessGroupJournal, ProcessGroupJournal } from '../execution/process-groups.js';
-import { errorMessage, fireAndForget } from '../error-handling.js';
+import { ProcessGroupJournal } from '../execution/process-groups.js';
+import { attempted, errorMessage, type FireAndForget } from '../error-handling.js';
+import { createAcpCriticDrive } from '../verification/critic.js';
+import { createChildProcessSpawn } from '../verification/command-verifier.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import type { Scheduler } from '../scheduler/scheduler.js';
 import { AutoDrive } from '../execution/auto-drive.js';
@@ -39,6 +42,8 @@ import type { WorktreeServices } from './app-worktrees.js';
 import { createPostMergeCheck } from '../verification/post-merge-check.js';
 import type { DistributionMode } from '../distribution-mode.js';
 import { touchStartupProgress } from '../reliability/startup-progress.js';
+import { createTrackerResolver } from '../tracker/adapter.js';
+import { createRepositoryResolver } from '../repository/resolve.js';
 
 function createLifecycleTracking(
   bus: EventBus,
@@ -46,6 +51,7 @@ function createLifecycleTracking(
   taskEvents: Stores['taskEvents'],
   tasks: Stores['tasks'],
   sessionStore: Stores['sessions'],
+  fireAndForget: FireAndForget,
 ): {
   recordAttemptLifecycleBestEffort: (run: Pick<AttemptRow, 'id'>, payload: Record<string, unknown>) => void;
   recordTaskEventBestEffort: (task: Pick<TaskRow, 'id'>, payload: Record<string, unknown>) => void;
@@ -97,16 +103,14 @@ async function runStartupRecovery(deps: {
   bus: EventBus;
   archive: TaskArchive;
   sessionTranscriptPath: (sessionRowId: number) => Promise<string | null>;
-  processGroups: ProcessGroupJournal;
 }): Promise<void> {
-  const { attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus, archive, sessionTranscriptPath, processGroups } = deps;
+  const { attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus, archive, sessionTranscriptPath } = deps;
   const crashRecovery = new CrashRecoveryCoordinator(attempts, tasks, operatorSettle, {
     runPostMergeCheck: postMergeCheck,
     postMerge,
     onEpicAttemptInterrupted: (attempt) => { bus.emit('attempt_changed', attempt); },
     archive,
     sessionTranscriptPath,
-    processGroups,
   });
   await crashRecovery.reconcile();
   for (const orphan of await tasks.list({ state: 'working' })) {
@@ -197,7 +201,6 @@ export interface Runtime {
   workspaceWatcher: WorkspaceWatcher;
   loopMonitor: EventLoopMonitor | undefined;
   archive: TaskArchive;
-  processGroups: ProcessGroupJournal;
   transcripts: TranscriptCapture;
 }
 
@@ -212,9 +215,17 @@ export async function createRuntime(deps: {
   managedWorktreesRoot: string;
   distributionMode: DistributionMode;
   runningVersion: string;
+  fireAndForget: FireAndForget;
 }): Promise<Runtime> {
-  const { opts, bus, scheduler, asyncDb, worktreesDir, managedWorktreesRoot, distributionMode, runningVersion } = deps;
-  const { tasks, attempts, taskEvents, settingsStore, workspaces, conversations, permissionRules, auth, notifier, epicMergeEvents, verificationAttempts, sessions: sessionStore } = deps.stores;
+  const { opts, bus, scheduler, asyncDb, worktreesDir, managedWorktreesRoot, distributionMode, runningVersion, fireAndForget } = deps;
+  const { tasks, attempts, taskEvents, settingsStore, workspaces, conversations, permissionRules, auth, notifier, epicMergeEvents, verificationAttempts, sessions: sessionStore, secrets } = deps.stores;
+  const resolveTracker = createTrackerResolver(secrets);
+  const resolveRepository = createRepositoryResolver(secrets);
+
+  const spawnProcessGroup = await new ProcessGroupJournal(asyncDb, fireAndForget).reapOrphans();
+  const criticDrive = opts.criticDrive ?? createAcpCriticDrive(spawnProcessGroup);
+  const commandSpawn = createChildProcessSpawn(spawnProcessGroup);
+  touchStartupProgress(opts.dataDir);
 
   let upgradeRef: UpgradeCoordinator | undefined;
   const conversationDriver = new ConversationDriver(conversations, () => settingsStore.getGlobal(), {
@@ -225,6 +236,8 @@ export async function createRuntime(deps: {
       onCommandsUpdate: (payload) => bus.emit('conversation_commands', payload),
     },
     rules: permissionRules,
+    processSpawn: createHarnessProcessSpawn(spawnProcessGroup),
+    fireAndForget,
     keys: {
       mint: async (conversationId) =>
         (await auth.createKey(`conversation-${conversationId}`, { scope: 'conversation', conversationId })).token,
@@ -233,7 +246,7 @@ export async function createRuntime(deps: {
     onTurnSettled: () => fireAndForget(() => upgradeRef?.reconcile(), { op: 'upgrade.reconcile', level: 'error' }),
     allowedRoots: async () => [...(await workspaces.list()).map((w) => w.workingDir), managedWorktreesRoot],
   });
-  const { recordAttemptLifecycleBestEffort, recordTaskEventBestEffort, sessionRetirement, drainRetirement, branchRetirement } = createLifecycleTracking(bus, attempts, taskEvents, tasks, sessionStore);
+  const { recordAttemptLifecycleBestEffort, recordTaskEventBestEffort, sessionRetirement, drainRetirement, branchRetirement } = createLifecycleTracking(bus, attempts, taskEvents, tasks, sessionStore, fireAndForget);
   let runnerRef: Runner | undefined;
   let globalPauseRef: GlobalPause | undefined;
   let trackerManagerRef: TrackerPollerManager | undefined;
@@ -278,22 +291,29 @@ export async function createRuntime(deps: {
       }
     },
   });
+  const transcripts = new TranscriptCapture(sessionStore, verificationAttempts, () => settingsStore.getGlobal());
   const postMergeCheck = createPostMergeCheck({
-    workspaces,
-    settingsStore,
+    getWorkspace: async (workspaceId) => {
+      if (workspaceId === null) return undefined;
+      const result = await attempted(() => workspaces.get(workspaceId), {
+        op: 'postMerge.resolveWorkspace', level: 'error', context: { workspaceId },
+      });
+      return result.ok ? result.value : undefined;
+    },
+    getConfig: () => settingsStore.getGlobal(),
     verificationAttempts,
-    criticDrive: opts.criticDrive,
+    attempts,
+    criticDrive,
+    commandSpawn,
+    fireAndForget,
     archive,
+    transcripts,
   });
   touchStartupProgress(opts.dataDir);
-  const transcripts = new TranscriptCapture(sessionStore, verificationAttempts, () => settingsStore.getGlobal());
-  const processGroups = new ProcessGroupJournal(asyncDb);
   await runStartupRecovery({
     attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus, archive,
     sessionTranscriptPath: (id) => transcripts.ensureSessionTranscript(id),
-    processGroups,
   });
-  attachProcessGroupJournal(processGroups);
   touchStartupProgress(opts.dataDir);
   const getWorkspaceRow = async (id: number | null) => {
     if (id == null) return undefined;
@@ -306,7 +326,7 @@ export async function createRuntime(deps: {
   const autoDrive = new AutoDrive(
     () => settingsStore.getGlobal(),
     (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
-    undefined,
+    resolveTracker,
     getWorkspaceRow,
     (workspaceId, ref) => tasks.epicKind(workspaceId, ref),
     (task, commit) => {
@@ -333,19 +353,14 @@ export async function createRuntime(deps: {
         else recordTaskEventBestEffort(task, payload);
       }, { op: 'autoDrive.recordTicketCloseFailed', level: 'warn', context: { taskId: task.id } });
     },
+    resolveRepository,
+    (run, url) => attempts.update(run.id, { pullRequestUrl: url }).then(() => undefined),
   );
   const mergeEffectsFor = (task: TaskRow, run: AttemptRow): MergeEffectExec[] => {
     const effects: MergeEffectExec[] = [];
-    if (task.trackerRef != null) {
-      effects.push({
-        effect: 'ticket-close',
-        idempotencyKey: `ticket-${task.trackerRef}`,
-        expected: { trackerRef: task.trackerRef },
-        apply: async () =>
-          (await autoDrive.closeCompleted(task))
-            ? { ok: true, observed: { trackerRef: task.trackerRef } }
-            : { ok: false, detail: `ticket #${task.trackerRef} could not be closed` },
-      });
+    const trackerRef = task.trackerRef;
+    if (trackerRef != null) {
+      effects.push(ticketCloseEffect(trackerRef, () => autoDrive.closeCompleted(task), () => tasks.setTicketClosePending(task.id, true)));
     }
     if (task.isolationMode !== 'worktree') return effects;
     if (!run.branch || !run.baseBranch || !run.verifiedHeadOid) return effects;
@@ -385,7 +400,10 @@ export async function createRuntime(deps: {
     postMerge,
     worktreesDir,
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
-    criticDrive: opts.criticDrive,
+    criticDrive,
+    commandSpawn,
+    spawnProcessGroup,
+    fireAndForget,
     sessionRetirement,
     onFailedAttemptRequeued,
     onTaskMerged,
@@ -397,6 +415,7 @@ export async function createRuntime(deps: {
     autoDrive,
     urlFor: (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
     getWorkspace: getWorkspaceRow,
+    agentMessages: deps.stores.agentMessages,
     archive,
   });
   runnerRef = runner;
@@ -405,6 +424,8 @@ export async function createRuntime(deps: {
   await globalPause.rebuild();
   touchStartupProgress(opts.dataDir);
   await runner.backfillUsage();
+  touchStartupProgress(opts.dataDir);
+  await backfillCriticPromptKeys({ db: asyncDb, archive, getTask: (taskId) => tasks.get(taskId) });
   touchStartupProgress(opts.dataDir);
   const escalation = new EscalationService(attempts, tasks, operatorSettle, mergeEffectsFor, {
     resume: (task, guidance, startNow) => runner.resumeWithGuidance(task, guidance, startNow),
@@ -445,9 +466,13 @@ export async function createRuntime(deps: {
     tasks,
     () => workspaces.list(),
     {
-      getConfig: () => settingsStore.getGlobal(),
+      integration: {
+        getConfig: () => settingsStore.getGlobal(),
+        mergeEpicIntegration: (input) => runnerRef!.mergeEpicIntegration(input),
+        criticDrive,
+        commandSpawn,
+      },
       operations: epicOperations,
-      mergeEpicIntegration: (input) => runnerRef!.mergeEpicIntegration(input),
       dispatchRefreshResolution: (target, detail, escalate, retry) => runnerRef!.enqueueEpicRefreshResolution(target, detail, escalate, retry),
       epicMergeEvents,
       epicAttempts: attempts,
@@ -464,15 +489,19 @@ export async function createRuntime(deps: {
         });
       },
       verificationAttemptStore: verificationAttempts,
-      criticDrive: opts.criticDrive,
+      fireAndForget,
       archive,
+      resolveAdapter: resolveTracker,
     },
   );
   epicServiceRef = epicService;
   const trackerManager = new TrackerPollerManager(tasks, () => workspaces.list(), {
     epicService,
+    resolveAdapter: resolveTracker,
+    resolveRepository,
     scheduler,
     workStartAllowed: () => upgrade.workStartAllowed(),
+    closeTicket: (task) => autoDrive.retryTicketClose(task),
   });
   trackerManagerRef = trackerManager;
   for (const merged of pendingPostMerge.splice(0)) await postMerge(merged);
@@ -495,7 +524,6 @@ export async function createRuntime(deps: {
     workspaceWatcher,
     loopMonitor,
     archive,
-    processGroups,
     transcripts,
   };
 }

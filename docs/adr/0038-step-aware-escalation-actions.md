@@ -3,6 +3,11 @@
 Status: accepted
 Date: 2026-09-22
 
+Current status (2026-10-02): The Step pipeline and operator override are
+implemented in `src/execution/turn-completion.ts` and
+`src/domain/escalation.ts`. The "today" statement under Consequences refers
+to the pre-implementation path.
+
 ## Context
 
 An Attempt runs a fixed Step pipeline: `rebase → implementation → verification

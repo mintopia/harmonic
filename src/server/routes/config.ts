@@ -14,6 +14,7 @@ import {
   epicVerificationStageSchema,
   type AppConfig,
   type DeepPartial,
+  promptFragmentsShape,
 } from '../../config.js';
 import { maskConfigSecrets } from '../../archive/export-secrets.js';
 
@@ -93,6 +94,13 @@ const configPatchBodySchema = z
       })
       .partial()
       .optional(),
+    agentMessages: z
+      .object({
+        enabled: z.boolean().meta({ example: false }),
+        sendCap: z.number().int().min(1).meta({ example: 10 }),
+      })
+      .partial()
+      .optional(),
     /** Maximum implementation attempts before a ticket is escalated. */
     maxAttempts: z.number().int().min(1).meta({ example: 2 }),
     contextReuseTokenLimit: z.number().int().min(0).meta({ example: 200_000 }),
@@ -103,13 +111,16 @@ const configPatchBodySchema = z
         continuePrompt: z.string().meta({ example: "Your last turn ended but Task {taskId} isn't finished…" }),
         mergeFate: z.enum(MERGE_FATES).meta({ example: 'auto-merge' }),
         continueAttempts: z.number().int().min(0).meta({ example: 1 }),
+        commitNudge: z.string().min(1).meta({ example: 'Commit the completed work now, then finish.' }),
       })
       .partial()
       .optional(),
+    promptFragments: z.object(promptFragmentsShape).partial().optional(),
+    merge: appConfigSchema.shape.merge.partial().optional(),
     verify: z
       .object({
         task: z.object({ preMerge: taskVerificationStageSchema, postMerge: taskVerificationStageSchema }).partial(),
-        epic: z.object({ preMerge: epicVerificationStageSchema, resolvePrompt: z.string().min(1) }).partial(),
+        epic: z.object({ preMerge: epicVerificationStageSchema, resolvePrompt: z.string().min(1), resolveSuffix: appConfigSchema.shape.verify.shape.epic.shape.resolveSuffix }).partial(),
       })
       .partial()
       .optional(),

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { cardTitle } from '../../board-sections-model';
 import { Markdown } from '../Markdown';
 import { sectionCaps } from './shared';
@@ -36,24 +36,33 @@ export function Description({ prompt }: { prompt: string }) {
  * to the harness, or the review prompt sent to the critic — verbatim and
  * monospaced, clamped when long. Distinct from {@link Description} (the ticket's
  * own body): this is what actually went to the agent. */
-export function PromptSent({ prompt, label = 'Prompt sent' }: { prompt: string; label?: string }) {
+export function PromptSentCard({ label = 'Prompt sent', className = 'mt-4', children }: { label?: string; className?: string; children: ReactNode }) {
+  return (
+    <div className={`${className} rounded-lg border border-hairline bg-surface p-4 shadow-card`} data-testid="prompt-sent">
+      <div className={`mb-2 ${sectionCaps}`}>{label}</div>
+      {children}
+    </div>
+  );
+}
+
+export function PromptSent({ prompt, label = 'Prompt sent', className = 'mt-4' }: { prompt: string; label?: string; className?: string }) {
   const [expanded, setExpanded] = useState(false);
   const clampable = prompt.length > 320;
   return (
-    <div className="mt-4 rounded-lg border border-hairline bg-surface p-4 shadow-card">
-      <div className={`mb-2 ${sectionCaps}`}>{label}</div>
+    <PromptSentCard label={label} className={className}>
       <pre className={`overflow-x-auto whitespace-pre-wrap break-words font-data text-[12.5px] leading-[1.55] text-muted ${clampable && !expanded ? 'line-clamp-[8]' : ''}`}>
         {prompt}
       </pre>
       {clampable && (
         <button
           type="button"
+          aria-expanded={expanded}
           onClick={() => setExpanded((v) => !v)}
           className="mt-2 text-[12.5px] font-semibold text-accent transition-colors hover:text-ink"
         >
           {expanded ? 'Show less' : 'Show more'}
         </button>
       )}
-    </div>
+    </PromptSentCard>
   );
 }

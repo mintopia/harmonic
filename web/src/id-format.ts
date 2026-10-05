@@ -1,3 +1,5 @@
+import type { TrackerRef } from './types.js';
+
 /** A task id in a compact identifier slot (Deck row, graph node, table cell): `T-174`. */
 export function taskKey(id: number): string {
   return `T-${id}`;
@@ -8,9 +10,17 @@ export function taskLabel(id: number): string {
   return `Task ${id}`;
 }
 
-/** A tracker (GitHub) issue ref: `#185`. The only place a bare `#n` is legitimate. */
-export function issueRef(ref: number): string {
-  return `#${ref}`;
+export function epicLabel(ref: TrackerRef): string {
+  return `Epic ${issueRef(ref)}`;
+}
+
+/**
+ * A tracker issue ref as its adapter renders it (ADR-0046): numeric refs
+ * (GitHub, GitLab, Forgejo) get `#185`; key-style refs (Jira `PROJ-185`,
+ * Forgejo `milestone-3`) are shown as-is. The only place a bare `#n` is legitimate.
+ */
+export function issueRef(ref: TrackerRef): string {
+  return /^\d+$/.test(ref) ? `#${ref}` : ref;
 }
 
 /**
@@ -18,7 +28,7 @@ export function issueRef(ref: number): string {
  * mirrored Task: `Task 174 · issue #185`. A native Task (no tracker ref) shows
  * just its task label.
  */
-export function ticketIdentity(id: number, trackerRef: number | null | undefined): string {
+export function ticketIdentity(id: number, trackerRef: TrackerRef | null | undefined): string {
   return trackerRef != null ? `${taskLabel(id)} · issue ${issueRef(trackerRef)}` : taskLabel(id);
 }
 
@@ -28,6 +38,17 @@ export function ticketIdentity(id: number, trackerRef: number | null | undefined
  * cross-reference), then the task key. A native Task (no tracker ref) shows just
  * its `T-` key. Keeps every listing surface labelling a ticket the same way.
  */
-export function ticketRowId(id: number, trackerRef: number | null | undefined): string {
-  return trackerRef != null ? `${issueRef(trackerRef)} · ${taskKey(id)}` : taskKey(id);
+export function ticketRowId(id: number, trackerRef: TrackerRef | null | undefined): string {
+  const { ref, key } = ticketRowParts(id, trackerRef);
+  return ref !== null ? `${ref}${TICKET_ROW_SEPARATOR}${key}` : key;
+}
+
+export const TICKET_ROW_SEPARATOR = ' · ';
+
+export function ticketRowParts(id: number, trackerRef: TrackerRef | null | undefined): { ref: string | null; key: string } {
+  return { ref: trackerRef != null ? issueRef(trackerRef) : null, key: taskKey(id) };
+}
+
+export function eventCount(n: number): string {
+  return `${n.toLocaleString()} ${n === 1 ? 'event' : 'events'}`;
 }

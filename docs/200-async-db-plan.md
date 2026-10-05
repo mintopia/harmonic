@@ -36,7 +36,7 @@ engine, ahead of the migration (ADR-0029 §5 assigns them to #200):
 
 - **Event-loop monitor** — `src/reliability/event-loop-monitor.ts`: probes loop
   delay on a cadence and logs a stall (throttled) as a legible event. Named
-  "monitor" not "watchdog" (CONTEXT.md reserves *watchdog* for Guardrail).
+  "monitor" not "watchdog" (GLOSSARY.md reserves *watchdog* for Guardrail).
   Wired into `buildApp` boot (started after boot-only sync work) and stopped in
   `onClose`; off in tests via `reliabilityTuning.eventLoop.enabled = false`.
 - **loops-must-yield** — `src/reliability/yield.ts`: `yieldToEventLoop()` and

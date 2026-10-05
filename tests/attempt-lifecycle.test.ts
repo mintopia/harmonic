@@ -62,6 +62,7 @@ describe('an unresolved auto-driven attempt fails its implementation step (issue
       autoDrive: undefined,
       taskService: {} as unknown as TurnCompletionDeps['taskService'],
       getConfig: () => baselineConfig(),
+      getWorkspace: undefined,
       postMerge: undefined,
       isShuttingDown: () => false,
       settleEscalated: async () => {},
@@ -125,6 +126,7 @@ describe('AttemptStore.markInterrupted also fails an orphaned attempt\'s still-r
   it('fails the orphaned running attempt and closes its running step, leaving passed steps untouched', async () => {
     const task = await tasks.create({ prompt: 'crash mid-implementation', state: 'ready' });
     const run = await attempts.create(task.id);
+    await attempts.addAgentDuration(run.id, 25);
     const rebase = await attempts.createStep(run.id, { type: 'rebase' });
     await attempts.updateStep(rebase.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() - 1000 });
     const implementation = await attempts.createStep(run.id, { type: 'implementation', logLocator: 'session:pending' });
@@ -133,7 +135,7 @@ describe('AttemptStore.markInterrupted also fails an orphaned attempt\'s still-r
     const orphans = await attempts.markInterrupted();
 
     expect(orphans.map((attempt) => attempt.id)).toEqual([run.id]);
-    expect(await attempts.get(run.id)).toMatchObject({ state: 'failed', reason: 'process-death' });
+    expect(await attempts.get(run.id)).toMatchObject({ state: 'failed', reason: 'process-death', agentDurationMs: null });
     const steps = await attempts.listSteps(run.id);
     expect(steps).toMatchObject([
       { type: 'rebase', state: 'passed' },

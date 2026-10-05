@@ -14,6 +14,7 @@ import { ConversationDriver } from '../src/execution/conversation-driver.js';
 import { registerShutdown } from '../src/server/app-lifecycle.js';
 import type { App } from '../src/server/app-context.js';
 import { seedWorkspace, startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { BackgroundWork } from '../src/error-handling.js';
 
 const alive = (pid: number): boolean => {
   try {
@@ -136,6 +137,7 @@ describe('app.close() — ordered shutdown', () => {
     let stubborn: ChildProcess | undefined;
     const config = { ...baselineConfig(), ...stubHarness() } as AppConfig;
     const driver = new ConversationDriver(store, () => config, {
+      fireAndForget: new BackgroundWork().fireAndForget,
       processSpawn: {
         spawn: (req) => {
           stubborn = spawn(req.command, req.args, { cwd: req.cwd, env: req.env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -148,6 +150,7 @@ describe('app.close() — ordered shutdown', () => {
     const logs = captureLogs();
     const app = Fastify() as unknown as App;
     registerShutdown(app, {
+      background: new BackgroundWork(),
       trackerManager: { stopAll: async () => {} },
       scheduler: { stop: async () => {} },
       autoRunner: { close: async () => {} },
@@ -170,6 +173,35 @@ describe('app.close() — ordered shutdown', () => {
       expect(await closedCause(db.read((d) => d.select().from(conversations).all()))).toMatch(/CLIENT_CLOSED/);
     } finally {
       process.kill(stubborn!.pid!, 'SIGKILL');
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('still closes the stats reader, process-group journal link and DB when a component fails to stop', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harmonic-shutdown-reject-'));
+    const db = await openAsyncDb(dir);
+    const logs = captureLogs();
+    const closed: string[] = [];
+    const app = Fastify() as unknown as App;
+    registerShutdown(app, {
+      background: new BackgroundWork(),
+      trackerManager: { stopAll: async () => {} },
+      scheduler: { stop: async () => { throw new Error('scheduler stop exploded'); } },
+      autoRunner: { close: async () => {} },
+      upgrade: { close: async () => {} },
+      runner: { shutdown: async () => {} },
+      conversationDriver: { shutdown: async () => {} },
+      loopMonitor: undefined,
+      hostLoad: { stop: () => {} },
+      workspaceWatcher: { stopAll: async () => {} },
+      statsReader: { close: async () => { closed.push('stats'); } },
+      asyncDb: { close: async () => { closed.push('db'); await db.close(); } },
+    });
+    try {
+      await app.close();
+      expect(closed).toEqual(['stats', 'db']);
+      expect(logs.some((line) => line.startsWith('warn shutdown: a component failed to stop') && line.includes('scheduler stop exploded'))).toBe(true);
+    } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });

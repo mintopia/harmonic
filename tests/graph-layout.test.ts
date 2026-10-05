@@ -28,7 +28,7 @@ const task = (id: number, state: TaskState = 'ready', extra: Partial<Task> = {})
   workflow: null,
   wayfinderType: null,
   escalationReason: null,
-  mergeStatus: null,
+  mergeStatus: null, ticketClosePending: false,
   openBlockerCount: 0,
   agentWorkable: true,
   humanOnly: false,
@@ -36,6 +36,7 @@ const task = (id: number, state: TaskState = 'ready', extra: Partial<Task> = {})
   mapRef: null,
   url: null,
   mapTitle: null,
+  trackerLabel: null,
   branch: null,
   stat: null,
   runStartedAt: null,
@@ -96,9 +97,9 @@ describe('flattenElkLayout', () => {
         { id: 't3', x: 400, y: 60, width: 196, height: 60 },
       ],
     };
-    const layout = flattenElkLayout(res, new Map([[41, 'Graph view']]), byId, []);
+    const layout = flattenElkLayout(res, new Map([['41', 'Graph view']]), byId, []);
 
-    expect(layout.groups).toEqual([{ ref: 41, title: 'Graph view', x: 100, y: 50, w: 240, h: 160 }]);
+    expect(layout.groups).toEqual([{ ref: '41', title: 'Graph view', x: 100, y: 50, w: 240, h: 160 }]);
     expect(layout.nodes).toContainEqual({ id: 1, task: byId.get(1), x: 114, y: 84, w: 196, h: 60 });
     expect(layout.nodes).toContainEqual({ id: 2, task: byId.get(2), x: 114, y: 160, w: 196, h: 60 });
     expect(layout.nodes).toContainEqual({ id: 3, task: byId.get(3), x: 400, y: 60, w: 196, h: 60 });

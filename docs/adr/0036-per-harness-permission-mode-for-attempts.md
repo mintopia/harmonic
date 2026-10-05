@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-09-16
 
+Current status (2026-10-02): Per-harness unattended permission mode is implemented for Attempts. Conversation permission policy remains separate under ADR-0006.
+
 Builds on ADR-0005 (ACP harness, Sessions) and ADR-0025 (per-Harness Adapter
 properties / Harness Capability).
 

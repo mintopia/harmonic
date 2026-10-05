@@ -11,6 +11,7 @@ import { CopyButton, revealOnHover } from '../CopyButton';
 import { Icon } from '../Icon';
 import { Markdown } from '../Markdown';
 import { ChatTranscript } from './ChatTranscript';
+import { PromptSent, PromptSentCard } from './Description';
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
 
@@ -84,14 +85,46 @@ function CriticSession({ attemptId, label, model, agent }: { attemptId: number; 
   return <ChatTranscript events={events} unavailable={false} model={model} agent={agent} stepLabel={label} fromArchive={fromArchive} />;
 }
 
+function ResolvedPrompt({ attemptId, locator }: { attemptId: number; locator: string }) {
+  const [prompt, setPrompt] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useLiveEffect((live) => {
+    setPrompt(null);
+    setFailed(false);
+    api.resolvedPrompt({ attemptId }, locator).then(
+      (text) => {
+        if (live()) setPrompt(text);
+      },
+      () => {
+        if (live()) setFailed(true);
+      },
+    );
+  }, [attemptId, locator]);
+
+  if (prompt) return <PromptSent prompt={prompt} label="Review prompt sent" />;
+  return failed ? <PromptNotArchived /> : null;
+}
+
+function PromptNotArchived() {
+  return (
+    <PromptSentCard label="Review prompt sent">
+      <p className="text-small text-muted">Prompt not archived.</p>
+    </PromptSentCard>
+  );
+}
+
 export function CriticSessions({ attempts, run, model }: { attempts: VerificationAttempt[]; run?: AttemptSummary; model?: string }) {
-  const sessions = attempts.filter((a) => a.mechanism === 'critic' && a.hasTranscript);
+  const sessions = attempts.filter((a) => a.mechanism === 'critic');
   if (sessions.length === 0) return null;
   const criticName = model ?? (run ? criticModel(run) : null) ?? 'critic';
   return (
     <div className="flex flex-col gap-2">
       {sessions.map((c, i) => (
-        <CriticSession key={c.id} attemptId={c.id} model={criticName} agent={c.harness ? harnessLabel(c.harness) : 'Critic'} label={sessions.length > 1 ? `Critic ${i + 1} of ${sessions.length} · ${c.verdict}` : 'Critic'} />
+        <div key={c.id}>
+          {c.promptLocator ? <ResolvedPrompt attemptId={c.attemptId} locator={c.promptLocator} /> : <PromptNotArchived />}
+          {c.hasTranscript && <CriticSession attemptId={c.id} model={criticName} agent={c.harness ? harnessLabel(c.harness) : 'Critic'} label={sessions.length > 1 ? `Critic ${i + 1} of ${sessions.length} · ${c.verdict}` : 'Critic'} />}
+        </div>
       ))}
     </div>
   );
@@ -159,7 +192,7 @@ export function Verification({ attempts, statuses, run, only, verifier, steps = 
                 <span className={`text-[13px] font-semibold ${status.state === 'disabled' ? 'text-muted' : 'text-ink'}`}>{mechanismName(status.mechanism, run)}</span>
                 {summaryText && <CopyButton text={summaryText} label={resultLabel} className={revealOnHover} />}
               </div>
-              <div className="mt-1 text-[13px] leading-[1.55] text-muted [&_code]:rounded-[5px] [&_code]:bg-raised [&_code]:px-[5px] [&_code]:py-px [&_code]:font-data [&_code]:text-[12px]">{attempt ? attempt.mechanism === 'critic' ? <Markdown source={attempt.summary} className="text-muted" /> : attempt.summary : status.reason}</div>
+              <div className="mt-1 text-[13px] leading-[1.55] text-muted [&_code]:rounded-[5px] [&_code]:bg-raised [&_code]:px-[5px] [&_code]:py-px [&_code]:font-data [&_code]:text-[12px]">{attempt?.mechanism === 'critic' ? <Markdown source={attempt.summary} className="text-muted" /> : summaryText}</div>
               {attempt?.mechanism === 'command' && attempt.output && (
                 <div className="relative mt-2">
                   <pre className="max-h-72 overflow-auto rounded-md border border-hairline bg-sunken px-3 py-2 font-data text-[11.5px] leading-[1.55] text-muted">{attempt.output}</pre>

@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { trackerRef } from '../src/tracker/adapter.js';
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -14,6 +15,7 @@ import { TaskArchive } from '../src/archive/task-archive.js';
 import { TaskExporter } from '../src/archive/task-export.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import { emptyGitProvenance } from '../src/archive/git-provenance.js';
+import { BackgroundWork } from '../src/error-handling.js';
 
 const ACCESS = 'harmonicaccess';
 const SECRET = 'harmonicsecretkey123';
@@ -136,15 +138,16 @@ describe.skipIf(!dockerAvailable())('TaskExporter S3 destination (#737)', () => 
 
   const exporter = (cfg: AppConfig, workspace?: Parameters<typeof resolveExportSettings>[1], now?: () => Date): TaskExporter =>
     new TaskExporter({
+      fireAndForget: new BackgroundWork().fireAndForget,
       dataDir: dir,
       archive,
       version: '9.9.9',
       ...(now ? { now } : {}),
       settings: async () => resolveExportSettings(cfg, workspace),
       epicSettings: async () => resolveExportSettings(cfg, workspace),
-      epicSnapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, members: [] }),
+      epicSnapshot: async () => ({ ticket: {}, timeline: {}, agentMessages: [], attemptCount: 0, members: [] }),
       workspaceName: async () => 'My Workspace',
-      snapshot: async () => ({ ticket: { title: 'T' }, timeline: {}, attemptCount: 1, git: emptyGitProvenance() }),
+      snapshot: async () => ({ ticket: { title: 'T' }, timeline: {}, agentMessages: [], attemptCount: 1, git: emptyGitProvenance() }),
       recordEpicStep: async () => undefined,
       recordFact: async (_id, payload) => {
         facts.push(payload as Record<string, unknown>);
@@ -187,7 +190,7 @@ describe.skipIf(!dockerAvailable())('TaskExporter S3 destination (#737)', () => 
   it('delivers an Epic Export to directory and S3 and retries a failed S3 upload', async () => {
     const epicHistory = (): Array<Record<string, unknown>> =>
       JSON.parse(readFileSync(join(dir, 'archive', 'my-workspace', 'epic-5', 'archive.json'), 'utf8')).exports;
-    const outcomes = await exporter(config({ prefix: 'exports/' })).runEpic(1, 5, 'done');
+    const outcomes = await exporter(config({ prefix: 'exports/' })).runEpic(1, trackerRef(5), 'done');
 
     expect(outcomes?.map((o) => [o.destination, o.status])).toEqual([['directory', 'succeeded'], ['s3', 'succeeded']]);
     const objects = await keys(globalBucket);
@@ -202,20 +205,21 @@ describe.skipIf(!dockerAvailable())('TaskExporter S3 destination (#737)', () => 
     let healed = false;
     const failures: unknown[] = [];
     const sut = new TaskExporter({
+      fireAndForget: new BackgroundWork().fireAndForget,
       dataDir: dir,
       archive,
       version: '9.9.9',
       now: () => new Date(clock),
       settings: async () => resolveExportSettings(config({}), undefined),
       epicSettings: async () => resolveExportSettings(healed ? config({ prefix: 'again/' }, null) : config({ prefix: 'again/', secretAccessKey: 'wrongwrongwrong' }, null), undefined),
-      epicSnapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, members: [] }),
+      epicSnapshot: async () => ({ ticket: {}, timeline: {}, agentMessages: [], attemptCount: 0, members: [] }),
       workspaceName: async () => 'My Workspace',
-      snapshot: async () => ({ ticket: {}, timeline: {}, attemptCount: 0, git: emptyGitProvenance() }),
+      snapshot: async () => ({ ticket: {}, timeline: {}, agentMessages: [], attemptCount: 0, git: emptyGitProvenance() }),
       recordEpicStep: async () => undefined,
       recordFact: async () => undefined,
       onFailure: (f) => void failures.push(f),
     });
-    expect((await sut.exportEpicAgain(1, 5))?.map((o) => [o.destination, o.status])).toEqual([['s3', 'failed']]);
+    expect((await sut.exportEpicAgain(1, trackerRef(5)))?.map((o) => [o.destination, o.status])).toEqual([['s3', 'failed']]);
     expect(failures).toHaveLength(1);
     expect((await keys(globalBucket)).filter((k) => k.startsWith('again/'))).toEqual([]);
     expect([...(await sut.pendingOwnerKeys())]).toEqual(['epic:1:5']);
@@ -239,7 +243,8 @@ describe.skipIf(!dockerAvailable())('TaskExporter S3 destination (#737)', () => 
     const outcomes = await exporter(config({ accessKeyId: 'wrong', secretAccessKey: 'wrongwrongwrong' })).run(task, 'done');
 
     expect(outcomes?.map((o) => [o.destination, o.status])).toEqual([['directory', 'succeeded'], ['s3', 'failed']]);
-    expect(outcomes![1]!.error).toBeTruthy();
+    const s3 = outcomes![1]!;
+    expect(s3.status === 'failed' && s3.error).toBeTruthy();
     expect(readdirSync(join(dest, 'my-workspace'))).toHaveLength(1);
     expect(facts.map((f) => [f.destination, f.status])).toEqual([['directory', 'succeeded'], ['s3', 'failed']]);
     expect(await keys(globalBucket)).toEqual([]);

@@ -12,7 +12,16 @@ export type MergeStepEvent =
   | { step: 'completed-in-place'; baseBranch: string; leftBranch?: string }
   | { step: 'reconciled'; fromBase: string; toBase: string; mergeOid: string }
   | { step: 'rebuilding'; fromBase: string; toBase: string; paths: string[] }
-  | { step: 'escalated'; reason: 'conflict' | 'post-merge-red' | 'target-advanced'; message: string };
+  | { step: 'escalated'; reason: EscalationReason; message: string };
+
+type EscalationReason = 'conflict' | 'post-merge-red' | 'write-failed' | 'target-advanced';
+
+const ESCALATION_LABELS: Record<EscalationReason, string> = {
+  conflict: 'Escalated — merge conflict',
+  'post-merge-red': 'Escalated — post-merge check failed',
+  'write-failed': 'Escalated — base update failed',
+  'target-advanced': 'Escalated — base advanced',
+};
 
 export type MergeStepTone = 'neutral' | 'running' | 'passed' | 'failed' | 'awaiting';
 
@@ -111,7 +120,7 @@ export function mergeStepRow(step: MergeStepEvent, index: number): MergeStepRow 
     case 'escalated':
       return {
         key,
-        label: step.reason === 'conflict' ? 'Escalated — merge conflict' : step.reason === 'target-advanced' ? 'Escalated — base advanced' : 'Escalated — post-merge check failed',
+        label: ESCALATION_LABELS[step.reason],
         detail: null,
         log: step.message,
         tone: 'awaiting',

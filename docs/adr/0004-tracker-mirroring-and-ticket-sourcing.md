@@ -2,6 +2,8 @@
 
 Status: accepted
 Date: 2026-08-28
+Reconciled: 2026-10-02. Stored Epic identity follows ADR-0018/0023; legacy boot backfill is removed.
+
 Part of the 2026-08-28 ADR reset (see README.md).
 
 ## The local DB is the source of truth for agent work
@@ -49,16 +51,17 @@ from open-blocker count, never stored.
 
 Epic membership and wave order come from the tracker's parent/child structure
 (native sub-issues and dependencies, with `## Parent` / `Part of #n` /
-`Blocked by: #n` body lines as fallback). Harmonic authors no Epic structure
-and stores no grouping entity; missing or messy structure degrades gracefully
-to per-task behaviour, never breaks.
+`Blocked by: #n` body lines as fallback). Harmonic authors no Epic structure. ADR-0018 persists leaf-most Epic
+lifecycle and integration facts; ADR-0023 also recognizes unlabelled root
+tickets with children. Missing structure degrades to per-task behaviour.
 
 ## Tracker configuration and resolution
 
 - Tracker enable/interval are **Workspace-only** — no global default, no
   inherit affordance: a global "enabled" would start every Workspace polling
-  a repo that may declare no tracker. (The one-time `backfillDefaultWorkspace`
-  shim has served its purpose and is removable.)
+  a repo that may declare no tracker. The obsolete tracker-config and
+  orphan-Workspace boot backfill has been removed; startup does not migrate
+  `settings.config` or assign unscoped rows to the oldest Workspace.
 - The **Resolved Tracker** (which tracker a repo declares, or why resolution
   failed) is derived in-memory in the poller manager and merged into API
   responses at serialize time — never a persisted column. Resolution is a
@@ -137,13 +140,10 @@ materialised as a **commit on the base branch**, produced inside the merge's
 locking discipline (ADR-0001) — never as a loose working-tree write, and never
 against `task.workingDir`:
 
-- **Checked-out base (in-place merge):** while the merge mutex is held, rewrite
-  the ticket file in the base checkout, stage the ticket path, commit, and
-  advance the tip through the same ff-only/CAS discipline the merge uses. The
-  working tree ends clean.
-- **Bare / CAS base:** perform the rewrite-and-commit in the detached admin
-  worktree the merge already spins up (`branch-merge.ts`,
-  `mergeIntoBaseUnchecked`, `mode: 'merge'`), then CAS-update the base ref.
+- **Administrative worktree:** stage and commit the status edit in the
+  ephemeral merge worktree under the repository locking discipline. Publish
+  through ADR-0040's reconciliation path and synchronize a checked-out base
+  path by path under ADR-0039, preserving the operator's edits.
 
 The push stays **best-effort and non-blocking**: a failed status commit
 escalates and records exactly as today and never reverts the code merge. It
@@ -163,11 +163,21 @@ with no working tree.
 - `closeTicket` moves off `task.workingDir` onto the base target; the tracker
   close becomes part of the merge sequence's locked region rather than a
   detached, uncommitted follow-up.
-- Follow-up work: thread the commit through the merge/close path
-  (`auto-drive.ts` + `branch-merge.ts`), have the file-backed adapter's close
-  yield the intended file edit so the merge layer can commit it, and add a
-  git-integration test asserting a local-markdown auto-merge leaves the base
-  checkout clean with the ticket closed on base.
+- The merge/close path owns committing file-backed status edits; adapter
+  lifecycle pushes remain output side effects. The administrative-checkout
+  and base-sync rules in ADR-0039/0040 apply to this path too.
+
+## Amendment (2026-10-03): tracker resolution precedence and Code Repository
+
+Status: accepted — amends the "declared by the repo, never auto-detected"
+resolution clause above. See ADR-0046.
+
+- The Resolved Tracker is chosen by precedence: Configured Tracker (Workspace
+  setting) → Detected Tracker (`docs/agents/issue-tracker.md`) → the Code
+  Repository when it is also an issue tracker → none.
+- Opening a PR is a Code Repository operation, not a tracker operation.
+- Tracker refs are opaque tracker-scoped strings; capability gating reads the
+  kind's declared capability set rather than optional methods.
 
 ## Absorbed at the reset
 

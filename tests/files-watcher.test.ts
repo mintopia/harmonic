@@ -12,7 +12,7 @@ describe('workspace filesystem watcher (issue #590)', () => {
   let root: string;
 
   beforeAll(async () => {
-    server = await startServer({ fileWatcherDebounceMs: 25 });
+    server = await startServer({ fileWatcherDebounceMs: 250 });
     root = mkdtempSync(join(tmpdir(), 'harmonic-watcher-'));
     mkdirSync(join(root, 'ignored'));
     execFileSync('git', ['init', '-b', 'main', root]);

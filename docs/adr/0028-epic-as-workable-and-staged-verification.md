@@ -2,8 +2,13 @@
 
 Status: accepted
 Date: 2026-09-08
-Implementation pending (epic to follow). Supersedes the single-critic model and
-the whole-Epic verify clauses of ADR-0003; builds on the verify-in-place change
+Current status (2026-10-02): Implemented in `src/tracker/epic-verification-runner.ts`,
+`src/tracker/epic-integration-runner.ts`, and the nested `verify` config in
+`src/config.ts`. ADR-0037 later replaced this ADR's whole-list Workspace
+override with additive, id-keyed verifier overlays. ADR-0039 places the
+epic-to-default post-merge check in the merge operation's ephemeral worktree.
+Supersedes the single-critic model and the whole-Epic verify clauses of ADR-0003;
+builds on the verify-in-place change
 of 2026-09-08 (ADR-0003 amendment). Reworks the Verification surface of the
 epic ADRs (0016/0018) without changing epic containment or first-class storage.
 
@@ -41,11 +46,9 @@ bodies are editable with a live compiled-prompt preview per variant.
 
 - **Task pre-merge fail** — a failed Attempt: feedback into the next Attempt,
   counter +1; `maxAttempts` → escalate the Task (ADR-0002).
-- **Task post-merge fail** — the merge is already on `epic/<ref>`, so a failure
-  is **revert-on-red**: revert that Task's merge commit off the integration
-  branch and escalate the Task. Tasks merge one-at-a-time under the mutex and
-  the check runs immediately, so the failed merge is still the tip and the
-  revert is clean (ADR-0001).
+- **Task post-merge fail** — the check runs on the merge result in the
+  operation worktree before publication. A failure discards that result and
+  escalates the Task, leaving `epic/<ref>` unchanged.
 - **Epic Pre-Merge Verification fail** — a **resolve loop** (below).
 - **Epic → default-branch merge fail** — escalate the Epic, as the one merge
   policy already does (ADR-0001).
@@ -66,17 +69,13 @@ Verification suite re-runs. This is bounded by the **normal per-Attempt limit**
 (`maxAttempts`); exhausting it escalates the Epic, which reuses the exact Task
 escalation and resume surfaces — no epic-specific escape hatch.
 
-## Verification runs in place; one detached check remains
+## Verification runs in place; the Epic merge uses its operation worktree
 
-Every verifier runs **in place** in the live worktree that already sits at the
-target commit — the Task's builder worktree for task stages, the Epic's
-worktree for the Epic Pre-Merge Verification, and the epic worktree is also
-where Tasks merge in and where the task post-merge check runs. The **only
-detached checkout left in the system** is the epic→default-branch **post-merge
-check**, which runs against the shared base where no worktree exists. This
-retires the disposable per-Attempt detached worktree entirely (the interim
-`runCommandVerifierDetached` epic carve of the 2026-09-08 amendment collapses to
-this single case).
+Pre-merge verifiers run **in place** in the live worktree that already sits at
+the target commit: the Task builder worktree or the Epic worktree. Task and
+Epic post-merge checks run in the ephemeral administrative worktree used for
+their merge (ADR-0039). All commands in a check use that same worktree. The
+disposable per-Attempt verification checkout is retired.
 
 Rationale: one worktree, one agent — there is no concurrent reader to isolate a
 mutating command from, and "verify exactly the committed tip" is vacuous when
@@ -88,9 +87,9 @@ base repo — sibling checkouts a task set up under the worktree included.
 
 The flat `verify.commands` + single `verify.review` become nested per-stage
 lists: `verify.task.{preMerge,postMerge}` and `verify.epic.preMerge`, each
-`{ commands[], critics[] }`, plus `verify.epic.resolvePrompt`. Override grain is
-**per-stage, per-list**: `null` inherits the global list, an array replaces it
-whole, `[]` runs none. The old single-critic keys — `verify.review.*` and the
+`{ commands[], critics[] }`, plus `verify.epic.resolvePrompt`. ADR-0037 now
+defines Workspace override grain as additive, id-keyed overlays; the original
+whole-array replacement rule no longer applies. The old single-critic keys — `verify.review.*` and the
 `WorkspaceRow` `reviewEnabled`/`reviewPrompt`/`reviewModel`/`reviewHarness`
 columns — are **deleted outright**, no back-compat: a baseline edit and a DB
 recreate, never a migration (ADR-0007 schema-sync doctrine).
@@ -100,13 +99,14 @@ recreate, never a migration (ADR-0007 schema-sync doctrine).
 - Attempts attach to Epics as well as Tasks; crash recovery, escalation, resume,
   Usage/Cost rollup, and the Attempt timeline all extend to Epic Attempts.
 - The verifier-status surface (ADR-0003) multiplies to per-stage, per-verifier;
-  its rendering is a UI follow-up, out of scope here.
+  the settings and detail views render the staged verifier lists.
 - Whole-Epic Verification's "runs no corrective turn at Epic scope" clause is
   reversed: the Epic now runs a bounded resolve loop.
 - The settings surface must edit lists of commands and critics at three stages,
-  and prompt pairs with dual preview — a real UX build, tracked separately.
-- Single-critic vocabulary (`review`, Review Step) is renamed out; a Verification
-  Step exists per command and per critic.
+  and prompt pairs with dual preview; those settings controls are implemented.
+- Single-critic configuration is removed. ADR-0038 later retained `review` as
+  the final Step name in the operator escalation pipeline; each critic also has
+  its own Verification Attempt.
 
 ## Supersedes
 

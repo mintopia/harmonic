@@ -5,10 +5,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ClosedRail, EpicBand } from '../web/src/components/Board.js';
 import type { Epic, EpicMember } from '../web/src/epic-model.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 function member(overrides: Partial<EpicMember> = {}): EpicMember {
   return {
-    ref: 1,
+    ref: trackerRef(1),
     title: 'Fix flaky test',
     taskId: 501,
     state: 'done',
@@ -21,13 +22,13 @@ function member(overrides: Partial<EpicMember> = {}): EpicMember {
 }
 
 const closed: EpicMember[] = [
-  member({ ref: 1, title: 'Fix flaky test', taskId: 501, state: 'done', mergeStatus: 'completed' }),
-  member({ ref: 2, title: 'Drop dead code path', taskId: null, state: 'cancelled', mergeStatus: 'pending' }),
+  member({ ref: trackerRef(1), title: 'Fix flaky test', taskId: 501, state: 'done', mergeStatus: 'completed' }),
+  member({ ref: trackerRef(2), title: 'Drop dead code path', taskId: null, state: 'cancelled', mergeStatus: 'pending' }),
 ];
 
 function epic(overrides: Partial<Epic> = {}): Epic {
   return {
-    ref: 423,
+    ref: trackerRef(423),
     title: 'Collapsible closed section',
     kind: 'spec',
     state: 'open',

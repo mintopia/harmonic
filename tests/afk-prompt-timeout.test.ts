@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, seedLocalMarkdownTicket, type TestServer } from './helpers.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 const tmpDirs: string[] = [];
@@ -47,9 +48,9 @@ describe('afk drive loop — finish_task + lost prompt response → verify, not 
     for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
   });
 
-  const mirroredAfk = (trackerRef: number): MirrorInput => ({
-    trackerRef,
-    prompt: `ticket ${trackerRef}\n\nbody`,
+  const mirroredAfk = (ref: number): MirrorInput => ({
+    trackerRef: trackerRef(ref),
+    prompt: `ticket ${ref}\n\nbody`,
     workflow: 'implement',
     wayfinderType: null,
     mapRef: null,

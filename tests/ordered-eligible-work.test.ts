@@ -7,6 +7,7 @@ import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 
 describe('TaskService.orderedEligibleWork', () => {
   let directory: string;
@@ -33,7 +34,7 @@ describe('TaskService.orderedEligibleWork', () => {
     const low = await taskService.create({ prompt: 'native low', workspaceId, priority: 'low' });
     const high = await taskService.create({ prompt: 'native high', workspaceId, priority: 'high' });
     const mirrored = await taskService.upsertMirrored({
-      trackerRef: 501,
+      trackerRef: trackerRef(501),
       prompt: 'mirrored',
       workflow: 'implement',
       wayfinderType: null,
@@ -41,7 +42,7 @@ describe('TaskService.orderedEligibleWork', () => {
       closed: false,
       facts: { state: 'open', parent: null, blockedBy: [], labels: ['ready-for-agent'], title: 'mirrored', body: '', url: 'https://example.test/501', createdAt: '2026-08-01T00:00:00Z' },
     }, workspaceId);
-    await taskService.upsertMirrored({ trackerRef: 502, prompt: 'unlabelled mirror', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false }, workspaceId);
+    await taskService.upsertMirrored({ trackerRef: trackerRef(502), prompt: 'unlabelled mirror', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false }, workspaceId);
     const blocker = await taskService.create({ prompt: 'blocker', workspaceId });
     await taskService.create({ prompt: 'dependent', workspaceId, dependsOn: [blocker.id] });
 

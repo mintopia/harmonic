@@ -1,5 +1,5 @@
 import type { SpanContext } from '@opentelemetry/api';
-import { isEpicTypeContainer, type Ticket } from './adapter.js';
+import { isEpicTypeContainer, type Ticket, type TrackerRef } from './adapter.js';
 import type { MirrorInput, TaskService } from '../domain/tasks.js';
 import { deriveStoredEpics } from '../domain/epic-derivation.js';
 import { WAYFINDER_TYPES, type TaskRow, type TrackerFacts, type WayfinderType, type Workflow } from '../db/schema.js';
@@ -34,7 +34,7 @@ const trackerFacts = (ticket: Ticket): TrackerFacts => ({
 /** The upsert input for one ticket — role derived, open/closed axis resolved. */
 export function toMirrorInput(ticket: Ticket, trackerCanClose = true, observedAt?: number): MirrorInput {
   return {
-    trackerRef: ticket.number,
+    trackerRef: ticket.ref,
     prompt: mirrorPrompt(ticket),
     ...deriveRole(ticket),
     mapRef: ticket.parent,
@@ -64,18 +64,18 @@ export async function mirrorScan(
   } = {},
 ): Promise<TaskRow[]> {
   const issues: Ticket[] = [];
-  const containers: Array<{ trackerRef: number; facts: TrackerFacts }> = [];
+  const containers: Array<{ trackerRef: TrackerRef; facts: TrackerFacts }> = [];
   const storedEpics = deriveStoredEpics(tickets);
   const storedEpicRefs = new Set(storedEpics.map((epic) => epic.ref));
   await forEachYielding(tickets, async (ticket) => {
-    if (isEpicTypeContainer(ticket) || storedEpicRefs.has(ticket.number)) {
-      containers.push({ trackerRef: ticket.number, facts: trackerFacts(ticket) });
-      await tasks.demoteMirroredToContainer(workspaceId, ticket.number);
-    } else if (!(await tasks.isDismissed(workspaceId, ticket.number))) issues.push(ticket);
+    if (isEpicTypeContainer(ticket) || storedEpicRefs.has(ticket.ref)) {
+      containers.push({ trackerRef: ticket.ref, facts: trackerFacts(ticket) });
+      await tasks.demoteMirroredToContainer(workspaceId, ticket.ref);
+    } else if (!(await tasks.isDismissed(workspaceId, ticket.ref))) issues.push(ticket);
   });
   await tasks.syncTrackerContainers(workspaceId, containers);
   await tasks.syncEpics(workspaceId, storedEpics);
-  const parentRefs = new Set<number>();
+  const parentRefs = new Set<TrackerRef>();
   await forEachYielding(tickets, (ticket) => {
     if (ticket.parent !== null) parentRefs.add(ticket.parent);
   });
@@ -84,7 +84,7 @@ export async function mirrorScan(
     const operation = pollSpanContext
       ? startOperation({
           type: 'tracker.mirror.issue',
-          attributes: { 'workspace.id': workspaceId, 'tracker.ref': t.number },
+          attributes: { 'workspace.id': workspaceId, 'tracker.ref': t.ref },
           parent: pollSpanContext,
         })
       : undefined;
@@ -98,14 +98,19 @@ export async function mirrorScan(
       throw error;
     }
   });
-  const idByRef = new Map<number, number>();
+  const idByRef = new Map<TrackerRef, number>();
   await forEachYielding(rows, (row) => {
     if (row.trackerRef !== null) idByRef.set(row.trackerRef, row.id);
   });
+  const unscannedBlockers = new Set<TrackerRef>();
+  await forEachYielding(issues, (issue) => {
+    for (const b of issue.blockedBy) if (!parentRefs.has(b.ref) && !idByRef.has(b.ref)) unscannedBlockers.add(b.ref);
+  });
+  const persistedIdByRef = await tasks.doneMirroredIdsByRef(workspaceId, [...unscannedBlockers]);
   await forEachYielding(issues, async (issue, i) => {
     const blockerIds = issue.blockedBy
-      .filter((b) => !parentRefs.has(b.number))
-      .map((b) => idByRef.get(b.number))
+      .filter((b) => !parentRefs.has(b.ref))
+      .map((b) => idByRef.get(b.ref) ?? persistedIdByRef.get(b.ref))
       .filter((id): id is number => id !== undefined);
     await tasks.reconcileMirroredDeps(rows[i]!.id, blockerIds);
   });
@@ -119,10 +124,10 @@ export async function mirrorScan(
 export interface DerivedMap {
   /** The owning Workspace; disambiguates Map refs that collide across repos. */
   workspaceId: number;
-  ref: number;
+  ref: TrackerRef;
   title: string;
   url: string;
-  taskRefs: number[];
+  taskRefs: TrackerRef[];
   counts: Record<string, number>;
 }
 
@@ -131,9 +136,9 @@ export function deriveMaps(tickets: Ticket[], mirrored: TaskRow[], workspaceId: 
   return tickets
     .filter((t) => t.isMap)
     .map((m) => {
-      const members = mirrored.filter((task) => task.mapRef === m.number);
+      const members = mirrored.filter((task) => task.mapRef === m.ref);
       const counts: Record<string, number> = {};
       for (const task of members) counts[task.state] = (counts[task.state] ?? 0) + 1;
-      return { workspaceId, ref: m.number, title: m.title, url: m.url, taskRefs: members.map((t) => t.trackerRef!), counts };
+      return { workspaceId, ref: m.ref, title: m.title, url: m.url, taskRefs: members.map((t) => t.trackerRef!), counts };
     });
 }
