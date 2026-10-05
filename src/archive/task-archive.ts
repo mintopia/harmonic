@@ -1,6 +1,6 @@
 import type { TrackerRef } from '../tracker/adapter.js';
 import { createWriteStream, type WriteStream } from 'node:fs';
-import { access, appendFile, copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { access, appendFile, copyFile, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { createHash, randomBytes } from 'node:crypto';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import type { TaskRow } from '../db/schema.js';
@@ -58,6 +58,8 @@ export interface OperatorInput {
 }
 
 const PROMPT_SEPARATOR = '\n\n---\n\n';
+const PROMPT_READ_CHUNK_BYTES = 64 * 1024;
+
 
 function warn(message: string, err: unknown, fields: Record<string, unknown> = {}): void {
   logger.warn(message, { ...fields, error: err instanceof Error ? err.message : String(err) });
@@ -395,6 +397,41 @@ export class TaskArchive {
       return (await pathExists(file)) ? file : null;
     } catch (err) {
       warn('archive: verification output lookup failed', err, { attemptNumber, fullOutputKey });
+      return null;
+    }
+  }
+
+  /** Read an archived Resolved Prompt (`prompt.md`) by its Attempt-relative locator, in chunks that yield the event loop; null when the locator is not a prompt file under the Attempt or the file is absent. */
+  async readArchivedPrompt(
+    owner: TaskRow | { workspaceId: number; epicRef: TrackerRef },
+    attemptNumber: number,
+    locator: string,
+    yieldNow: () => Promise<void> = yieldToEventLoop,
+  ): Promise<string | null> {
+    try {
+      const root = await this.existingOwnerDir(owner);
+      if (!root) return null;
+      const attemptDir = join(root, 'attempts', String(attemptNumber));
+      const file = resolve(attemptDir, locator);
+      if (!file.startsWith(attemptDir + sep) || basename(file) !== 'prompt.md') return null;
+      const handle = await open(file, 'r');
+      try {
+        const chunks: Buffer[] = [];
+        for (;;) {
+          const buffer = Buffer.allocUnsafe(PROMPT_READ_CHUNK_BYTES);
+          const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+          if (bytesRead === 0) break;
+          chunks.push(buffer.subarray(0, bytesRead));
+          await yieldNow();
+        }
+        return Buffer.concat(chunks).toString('utf8');
+      } finally {
+        await handle.close();
+      }
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT' && (err as NodeJS.ErrnoException).code !== 'EISDIR') {
+        warn('archive: resolved prompt read failed', err, { attemptNumber, locator });
+      }
       return null;
     }
   }
