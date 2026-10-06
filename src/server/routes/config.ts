@@ -147,7 +147,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
     {
       schema: {
         tags: ['Config'],
-        description: 'Get the full effective configuration. Operator only; not reachable with an attempt-scoped Attempt Key.',
+        description: 'Get the full effective configuration.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         response: {
           200: appConfigSchema.describe(
@@ -178,7 +178,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
       schema: {
         tags: ['Config'],
         description:
-          'Deep-merge a partial config patch onto the stored configuration. Operator only; not reachable with an attempt-scoped Attempt Key.',
+          'Deep-merge a partial config patch onto the stored configuration.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: configPatchBodySchema,
         response: {
@@ -199,7 +199,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
       schema: {
         tags: ['Config'],
         description:
-          "Full-replace the stored configuration. Unlike PATCH's deep-merge, a record key omitted here (a harness environment variable, a catalog entry) is deleted, not left alone. The settings UI loads the whole config, edits locally, and saves the complete object so it can delete as well as add. The config schema validates the request atomically, so an invalid body makes no partial write. Operator only; not reachable with an attempt-scoped Attempt Key.",
+          "Full-replace the stored configuration. Unlike PATCH's deep-merge, a record key omitted here (a harness environment variable, a catalog entry) is deleted, not left alone. The settings UI loads the whole config, edits locally, and saves the complete object so it can delete as well as add. The config schema validates the request atomically, so an invalid body makes no partial write.",
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: appConfigSchema,
         response: {

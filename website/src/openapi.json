@@ -3,7 +3,7 @@
   "info": {
     "title": "@mintopia/harmonic",
     "version": "2.23.0",
-    "description": "Queue, run, and review autonomous coding-agent tasks over ACP\n\n## MCP\n\n`POST /mcp` is a stateless streamable-HTTP MCP server (not a REST\nendpoint, so it has no entry in this spec's paths). It authenticates the\nsame way as the REST API — a bearer token, either an operator API key or\nthe Attempt Key Harmonic injects into a spawned harness — and exposes the\nagent task surface as MCP tools (task CRUD, dependencies, queue/cancel,\nattempts and events). Accept/Reject are human-only and are never exposed as\nMCP tools — a verifier's pass is the accept (#140, ADR-0021). An attempt-scoped\nAttempt Key may call `/mcp` regardless of the REST restrictions noted per\nendpoint below.\n\n## WebSocket\n\n`GET /api/ws` is a single firehose WebSocket (also outside this spec's\npaths): every attempt event, attempt state change, task state change/removal, and\nConversation event/change is broadcast to every connected client as JSON\nmessages of the form `{ type: 'attempt_event' | 'attempt_changed' | 'attempt_timeline_changed' |\n'attempt_usage' | 'task_changed' | 'task_removed' | 'epic_changed' | 'epic_integrated' |\n'agent_messages_changed' | 'scheduled-jobs' | 'operations' | 'worktrees' | 'host_load' |\n'export_failed' | 'notification_created' | 'notifications_read' | 'fs_changed' | 'git_status' |\n'attempt_log_event' | 'critic_log_event' | 'heartbeat' | 'conversation_event' |\n'conversation_changed' | 'conversation_commands' | 'permission_request' |\n'elicitation_request', ... }`, using the same Task/Attempt/Conversation/Scheduled Job/Operation shapes\nserved over REST. `attempt_usage` is a live-usage snapshot for a running Attempt\n(tokens, context fill, derived Cost, current-activity line, and Process\nTree), pushed about once a second while the Attempt tails its native log.\n`task_removed` (issue #162) announces a hard-deleted Task's id (`{ type:\n'task_removed', id }`) — the row is gone, not another state change.\n`scheduled-jobs` announces the full Scheduled Job registry snapshot, matching\n`GET /api/scheduled-jobs`.\n`operations` announces an Operation lifecycle event, matching the operation shape\nserved by `GET /api/operations`.\n`permission_request` announces a Harness blocked on an\noperator permission decision in a Conversation (ADR-0007), answered via\n`POST /conversations/:id/permissions/:reqId`. Authenticate by offering the\nsession token or an API key as the sole WebSocket subprotocol\n(`new WebSocket(url, [token])`) — never as a query parameter, which leaks\ninto logs and browser history. A browser client authenticated by session\ncookie needs no subprotocol. A `read`-scoped key gets the firehose minus the Conversation and permission\ntraffic (`conversation_event`, `conversation_changed`, `conversation_commands`,\n`permission_request`, `elicitation_request`); everything else, including\n`attempt_timeline_changed` and the `epic_*` events, is delivered. The server\nsends a protocol ping and a `{ type: 'heartbeat', intervalMs, ts }` message every\n30 seconds (browsers cannot see protocol pings); a client that sees nothing for\ntwo intervals can treat the connection as dead and reconnect. A connection that\nmisses a pong is terminated. Cross-origin REST calls are allowed for origins\nlisted in `HARMONIC_CORS_ORIGINS` (comma-separated, `*` for any); credentials\nare never allowed, so authenticate with a bearer key.\n\n## Read scope\n\nA `read`-scoped API key (created via `POST /api/keys` with\n`{ \"scope\": \"read\" }`) is a viz-client credential: it may `GET` tasks,\nattempts, maps, Workspaces and their Epics (`/api/workspaces`, `/api/workspaces/:id/epics[/:ref]`), Operations (`/api/operations`), and the instance-wide Activity snapshot (`/api/activity`,\nfiltered to Attempts only for a read key), and open the WebSocket (filtered as\nabove). Every mutation and the whole operator surface (keys, config,\nchannels, Conversations) is blocked. There is no `map_changed` event — a\nclient re-fetches `/maps` on reconnect or when it sees a `mapRef` it has\nnot resolved yet."
+    "description": "Queue, run, and review autonomous coding-agent tasks over ACP\n\n## MCP\n\n`POST /mcp` is a stateless streamable-HTTP MCP server (not a REST\nendpoint, so it has no entry in this spec's paths). It authenticates the\nsame way as the REST API — a bearer token, either an operator API key or\nthe Attempt Key Harmonic injects into a spawned harness — and exposes the\nagent task surface as MCP tools (task CRUD, dependencies, queue/cancel,\nattempts and events). Accept/Reject are human-only and are never exposed as\nMCP tools — a verifier's pass is the accept (#140, ADR-0021). An attempt-scoped\nAttempt Key may call `/mcp` regardless of the REST restrictions noted per\nendpoint below.\n\n## WebSocket\n\n`GET /api/ws` is a single firehose WebSocket (also outside this spec's\npaths): every attempt event, attempt state change, task state change/removal, and\nConversation event/change is broadcast to every connected client as JSON\nmessages of the form `{ type: 'attempt_event' | 'attempt_changed' | 'attempt_timeline_changed' |\n'attempt_usage' | 'task_changed' | 'task_removed' | 'epic_changed' | 'epic_integrated' |\n'agent_messages_changed' | 'scheduled-jobs' | 'operations' | 'worktrees' | 'host_load' |\n'export_failed' | 'notification_created' | 'notifications_read' | 'fs_changed' | 'git_status' |\n'attempt_log_event' | 'critic_log_event' | 'heartbeat' | 'conversation_event' |\n'conversation_changed' | 'conversation_commands' | 'permission_request' |\n'elicitation_request', ... }`, using the same Task/Attempt/Conversation/Scheduled Job/Operation shapes\nserved over REST. `attempt_usage` is a live-usage snapshot for a running Attempt\n(tokens, context fill, derived Cost, current-activity line, and Process\nTree), pushed about once a second while the Attempt tails its native log.\n`task_removed` (issue #162) announces a hard-deleted Task's id (`{ type:\n'task_removed', id }`) — the row is gone, not another state change.\n`scheduled-jobs` announces the full Scheduled Job registry snapshot, matching\n`GET /api/scheduled-jobs`.\n`operations` announces an Operation lifecycle event, matching the operation shape\nserved by `GET /api/operations`.\n`permission_request` announces a Harness blocked on an\noperator permission decision in a Conversation (ADR-0007), answered via\n`POST /conversations/:id/permissions/:reqId`. Authenticate by offering the\nsession token or an API key as the sole WebSocket subprotocol\n(`new WebSocket(url, [token])`) — never as a query parameter, which leaks\ninto logs and browser history. A browser client authenticated by session\ncookie needs no subprotocol. A `read`-scoped key gets the firehose minus the Conversation and permission\ntraffic (`conversation_event`, `conversation_changed`, `conversation_commands`,\n`permission_request`, `elicitation_request`); everything else, including\n`attempt_timeline_changed` and the `epic_*` events, is delivered. The server\nsends a protocol ping and a `{ type: 'heartbeat', intervalMs, ts }` message every\n30 seconds (browsers cannot see protocol pings); a client that sees nothing for\ntwo intervals can treat the connection as dead and reconnect. A connection that\nmisses a pong is terminated. Cross-origin REST calls are allowed for origins\nlisted in `HARMONIC_CORS_ORIGINS` (comma-separated, `*` for any); credentials\nare never allowed, so authenticate with a bearer key.\n\n## Read scope\n\nA `read`-scoped API key (created via `POST /api/keys` with\n`{ \"scope\": \"read\" }`) is a viz-client credential: it may `GET` Workspaces and their Epics (`/api/workspaces/:id/epics[/:ref]`), tasks, attempts, Workspaces (`/api/workspaces`), maps, the instance-wide Activity snapshot (`/api/activity`, filtered to Attempts only for a read key), Operations (`/api/operations`), and open the WebSocket (filtered as\nabove). Every mutation and the whole operator surface (keys, config,\nchannels, Conversations) is blocked. There is no `map_changed` event — a\nclient re-fetches `/maps` on reconnect or when it sees a `mapRef` it has\nnot resolved yet."
   },
   "components": {
     "securitySchemes": {
@@ -18749,7 +18749,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Create a task. Reachable with an attempt-scoped Attempt Key.",
+        "description": "Create a task. Key scopes: full, attempt.",
         "requestBody": {
           "required": true,
           "content": {
@@ -18870,7 +18870,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "List tasks: filtered (`state`, `harness`, `priority`, `parent` — an Epic ref, returning its child tasks), searched (`q`, server-side substring over prompt + title), sorted, and paginated (`limit`/`offset`, with a `total` count). An omitted `limit` returns every match. With `epics=true` and a `workspaceId`, the derived-epic model (ADR-0016) contributes epic-format rows to the unfiltered list. Reachable with an attempt-scoped Attempt Key.",
+        "description": "List tasks: filtered (`state`, `harness`, `priority`, `parent` — an Epic ref, returning its child tasks), searched (`q`, server-side substring over prompt + title), sorted, and paginated (`limit`/`offset`, with a `total` count). An omitted `limit` returns every match. With `epics=true` and a `workspaceId`, the derived-epic model (ADR-0016) contributes epic-format rows to the unfiltered list. Key scopes: full, attempt, read.",
         "parameters": [
           {
             "schema": {
@@ -19039,7 +19039,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Get one task with its dependency context and Cost. Reachable with an attempt-scoped Attempt Key.",
+        "description": "Get one task with its dependency context and Cost. Key scopes: full, attempt, read.",
         "parameters": [
           {
             "schema": {
@@ -19080,7 +19080,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Edit a draft or ready task. Each Task-default field (harness, model, isolationMode, priority) accepts null to clear it back to inherit. Reachable with an attempt-scoped Attempt Key.",
+        "description": "Edit a draft or ready task. Each Task-default field (harness, model, isolationMode, priority) accepts null to clear it back to inherit. Key scopes: full, attempt.",
         "requestBody": {
           "required": true,
           "content": {
@@ -19238,7 +19238,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Permanently delete a Task and its Attempts, Usage, and Dependency edges. A mirrored Task is also dismissed so a re-poll will not re-create it. Distinct from Cancel, which keeps the record.",
+        "description": "Permanently delete a Task and its Attempts, Usage, and Dependency edges. A mirrored Task is also dismissed so a re-poll will not re-create it. Distinct from Cancel, which keeps the record. Key scopes: full, attempt.",
         "parameters": [
           {
             "schema": {
@@ -19306,7 +19306,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Promote a draft to ready. Blocked-ness is derived from its open blockers. Reachable with an attempt-scoped Attempt Key.",
+        "description": "Promote a draft to ready. Blocked-ness is derived from its open blockers. Key scopes: full, attempt.",
         "parameters": [
           {
             "schema": {
@@ -19349,7 +19349,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Cancel a non-terminal task, optionally cascading to its dependents. Reachable with an attempt-scoped Attempt Key.",
+        "description": "Cancel a non-terminal task, optionally cascading to its dependents. Key scopes: full, attempt.",
         "requestBody": {
           "required": true,
           "content": {
@@ -19420,7 +19420,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Inject the configured pause steer, then pause a working task after its active turn settles. Reachable with an attempt-scoped Attempt Key.",
+        "description": "Inject the configured pause steer, then pause a working task after its active turn settles. Key scopes: full, attempt.",
         "parameters": [
           {
             "schema": {
@@ -19463,7 +19463,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Resume a paused task. `continuation` picks how it re-attaches to its prior Session: `full` reuses the retained conversation, `condensed` starts a fresh one; omitted keeps the recommended default. Reachable with an attempt-scoped Attempt Key.",
+        "description": "Resume a paused task. `continuation` picks how it re-attaches to its prior Session: `full` reuses the retained conversation, `condensed` starts a fresh one; omitted keeps the recommended default. Key scopes: full, attempt.",
         "requestBody": {
           "required": true,
           "content": {
@@ -19533,7 +19533,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Force a working task to done (operator override): stop the agent and settle it done, skipping verification and merging. Operator only.",
+        "description": "Force a working task to done (operator override): stop the agent and settle it done, skipping verification and merging. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -19576,7 +19576,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Steer a running task: send an operator message to its active Attempt. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no Attempt is active but the task's last Attempt left a resumable session (an escalated task that ended without closure), the message continues that session in a fresh Attempt. A paused task is resumed to working and the message delivered the same way; a working task whose Attempt is no longer running (restarted, upgraded, or torn down between turns) is relaunched. A resume is never refused: a cold cache only changes the estimated cost, and a Session incompatible for continue-full (harness/adapter-version/cwd/permission-mode changed) falls back to start-condensed rather than blocking. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, continue one whose Attempt just ended, resume a paused one, or relaunch a stranded one. Operator only.",
+        "description": "Steer a running task: send an operator message to its active Attempt. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no Attempt is active but the task's last Attempt left a resumable session (an escalated task that ended without closure), the message continues that session in a fresh Attempt. A paused task is resumed to working and the message delivered the same way; a working task whose Attempt is no longer running (restarted, upgraded, or torn down between turns) is relaunched. A resume is never refused: a cold cache only changes the estimated cost, and a Session incompatible for continue-full (harness/adapter-version/cwd/permission-mode changed) falls back to start-condensed rather than blocking. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, continue one whose Attempt just ended, resume a paused one, or relaunch a stranded one. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -19639,7 +19639,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Extend the wall-clock time guardrail of a working task's live Attempt by `minutes`, giving a run that is close to its budget more time without restarting it. The raised cap is persisted onto the Attempt's frozen guardrail config and the live deadline is re-armed immediately. Operator only.",
+        "description": "Extend the wall-clock time guardrail of a working task's live Attempt by `minutes`, giving a run that is close to its budget more time without restarting it. The raised cap is persisted onto the Attempt's frozen guardrail config and the live deadline is re-armed immediately. Key scopes: full, attempt.",
         "requestBody": {
           "required": true,
           "content": {
@@ -19703,7 +19703,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Return a cancelled task to the queue in place (ready; blocked-ness is derived from its open blockers). Reachable with an attempt-scoped Attempt Key.",
+        "description": "Return a cancelled task to the queue in place (ready; blocked-ness is derived from its open blockers). Key scopes: full, attempt.",
         "parameters": [
           {
             "schema": {
@@ -19746,7 +19746,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Add a dependency edge, re-deriving the open-blocker count. Reachable with an attempt-scoped Attempt Key.",
+        "description": "Add a dependency edge, re-deriving the open-blocker count. Key scopes: full, attempt.",
         "requestBody": {
           "required": true,
           "content": {
@@ -19810,7 +19810,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Remove a dependency edge, re-deriving the open-blocker count. Reachable with an attempt-scoped Attempt Key.",
+        "description": "Remove a dependency edge, re-deriving the open-blocker count. Key scopes: full, attempt.",
         "parameters": [
           {
             "schema": {
@@ -19854,7 +19854,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Accept an escalated ticket: the operator has judged the work done, so the candidate is merged as-is — merge, close the tracker issue, clean up, move it to done — with no verification. Human-only.",
+        "description": "Accept an escalated ticket: the operator has judged the work done, so the candidate is merged as-is — merge, close the tracker issue, clean up, move it to done — with no verification. Human-only. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -19897,7 +19897,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Reject an escalated ticket: optional guidance becomes feedback for the next Attempt and the attempt budget resets. The ticket requeues to `ready` — the Auto-Runner starts the next Attempt when capacity frees; it is not force-started here unless `start: true` (the warm-Session \"start now\" override, which bypasses the capacity ceiling). The escalated Attempt's branch is retained as evidence until its Session retires. Human-only.",
+        "description": "Reject an escalated ticket: optional guidance becomes feedback for the next Attempt and the attempt budget resets. The ticket requeues to `ready` — the Auto-Runner starts the next Attempt when capacity frees; it is not force-started here unless `start: true` (the warm-Session \"start now\" override, which bypasses the capacity ceiling). The escalated Attempt's branch is retained as evidence until its Session retires. Human-only. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -19963,7 +19963,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Close an escalated ticket: cancel it and clean up — remove its branch and worktree, close the tracker issue. Human-only.",
+        "description": "Close an escalated ticket: cancel it and clean up — remove its branch and worktree, close the tracker issue. Human-only. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -20030,7 +20030,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Preview the Session continuation available to a manual resume: if this task has a live Session, the warm-session estimate and the condensed alternative. `available: false` when there is nothing to continue.",
+        "description": "Preview the Session continuation available to a manual resume: if this task has a live Session, the warm-session estimate and the condensed alternative. `available: false` when there is nothing to continue. Key scopes: full, attempt, read.",
         "parameters": [
           {
             "schema": {
@@ -20262,7 +20262,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "Start an attempt for a ready task. Reachable with an attempt-scoped Attempt Key.",
+        "description": "Start an attempt for a ready task. Key scopes: full, attempt.",
         "parameters": [
           {
             "schema": {
@@ -20295,7 +20295,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "A ticket's attempt timeline. Steps are ordered exactly as they ran.",
+        "description": "A ticket's attempt timeline. Steps are ordered exactly as they ran. Key scopes: full, attempt, read.",
         "parameters": [
           {
             "schema": {
@@ -20350,7 +20350,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "A chronological projection of the ticket lifecycle, verification, guardrail, operator, and merging event logs.",
+        "description": "A chronological projection of the ticket lifecycle, verification, guardrail, operator, and merging event logs. Key scopes: full, attempt, read.",
         "parameters": [
           {
             "schema": {
@@ -20471,7 +20471,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "List a task's attempts (retries included). Reachable with an attempt-scoped Attempt Key.",
+        "description": "List a task's attempts (retries included). Key scopes: full, attempt, read.",
         "parameters": [
           {
             "schema": {
@@ -20546,7 +20546,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "The task's current (latest) attempt — the follow-forward read for pollers: self-heal advances to a new Attempt row each turn, and this always reflects the live one. Reachable with an attempt-scoped Attempt Key.",
+        "description": "The task's current (latest) attempt — the follow-forward read for pollers: self-heal advances to a new Attempt row each turn, and this always reflects the live one. Key scopes: full, attempt, read.",
         "parameters": [
           {
             "schema": {
@@ -20589,7 +20589,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "Get one attempt with its Usage and Cost. Reachable with an attempt-scoped Attempt Key.",
+        "description": "Get one attempt with its Usage and Cost. Key scopes: full, attempt, read.",
         "parameters": [
           {
             "schema": {
@@ -20632,7 +20632,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "Read an Attempt's native harness transcript, falling back to the Archive's copy when the native one is missing or unreadable. Unavailable only when neither can be read.",
+        "description": "Read an Attempt's native harness transcript, falling back to the Archive's copy when the native one is missing or unreadable. Unavailable only when neither can be read. Key scopes: full, attempt, read.",
         "parameters": [
           {
             "schema": {
@@ -20752,7 +20752,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "Replay an attempt's persisted events, in order — the same records streamed live over the WebSocket. Reachable with an attempt-scoped Attempt Key.",
+        "description": "Replay an attempt's persisted events, in order — the same records streamed live over the WebSocket. Key scopes: full, attempt, read.",
         "parameters": [
           {
             "schema": {
@@ -20864,7 +20864,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "Replay an attempt's Guardrail-trip event log, in sequence order (issue #171). Reachable with an attempt-scoped Attempt Key.",
+        "description": "Replay an attempt's Guardrail-trip event log, in sequence order (issue #171). Key scopes: full, attempt, read.",
         "parameters": [
           {
             "schema": {
@@ -21009,7 +21009,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "Replay an attempt's verification-attempt log (per-verifier verdicts + summaries), in sequence order (issue #169, part of #109). Reachable with an attempt-scoped Attempt Key.",
+        "description": "Replay an attempt's verification-attempt log (per-verifier verdicts + summaries), in sequence order (issue #169, part of #109). Key scopes: full, attempt, read.",
         "parameters": [
           {
             "schema": {
@@ -21194,7 +21194,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "Read a verification task outcome and its captured command output.",
+        "description": "Read a verification task outcome and its captured command output. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -21245,7 +21245,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "Stream a command verification attempt's full, uncapped output from the Archive (text/plain). 404 when the attempt's output was not truncated or the Archive no longer holds it.",
+        "description": "Stream a command verification attempt's full, uncapped output from the Archive (text/plain). 404 when the attempt's output was not truncated or the Archive no longer holds it. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -21288,7 +21288,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "Read a Resolved Prompt from the Task Archive by its Attempt-relative locator (e.g. `verification/pre-merge/<stepId>/prompt.md` or `implementation/prompt.md`), as text/plain. The file is read on demand off the event loop; nothing is stored in the database. With `segments=true` it returns JSON `{ prompts }`, one string per turn, sliced from the step's offset index so prompts containing horizontal rules stay whole (archives written before the index existed fall back to splitting on the separator). 404 when the Attempt or the archived prompt is absent.",
+        "description": "Read a Resolved Prompt from the Task Archive by its Attempt-relative locator (e.g. `verification/pre-merge/<stepId>/prompt.md` or `implementation/prompt.md`), as text/plain. The file is read on demand off the event loop; nothing is stored in the database. With `segments=true` it returns JSON `{ prompts }`, one string per turn, sliced from the step's offset index so prompts containing horizontal rules stay whole (archives written before the index existed fall back to splitting on the separator). 404 when the Attempt or the archived prompt is absent. Key scopes: full, attempt, read.",
         "parameters": [
           {
             "schema": {
@@ -21365,7 +21365,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "Read a critic verification attempt's native harness transcript — what the critic itself read, ran, and reasoned. Falls back to the Archive's copy when the native transcript is missing or unreadable; unavailable only when neither can be read.",
+        "description": "Read a critic verification attempt's native harness transcript — what the critic itself read, ran, and reasoned. Falls back to the Archive's copy when the native transcript is missing or unreadable; unavailable only when neither can be read. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -21485,7 +21485,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "Usage and Cost rolled up across all of a task's attempts, retries included. Reachable with an attempt-scoped Attempt Key.",
+        "description": "Usage and Cost rolled up across all of a task's attempts, retries included. Key scopes: full, attempt, read.",
         "parameters": [
           {
             "schema": {
@@ -21699,7 +21699,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "Branch and diffstat for the review inbox (worktree-mode attempts only; other fields are null). Reachable with an attempt-scoped Attempt Key.",
+        "description": "Branch and diffstat for the review inbox (worktree-mode attempts only; other fields are null). Key scopes: full, attempt, read.",
         "parameters": [
           {
             "schema": {
@@ -21774,7 +21774,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "Per-file unified-diff hunks for the review pane (worktree-mode attempts only). Empty `files` outside worktree mode or when the branch/worktree is gone. Reachable with an attempt-scoped Attempt Key.",
+        "description": "Per-file unified-diff hunks for the review pane (worktree-mode attempts only). Empty `files` outside worktree mode or when the branch/worktree is gone. Key scopes: full, attempt, read.",
         "parameters": [
           {
             "schema": {
@@ -21926,7 +21926,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Export status for a Task: the latest Export (filename, build time, size, redactions, partial flag) with per-Destination delivery status, last attempt, error and pending retry, plus earlier Exports. `latest` is null until an Export has been attempted.",
+        "description": "Export status for a Task: the latest Export (filename, build time, size, redactions, partial flag) with per-Destination delivery status, last attempt, error and pending retry, plus earlier Exports. `latest` is null until an Export has been attempted. Key scopes: full, attempt, read.",
         "parameters": [
           {
             "schema": {
@@ -21975,7 +21975,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Export again: rebuild the Export and deliver it to every configured Destination regardless of the includeStates filter, as a new Export that never overwrites an earlier one. A Task that predates the Archive is built from surviving records and flagged `partial`. Only done or cancelled Tasks; 409 when the Task is not finished or no Destination is enabled.",
+        "description": "Export again: rebuild the Export and deliver it to every configured Destination regardless of the includeStates filter, as a new Export that never overwrites an earlier one. A Task that predates the Archive is built from surviving records and flagged `partial`. Only done or cancelled Tasks; 409 when the Task is not finished or no Destination is enabled. Key scopes: full, attempt.",
         "parameters": [
           {
             "schema": {
@@ -22036,7 +22036,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Stream a freshly built, redacted Export tarball (tar.gz) to the browser. Needs no configured Destination and is not recorded as an Export.",
+        "description": "Stream a freshly built, redacted Export tarball (tar.gz) to the browser. Needs no configured Destination and is not recorded as an Export. Key scopes: full, attempt, read.",
         "parameters": [
           {
             "schema": {
@@ -22097,7 +22097,7 @@
         "tags": [
           "Epics"
         ],
-        "description": "Export status for an Epic: the latest Export with per-Destination delivery status, last attempt, error and pending retry, plus earlier Exports. `exportable` is true once the Epic is integrated; `latest` is null until an Export has been attempted.",
+        "description": "Export status for an Epic: the latest Export with per-Destination delivery status, last attempt, error and pending retry, plus earlier Exports. `exportable` is true once the Epic is integrated; `latest` is null until an Export has been attempted. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -22156,7 +22156,7 @@
         "tags": [
           "Epics"
         ],
-        "description": "Export again: rebuild the Epic Export and deliver it to every configured Destination regardless of the includeStates filter, as a new Export that never overwrites an earlier one. Only integrated Epics; 409 when the Epic is not integrated or no Destination is enabled.",
+        "description": "Export again: rebuild the Epic Export and deliver it to every configured Destination regardless of the includeStates filter, as a new Export that never overwrites an earlier one. Only integrated Epics; 409 when the Epic is not integrated or no Destination is enabled. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -22227,7 +22227,7 @@
         "tags": [
           "Epics"
         ],
-        "description": "Stream a freshly built, redacted Epic Export tarball (tar.gz). Needs no configured Destination and is not recorded as an Export.",
+        "description": "Stream a freshly built, redacted Epic Export tarball (tar.gz). Needs no configured Destination and is not recorded as an Export. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -22298,7 +22298,7 @@
         "tags": [
           "Maps"
         ],
-        "description": "The derived Map rollup: every Map from the last tracker poll with its member Tasks and per-state counts, each stamped with its Workspace. `?workspaceId=` scopes to one Workspace's board (issue #45). Searched (`q`, case-insensitive substring over the Map title) and paginated (`limit`/`offset`, with a `total`). Query-time (no table); empty when tracker mirroring is off or before the first poll. Reachable with a read-scoped API Key.",
+        "description": "The derived Map rollup: every Map from the last tracker poll with its member Tasks and per-state counts, each stamped with its Workspace. `?workspaceId=` scopes to one Workspace's board (issue #45). Searched (`q`, case-insensitive substring over the Map title) and paginated (`limit`/`offset`, with a `total`). Query-time (no table); empty when tracker mirroring is off or before the first poll. Key scopes: full, read.",
         "parameters": [
           {
             "schema": {
@@ -22382,7 +22382,7 @@
         "tags": [
           "Maps"
         ],
-        "description": "One derived Map by its tracker ref. `?workspaceId=` disambiguates a ref shared across repos (issue #45). Reachable with a read-scoped API Key.",
+        "description": "One derived Map by its tracker ref. `?workspaceId=` disambiguates a ref shared across repos (issue #45). Key scopes: full, read.",
         "parameters": [
           {
             "schema": {
@@ -22435,7 +22435,7 @@
         "tags": [
           "Workspaces"
         ],
-        "description": "List Workspaces. A read-scoped key is served only the id, name and color of each Workspace (never its config); not reachable with an attempt-scoped Attempt Key.",
+        "description": "List Workspaces. A read-scoped key is served only the id, name and color of each Workspace (never its config). Key scopes: full, read.",
         "parameters": [
           {
             "schema": {
@@ -22531,7 +22531,7 @@
         "tags": [
           "Workspaces"
         ],
-        "description": "Create a Workspace: a named Working Directory, unique by absolute path. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Create a Workspace: a named Working Directory, unique by absolute path. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -22615,7 +22615,7 @@
         "tags": [
           "Workspaces"
         ],
-        "description": "Get one Workspace. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Get one Workspace. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -22664,7 +22664,7 @@
         "tags": [
           "Workspaces"
         ],
-        "description": "Rename a Workspace or repoint its Working Directory. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Rename a Workspace or repoint its Working Directory. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -24340,7 +24340,7 @@
         "tags": [
           "Workspaces"
         ],
-        "description": "Delete a Workspace and everything on its board, stopping its tracker poll loop. Refuses a Workspace with a running Task; deleting the last Workspace is allowed. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Delete a Workspace and everything on its board, stopping its tracker poll loop. Refuses a Workspace with a running Task; deleting the last Workspace is allowed. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -24394,7 +24394,7 @@
         "tags": [
           "Workspaces"
         ],
-        "description": "Force an immediate tracker poll for a Workspace — rescan its Working Directory and mirror any ticket changes onto the board now, instead of waiting for the next interval. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Force an immediate tracker poll for a Workspace — rescan its Working Directory and mirror any ticket changes onto the board now, instead of waiting for the next interval. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -24478,7 +24478,7 @@
         "tags": [
           "Conversations"
         ],
-        "description": "Create a Conversation (an interactive, multi-turn exchange the operator drives with a Harness over ACP). Execution settings default from global config. Operator only; not reachable with an attempt-scoped key. The harness opens its ACP Session without submitting a Turn.",
+        "description": "Create a Conversation (an interactive, multi-turn exchange the operator drives with a Harness over ACP). Execution settings default from global config. The harness opens its ACP Session without submitting a Turn. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -24560,7 +24560,7 @@
         "tags": [
           "Conversations"
         ],
-        "description": "List Conversations, newest first, optionally scoped to one Workspace. Operator only; not reachable with an attempt-scoped key.",
+        "description": "List Conversations, newest first, optionally scoped to one Workspace. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -24643,7 +24643,7 @@
         "tags": [
           "Conversations"
         ],
-        "description": "Get one Conversation. Operator only; not reachable with an attempt-scoped key.",
+        "description": "Get one Conversation. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -24692,7 +24692,7 @@
         "tags": [
           "Conversations"
         ],
-        "description": "Update a Conversation title or permission mode. Pass title null to clear it and fall back to the title derived from the first Turn. Operator only; not reachable with an attempt-scoped key.",
+        "description": "Update a Conversation title or permission mode. Pass title null to clear it and fall back to the title derived from the first Turn. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -24782,7 +24782,7 @@
         "tags": [
           "Conversations"
         ],
-        "description": "Delete a Conversation: stops the harness if warm, revokes its key, and cascades its events. Operator only; not reachable with an attempt-scoped key.",
+        "description": "Delete a Conversation: stops the harness if warm, revokes its key, and cascades its events. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -24833,7 +24833,7 @@
         "tags": [
           "Conversations"
         ],
-        "description": "Replay a Conversation's persisted events, in order — the same records streamed live over the WebSocket. Operator only; not reachable with an attempt-scoped key.",
+        "description": "Replay a Conversation's persisted events, in order — the same records streamed live over the WebSocket. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -24962,7 +24962,7 @@
         "tags": [
           "Conversations"
         ],
-        "description": "Send an operator Turn through its warm harness; the reply streams over the WebSocket. If a Turn is already running, the message is queued and sent as the next Turn (issue 14). An ended Conversation that still holds a stored session is reactivated and its ACP session reloaded (a cold resume). Operator only; not reachable with an attempt-scoped key.",
+        "description": "Send an operator Turn through its warm harness; the reply streams over the WebSocket. If a Turn is already running, the message is queued and sent as the next Turn (issue 14). An ended Conversation that still holds a stored session is reactivated and its ACP session reloaded (a cold resume). Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -25072,7 +25072,7 @@
         "tags": [
           "Conversations"
         ],
-        "description": "Steer a running Turn (issue 14): cancel the in-flight Turn via ACP session/cancel and re-prompt with `text` as the next Turn, or just stop it when `text` is empty. The cancelled Turn records a cancelled stop reason. Operator only; not reachable with an attempt-scoped key.",
+        "description": "Steer a running Turn (issue 14): cancel the in-flight Turn via ACP session/cancel and re-prompt with `text` as the next Turn, or just stop it when `text` is empty. The cancelled Turn records a cancelled stop reason. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -25166,7 +25166,7 @@
         "tags": [
           "Conversations"
         ],
-        "description": "Answer a Harness's held permission request in a Conversation (ADR-0007). `optionId` is the ACP option the operator chose — allow_once, the native allow_always ('Allow for this conversation'), or a reject option. Set `remember` to also persist a Permission Rule ('Always allow in {dir}') keyed on the tool kind + Working Directory. Operator only; not reachable with an attempt-scoped key.",
+        "description": "Answer a Harness's held permission request in a Conversation (ADR-0007). `optionId` is the ACP option the operator chose — allow_once, the native allow_always ('Allow for this conversation'), or a reject option. Set `remember` to also persist a Permission Rule ('Always allow in {dir}') keyed on the tool kind + Working Directory. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -25251,7 +25251,7 @@
         "tags": [
           "Conversations"
         ],
-        "description": "Answer a Harness's held structured question (ACP form elicitation, e.g. AskUserQuestion) in a Conversation. `accept` carries the field answers keyed by field id; `decline` skips the question (the harness is told nothing was chosen); `cancel` aborts the asking tool call. Operator only; not reachable with an attempt-scoped key.",
+        "description": "Answer a Harness's held structured question (ACP form elicitation, e.g. AskUserQuestion) in a Conversation. `accept` carries the field answers keyed by field id; `decline` skips the question (the harness is told nothing was chosen); `cancel` aborts the asking tool call. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -25388,7 +25388,7 @@
         "tags": [
           "Conversations"
         ],
-        "description": "End a Conversation: stop the harness and mark it ended (its transcript survives read-only). If it holds a stored session, a later Turn reactivates it and reloads that session as a cold resume. Operator only; not reachable with an attempt-scoped key.",
+        "description": "End a Conversation: stop the harness and mark it ended (its transcript survives read-only). If it holds a stored session, a later Turn reactivates it and reloads that session as a cold resume. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -25439,7 +25439,7 @@
         "tags": [
           "Conversations"
         ],
-        "description": "List persistent Permission Rules (auto-approve a tool kind in a Working Directory across Conversations). Operator only; not reachable with an attempt-scoped key.",
+        "description": "List persistent Permission Rules (auto-approve a tool kind in a Working Directory across Conversations). Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -25511,7 +25511,7 @@
         "tags": [
           "Conversations"
         ],
-        "description": "Revoke a Permission Rule; matching requests prompt again afterwards. Operator only; not reachable with an attempt-scoped key.",
+        "description": "Revoke a Permission Rule; matching requests prompt again afterwards. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -25562,7 +25562,7 @@
         "tags": [
           "Config"
         ],
-        "description": "Get the full effective configuration. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Get the full effective configuration. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "security": [
           {
             "bearerAuth": []
@@ -26864,7 +26864,7 @@
         "tags": [
           "Config"
         ],
-        "description": "Deep-merge a partial config patch onto the stored configuration. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Deep-merge a partial config patch onto the stored configuration. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -28176,7 +28176,7 @@
         "tags": [
           "Config"
         ],
-        "description": "Full-replace the stored configuration. Unlike PATCH's deep-merge, a record key omitted here (a harness environment variable, a catalog entry) is deleted, not left alone. The settings UI loads the whole config, edits locally, and saves the complete object so it can delete as well as add. The config schema validates the request atomically, so an invalid body makes no partial write. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Full-replace the stored configuration. Unlike PATCH's deep-merge, a record key omitted here (a harness environment variable, a catalog entry) is deleted, not left alone. The settings UI loads the whole config, edits locally, and saves the complete object so it can delete as well as add. The config schema validates the request atomically, so an invalid body makes no partial write. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -30706,7 +30706,7 @@
         "tags": [
           "Config"
         ],
-        "description": "Get the distributed baseline and effective global configuration for settings inheritance controls.",
+        "description": "Get the distributed baseline and effective global configuration for settings inheritance controls. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "security": [
           {
             "bearerAuth": []
@@ -33327,7 +33327,7 @@
         "tags": [
           "Config"
         ],
-        "description": "Clear every global override and return to the distributed baseline.",
+        "description": "Clear every global override and return to the distributed baseline. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "security": [
           {
             "bearerAuth": []
@@ -34631,7 +34631,7 @@
         "tags": [
           "Execution"
         ],
-        "description": "Get the fleet-wide execution pause state. Operator only.",
+        "description": "Get the fleet-wide execution pause state. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "security": [
           {
             "bearerAuth": []
@@ -34667,7 +34667,7 @@
         "tags": [
           "Execution"
         ],
-        "description": "Pause all execution and latch new Attempts in paused. Operator only.",
+        "description": "Pause all execution and latch new Attempts in paused. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "security": [
           {
             "bearerAuth": []
@@ -34703,7 +34703,7 @@
         "tags": [
           "Execution"
         ],
-        "description": "Clear the fleet-wide execution pause and resume its paused Attempts. Operator only.",
+        "description": "Clear the fleet-wide execution pause and resume its paused Attempts. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "security": [
           {
             "bearerAuth": []
@@ -34741,7 +34741,7 @@
         "tags": [
           "Update"
         ],
-        "description": "The offered and armed package update, plus the current drain-to-idle blockers. Operator only.",
+        "description": "The offered and armed package update, plus the current drain-to-idle blockers. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "security": [
           {
             "bearerAuth": []
@@ -34945,7 +34945,7 @@
         "tags": [
           "Update"
         ],
-        "description": "Pin the currently offered update and quiesce new work until the instance is idle. Operator only.",
+        "description": "Pin the currently offered update and quiesce new work until the instance is idle. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "security": [
           {
             "bearerAuth": []
@@ -35157,7 +35157,7 @@
         "tags": [
           "Update"
         ],
-        "description": "Cancel an armed update and restore the Auto-Runner master switch to its pre-arm value. Operator only.",
+        "description": "Cancel an armed update and restore the Auto-Runner master switch to its pre-arm value. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "security": [
           {
             "bearerAuth": []
@@ -35371,7 +35371,7 @@
         "tags": [
           "Update"
         ],
-        "description": "Dismiss the currently offered update until a newer version is published. Operator only.",
+        "description": "Dismiss the currently offered update until a newer version is published. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "security": [
           {
             "bearerAuth": []
@@ -35575,7 +35575,7 @@
         "tags": [
           "Update"
         ],
-        "description": "Check now for a newer published version instead of waiting for the hourly check. Operator only.",
+        "description": "Check now for a newer published version instead of waiting for the hourly check. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "security": [
           {
             "bearerAuth": []
@@ -35828,7 +35828,7 @@
         "tags": [
           "Auth"
         ],
-        "description": "End the current session.",
+        "description": "End the current session. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "responses": {
           "200": {
             "description": "The cookie is cleared and its session destroyed; sent the same way when there was no session to end.",
@@ -35884,7 +35884,7 @@
         "tags": [
           "Auth"
         ],
-        "description": "Set or change the operator password. When one is already set, currentPassword must match (a wrong current password changes nothing); when none is set (ungated), currentPassword is ignored and this sets the initial password. newPassword takes the same minimum-length rule as initial setup. On success every session other than the caller's own is destroyed — a stolen cookie doesn't survive a credential rotation — but API Keys are untouched. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Set or change the operator password. When one is already set, currentPassword must match (a wrong current password changes nothing); when none is set (ungated), currentPassword is ignored and this sets the initial password. newPassword takes the same minimum-length rule as initial setup. On success every session other than the caller's own is destroyed — a stolen cookie doesn't survive a credential rotation — but API Keys are untouched. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -35957,7 +35957,7 @@
         "tags": [
           "Auth"
         ],
-        "description": "Remove the operator password — Harmonic falls back to ungated (every API surface open). Verifies currentPassword first when one is set; a no-op when none is set (idempotent). On success every session other than the caller's own is destroyed. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Remove the operator password — Harmonic falls back to ungated (every API surface open). Verifies currentPassword first when one is set; a no-op when none is set (idempotent). On success every session other than the caller's own is destroyed. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -36014,7 +36014,7 @@
         "tags": [
           "Keys"
         ],
-        "description": "Create a new operator API key. `scope` defaults to 'full' (drives the whole fleet); 'read' mints a viz-client key that can GET tasks/attempts/maps and open the WebSocket but cannot mutate anything. The bearer token is returned once and never stored.",
+        "description": "Create a new operator API key. `scope` defaults to 'full' (drives the whole fleet); 'read' mints a viz-client key that can GET tasks/attempts/maps and open the WebSocket but cannot mutate anything. The bearer token is returned once and never stored. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -36140,7 +36140,7 @@
         "tags": [
           "Keys"
         ],
-        "description": "List operator API keys (Attempt Keys are internal and never listed).",
+        "description": "List operator API keys (Attempt Keys are internal and never listed). Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -36278,7 +36278,7 @@
         "tags": [
           "Keys"
         ],
-        "description": "Revoke an operator API key immediately.",
+        "description": "Revoke an operator API key immediately. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -36319,7 +36319,7 @@
         "tags": [
           "Stats"
         ],
-        "description": "Usage, Cost, and attempt-state counts over a time range (by attempt start time). Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Usage, Cost, and attempt-state counts over a time range (by attempt start time). Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -36995,7 +36995,7 @@
         "tags": [
           "Stats"
         ],
-        "description": "Usage, Cost, and attempt-state counts scoped to one Epic's child Tasks (ADR-0014), over a time range by attempt start time. Same shape as the fleet Stats surface. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Usage, Cost, and attempt-state counts scoped to one Epic's child Tasks (ADR-0014), over a time range by attempt start time. Same shape as the fleet Stats surface. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -37681,7 +37681,7 @@
         "tags": [
           "Activity"
         ],
-        "description": "Instance-wide snapshot of every capacity-consuming Attempt and warm Conversation across Workspaces (ADR 0010). Attempts come from persisted state and join their latest live Usage, context fill, derived Cost, current-activity line, and Process Tree when available. The Activity view loads this once on page-load, then follows the live `attempt_usage` firehose. A Read Key (a read-scoped API key) sees Attempts only — Conversations are excluded, matching the firehose filter.",
+        "description": "Instance-wide snapshot of every capacity-consuming Attempt and warm Conversation across Workspaces (ADR 0010). Attempts come from persisted state and join their latest live Usage, context fill, derived Cost, current-activity line, and Process Tree when available. The Activity view loads this once on page-load, then follows the live `attempt_usage` firehose. A Read Key (a read-scoped API key) sees Attempts only — Conversations are excluded, matching the firehose filter. Key scopes: full, read.",
         "parameters": [
           {
             "schema": {
@@ -37776,7 +37776,7 @@
         "tags": [
           "Agent Messages"
         ],
-        "description": "Agent Message Threads, newest activity first. An omitted `workspaceId` is Global (every Workspace with Agent Messages enabled); Workspaces with Agent Messages disabled never contribute Threads. `epicId` keeps Threads with a participant Task under that Epic, `taskId` keeps Threads that Task sent or received in, `live=true` keeps Threads with a participant running an Attempt.",
+        "description": "Agent Message Threads, newest activity first. An omitted `workspaceId` is Global (every Workspace with Agent Messages enabled); Workspaces with Agent Messages disabled never contribute Threads. `epicId` keeps Threads with a participant Task under that Epic, `taskId` keeps Threads that Task sent or received in, `live=true` keeps Threads with a participant running an Attempt. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -37900,7 +37900,7 @@
         "tags": [
           "Activity"
         ],
-        "description": "Every task Attempt whose run window overlaps [from, to], optionally scoped to one Workspace, as fleet-timeline spans — lane is the harness, plus the attempt outcome and the window it occupied. Read from persisted attempt history, so it spans finished work the live Activity snapshot no longer retains. A still-running Attempt has a null endedAt; the client extends its bar to now. Powers the scrubbable Timeline view.",
+        "description": "Every task Attempt whose run window overlaps [from, to], optionally scoped to one Workspace, as fleet-timeline spans — lane is the harness, plus the attempt outcome and the window it occupied. Read from persisted attempt history, so it spans finished work the live Activity snapshot no longer retains. A still-running Attempt has a null endedAt; the client extends its bar to now. Powers the scrubbable Timeline view. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -37960,7 +37960,7 @@
         "tags": [
           "Operations"
         ],
-        "description": "Current open Operation tree plus a bounded, in-memory history of recently completed root Operations.",
+        "description": "Current open Operation tree plus a bounded, in-memory history of recently completed root Operations. Key scopes: full, read.",
         "parameters": [
           {
             "schema": {
@@ -38039,7 +38039,7 @@
         "tags": [
           "Operations"
         ],
-        "description": "Run worktree reconciliation immediately.",
+        "description": "Run worktree reconciliation immediately. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -38103,7 +38103,7 @@
         "tags": [
           "Scheduled Jobs"
         ],
-        "description": "Read-only registry of recurring Harmonic Scheduled Jobs, including durable last-run facts and computed next run.",
+        "description": "Read-only registry of recurring Harmonic Scheduled Jobs, including durable last-run facts and computed next run. Key scopes: full, read.",
         "parameters": [
           {
             "schema": {
@@ -38175,7 +38175,7 @@
         "tags": [
           "Worktrees"
         ],
-        "description": "A read-time inventory of every Git worktree joined to mirrored Tasks and Epics. The state is never persisted.",
+        "description": "A read-time inventory of every Git worktree joined to mirrored Tasks and Epics. The state is never persisted. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -38269,7 +38269,7 @@
         "tags": [
           "Worktrees"
         ],
-        "description": "Human-only, confirmed removal of a managed worktree and its Harmonic branch. Dirty and unreadable worktrees are never removed automatically; this is the explicit operator disposition path.",
+        "description": "Human-only, confirmed removal of a managed worktree and its Harmonic branch. Dirty and unreadable worktrees are never removed automatically; this is the explicit operator disposition path. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -38349,7 +38349,7 @@
         "tags": [
           "Worktrees"
         ],
-        "description": "The uncommitted paths that a forced cleanup would discard.",
+        "description": "The uncommitted paths that a forced cleanup would discard. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -38432,7 +38432,7 @@
         "tags": [
           "Secrets"
         ],
-        "description": "List the Secrets set for a Workspace, by name only. Values are never returned. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "List the Secrets set for a Workspace, by name only. Values are never returned. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -38503,7 +38503,7 @@
         "tags": [
           "Secrets"
         ],
-        "description": "Whether one Secret is set. The value is never returned. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Whether one Secret is set. The value is never returned. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -38562,7 +38562,7 @@
         "tags": [
           "Secrets"
         ],
-        "description": "Set or replace a Secret. The value is write-only. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Set or replace a Secret. The value is write-only. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -38652,7 +38652,7 @@
         "tags": [
           "Secrets"
         ],
-        "description": "Clear a Secret; clearing one that is not set succeeds. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Clear a Secret; clearing one that is not set succeeds. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -38713,7 +38713,7 @@
         "tags": [
           "Workspaces"
         ],
-        "description": "The tracker kinds Harmonic can talk to, with their settings JSON Schema and Secret names.",
+        "description": "The tracker kinds Harmonic can talk to, with their settings JSON Schema and Secret names. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "security": [
           {
             "bearerAuth": []
@@ -38754,7 +38754,7 @@
         "tags": [
           "Workspaces"
         ],
-        "description": "The Detected Tracker declared by the repo and the Code Repository detected from its origin remote.",
+        "description": "The Detected Tracker declared by the repo and the Code Repository detected from its origin remote. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -38805,7 +38805,7 @@
         "tags": [
           "Workspaces"
         ],
-        "description": "Verify the Workspace's Resolved Tracker is reachable and report the identity it acts as.",
+        "description": "Verify the Workspace's Resolved Tracker is reachable and report the identity it acts as. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -38856,7 +38856,7 @@
         "tags": [
           "Workspaces"
         ],
-        "description": "Verify the Workspace's Code Repository is reachable with the ambient credentials.",
+        "description": "Verify the Workspace's Code Repository is reachable with the ambient credentials. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -38907,7 +38907,7 @@
         "tags": [
           "Harnesses"
         ],
-        "description": "Discover the providers available to a harness. Harnesses without discovery capabilities return an empty list. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Discover the providers available to a harness. Harnesses without discovery capabilities return an empty list. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -38977,7 +38977,7 @@
         "tags": [
           "Harnesses"
         ],
-        "description": "Discover the models available from a harness provider. Harnesses without discovery capabilities return an empty list. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Discover the models available from a harness provider. Harnesses without discovery capabilities return an empty list. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -39086,7 +39086,7 @@
         "tags": [
           "Channels"
         ],
-        "description": "Create a notification channel. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Create a notification channel. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -39183,7 +39183,7 @@
         "tags": [
           "Channels"
         ],
-        "description": "List notification channels. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "List notification channels. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -39255,7 +39255,7 @@
         "tags": [
           "Channels"
         ],
-        "description": "Get one notification channel. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Get one notification channel. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -39304,7 +39304,7 @@
         "tags": [
           "Channels"
         ],
-        "description": "Edit a notification channel. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Edit a notification channel. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -39409,7 +39409,7 @@
         "tags": [
           "Channels"
         ],
-        "description": "Delete a notification channel. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Delete a notification channel. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -39460,7 +39460,7 @@
         "tags": [
           "Channels"
         ],
-        "description": "Add a per-task channel override: this task announces its events to this channel in addition to the channel's own subscriptions. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Add a per-task channel override: this task announces its events to this channel in addition to the channel's own subscriptions. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -39536,7 +39536,7 @@
         "tags": [
           "Channels"
         ],
-        "description": "List a task's per-task channel overrides. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "List a task's per-task channel overrides. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -39619,7 +39619,7 @@
         "tags": [
           "Channels"
         ],
-        "description": "Remove a per-task channel override. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Remove a per-task channel override. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -39687,7 +39687,7 @@
         "tags": [
           "Notifications"
         ],
-        "description": "List stored Notifications, newest first. `workspaceId` is the Workspace Scope; omitted means Global. `before` is an id cursor: pass the last id of the previous page. `unreadCount` respects the Workspace Scope only. Reachable with a Read Key.",
+        "description": "List stored Notifications, newest first. `workspaceId` is the Workspace Scope; omitted means Global. `before` is an id cursor: pass the last id of the previous page. `unreadCount` respects the Workspace Scope only.  Key scopes: full, read.",
         "parameters": [
           {
             "schema": {
@@ -39799,7 +39799,7 @@
         "tags": [
           "Notifications"
         ],
-        "description": "Mark every unread Notification in the scope read (all Workspaces when `workspaceId` is omitted). Operator only.",
+        "description": "Mark every unread Notification in the scope read (all Workspaces when `workspaceId` is omitted). Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -39858,7 +39858,7 @@
         "tags": [
           "Notifications"
         ],
-        "description": "Mark one Notification read. Idempotent: the first read time is kept. Operator only.",
+        "description": "Mark one Notification read. Idempotent: the first read time is kept. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -39919,7 +39919,7 @@
         "tags": [
           "Filesystem"
         ],
-        "description": "Immediate child directories of `path`, one level deep — the data behind the workspace directory picker (issue #62). An empty or omitted `path` starts at the server user's home. Files and hidden (dot) directories are excluded; entries are sorted by name. No root restriction — any directory the running user can read is browsable (a sysadmin concern, per the map decision). Operator-only: a full-scope session is required (not reachable with a scoped or read key).",
+        "description": "Immediate child directories of `path`, one level deep — the data behind the workspace directory picker (issue #62). An empty or omitted `path` starts at the server user's home. Files and hidden (dot) directories are excluded; entries are sorted by name. No root restriction — any directory the running user can read is browsable (a sysadmin concern, per the map decision). Operator-only: a full-scope session is required. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -39979,7 +39979,7 @@
         "tags": [
           "Filesystem"
         ],
-        "description": "A paginated directory listing confined to one Workspace working directory.",
+        "description": "A paginated directory listing confined to one Workspace working directory. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -40126,7 +40126,7 @@
         "tags": [
           "Filesystem"
         ],
-        "description": "Read one text file confined to a Workspace working directory.",
+        "description": "Read one text file confined to a Workspace working directory. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -40220,7 +40220,7 @@
         "tags": [
           "Filesystem"
         ],
-        "description": "Operator-only: write one text file confined to a Workspace working directory.",
+        "description": "Operator-only: write one text file confined to a Workspace working directory. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -40342,7 +40342,7 @@
         "tags": [
           "Filesystem"
         ],
-        "description": "Stream one file confined to a Workspace working directory.",
+        "description": "Stream one file confined to a Workspace working directory. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -40393,7 +40393,7 @@
         "tags": [
           "Filesystem"
         ],
-        "description": "Operator-only: create an empty file or directory confined to a Workspace working directory.",
+        "description": "Operator-only: create an empty file or directory confined to a Workspace working directory. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -40506,7 +40506,7 @@
         "tags": [
           "Filesystem"
         ],
-        "description": "Operator-only: rename or move a file or directory within a Workspace working directory.",
+        "description": "Operator-only: rename or move a file or directory within a Workspace working directory. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -40616,7 +40616,7 @@
         "tags": [
           "Filesystem"
         ],
-        "description": "Operator-only: delete a file or directory (recursively) within a Workspace working directory.",
+        "description": "Operator-only: delete a file or directory (recursively) within a Workspace working directory. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -40702,7 +40702,7 @@
         "tags": [
           "Filesystem"
         ],
-        "description": "Read the Workspace Git status without changing its working directory or index.",
+        "description": "Read the Workspace Git status without changing its working directory or index. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -40786,7 +40786,7 @@
         "tags": [
           "Filesystem"
         ],
-        "description": "Unified diff of one working-directory path (staged + unstaged vs HEAD; an untracked file reads as all-added).",
+        "description": "Unified diff of one working-directory path (staged + unstaged vs HEAD; an untracked file reads as all-added). Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -40941,7 +40941,7 @@
         "tags": [
           "Filesystem"
         ],
-        "description": "Stage selected paths in a Workspace Git repository.",
+        "description": "Stage selected paths in a Workspace Git repository. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -41003,7 +41003,7 @@
         "tags": [
           "Filesystem"
         ],
-        "description": "Unstage selected paths in a Workspace Git repository.",
+        "description": "Unstage selected paths in a Workspace Git repository. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -41065,7 +41065,7 @@
         "tags": [
           "Filesystem"
         ],
-        "description": "Discard selected tracked or untracked paths in a Workspace Git repository.",
+        "description": "Discard selected tracked or untracked paths in a Workspace Git repository. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -41127,7 +41127,7 @@
         "tags": [
           "Filesystem"
         ],
-        "description": "Commit the staged changes in a Workspace Git repository.",
+        "description": "Commit the staged changes in a Workspace Git repository. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -41186,7 +41186,7 @@
         "tags": [
           "Export"
         ],
-        "description": "Write then remove a probe file or object at an Export Destination. A destination failure is reported as ok:false, never a 5xx.",
+        "description": "Write then remove a probe file or object at an Export Destination. A destination failure is reported as ok:false, never a 5xx. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -41305,7 +41305,7 @@
         "tags": [
           "Epics"
         ],
-        "description": "Every open Epic for a Workspace (issue #167, ADR-0018) — an integrated Epic leaves this list and resolves by ref only — each folded with its member merge state, integration-branch tip, and whole-Epic integrate/verification state. Searched (`q`, case-insensitive substring over the Epic title) and paginated (`limit`/`offset`, with a `total`). Not reachable with an attempt-scoped key; readable with a read-scoped key.",
+        "description": "Every open Epic for a Workspace (issue #167, ADR-0018) — an integrated Epic leaves this list and resolves by ref only — each folded with its member merge state, integration-branch tip, and whole-Epic integrate/verification state. Searched (`q`, case-insensitive substring over the Epic title) and paginated (`limit`/`offset`, with a `total`). Key scopes: full, read.",
         "parameters": [
           {
             "schema": {
@@ -41407,7 +41407,7 @@
         "tags": [
           "Epics"
         ],
-        "description": "One derived Epic by its tracker ref, from the Workspace's last poll scan (issue #167). 404s when the scan derives no leaf-most Epic with that ref. Not reachable with an attempt-scoped key; readable with a read-scoped key.",
+        "description": "One derived Epic by its tracker ref, from the Workspace's last poll scan (issue #167). 404s when the scan derives no leaf-most Epic with that ref. Key scopes: full, read.",
         "parameters": [
           {
             "schema": {
@@ -41468,7 +41468,7 @@
         "tags": [
           "Epics"
         ],
-        "description": "Every durable Attempt owned by this Epic, ordered by its Epic-local timeline number. Operator only.",
+        "description": "Every durable Attempt owned by this Epic, ordered by its Epic-local timeline number. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -41529,7 +41529,7 @@
         "tags": [
           "Epics"
         ],
-        "description": "Read an Epic's Resolved Prompt from the Task Archive by Attempt number and Attempt-relative locator, as text/plain. Serves prompts archived before the Epic had an Attempt row (under Attempt 1). 404 when the archived prompt is absent.",
+        "description": "Read an Epic's Resolved Prompt from the Task Archive by Attempt number and Attempt-relative locator, as text/plain. Serves prompts archived before the Epic had an Attempt row (under Attempt 1). 404 when the archived prompt is absent. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -41622,7 +41622,7 @@
         "tags": [
           "Epics"
         ],
-        "description": "Reject an escalated Epic with guidance. The guidance is recorded on the escalated Epic Attempt and included in the next whole-Epic resolver turn. Operator only.",
+        "description": "Reject an escalated Epic with guidance. The guidance is recorded on the escalated Epic Attempt and included in the next whole-Epic resolver turn. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -41722,7 +41722,7 @@
         "tags": [
           "Epics"
         ],
-        "description": "Per-file unified-diff hunks for the whole-Epic diff panel (ADR-0018): what `epic/<ref>` changes over base while open, the frozen merge-commit diff once integrated (survives branch retirement). Paginated. Empty `files` for a branchless/no-op Epic. Operator only.",
+        "description": "Per-file unified-diff hunks for the whole-Epic diff panel (ADR-0018): what `epic/<ref>` changes over base while open, the frozen merge-commit diff once integrated (survives branch retirement). Paginated. Empty `files` for a branchless/no-op Epic. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {

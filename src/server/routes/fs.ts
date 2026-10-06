@@ -62,7 +62,7 @@ export async function fsRoutes(fastify: FastifyInstance, ctx: Pick<TrackingConte
           "picker (issue #62). An empty or omitted `path` starts at the server user's home. Files and hidden " +
           '(dot) directories are excluded; entries are sorted by name. No root restriction — any directory the ' +
           'running user can read is browsable (a sysadmin concern, per the map decision). Operator-only: a ' +
-          'full-scope session is required (not reachable with a scoped or read key).',
+          'full-scope session is required.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         querystring: fsQuerySchema,
         response: {

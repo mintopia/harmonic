@@ -1,3 +1,5 @@
+import { readScopePathList } from './key-scopes.js';
+
 export function buildSpecDescription(pkg: { description: string }): string {
   return `${pkg.description}
 
@@ -54,9 +56,7 @@ are never allowed, so authenticate with a bearer key.
 ## Read scope
 
 A \`read\`-scoped API key (created via \`POST /api/keys\` with
-\`{ "scope": "read" }\`) is a viz-client credential: it may \`GET\` tasks,
-attempts, maps, Workspaces and their Epics (\`/api/workspaces\`, \`/api/workspaces/:id/epics[/:ref]\`), Operations (\`/api/operations\`), and the instance-wide Activity snapshot (\`/api/activity\`,
-filtered to Attempts only for a read key), and open the WebSocket (filtered as
+\`{ "scope": "read" }\`) is a viz-client credential: it may \`GET\` ${readScopePathList()}, and open the WebSocket (filtered as
 above). Every mutation and the whole operator surface (keys, config,
 channels, Conversations) is blocked. There is no \`map_changed\` event — a
 client re-fetches \`/maps\` on reconnect or when it sees a \`mapRef\` it has

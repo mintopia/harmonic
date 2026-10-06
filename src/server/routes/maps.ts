@@ -46,7 +46,7 @@ export async function mapRoutes(fastify: FastifyInstance, ctx: Pick<TrackingCont
       schema: {
         tags: ['Maps'],
         description:
-          "The derived Map rollup: every Map from the last tracker poll with its member Tasks and per-state counts, each stamped with its Workspace. `?workspaceId=` scopes to one Workspace's board (issue #45). Searched (`q`, case-insensitive substring over the Map title) and paginated (`limit`/`offset`, with a `total`). Query-time (no table); empty when tracker mirroring is off or before the first poll. Reachable with a read-scoped API Key.",
+          "The derived Map rollup: every Map from the last tracker poll with its member Tasks and per-state counts, each stamped with its Workspace. `?workspaceId=` scopes to one Workspace's board (issue #45). Searched (`q`, case-insensitive substring over the Map title) and paginated (`limit`/`offset`, with a `total`). Query-time (no table); empty when tracker mirroring is off or before the first poll.",
         querystring: mapsListQuerySchema,
         response: { 200: mapsListResponseSchema.describe('Every derived Map, newest tracker scan.') },
       },
@@ -67,7 +67,7 @@ export async function mapRoutes(fastify: FastifyInstance, ctx: Pick<TrackingCont
       schema: {
         tags: ['Maps'],
         description:
-          'One derived Map by its tracker ref. `?workspaceId=` disambiguates a ref shared across repos (issue #45). Reachable with a read-scoped API Key.',
+          'One derived Map by its tracker ref. `?workspaceId=` disambiguates a ref shared across repos (issue #45).',
         params: refParamsSchema,
         querystring: workspaceQuerySchema,
         response: {

@@ -30,7 +30,7 @@ export async function harnessRoutes(fastify: FastifyInstance): Promise<void> {
   app.get('/harnesses/:id/providers', {
     schema: {
       tags: ['Harnesses'],
-      description: 'Discover the providers available to a harness. Harnesses without discovery capabilities return an empty list. Operator only; not reachable with an attempt-scoped Attempt Key.',
+      description: 'Discover the providers available to a harness. Harnesses without discovery capabilities return an empty list.',
       security: [{ bearerAuth: [] }, { sessionCookie: [] }],
       params: harnessParamsSchema,
       response: { 200: z.object({ providers: z.array(providerSchema) }).describe('The providers dynamically discovered by the harness.') },
@@ -40,7 +40,7 @@ export async function harnessRoutes(fastify: FastifyInstance): Promise<void> {
   app.get('/harnesses/:id/models', {
     schema: {
       tags: ['Harnesses'],
-      description: 'Discover the models available from a harness provider. Harnesses without discovery capabilities return an empty list. Operator only; not reachable with an attempt-scoped Attempt Key.',
+      description: 'Discover the models available from a harness provider. Harnesses without discovery capabilities return an empty list.',
       security: [{ bearerAuth: [] }, { sessionCookie: [] }],
       params: harnessParamsSchema,
       querystring: modelQuerySchema,

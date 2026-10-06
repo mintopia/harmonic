@@ -27,7 +27,7 @@ export async function permissionRuleRoutes(fastify: FastifyInstance, ctx: Pick<P
       schema: {
         tags: ['Conversations'],
         description:
-          'List persistent Permission Rules (auto-approve a tool kind in a Working Directory across Conversations). Operator only; not reachable with an attempt-scoped key.',
+          'List persistent Permission Rules (auto-approve a tool kind in a Working Directory across Conversations).',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         querystring: paginationQuerySchema,
         response: { 200: permissionRulesListResponseSchema.describe('Every Permission Rule in force, newest first.') },
@@ -46,7 +46,7 @@ export async function permissionRuleRoutes(fastify: FastifyInstance, ctx: Pick<P
       schema: {
         tags: ['Conversations'],
         description:
-          'Revoke a Permission Rule; matching requests prompt again afterwards. Operator only; not reachable with an attempt-scoped key.',
+          'Revoke a Permission Rule; matching requests prompt again afterwards.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         response: {

@@ -29,7 +29,7 @@ export async function secretRoutes(fastify: FastifyInstance, ctx: Pick<Persisten
     {
       schema: {
         tags: ['Secrets'],
-        description: 'List the Secrets set for a Workspace, by name only. Values are never returned. Operator only; not reachable with an attempt-scoped Attempt Key.',
+        description: 'List the Secrets set for a Workspace, by name only. Values are never returned.',
         security,
         params: idParamsSchema,
         response: {
@@ -50,7 +50,7 @@ export async function secretRoutes(fastify: FastifyInstance, ctx: Pick<Persisten
     {
       schema: {
         tags: ['Secrets'],
-        description: 'Whether one Secret is set. The value is never returned. Operator only; not reachable with an attempt-scoped Attempt Key.',
+        description: 'Whether one Secret is set. The value is never returned.',
         security,
         params: secretParamsSchema,
         response: {
@@ -70,7 +70,7 @@ export async function secretRoutes(fastify: FastifyInstance, ctx: Pick<Persisten
     {
       schema: {
         tags: ['Secrets'],
-        description: 'Set or replace a Secret. The value is write-only. Operator only; not reachable with an attempt-scoped Attempt Key.',
+        description: 'Set or replace a Secret. The value is write-only.',
         security,
         params: secretParamsSchema,
         body: z.object({ value: secretValueSchema.meta({ example: 'f0rg3jo-t0ken' }) }),
@@ -93,7 +93,7 @@ export async function secretRoutes(fastify: FastifyInstance, ctx: Pick<Persisten
     {
       schema: {
         tags: ['Secrets'],
-        description: 'Clear a Secret; clearing one that is not set succeeds. Operator only; not reachable with an attempt-scoped Attempt Key.',
+        description: 'Clear a Secret; clearing one that is not set succeeds.',
         security,
         params: secretParamsSchema,
         response: {

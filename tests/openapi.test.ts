@@ -127,9 +127,9 @@ describe('openapi spec', () => {
   it('states Attempt Key reachability in each migrated endpoint description', async () => {
     const doc = (await server.anonApi('GET', '/api/openapi.json')).body;
 
-    expect(doc.paths['/api/tasks'].post.description).toContain('Reachable with an attempt-scoped Attempt Key');
-    expect(doc.paths['/api/tasks/{id}/run'].post.description).toContain('Reachable with an attempt-scoped Attempt Key');
-    expect(doc.paths['/api/attempts/{id}'].get.description).toContain('Reachable with an attempt-scoped Attempt Key');
+    expect(doc.paths['/api/tasks'].post.description).toContain('Key scopes: full, attempt');
+    expect(doc.paths['/api/tasks/{id}/run'].post.description).toContain('Key scopes: full, attempt');
+    expect(doc.paths['/api/attempts/{id}'].get.description).toContain('Key scopes: full, attempt');
 
     expect(doc.paths['/api/tasks/{id}/accept'].post.description).toContain('Human-only');
     expect(doc.paths['/api/tasks/{id}/reject'].post.description).toContain('Human-only');

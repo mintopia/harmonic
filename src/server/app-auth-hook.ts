@@ -1,6 +1,7 @@
 import { SESSION_COOKIE } from './routes/auth.js';
 import type { AuthService } from './auth.js';
 import type { App } from './app-context.js';
+import { readScopeAllowed, scopedKeyAllowed } from './key-scopes.js';
 
 export const PUBLIC_API_PATHS: ReadonlySet<string> = new Set([
   '/api/auth/login',
@@ -8,35 +9,6 @@ export const PUBLIC_API_PATHS: ReadonlySet<string> = new Set([
   '/api/openapi.json',
   '/api/openapi.yaml',
 ]);
-
-export function scopedKeyAllowed(path: string): boolean {
-  if (path.startsWith('/mcp')) return true;
-  if (/^\/api\/tasks\/[^/]+\/complete$/.test(path)) return false;
-  if (/^\/api\/tasks\/[^/]+\/steer$/.test(path)) return false;
-  if (/^\/api\/workspaces\/[^/]+\/epics\/[^/]+\/reject$/.test(path)) return false;
-  if (/^\/api\/workspaces\/[^/]+\/epics(\/[^/]+)?$/.test(path)) return false;
-  if (/^\/api\/tasks\/[^/]+\/(accept|reject|close)$/.test(path)) return false;
-  if (/^\/api\/tasks\/[^/]+\/channels(\/|$)/.test(path)) return false;
-  if (path === '/api/tasks' || path.startsWith('/api/tasks/')) return true;
-  if (path.startsWith('/api/attempts')) return true;
-  return false;
-}
-
-export function readScopeAllowed(path: string, method: string): boolean {
-  if (method !== 'GET') return false;
-  if (path === '/api/ws') return true;
-  if (path === '/api/workspaces') return true;
-  if (/^\/api\/workspaces\/[^/]+\/epics(\/[^/]+)?$/.test(path)) return true;
-  if (/^\/api\/tasks\/[^/]+\/channels(\/|$)/.test(path)) return false;
-  if (path === '/api/tasks' || path.startsWith('/api/tasks/')) return true;
-  if (path.startsWith('/api/attempts')) return true;
-  if (path === '/api/maps' || path.startsWith('/api/maps/')) return true;
-  if (path === '/api/activity') return true;
-  if (path === '/api/operations') return true;
-  if (path === '/api/scheduled-jobs') return true;
-  if (path === '/api/notifications') return true;
-  return false;
-}
 
 export function registerAuthHook(app: App, auth: AuthService): void {
   app.addHook('onRequest', async (req, reply) => {

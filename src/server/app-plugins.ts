@@ -10,6 +10,8 @@ import {
 import { readPackageManifest } from './routes/openapi.js';
 import { SESSION_COOKIE } from './routes/auth.js';
 import { buildSpecDescription } from './openapi-description.js';
+import { describeKeyScopes } from './key-scopes.js';
+import { PUBLIC_API_PATHS } from './app-auth-hook.js';
 import type { App } from './app-context.js';
 
 export async function registerPlugins(app: App): Promise<void> {
@@ -54,7 +56,16 @@ export async function registerPlugins(app: App): Promise<void> {
         },
       },
     },
-    transform: jsonSchemaTransform,
+    transform: (input) => {
+      const out = jsonSchemaTransform(input);
+      const { url, route } = input;
+      if (!url.startsWith('/api') || PUBLIC_API_PATHS.has(url)) return out;
+      const schema = out.schema as { description?: string };
+      const method = String(Array.isArray(route.method) ? route.method[0] : route.method);
+      const scopes = describeKeyScopes(url, method);
+      schema.description = schema.description ? `${schema.description} ${scopes}` : scopes;
+      return out;
+    },
     // Without transformObject, fastify-type-provider-zod emits `$ref`s for `.meta({ id })` schemas but never writes them into components.schemas.
     transformObject: jsonSchemaTransformObject,
   });

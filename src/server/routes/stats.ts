@@ -212,7 +212,7 @@ export async function statsRoutes(fastify: FastifyInstance, ctx: Pick<Persistenc
       schema: {
         tags: ['Stats'],
         description:
-          'Usage, Cost, and attempt-state counts over a time range (by attempt start time). Operator only; not reachable with an attempt-scoped Attempt Key.',
+          'Usage, Cost, and attempt-state counts over a time range (by attempt start time).',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         querystring: querySchema,
         response: {
@@ -235,7 +235,7 @@ export async function statsRoutes(fastify: FastifyInstance, ctx: Pick<Persistenc
       schema: {
         tags: ['Stats'],
         description:
-          "Usage, Cost, and attempt-state counts scoped to one Epic's child Tasks (ADR-0014), over a time range by attempt start time. Same shape as the fleet Stats surface. Operator only; not reachable with an attempt-scoped Attempt Key.",
+          "Usage, Cost, and attempt-state counts scoped to one Epic's child Tasks (ADR-0014), over a time range by attempt start time. Same shape as the fleet Stats surface.",
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: epicParamsSchema,
         querystring: querySchema,
