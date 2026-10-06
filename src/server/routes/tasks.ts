@@ -396,7 +396,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Create a task. Reachable with an attempt-scoped Attempt Key.',
+        description: 'Create a task.',
         body: createTaskInputSchema,
         response: {
           201: taskSchema.describe('The created task, in draft.'),
@@ -416,7 +416,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Tasks'],
         description:
-          'List tasks: filtered (`state`, `harness`, `priority`, `parent` — an Epic ref, returning its child tasks), searched (`q`, server-side substring over prompt + title), sorted, and paginated (`limit`/`offset`, with a `total` count). An omitted `limit` returns every match. With `epics=true` and a `workspaceId`, the derived-epic model (ADR-0016) contributes epic-format rows to the unfiltered list. Reachable with an attempt-scoped Attempt Key.',
+          'List tasks: filtered (`state`, `harness`, `priority`, `parent` — an Epic ref, returning its child tasks), searched (`q`, server-side substring over prompt + title), sorted, and paginated (`limit`/`offset`, with a `total` count). An omitted `limit` returns every match. With `epics=true` and a `workspaceId`, the derived-epic model (ADR-0016) contributes epic-format rows to the unfiltered list.',
         querystring: taskListQuerySchema
           .extend(paginationQuerySchema.shape)
           .extend({ epics: z.enum(['true', 'false']).optional().meta({ example: 'true' }) }),
@@ -448,7 +448,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Get one task with its dependency context and Cost. Reachable with an attempt-scoped Attempt Key.',
+        description: 'Get one task with its dependency context and Cost.',
         params: idParamsSchema,
         response: {
           200: taskSchema.describe('The task, with its dependency context and Cost.'),
@@ -465,7 +465,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Tasks'],
         description:
-          'Edit a draft or ready task. Each Task-default field (harness, model, isolationMode, priority) accepts null to clear it back to inherit. Reachable with an attempt-scoped Attempt Key.',
+          'Edit a draft or ready task. Each Task-default field (harness, model, isolationMode, priority) accepts null to clear it back to inherit.',
         params: idParamsSchema,
         body: updateTaskInputSchema,
         response: {
@@ -483,7 +483,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Promote a draft to ready. Blocked-ness is derived from its open blockers. Reachable with an attempt-scoped Attempt Key.',
+        description: 'Promote a draft to ready. Blocked-ness is derived from its open blockers.',
         params: idParamsSchema,
         response: {
           200: taskSchema.describe('The task in its new state.'),
@@ -499,7 +499,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Cancel a non-terminal task, optionally cascading to its dependents. Reachable with an attempt-scoped Attempt Key.',
+        description: 'Cancel a non-terminal task, optionally cascading to its dependents.',
         params: idParamsSchema,
         body: cancelInputSchema,
         response: {
@@ -525,7 +525,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Inject the configured pause steer, then pause a working task after its active turn settles. Reachable with an attempt-scoped Attempt Key.',
+        description: 'Inject the configured pause steer, then pause a working task after its active turn settles.',
         params: idParamsSchema,
         response: {
           200: taskSchema.describe('The paused task.'),
@@ -548,7 +548,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Tasks'],
         description:
-          'Resume a paused task. `continuation` picks how it re-attaches to its prior Session: `full` reuses the retained conversation, `condensed` starts a fresh one; omitted keeps the recommended default. Reachable with an attempt-scoped Attempt Key.',
+          'Resume a paused task. `continuation` picks how it re-attaches to its prior Session: `full` reuses the retained conversation, `condensed` starts a fresh one; omitted keeps the recommended default.',
         params: idParamsSchema,
         body: resumeInputSchema,
         response: {
@@ -604,7 +604,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Tasks'],
         description:
-          'Force a working task to done (operator override): stop the agent and settle it done, skipping verification and merging. Operator only.',
+          'Force a working task to done (operator override): stop the agent and settle it done, skipping verification and merging.',
         params: idParamsSchema,
         response: {
           200: taskSchema.describe('The task in its new state.'),
@@ -625,7 +625,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Tasks'],
         description:
-          "Steer a running task: send an operator message to its active Attempt. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no Attempt is active but the task's last Attempt left a resumable session (an escalated task that ended without closure), the message continues that session in a fresh Attempt. A paused task is resumed to working and the message delivered the same way; a working task whose Attempt is no longer running (restarted, upgraded, or torn down between turns) is relaunched. A resume is never refused: a cold cache only changes the estimated cost, and a Session incompatible for continue-full (harness/adapter-version/cwd/permission-mode changed) falls back to start-condensed rather than blocking. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, continue one whose Attempt just ended, resume a paused one, or relaunch a stranded one. Operator only.",
+          "Steer a running task: send an operator message to its active Attempt. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no Attempt is active but the task's last Attempt left a resumable session (an escalated task that ended without closure), the message continues that session in a fresh Attempt. A paused task is resumed to working and the message delivered the same way; a working task whose Attempt is no longer running (restarted, upgraded, or torn down between turns) is relaunched. A resume is never refused: a cold cache only changes the estimated cost, and a Session incompatible for continue-full (harness/adapter-version/cwd/permission-mode changed) falls back to start-condensed rather than blocking. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, continue one whose Attempt just ended, resume a paused one, or relaunch a stranded one.",
         params: idParamsSchema,
         body: steerInputSchema,
         response: {
@@ -656,7 +656,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Tasks'],
         description:
-          "Extend the wall-clock time guardrail of a working task's live Attempt by `minutes`, giving a run that is close to its budget more time without restarting it. The raised cap is persisted onto the Attempt's frozen guardrail config and the live deadline is re-armed immediately. Operator only.",
+          "Extend the wall-clock time guardrail of a working task's live Attempt by `minutes`, giving a run that is close to its budget more time without restarting it. The raised cap is persisted onto the Attempt's frozen guardrail config and the live deadline is re-armed immediately.",
         params: idParamsSchema,
         body: extendGuardrailInputSchema,
         response: {
@@ -681,7 +681,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Tasks'],
         description:
-          'Return a cancelled task to the queue in place (ready; blocked-ness is derived from its open blockers). Reachable with an attempt-scoped Attempt Key.',
+          'Return a cancelled task to the queue in place (ready; blocked-ness is derived from its open blockers).',
         params: idParamsSchema,
         response: {
           200: taskSchema.describe('The task in its new state.'),
@@ -697,7 +697,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Add a dependency edge, re-deriving the open-blocker count. Reachable with an attempt-scoped Attempt Key.',
+        description: 'Add a dependency edge, re-deriving the open-blocker count.',
         params: idParamsSchema,
         body: dependsOnBodySchema,
         response: {
@@ -717,7 +717,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Remove a dependency edge, re-deriving the open-blocker count. Reachable with an attempt-scoped Attempt Key.',
+        description: 'Remove a dependency edge, re-deriving the open-blocker count.',
         params: depParamsSchema,
         response: { 200: taskWithDepsSchema.describe('The task with the edge removed, and its open-blocker count re-derived.') },
       },
@@ -861,7 +861,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Attempts'],
-        description: 'Start an attempt for a ready task. Reachable with an attempt-scoped Attempt Key.',
+        description: 'Start an attempt for a ready task.',
         params: idParamsSchema,
         response: { 201: attemptSchema.describe('The attempt that just started.') },
       },
@@ -918,7 +918,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Attempts'],
-        description: "List a task's attempts (retries included). Reachable with an attempt-scoped Attempt Key.",
+        description: "List a task's attempts (retries included).",
         params: idParamsSchema,
         querystring: paginationQuerySchema,
         response: { 200: attemptsListResponseSchema.describe("Every attempt for the task, including failed retries, oldest first.") },
@@ -939,7 +939,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Attempts'],
         description:
-          "The task's current (latest) attempt — the follow-forward read for pollers: self-heal advances to a new Attempt row each turn, and this always reflects the live one. Reachable with an attempt-scoped Attempt Key.",
+          "The task's current (latest) attempt — the follow-forward read for pollers: self-heal advances to a new Attempt row each turn, and this always reflects the live one.",
         params: idParamsSchema,
         response: {
           200: attemptSchema.describe('The current attempt, with its Usage and Cost.'),
@@ -958,7 +958,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Attempts'],
-        description: 'Get one attempt with its Usage and Cost. Reachable with an attempt-scoped Attempt Key.',
+        description: 'Get one attempt with its Usage and Cost.',
         params: idParamsSchema,
         response: {
           200: attemptSchema.describe('The attempt, with its Usage and Cost.'),
@@ -1031,7 +1031,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Attempts'],
-        description: 'Replay an attempt\'s persisted events, in order — the same records streamed live over the WebSocket. Reachable with an attempt-scoped Attempt Key.',
+        description: 'Replay an attempt\'s persisted events, in order — the same records streamed live over the WebSocket.',
         params: idParamsSchema,
         querystring: paginationQuerySchema,
         response: { 200: eventsListResponseSchema.describe('The attempt\'s persisted events in sequence order.') },
@@ -1050,7 +1050,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Attempts'],
-        description: "Replay an attempt's Guardrail-trip event log, in sequence order (issue #171). Reachable with an attempt-scoped Attempt Key.",
+        description: "Replay an attempt's Guardrail-trip event log, in sequence order (issue #171).",
         params: idParamsSchema,
         querystring: paginationQuerySchema,
         response: {
@@ -1077,7 +1077,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Attempts'],
         description:
-          "Replay an attempt's verification-attempt log (per-verifier verdicts + summaries), in sequence order (issue #169, part of #109). Reachable with an attempt-scoped Attempt Key.",
+          "Replay an attempt's verification-attempt log (per-verifier verdicts + summaries), in sequence order (issue #169, part of #109).",
         params: idParamsSchema,
         querystring: paginationQuerySchema,
         response: {
@@ -1224,7 +1224,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Attempts'],
         description:
-          "Usage and Cost rolled up across all of a task's attempts, retries included. Reachable with an attempt-scoped Attempt Key.",
+          "Usage and Cost rolled up across all of a task's attempts, retries included.",
         params: idParamsSchema,
         response: { 200: usageResponseSchema.describe('Usage and Cost rolled up across the task\'s attempts.') },
       },
@@ -1249,7 +1249,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Attempts'],
         description:
-          'Branch and diffstat for the review inbox (worktree-mode attempts only; other fields are null). Reachable with an attempt-scoped Attempt Key.',
+          'Branch and diffstat for the review inbox (worktree-mode attempts only; other fields are null).',
         params: idParamsSchema,
         response: { 200: diffResponseSchema.describe('The attempt\'s branch and its diffstat against the base; nulls outside worktree mode.') },
       },
@@ -1278,7 +1278,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Attempts'],
         description:
-          'Per-file unified-diff hunks for the review pane (worktree-mode attempts only). Empty `files` outside worktree mode or when the branch/worktree is gone. Reachable with an attempt-scoped Attempt Key.',
+          'Per-file unified-diff hunks for the review pane (worktree-mode attempts only). Empty `files` outside worktree mode or when the branch/worktree is gone.',
         params: idParamsSchema,
         querystring: paginationQuerySchema,
         response: { 200: diffFilesResponseSchema.describe("The attempt's changed files with parsed +/- hunks; empty outside worktree mode.") },

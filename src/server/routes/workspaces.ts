@@ -162,7 +162,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     {
       schema: {
         tags: ['Workspaces'],
-        description: 'List Workspaces. A read-scoped key is served only the id, name and color of each Workspace (never its config); not reachable with an attempt-scoped Attempt Key.',
+        description: 'List Workspaces. A read-scoped key is served only the id, name and color of each Workspace (never its config).',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         querystring: paginationQuerySchema,
         response: {
@@ -190,7 +190,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
       schema: {
         tags: ['Workspaces'],
         description:
-          'Create a Workspace: a named Working Directory, unique by absolute path. Operator only; not reachable with an attempt-scoped Attempt Key.',
+          'Create a Workspace: a named Working Directory, unique by absolute path.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: createWorkspaceInputSchema,
         response: {
@@ -213,7 +213,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     {
       schema: {
         tags: ['Workspaces'],
-        description: 'Get one Workspace. Operator only; not reachable with an attempt-scoped Attempt Key.',
+        description: 'Get one Workspace.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         response: {
@@ -231,7 +231,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
       schema: {
         tags: ['Workspaces'],
         description:
-          'Rename a Workspace or repoint its Working Directory. Operator only; not reachable with an attempt-scoped Attempt Key.',
+          'Rename a Workspace or repoint its Working Directory.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         body: updateWorkspaceInputSchema,
@@ -263,7 +263,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
       schema: {
         tags: ['Workspaces'],
         description:
-          'Delete a Workspace and everything on its board, stopping its tracker poll loop. Refuses a Workspace with a running Task; deleting the last Workspace is allowed. Operator only; not reachable with an attempt-scoped Attempt Key.',
+          'Delete a Workspace and everything on its board, stopping its tracker poll loop. Refuses a Workspace with a running Task; deleting the last Workspace is allowed.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         response: {
@@ -294,7 +294,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
       schema: {
         tags: ['Workspaces'],
         description:
-          'Force an immediate tracker poll for a Workspace — rescan its Working Directory and mirror any ticket changes onto the board now, instead of waiting for the next interval. Operator only; not reachable with an attempt-scoped Attempt Key.',
+          'Force an immediate tracker poll for a Workspace — rescan its Working Directory and mirror any ticket changes onto the board now, instead of waiting for the next interval.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         response: {

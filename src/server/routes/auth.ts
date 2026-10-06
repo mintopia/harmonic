@@ -132,7 +132,7 @@ export async function authRoutes(fastify: FastifyInstance, ctx: Pick<Persistence
       schema: {
         tags: ['Auth'],
         description:
-          "Set or change the operator password. When one is already set, currentPassword must match (a wrong current password changes nothing); when none is set (ungated), currentPassword is ignored and this sets the initial password. newPassword takes the same minimum-length rule as initial setup. On success every session other than the caller's own is destroyed — a stolen cookie doesn't survive a credential rotation — but API Keys are untouched. Operator only; not reachable with an attempt-scoped Attempt Key.",
+          "Set or change the operator password. When one is already set, currentPassword must match (a wrong current password changes nothing); when none is set (ungated), currentPassword is ignored and this sets the initial password. newPassword takes the same minimum-length rule as initial setup. On success every session other than the caller's own is destroyed — a stolen cookie doesn't survive a credential rotation — but API Keys are untouched.",
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: changePasswordBodySchema,
         response: {
@@ -165,7 +165,7 @@ export async function authRoutes(fastify: FastifyInstance, ctx: Pick<Persistence
       schema: {
         tags: ['Auth'],
         description:
-          'Remove the operator password — Harmonic falls back to ungated (every API surface open). Verifies currentPassword first when one is set; a no-op when none is set (idempotent). On success every session other than the caller\'s own is destroyed. Operator only; not reachable with an attempt-scoped Attempt Key.',
+          'Remove the operator password — Harmonic falls back to ungated (every API surface open). Verifies currentPassword first when one is set; a no-op when none is set (idempotent). On success every session other than the caller\'s own is destroyed.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: removePasswordBodySchema,
         response: {
