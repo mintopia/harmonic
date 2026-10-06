@@ -143,6 +143,7 @@ harmonic serve
 | --- | --- | --- |
 | `HARMONIC_DATA_DIR` | `--data-dir` | State directory. |
 | `HARMONIC_PASSWORD` | `--password` | Operator password. |
+| `HARMONIC_CORS_ORIGINS` | — | Comma-separated origins allowed to call the REST API from a browser page on another site, such as `https://viewer.example.com`. `*` allows any origin. Unset, cross-origin calls are blocked. |
 
 With no password set, Harmonic runs **ungated** — anyone who can reach the
 address has full access. Bind to `127.0.0.1`, or set a password, before

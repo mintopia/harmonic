@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import type { CorsPolicy } from '../src/server/cors.js';
 import { randomBytes, scryptSync } from 'node:crypto';
 import { copyFileSync, mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -344,7 +345,7 @@ export async function startServer(
     migrationRequired?: boolean | undefined;
     installMode?: Parameters<typeof buildApp>[0]['installMode'];
     guardMissing?: boolean | undefined;
-    corsOrigins?: string[] | undefined;
+    corsOrigins?: CorsPolicy | undefined;
   } = {},
 ): Promise<TestServer> {
   const dataDir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'harmonic-test-'));

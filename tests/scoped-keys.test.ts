@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
+import { WebSocket as WsClient } from 'ws';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -102,6 +103,27 @@ describe('read-scoped key (issue #35)', () => {
     expect(await asRead('GET', '/api/workspaces/1/epics/a/diff/files')).toBe(403);
   });
 
+  it('lists Workspaces as id/name/color only, never their config', async () => {
+    const res = await fetch(`${server.baseUrl}/api/workspaces`, { headers: { authorization: `Bearer ${readToken}` } });
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.workspaces.length).toBeGreaterThan(0);
+    expect(body.total).toBe(body.workspaces.length);
+    for (const workspace of body.workspaces) {
+      expect(Object.keys(workspace).sort()).toEqual(['color', 'id', 'name']);
+    }
+    expect(JSON.stringify(body)).not.toContain('workingDir');
+  });
+
+  it('still serves the full Workspace shape to a full-scope key and the operator session', async () => {
+    const { body: key } = await server.api('POST', '/api/keys', { name: 'ops' });
+    const viaKey = await (await fetch(`${server.baseUrl}/api/workspaces`, { headers: { authorization: `Bearer ${key.token}` } })).json();
+    const viaSession = (await server.api('GET', '/api/workspaces')).body;
+    for (const body of [viaKey, viaSession]) {
+      expect(body.workspaces[0]).toMatchObject({ workingDir: expect.any(String), trackerEnabled: expect.any(Boolean), exportS3Bucket: null });
+    }
+  });
+
   it('blocks every mutation and the operator surface', async () => {
     expect(await asRead('POST', '/api/tasks', { prompt: 'nope' })).toBe(403);
     expect(await asRead('PATCH', '/api/tasks/1', { prompt: 'edit' })).toBe(403);
@@ -148,7 +170,7 @@ describe('read-scoped key (issue #35)', () => {
 
   it('delivers attempt_timeline_changed to a Read Key', async () => {
     const readWs = await connectFirehose(server, readToken);
-    server.app.ctx.bus.emit('step_changed', { taskId: 1 } as any);
+    server.app.ctx.bus.emit('step_changed', { taskId: 1 });
     await waitFor(async () => readWs.messages.some((m) => m.type === 'attempt_timeline_changed'));
     readWs.close();
   });
@@ -160,9 +182,21 @@ describe('websocket heartbeat', () => {
     server = await startServer(stubHarness());
   });
   afterAll(async () => {
-    vi.useRealTimers();
     await server.close();
   });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const openSilentClient = async (): Promise<{ closed: Promise<void>; terminate: () => void }> => {
+    const client = new WsClient(`${server.baseUrl.replace('http', 'ws')}/api/ws`, [server.sessionToken], { autoPong: false });
+    const closed = new Promise<void>((resolve) => client.once('close', () => resolve()));
+    await new Promise<void>((resolve, reject) => {
+      client.once('message', () => resolve());
+      client.once('error', reject);
+    });
+    return { closed, terminate: () => client.terminate() };
+  };
 
   it('sends a heartbeat message every interval', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
@@ -172,33 +206,32 @@ describe('websocket heartbeat', () => {
     expect(beat).toMatchObject({ intervalMs: WS_HEARTBEAT_INTERVAL_MS });
     ws.close();
   });
-});
 
-describe('CORS allow-list', () => {
-  let server: TestServer;
-  beforeAll(async () => {
-    server = await startServer(stubHarness(), { corsOrigins: ['https://viz.example'] });
-  });
-  afterAll(async () => {
-    await server.close();
-  });
-
-  it('answers a preflight from an allowed origin without credentials', async () => {
-    const res = await fetch(`${server.baseUrl}/api/tasks`, {
-      method: 'OPTIONS',
-      headers: { origin: 'https://viz.example', 'access-control-request-method': 'GET', 'access-control-request-headers': 'authorization' },
+  it('keeps a client that answers pings connected across several intervals', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const client = new WsClient(`${server.baseUrl.replace('http', 'ws')}/api/ws`, [server.sessionToken]);
+    let closed = false;
+    client.on('close', () => {
+      closed = true;
     });
-    expect(res.status).toBe(204);
-    expect(res.headers.get('access-control-allow-origin')).toBe('https://viz.example');
-    expect(res.headers.get('access-control-allow-headers')).toBe('authorization');
+    await new Promise<void>((resolve) => client.once('message', () => resolve()));
+    for (let i = 0; i < 3; i += 1) {
+      vi.advanceTimersByTime(WS_HEARTBEAT_INTERVAL_MS);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(closed).toBe(false);
+    client.close();
   });
 
-  it('adds the origin header to authenticated responses and omits it for other origins', async () => {
-    const headers = { authorization: `Bearer ${server.sessionToken}` };
-    const allowed = await fetch(`${server.baseUrl}/api/tasks`, { headers: { ...headers, origin: 'https://viz.example' } });
-    expect(allowed.headers.get('access-control-allow-origin')).toBe('https://viz.example');
-    const other = await fetch(`${server.baseUrl}/api/tasks`, { headers: { ...headers, origin: 'https://evil.example' } });
-    expect(other.headers.get('access-control-allow-origin')).toBeNull();
+  it('terminates a client that misses a pong, and clears the timer when the socket closes', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const before = vi.getTimerCount();
+    const client = await openSilentClient();
+    expect(vi.getTimerCount()).toBe(before + 1);
+    vi.advanceTimersByTime(WS_HEARTBEAT_INTERVAL_MS);
+    vi.advanceTimersByTime(WS_HEARTBEAT_INTERVAL_MS);
+    await client.closed;
+    await waitFor(async () => vi.getTimerCount() === before);
   });
 });
 

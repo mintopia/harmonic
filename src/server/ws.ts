@@ -85,20 +85,10 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       ctx.bus.on('git_status', (payload) => send({ type: 'git_status', ...payload })),
     ];
     send({ type: 'host_load', load: ctx.hostLoad.current() });
-    let alive = true;
+    let awaitingPong = false;
     socket.on('pong', () => {
-      alive = true;
+      awaitingPong = false;
     });
-    // Browsers cannot observe protocol pings, so each tick also sends a `heartbeat` message clients can time out on.
-    const heartbeat = setInterval(() => {
-      if (!alive) {
-        socket.terminate();
-        return;
-      }
-      alive = false;
-      socket.ping();
-      send({ type: 'heartbeat', intervalMs: WS_HEARTBEAT_INTERVAL_MS, ts: Date.now() });
-    }, WS_HEARTBEAT_INTERVAL_MS);
     if (hasWriteScope) {
       unsubscribes.push(
         ctx.bus.on('conversation_event', (event) => send({ type: 'conversation_event', event })),
@@ -151,6 +141,16 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       }
       replaying = false;
     });
+    // Browsers cannot observe protocol pings, so each tick also sends a `heartbeat` message clients can time out on.
+    const heartbeat = setInterval(() => {
+      if (awaitingPong) {
+        socket.terminate();
+        return;
+      }
+      awaitingPong = true;
+      socket.ping();
+      send({ type: 'heartbeat', intervalMs: WS_HEARTBEAT_INTERVAL_MS, ts: Date.now() });
+    }, WS_HEARTBEAT_INTERVAL_MS);
     socket.on('close', () => {
       clearInterval(heartbeat);
       unsubscribeAttemptLog?.();

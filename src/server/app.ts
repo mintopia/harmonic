@@ -174,7 +174,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     asyncDb,
   });
   await registerPlugins(app);
-  registerCors(app, opts.corsOrigins ?? []);
+  registerCors(app, opts.corsOrigins ?? { kind: 'off' });
   registerAuthHook(app, stores.auth);
   registerErrorHandler(app);
   registerServerErrorLogging(app);

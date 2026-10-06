@@ -18,9 +18,13 @@ endpoint below.
 \`GET /api/ws\` is a single firehose WebSocket (also outside this spec's
 paths): every attempt event, attempt state change, task state change/removal, and
 Conversation event/change is broadcast to every connected client as JSON
-messages of the form \`{ type: 'attempt_event' | 'attempt_changed' | 'attempt_usage' |
-'task_changed' | 'task_removed' | 'conversation_event' | 'conversation_changed' |
-'permission_request' | 'scheduled-jobs' | 'operations', ... }\`, using the same Task/Attempt/Conversation/Scheduled Job/Operation shapes
+messages of the form \`{ type: 'attempt_event' | 'attempt_changed' | 'attempt_timeline_changed' |
+'attempt_usage' | 'task_changed' | 'task_removed' | 'epic_changed' | 'epic_integrated' |
+'agent_messages_changed' | 'scheduled-jobs' | 'operations' | 'worktrees' | 'host_load' |
+'export_failed' | 'notification_created' | 'notifications_read' | 'fs_changed' | 'git_status' |
+'attempt_log_event' | 'critic_log_event' | 'heartbeat' | 'conversation_event' |
+'conversation_changed' | 'conversation_commands' | 'permission_request' |
+'elicitation_request', ... }\`, using the same Task/Attempt/Conversation/Scheduled Job/Operation shapes
 served over REST. \`attempt_usage\` is a live-usage snapshot for a running Attempt
 (tokens, context fill, derived Cost, current-activity line, and Process
 Tree), pushed about once a second while the Attempt tails its native log.

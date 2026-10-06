@@ -24,7 +24,7 @@ applies to `status` and `stop`. Full command coverage is in the
 
 ## Environment variables
 
-Two variables back the options above, for when setting an environment is
+These variables configure Harmonic from the environment, for when that is
 easier than passing a flag, such as in a service unit, a container, or a
 shell profile:
 
@@ -33,6 +33,7 @@ shell profile:
 | `HARMONIC_DATA_DIR` | `--data-dir` | State directory. |
 | `HARMONIC_PASSWORD` | `--password` | Operator password. |
 | `HARMONIC_SECRET_KEY` | — | Encryption key for Secrets (tokens, etc.). Hex or base64, 32 bytes. Auto-created on first run and stored as `secret.key` (mode 0600) in the data directory if not set. |
+| `HARMONIC_CORS_ORIGINS` | — | Comma-separated origins allowed to call the REST API from a browser page on another site, such as `https://viewer.example.com`. `*` allows any origin. Unset, cross-origin calls are blocked. |
 
 ## Precedence
 

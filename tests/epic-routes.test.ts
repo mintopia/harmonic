@@ -506,7 +506,7 @@ describe('epic-routes', () => {
           const res = await fetch(`${server.baseUrl}/api/workspaces/${(await defaultWorkspaceId())}/epics/42`, {
             headers: { authorization: `Bearer ${body.token}` },
           });
-          expect(res.status).not.toBe(403);
+          expect(res.status).toBe(404);
         });
       });
     });

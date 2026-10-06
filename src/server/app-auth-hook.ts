@@ -41,6 +41,7 @@ export function readScopeAllowed(path: string, method: string): boolean {
 export function registerAuthHook(app: App, auth: AuthService): void {
   app.addHook('onRequest', async (req, reply) => {
     const path = req.routeOptions.url ?? req.url.split('?')[0] ?? req.url;
+    if (req.method === 'OPTIONS' && req.headers['access-control-request-method']) return;
     if ((!path.startsWith('/api') && !path.startsWith('/mcp')) || PUBLIC_API_PATHS.has(path)) return;
 
     if (!(await auth.hasPassword())) return;
