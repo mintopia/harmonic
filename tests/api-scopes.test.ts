@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { scopedKeyAllowed, readScopeAllowed } from '../src/server/app-auth-hook.js';
+import { scopedKeyAllowed, readScopeAllowed, keyScopesFor, describeKeyScopes } from '../src/server/key-scopes.js';
+import { PUBLIC_API_PATHS } from '../src/server/app-auth-hook.js';
 import { startServer } from './helpers.js';
 
 it('enforces operator-only routes for encoded and noncanonical task ids', async () => {
@@ -115,9 +116,12 @@ describe('readScopeAllowed', () => {
     expect(scopedKeyAllowed('/api/notifications')).toBe(false);
   });
 
-  it('blocks the Epic surface, listed or by id', () => {
-    expect(readScopeAllowed('/api/workspaces/1/epics', 'GET')).toBe(false);
-    expect(readScopeAllowed('/api/workspaces/1/epics/2', 'GET')).toBe(false);
+  it('allows GET on Workspaces and the Epic list/detail, but not other Epic routes or mutations', () => {
+    expect(readScopeAllowed('/api/workspaces', 'GET')).toBe(true);
+    expect(readScopeAllowed('/api/workspaces/1/epics', 'GET')).toBe(true);
+    expect(readScopeAllowed('/api/workspaces/1/epics/2', 'GET')).toBe(true);
+    expect(readScopeAllowed('/api/workspaces/1/epics/2/diff/files', 'GET')).toBe(false);
+    expect(readScopeAllowed('/api/workspaces/1/epics', 'POST')).toBe(false);
   });
 
   it('blocks Task channels', () => {
@@ -145,4 +149,40 @@ describe('readScopeAllowed', () => {
     expect(readScopeAllowed('/api/config', 'GET')).toBe(false);
     expect(readScopeAllowed('/api/channels', 'GET')).toBe(false);
   });
+});
+
+it('derives the auth hook decision and the OpenAPI scope text from the same key-scope table for every /api route', async () => {
+  const server = await startServer();
+  try {
+    const spec = server.app.swagger() as { paths: Record<string, Record<string, { description?: string }>> };
+    const keys = {
+      attempt: (await server.app.ctx.auth.createKey('walk attempt', { scope: 'attempt' })).token,
+      read: (await server.app.ctx.auth.createKey('walk read', { scope: 'read' })).token,
+    };
+    let checked = 0;
+    for (const [openapiPath, ops] of Object.entries(spec.paths)) {
+      if (!openapiPath.startsWith('/api') || PUBLIC_API_PATHS.has(openapiPath)) continue;
+      const path = openapiPath.replace(/\{([^}]+)\}/g, ':$1');
+      for (const [method, op] of Object.entries(ops)) {
+        const upper = method.toUpperCase();
+        const scopes = keyScopesFor(path, upper);
+        expect(op.description, `${upper} ${path}`).toContain(describeKeyScopes(path, upper));
+        for (const scope of ['attempt', 'read'] as const) {
+          const url = openapiPath.replace(/\{[^}]+\}/g, '1');
+          const response = await server.app.inject({
+            method: upper as 'GET',
+            url,
+            headers: { authorization: `Bearer ${keys[scope]}` },
+            payload: upper === 'GET' || upper === 'DELETE' ? undefined : {},
+          });
+          const forbidden = response.statusCode === 403 && response.json()?.error?.code === 'forbidden';
+          expect(forbidden, `${scope} ${upper} ${path}`).toBe(!scopes.includes(scope));
+        }
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(50);
+  } finally {
+    await server.close();
+  }
 });

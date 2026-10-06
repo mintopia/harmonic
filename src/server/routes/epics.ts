@@ -224,7 +224,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         description:
           "Every open Epic for a Workspace (issue #167, ADR-0018) — an integrated Epic leaves this list and resolves by ref only — each folded with its " +
           'member merge state, integration-branch tip, and whole-Epic integrate/verification state. Searched (`q`, ' +
-          'case-insensitive substring over the Epic title) and paginated (`limit`/`offset`, with a `total`). Operator only.',
+          'case-insensitive substring over the Epic title) and paginated (`limit`/`offset`, with a `total`).',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: epicListParamsSchema,
         querystring: epicListQuerySchema,
@@ -252,7 +252,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         tags: ['Epics'],
         description:
           "One derived Epic by its tracker ref, from the Workspace's last poll scan (issue #167). " +
-          '404s when the scan derives no leaf-most Epic with that ref. Operator only.',
+          '404s when the scan derives no leaf-most Epic with that ref.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: epicParamsSchema,
         response: {
@@ -276,7 +276,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Epics'],
-        description: 'Every durable Attempt owned by this Epic, ordered by its Epic-local timeline number. Operator only.',
+        description: 'Every durable Attempt owned by this Epic, ordered by its Epic-local timeline number.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: epicParamsSchema,
         response: {
@@ -329,7 +329,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Epics'],
-        description: 'Reject an escalated Epic with guidance. The guidance is recorded on the escalated Epic Attempt and included in the next whole-Epic resolver turn. Operator only.',
+        description: 'Reject an escalated Epic with guidance. The guidance is recorded on the escalated Epic Attempt and included in the next whole-Epic resolver turn.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: epicParamsSchema,
         body: rejectEpicInputSchema,
@@ -356,7 +356,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         description:
           'Per-file unified-diff hunks for the whole-Epic diff panel (ADR-0018): what `epic/<ref>` changes over ' +
           'base while open, the frozen merge-commit diff once integrated (survives branch retirement). Paginated. ' +
-          'Empty `files` for a branchless/no-op Epic. Operator only.',
+          'Empty `files` for a branchless/no-op Epic.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: epicParamsSchema,
         querystring: paginationQuerySchema,

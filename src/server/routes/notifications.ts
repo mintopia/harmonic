@@ -51,7 +51,7 @@ export async function notificationRoutes(fastify: FastifyInstance, ctx: Pick<Per
         description:
           'List stored Notifications, newest first. `workspaceId` is the Workspace Scope; omitted means Global. ' +
           '`before` is an id cursor: pass the last id of the previous page. `unreadCount` respects the Workspace Scope only. ' +
-          'Reachable with a Read Key.',
+          '',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         querystring: listQuerySchema,
         response: { 200: listResponseSchema.describe('One page of Notifications plus the unread count for the scope.') },
@@ -75,7 +75,7 @@ export async function notificationRoutes(fastify: FastifyInstance, ctx: Pick<Per
     {
       schema: {
         tags: ['Notifications'],
-        description: 'Mark every unread Notification in the scope read (all Workspaces when `workspaceId` is omitted). Operator only.',
+        description: 'Mark every unread Notification in the scope read (all Workspaces when `workspaceId` is omitted).',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: readAllBodySchema,
         response: { 200: z.object({ updated: z.number().int().nonnegative().meta({ example: 3 }) }).describe('How many Notifications changed.') },
@@ -92,7 +92,7 @@ export async function notificationRoutes(fastify: FastifyInstance, ctx: Pick<Per
     {
       schema: {
         tags: ['Notifications'],
-        description: 'Mark one Notification read. Idempotent: the first read time is kept. Operator only.',
+        description: 'Mark one Notification read. Idempotent: the first read time is kept.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         response: {

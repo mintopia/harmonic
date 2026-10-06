@@ -1205,9 +1205,10 @@ the ephemeral Attempt/Conversation Keys.
 _Avoid_: token (ambiguous with Attempt Key)
 
 **Read Key**:
-A read-scoped API Key for a viz client: it may GET tasks, runs, and Maps and
-open the firehose WebSocket (filtered to task/run/run-event/run-usage — no
-Conversation or permission traffic), but every mutation and the operator surface (keys,
+A read-scoped API Key for a viz client: it may GET tasks, runs, and Maps,
+list Workspaces (by id, name and colour only) and their Epics, and open the
+firehose WebSocket (everything except Conversation, permission and
+elicitation traffic), but every mutation and the operator surface (keys,
 config, channels, Conversations) is blocked. Operator-created and listed like
 a full API Key, unlike the ephemeral Attempt/Conversation Keys.
 _Avoid_: viz key, guest key

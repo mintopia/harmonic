@@ -17,6 +17,7 @@ import { registerAppExports } from './app-exports.js';
 import { registerBusListeners } from './app-bus-listeners.js';
 import { registerPlugins } from './app-plugins.js';
 import { registerAuthHook } from './app-auth-hook.js';
+import { registerCors } from './cors.js';
 import { registerRouteRecorder, registerErrorHandler, registerServerErrorLogging, fastifyLogger } from './app-hooks.js';
 import { registerShutdown, registerStartup } from './app-lifecycle.js';
 import { registerRoutes } from './app-routes.js';
@@ -173,6 +174,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     asyncDb,
   });
   await registerPlugins(app);
+  registerCors(app, opts.corsOrigins ?? { kind: 'off' });
   registerAuthHook(app, stores.auth);
   registerErrorHandler(app);
   registerServerErrorLogging(app);

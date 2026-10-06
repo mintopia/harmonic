@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import type { CorsPolicy } from '../src/server/cors.js';
 import { randomBytes, scryptSync } from 'node:crypto';
 import { copyFileSync, mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -344,6 +345,7 @@ export async function startServer(
     migrationRequired?: boolean | undefined;
     installMode?: Parameters<typeof buildApp>[0]['installMode'];
     guardMissing?: boolean | undefined;
+    corsOrigins?: CorsPolicy | undefined;
   } = {},
 ): Promise<TestServer> {
   const dataDir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'harmonic-test-'));
@@ -367,6 +369,7 @@ export async function startServer(
     migrationRequired: opts.migrationRequired,
     installMode: opts.installMode,
     guardMissing: opts.guardMissing,
+    corsOrigins: opts.corsOrigins,
     // Heavy synchronous test setup can trip the event-loop stall monitor.
     reliabilityTuning: { eventLoop: { enabled: false } },
   });

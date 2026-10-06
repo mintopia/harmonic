@@ -71,7 +71,7 @@ export async function updateRoutes(
   app.get('/update', {
     schema: {
       tags: ['Update'],
-      description: 'The offered and armed package update, plus the current drain-to-idle blockers. Operator only.',
+      description: 'The offered and armed package update, plus the current drain-to-idle blockers.',
       security: [{ bearerAuth: [] }, { sessionCookie: [] }],
       response: { 200: updateStateSchema.describe('The current offered and armed update, with drain-to-idle blockers.') },
     },
@@ -83,7 +83,7 @@ export async function updateRoutes(
   app.post('/update/arm', {
     schema: {
       tags: ['Update'],
-      description: 'Pin the currently offered update and quiesce new work until the instance is idle. Operator only.',
+      description: 'Pin the currently offered update and quiesce new work until the instance is idle.',
       security: [{ bearerAuth: [] }, { sessionCookie: [] }],
       response: { 200: updateStateSchema.describe('The newly armed update and current drain-to-idle blockers.'), 409: errorResponse('No update is currently available to arm, or a previously armed one is already switching versions.') },
     },
@@ -96,7 +96,7 @@ export async function updateRoutes(
   app.delete('/update/arm', {
     schema: {
       tags: ['Update'],
-      description: 'Cancel an armed update and restore the Auto-Runner master switch to its pre-arm value. Operator only.',
+      description: 'Cancel an armed update and restore the Auto-Runner master switch to its pre-arm value.',
       security: [{ bearerAuth: [] }, { sessionCookie: [] }],
       response: {
         200: updateStateSchema.describe('The unarmed update state and current drain-to-idle blockers, or the unchanged state if the swap has already started stopping and hasn\'t yet.'),
@@ -112,7 +112,7 @@ export async function updateRoutes(
   app.post('/update/dismiss', {
     schema: {
       tags: ['Update'],
-      description: 'Dismiss the currently offered update until a newer version is published. Operator only.',
+      description: 'Dismiss the currently offered update until a newer version is published.',
       security: [{ bearerAuth: [] }, { sessionCookie: [] }],
       response: { 200: updateStateSchema.describe('The dismissed update and current drain-to-idle blockers.') },
     },
@@ -125,7 +125,7 @@ export async function updateRoutes(
   app.post('/update/check', {
     schema: {
       tags: ['Update'],
-      description: 'Check now for a newer published version instead of waiting for the hourly check. Operator only.',
+      description: 'Check now for a newer published version instead of waiting for the hourly check.',
       security: [{ bearerAuth: [] }, { sessionCookie: [] }],
       response: { 200: updateStateSchema.describe('The current offered and armed update, with drain-to-idle blockers.') },
     },

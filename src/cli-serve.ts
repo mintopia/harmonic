@@ -20,6 +20,7 @@ import { hasValidInstall, installVersion, readInstalledVersion, verifyInstall, t
 import { clearRollback, flipCurrent, markHealthy, readPending, readRollback, snapshotDatabase, writePending } from './upgrade/boot-state.js';
 import { startOperation } from './telemetry/operations.js';
 import { displayUrl, type CliOutcome } from './cli-commands.js';
+import { parseCorsOrigins } from './server/cors.js';
 import { createServiceManager, CURRENT_UNIT_REVISION, unitRevision } from './service-manager.js';
 
 export interface SystemdGuardRevisionDeps {
@@ -232,6 +233,7 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
     app = await buildApp({
       dataDir,
       password,
+      corsOrigins: parseCorsOrigins(process.env.HARMONIC_CORS_ORIGINS),
       migrationRequired,
       installMode,
       guardMissing,

@@ -10,6 +10,7 @@ import { ConversationStore } from '../domain/conversations.js';
 import { WorkspaceService } from '../domain/workspaces.js';
 import { PermissionRuleStore } from '../domain/permission-rules.js';
 import { EscalationService } from '../domain/escalation.js';
+import type { CorsPolicy } from './cors.js';
 import { SessionStore } from '../domain/sessions.js';
 import { WorktreeReconciler } from '../domain/worktree-reconciler.js';
 import { WorktreeInventory } from '../domain/worktree-inventory.js';
@@ -45,6 +46,8 @@ export interface AppOptions {
   configOverrides?: DeepPartial<AppConfig> | undefined;
   /** Set/update the operator password at boot; an empty string clears it (ungated). Undefined leaves it untouched. */
   password?: string | undefined;
+  /** Parsed `HARMONIC_CORS_ORIGINS` policy for cross-origin REST calls; `off` or absent disables CORS. */
+  corsOrigins?: CorsPolicy | undefined;
   /** Test-only Runner cadence overrides; absent uses production defaults. */
   runnerTuning?: { spendGuardrail?: { pollMs?: number; graceMs?: number } } | undefined;
   /** Event-loop stall monitor overrides; `enabled: false` turns the probe off. */

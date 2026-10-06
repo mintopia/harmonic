@@ -134,7 +134,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'Create a Conversation (an interactive, multi-turn exchange the operator drives with a Harness over ACP). Execution settings default from global config. Operator only; not reachable with an attempt-scoped key. The harness opens its ACP Session without submitting a Turn.',
+          'Create a Conversation (an interactive, multi-turn exchange the operator drives with a Harness over ACP). Execution settings default from global config. The harness opens its ACP Session without submitting a Turn.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: createConversationInputSchema,
         response: {
@@ -175,7 +175,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'List Conversations, newest first, optionally scoped to one Workspace. Operator only; not reachable with an attempt-scoped key.',
+          'List Conversations, newest first, optionally scoped to one Workspace.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         querystring: conversationsListQuerySchema.extend(paginationQuerySchema.shape),
         response: {
@@ -198,7 +198,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
     {
       schema: {
         tags: ['Conversations'],
-        description: 'Get one Conversation. Operator only; not reachable with an attempt-scoped key.',
+        description: 'Get one Conversation.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         response: {
@@ -216,7 +216,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'Update a Conversation title or permission mode. Pass title null to clear it and fall back to the title derived from the first Turn. Operator only; not reachable with an attempt-scoped key.',
+          'Update a Conversation title or permission mode. Pass title null to clear it and fall back to the title derived from the first Turn.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         body: updateConversationInputSchema,
@@ -253,7 +253,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'Delete a Conversation: stops the harness if warm, revokes its key, and cascades its events. Operator only; not reachable with an attempt-scoped key.',
+          'Delete a Conversation: stops the harness if warm, revokes its key, and cascades its events.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         response: {
@@ -277,7 +277,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          "Replay a Conversation's persisted events, in order — the same records streamed live over the WebSocket. Operator only; not reachable with an attempt-scoped key.",
+          "Replay a Conversation's persisted events, in order — the same records streamed live over the WebSocket.",
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         querystring: paginationQuerySchema,
@@ -300,7 +300,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'Send an operator Turn through its warm harness; the reply streams over the WebSocket. If a Turn is already running, the message is queued and sent as the next Turn (issue 14). An ended Conversation that still holds a stored session is reactivated and its ACP session reloaded (a cold resume). Operator only; not reachable with an attempt-scoped key.',
+          'Send an operator Turn through its warm harness; the reply streams over the WebSocket. If a Turn is already running, the message is queued and sent as the next Turn (issue 14). An ended Conversation that still holds a stored session is reactivated and its ACP session reloaded (a cold resume).',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         body: turnInputSchema,
@@ -327,7 +327,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'Steer a running Turn (issue 14): cancel the in-flight Turn via ACP session/cancel and re-prompt with `text` as the next Turn, or just stop it when `text` is empty. The cancelled Turn records a cancelled stop reason. Operator only; not reachable with an attempt-scoped key.',
+          'Steer a running Turn (issue 14): cancel the in-flight Turn via ACP session/cancel and re-prompt with `text` as the next Turn, or just stop it when `text` is empty. The cancelled Turn records a cancelled stop reason.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         body: interruptInputSchema,
@@ -353,7 +353,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          "Answer a Harness's held permission request in a Conversation (ADR-0007). `optionId` is the ACP option the operator chose — allow_once, the native allow_always ('Allow for this conversation'), or a reject option. Set `remember` to also persist a Permission Rule ('Always allow in {dir}') keyed on the tool kind + Working Directory. Operator only; not reachable with an attempt-scoped key.",
+          "Answer a Harness's held permission request in a Conversation (ADR-0007). `optionId` is the ACP option the operator chose — allow_once, the native allow_always ('Allow for this conversation'), or a reject option. Set `remember` to also persist a Permission Rule ('Always allow in {dir}') keyed on the tool kind + Working Directory.",
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: permissionParamsSchema,
         body: answerPermissionInputSchema,
@@ -375,7 +375,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          "Answer a Harness's held structured question (ACP form elicitation, e.g. AskUserQuestion) in a Conversation. `accept` carries the field answers keyed by field id; `decline` skips the question (the harness is told nothing was chosen); `cancel` aborts the asking tool call. Operator only; not reachable with an attempt-scoped key.",
+          "Answer a Harness's held structured question (ACP form elicitation, e.g. AskUserQuestion) in a Conversation. `accept` carries the field answers keyed by field id; `decline` skips the question (the harness is told nothing was chosen); `cancel` aborts the asking tool call.",
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: elicitationParamsSchema,
         body: answerElicitationInputSchema,
@@ -397,7 +397,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'End a Conversation: stop the harness and mark it ended (its transcript survives read-only). If it holds a stored session, a later Turn reactivates it and reloads that session as a cold resume. Operator only; not reachable with an attempt-scoped key.',
+          'End a Conversation: stop the harness and mark it ended (its transcript survives read-only). If it holds a stored session, a later Turn reactivates it and reloads that session as a cold resume.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         response: {

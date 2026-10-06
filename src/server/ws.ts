@@ -27,6 +27,8 @@ function latestChangeSender<TRow, TApi>(toApi: (row: TRow) => Promise<TApi>): {
   };
 }
 
+export const WS_HEARTBEAT_INTERVAL_MS = 30_000;
+
 /** One firehose socket at /api/ws: every event is broadcast to every client; clients filter. */
 export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promise<void> {
 
@@ -83,6 +85,10 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       ctx.bus.on('git_status', (payload) => send({ type: 'git_status', ...payload })),
     ];
     send({ type: 'host_load', load: ctx.hostLoad.current() });
+    let awaitingPong = false;
+    socket.on('pong', () => {
+      awaitingPong = false;
+    });
     if (hasWriteScope) {
       unsubscribes.push(
         ctx.bus.on('conversation_event', (event) => send({ type: 'conversation_event', event })),
@@ -135,7 +141,18 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       }
       replaying = false;
     });
+    // Browsers cannot observe protocol pings, so each tick also sends a `heartbeat` message clients can time out on.
+    const heartbeat = setInterval(() => {
+      if (awaitingPong) {
+        socket.terminate();
+        return;
+      }
+      awaitingPong = true;
+      socket.ping();
+      send({ type: 'heartbeat', intervalMs: WS_HEARTBEAT_INTERVAL_MS, ts: Date.now() });
+    }, WS_HEARTBEAT_INTERVAL_MS);
     socket.on('close', () => {
+      clearInterval(heartbeat);
       unsubscribeAttemptLog?.();
       unsubscribeCriticLog?.();
       unsubscribes.forEach((u) => u());

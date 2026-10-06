@@ -49,6 +49,21 @@ See [CLI](/harmonic/run/cli/) and
 `--host` options, and [Settings & overrides](/harmonic/run/settings/) for
 in-app Permission Rules.
 
+## Browser access from another site
+
+A separately hosted page, such as a dashboard that reads activity with an
+API key, needs its origin allowed before the browser will let it call the
+REST API. List those origins in `HARMONIC_CORS_ORIGINS`, comma-separated:
+
+```sh
+HARMONIC_CORS_ORIGINS='https://viewer.example.com' harmonic start
+```
+
+`*` allows any origin. Requests from an allowed origin still need an API
+key, and Harmonic never allows credentialed cross-origin requests, so the
+page can't use your login session. Give such pages a Read Key, which can
+view work but change nothing.
+
 ## Secret key backup
 
 Workspace tokens for Forgejo and Jira are encrypted with an instance key
