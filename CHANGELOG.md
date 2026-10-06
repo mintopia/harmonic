@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.25.0](https://github.com/mintopia/harmonic/compare/v2.24.0...v2.25.0) (2026-10-06)
+
+
+### Features
+
+* **api:** CORS allow-list, Read Key Workspace/Epic listing, WS heartbeat ([#812](https://github.com/mintopia/harmonic/issues/812)) ([e3fe656](https://github.com/mintopia/harmonic/commit/e3fe656128648f68c1c2220341db7ecab3e130d2))
+
 ## [2.24.0](https://github.com/mintopia/harmonic/compare/v2.23.0...v2.24.0) (2026-10-05)
 
 
