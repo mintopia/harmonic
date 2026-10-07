@@ -89,6 +89,24 @@ describe('lifecycleTimelineRows', () => {
     ]);
   });
 
+  it('shows a Routing Label route change with the deciding label and whether the Session was kept', () => {
+    const route = {
+      event: 'route-changed',
+      from: { harness: 'claude', model: 'claude-haiku-4-5-20251001' },
+      to: { harness: 'claude', model: 'claude-opus-5-5' },
+      label: 'reasoning',
+    };
+    const rows = lifecycleTimelineRows([
+      lifecycle(10, { ...route, sessionKept: true }),
+      lifecycle(20, { ...route, to: { harness: 'codex', model: '' }, sessionKept: false }),
+    ]);
+
+    expect(rows.map((row) => [row.label, row.detail])).toEqual([
+      ['Route changed: Claude claude-haiku-4-5-20251001 → Claude claude-opus-5-5', "label 'reasoning'; warm Session kept"],
+      ['Route changed: Claude claude-haiku-4-5-20251001 → Codex', "label 'reasoning'; fresh Session started"],
+    ]);
+  });
+
   it('makes an unattended permission-mode fallback visible', () => {
     const rows = lifecycleTimelineRows([
       lifecycle(10, {

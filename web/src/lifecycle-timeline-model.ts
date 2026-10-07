@@ -148,6 +148,18 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
       const n = num(payload?.attempt);
       return { label: n !== null ? `Continued as Attempt ${n}` : 'Continued', detail: null, tone: 'running', tag: null };
     }
+    case 'route-changed': {
+      const side = (value: unknown): string => {
+        const route = record(value);
+        const harness = text(route?.harness);
+        const model = text(route?.model);
+        return harness ? (model ? `${harnessLabel(harness)} ${model}` : harnessLabel(harness)) : 'default';
+      };
+      const label = text(payload?.label);
+      const session = payload?.sessionKept === true ? 'warm Session kept' : 'fresh Session started';
+      const via = label ? `label '${label}'; ` : '';
+      return { label: `Route changed: ${side(payload?.from)} → ${side(payload?.to)}`, detail: `${via}${session}`, tone: 'neutral', tag: null };
+    }
     case 'session-reloaded':
       return { label: 'Resumed prior session', detail: null, tone: 'neutral', tag: null };
     case 'session-reload-declined':
