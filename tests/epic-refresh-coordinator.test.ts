@@ -289,6 +289,61 @@ describe('epic refresh corrective turn (issue #315)', () => {
       return { outcome, driveCalls, escalations };
     }
 
+    async function resolveOn(epicLabels: string[], config = routedConfig()) {
+      const routedTasks = new TaskService(asyncDb, () => config, allWorkspaces(asyncDb, settingsStore));
+      const workspace = await new WorkspaceService(asyncDb, settingsStore).create({ name: 'Routed resolve', workingDir: repo });
+      await mirrorScan(routedTasks, [ticket({ ref: trackerRef(5), labels: epicLabels }), ticket({ ref: trackerRef(6), parent: trackerRef(5), labels: ['cheap'] })], workspace.id);
+      const attempts = new AttemptStore(asyncDb);
+      const attempt = await attempts.createForEpic({ workspaceId: workspace.id, epicRef: trackerRef(5) });
+      const liveWorktree = join(dir, 'epic-routed-resolve');
+      git(repo, 'worktree', 'add', liveWorktree, 'epic/5');
+      const driveCalls: CriticDriveRequest[] = [];
+      const runner = new Runner(routedTasks, asyncDb, () => config, {
+        ...executionPlumbing(),
+        worktreesDir: join(dir, 'worktrees'),
+        criticDrive: {
+          run: async (req) => {
+            driveCalls.push(req);
+            writeFileSync(join(req.cwd, 'resolved.txt'), 'fixed\n');
+            git(req.cwd, 'add', 'resolved.txt');
+            git(req.cwd, 'commit', '-m', 'Resolve verification');
+            return { output: 'fixed', permissionRequests: [] };
+          },
+        },
+      });
+      const result = await runner.resolveEpicVerification({
+        workspaceId: workspace.id,
+        epicRef: trackerRef(5),
+        repoDir: repo,
+        worktreePath: liveWorktree,
+        attempt,
+        verifiedHeadOid: git(repo, 'rev-parse', 'epic/5'),
+        verificationReason: 'tests red',
+        resolvePrompt: 'Fix it',
+      }).then(() => null, (err: unknown) => err as Error);
+      return { driveCalls, error: result };
+    }
+
+    it('the Epic resolve turn runs on the reasoning route while a cheap-labelled member exists', async () => {
+      const { driveCalls, error } = await resolveOn(['epic', 'reasoning']);
+      expect(error).toBeNull();
+      expect(driveCalls.map((c) => [c.harnessId, c.model])).toEqual([['claude', 'claude-opus-5-5']]);
+    });
+
+    it('an unlabelled Epic resolves on the defaults regardless of its cheap-labelled member', async () => {
+      const config = routedConfig();
+      const { driveCalls } = await resolveOn(['epic'], config);
+      expect(driveCalls.map((c) => [c.harnessId, c.model])).toEqual([[config.defaults.harness, config.harnesses[config.defaults.harness]!.defaultModel]]);
+    });
+
+    it('the Epic resolve turn fails naming the label when its routed Harness is not configured', async () => {
+      const config = routedConfig();
+      delete (config.harnesses as Record<string, unknown>).claude;
+      const { driveCalls, error } = await resolveOn(['epic', 'reasoning'], config);
+      expect(driveCalls).toEqual([]);
+      expect(error?.message).toContain("routed by label 'reasoning'");
+    });
+
     it('an Epic labelled reasoning refreshes on the reasoning route while its member is labelled cheap', async () => {
       const { driveCalls, escalations } = await refreshOn(['epic', 'reasoning']);
       expect(escalations).toEqual([]);

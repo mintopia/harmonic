@@ -202,6 +202,29 @@ describe('merge-conflict resolver prompts are archived (ADR-0047)', () => {
     expect(sentRoutes).toEqual([{ harnessId: 'claude', model: 'claude-opus-5-5' }]);
   });
 
+  it('escalates the Epic integration conflict without driving a turn when the routed Harness is not configured', async () => {
+    sentPrompts.length = 0;
+    const repo = await conflictedRepo('epic/10');
+    const dataDir = tmp('harmonic-conflict-archive-data-');
+    const outcome = await coordinator(dataDir, {
+      attempts: { listForEpic: async () => [], addAgentDuration: vi.fn(async () => {}), appendEvent: vi.fn(async () => ({})) },
+      listWorkingTasks: async () => [],
+      epicRoute: async () => ({ harness: 'missing-harness', model: 'm', label: 'reasoning' }),
+      epicMergeEvents: { append: async () => {} },
+      onEpicMergeStep: () => {},
+    } as never).mergeEpicIntegration({
+      workspaceId: 4,
+      repoDir: repo,
+      epicRef: trackerRef(10),
+      defaultBranch: 'main',
+      integrationBranch: 'epic/10',
+      runPostMergeCheck: async () => ({ pass: true, output: '' }),
+    });
+
+    expect(outcome).toMatchObject({ kind: 'escalated', reason: 'conflict' });
+    expect(sentPrompts).toEqual([]);
+  });
+
   it('still resolves the conflict when the Archive write fails', async () => {
     sentPrompts.length = 0;
     const repo = await conflictedRepo('task-2');
