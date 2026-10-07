@@ -270,6 +270,14 @@ export const redactPatternSchema = z.object({
 export type RedactPattern = z.infer<typeof redactPatternSchema>;
 export const redactPatternsSchema = z.array(redactPatternSchema);
 
+export const routingLabelSchema = z.object({
+  label: z.string().trim().min(1).meta({ example: 'reasoning' }),
+  harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }),
+  /** Empty means the Harness's default model; ids are not validated against the catalog. */
+  model: z.string().meta({ example: 'claude-opus-5-5' }),
+});
+export type RoutingLabel = z.infer<typeof routingLabelSchema>;
+
 export const appConfigSchema = z.object({
   /** Operator-chosen display name; feeds the sidebar heading and browser title. Empty (the default) falls back to "Harmonic". */
   name: z.string().meta({ example: 'Production' }),
@@ -292,6 +300,8 @@ export const appConfigSchema = z.object({
     /** Agentic resolve-turns a rebase conflict gets before it escalates; 0 escalates on the first conflict. */
     conflictResolveTurns: z.number().int().min(0).meta({ example: 2 }),
   }),
+  /** Ordered tracker-label → Harness + Model mappings for mirrored Tickets (ADR-0049); the first match in list order wins. */
+  routingLabels: z.array(routingLabelSchema).meta({ example: [{ label: 'reasoning', harness: 'claude', model: 'claude-opus-5-5' }] }),
   /** The default Harness and model a new Conversation starts with; a Workspace stores `null` to inherit. */
   chat: z.object({
     harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }),
@@ -408,6 +418,17 @@ export const appConfigSchema = z.object({
       message: `chat model must be one of the ${config.chat.harness} harness's models`,
     });
   }
+  const seenRoutingLabels = new Set<string>();
+  config.routingLabels.forEach((route, i) => {
+    const key = route.label.toLowerCase();
+    if (seenRoutingLabels.has(key)) {
+      ctx.addIssue({ code: 'custom', path: ['routingLabels', i, 'label'], message: `routing label "${route.label}" is already mapped` });
+    }
+    seenRoutingLabels.add(key);
+    if (!config.harnesses[route.harness]) {
+      ctx.addIssue({ code: 'custom', path: ['routingLabels', i, 'harness'], message: `harness ${route.harness} is not configured` });
+    }
+  });
   const unpriced = unpricedModelsForCostCap(config.guardrails.budget, config);
   if (unpriced.length > 0) {
     ctx.addIssue({

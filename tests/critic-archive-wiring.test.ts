@@ -162,6 +162,33 @@ describe('Critic Step archive wiring (#730)', () => {
       rmSync(repoDir, { recursive: true, force: true });
     });
 
+    it('runs a harness-less post-merge critic on the unrouted Harness, not the Task routed one', async () => {
+      const settingsStore = await makeSettingsStore(dir);
+      const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
+      const attempts = new AttemptStore(asyncDb);
+      const task = await tasks.create({ prompt: 'routed', state: 'ready', workingDir: repoDir, isolationMode: 'direct' });
+      const run = await attempts.create(task.id);
+      const ws = { taskPostMergeCommands: null, taskPostMergeCritics: JSON.stringify(twoCritics.slice(0, 1)), taskPreMergeCommands: null, taskPreMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null, ...NO_PROMPT_FRAGMENT_OVERRIDES };
+      const verificationAttempts = new VerificationAttemptStore(asyncDb);
+      const transcripts = new TranscriptCapture(new SessionStore(asyncDb), verificationAttempts, () => criticConfig(logDir));
+      const harnessIds: string[] = [];
+      const check = createPostMergeCheck({
+        ...executionPlumbing(),
+        getWorkspace: async () => ws,
+        getConfig: () => criticConfig(logDir),
+        unroutedHarness: async () => 'claude',
+        verificationAttempts,
+        attempts,
+        criticDrive: { run: (request) => { harnessIds.push(request.harnessId); return drive.run(request); } },
+        transcripts,
+      });
+
+      await check({ task: { ...task, harness: 'codex' }, run, mergeOid: git(repoDir, 'rev-parse', 'HEAD'), baseDir: repoDir });
+
+      expect(harnessIds).toEqual(['claude']);
+      transcripts.close();
+    });
+
     it('writes post-merge critic Steps as critic-<n> under verification/post-merge', async () => {
       const settingsStore = await makeSettingsStore(dir);
       const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
@@ -178,6 +205,7 @@ describe('Critic Step archive wiring (#730)', () => {
         ...executionPlumbing(),
         getWorkspace: async () => ws,
         getConfig: () => criticConfig(logDir),
+        unroutedHarness: async () => 'claude',
         verificationAttempts,
         attempts,
         criticDrive: { run: (request) => { timeouts.push(request.timeoutMs); return drive.run(request); } },

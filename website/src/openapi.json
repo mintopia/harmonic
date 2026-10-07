@@ -2408,6 +2408,32 @@
               }
             ]
           },
+          "routing": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "applied": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "label",
+                  "applied"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "label": "reasoning",
+              "applied": true
+            }
+          },
           "url": {
             "anyOf": [
               {
@@ -2607,6 +2633,7 @@
           "overrides",
           "summary",
           "cost",
+          "routing",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -2942,6 +2969,32 @@
               }
             ]
           },
+          "routing": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "applied": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "label",
+                  "applied"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "label": "reasoning",
+              "applied": true
+            }
+          },
           "url": {
             "anyOf": [
               {
@@ -3140,6 +3193,7 @@
           "overrides",
           "summary",
           "cost",
+          "routing",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -3460,6 +3514,32 @@
               }
             ]
           },
+          "routing": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "applied": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "label",
+                  "applied"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "label": "reasoning",
+              "applied": true
+            }
+          },
           "url": {
             "anyOf": [
               {
@@ -3660,6 +3740,7 @@
           "overrides",
           "summary",
           "cost",
+          "routing",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -7727,6 +7808,45 @@
               }
             }
           },
+          "routingLabels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "reasoning"
+                },
+                "harness": {
+                  "type": "string",
+                  "enum": [
+                    "claude",
+                    "codex",
+                    "copilot",
+                    "opencode"
+                  ],
+                  "example": "claude"
+                },
+                "model": {
+                  "type": "string",
+                  "example": "claude-opus-5-5"
+                }
+              },
+              "required": [
+                "label",
+                "harness",
+                "model"
+              ]
+            },
+            "example": [
+              {
+                "label": "reasoning",
+                "harness": "claude",
+                "model": "claude-opus-5-5"
+              }
+            ]
+          },
           "chat": {
             "type": "object",
             "properties": {
@@ -11696,6 +11816,33 @@
               }
             ]
           },
+          "routing": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "applied": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "label",
+                  "applied"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "label": "reasoning",
+              "applied": true
+            }
+          },
           "url": {
             "anyOf": [
               {
@@ -11895,6 +12042,7 @@
           "overrides",
           "summary",
           "cost",
+          "routing",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -12232,6 +12380,33 @@
               }
             ]
           },
+          "routing": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "applied": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "label",
+                  "applied"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "label": "reasoning",
+              "applied": true
+            }
+          },
           "url": {
             "anyOf": [
               {
@@ -12430,6 +12605,7 @@
           "overrides",
           "summary",
           "cost",
+          "routing",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -12752,6 +12928,33 @@
               }
             ]
           },
+          "routing": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "applied": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "label",
+                  "applied"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "label": "reasoning",
+              "applied": true
+            }
+          },
           "url": {
             "anyOf": [
               {
@@ -12952,6 +13155,7 @@
           "overrides",
           "summary",
           "cost",
+          "routing",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -17129,6 +17333,46 @@
               }
             },
             "additionalProperties": false
+          },
+          "routingLabels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "reasoning"
+                },
+                "harness": {
+                  "type": "string",
+                  "enum": [
+                    "claude",
+                    "codex",
+                    "copilot",
+                    "opencode"
+                  ],
+                  "example": "claude"
+                },
+                "model": {
+                  "type": "string",
+                  "example": "claude-opus-5-5"
+                }
+              },
+              "required": [
+                "label",
+                "harness",
+                "model"
+              ],
+              "additionalProperties": false
+            },
+            "example": [
+              {
+                "label": "reasoning",
+                "harness": "claude",
+                "model": "claude-opus-5-5"
+              }
+            ]
           },
           "chat": {
             "type": "object",
@@ -25785,6 +26029,46 @@
                       ],
                       "additionalProperties": false
                     },
+                    "routingLabels": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "reasoning"
+                          },
+                          "harness": {
+                            "type": "string",
+                            "enum": [
+                              "claude",
+                              "codex",
+                              "copilot",
+                              "opencode"
+                            ],
+                            "example": "claude"
+                          },
+                          "model": {
+                            "type": "string",
+                            "example": "claude-opus-5-5"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "harness",
+                          "model"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "label": "reasoning",
+                          "harness": "claude",
+                          "model": "claude-opus-5-5"
+                        }
+                      ]
+                    },
                     "chat": {
                       "type": "object",
                       "properties": {
@@ -26834,6 +27118,7 @@
                     "name",
                     "harnesses",
                     "defaults",
+                    "routingLabels",
                     "chat",
                     "autoRunner",
                     "agentMessages",
@@ -27097,6 +27382,46 @@
                       ],
                       "additionalProperties": false
                     },
+                    "routingLabels": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "reasoning"
+                          },
+                          "harness": {
+                            "type": "string",
+                            "enum": [
+                              "claude",
+                              "codex",
+                              "copilot",
+                              "opencode"
+                            ],
+                            "example": "claude"
+                          },
+                          "model": {
+                            "type": "string",
+                            "example": "claude-opus-5-5"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "harness",
+                          "model"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "label": "reasoning",
+                          "harness": "claude",
+                          "model": "claude-opus-5-5"
+                        }
+                      ]
+                    },
                     "chat": {
                       "type": "object",
                       "properties": {
@@ -28146,6 +28471,7 @@
                     "name",
                     "harnesses",
                     "defaults",
+                    "routingLabels",
                     "chat",
                     "autoRunner",
                     "agentMessages",
@@ -28384,6 +28710,45 @@
                       "isolationMode",
                       "priority",
                       "conflictResolveTurns"
+                    ]
+                  },
+                  "routingLabels": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "reasoning"
+                        },
+                        "harness": {
+                          "type": "string",
+                          "enum": [
+                            "claude",
+                            "codex",
+                            "copilot",
+                            "opencode"
+                          ],
+                          "example": "claude"
+                        },
+                        "model": {
+                          "type": "string",
+                          "example": "claude-opus-5-5"
+                        }
+                      },
+                      "required": [
+                        "label",
+                        "harness",
+                        "model"
+                      ]
+                    },
+                    "example": [
+                      {
+                        "label": "reasoning",
+                        "harness": "claude",
+                        "model": "claude-opus-5-5"
+                      }
                     ]
                   },
                   "chat": {
@@ -29381,6 +29746,7 @@
                   "name",
                   "harnesses",
                   "defaults",
+                  "routingLabels",
                   "chat",
                   "autoRunner",
                   "agentMessages",
@@ -29624,6 +29990,46 @@
                         "conflictResolveTurns"
                       ],
                       "additionalProperties": false
+                    },
+                    "routingLabels": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "reasoning"
+                          },
+                          "harness": {
+                            "type": "string",
+                            "enum": [
+                              "claude",
+                              "codex",
+                              "copilot",
+                              "opencode"
+                            ],
+                            "example": "claude"
+                          },
+                          "model": {
+                            "type": "string",
+                            "example": "claude-opus-5-5"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "harness",
+                          "model"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "label": "reasoning",
+                          "harness": "claude",
+                          "model": "claude-opus-5-5"
+                        }
+                      ]
                     },
                     "chat": {
                       "type": "object",
@@ -30674,6 +31080,7 @@
                     "name",
                     "harnesses",
                     "defaults",
+                    "routingLabels",
                     "chat",
                     "autoRunner",
                     "agentMessages",
@@ -30932,6 +31339,46 @@
                           ],
                           "additionalProperties": false
                         },
+                        "routingLabels": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "reasoning"
+                              },
+                              "harness": {
+                                "type": "string",
+                                "enum": [
+                                  "claude",
+                                  "codex",
+                                  "copilot",
+                                  "opencode"
+                                ],
+                                "example": "claude"
+                              },
+                              "model": {
+                                "type": "string",
+                                "example": "claude-opus-5-5"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "harness",
+                              "model"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "example": [
+                            {
+                              "label": "reasoning",
+                              "harness": "claude",
+                              "model": "claude-opus-5-5"
+                            }
+                          ]
+                        },
                         "chat": {
                           "type": "object",
                           "properties": {
@@ -31981,6 +32428,7 @@
                         "name",
                         "harnesses",
                         "defaults",
+                        "routingLabels",
                         "chat",
                         "autoRunner",
                         "agentMessages",
@@ -32210,6 +32658,46 @@
                           ],
                           "additionalProperties": false
                         },
+                        "routingLabels": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "reasoning"
+                              },
+                              "harness": {
+                                "type": "string",
+                                "enum": [
+                                  "claude",
+                                  "codex",
+                                  "copilot",
+                                  "opencode"
+                                ],
+                                "example": "claude"
+                              },
+                              "model": {
+                                "type": "string",
+                                "example": "claude-opus-5-5"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "harness",
+                              "model"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "example": [
+                            {
+                              "label": "reasoning",
+                              "harness": "claude",
+                              "model": "claude-opus-5-5"
+                            }
+                          ]
+                        },
                         "chat": {
                           "type": "object",
                           "properties": {
@@ -33259,6 +33747,7 @@
                         "name",
                         "harnesses",
                         "defaults",
+                        "routingLabels",
                         "chat",
                         "autoRunner",
                         "agentMessages",
@@ -33550,6 +34039,46 @@
                       ],
                       "additionalProperties": false
                     },
+                    "routingLabels": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "reasoning"
+                          },
+                          "harness": {
+                            "type": "string",
+                            "enum": [
+                              "claude",
+                              "codex",
+                              "copilot",
+                              "opencode"
+                            ],
+                            "example": "claude"
+                          },
+                          "model": {
+                            "type": "string",
+                            "example": "claude-opus-5-5"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "harness",
+                          "model"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "label": "reasoning",
+                          "harness": "claude",
+                          "model": "claude-opus-5-5"
+                        }
+                      ]
+                    },
                     "chat": {
                       "type": "object",
                       "properties": {
@@ -34599,6 +35128,7 @@
                     "name",
                     "harnesses",
                     "defaults",
+                    "routingLabels",
                     "chat",
                     "autoRunner",
                     "agentMessages",

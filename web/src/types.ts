@@ -590,6 +590,8 @@ export interface Task {
     priority: 'high' | 'normal' | 'low' | null;
     conflictResolveTurns: number | null;
   };
+  /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. */
+  routing: { label: string; applied: boolean } | null;
   state: TaskState;
   /** Why the ticket is `escalated` — the trigger's recorded reason; null in every other state. */
   escalationReason: string | null;
@@ -1160,6 +1162,7 @@ export interface AppConfig {
     harness: string;
     model: string;
   };
+  routingLabels: { label: string; harness: string; model: string }[];
   autoRunner: { enabled: boolean; maxConcurrentAttempts: number };
   agentMessages: { enabled: boolean; sendCap: number };
   /** Per-stage command and critic verifier lists. */

@@ -157,10 +157,16 @@ function PauseResumeButton({ task }: { task: Task }) {
   );
 }
 
-function WhoLine({ harness, model }: { harness: string; model: string }) {
+function WhoLine({ harness, model, routedBy }: { harness: string; model: string; routedBy?: string }) {
   return (
     <span className="min-w-0 truncate text-small text-muted">
       {providerLabel(harness)} · {formatModelLabel(model)}
+      {routedBy && (
+        <span className="text-faint">
+          {' '}
+          · via <code className="font-data text-[11px] text-tool">{routedBy}</code>
+        </span>
+      )}
     </span>
   );
 }
@@ -241,7 +247,7 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
           {task.origin === 'mirrored' && (
             <span className="shrink-0 rounded-[3px] bg-raised px-1.5 py-0.5 text-label font-medium text-muted">mirrored</span>
           )}
-          <WhoLine harness={task.harness} model={task.model} />
+          <WhoLine harness={task.harness} model={task.model} routedBy={task.routing?.applied ? task.routing.label : undefined} />
         </div>
         {task.escalationReason && (
           <div className="mt-1.5 line-clamp-2 text-[12.5px] text-await" title={task.escalationReason}>

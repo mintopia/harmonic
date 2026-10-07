@@ -26,6 +26,7 @@ export function SettingsForm({
   saving,
   error,
   onSave,
+  saveDisabled,
   onDiscard,
   headerActions,
   children,
@@ -40,6 +41,7 @@ export function SettingsForm({
   saving: boolean;
   error: string | null;
   onSave: () => void;
+  saveDisabled?: boolean;
   onDiscard: () => void;
   /** Extra out-of-panel content, e.g. the workspace delete confirm dialog. */
   children?: ReactNode;
@@ -85,7 +87,7 @@ export function SettingsForm({
         })}
       </div>
 
-      {dirty && <FloatingSaveBar error={error} saving={saving} onDiscard={onDiscard} onSave={onSave} />}
+      {dirty && <FloatingSaveBar error={error} saving={saving} onDiscard={onDiscard} onSave={onSave} saveDisabled={saveDisabled} />}
 
       {children}
     </div>

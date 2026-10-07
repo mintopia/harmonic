@@ -75,6 +75,7 @@ defaults:
   isolationMode: direct
   priority: normal
   conflictResolveTurns: 2
+routingLabels: []
 chat:
   harness: claude
   model: claude-sonnet-5-5
