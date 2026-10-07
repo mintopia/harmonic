@@ -395,11 +395,9 @@ export class VerificationCoordinator {
     const config = this.deps.getConfig();
     const resolver = resolveEpicResolverPrompts(await this.deps.getWorkspace?.(input.workspaceId), config);
     const branch = integrationBranchName(input.epicRef);
-    const host = (await this.deps.taskService.list({ state: 'working' })).find((task) => task.baseBranch === branch);
-    const harnessId = host?.harness ?? config.defaults.harness;
+    const { harness: harnessId, model, label } = await this.deps.taskService.epicRoute(input.workspaceId, input.epicRef);
     const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
-    if (!harness) throw new Error(`harness '${harnessId}' is not configured for Epic verification resolution`);
-    const model = host?.model ?? harness.defaultModel;
+    if (!harness) throw new Error(`harness '${harnessId}'${label ? ` (routed by label '${label}')` : ''} is not configured for Epic verification resolution`);
     const worktreePath = input.worktreePath;
 
     const step = await this.deps.attempts.createStep(input.attempt.id, { type: 'implementation' });

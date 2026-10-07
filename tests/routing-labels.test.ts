@@ -226,4 +226,40 @@ describe('Routing Labels (ADR-0049)', () => {
       expect(parse([{ label: '  ', harness: 'claude', model: '' }]).success).toBe(false);
     });
   });
+  describe('Epic route (ADR-0049)', () => {
+    const epic = async (ref: number, labels: string[], memberLabels: string[]) => {
+      const member = { ...ticket(ref + 1, memberLabels), parent: trackerRef(ref) };
+      await mirrorScan(tasks, [ticket(ref, labels), member], wsId);
+      return trackerRef(ref);
+    };
+
+    it('an Epic labelled reasoning routes to reasoning even when its member is labelled cheap', async () => {
+      const epicRef = await epic(10, ['epic', 'reasoning'], ['cheap']);
+      expect(await tasks.epicRoute(wsId, epicRef)).toEqual({ harness: 'claude', model: 'claude-opus-5-5', label: 'reasoning' });
+    });
+
+    it('an unlabelled Epic uses the defaults regardless of its members', async () => {
+      const epicRef = await epic(12, ['epic'], ['reasoning']);
+      expect(await tasks.epicRoute(wsId, epicRef)).toEqual({ harness: 'claude', model: 'claude-sonnet-5-5', label: null });
+    });
+
+    it('a route with an empty model uses the Harness default model', async () => {
+      const epicRef = await epic(14, ['epic', 'cheap'], []);
+      const route = await tasks.epicRoute(wsId, epicRef);
+      expect(route).toMatchObject({ harness: 'codex', label: 'cheap' });
+      expect(route.model).toBe(config.harnesses.codex!.defaultModel);
+    });
+
+    it('reads the labels of an Epic persisted as a tracker container', async () => {
+      await tasks.syncTrackerContainers(wsId, [{
+        trackerRef: trackerRef(20),
+        facts: { state: 'open', parent: null, blockedBy: [], labels: ['Reasoning'], title: 'Epic', body: '', url: 'u', createdAt: '2026-08-07T00:00:00Z' },
+      }]);
+      expect(await tasks.epicRoute(wsId, trackerRef(20))).toMatchObject({ harness: 'claude', model: 'claude-opus-5-5', label: 'reasoning' });
+    });
+
+    it('an Epic with no stored row falls back to the defaults', async () => {
+      expect(await tasks.epicRoute(wsId, trackerRef(99))).toMatchObject({ harness: 'claude', label: null });
+    });
+  });
 });
