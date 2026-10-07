@@ -196,6 +196,25 @@ column one, this tracker's label in column two), else the instance defaults
 resolves independently.
 _Avoid_: hard-coded labels, label names
 
+**Routing Label**:
+An operator-defined tracker label that picks a mirrored Ticket's execution
+settings — today a **Harness + Model** pair (e.g. `reasoning` → Claude, Opus
+5.5); the set of settings a Routing Label may carry can grow. Defined globally
+as an **ordered list** that a Workspace overlays additively — it may reorder or
+disable global entries and add its own, never edit a global one; a label is
+unique within the resolved list. When an issue
+carries several, the first in the list wins, and the Ticket shows which label
+decided. Labels match case-insensitively. Precedence: an operator's explicit
+setting on the Ticket, then the Routing Label, then the Workspace default, then
+the global default. Re-resolved at every Attempt start, so relabelling an
+escalated Ticket retries it on the new route; an Attempt in flight is never
+re-routed. A route whose Harness is unavailable escalates the Ticket rather
+than falling back. An Epic is routed by its own labels; Critics are never
+routed. Distinct from Triage Labels, which mark workflow roles, not execution
+settings. Native Tasks carry no labels, so are never routed. (ADR-0049.)
+_Avoid_: agent label (an Agent is a running Session, not a configured choice),
+harness label, model label, profile
+
 **Secret**:
 A per-Workspace named credential (a Forgejo token, a Jira API token) stored
 encrypted at rest and never readable back through the API or UI — only

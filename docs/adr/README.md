@@ -95,6 +95,7 @@ is historical and retains the terminology used at the reset.
 | 0046 | [Tracker selection, Code Repository, and Secrets](0046-tracker-selection-code-repository-and-secrets.md) |
 | 0047 | [Prompt Fragments are operator-editable and Resolved Prompts are visible](0047-prompt-fragments-are-editable-and-resolved-prompts-are-visible.md) |
 | 0048 | [Closing the ticket after a Merge is best-effort and retried](0048-ticket-close-after-merge-is-best-effort-and-retried.md) |
+| 0049 | [Routing Labels pick a Ticket's Harness and Model](0049-routing-labels-pick-a-tickets-harness-and-model.md) |
 
 ## Where every pre-reset ADR went
 
