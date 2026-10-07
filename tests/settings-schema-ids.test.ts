@@ -25,6 +25,7 @@ function makeConfig(): AppConfig {
     drive: { prompt: '', unattendedReminder: '', continuePrompt: '', commitNudge: '', mergeFate: 'auto-merge', continueAttempts: 0 },
     maxAttempts: 3,
     contextReuseTokenLimit: 100_000,
+    routingLabels: [],
     editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
     pauseMessage: 'Pause.',

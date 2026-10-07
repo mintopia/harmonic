@@ -85,6 +85,8 @@ CREATE TABLE `attempts` (
 	`live_usage` text,
 	`guardrail_config` text,
 	`price_table` text,
+	`harness` text,
+	`model` text,
 	`detail` text,
 	`pull_request_url` text,
 	FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE no action,

@@ -193,6 +193,7 @@ export class Runner {
         commandSpawn: this.commandSpawn,
         fireAndForget: this.fireAndForget,
         getConfig: this.getConfig,
+        unroutedHarness: (taskId) => this.taskService.unroutedHarness(taskId),
         getWorkspace: async (workspaceId) => this.getWorkspace?.(workspaceId),
         verificationAttempts: this.verificationAttempts,
         attempts: this.attempts,
@@ -525,7 +526,11 @@ export class Runner {
       }
       const config = this.getConfig();
       const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
-      if (!harness) throw new DomainError('validation', `harness '${task.harness}' is not configured`);
+      if (!harness) {
+        const route = await this.taskService.routingFor(task.id);
+        const via = route?.applied ? ` (routed by label '${route.label}')` : '';
+        throw new DomainError('validation', `harness '${task.harness}'${via} is not configured`);
+      }
       const ws = (await this.getWorkspace?.(task.workspaceId)) ?? { guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null };
       const snapshot: AttemptGuardrailSnapshot = {
         guardrailConfig: resolveGuardrails(ws, config),
@@ -540,9 +545,11 @@ export class Runner {
             detail: null,
             guardrailConfig: JSON.stringify(snapshot.guardrailConfig),
             priceTable: JSON.stringify(snapshot.priceTable),
+            harness: resumedAttempt.harness ?? task.harness,
+            model: resumedAttempt.model ?? task.model,
             ...(task.continuationChoice === 'condensed' ? { sessionRowId: null, sessionId: null } : {}),
           })
-        : await this.attempts.create(task.id, snapshot);
+        : await this.attempts.create(task.id, snapshot, { harness: task.harness, model: task.model });
       const pendingContinuation = this.activeRuns.takePendingContinuation(task.id);
       if (pendingContinuation !== undefined) {
         await this.attempts.setContinuation(created.id, pendingContinuation);

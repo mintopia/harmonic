@@ -67,7 +67,7 @@ const task = (
   verifiedRef: null,
   hasCandidate: false,
   wallClockDeadline: null,
-  skipReason: null,
+  skipReason: null, routing: null,
   ...extra,
 });
 

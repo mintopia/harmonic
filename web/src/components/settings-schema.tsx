@@ -34,6 +34,7 @@ import { CodeRepositorySection, IssueTrackerSection, TriageLabelsSection } from 
 import { HarnessesSection } from './HarnessSettings';
 import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
+import { RoutingLabelsEditor } from './RoutingLabelsEditor';
 import { SecuritySection } from './SecuritySection';
 import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection } from './ArchiveExportSettings';
 import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './VerificationSettings';
@@ -1323,6 +1324,18 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     },
     body: (ctx) =>
       grid(twoColGrid(ctx.surface), [taskHarness, taskModel, isolationMode, priority, conflictResolveTurns], ctx),
+  },
+  {
+    tab: 'execution',
+    surfaces: ['global'],
+    title: 'Routing Labels',
+    wide: true,
+    description:
+      'Map a tracker label to a Harness and Model. When an issue carries several routing labels, the first one in this list wins.',
+    body: (ctx) =>
+      ctx.surface === 'global' ? (
+        <RoutingLabelsEditor items={ctx.config.routingLabels} config={ctx.config} onChange={(routingLabels) => ctx.setConfig({ ...ctx.config, routingLabels })} />
+      ) : null,
   },
   {
     tab: 'execution',

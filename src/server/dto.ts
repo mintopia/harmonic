@@ -409,6 +409,8 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'isolationMode' | 'prio
     isolationMode: IsolationMode | null;
     priority: Priority | null;
   };
+  /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. Null when none matches. */
+  routing: { label: string; applied: boolean } | null;
   /** The prompt's first line, bounded; the full `prompt` is item-GET-only. */
   summary: string;
   cost: Cost | null;
@@ -501,6 +503,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListR
     humanOnly: true,
     isEpic: true,
     overrides: { harness: null, model: null, isolationMode: null, priority: null, conflictResolveTurns: null },
+    routing: null,
     summary: ticket.title,
     cost: null,
     url: ticket.url,

@@ -53,6 +53,8 @@ const attemptRow = (over: Partial<TaskAttemptRow> = {}): TaskAttemptRow => ({
   liveUsage: null,
   guardrailConfig: null,
   priceTable: null,
+  harness: null,
+  model: null,
   detail: null,
   ...over,
 });
@@ -106,6 +108,7 @@ const taskWithDeps = (over: Partial<TaskWithDeps> = {}): TaskWithDeps => ({
   humanOnly: false,
   isEpic: false,
   overrides,
+  routing: null,
   ...over,
 });
 

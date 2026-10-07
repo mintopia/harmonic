@@ -8,7 +8,7 @@ import { useLiveEffect } from '../useLiveEffect.js';
 
 const fieldLabel = `mb-1 block ${labelType} text-muted`;
 
-export function DiscoveryModelPicker({ harness, value, options, id, onChange }: { harness: string; value: string; options: string[]; id: string; onChange: (model: string) => void }) {
+export function DiscoveryModelPicker({ harness, value, options, id, onChange, compact, ariaLabel }: { harness: string; value: string; options: string[]; id: string; onChange: (model: string) => void; compact?: boolean; ariaLabel?: string }) {
   const [provider, setProvider] = useState('');
   const providers = useAsyncResource(() => api.harnessProviders(harness), [harness]);
   const models = useAsyncResource(provider ? () => api.harnessModels(harness, provider) : null, [harness, provider]);
@@ -31,7 +31,7 @@ export function DiscoveryModelPicker({ harness, value, options, id, onChange }: 
           {providers.error && <LoadErrorNote message={providers.error} onRetry={providers.reload} />}
         </div>
       )}
-      <ModelCombobox id={id} value={value} onChange={onChange} options={[...new Set([...options, ...modelList.map((model) => model.id)])]} />
+      <ModelCombobox id={id} compact={compact} ariaLabel={ariaLabel} value={value} onChange={onChange} options={[...new Set([...options, ...modelList.map((model) => model.id)])]} />
       {models.error && <LoadErrorNote message={`${models.error} — only curated models are listed`} onRetry={models.reload} />}
     </>
   );

@@ -301,7 +301,7 @@ export class VerificationCoordinator {
       if (!oid) {
         verdicts.push(await this.noVerifiedHeadVerdict(task, 'critic', record));
       } else {
-        const criticHarnessId = critic.harness ?? task.harness;
+        const criticHarnessId = critic.harness ?? await this.deps.taskService.unroutedHarness(task.id);
         const criticHarness = this.resolveCriticHarness(config, criticHarnessId);
         const baseOid =
           run.branch && run.baseBranch

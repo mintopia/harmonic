@@ -87,6 +87,29 @@ describe('PATCH /api/config verification', () => {
     expect(patched.body.verify.task.preMerge.commands[0].timeoutSeconds).toBe(600);
   });
 
+  it('round-trips routingLabels through PATCH and refuses case-insensitive duplicates (ADR-0049)', async () => {
+    const patched = await server.api('PATCH', '/api/config', {
+      routingLabels: [{ label: 'reasoning', harness: 'claude', model: 'claude-opus-5-5' }],
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.body.routingLabels).toEqual([{ label: 'reasoning', harness: 'claude', model: 'claude-opus-5-5' }]);
+    expect((await server.api('GET', '/api/config')).body.routingLabels).toHaveLength(1);
+
+    const duplicate = await server.api('PATCH', '/api/config', {
+      routingLabels: [
+        { label: 'reasoning', harness: 'claude', model: '' },
+        { label: 'REASONING', harness: 'codex', model: '' },
+      ],
+    });
+    expect(duplicate.status).toBe(400);
+    expect((await server.api('GET', '/api/config')).body.routingLabels).toHaveLength(1);
+
+    const unknownHarness = await server.api('PATCH', '/api/config', {
+      routingLabels: [{ label: 'x', harness: 'nope', model: '' }],
+    });
+    expect(unknownHarness.status).toBe(400);
+  });
+
   it('accepts an agent critic', async () => {
     const patched = await server.api('PATCH', '/api/config', {
       verify: { task: { preMerge: { commands: [], critics: [{ name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.',model: 'claude-opus-5' }] } } },
