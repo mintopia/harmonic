@@ -5,7 +5,31 @@ import { btnGhost, btnPrimary, field, labelType, panelTitle } from '../../ui';
 import { taskLabel } from '../../id-format.js';
 import { Modal } from '../Modal';
 
-export const UNCONFIGURED_HARNESS = /not configured/;
+const UNCONFIGURED_HARNESS = /^(?:Routing Label '(.+)' needs )?Harness '([^']+)'(?: is|,) (?:which is )?not configured\.$/;
+
+export function parseUnconfiguredHarness(reason: string): { label: string | null; harness: string } | null {
+  const m = UNCONFIGURED_HARNESS.exec(reason.trim());
+  return m ? { label: m[1] ?? null, harness: m[2]! } : null;
+}
+
+export function UnconfiguredHarnessMessage({ label, harness }: { label: string | null; harness: string }) {
+  const code = 'rounded-[3px] bg-surface px-1.5 font-data text-small text-ink';
+  return (
+    <>
+      {label ? (
+        <>
+          Routing Label <code className={code}>{label}</code> routes to Harness <code className={code}>{harness}</code>, which is not configured.
+        </>
+      ) : (
+        <>
+          Harness <code className={code}>{harness}</code> is not configured.
+        </>
+      )}{' '}
+      No Attempt was started. Configure the Harness in Settings › Integrations,{' '}
+      {label ? "change the label's route in Settings › Execution, " : ''}or set a Harness on this Ticket.
+    </>
+  );
+}
 
 function SetHarnessDialog({ taskId, onClose, onDone }: { taskId: number; onClose: () => void; onDone: () => void }) {
   const config = useAsyncResource(() => api.config(), []);
@@ -62,7 +86,7 @@ function SetHarnessDialog({ taskId, onClose, onDone }: { taskId: number; onClose
   );
 }
 
-export function UnconfiguredHarnessGate({ taskId, onChanged }: { taskId: number; onChanged: () => void }) {
+export function UnconfiguredHarnessGate({ taskId, onChanged, onClose }: { taskId: number; onChanged: () => void; onClose?: () => void }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,9 +106,14 @@ export function UnconfiguredHarnessGate({ taskId, onChanged }: { taskId: number;
 
   return (
     <>
-      <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-hairline pt-2">
-        <span className="text-muted">Setting a Harness on the Ticket overrides the label for this Ticket only.</span>
+      <div className="mt-4 flex flex-wrap items-center gap-2.5 rounded-b-lg border-t border-hairline bg-surface px-3.5 py-3 shadow-float">
+        <span className="text-small text-muted">Setting a Harness on the Ticket overrides the label for this Ticket only.</span>
         <span className="flex-1" />
+        {onClose && (
+          <button type="button" className="px-2 py-1 text-muted hover:text-ink" onClick={onClose}>
+            Close
+          </button>
+        )}
         <button type="button" className={btnGhost} disabled={busy} onClick={() => setOpen(true)}>
           Set Harness on this Ticket…
         </button>

@@ -227,15 +227,15 @@ describe('Board card routing suffix', () => {
   const mountBoard = (tasks: Task[]) =>
     mountComponent(createElement(Board, { tasks, epics: [], loading: false, hasHistory: true, onOpen: () => {}, onOpenTask: () => {}, onNewTask: () => {} }));
 
-  it('shows "via label" only when the label was applied', async () => {
+  it('shows the ↳ label chip only when the label was applied', async () => {
     const host = await mountBoard([
       makeTask({ id: 1, state: 'working', routing: { label: 'reasoning', applied: true } }),
       makeTask({ id: 2, state: 'working', routing: { label: 'cheap', applied: false } }),
       makeTask({ id: 3, state: 'working', routing: null }),
     ]);
     const text = host.textContent ?? '';
-    expect(text).toContain('via reasoning');
-    expect(text).not.toContain('via cheap');
-    expect(text.match(/via /g)).toHaveLength(1);
+    expect(text).toContain('↳ reasoning');
+    expect(text).not.toContain('↳ cheap');
+    expect(text.match(/↳ /g)).toHaveLength(1);
   });
 });
