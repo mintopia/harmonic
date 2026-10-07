@@ -6538,6 +6538,88 @@
             ],
             "example": null
           },
+          "routingLabels": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "global"
+                        },
+                        "ref": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "ref",
+                        "enabled"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "local"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "routingLabel": {
+                          "type": "object",
+                          "properties": {
+                            "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "reasoning"
+                            },
+                            "harness": {
+                              "type": "string",
+                              "enum": [
+                                "claude",
+                                "codex",
+                                "copilot",
+                                "opencode"
+                              ],
+                              "example": "claude"
+                            },
+                            "model": {
+                              "type": "string",
+                              "example": "claude-opus-5-5"
+                            }
+                          },
+                          "required": [
+                            "label",
+                            "harness",
+                            "model"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "enabled",
+                        "routingLabel"
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "guardrailBudget": {
             "anyOf": [
               {
@@ -7276,6 +7358,7 @@
           "taskPostMergeCritics",
           "epicPreMergeCommands",
           "epicPreMergeCritics",
+          "routingLabels",
           "guardrailBudget",
           "guardrailProgress",
           "toolTimeoutMinutes",
@@ -16046,6 +16129,91 @@
             ],
             "example": null
           },
+          "routingLabels": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "global"
+                        },
+                        "ref": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "ref",
+                        "enabled"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "local"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "routingLabel": {
+                          "type": "object",
+                          "properties": {
+                            "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "reasoning"
+                            },
+                            "harness": {
+                              "type": "string",
+                              "enum": [
+                                "claude",
+                                "codex",
+                                "copilot",
+                                "opencode"
+                              ],
+                              "example": "claude"
+                            },
+                            "model": {
+                              "type": "string",
+                              "example": "claude-opus-5-5"
+                            }
+                          },
+                          "required": [
+                            "label",
+                            "harness",
+                            "model"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "enabled",
+                        "routingLabel"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "guardrailBudget": {
             "anyOf": [
               {
@@ -16791,6 +16959,7 @@
           "taskPostMergeCritics",
           "epicPreMergeCommands",
           "epicPreMergeCritics",
+          "routingLabels",
           "guardrailBudget",
           "guardrailProgress",
           "toolTimeoutMinutes",
@@ -23754,6 +23923,91 @@
                                 "kind",
                                 "enabled",
                                 "critic"
+                              ]
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "routingLabels": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "global"
+                                  ]
+                                },
+                                "ref": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "ref",
+                                "enabled"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "local"
+                                  ]
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "routingLabel": {
+                                  "type": "object",
+                                  "properties": {
+                                    "label": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "reasoning"
+                                    },
+                                    "harness": {
+                                      "type": "string",
+                                      "enum": [
+                                        "claude",
+                                        "codex",
+                                        "copilot",
+                                        "opencode"
+                                      ],
+                                      "example": "claude"
+                                    },
+                                    "model": {
+                                      "type": "string",
+                                      "example": "claude-opus-5-5"
+                                    }
+                                  },
+                                  "required": [
+                                    "label",
+                                    "harness",
+                                    "model"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "enabled",
+                                "routingLabel"
                               ]
                             }
                           ]

@@ -425,6 +425,8 @@ export interface Workspace extends PromptFragmentOverrides {
   taskPostMergeCritics: TaskCriticOverlayEntry[] | null;
   epicPreMergeCommands: CommandOverlayEntry[] | null;
   epicPreMergeCritics: EpicCriticOverlayEntry[] | null;
+  /** Routing Label overlay; `null` inherits every global Routing Label in order. */
+  routingLabels: RoutingLabelOverlayEntry[] | null;
   /** Guardrail overrides; `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
    * object shape it was PATCHed as. */
@@ -537,6 +539,11 @@ export type TaskCriticOverlayEntry =
 export type EpicCriticOverlayEntry =
   | { kind: 'global'; ref: string; enabled: boolean }
   | { kind: 'local'; enabled: boolean; critic: EpicVerificationCritic };
+
+/** A Workspace Routing Label overlay entry; a `global` entry's `ref` is the global label, lowercased. */
+export type RoutingLabelOverlayEntry =
+  | { kind: 'global'; ref: string; enabled: boolean }
+  | { kind: 'local'; enabled: boolean; routingLabel: { label: string; harness: string; model: string } };
 
 /** The budget Guardrail: a mandatory wall-clock bound per afk Attempt
  * plus optional token and cost caps (`null` = that cap is off). */

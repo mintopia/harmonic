@@ -278,6 +278,11 @@ export const routingLabelSchema = z.object({
 });
 export type RoutingLabel = z.infer<typeof routingLabelSchema>;
 
+/** Global Routing Labels carry no id, so a `global` overlay entry's `ref` is the lowercased label (ADR-0049). */
+export const routingLabelOverlayEntrySchema = overlayEntrySchema('routingLabel', routingLabelSchema);
+export type RoutingLabelOverlayEntry = z.infer<typeof routingLabelOverlayEntrySchema>;
+export const routingLabelOverrideSchema = z.array(routingLabelOverlayEntrySchema);
+
 export const appConfigSchema = z.object({
   /** Operator-chosen display name; feeds the sidebar heading and browser title. Empty (the default) falls back to "Harmonic". */
   name: z.string().meta({ example: 'Production' }),

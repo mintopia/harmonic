@@ -5,6 +5,7 @@ import { btnDestructive, btnGhost, displayTitle, field } from '../ui';
 import { humanizeSaveError, parseFieldErrors } from './SettingsSection';
 import { Modal } from './Modal';
 import { firstPatternError, normalizeWorkspaceExport } from '../archive-export-model';
+import { firstRoutingOverlayError } from './routing-label-overlay-model';
 import { SettingsForm } from './SettingsForm';
 import type { AppConfig } from '../types';
 import type { WorkspaceRenderCtx } from './settings-schema';
@@ -48,6 +49,7 @@ export function WorkspaceSettingsPage({
   }, [workspace]);
 
   const dirty = JSON.stringify(local) !== JSON.stringify(pristine);
+  const routingError = firstRoutingOverlayError(local.routingLabels, config.routingLabels);
 
   const discard = () => {
     setLocal(pristine);
@@ -105,7 +107,8 @@ export function WorkspaceSettingsPage({
       ctx={ctx}
       dirty={dirty}
       saving={saving}
-      error={error}
+      error={error ?? routingError}
+      saveDisabled={routingError !== null}
       onSave={save}
       onDiscard={discard}
     >
