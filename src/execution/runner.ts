@@ -602,7 +602,6 @@ export class Runner {
     }
   }
 
-  /** Records an Activity event when a Routing Label (ADR-0049) moved this Attempt off the previous Attempt's Harness/Model. */
   private async recordRouteChange(task: TaskRow, bound: AttemptRow): Promise<void> {
     await bestEffort(async () => {
       const prior = (await this.attempts.listForTask(task.id)).filter((a) => a.id !== bound.id).at(-1);

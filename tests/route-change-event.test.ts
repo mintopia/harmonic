@@ -52,6 +52,7 @@ describe('route-changed Activity event (ADR-0049)', () => {
     tasks = new TaskService(asyncDb, () => config, allWorkspaces(asyncDb, settingsStore));
     attempts = new AttemptStore(asyncDb);
     runner = new Runner(tasks, asyncDb, () => config, executionPlumbing());
+    (runner as unknown as { turnDriver: { drive: () => Promise<void> } }).turnDriver.drive = async () => {};
     wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
   });
   afterEach(async () => {
@@ -59,9 +60,6 @@ describe('route-changed Activity event (ADR-0049)', () => {
     await asyncDb.close();
     rmSync(dir, { recursive: true, force: true });
   });
-
-  const record = (task: Awaited<ReturnType<TaskService['get']>>, bound: Awaited<ReturnType<AttemptStore['create']>>) =>
-    (runner as unknown as { recordRouteChange: (t: typeof task, b: typeof bound) => Promise<void> }).recordRouteChange(task, bound);
 
   async function retryAfterRelabel(from: string, to: string) {
     const mirrored = (await mirrorScan(tasks, [ticket(['ready-for-agent', from])], wsId))[0]!;
@@ -71,17 +69,15 @@ describe('route-changed Activity event (ADR-0049)', () => {
     await tasks.setState(mirrored.id, 'ready');
     await mirrorScan(tasks, [ticket(['ready-for-agent', to])], wsId);
     const next = (await tasks.claimReady(mirrored.id))!;
-    const bound = await attempts.create(mirrored.id, undefined, { harness: next.harness, model: next.model });
-    return { next, bound };
+    return (runner as unknown as { beginRun: (t: typeof next) => Promise<Awaited<ReturnType<AttemptStore['create']>>> }).beginRun(next);
   }
 
   const events = async (attemptId: number) =>
     (await attempts.listEvents(attemptId)).map((e) => JSON.parse(typeof e.payload === 'string' ? e.payload : JSON.stringify(e.payload)));
 
-  it('escalated cheap Ticket relabelled reasoning retries on the reasoning route, recorded as a Model-only change', async () => {
-    const { next, bound } = await retryAfterRelabel('cheap', 'reasoning');
+  it('escalated cheap Ticket relabelled reasoning retries on the reasoning route, recorded as a fresh Session', async () => {
+    const bound = await retryAfterRelabel('cheap', 'reasoning');
     expect(bound).toMatchObject({ harness: 'claude', model: 'claude-opus-5-5' });
-    await record(next, bound);
     expect(await events(bound.id)).toEqual([
       {
         event: 'route-changed',
@@ -93,21 +89,13 @@ describe('route-changed Activity event (ADR-0049)', () => {
     ]);
   });
 
-  it('records sessionKept when the new Attempt is bound to a prior Session', async () => {
-    const { next, bound } = await retryAfterRelabel('cheap', 'reasoning');
-    await record(next, { ...bound, sessionRowId: 7 });
-    expect((await events(bound.id))[0]).toMatchObject({ event: 'route-changed', sessionKept: true });
-  });
-
   it('records a Harness change', async () => {
-    const { next, bound } = await retryAfterRelabel('cheap', 'other');
-    await record(next, bound);
+    const bound = await retryAfterRelabel('cheap', 'other');
     expect((await events(bound.id))[0]).toMatchObject({ to: { harness: 'codex' }, label: 'other', sessionKept: false });
   });
 
   it('records nothing when the route is unchanged', async () => {
-    const { next, bound } = await retryAfterRelabel('cheap', 'cheap');
-    await record(next, bound);
+    const bound = await retryAfterRelabel('cheap', 'cheap');
     expect(await events(bound.id)).toEqual([]);
   });
 });
