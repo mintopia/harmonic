@@ -66,6 +66,8 @@ describe('route-changed Activity event (ADR-0049)', () => {
     const first = (await tasks.claimReady(mirrored.id))!;
     const prior = await attempts.create(mirrored.id, undefined, { harness: first.harness, model: first.model });
     await attempts.update(prior.id, { state: 'failed', endedAt: Date.now() });
+    const placeholder = await attempts.create(mirrored.id);
+    await attempts.update(placeholder.id, { state: 'failed', endedAt: Date.now() });
     await tasks.setState(mirrored.id, 'ready');
     await mirrorScan(tasks, [ticket(['ready-for-agent', to])], wsId);
     const next = (await tasks.claimReady(mirrored.id))!;

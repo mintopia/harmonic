@@ -604,7 +604,7 @@ export class Runner {
 
   private async recordRouteChange(task: TaskRow, bound: AttemptRow): Promise<void> {
     await bestEffort(async () => {
-      const prior = (await this.attempts.listForTask(task.id)).filter((a) => a.id !== bound.id).at(-1);
+      const prior = (await this.attempts.listForTask(task.id)).findLast((a) => a.id !== bound.id && a.harness);
       if (!prior?.harness || (prior.harness === task.harness && prior.model === task.model)) return;
       const route = await this.taskService.routingFor(task.id);
       const payload = {
