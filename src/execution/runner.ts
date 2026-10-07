@@ -557,6 +557,7 @@ export class Runner {
       }
       const run = created;
       const bound = await this.sessionContinuation.bindContinuationIfEligible(task, run);
+      if (!resumedAttempt) await this.recordRouteChange(task, bound);
       if ((await this.checkRunBoundary(task.id)).stop) {
         this.activeRuns.clearDriving(task.id);
         return bound;
@@ -600,6 +601,23 @@ export class Runner {
       }
       throw err;
     }
+  }
+
+  private async recordRouteChange(task: TaskRow, bound: AttemptRow): Promise<void> {
+    await bestEffort(async () => {
+      const prior = (await this.attempts.listForTask(task.id)).findLast((a) => a.id !== bound.id && a.harness);
+      if (!prior?.harness || (prior.harness === task.harness && prior.model === task.model)) return;
+      const route = await this.taskService.routingFor(task.id);
+      const payload = {
+        event: 'route-changed',
+        from: { harness: prior.harness, model: prior.model },
+        to: { harness: task.harness, model: task.model },
+        label: route?.applied ? route.label : null,
+        sessionKept: bound.sessionRowId !== null,
+      };
+      const persisted = await this.attempts.appendEvent(bound.id, { type: 'lifecycle', payload });
+      this.events.onAttemptEvent?.(persisted);
+    }, { op: 'runner.beginRun.recordRouteChange', level: 'warn', context: { taskId: task.id, attemptId: bound.id } });
   }
 
   operationParent(attemptId: number): SpanContext | undefined {
