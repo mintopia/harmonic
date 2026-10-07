@@ -25,8 +25,8 @@ export function UnconfiguredHarnessMessage({ label, harness }: { label: string |
           Harness <code className={code}>{harness}</code> is not configured.
         </>
       )}{' '}
-      No Attempt was started. Configure the Harness in Settings › Integrations,{' '}
-      {label ? "change the label's route in Settings › Execution, " : ''}or set a Harness on this Ticket.
+      No Attempt was started. Configure the Harness in Global settings › Integrations › Harnesses,{' '}
+      {label ? "change the label's route in Settings › Execution › Routing Labels, " : ''}or set a Harness on this Ticket.
     </>
   );
 }
