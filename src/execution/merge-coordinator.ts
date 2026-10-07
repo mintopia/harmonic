@@ -79,6 +79,7 @@ export interface MergeCoordinatorDeps {
   postMerge: RunnerOptions['postMerge'];
   urlFor: (task: TaskRow) => string | null;
   listWorkingTasks: () => Promise<TaskRow[]>;
+  epicRoute: (workspaceId: number, epicRef: TrackerRef) => Promise<{ harness: string; model: string; label: string | null }>;
   latestAttemptFor: (task: Pick<TaskRow, 'id'>) => Promise<AttemptRow>;
   updateStep: (taskId: number, id: number, patch: Parameters<AttemptStore['updateStep']>[1]) => Promise<Awaited<ReturnType<AttemptStore['updateStep']>>>;
   criticUpdateRelay: (attemptId: number) => (update: { sessionUpdate: string; [key: string]: unknown }) => void;
@@ -194,21 +195,23 @@ export class MergeCoordinator {
 
   /**
    * Integrate an Epic's `epic/<ref>` branch into the default branch under the
-   * one merge policy. The harness/model is resolved from a live member (else
-   * the Workspace default). Escalation is returned to the caller, which owns
+   * one merge policy. The conflict turn's harness/model is the Epic's own
+   * Routing Label, else the Workspace/global default. Escalation is returned to the caller, which owns
    * the Epic-level escalation surface, rather than settled here.
    */
   async mergeEpicIntegration(input: EpicIntegrationMergeInput): Promise<MergePolicyOutcome> {
     const config = this.deps.getConfig();
     const epicAttempt = (await this.deps.attempts.listForEpic({ workspaceId: input.workspaceId, epicRef: input.epicRef })).at(-1);
     const host = (await this.deps.listWorkingTasks()).find((task) => task.baseBranch === input.integrationBranch);
-    const harnessId = host?.harness ?? config.defaults.harness;
+    const { harness: harnessId, model, label } = await this.deps.epicRoute(input.workspaceId, input.epicRef);
     const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
-    const model = host?.model ?? harness?.defaultModel ?? '';
     const deps: MergePolicyDeps = {
       resolveConflictTurn: async (ctx) => {
         try {
-          if (!harness) return;
+          if (!harness) {
+            logger.warn('epic conflict turn skipped: harness not configured', { epicRef: input.epicRef, harness: harnessId, routingLabel: label ?? '' });
+            return;
+          }
           const drive = this.deps.criticDrive;
           const merge = resolveMergePrompts(await this.deps.getWorkspace?.(input.workspaceId), config);
           const prompt = renderConflictPrompt(merge.epicConflictPrompt, merge.fragments, ctx);

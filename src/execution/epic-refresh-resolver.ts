@@ -36,8 +36,8 @@ export class EpicRefreshResolver {
    * Dispatch the bounded corrective turn for an integration refresh: check
    * `epic/<ref>` out into a dedicated worktree, reproduce the conflicted merge
    * of the default branch there, and drive one agent turn against that
-   * worktree to resolve and commit it. A live member supplies the harness/model
-   * when one is running, else the Workspace default harness. Every pre-turn
+   * worktree to resolve and commit it. The Epic's own Routing Label supplies the
+   * harness/model, else the Workspace/global default. Every pre-turn
    * failure returns `escalated` synchronously; the agent turn itself is
    * fire-and-forget (it must NOT hold the caller's repo lock), after which
    * `retry` re-runs the refresh.
@@ -58,13 +58,12 @@ export class EpicRefreshResolver {
       return { status: 'escalated', reason };
     };
     const config = this.deps.getConfig();
-    const host = (await this.deps.taskService.list({ state: 'working' })).find((task) => task.baseBranch === branch);
-    const harnessId = host?.harness ?? config.defaults.harness;
+    const { harness: harnessId, model, label } = await this.deps.taskService.epicRoute(target.workspaceId, target.ref);
     const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
     if (!harness) {
-      return escalated(`harness '${harnessId}' is not configured to run the refresh corrective turn for ${branch}: ${detail}`);
+      const via = label ? ` (routed by label '${label}')` : '';
+      return escalated(`harness '${harnessId}'${via} is not configured to run the refresh corrective turn for ${branch}: ${detail}`);
     }
-    const model = host?.model ?? harness.defaultModel;
 
     mkdirSync(this.deps.worktreesDir, { recursive: true });
     const worktreePath = join(this.deps.worktreesDir, `epic-refresh-${target.ref}`);

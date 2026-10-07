@@ -204,6 +204,7 @@ export class Runner {
       postMerge: this.postMerge,
       urlFor: this.urlFor,
       listWorkingTasks: () => this.taskService.list({ state: 'working' }),
+      epicRoute: (workspaceId, epicRef) => this.taskService.epicRoute(workspaceId, epicRef),
       latestAttemptFor: (task) => this.latestAttemptFor(task),
       updateStep: (taskId, id, patch) => this.updateStep(taskId, id, patch),
       criticUpdateRelay: (attemptId) => this.criticUpdateRelay(attemptId),

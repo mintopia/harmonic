@@ -314,6 +314,21 @@ export class TaskService {
     return raw.harness ?? resolveScoped('harness', workspace.harness, this.getConfig().defaults.harness);
   }
 
+  /** The Harness + Model an Epic-level turn runs on: the Epic issue's own Routing Label, else the Workspace/global default (ADR-0049). */
+  async epicRoute(workspaceId: number, epicRef: TrackerRef): Promise<{ harness: string; model: string; label: string | null }> {
+    const config = this.getConfig();
+    const [container, task] = await this.db.read(async (db) => [
+      await db.select({ trackerLabels: trackerContainers.trackerLabels }).from(trackerContainers).where(and(eq(trackerContainers.workspaceId, workspaceId), eq(trackerContainers.trackerRef, epicRef))).get(),
+      await db.select().from(tasks).where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.trackerRef, epicRef))).get(),
+    ] as const);
+    const route = container ? this.matchRoute({ origin: 'mirrored', trackerLabels: container.trackerLabels }) : task ? this.matchRoute(task) : null;
+    if (route) return { harness: route.harness, model: route.model || config.harnesses[route.harness]?.defaultModel || '', label: route.label };
+    const workspace = await this.resolveWorkspace(workspaceId);
+    const harness = resolveScoped('harness', workspace.harness, config.defaults.harness);
+    const model = resolveScoped('model', workspace.model, config.harnesses[harness as keyof typeof config.harnesses]?.defaultModel ?? '');
+    return { harness, model, label: null };
+  }
+
   private resolveDefaults(raw: RawTaskRow, workspace: WorkspaceRow) {
     const over = this.overridesOf(raw);
     const config = this.getConfig();
