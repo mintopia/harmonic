@@ -30,6 +30,7 @@ import { taskExportTarget } from '../export-targets';
 import { ChangesPane, NoRunsYet } from './ticket/ChangesPane';
 import { AttemptsNav, PanelNav } from './ticket/AttemptsNav';
 import { AttemptPanel } from './ticket/AttemptPanel';
+import { UNCONFIGURED_HARNESS, UnconfiguredHarnessGate } from './ticket/UnconfiguredHarnessGate';
 
 export function TicketPage({
   task,
@@ -251,6 +252,9 @@ export function TicketPage({
                 </span>
                 {escalationReason && (
                   <div className="mt-0.5 whitespace-pre-wrap break-words text-ink">{escalationReason}</div>
+                )}
+                {escalationReason && UNCONFIGURED_HARNESS.test(escalationReason) && (
+                  <UnconfiguredHarnessGate taskId={task.id} onChanged={onChanged} />
                 )}
               </div>
             )}

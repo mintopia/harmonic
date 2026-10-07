@@ -798,7 +798,8 @@ export class TaskService {
 
   async update(id: number, input: UpdateTaskInput): Promise<TaskRow> {
     const task = await this.get(id);
-    if (!EDITABLE_STATES.includes(task.state)) {
+    const routeOnly = Object.keys(input).every((key) => key === 'harness' || key === 'model');
+    if (!EDITABLE_STATES.includes(task.state) && !(task.state === 'escalated' && routeOnly)) {
       throw new DomainError('invalid_state', `task ${id} is ${task.state}; only draft, ready, or blocked tasks can be edited`);
     }
     this.assertHarnessConfigured(input.harness);

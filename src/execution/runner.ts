@@ -529,8 +529,13 @@ export class Runner {
       const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
       if (!harness) {
         const route = await this.taskService.routingFor(task.id);
-        const via = route?.applied ? ` (routed by label '${route.label}')` : '';
-        throw new DomainError('validation', `harness '${task.harness}'${via} is not configured`);
+        const reason = route?.applied
+          ? `Routing Label '${route.label}' needs Harness '${task.harness}', which is not configured.`
+          : `Harness '${task.harness}' is not configured.`;
+        const unspawned = await this.attempts.create(task.id);
+        await this.settleEscalated(task, unspawned, reason, {});
+        this.activeRuns.clearDriving(task.id);
+        return unspawned;
       }
       const ws = (await this.getWorkspace?.(task.workspaceId)) ?? { guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null };
       const snapshot: AttemptGuardrailSnapshot = {
