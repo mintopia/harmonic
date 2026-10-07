@@ -11,6 +11,7 @@ import { triageLabelsOverrideSchema } from '../../tracker/triage-labels.js';
 import { EXPORT_STATES, redactPatternsSchema } from '../../config.js';
 import {
   verificationCommandOverrideSchema,
+  routingLabelOverrideSchema,
   taskVerificationCriticOverrideSchema,
   epicVerificationCriticOverrideSchema,
   budgetGuardrailSchema,
@@ -21,7 +22,7 @@ import { forEachYielding } from '../../reliability/yield.js';
 import { requestActor } from '../operator-inputs.js';
 import { requestIsOperator } from '../auth.js';
 import type { AppContext } from '../app.js';
-import { resolveScoped } from '../../domain/setting-override.js';
+import { resolveScoped, routingLabelOverlayIssues } from '../../domain/setting-override.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
@@ -79,6 +80,8 @@ const workspaceSchema = z
     taskPostMergeCritics: taskVerificationCriticOverrideSchema.nullable().meta({ example: null }),
     epicPreMergeCommands: verificationCommandOverrideSchema.nullable().meta({ example: null }),
     epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().meta({ example: null }),
+    /** Routing Label overlay; null inherits every global Routing Label in order. */
+    routingLabels: routingLabelOverrideSchema.nullable().meta({ example: null }),
     guardrailBudget: budgetGuardrailSchema.nullable().meta({ example: null }),
     guardrailProgress: z.boolean().nullable().meta({ example: null }),
     /** Tool-timeout bound override; null inherits `config.guardrails.toolTimeoutMinutes`. */
@@ -148,6 +151,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     taskPostMergeCritics: ws.taskPostMergeCritics ? JSON.parse(ws.taskPostMergeCritics) : null,
     epicPreMergeCommands: ws.epicPreMergeCommands ? JSON.parse(ws.epicPreMergeCommands) : null,
     epicPreMergeCritics: ws.epicPreMergeCritics ? JSON.parse(ws.epicPreMergeCritics) : null,
+    routingLabels: ws.routingLabels ? JSON.parse(ws.routingLabels) : null,
     exportRedactPatterns: ws.exportRedactPatterns ? JSON.parse(ws.exportRedactPatterns) : null,
     exportIncludeStates: ws.exportIncludeStates ? JSON.parse(ws.exportIncludeStates) : null,
     configuredTracker: ws.configuredTracker ? JSON.parse(ws.configuredTracker) : null,
@@ -244,6 +248,11 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
       },
     },
     async (req) => {
+      if (req.body.routingLabels) {
+        const issues = routingLabelOverlayIssues(req.body.routingLabels, ctx.settingsStore.getGlobal());
+        const first = issues[0];
+        if (first) throw new DomainError('validation', `routingLabels.${first.path.join('.')}: ${first.message}`);
+      }
       if (req.body.guardrailBudget) {
         const unpriced = unpricedModelsForCostCap(req.body.guardrailBudget, ctx.settingsStore.getGlobal());
         if (unpriced.length > 0) {

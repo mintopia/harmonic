@@ -5,11 +5,13 @@ export function FloatingSaveBar({
   saving,
   onDiscard,
   onSave,
+  saveDisabled = false,
 }: {
   error: string | null;
   saving: boolean;
   onDiscard: () => void;
   onSave: () => void;
+  saveDisabled?: boolean;
 }) {
   return (
     <div className="sticky bottom-4 z-10 mt-6 max-w-3xl">
@@ -24,7 +26,7 @@ export function FloatingSaveBar({
           <button disabled={saving} onClick={onDiscard} className={btnGhost}>
             Discard
           </button>
-          <button disabled={saving} onClick={onSave} className={btnPrimary}>
+          <button disabled={saving || saveDisabled} onClick={onSave} className={btnPrimary}>
             {saving ? 'Saving…' : 'Save changes'}
           </button>
         </div>

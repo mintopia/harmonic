@@ -50,6 +50,7 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     drive: { prompt: '', unattendedReminder: '', continuePrompt: '', commitNudge: '', mergeFate: 'auto-merge', continueAttempts: 0 },
     maxAttempts: 3,
     contextReuseTokenLimit: 100_000,
+    routingLabels: [],
     editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
     pauseMessage: 'Pause.',
@@ -96,6 +97,7 @@ export function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     taskPostMergeCritics: null,
     epicPreMergeCommands: null,
     epicPreMergeCritics: null,
+    routingLabels: null,
     guardrailBudget: null,
     guardrailProgress: null,
     exportEnabled: null,
@@ -183,6 +185,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     hasCandidate: false,
     wallClockDeadline: null,
     skipReason: null,
+    routing: null,
     ...overrides,
   };
 }

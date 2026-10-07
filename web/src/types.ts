@@ -425,6 +425,8 @@ export interface Workspace extends PromptFragmentOverrides {
   taskPostMergeCritics: TaskCriticOverlayEntry[] | null;
   epicPreMergeCommands: CommandOverlayEntry[] | null;
   epicPreMergeCritics: EpicCriticOverlayEntry[] | null;
+  /** Routing Label overlay; `null` inherits every global Routing Label in order. */
+  routingLabels: RoutingLabelOverlayEntry[] | null;
   /** Guardrail overrides; `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
    * object shape it was PATCHed as. */
@@ -538,6 +540,11 @@ export type EpicCriticOverlayEntry =
   | { kind: 'global'; ref: string; enabled: boolean }
   | { kind: 'local'; enabled: boolean; critic: EpicVerificationCritic };
 
+/** A Workspace Routing Label overlay entry; a `global` entry's `ref` is the global label, lowercased. */
+export type RoutingLabelOverlayEntry =
+  | { kind: 'global'; ref: string; enabled: boolean }
+  | { kind: 'local'; enabled: boolean; routingLabel: { label: string; harness: string; model: string } };
+
 /** The budget Guardrail: a mandatory wall-clock bound per afk Attempt
  * plus optional token and cost caps (`null` = that cap is off). */
 export interface BudgetGuardrail {
@@ -590,6 +597,8 @@ export interface Task {
     priority: 'high' | 'normal' | 'low' | null;
     conflictResolveTurns: number | null;
   };
+  /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. */
+  routing: { label: string; applied: boolean } | null;
   state: TaskState;
   /** Why the ticket is `escalated` — the trigger's recorded reason; null in every other state. */
   escalationReason: string | null;
@@ -1160,6 +1169,7 @@ export interface AppConfig {
     harness: string;
     model: string;
   };
+  routingLabels: { label: string; harness: string; model: string }[];
   autoRunner: { enabled: boolean; maxConcurrentAttempts: number };
   agentMessages: { enabled: boolean; sendCap: number };
   /** Per-stage command and critic verifier lists. */

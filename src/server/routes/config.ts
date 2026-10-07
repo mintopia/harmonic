@@ -15,6 +15,7 @@ import {
   type AppConfig,
   type DeepPartial,
   promptFragmentsShape,
+  routingLabelSchema,
 } from '../../config.js';
 import { maskConfigSecrets } from '../../archive/export-secrets.js';
 
@@ -78,6 +79,8 @@ const configPatchBodySchema = z
       })
       .partial()
       .optional(),
+    /** Replaces the whole ordered list; labels are unique case-insensitively and each Harness must be configured. */
+    routingLabels: z.array(routingLabelSchema).meta({ example: [{ label: 'reasoning', harness: 'claude', model: 'claude-opus-5-5' }] }).optional(),
     chat: z
       .object({
         /** Default Harness a new Conversation starts with. */

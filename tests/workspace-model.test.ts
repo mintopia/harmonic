@@ -46,6 +46,7 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   taskPostMergeCritics: null,
   epicPreMergeCommands: null,
   epicPreMergeCritics: null,
+  routingLabels: null,
   guardrailBudget: null,
   guardrailProgress: null,
   exportEnabled: null,

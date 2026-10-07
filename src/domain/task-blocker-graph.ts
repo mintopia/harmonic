@@ -18,6 +18,7 @@ export interface TaskWithBlockers extends TaskRow {
     priority: string | null;
     conflictResolveTurns: number | null;
   };
+  routing: { label: string; applied: boolean } | null;
 }
 
 export interface TaskBlockerGraphOptions {

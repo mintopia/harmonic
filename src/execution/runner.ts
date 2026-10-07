@@ -193,6 +193,7 @@ export class Runner {
         commandSpawn: this.commandSpawn,
         fireAndForget: this.fireAndForget,
         getConfig: this.getConfig,
+        unroutedHarness: (taskId) => this.taskService.unroutedHarness(taskId),
         getWorkspace: async (workspaceId) => this.getWorkspace?.(workspaceId),
         verificationAttempts: this.verificationAttempts,
         attempts: this.attempts,
@@ -203,6 +204,7 @@ export class Runner {
       postMerge: this.postMerge,
       urlFor: this.urlFor,
       listWorkingTasks: () => this.taskService.list({ state: 'working' }),
+      epicRoute: (workspaceId, epicRef) => this.taskService.epicRoute(workspaceId, epicRef),
       latestAttemptFor: (task) => this.latestAttemptFor(task),
       updateStep: (taskId, id, patch) => this.updateStep(taskId, id, patch),
       criticUpdateRelay: (attemptId) => this.criticUpdateRelay(attemptId),
@@ -525,7 +527,16 @@ export class Runner {
       }
       const config = this.getConfig();
       const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
-      if (!harness) throw new DomainError('validation', `harness '${task.harness}' is not configured`);
+      if (!harness) {
+        const route = await this.taskService.routingFor(task.id);
+        const reason = route?.applied
+          ? `Routing Label '${route.label}' needs Harness '${task.harness}', which is not configured.`
+          : `Harness '${task.harness}' is not configured.`;
+        const unspawned = await this.attempts.create(task.id);
+        await this.settleEscalated(task, unspawned, reason, {});
+        this.activeRuns.clearDriving(task.id);
+        return unspawned;
+      }
       const ws = (await this.getWorkspace?.(task.workspaceId)) ?? { guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null };
       const snapshot: AttemptGuardrailSnapshot = {
         guardrailConfig: resolveGuardrails(ws, config),
@@ -540,15 +551,18 @@ export class Runner {
             detail: null,
             guardrailConfig: JSON.stringify(snapshot.guardrailConfig),
             priceTable: JSON.stringify(snapshot.priceTable),
+            harness: resumedAttempt.harness ?? task.harness,
+            model: resumedAttempt.model ?? task.model,
             ...(task.continuationChoice === 'condensed' ? { sessionRowId: null, sessionId: null } : {}),
           })
-        : await this.attempts.create(task.id, snapshot);
+        : await this.attempts.create(task.id, snapshot, { harness: task.harness, model: task.model });
       const pendingContinuation = this.activeRuns.takePendingContinuation(task.id);
       if (pendingContinuation !== undefined) {
         await this.attempts.setContinuation(created.id, pendingContinuation);
       }
       const run = created;
       const bound = await this.sessionContinuation.bindContinuationIfEligible(task, run);
+      if (!resumedAttempt) await this.recordRouteChange(task, bound);
       if ((await this.checkRunBoundary(task.id)).stop) {
         this.activeRuns.clearDriving(task.id);
         return bound;
@@ -592,6 +606,23 @@ export class Runner {
       }
       throw err;
     }
+  }
+
+  private async recordRouteChange(task: TaskRow, bound: AttemptRow): Promise<void> {
+    await bestEffort(async () => {
+      const prior = (await this.attempts.listForTask(task.id)).findLast((a) => a.id !== bound.id && a.harness);
+      if (!prior?.harness || (prior.harness === task.harness && prior.model === task.model)) return;
+      const route = await this.taskService.routingFor(task.id);
+      const payload = {
+        event: 'route-changed',
+        from: { harness: prior.harness, model: prior.model },
+        to: { harness: task.harness, model: task.model },
+        label: route?.applied ? route.label : null,
+        sessionKept: bound.sessionRowId !== null,
+      };
+      const persisted = await this.attempts.appendEvent(bound.id, { type: 'lifecycle', payload });
+      this.events.onAttemptEvent?.(persisted);
+    }, { op: 'runner.beginRun.recordRouteChange', level: 'warn', context: { taskId: task.id, attemptId: bound.id } });
   }
 
   operationParent(attemptId: number): SpanContext | undefined {

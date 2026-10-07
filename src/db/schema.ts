@@ -57,7 +57,7 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   maxAttempts: number | null; contextReuseTokenLimit: number | null;
   taskPreMergeCommands: string | null; taskPreMergeCritics: string | null;
   taskPostMergeCommands: string | null; taskPostMergeCritics: string | null;
-  epicPreMergeCommands: string | null; epicPreMergeCritics: string | null;
+  epicPreMergeCommands: string | null; epicPreMergeCritics: string | null; routingLabels: string | null;
   guardrailBudget: string | null; guardrailProgress: boolean | null; toolTimeoutMinutes: number | null;
   drivePrompt: string | null; driveUnattendedReminder: string | null; driveContinuePrompt: string | null;
   driveMergeFate: string | null; driveContinueAttempts: number | null; taskPrompt: string | null; pauseMessage: string | null;
@@ -240,6 +240,9 @@ export const attempts = sqliteTable('attempts', {
   guardrailConfig: text('guardrail_config'),
   /** JSON: `PriceTable` snapshotted at Attempt start. */
   priceTable: text('price_table'),
+  /** The Harness and Model resolved when the Attempt started; an in-flight Attempt is never re-routed (ADR-0049). Null for Attempts that predate it. */
+  harness: text('harness'),
+  model: text('model'),
   /** Free-text detail behind {@link reason}; null while running or when the kind needs none. */
   detail: text('detail'),
   /** The PR/MR the open-PR Merge Fate created for this Attempt's branch; null when none was opened (other fates, or a Code Repository that opens none). */

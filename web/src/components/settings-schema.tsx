@@ -34,6 +34,8 @@ import { CodeRepositorySection, IssueTrackerSection, TriageLabelsSection } from 
 import { HarnessesSection } from './HarnessSettings';
 import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
+import { RoutingLabelOverlayEditor } from './RoutingLabelOverlayEditor';
+import { RoutingLabelsEditor } from './RoutingLabelsEditor';
 import { SecuritySection } from './SecuritySection';
 import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection } from './ArchiveExportSettings';
 import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './VerificationSettings';
@@ -1323,6 +1325,28 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     },
     body: (ctx) =>
       grid(twoColGrid(ctx.surface), [taskHarness, taskModel, isolationMode, priority, conflictResolveTurns], ctx),
+  },
+  {
+    tab: 'execution',
+    surfaces: BOTH,
+    title: 'Routing Labels',
+    wide: true,
+    description: {
+      global:
+        'Map a tracker label to a Harness and Model. When an issue carries several routing labels, the first one in this list wins.',
+      workspace:
+        'Global rows are managed in Global settings. You can reorder them and turn them off here; labels you add are local to this Workspace.',
+    },
+    body: (ctx) =>
+      ctx.surface === 'global' ? (
+        <RoutingLabelsEditor items={ctx.config.routingLabels} config={ctx.config} onChange={(routingLabels) => ctx.setConfig({ ...ctx.config, routingLabels })} />
+      ) : (
+        <RoutingLabelOverlayEditor
+          overlay={ctx.workspace.routingLabels}
+          config={ctx.config}
+          onChange={(routingLabels) => ctx.setWorkspace({ ...ctx.workspace, routingLabels })}
+        />
+      ),
   },
   {
     tab: 'execution',

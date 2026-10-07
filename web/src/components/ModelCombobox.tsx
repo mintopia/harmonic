@@ -8,7 +8,11 @@ export function ModelCombobox({
   value,
   onChange,
   options,
+  compact = false,
+  ariaLabel,
 }: {
+  compact?: boolean;
+  ariaLabel?: string;
   id?: string;
   value: string;
   onChange: (value: string) => void;
@@ -80,12 +84,13 @@ export function ModelCombobox({
     <div ref={wrap} className="relative">
       <input
         id={id}
+        aria-label={ariaLabel}
         role="combobox"
         aria-expanded={panelOpen}
         aria-controls={panelOpen ? listId : undefined}
         aria-autocomplete="list"
         aria-activedescendant={highlight >= 0 ? `${listId}-opt-${highlight}` : undefined}
-        className={`${field} min-h-11 pr-8`}
+        className={`${field} ${compact ? 'min-h-9 font-data text-data' : 'min-h-11'} pr-8`}
         value={value}
         onChange={(e) => {
           onChange(e.target.value);

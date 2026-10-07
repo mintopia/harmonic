@@ -82,6 +82,7 @@ const workspace = {
   taskPostMergeCritics: null,
   epicPreMergeCommands: null,
   epicPreMergeCritics: null,
+  routingLabels: null,
   guardrailBudget: null,
   guardrailProgress: null,
   exportEnabled: null,
@@ -171,7 +172,7 @@ export const task = {
   verifiedRef: 'e33b4ae',
   hasCandidate: true,
   wallClockDeadline: null,
-  skipReason: null,
+  skipReason: null, routing: null,
 } satisfies Task;
 
 export const runs = [
@@ -368,7 +369,7 @@ const boardTask = (id: number, state: Task['state'], extra: Partial<Task> = {}):
   verifiedRef: null,
   hasCandidate: false,
   wallClockDeadline: null,
-  skipReason: null,
+  skipReason: null, routing: null,
   ...extra,
 });
 export const boardTasks = [
@@ -507,7 +508,7 @@ export const epicChildren: Task[] = [
     blockedOnFailed: false, openBlockerCount: 0, agentWorkable: false, humanOnly: false, isEpic: false,
     cost: { totalUsd: 12.4, byModel: { 'opus-4.8': 12.4 }, incomplete: false }, origin: 'mirrored', trackerRef: '140', workflow: 'implement',
     wayfinderType: null, mapRef: '166', url: null, mapTitle: null, trackerLabel: null, branch: 'harmonic/task-501', stat: null, runStartedAt: null, toolCount: null,
-    attemptId: null, currentStep: null, contextTokens: null, contextWindow: null, verifiedRef: 'aa11bb2', hasCandidate: true, wallClockDeadline: null, skipReason: null,
+    attemptId: null, currentStep: null, contextTokens: null, contextWindow: null, verifiedRef: 'aa11bb2', hasCandidate: true, wallClockDeadline: null, skipReason: null, routing: null,
   },
   {
     id: 502, summary: 'Wire the Settings form to the resolver', workspaceId: 1, harness: 'claude', model: 'sonnet-4.5',
@@ -517,7 +518,7 @@ export const epicChildren: Task[] = [
     blockedOnFailed: false, openBlockerCount: 0, agentWorkable: false, humanOnly: false, isEpic: false,
     cost: { totalUsd: 4.62, byModel: { 'sonnet-4.5': 4.62 }, incomplete: false }, origin: 'mirrored', trackerRef: '141', workflow: 'implement',
     wayfinderType: null, mapRef: '166', url: null, mapTitle: null, trackerLabel: null, branch: 'harmonic/task-502', stat: null, runStartedAt: null, toolCount: null,
-    attemptId: null, currentStep: null, contextTokens: null, contextWindow: null, verifiedRef: 'bb22cc3', hasCandidate: true, wallClockDeadline: null, skipReason: null,
+    attemptId: null, currentStep: null, contextTokens: null, contextWindow: null, verifiedRef: 'bb22cc3', hasCandidate: true, wallClockDeadline: null, skipReason: null, routing: null,
   },
   {
     id: 503, summary: 'Per-task override UI + inherit toggle', workspaceId: 1, harness: 'codex', model: 'gpt-5.1',
@@ -527,7 +528,7 @@ export const epicChildren: Task[] = [
     blockedOnFailed: false, openBlockerCount: 0, agentWorkable: true, humanOnly: false, isEpic: false,
     cost: { totalUsd: 18.9, byModel: { 'gpt-5.1': 18.9 }, incomplete: false }, origin: 'mirrored', trackerRef: '142', workflow: 'implement',
     wayfinderType: null, mapRef: '166', url: null, mapTitle: null, trackerLabel: null, branch: 'harmonic/task-503', stat: null, runStartedAt: E0 + emin(210), toolCount: 44,
-    attemptId: 9001, currentStep: 'implementation', contextTokens: 120_000, contextWindow: 400_000, verifiedRef: null, hasCandidate: false, wallClockDeadline: null, skipReason: null,
+    attemptId: 9001, currentStep: 'implementation', contextTokens: 120_000, contextWindow: 400_000, verifiedRef: null, hasCandidate: false, wallClockDeadline: null, skipReason: null, routing: null,
   },
   {
     id: 504, summary: 'Backfill existing Workspaces onto the new resolver', workspaceId: 1, harness: 'claude', model: 'opus-4.8',
@@ -538,7 +539,7 @@ export const epicChildren: Task[] = [
     blockedOnFailed: false, openBlockerCount: 0, agentWorkable: false, humanOnly: false, isEpic: false,
     cost: { totalUsd: 6.26, byModel: { 'opus-4.8': 6.26 }, incomplete: false }, origin: 'mirrored', trackerRef: 'PROJ-143', workflow: 'implement',
     wayfinderType: null, mapRef: '166', url: 'https://example.atlassian.net/browse/PROJ-143', mapTitle: null, trackerLabel: 'Jira', branch: 'harmonic/task-504', stat: null, runStartedAt: null, toolCount: null,
-    attemptId: null, currentStep: null, contextTokens: null, contextWindow: null, verifiedRef: 'cc33dd4', hasCandidate: true, wallClockDeadline: null, skipReason: null,
+    attemptId: null, currentStep: null, contextTokens: null, contextWindow: null, verifiedRef: 'cc33dd4', hasCandidate: true, wallClockDeadline: null, skipReason: null, routing: null,
   },
 ];
 
