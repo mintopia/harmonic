@@ -94,6 +94,7 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     taskPostMergeCritics: null,
     epicPreMergeCommands: null,
     epicPreMergeCritics: null,
+    routingLabels: null,
     guardrailBudget: null,
     guardrailProgress: null,
     exportEnabled: null,

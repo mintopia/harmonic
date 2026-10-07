@@ -28,7 +28,8 @@ import type { MergeStepEvent } from '../merge-progress-model';
 import { HintBanner } from '../components/HintBanner';
 import { SettingsPage } from '../components/SettingsPage';
 import { ExportPanel } from '../components/ticket/ExportPanel';
-import type { TaskExportStatus, Workspace } from '../types';
+import type { RoutingLabelOverlayEntry, TaskExportStatus, Workspace } from '../types';
+import { RoutingLabelOverlayEditor } from '../components/RoutingLabelOverlayEditor';
 import { SecretField, IssueTrackerSection, CodeRepositorySection, TriageLabelsSection } from '../components/TrackerSettings';
 import { SettingsSection } from '../components/SettingsSection';
 import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline, verificationAttempts as storyVerificationAttempts, verifierStatuses } from './fixtures';
@@ -482,6 +483,26 @@ function SecretsStory() {
   );
 }
 
+function RoutingOverlayStory() {
+  const route = (label: string, harness: string, model: string) => ({ label, harness, model });
+  const config = { ...storyConfig, routingLabels: [route('reasoning', 'claude', 'claude-opus-5-5'), route('cheap', 'claude', 'claude-haiku-4-5')] };
+  const [overlay, setOverlay] = useState<RoutingLabelOverlayEntry[] | null>([
+    { kind: 'local', enabled: true, routingLabel: route('security-review', 'claude', 'claude-sonnet-4-6') },
+    { kind: 'global', ref: 'reasoning', enabled: true },
+    { kind: 'global', ref: 'cheap', enabled: false },
+    { kind: 'local', enabled: true, routingLabel: route('Reasoning', 'claude', 'claude-sonnet-4-6') },
+  ]);
+  return (
+    <StoryFrame style={{ padding: 24 }}>
+      <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+        <SettingsSection title="Routing Labels" description="Global rows are managed in Global settings. You can reorder them and turn them off here; labels you add are local to this Workspace.">
+          <RoutingLabelOverlayEditor overlay={overlay} config={config} onChange={setOverlay} />
+        </SettingsSection>
+      </div>
+    </StoryFrame>
+  );
+}
+
 const STORIES: Record<string, () => JSX.Element> = {
   settings: SettingsStory,
   board: BoardStory,
@@ -512,6 +533,7 @@ const STORIES: Record<string, () => JSX.Element> = {
   archive: ArchiveStory,
   tracker: TrackerStory,
   secrets: SecretsStory,
+  'routing-overlay': RoutingOverlayStory,
 };
 
 function Story() {

@@ -3,9 +3,10 @@ import { act, createElement, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../web/src/api.js';
 import { Board } from '../web/src/components/Board.js';
+import { RoutingLabelOverlayEditor } from '../web/src/components/RoutingLabelOverlayEditor.js';
 import { RoutingLabelsEditor, firstRoutingLabelError, routingLabelErrors } from '../web/src/components/RoutingLabelsEditor.js';
 import { Properties } from '../web/src/components/ticket/Metrics.js';
-import type { AppConfig, Task } from '../web/src/types.js';
+import type { AppConfig, RoutingLabelOverlayEntry, Task } from '../web/src/types.js';
 import { cleanup, flush, makeConfig, makeTask, mountComponent } from './component-smoke-harness.js';
 
 type Routes = AppConfig['routingLabels'];
@@ -131,6 +132,70 @@ describe('RoutingLabelsEditor', () => {
   it('flags an empty label', () => {
     expect(routingLabelErrors([{ label: '  ', harness: 'claude', model: 'm' }])).toEqual(['Enter a label.']);
     expect(firstRoutingLabelError(two)).toBeNull();
+  });
+});
+
+type Overlay = RoutingLabelOverlayEntry[] | null;
+let latestOverlay: Overlay = null;
+function captureOverlay(next: RoutingLabelOverlayEntry[]) {
+  latestOverlay = next;
+}
+const overlayConfig = { ...config, routingLabels: two };
+
+function OverlayHarness({ initial }: { initial: Overlay }) {
+  const [overlay, setOverlay] = useState<Overlay>(initial);
+  return createElement(RoutingLabelOverlayEditor, {
+    overlay,
+    config: overlayConfig,
+    onChange: (next: RoutingLabelOverlayEntry[]) => { captureOverlay(next); setOverlay(next); },
+  });
+}
+const mountOverlay = (initial: Overlay) => mountComponent(createElement(OverlayHarness, { initial }));
+
+describe('RoutingLabelOverlayEditor', () => {
+  it('shows inherited globals locked with a Global chip and a switch, and no Remove', async () => {
+    const host = await mountOverlay(null);
+    expect(host.textContent).toContain('reasoning');
+    expect(host.textContent).toContain('Global');
+    expect(byLabel(host, 'Disable routing label 1').getAttribute('aria-checked')).toBe('true');
+    expect(host.querySelector('[aria-label="Remove Routing Label 1"]')).toBeNull();
+    expect(host.querySelector('input[aria-label="Routing Label 1"]')).toBeNull();
+  });
+
+  it('disables a global row with the switch', async () => {
+    const host = await mountOverlay(null);
+    await click(byLabel(host, 'Disable routing label 2'));
+    expect(latestOverlay).toEqual([
+      { kind: 'global', ref: 'reasoning', enabled: true },
+      { kind: 'global', ref: 'cheap', enabled: false },
+    ]);
+    expect(byLabel(host, 'Enable routing label 2').getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('adds an editable local row and edits it', async () => {
+    const host = await mountOverlay(null);
+    await click(Array.from(host.querySelectorAll('button')).find((b) => b.textContent === '+ Add Routing Label')!);
+    await type(byLabel<HTMLInputElement>(host, 'Routing Label 3'), 'security');
+    expect(latestOverlay?.[2]).toEqual({ kind: 'local', enabled: true, routingLabel: { label: 'security', harness: 'claude', model: 'claude-sonnet-4-6' } });
+    await click(byLabel(host, 'Remove Routing Label 3'));
+    expect(latestOverlay).toHaveLength(2);
+  });
+
+  it('shows the duplicate error inline until the Global row is disabled', async () => {
+    const host = await mountOverlay([{ kind: 'local', enabled: true, routingLabel: { label: 'Reasoning', harness: 'claude', model: 'claude-sonnet-4-6' } }]);
+    const alert = host.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain('duplicates the enabled Global label reasoning');
+    expect(alert?.querySelector('code')?.textContent).toBe('reasoning');
+    expect(byLabel(host, 'Routing Label 1').getAttribute('aria-invalid')).toBe('true');
+    await click(byLabel(host, 'Disable routing label 2'));
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('marks a dropped global as Removed and lets it be removed', async () => {
+    const host = await mountOverlay([{ kind: 'global', ref: 'gone', enabled: true }]);
+    expect(host.textContent).toContain('Removed');
+    await click(byLabel(host, 'Remove Routing Label 1'));
+    expect(latestOverlay?.some((e) => e.kind === 'global' && e.ref === 'gone')).toBe(false);
   });
 });
 

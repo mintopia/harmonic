@@ -4,7 +4,7 @@ import { PROMPT_FRAGMENT_NAMES, PROMPT_FRAGMENTS, promptFragmentOverrideKey, typ
 export type SettingScope = 'global-only' | 'overridable';
 
 /** The UI control a setting renders as. */
-export type SettingControl = 'select' | 'toggle' | 'number' | 'text' | 'json' | 'verifier';
+export type SettingControl = 'select' | 'toggle' | 'number' | 'text' | 'json' | 'verifier' | 'routing-labels';
 
 /** The tab a setting groups under in the Settings UI. */
 export type SettingTab = 'general' | 'execution' | 'verification' | 'prompts' | 'integrations' | 'security' | 'archive';
@@ -163,6 +163,13 @@ export const settingsRegistry = {
     tab: 'verification',
     label: 'Epic pre-merge critics',
     help: 'Critics run after Epic pre-merge commands pass.',
+  },
+  routingLabels: {
+    scope: 'overridable',
+    control: 'routing-labels',
+    tab: 'execution',
+    label: 'Routing Labels',
+    help: 'Ordered ticket label to Harness and Model routes; reorder or disable global routes and add Workspace-only ones. Inherits the global list when unset.',
   },
   guardrailBudget: {
     scope: 'overridable',
