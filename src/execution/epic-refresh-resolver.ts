@@ -12,7 +12,7 @@ import type { RunnerEvents } from './runner-options.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import type { TaskArchive } from '../archive/task-archive.js';
-import { expandFragments, fillTemplate } from './prompt-template.js';
+import { renderEpicRefreshPrompt } from './prompt-assembly.js';
 import { resolveEpicResolverPrompts } from '../domain/setting-override.js';
 import { logger } from '../logger.js';
 
@@ -132,13 +132,11 @@ export class EpicRefreshResolver {
       if (args.conflicted) {
         const drive = this.deps.criticDrive;
         const resolver = resolveEpicResolverPrompts(await this.deps.getWorkspace?.(args.target.workspaceId), this.deps.getConfig());
-        const prompt = fillTemplate(expandFragments(resolver.refreshPrompt, resolver.fragments), {
+        const prompt = renderEpicRefreshPrompt(resolver.refreshPrompt, resolver.fragments, {
           defaultBranch: args.target.defaultBranch,
           branch: args.branch,
           detail: args.conflictDetail,
-          baseDir: args.worktreePath,
-          baseBranch: args.branch,
-          taskBranch: args.target.defaultBranch,
+          worktreePath: args.worktreePath,
         });
         await this.archiveAndRecord(args.target, prompt);
         await drive.run({

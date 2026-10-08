@@ -128,10 +128,10 @@ export function composeEpicResolvePrompt(i: {
 }): string {
   return [
     expandFragments(i.resolvePrompt, i.fragments)
-      .replaceAll('{ref}', i.epic.ref)
-      .replaceAll('{title}', i.epic.title)
-      .replaceAll('{description}', i.epic.body)
-      .replaceAll('{url}', i.epic.url),
+      .replaceAll('{ref}', () => i.epic.ref)
+      .replaceAll('{title}', () => i.epic.title)
+      .replaceAll('{description}', () => i.epic.body)
+      .replaceAll('{url}', () => i.epic.url),
     '',
     renderFragment('epicFailingVerification', i.fragments, { reason: i.reason }),
     '',
