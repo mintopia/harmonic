@@ -312,9 +312,9 @@ export class TaskService {
     };
   }
 
-  /** A routed Attempt in flight (working or paused) keeps the Harness/Model it started with; relabelling or a config change applies from the next Attempt (ADR-0049). */
-  private isRoutePinned(raw: RawTaskRow, scope: RoutingScope): boolean {
-    return IN_FLIGHT_STATES.includes(raw.state) && routeApplies(raw) && this.routing.matchRoute(raw, scope.labels) !== null;
+  /** A mirrored Attempt in flight (working or paused) keeps the Harness/Model it started with, whether or not a Routing Label still matches; relabelling or a config change applies from the next Attempt (ADR-0049). */
+  private isRoutePinned(raw: RawTaskRow): boolean {
+    return IN_FLIGHT_STATES.includes(raw.state) && raw.origin === 'mirrored' && routeApplies(raw);
   }
 
   private async runningRoutes(taskIds: readonly number[]): Promise<Map<number, { harness: string; model: string }>> {
@@ -339,7 +339,7 @@ export class TaskService {
     await forEachYielding(raws, (raw) => {
       const scope = scopeOf(raw.workspaceId);
       rows.push({ ...raw, ...this.resolveDefaults(raw, scope) });
-      if (this.isRoutePinned(raw, scope)) pinned.push(raw.id);
+      if (this.isRoutePinned(raw)) pinned.push(raw.id);
     });
     if (pinned.length === 0) return rows;
     const routes = await this.runningRoutes(pinned);
@@ -354,7 +354,7 @@ export class TaskService {
   private async resolve(raw: RawTaskRow): Promise<TaskRow> {
     const scope = await this.routing.scopeFor(raw.workspaceId);
     const task: TaskRow = { ...raw, ...this.resolveDefaults(raw, scope) };
-    if (!this.isRoutePinned(raw, scope)) return task;
+    if (!this.isRoutePinned(raw)) return task;
     const route = (await this.runningRoutes([raw.id])).get(raw.id);
     return route ? { ...task, ...route } : task;
   }
