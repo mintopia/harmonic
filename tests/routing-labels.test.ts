@@ -184,6 +184,53 @@ describe('Routing Labels (ADR-0049)', () => {
     });
   });
 
+  describe('in-flight pinning when no Routing Label matches any more', () => {
+    const started = { harness: 'claude', model: 'claude-opus-5-5' };
+    async function routedAttempt() {
+      const attempts = new AttemptStore(asyncDb);
+      const mirrored = await mirror(1, ['ready-for-agent', 'reasoning']);
+      const claimed = (await tasks.claimReady(mirrored.id))!;
+      const attempt = await attempts.create(mirrored.id, { route: { harness: claimed.harness, model: claimed.model } });
+      return { mirrored, attempts, attempt };
+    }
+
+    it('keeps the route when the deciding label is removed from the Ticket', async () => {
+      const { mirrored, attempts, attempt } = await routedAttempt();
+      await mirror(1, ['ready-for-agent']);
+      expect(await tasks.get(mirrored.id)).toMatchObject(started);
+      expect((await tasks.listWithDeps()).find((t) => t.id === mirrored.id)).toMatchObject(started);
+      await attempts.update(attempt.id, { state: 'failed', endedAt: Date.now() });
+      expect(await tasks.get(mirrored.id)).toMatchObject({ model: 'claude-sonnet-5-5' });
+    });
+
+    it('keeps the route when the Ticket is relabelled to a non-routing label', async () => {
+      const { mirrored } = await routedAttempt();
+      await mirror(1, ['ready-for-agent', 'documentation']);
+      expect(await tasks.get(mirrored.id)).toMatchObject(started);
+    });
+
+    it('keeps the route when the Routing Label row is deleted from the global config', async () => {
+      const { mirrored } = await routedAttempt();
+      config = { ...config, routingLabels: [] };
+      expect(await tasks.get(mirrored.id)).toMatchObject(started);
+      expect((await tasks.list()).find((t) => t.id === mirrored.id)).toMatchObject(started);
+    });
+
+    it('keeps the route when the row is disabled in the Workspace overlay', async () => {
+      const { mirrored } = await routedAttempt();
+      await new WorkspaceService(asyncDb, settingsStore).update(wsId, { routingLabels: [{ kind: 'global', ref: 'reasoning', enabled: false }] });
+      expect(await tasks.get(mirrored.id)).toMatchObject(started);
+      expect((await tasks.listWithDeps()).find((t) => t.id === mirrored.id)).toMatchObject(started);
+    });
+
+    it('keeps the route while paused with the label removed', async () => {
+      const { mirrored } = await routedAttempt();
+      await tasks.pause(mirrored.id);
+      await mirror(1, ['ready-for-agent']);
+      expect(await tasks.get(mirrored.id)).toMatchObject({ state: 'paused', ...started });
+    });
+  });
+
   describe('in-flight pinning while paused', () => {
     async function pausedRoutedTask() {
       const attempts = new AttemptStore(asyncDb);

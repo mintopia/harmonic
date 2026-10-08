@@ -6,7 +6,8 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { baselineConfig, type AppConfig, type RoutingLabel, type RoutingLabelOverlayEntry } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
-import { resolveRoutingLabels, routingLabelIssues, routingLabelOverlayIssues } from '../src/domain/setting-override.js';
+import { routingLabelIssues, routingLabelOverlayIssues } from '../src/domain/setting-override.js';
+import { resolveRoutingLabels } from '../src/domain/routing-labels.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
 import { trackerRef, type Ticket } from '../src/tracker/adapter.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -170,12 +171,20 @@ describe('Workspace Routing Label overlay save validation', () => {
   it('refuses a local row duplicating an enabled global label, case-insensitively', async () => {
     const res = await patch([global('reasoning'), local({ ...fast, label: 'REASONING' })]);
     expect(res.status).toBe(400);
-    expect(JSON.stringify(res.body)).toContain('already mapped');
+    expect(JSON.stringify(res.body)).toContain('duplicates the enabled Global label reasoning');
     expect((await server.api('GET', `/api/workspaces/${wsId}`)).body.routingLabels).toBeNull();
   });
 
   it('refuses a local row duplicating a global that the overlay does not name', async () => {
     expect((await patch([local({ ...fast, label: 'cheap' })])).status).toBe(400);
+  });
+
+  it('refuses a local row whose Harness is not configured', async () => {
+    delete (server.app.ctx.settingsStore.getGlobal().harnesses as Record<string, unknown>).codex;
+    const res = await patch([local(fast)]);
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toContain("harness 'codex' is not configured");
+    expect((await server.api('GET', `/api/workspaces/${wsId}`)).body.routingLabels).toBeNull();
   });
 
   it('allows the label once the global is disabled', async () => {

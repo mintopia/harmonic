@@ -7,7 +7,7 @@ import { parse } from 'yaml';
 import { z } from 'zod';
 import { verdictContractError } from './verification/critic-schema.js';
 import { isModelPriced, pricesForHarness } from './domain/pricing.js';
-import { routingLabelIssues } from './domain/setting-override.js';
+import { routingLabelIssueMessage, routingLabelIssues } from './domain/setting-override.js';
 import {
   PROMPT_FRAGMENT_NAMES,
   PROMPT_FRAGMENTS,
@@ -449,7 +449,7 @@ export const appConfigSchema = z.object({
     ctx.addIssue({
       code: 'custom',
       path: ['routingLabels', issue.index, 'label'],
-      message: issue.kind === 'blank' ? 'routing label must not be blank' : `routing label "${config.routingLabels[issue.index]?.label}" is already mapped`,
+      message: routingLabelIssueMessage(issue, config.routingLabels[issue.index]?.label ?? ''),
     });
   }
   const unpriced = unpricedModelsForCostCap(config.guardrails.budget, config);

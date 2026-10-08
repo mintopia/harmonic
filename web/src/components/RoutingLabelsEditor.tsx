@@ -16,12 +16,12 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { routingLabelIssues } from '../../../src/domain/setting-override.js';
+import { routingLabelIssueMessage, routingLabelIssues } from '../../../src/domain/setting-override.js';
 import type { AppConfig } from '../types';
 import { field } from '../ui';
 import { DiscoveryModelPicker } from './DiscoveryModelPicker';
 import { fieldLabel } from './SettingsSection';
-import { firstIssueMessage, isIssueVisible, issuesByIndex, routingIssueMessage } from './routing-label-overlay-model';
+import { firstIssueMessage, isIssueVisible, issuesByIndex } from './routing-label-overlay-model';
 import { providerLabel } from './TaskIdentity';
 
 type RoutingLabel = AppConfig['routingLabels'][number];
@@ -312,7 +312,7 @@ export function RoutingLabelsEditor({
           const issue = issues.get(index);
           const visibleIssue = isIssueVisible(issue, touched) ? issue : null;
           return (
-            <RoutingRowShell id={id} index={index} error={visibleIssue && routingIssueMessage(visibleIssue, item.label)}>
+            <RoutingRowShell id={id} index={index} error={visibleIssue && routingLabelIssueMessage(visibleIssue, item.label)}>
               <RouteCells
                 id={id}
                 index={index}
@@ -327,12 +327,12 @@ export function RoutingLabelsEditor({
           );
         }}
       />
-      <RoutingNote />
+      <RoutingEditorHelp />
     </div>
   );
 }
 
-export function RoutingNote() {
+export function RoutingEditorHelp() {
   return (
     <p className="mt-2 text-small text-faint">
       The Model picker is the same combobox as the Task form: type to filter that Harness&apos;s catalog, or enter a custom id. Changing the Harness resets the Model to that Harness&apos;s default. Labels are free text and matched case-insensitively.

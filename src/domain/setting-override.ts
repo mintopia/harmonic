@@ -12,7 +12,6 @@ import {
   type BudgetGuardrail,
   type MergeFate,
   type RoutingLabel,
-  type RoutingLabelOverlayEntry,
 } from '../config.js';
 import { expandFragments } from '../execution/prompt-template.js';
 import {
@@ -83,7 +82,7 @@ export function resolveVerifiers(
  * already-customised Workspace. `null` inherits every global, in global
  * order, enabled.
  */
-function mergeOverlay<TItem, TEntry extends { kind: 'global' | 'local'; enabled: boolean }>(
+export function mergeOverlay<TItem, TEntry extends { kind: 'global' | 'local'; enabled: boolean }>(
   overlay: readonly TEntry[] | null,
   globals: readonly TItem[],
   idOf: (item: TItem) => string,
@@ -133,16 +132,33 @@ export type RoutingLabelIssue =
   | { index: number; kind: 'blank' | 'duplicate' }
   | { index: number; kind: 'duplicate-global'; globalRef: string };
 
+export type RoutingLabelIssueText = { before: string; globalRef?: string; after: string };
+
+/** The message for an issue on `label`, split around the Global label it repeats so a UI can style that name. */
+export function describeRoutingLabelIssue(issue: RoutingLabelIssue, label: string): RoutingLabelIssueText {
+  const text = label.trim();
+  switch (issue.kind) {
+    case 'blank':
+      return { before: 'Enter a label.', after: '' };
+    case 'duplicate':
+      return { before: `“${text}” is already mapped above (labels match case-insensitively).`, after: '' };
+    case 'duplicate-global':
+      return {
+        before: `“${text}” duplicates the enabled Global label `,
+        globalRef: issue.globalRef,
+        after: ' (labels match case-insensitively). Rename it, or disable the Global row above.',
+      };
+  }
+}
+
+export function routingLabelIssueMessage(issue: RoutingLabelIssue, label: string): string {
+  const { before, globalRef = '', after } = describeRoutingLabelIssue(issue, label);
+  return before + globalRef + after;
+}
+
 /** Blank and case-insensitively repeated labels in a flat (Global) list. */
 export function routingLabelIssues(labels: readonly Pick<RoutingLabel, 'label'>[]): RoutingLabelIssue[] {
-  const seen = new Set<string>();
-  return labels.flatMap((route, index): RoutingLabelIssue[] => {
-    const ref = routingLabelRef(route);
-    if (ref === '') return [{ index, kind: 'blank' }];
-    if (seen.has(ref)) return [{ index, kind: 'duplicate' }];
-    seen.add(ref);
-    return [];
-  });
+  return routingLabelOverlayIssues(labels.map((routingLabel) => ({ kind: 'local', enabled: true, routingLabel })), []);
 }
 
 /**
@@ -169,20 +185,6 @@ export function routingLabelOverlayIssues(
     seen.add(ref);
     return [];
   });
-}
-
-/** Effective Routing Labels: null inherits all globals; a local shadowed by an enabled global is dropped (ADR-0049). */
-export function resolveRoutingLabels(
-  ws: Pick<WorkspaceRow, 'routingLabels'> | null | undefined,
-  config: Pick<AppConfig, 'routingLabels'>,
-): RoutingLabel[] {
-  const stored = isOverridable('routingLabels') ? ws?.routingLabels : null;
-  const overlay = stored == null ? null : (JSON.parse(stored) as RoutingLabelOverlayEntry[]);
-  const merged = mergeOverlay<RoutingLabel, RoutingLabelOverlayEntry>(overlay, config.routingLabels, routingLabelRef, (e) => e.ref, (e) => e.routingLabel);
-  if (overlay == null) return merged;
-  const globals = new Set<RoutingLabel>(config.routingLabels);
-  const enabledGlobalRefs = new Set(merged.filter((route) => globals.has(route)).map(routingLabelRef));
-  return merged.filter((route) => globals.has(route) || !enabledGlobalRefs.has(routingLabelRef(route)));
 }
 
 function resolveTaskStage(

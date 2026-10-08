@@ -1,31 +1,8 @@
 import type { AppConfig, RoutingLabelOverlayEntry } from '../types.js';
-import { routingLabelOverlayIssues, routingLabelRef, type RoutingLabelIssue } from '../../../src/domain/setting-override.js';
+import { routingLabelIssueMessage, routingLabelOverlayIssues, routingLabelRef, type RoutingLabelIssue } from '../../../src/domain/setting-override.js';
 import { withMissingGlobals } from './verification-override-model.js';
 
 type RoutingLabel = AppConfig['routingLabels'][number];
-
-export type RoutingIssueText = { before: string; globalRef?: string; after: string };
-
-export function routingIssueText(issue: RoutingLabelIssue, label: string): RoutingIssueText {
-  const text = label.trim();
-  switch (issue.kind) {
-    case 'blank':
-      return { before: 'Enter a label.', after: '' };
-    case 'duplicate':
-      return { before: `“${text}” is already mapped above (labels match case-insensitively).`, after: '' };
-    case 'duplicate-global':
-      return {
-        before: `“${text}” duplicates the enabled Global label `,
-        globalRef: issue.globalRef,
-        after: ' (labels match case-insensitively). Rename it, or disable the Global row above.',
-      };
-  }
-}
-
-export const routingIssueMessage = (issue: RoutingLabelIssue, label: string): string => {
-  const { before, globalRef = '', after } = routingIssueText(issue, label);
-  return before + globalRef + after;
-};
 
 /** An issue shows immediately unless it is the blank-label prompt, which waits until the row was touched. */
 export const isIssueVisible = (issue: RoutingLabelIssue | undefined, touched: boolean): issue is RoutingLabelIssue =>
@@ -36,7 +13,7 @@ export const issuesByIndex = (issues: readonly RoutingLabelIssue[]): Map<number,
 
 export function firstIssueMessage(issues: readonly RoutingLabelIssue[], labelAt: (index: number) => string): string | null {
   const first = issues[0];
-  return first ? `Routing Label ${first.index + 1}: ${routingIssueMessage(first, labelAt(first.index))}` : null;
+  return first ? `Routing Label ${first.index + 1}: ${routingLabelIssueMessage(first, labelAt(first.index))}` : null;
 }
 
 /** The overlay as displayed: any global not named is appended enabled, mirroring the runtime merge. */

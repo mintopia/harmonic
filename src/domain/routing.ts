@@ -3,7 +3,8 @@ import type { AsyncDbHandle } from '../db/async.js';
 import { tasks, trackerContainers, type RawTaskRow, type TaskRow, type WorkspaceRow } from '../db/schema.js';
 import type { AppConfig, RoutingLabel } from '../config.js';
 import type { TrackerRef } from '../tracker/adapter.js';
-import { resolveRoutingLabels, resolveScoped, routingLabelRef } from './setting-override.js';
+import { resolveScoped, routingLabelRef } from './setting-override.js';
+import { resolveRoutingLabels } from './routing-labels.js';
 import { harnessConfig, resolveRoute, type ResolvedRoute } from './route.js';
 import type { TaskRouting } from './task-routing.js';
 import { resolveWorkspace } from './workspaces.js';
@@ -16,6 +17,18 @@ export interface RoutingScope {
 
 export function routeApplies(over: { harness: string | null; model: string | null }): boolean {
   return over.harness === null && over.model === null;
+}
+
+/** The Harness + Model a turn runs on absent an operator Model: the Routing Label (empty Model = the Harness default), else the Workspace/global default. */
+export function defaultRoute(
+  config: AppConfig,
+  workspace: WorkspaceRow,
+  route: RoutingLabel | null,
+  harnessOverride: string | null = null,
+): { harness: string; model: string } {
+  const harness = harnessOverride ?? route?.harness ?? resolveScoped('harness', workspace.harness, config.defaults.harness);
+  const defaultModel = harnessConfig(config, harness)?.defaultModel ?? '';
+  return { harness, model: route ? route.model || defaultModel : resolveScoped('model', workspace.model, defaultModel) };
 }
 
 export class RoutingService {
@@ -75,9 +88,8 @@ export class RoutingService {
       await db.select().from(tasks).where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.trackerRef, epicRef))).get(),
     ] as const);
     const route = container ? this.matchRoute({ origin: 'mirrored', trackerLabels: container.trackerLabels }, labels) : task ? this.matchRoute(task, labels) : null;
-    if (route) return resolveRoute(config, route.harness, route.model || harnessConfig(config, route.harness)?.defaultModel || '', route.label);
-    const harness = resolveScoped('harness', workspace.harness, config.defaults.harness);
-    return resolveRoute(config, harness, resolveScoped('model', workspace.model, harnessConfig(config, harness)?.defaultModel ?? ''), null);
+    const target = defaultRoute(config, workspace, route);
+    return resolveRoute(config, target.harness, target.model, route?.label ?? null);
   }
 
   private async getRaw(id: number): Promise<RawTaskRow> {

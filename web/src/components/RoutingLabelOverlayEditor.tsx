@@ -1,31 +1,31 @@
 import { arrayMove } from '@dnd-kit/sortable';
-import { routingLabelOverlayIssues, routingLabelRef, type RoutingLabelIssue } from '../../../src/domain/setting-override.js';
+import { describeRoutingLabelIssue, routingLabelOverlayIssues, routingLabelRef, type RoutingLabelIssue } from '../../../src/domain/setting-override.js';
 import type { AppConfig, RoutingLabelOverlayEntry } from '../types';
-import { chip } from '../ui';
+import { chip, codeChip } from '../ui';
 import {
   Precedence,
   RemoveButton,
   RouteCells,
   RoutingListFrame,
-  RoutingNote,
+  RoutingEditorHelp,
   RoutingRowShell,
   arrowCell,
   defaultRoute,
   stackedCell,
   trailingCell,
 } from './RoutingLabelsEditor';
-import { isIssueVisible, issuesByIndex, newLocalEntry, overlayRows, routingIssueText } from './routing-label-overlay-model';
+import { isIssueVisible, issuesByIndex, newLocalEntry, overlayRows } from './routing-label-overlay-model';
 import { Switch } from './Switch';
 import { formatModelLabel, providerLabel } from './TaskIdentity';
 
 const globalChip = `${chip} bg-raised text-muted`;
 
 function ErrorText({ issue, label }: { issue: RoutingLabelIssue; label: string }) {
-  const { before, globalRef, after } = routingIssueText(issue, label);
+  const { before, globalRef, after } = describeRoutingLabelIssue(issue, label);
   return (
     <>
       {before}
-      {globalRef !== undefined && <code className="font-data">{globalRef}</code>}
+      {globalRef !== undefined && <code className={codeChip}>{globalRef}</code>}
       {after}
     </>
   );
@@ -121,7 +121,7 @@ export function RoutingLabelOverlayEditor({
           );
         }}
       />
-      <RoutingNote />
+      <RoutingEditorHelp />
     </div>
   );
 }

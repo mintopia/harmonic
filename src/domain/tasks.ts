@@ -26,10 +26,10 @@ import {
   type EpicRow,
 } from '../db/schema.js';
 import { resolveWorkspace } from './workspaces.js';
-import { routeApplies, RoutingService, type RoutingScope } from './routing.js';
+import { defaultRoute, routeApplies, RoutingService, type RoutingScope } from './routing.js';
 import { resolveScoped } from './setting-override.js';
 import { harnessConfig } from './route.js';
-import type { EscalationCause } from './task-routing.js';
+import type { EscalationCause, TaskRouting } from './task-routing.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
 import { logger } from '../logger.js';
@@ -189,7 +189,7 @@ export interface TaskWithDeps extends TaskRow {
   /** The inheritable defaults as stored (`null` ⇒ inherited): lets the editor tell an
    * inherited field from a pinned one, since the row's own fields are resolved. */
   overrides: TaskOverrides;
-  routing: { label: string; applied: boolean } | null;
+  routing: TaskRouting | null;
 }
 
 /** A scheduler candidate with its unfinished local dependency ids. */
@@ -300,21 +300,19 @@ export class TaskService {
     const over = this.overridesOf(raw);
     const config = this.getConfig();
     const route = routeApplies(over) ? this.routing.matchRoute(raw, labels) : null;
-    const harness = over.harness ?? route?.harness ?? resolveScoped('harness', workspace.harness, config.defaults.harness);
-    const defaultModel = harnessConfig(config, harness)?.defaultModel;
-    const model = over.model ?? (route ? route.model || defaultModel || '' : resolveScoped('model', workspace.model, defaultModel ?? ''));
+    const target = defaultRoute(config, workspace, route, over.harness);
     return {
-      harness,
-      model,
+      harness: target.harness,
+      model: over.model ?? target.model,
       isolationMode: over.isolationMode ?? resolveScoped('isolationMode', workspace.isolationMode, config.defaults.isolationMode),
       priority: over.priority ?? resolveScoped('priority', workspace.priority, config.defaults.priority),
       conflictResolveTurns: over.conflictResolveTurns ?? resolveScoped('conflictResolveTurns', workspace.conflictResolveTurns, config.defaults.conflictResolveTurns),
     };
   }
 
-  /** A routed Attempt in flight (working or paused) keeps the Harness/Model it started with; relabelling or a config change applies from the next Attempt (ADR-0049). */
-  private isRoutePinned(raw: RawTaskRow, scope: RoutingScope): boolean {
-    return IN_FLIGHT_STATES.includes(raw.state) && routeApplies(raw) && this.routing.matchRoute(raw, scope.labels) !== null;
+  /** A mirrored Attempt in flight (working or paused) keeps the Harness/Model it started with, whether or not a Routing Label still matches; relabelling or a config change applies from the next Attempt (ADR-0049). */
+  private isRoutePinned(raw: RawTaskRow): boolean {
+    return IN_FLIGHT_STATES.includes(raw.state) && raw.origin === 'mirrored' && routeApplies(raw);
   }
 
   private async runningRoutes(taskIds: readonly number[]): Promise<Map<number, { harness: string; model: string }>> {
@@ -339,7 +337,7 @@ export class TaskService {
     await forEachYielding(raws, (raw) => {
       const scope = scopeOf(raw.workspaceId);
       rows.push({ ...raw, ...this.resolveDefaults(raw, scope) });
-      if (this.isRoutePinned(raw, scope)) pinned.push(raw.id);
+      if (this.isRoutePinned(raw)) pinned.push(raw.id);
     });
     if (pinned.length === 0) return rows;
     const routes = await this.runningRoutes(pinned);
@@ -354,7 +352,7 @@ export class TaskService {
   private async resolve(raw: RawTaskRow): Promise<TaskRow> {
     const scope = await this.routing.scopeFor(raw.workspaceId);
     const task: TaskRow = { ...raw, ...this.resolveDefaults(raw, scope) };
-    if (!this.isRoutePinned(raw, scope)) return task;
+    if (!this.isRoutePinned(raw)) return task;
     const route = (await this.runningRoutes([raw.id])).get(raw.id);
     return route ? { ...task, ...route } : task;
   }

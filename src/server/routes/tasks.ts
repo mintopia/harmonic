@@ -28,7 +28,7 @@ import { adapterFor } from '../../execution/harness/registry.js';
 import { attemptTimelineToApi, attemptToApi, taskToApi, tasksToApi, ticketTimelineToApi, verifierStatusesToApi } from '../serialize.js';
 import { atRestWorkspaceId, costOfAttempts, epicToListRow, verificationAttemptToApi } from '../dto.js';
 import type { ApiTaskListItem } from '../dto.js';
-import type { EscalationCause, TaskRouting } from '../../domain/task-routing.js';
+import { escalationCauseSchema, taskRoutingSchema } from '../../domain/task-routing.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, attemptUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import { diffFilesResponseSchema } from './diff.js';
@@ -127,13 +127,6 @@ const depParamsSchema = z.object({
   id: z.coerce.number().int().meta({ example: 4821 }),
   depId: z.coerce.number().int().meta({ example: 4818 }),
 });
-
-const taskRoutingSchema = z.object({ label: z.string(), applied: z.boolean() }) satisfies z.ZodType<TaskRouting>;
-const escalationCauseSchema = z.object({
-  kind: z.literal('harness_unconfigured'),
-  harness: z.string(),
-  label: z.string().nullable(),
-}) satisfies z.ZodType<EscalationCause>;
 
 /** A task plus its dependency context (`TaskService.withDeps`) — no Cost, since not every caller derives it. */
 const taskWithDepsSchema = z

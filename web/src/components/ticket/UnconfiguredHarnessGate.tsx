@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { api } from '../../api';
 import { useAsyncResource } from '../../useAsyncResource';
-import { btnGhost, btnPrimary, field, labelType, panelTitle } from '../../ui';
+import { btnGhost, btnPrimary, codeChip, field, labelType, panelTitle } from '../../ui';
 import { taskLabel } from '../../id-format.js';
 import { Modal } from '../Modal';
 import { providerLabel } from '../TaskIdentity';
 
 export function UnconfiguredHarnessMessage({ label, harness }: { label: string | null; harness: string }) {
-  const code = 'rounded-[3px] bg-surface px-1.5 font-data text-small text-ink';
+  const code = `${codeChip} bg-surface text-ink`;
   return (
     <>
       {label ? (

@@ -4,10 +4,8 @@ import {
   newLocalEntry,
   overlayRows,
   isIssueVisible,
-  routingIssueMessage,
-  routingIssueText,
 } from '../web/src/components/routing-label-overlay-model.js';
-import { routingLabelOverlayIssues } from '../src/domain/setting-override.js';
+import { describeRoutingLabelIssue, routingLabelIssueMessage, routingLabelOverlayIssues } from '../src/domain/setting-override.js';
 import type { RoutingLabelOverlayEntry } from '../web/src/types.js';
 
 const globals = [
@@ -39,8 +37,8 @@ describe('routing overlay issue messages', () => {
     const rows = overlayRows([local('REASONING')], globals);
     const [issue] = routingLabelOverlayIssues(rows, globals);
     expect(issue).toEqual({ index: 0, kind: 'duplicate-global', globalRef: 'reasoning' });
-    expect(routingIssueText(issue!, 'REASONING').globalRef).toBe('reasoning');
-    expect(routingIssueMessage(issue!, 'REASONING')).toContain('duplicates the enabled Global label reasoning');
+    expect(describeRoutingLabelIssue(issue!, 'REASONING').globalRef).toBe('reasoning');
+    expect(routingLabelIssueMessage(issue!, 'REASONING')).toContain('duplicates the enabled Global label reasoning');
   });
 
   it('shows the blank-label prompt only once the row was touched', () => {
