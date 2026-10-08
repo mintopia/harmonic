@@ -37,7 +37,7 @@ import { EmptyState } from './EmptyState';
 import { Icon } from './Icon';
 import { Markdown } from './Markdown';
 import { TokenTypeBar, TokenTypeLegend } from './TokenTypeBar';
-import { ModelLabel, ProviderChip } from './TaskIdentity';
+import { formatModelKey, ModelLabel, ProviderChip } from './TaskIdentity';
 import { ChangedFilesNav, changedFileKind } from './ticket/ChangedFilesNav';
 import { Fact } from './Fact';
 import { CriticSessions } from './ticket/Verification';
@@ -213,7 +213,7 @@ function UsageCard({ stats, epic }: { stats: Stats; epic: Epic }) {
             {summary.modelBars.map((bar) => {
               const usage = stats.models[bar.key];
               return usage ? (
-                <TokenTypeBar key={bar.key} label={bar.key} usage={usage} maxTotal={maxTotal} trailing={modelCostTag(stats.cost, bar.key)} />
+                <TokenTypeBar key={bar.key} label={formatModelKey(bar.key)} usage={usage} maxTotal={maxTotal} trailing={modelCostTag(stats.cost, bar.key)} />
               ) : null;
             })}
           </div>

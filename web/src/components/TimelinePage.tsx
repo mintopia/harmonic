@@ -1,4 +1,4 @@
-import { formatModelLabel } from './TaskIdentity';
+import { formatModelLabel, providerLabel } from './TaskIdentity';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import type { Attempt, TimelineAttempt } from '../types';
@@ -451,7 +451,7 @@ export function TimelinePage({
               const st = active ? styleFor(active.state) : null;
               return (
                 <div key={lane.harness} className="flex min-w-0 items-center gap-2.5 text-small">
-                  <span className="w-16 shrink-0 font-data text-data text-faint">{lane.harness}</span>
+                  <span className="w-16 shrink-0 font-data text-data text-faint">{providerLabel(lane.harness)}</span>
                   <span className={`size-2 shrink-0 rounded-full ${st ? st.dot : 'bg-edge'}`} aria-hidden="true" />
                   <span className="min-w-0 truncate font-medium text-ink" title={active ? active.title : 'idle'}>
                     {active ? (
@@ -530,7 +530,7 @@ export function TimelinePage({
                   style={{ gridTemplateColumns: `${LABEL_W}px 1fr` }}
                 >
                   <div className="flex flex-col justify-center gap-0.5 border-r border-hairline bg-shell/40 px-3 py-2">
-                    <span className="font-data text-data font-medium text-ink">{lane.harness}</span>
+                    <span className="font-data text-data font-medium text-ink">{providerLabel(lane.harness)}</span>
                     <span className="text-label text-faint">
                       {lane.spans.length} {lane.spans.length === 1 ? 'attempt' : 'attempts'}
                     </span>
@@ -620,7 +620,7 @@ function HoverCard({ hover, now }: { hover: NonNullable<Hover>; now: number }) {
       <div className="mt-1 text-small font-semibold leading-snug text-ink">{span.title}</div>
       <dl className="mt-2.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-small">
         <dt className="text-muted">Harness</dt>
-        <dd className="text-right font-data text-data text-ink">{span.harness}</dd>
+        <dd className="text-right font-data text-data text-ink">{providerLabel(span.harness)}</dd>
         <dt className="text-muted">Model</dt>
         <dd className="truncate text-right font-data text-data text-ink" title={span.model}>{formatModelLabel(span.model)}</dd>
         <dt className="text-muted">Duration</dt>
@@ -707,7 +707,7 @@ function AttemptInspector({
             <span aria-hidden="true">·</span>
             <span>attempt #{span.number}</span>
             <span aria-hidden="true">·</span>
-            <span className="font-data text-data">{span.harness} / {formatModelLabel(span.model)}</span>
+            <span className="font-data text-data">{providerLabel(span.harness)} / {formatModelLabel(span.model)}</span>
             <span aria-hidden="true">·</span>
             <span className="tabular-nums">{fmtDuration(to - from)}</span>
             {formatCost(span.cost) && (

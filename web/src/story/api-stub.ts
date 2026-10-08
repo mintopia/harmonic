@@ -255,6 +255,8 @@ const storyResolvedPrompts = [
 ];
 
 export const api: typeof RealApi = {
+  scheduledJobs: () => ok({ jobs: [] }),
+  operations: () => ok({ operations: [], recent: [] }),
   trackerKinds: () => ok({ kinds: trackerKindFixtures }),
   trackerDetection: (_id: number) => ok({ detectedTracker: { name: 'GitHub', kind: 'github' }, detectedCodeRepository: 'github' as const }),
   verifyTracker: (_id: number) => ok({ ok: true as const, identity: 'octocat' }),

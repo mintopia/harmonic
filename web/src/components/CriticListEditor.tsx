@@ -1,4 +1,4 @@
-import { formatModelLabel } from './TaskIdentity';
+import { formatModelLabel, providerLabel } from './TaskIdentity';
 import { createContext, useContext } from "react";
 import type {
   AppConfig,
@@ -63,7 +63,7 @@ function CriticRuntimeFields({
   onChange: (field: "model" | "timeoutSeconds", value: string) => void;
   onHarnessChange: (harness: string) => void;
 }) {
-  const models = harnessModels[critic.harness]?.models ?? [];
+  const models = harnessModels.byId[critic.harness]?.models ?? [];
   return (
     <div className="grid gap-3 rounded-md border border-hairline bg-sunken p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem]">
       <div>
@@ -77,12 +77,12 @@ function CriticRuntimeFields({
           value={critic.harness}
           onChange={(e) => onHarnessChange(e.target.value)}
         >
-          {!(critic.harness in harnessModels) && (
-            <option value={critic.harness}>{critic.harness}</option>
+          {!(critic.harness in harnessModels.byId) && (
+            <option value={critic.harness}>{providerLabel(critic.harness)}</option>
           )}
-          {Object.keys(harnessModels).map((harness) => (
+          {Object.keys(harnessModels.byId).map((harness) => (
             <option key={harness} value={harness}>
-              {harness}
+              {providerLabel(harness)}
             </option>
           ))}
         </select>
@@ -99,11 +99,11 @@ function CriticRuntimeFields({
           onChange={(e) => onChange("model", e.target.value)}
         >
           {!models.includes(critic.model) && (
-            <option value={critic.model}>{critic.model || "Choose a model"}</option>
+            <option value={critic.model}>{critic.model ? formatModelLabel(critic.model) : "Choose a model"}</option>
           )}
           {models.map((model) => (
             <option key={model} value={model}>
-              {model}
+              {formatModelLabel(model)}
             </option>
           ))}
         </select>
@@ -163,7 +163,7 @@ function CriticRunChip({ critic }: { critic: Pick<TaskVerificationCritic, "model
   return (
     <span className="hidden items-center gap-1.5 rounded-full bg-raised px-2 py-0.5 text-small text-muted sm:inline-flex">
       <span className="size-1.5 rounded-full bg-tool" aria-hidden="true" />
-      <span className="font-semibold">{critic.harness}</span>
+      <span className="font-semibold">{providerLabel(critic.harness)}</span>
       {critic.model && (
         <>
           {" · "}

@@ -67,7 +67,7 @@ describe('UpdateBanner', () => {
   it.each([
     ['upgradingVersion', { upgradingVersion: '2.25.0' }, /Updating to v2\.25\.0/],
     ['armedVersion', { armedVersion: '2.25.0' }, /Updating to version 2\.25\.0/],
-    ['failed', { failed: { targetVersion: '2.25.0', reason: 'boom' } }, /did not complete \(boom\)/],
+    ['failed', { failed: { targetVersion: '2.25.0', reason: 'boom', at: '2026-10-08T00:00:00Z' } }, /did not complete \(boom\)/],
     ['migrationRequired', { migrationRequired: true }, /Upgrading from the app is off/],
   ] satisfies [string, Partial<UpdateState>, RegExp][])('keeps the %s self-upgrade banner when the bundle is ahead of the running server', async (_name, overrides, text) => {
     await renderBanner({ update: makeUpdate({ currentVersion: '2.21.0', ...overrides }), bundleVersion: '2.25.0' });

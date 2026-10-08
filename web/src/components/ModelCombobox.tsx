@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { field } from '../ui';
+import { useDismissOnOutsidePointer } from '../useDismissOnOutsidePointer';
 import { Icon } from './Icon';
 import { filterModels } from './modelFilter';
 import { formatModelLabel } from './TaskIdentity';
@@ -28,14 +29,7 @@ export function ModelCombobox({
   const custom = value.trim() !== '' && shown.length === 0;
   const panelOpen = open && (shown.length > 0 || custom);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', onDown);
-    return () => document.removeEventListener('pointerdown', onDown);
-  }, [open]);
+  useDismissOnOutsidePointer(wrap, open, () => setOpen(false));
 
   useEffect(() => {
     if (highlight >= 0) {

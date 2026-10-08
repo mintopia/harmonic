@@ -1,9 +1,10 @@
 import type {
+  AppConfig,
   EpicVerificationCritic,
   TaskVerificationCritic,
   VerificationCommand,
 } from '../types.js';
-import { formatModelLabel } from './TaskIdentity.js';
+import { formatModelLabel, providerLabel } from './TaskIdentity.js';
 
 /** A freshly added command verifier, own id via `crypto.randomUUID()` — a
  * shared static seed would hand every add the same id (ADR-0037: commands are
@@ -24,18 +25,34 @@ export function newEpicCritic(start: HarnessStart): EpicVerificationCritic {
 
 export type HarnessChoice = { models: string[]; defaultModel: string };
 
-export type HarnessChoices = Record<string, HarnessChoice>;
+export type HarnessChoices = { defaultHarness: string; byId: Record<string, HarnessChoice> };
+
+/** The Harness new routes and Critics start on: the configured default when it exists, else the first configured one. */
+export function defaultHarnessId(config: Pick<AppConfig, 'defaults' | 'harnesses'>): string {
+  return config.defaults.harness in config.harnesses ? config.defaults.harness : (Object.keys(config.harnesses)[0] ?? '');
+}
+
+export function harnessChoices(config: Pick<AppConfig, 'defaults' | 'harnesses'>): HarnessChoices {
+  return {
+    defaultHarness: defaultHarnessId(config),
+    byId: Object.fromEntries(
+      Object.entries(config.harnesses).map(([id, harness]): [string, HarnessChoice] => [
+        id,
+        { models: harness.models.map((m) => m.id), defaultModel: harness.defaultModel },
+      ]),
+    ),
+  };
+}
 
 export type HarnessStart = { harness: string; model: string };
 
 export function startingHarness(choices: HarnessChoices): HarnessStart {
-  const [harness, choice] = Object.entries(choices)[0] ?? ['', undefined];
-  return { harness, model: choice?.defaultModel ?? '' };
+  return { harness: choices.defaultHarness, model: choices.byId[choices.defaultHarness]?.defaultModel ?? '' };
 }
 
 /** Switch a Critic's Harness; the model resets to that Harness's default unless it is already one of its models. */
 export function withHarness<T extends HarnessStart>(critic: T, harness: string, choices: HarnessChoices): T {
-  const choice = choices[harness];
+  const choice = choices.byId[harness];
   const keepModel = choice?.models.includes(critic.model) ?? false;
   return { ...critic, harness, model: keepModel ? critic.model : (choice?.defaultModel ?? '') };
 }
@@ -136,11 +153,11 @@ export function setEpicCriticField(
 
 /**
  * One-line summary of an agent critic for the inheriting read-only display: the
- * reviewer harness (when overridden) and model. An empty model (the seed for
+ * reviewer Harness and Model by friendly name. An empty model (the seed for
  * an unconfigured global default) reads as "Not configured".
  */
 export function summarizeCritic(critic: Pick<TaskVerificationCritic, 'name' | 'harness' | 'model'>): string {
   if (critic.model.trim() === '') return 'Not configured';
-  const runtime = `${critic.harness} · ${formatModelLabel(critic.model)}`;
+  const runtime = `${providerLabel(critic.harness)} · ${formatModelLabel(critic.model)}`;
   return `${criticLabel(critic.name)} (${runtime})`;
 }

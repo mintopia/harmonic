@@ -57,11 +57,13 @@ export function formatModelKey(key: string): string {
 }
 
 export function ModelLabel({ model, className = '' }: { model: string; className?: string }) {
+  const label = formatModelLabel(model);
+  if (label === model) return el('span', { className: `min-w-0 truncate font-data ${className}`.trim(), title: model }, model);
   return el(
     'span',
     { 'aria-label': model, className: `min-w-0 truncate ${className}`.trim(), title: model },
     el('span', { className: 'sr-only' }, model),
-    el('span', { 'aria-hidden': 'true' }, formatModelLabel(model)),
+    el('span', { 'aria-hidden': 'true' }, label),
   );
 }
 

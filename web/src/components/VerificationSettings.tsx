@@ -16,7 +16,7 @@ import {
   TaskCriticOverlayEditor,
 } from "./CriticListEditor";
 import { Tabs } from "./Tabs";
-import type { HarnessChoice, HarnessChoices } from "./verification-override-model";
+import { harnessChoices, type HarnessChoices } from "./verification-override-model";
 
 type EditorProps = {
   commands: VerificationCommand[];
@@ -25,15 +25,6 @@ type EditorProps = {
   errorPrefix: string;
   fieldErrors: Record<string, string>;
 };
-
-function harnessModelMap(config: AppConfig): HarnessChoices {
-  const choices = Object.entries(config.harnesses).map(([id, harness]): [string, HarnessChoice] => [
-    id,
-    { models: harness.models.map((m) => m.id), defaultModel: harness.defaultModel },
-  ]);
-  const preferred = choices.filter(([id]) => id === config.defaults.harness);
-  return Object.fromEntries([...preferred, ...choices.filter(([id]) => id !== config.defaults.harness)]);
-}
 
 const SCOPE_TABS = [
   { id: "task", label: "Task" },
@@ -169,7 +160,7 @@ export function GlobalVerificationSettings({
   fieldErrors: Record<string, string>;
 }) {
   const [scope, setScope] = useState<"task" | "epic">("task");
-  const harnessModels = harnessModelMap(config);
+  const harnessModels = harnessChoices(config);
   const setTaskStage = (
     stage: "preMerge" | "postMerge",
     next: AppConfig["verify"]["task"]["preMerge"],
@@ -285,6 +276,7 @@ export function GlobalVerificationSettings({
 function WorkspaceTaskStage({
   workspace,
   config,
+  harnessModels,
   setWorkspace,
   commandsKey,
   criticsKey,
@@ -293,6 +285,7 @@ function WorkspaceTaskStage({
 }: {
   workspace: Workspace;
   config: AppConfig;
+  harnessModels: HarnessChoices;
   setWorkspace: (workspace: Workspace) => void;
   commandsKey: "taskPreMergeCommands" | "taskPostMergeCommands";
   criticsKey: "taskPreMergeCritics" | "taskPostMergeCritics";
@@ -318,7 +311,7 @@ function WorkspaceTaskStage({
         idPrefix={idPrefix}
         errorPrefix={criticsKey}
         fieldErrors={fieldErrors}
-        harnessModels={harnessModelMap(config)}
+        harnessModels={harnessModels}
         emptyText="No critics run after commands pass."
       />
     </div>
@@ -328,11 +321,13 @@ function WorkspaceTaskStage({
 function WorkspaceEpicStage({
   workspace,
   config,
+  harnessModels,
   setWorkspace,
   fieldErrors,
 }: {
   workspace: Workspace;
   config: AppConfig;
+  harnessModels: HarnessChoices;
   setWorkspace: (workspace: Workspace) => void;
   fieldErrors: Record<string, string>;
 }) {
@@ -354,7 +349,7 @@ function WorkspaceEpicStage({
         idPrefix="workspace-epic-pre-merge"
         errorPrefix="epicPreMergeCritics"
         fieldErrors={fieldErrors}
-        harnessModels={harnessModelMap(config)}
+        harnessModels={harnessModels}
         emptyText="No critics run after commands pass."
       />
     </div>
@@ -373,6 +368,7 @@ export function WorkspaceVerificationSettings({
   fieldErrors: Record<string, string>;
 }) {
   const [scope, setScope] = useState<"task" | "epic">("task");
+  const harnessModels = harnessChoices(config);
   return (
     <PromptFragmentsContext.Provider value={resolvePromptFragments(workspace, config)}>
       <div>
@@ -389,6 +385,7 @@ export function WorkspaceVerificationSettings({
               <WorkspaceTaskStage
                 workspace={workspace}
                 config={config}
+                harnessModels={harnessModels}
                 setWorkspace={setWorkspace}
                 commandsKey="taskPreMergeCommands"
                 criticsKey="taskPreMergeCritics"
@@ -403,6 +400,7 @@ export function WorkspaceVerificationSettings({
               <WorkspaceTaskStage
                 workspace={workspace}
                 config={config}
+                harnessModels={harnessModels}
                 setWorkspace={setWorkspace}
                 commandsKey="taskPostMergeCommands"
                 criticsKey="taskPostMergeCritics"
@@ -419,6 +417,7 @@ export function WorkspaceVerificationSettings({
             <WorkspaceEpicStage
               workspace={workspace}
               config={config}
+              harnessModels={harnessModels}
               setWorkspace={setWorkspace}
               fieldErrors={fieldErrors}
             />

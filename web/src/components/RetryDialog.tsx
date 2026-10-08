@@ -1,18 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { api } from '../api';
 import { toastSuccess } from '../toast';
+import { useDismissOnOutsidePointer } from '../useDismissOnOutsidePointer';
 import { useLiveEffect } from '../useLiveEffect';
 import { Modal } from './Modal';
 import { ConfirmDialog } from './ConfirmDialog';
-import { formatModelLabel, providerLabel } from './TaskIdentity';
+import { ModelLabel, providerLabel } from './TaskIdentity';
+import { harnessChoices, type HarnessChoices } from './verification-override-model';
 import { btnGhost, btnPrimary, field, panelTitle, labelType } from '../ui';
 import { taskLabel } from '../id-format.js';
 import type { ContinuationPreview, Task } from '../types';
-
-export interface RouteGroup {
-  harness: string;
-  models: string[];
-}
 
 export interface RetryBody {
   guidance: string;
@@ -27,9 +24,12 @@ interface Route {
   model: string;
 }
 
-async function fetchRouteGroups(): Promise<RouteGroup[]> {
-  const config = await api.config();
-  return Object.entries(config.harnesses).map(([harness, h]) => ({ harness, models: h.models.map((m) => m.id) }));
+const NO_CHOICES: HarnessChoices = { defaultHarness: '', byId: {} };
+
+function withCurrentRoute(choices: HarnessChoices, current: Route): HarnessChoices {
+  const existing = choices.byId[current.harness] ?? { models: [], defaultModel: current.model };
+  const models = existing.models.includes(current.model) ? existing.models : [current.model, ...existing.models];
+  return { ...choices, byId: { ...choices.byId, [current.harness]: { ...existing, models } } };
 }
 
 const chipClass = 'ml-1.5 inline-flex align-middle items-center gap-1 rounded-full bg-tool-tint px-2 text-micro font-semibold text-tool';
@@ -40,16 +40,11 @@ const chevron = (
   </svg>
 );
 
-function ModelName({ model }: { model: string }) {
-  const label = formatModelLabel(model);
-  return label === model ? <span className="font-data">{label}</span> : <>{label}</>;
-}
-
 const warnClass = 'mb-3 rounded-sm bg-running-tint px-2.5 py-1.5 text-small text-running';
 
 function RoutePicker({
   id,
-  groups,
+  choices,
   value,
   current,
   label,
@@ -57,7 +52,7 @@ function RoutePicker({
   onChange,
 }: {
   id: string;
-  groups: RouteGroup[];
+  choices: HarnessChoices;
   value: Route;
   current: Route;
   label: string | null;
@@ -66,14 +61,7 @@ function RoutePicker({
 }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', onDown);
-    return () => document.removeEventListener('pointerdown', onDown);
-  }, [open]);
+  useDismissOnOutsidePointer(wrap, open, () => setOpen(false));
   const isCurrent = (harness: string, model: string) => harness === current.harness && model === current.model;
   const chip = label && isCurrent(value.harness, value.model) && (
     <span className={chipClass}>
@@ -92,38 +80,38 @@ function RoutePicker({
         className={`${field} flex min-h-11 items-center justify-between text-left`}
       >
         <span>
-          {providerLabel(value.harness)} · <ModelName model={value.model} />
+          {providerLabel(value.harness)} · <ModelLabel model={value.model} />
           {chip}
         </span>
         {chevron}
       </button>
       {open && (
         <ul role="listbox" aria-labelledby={`${id}-label`} className="absolute inset-x-0 top-full z-10 mt-1 max-h-64 overflow-auto rounded-sm bg-surface py-1 shadow-float">
-          {groups.map((group) => (
-            <li key={group.harness} role="presentation">
-              <div className={`${labelType} px-2.5 pb-0.5 pt-1.5 text-faint`}>{providerLabel(group.harness)}</div>
-              <ul role="group" aria-label={providerLabel(group.harness)}>
-                {group.models.map((model) => {
-                  const selected = value.harness === group.harness && value.model === model;
+          {Object.entries(choices.byId).map(([harness, choice]) => (
+            <li key={harness} role="presentation">
+              <div className={`${labelType} px-2.5 pb-0.5 pt-1.5 text-faint`}>{providerLabel(harness)}</div>
+              <ul role="group" aria-label={providerLabel(harness)}>
+                {choice.models.map((model) => {
+                  const selected = value.harness === harness && value.model === model;
                   return (
                     <li key={model} role="option" aria-selected={selected}>
                       <button
                         type="button"
                         className={`flex w-full items-center justify-between px-2.5 py-1.5 text-left hover:bg-raised ${selected ? 'bg-raised' : ''}`}
                         onClick={() => {
-                          onChange({ harness: group.harness, model });
+                          onChange({ harness, model });
                           setOpen(false);
                         }}
                       >
                         <span>
-                          <ModelName model={model} />
-                          {label && isCurrent(group.harness, model) && (
+                          <ModelLabel model={model} />
+                          {label && isCurrent(harness, model) && (
                             <span className={chipClass}>
                               ↳ <code className="font-data">{label}</code>
                             </span>
                           )}
                         </span>
-                        {selected ? <span className="text-accent">✓</span> : isCurrent(group.harness, model) ? <span className="text-micro text-faint">current</span> : null}
+                        {selected ? <span className="text-accent">✓</span> : isCurrent(harness, model) ? <span className="text-micro text-faint">current</span> : null}
                       </button>
                     </li>
                   );
@@ -150,10 +138,10 @@ export function RetryDialog({
   onDone: () => void;
   retry?: (body: RetryBody) => Promise<unknown>;
   loadPreview?: () => Promise<ContinuationPreview>;
-  loadRoute?: () => Promise<RouteGroup[]>;
+  loadRoute?: () => Promise<HarnessChoices>;
 }) {
   const current: Route = { harness: task.harness, model: task.model };
-  const [groups, setGroups] = useState<RouteGroup[]>([]);
+  const [choices, setChoices] = useState<HarnessChoices>(NO_CHOICES);
   const [route, setRoute] = useState<Route>(current);
   const [guidance, setGuidance] = useState('');
   const [when, setWhen] = useState<'later' | 'now'>('later');
@@ -177,17 +165,9 @@ export function RetryDialog({
   }, [loadPreview, task.id]);
 
   useLiveEffect((live) => {
-    (loadRoute ?? fetchRouteGroups)()
-      .then((all) => {
-        if (!live()) return;
-        const withCurrent = all.some((g) => g.harness === task.harness)
-          ? all
-          : [...all, { harness: task.harness, models: [] }];
-        setGroups(
-          withCurrent.map((g) =>
-            g.harness === task.harness && !g.models.includes(task.model) ? { ...g, models: [task.model, ...g.models] } : g,
-          ),
-        );
+    (loadRoute ?? (() => api.config().then(harnessChoices)))()
+      .then((loaded) => {
+        if (live()) setChoices(withCurrentRoute(loaded, { harness: task.harness, model: task.model }));
       })
       .catch((e) => console.warn('failed to load route options', e));
   }, [loadRoute, task.harness, task.model]);
@@ -271,7 +251,7 @@ export function RetryDialog({
             </span>
             <RoutePicker
               id="retry-route"
-              groups={groups}
+              choices={choices}
               value={route}
               current={current}
               label={labelNote}

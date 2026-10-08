@@ -23,6 +23,7 @@ import { DiscoveryModelPicker } from './DiscoveryModelPicker';
 import { fieldLabel } from './SettingsSection';
 import { firstIssueMessage, isIssueVisible, issuesByIndex, routingIssueMessage } from './routing-label-overlay-model';
 import { providerLabel } from './TaskIdentity';
+import { defaultHarnessId } from './verification-override-model';
 
 type RoutingLabel = AppConfig['routingLabels'][number];
 
@@ -153,7 +154,7 @@ export function RouteCells({
             {providerLabel(h)}
           </option>
         ))}
-        {!config.harnesses[item.harness] && <option value={item.harness}>{item.harness} (not configured)</option>}
+        {!config.harnesses[item.harness] && <option value={item.harness}>{providerLabel(item.harness)} (not configured)</option>}
       </select>
       <div className={`min-w-0 ${stackedCell}`}>
         <DiscoveryModelPicker
@@ -282,7 +283,7 @@ export function RoutingListFrame({
 }
 
 export function defaultRoute(config: AppConfig): RoutingLabel {
-  const harness = config.defaults.harness in config.harnesses ? config.defaults.harness : (Object.keys(config.harnesses)[0] ?? '');
+  const harness = defaultHarnessId(config);
   return { label: '', harness, model: config.harnesses[harness]?.defaultModel ?? '' };
 }
 
