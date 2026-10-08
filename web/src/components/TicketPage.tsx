@@ -292,6 +292,7 @@ export function TicketPage({
                     baseBranch={task.baseBranch}
                     primaryModel={task.model}
                     agent={harnessLabel(task.harness)}
+                    baseDir={task.workingDir}
                   />
                 ) : (
                   <NoRunsYet task={task} onChanged={onChanged} />

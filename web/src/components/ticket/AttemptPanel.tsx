@@ -128,6 +128,7 @@ export function AttemptPanel({
   baseBranch,
   primaryModel,
   agent,
+  baseDir,
 }: {
   run: AttemptSummary;
   attempt: Attempt | undefined;
@@ -144,6 +145,7 @@ export function AttemptPanel({
   baseBranch: string | null;
   primaryModel: string;
   agent: string;
+  baseDir?: string;
 }) {
   const steps = attempt?.steps ?? [];
   const tabs = attemptStepTabs(steps, attempt?.verifierStatuses ?? verifierStatuses);
@@ -176,6 +178,7 @@ export function AttemptPanel({
       agent={agent}
       stepLabel="Implementation"
       attemptId={run.id}
+      baseDir={baseDir}
     />
   );
   const tabContent =
@@ -192,12 +195,12 @@ export function AttemptPanel({
         </>
       ) : activeTab.type === 'verification' ? (
         <div className="mt-4">
-          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="command" verifier={`command:${steps.filter((step) => step.type === 'verification').findIndex((step) => `verification:${step.id}` === activeTab.id)}`} steps={steps} liveOutput={verificationOutputTail(events, 'command')} />
+          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="command" verifier={`command:${steps.filter((step) => step.type === 'verification').findIndex((step) => `verification:${step.id}` === activeTab.id)}`} steps={steps} liveOutput={verificationOutputTail(events, 'command')} baseDir={baseDir} />
         </div>
       ) : (
         <div className="mt-4">
-          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="critic" verifier={`critic:${steps.filter((step) => step.type === 'review').findIndex((step) => `review:${step.id}` === activeTab.id)}`} steps={steps} />
-          <CriticSessions attempts={verificationAttempts} run={run} />
+          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="critic" verifier={`critic:${steps.filter((step) => step.type === 'review').findIndex((step) => `review:${step.id}` === activeTab.id)}`} steps={steps} baseDir={baseDir} />
+          <CriticSessions attempts={verificationAttempts} run={run} baseDir={baseDir} />
         </div>
       )
     ) : (

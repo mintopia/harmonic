@@ -100,6 +100,19 @@ describe('EventStream tool cards (#549)', () => {
   });
 });
 
+describe('EventStream baseDir', () => {
+  it('shows a path inside the base directory relative to it with the absolute path in the tooltip', () => {
+    const abs = '/work/repo/src/x.ts';
+    const html = renderToStaticMarkup(createElement(EventStream, {
+      events: [tool(1, { kind: 'read', title: 'Read', status: 'completed', rawInput: { path: abs } })],
+      baseDir: '/work/repo',
+    }));
+    expect(html).toContain(`title="${abs}"`);
+    expect(html).toContain('<span class="truncate">src/</span>');
+    expect(html).toContain('<span class="shrink-0">x.ts</span>');
+  });
+});
+
 describe('EventStream path targets', () => {
   const long = '/home/workspace/.npm/_npx/8c3382fc4b2ffbb5/node_modules/@mintopia/cc-acp/mod/.claude-plugin/plugin.json';
 

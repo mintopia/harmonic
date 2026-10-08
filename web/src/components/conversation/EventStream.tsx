@@ -31,9 +31,9 @@ function toolKindLabel(kind: string | undefined): string {
   return (kind && TOOL_KIND_LABEL[kind]) ?? 'tool';
 }
 
-function ToolTarget({ target, className }: { target: string; className: string }) {
+function ToolTarget({ target, className, baseDir }: { target: string; className: string; baseDir?: string }) {
   if (!looksLikePath(target)) return <span className={`${TOOL_TARGET} ${className}`} title={target}>{target}</span>;
-  return <PathTail path={target} display={displayPath(target)} className={`flex-1 font-data text-data ${className}`} />;
+  return <PathTail path={target} display={displayPath(target, baseDir)} className={`flex-1 font-data text-data ${className}`} />;
 }
 
 function ToolStatus({ status }: { status: string | undefined }) {
@@ -86,7 +86,7 @@ function ExecuteCard({ tool }: { tool: ToolCallView }) {
   );
 }
 
-function ReadCard({ tool }: { tool: ToolCallView }) {
+function ReadCard({ tool, baseDir }: { tool: ToolCallView; baseDir?: string }) {
   const path = inputValue(tool.input, ['path', 'filePath', 'file_path']) ?? tool.title ?? 'File';
   const start = inputValue(tool.input, ['lineStart', 'startLine', 'start']);
   const end = inputValue(tool.input, ['lineEnd', 'endLine', 'end']);
@@ -94,7 +94,7 @@ function ReadCard({ tool }: { tool: ToolCallView }) {
   const head = (
     <>
       <span className={`${toolChip} shrink-0`}>read</span>
-      <ToolTarget target={path} className="text-muted" />
+      <ToolTarget target={path} className="text-muted" baseDir={baseDir} />
       {range && <span className="shrink-0 font-data text-[11px] text-faint">{range}</span>}
       <ToolStatus status={tool.status} />
     </>
@@ -111,8 +111,8 @@ function ReadCard({ tool }: { tool: ToolCallView }) {
   );
 }
 
-function EditCard({ tool }: { tool: ToolCallView }) {
-  if (!tool.diffs?.length) return <GenericToolCard tool={tool} />;
+function EditCard({ tool, baseDir }: { tool: ToolCallView; baseDir?: string }) {
+  if (!tool.diffs?.length) return <GenericToolCard tool={tool} baseDir={baseDir} />;
   const files = tool.diffs.map(toolDiffFile);
   const single = files.length === 1 ? files[0] : null;
   const additions = files.reduce((sum, file) => sum + file.additions, 0);
@@ -122,7 +122,7 @@ function EditCard({ tool }: { tool: ToolCallView }) {
       <div className="flex items-center gap-2 border-b border-hairline bg-sunken px-3 py-1.5">
         <span className={`${toolChip} shrink-0`}>edit</span>
         {single ? (
-          <ToolTarget target={single.path} className="text-ink" />
+          <ToolTarget target={single.path} className="text-ink" baseDir={baseDir} />
         ) : (
           <span className="min-w-0 flex-1 truncate font-data text-data text-ink" title={tool.title}>{`${files.length} files`}</span>
         )}
@@ -137,7 +137,7 @@ function EditCard({ tool }: { tool: ToolCallView }) {
   );
 }
 
-function GenericToolCard({ tool }: { tool: ToolCallView }) {
+function GenericToolCard({ tool, baseDir }: { tool: ToolCallView; baseDir?: string }) {
   const target = tool.title || 'Tool call';
   const space = target.indexOf(' ');
   const pathTarget = space > 0 && looksLikePath(target.slice(space + 1)) ? target.slice(space + 1) : null;
@@ -147,7 +147,7 @@ function GenericToolCard({ tool }: { tool: ToolCallView }) {
       {pathTarget ? (
         <>
           <span className="shrink-0 font-data text-data text-muted">{target.slice(0, space)}</span>
-          <ToolTarget target={pathTarget} className="text-muted" />
+          <ToolTarget target={pathTarget} className="text-muted" baseDir={baseDir} />
         </>
       ) : (
         <span className={`${TOOL_TARGET} text-muted`} title={target}>{target}</span>
@@ -169,11 +169,11 @@ function GenericToolCard({ tool }: { tool: ToolCallView }) {
   );
 }
 
-function ToolLine({ tool }: { tool: ToolCallView }) {
-  if (tool.diffs?.length || tool.toolKind === 'edit') return <EditCard tool={tool} />;
+function ToolLine({ tool, baseDir }: { tool: ToolCallView; baseDir?: string }) {
+  if (tool.diffs?.length || tool.toolKind === 'edit') return <EditCard tool={tool} baseDir={baseDir} />;
   if (tool.toolKind === 'execute') return <ExecuteCard tool={tool} />;
-  if (tool.toolKind === 'read') return <ReadCard tool={tool} />;
-  return <GenericToolCard tool={tool} />;
+  if (tool.toolKind === 'read') return <ReadCard tool={tool} baseDir={baseDir} />;
+  return <GenericToolCard tool={tool} baseDir={baseDir} />;
 }
 
 function payloadValue(payload: unknown, key: string): unknown {
@@ -272,7 +272,7 @@ function renderEventLine(event: StreamEvent): ReactNode {
   return null;
 }
 
-export function EventStream<E extends StreamEvent>({ events }: { events: E[] }) {
+export function EventStream<E extends StreamEvent>({ events, baseDir }: { events: E[]; baseDir?: string }) {
   const { items, hidden } = useMemo(() => coalesceTail(events), [events]);
   const rendered = useMemo(
     () =>
@@ -289,11 +289,11 @@ export function EventStream<E extends StreamEvent>({ events }: { events: E[] }) 
           }
           return <Markdown key={item.key} source={item.text} className={`${READ_MEASURE} text-ink`} />;
         }
-        if (item.kind === 'tool') return <ToolLine key={item.key} tool={item.tool} />;
+        if (item.kind === 'tool') return <ToolLine key={item.key} tool={item.tool} baseDir={baseDir} />;
         const line = renderEventLine(item.event);
         return line ? <div key={item.key}>{line}</div> : null;
       }),
-    [items],
+    [items, baseDir],
   );
   return (
     <div className="space-y-2">
