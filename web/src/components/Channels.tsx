@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { api } from '../api';
 import type { Channel } from '../types';
 import { btnGhost, btnQuiet, btnQuietDestructive, chip, field, selectField } from '../ui';
+import { toastError } from '../toast';
+import { ConfirmDialog } from './ConfirmDialog';
 import { EmptyState } from './EmptyState';
 
 const EVENTS = ['task.created', 'run.started', 'task.escalated', 'task.done', 'task.failed', 'export.failed', 'queue.idle'] as const;
@@ -30,6 +32,7 @@ export function ChannelsSection({
   const [secret, setSecret] = useState('');
   const [smtp, setSmtp] = useState({ host: '', port: '587', from: '', to: '' });
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<Channel | null>(null);
 
   const create = async () => {
     setError(null);
@@ -53,6 +56,22 @@ export function ChannelsSection({
 
   return (
     <div>
+      {deleting && (
+        <ConfirmDialog
+          label={`Delete channel ${deleting.name}`}
+          title={`Delete "${deleting.name}"?`}
+          confirmLabel="Delete"
+          tone="danger"
+          onCancel={() => setDeleting(null)}
+          onConfirm={() => {
+            const { id } = deleting;
+            setDeleting(null);
+            api.deleteChannel(id).then(() => onDeleted(id)).catch(toastError);
+          }}
+        >
+          This permanently removes the channel and its notification settings. This cannot be undone.
+        </ConfirmDialog>
+      )}
       {channels.length > 0 && (
         <ul className="flex flex-col gap-3">
           {channels.map((channel) => (
@@ -65,7 +84,7 @@ export function ChannelsSection({
                 </span>
                 <button
                   className={`${btnQuietDestructive} px-2 py-1.5`}
-                  onClick={() => api.deleteChannel(channel.id).then(() => onDeleted(channel.id))}
+                  onClick={() => setDeleting(channel)}
                 >
                   Delete
                 </button>
