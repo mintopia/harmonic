@@ -26,10 +26,10 @@ import {
   type EpicRow,
 } from '../db/schema.js';
 import { resolveWorkspace } from './workspaces.js';
-import { routeApplies, RoutingService, type RoutingScope } from './routing.js';
+import { defaultRoute, routeApplies, RoutingService, type RoutingScope } from './routing.js';
 import { resolveScoped } from './setting-override.js';
 import { harnessConfig } from './route.js';
-import type { EscalationCause } from './task-routing.js';
+import type { EscalationCause, TaskRouting } from './task-routing.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
 import { logger } from '../logger.js';
@@ -189,7 +189,7 @@ export interface TaskWithDeps extends TaskRow {
   /** The inheritable defaults as stored (`null` ⇒ inherited): lets the editor tell an
    * inherited field from a pinned one, since the row's own fields are resolved. */
   overrides: TaskOverrides;
-  routing: { label: string; applied: boolean } | null;
+  routing: TaskRouting | null;
 }
 
 /** A scheduler candidate with its unfinished local dependency ids. */
@@ -300,12 +300,10 @@ export class TaskService {
     const over = this.overridesOf(raw);
     const config = this.getConfig();
     const route = routeApplies(over) ? this.routing.matchRoute(raw, labels) : null;
-    const harness = over.harness ?? route?.harness ?? resolveScoped('harness', workspace.harness, config.defaults.harness);
-    const defaultModel = harnessConfig(config, harness)?.defaultModel;
-    const model = over.model ?? (route ? route.model || defaultModel || '' : resolveScoped('model', workspace.model, defaultModel ?? ''));
+    const target = defaultRoute(config, workspace, route, over.harness);
     return {
-      harness,
-      model,
+      harness: target.harness,
+      model: over.model ?? target.model,
       isolationMode: over.isolationMode ?? resolveScoped('isolationMode', workspace.isolationMode, config.defaults.isolationMode),
       priority: over.priority ?? resolveScoped('priority', workspace.priority, config.defaults.priority),
       conflictResolveTurns: over.conflictResolveTurns ?? resolveScoped('conflictResolveTurns', workspace.conflictResolveTurns, config.defaults.conflictResolveTurns),

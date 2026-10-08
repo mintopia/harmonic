@@ -201,7 +201,7 @@ export function estimateCondensedContinuationCost(warmth: SessionWarmthFacts, no
 /**
  * Decide how a continuation triggered by `trigger` is offered on a Session with
  * the given `warmth`, as of `now`. An automated trigger reuses the same Session
- * silently (`silent-continue`). A human rejection surfaces the choice
+ * silently (`silent-continue`). A human Retry surfaces the choice
  * (`offer-choice`); both options are always present — warmth informs the
  * estimate, it never removes an option.
  */

@@ -23,7 +23,8 @@ import { forEachYielding } from '../../reliability/yield.js';
 import { requestActor } from '../operator-inputs.js';
 import { requestIsOperator } from '../auth.js';
 import type { AppContext } from '../app.js';
-import { resolveScoped, routingLabelOverlayIssues } from '../../domain/setting-override.js';
+import { resolveScoped, routingLabelIssueMessage, routingLabelOverlayIssues } from '../../domain/setting-override.js';
+import { parseRoutingLabelOverlay } from '../../domain/routing-labels.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
@@ -152,7 +153,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     taskPostMergeCritics: ws.taskPostMergeCritics ? JSON.parse(ws.taskPostMergeCritics) : null,
     epicPreMergeCommands: ws.epicPreMergeCommands ? JSON.parse(ws.epicPreMergeCommands) : null,
     epicPreMergeCritics: ws.epicPreMergeCritics ? JSON.parse(ws.epicPreMergeCritics) : null,
-    routingLabels: ws.routingLabels ? JSON.parse(ws.routingLabels) : null,
+    routingLabels: parseRoutingLabelOverlay(ws.routingLabels),
     exportRedactPatterns: ws.exportRedactPatterns ? JSON.parse(ws.exportRedactPatterns) : null,
     exportIncludeStates: ws.exportIncludeStates ? JSON.parse(ws.exportIncludeStates) : null,
     configuredTracker: ws.configuredTracker ? JSON.parse(ws.configuredTracker) : null,
@@ -249,17 +250,20 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
       },
     },
     async (req) => {
+      const harnesses = ctx.settingsStore.getGlobal().harnesses;
       if (req.body.routingLabels) {
-        const issues = routingLabelOverlayIssues(req.body.routingLabels, ctx.settingsStore.getGlobal().routingLabels);
-        const first = issues[0];
+        const first = routingLabelOverlayIssues(req.body.routingLabels, ctx.settingsStore.getGlobal().routingLabels)[0];
         if (first) {
           const entry = req.body.routingLabels[first.index];
           const label = entry?.kind === 'local' ? entry.routingLabel.label : '';
-          const message = first.kind === 'blank' ? 'routing label must not be blank' : `routing label "${label}" is already mapped`;
-          throw new DomainError('validation', `routingLabels.${first.index}.routingLabel.label: ${message}`);
+          throw new DomainError('validation', `routingLabels.${first.index}.routingLabel.label: ${routingLabelIssueMessage(first, label)}`);
         }
+        req.body.routingLabels.forEach((entry, index) => {
+          if (entry.kind === 'local' && !harnesses[entry.routingLabel.harness]) {
+            throw new DomainError('validation', `routingLabels.${index}.routingLabel.harness: harness '${entry.routingLabel.harness}' is not configured`);
+          }
+        });
       }
-      const harnesses = ctx.settingsStore.getGlobal().harnesses;
       for (const [key, list] of [['taskPreMergeCritics', req.body.taskPreMergeCritics], ['taskPostMergeCritics', req.body.taskPostMergeCritics], ['epicPreMergeCritics', req.body.epicPreMergeCritics]] as const) {
         list?.forEach((entry, index) => {
           if (entry.kind !== 'local') return;

@@ -3,6 +3,7 @@ import { formatCost } from '../../cost';
 import type { AttemptSummary, AttemptUsageEvent, Task } from '../../types';
 import { changedFilesFromNumstat } from '../../attempt-rail-model';
 import { sumCosts } from '../../activity-model';
+import { codeChip } from '../../ui';
 import { Icon } from '../Icon';
 import { Fact } from '../Fact';
 import { formatModelLabel } from '../TaskIdentity';
@@ -103,18 +104,17 @@ export function DependsOn({ task, allTasks }: { task: Task; allTasks: Task[] }) 
   );
 }
 
-function RoutingNote({ routing }: { routing: NonNullable<Task['routing']> }) {
-  const code = 'rounded-sm px-1.5 font-data text-small';
-  return routing.applied ? (
+function RoutedByNote({ routing }: { routing: NonNullable<Task['routing']> }) {
+    return routing.applied ? (
     <span className="text-small text-muted">
       {' '}
-      — routed by <code className={`${code} bg-tool-tint text-tool`}>{routing.label}</code>
+      — routed by <code className={`${codeChip} bg-tool-tint text-tool`}>{routing.label}</code>
     </span>
   ) : (
     <span className="text-small text-muted">
       {' '}
       — <span className="font-medium text-ink">set on this Ticket</span> · label{' '}
-      <code className={`${code} bg-raised text-muted line-through`}>{routing.label}</code> not applied
+      <code className={`${codeChip} bg-raised text-muted line-through`}>{routing.label}</code> not applied
     </span>
   );
 }
@@ -134,7 +134,7 @@ export function Properties({ task, allTasks, workspaceName }: { task: Task; allT
             {harnessLabel(task.harness)} · <span className="font-data text-muted">{formatModelLabel(task.model)}</span>
           </>
         )}
-        {task.routing && <RoutingNote routing={task.routing} />}
+        {task.routing && <RoutedByNote routing={task.routing} />}
       </Fact>
       <Fact label="Workspace">{workspaceName ?? '—'}</Fact>
       <Fact label="Depends on">
