@@ -32,6 +32,7 @@ import type { RoutingLabelOverlayEntry, TaskExportStatus, Workspace } from '../t
 import { RoutingLabelOverlayEditor } from '../components/RoutingLabelOverlayEditor';
 import { SecretField, IssueTrackerSection, CodeRepositorySection, TriageLabelsSection } from '../components/TrackerSettings';
 import { SettingsSection } from '../components/SettingsSection';
+import { RetryDialog } from '../components/RetryDialog';
 import { PromptsTab } from '../components/prompts/PromptsTab';
 import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline, verificationAttempts as storyVerificationAttempts, verifierStatuses } from './fixtures';
 
@@ -156,10 +157,11 @@ function PromptsTabStory() {
 }
 
 function BoardStory() {
+  const routedTasks = params.get('routing') ? boardTasks.map((t, i) => (i % 2 === 0 ? { ...t, routing: { applied: true, label: 'reasoning' } as never } : t)) : boardTasks;
   return (
     <StoryFrame style={{ padding: 24 }}>
       <Board
-        tasks={boardTasks}
+        tasks={routedTasks}
         loading={false}
         epics={[boardEpic, doneEpic]}
         hasHistory={true}
@@ -461,10 +463,12 @@ function EpicStory() {
 }
 
 function TicketStory() {
+  const routed = params.get('routing');
+  const shown = routed ? { ...task, routing: { applied: routed === 'applied', label: 'reasoning' } as never } : task;
   return (
     <StoryFrame style={{ height: '100vh' }}>
       <TicketPage
-        task={task}
+        task={shown}
         onEdit={() => {}}
         onChanged={() => {}}
         onClose={() => {}}
@@ -529,6 +533,27 @@ function RoutingOverlayStory() {
   );
 }
 
+function RetryStory() {
+  const choices = {
+    defaultHarness: 'claude',
+    byId: {
+      claude: { models: ['claude-opus-5-5', 'claude-sonnet-4-6', 'claude-haiku-4-5'], defaultModel: 'claude-opus-5-5' },
+      codex: { models: ['gpt-5', 'gpt-5-mini'], defaultModel: 'gpt-5' },
+    },
+  };
+  return (
+    <StoryFrame>
+      <RetryDialog
+        task={{ id: 421, harness: 'claude', model: 'claude-sonnet-4-6', routing: { applied: true, label: 'reasoning' } as never }}
+        onClose={() => {}}
+        onDone={() => {}}
+        loadRoute={async () => choices}
+        loadPreview={async () => ({ available: true, continueFull: { estimate: { warm: params.get('cold') !== '1' } } }) as never}
+      />
+    </StoryFrame>
+  );
+}
+
 const STORIES: Record<string, () => JSX.Element> = {
   settings: SettingsStory,
   'prompts-tab': PromptsTabStory,
@@ -561,6 +586,7 @@ const STORIES: Record<string, () => JSX.Element> = {
   tracker: TrackerStory,
   secrets: SecretsStory,
   'routing-overlay': RoutingOverlayStory,
+  retry: RetryStory,
 };
 
 function Story() {

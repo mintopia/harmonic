@@ -312,7 +312,7 @@ describe('App smoke (issue #452)', () => {
       update: { availableVersion: '2.7.0', armedVersion: '2.7.0', upgradingVersion: null, dismissedVersion: null, migrationRequired: false, mode: { kind: 'systemd' as const }, guardMissing: false, failed: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: true } },
     });
 
-    expect(el.textContent).toContain('waiting for agent before updating');
+    expect(el.textContent).toContain('Waiting for an agent to finish its turn before updating');
     expect([...el.querySelectorAll('button')].some((button) => button.textContent === 'Cancel')).toBe(true);
   });
 

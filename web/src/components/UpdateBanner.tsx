@@ -133,7 +133,7 @@ function primaryBanner({ update, pending, onArm, onCancel, onDismiss }: BannerAc
         <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-running-dot" />
         <p className="min-w-0 flex-1 text-ink">
           Version {update.armedVersion} will restart when Harmonic is idle.
-          {update.idle.conversationMidTurn && ' waiting for agent before updating.'}
+          {update.idle.conversationMidTurn && ' Waiting for an agent to finish its turn before updating.'}
         </p>
         <button type="button" className={`${btnQuiet} shrink-0`} disabled={pending} onClick={onCancel}>
           Cancel
