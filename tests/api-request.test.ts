@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api } from '../web/src/api.js';
+import { api, onSessionLost } from '../web/src/api.js';
 
 const fakeFetch = (body: string | null, init: ResponseInit) =>
   vi.fn().mockResolvedValue(new Response(body, init));
@@ -9,6 +9,25 @@ afterEach(() => {
 });
 
 describe('api request()', () => {
+  it('reports a lost session when an ordinary route answers 401, but not a wrong password on an auth route', async () => {
+    const lost = vi.fn();
+    const stop = onSessionLost(lost);
+    const unauthenticated = () => fakeFetch(JSON.stringify({ error: { code: 'unauthenticated', message: 'authentication required' } }), { status: 401 });
+
+    vi.stubGlobal('fetch', unauthenticated());
+    await expect(api.config()).rejects.toMatchObject({ status: 401 });
+    expect(lost).toHaveBeenCalledTimes(1);
+
+    vi.stubGlobal('fetch', unauthenticated());
+    await expect(api.changePassword('wrong', 'new-password')).rejects.toMatchObject({ status: 401 });
+    expect(lost).toHaveBeenCalledTimes(1);
+
+    stop();
+    vi.stubGlobal('fetch', unauthenticated());
+    await expect(api.config()).rejects.toMatchObject({ status: 401 });
+    expect(lost).toHaveBeenCalledTimes(1);
+  });
+
   it('throws an honest error (not a null destructure) on an empty 2xx body', async () => {
     vi.stubGlobal('fetch', fakeFetch('', { status: 200 }));
     await expect(api.tasks()).rejects.toThrow(/Empty response from GET \/api\/tasks/);

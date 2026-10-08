@@ -67,6 +67,14 @@ export class ApiError extends Error {
   }
 }
 
+const sessionLostListeners = new Set<() => void>();
+
+/** Called when the server stops accepting this tab's session (e.g. it restarted); returns an unsubscribe. */
+export function onSessionLost(listener: () => void): () => void {
+  sessionLostListeners.add(listener);
+  return () => sessionLostListeners.delete(listener);
+}
+
 async function send(method: string, path: string, body?: unknown): Promise<{ res: Response; text: string }> {
   const res = await fetch(path, {
     method,
@@ -74,6 +82,8 @@ async function send(method: string, path: string, body?: unknown): Promise<{ res
       ? {}
       : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
   });
+  // `/api/auth/*` 401s mean a wrong password typed into a form, not a lost session.
+  if (res.status === 401 && !path.startsWith('/api/auth/')) sessionLostListeners.forEach((listener) => listener());
   return { res, text: await res.text() };
 }
 

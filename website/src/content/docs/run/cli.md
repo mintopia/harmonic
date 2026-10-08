@@ -96,6 +96,12 @@ under a supervisor it doesn't control. The banner shows the command to run
 instead. From a source checkout Harmonic doesn't self-update; pull and
 rebuild instead.
 
+Upgrading the package by hand (`npm i -g`) replaces the files on disk, but
+the running server keeps the old version until it restarts. Until you
+restart the Harmonic service, a banner says which version is installed and
+which is still running, and some pages may not work. If the server was
+upgraded while a tab was open, the banner offers a Reload instead.
+
 ## See also
 
 - [Configuration reference](/harmonic/run/configuration/): the
