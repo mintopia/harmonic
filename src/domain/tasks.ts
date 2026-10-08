@@ -1046,18 +1046,20 @@ export class TaskService {
    * writes a `tracker_dismissals` tombstone so a re-poll can't resurrect it.
    */
   async delete(id: number): Promise<void> {
-    const task = await this.get(id);
-    const initial = decideTaskDeletion(task);
-    if (!initial.ok) throw new DomainError('invalid_state', initial.reason!);
-    try {
-      await this.beforeDelete(task);
-    } catch (err) {
-      logger.warn('beforeDelete hook failed', { taskId: id, error: err instanceof Error ? err.message : String(err) });
-    }
-    // The hook awaits I/O, so the Task may have started working meanwhile.
-    const decision = decideTaskDeletion(await this.get(id));
-    if (!decision.ok) throw new DomainError('invalid_state', decision.reason!);
-    await this.removeTaskCascade(id, decision.tombstone);
+    return withTaskLock(id, async () => {
+      const task = await this.get(id);
+      const initial = decideTaskDeletion(task);
+      if (!initial.ok) throw new DomainError('invalid_state', initial.reason!);
+      try {
+        await this.beforeDelete(task);
+      } catch (err) {
+        logger.warn('beforeDelete hook failed', { taskId: id, error: err instanceof Error ? err.message : String(err) });
+      }
+      // The hook awaits I/O, so the Task may have started working meanwhile.
+      const decision = decideTaskDeletion(await this.get(id));
+      if (!decision.ok) throw new DomainError('invalid_state', decision.reason!);
+      await this.removeTaskCascade(id, decision.tombstone);
+    });
   }
 
   /**

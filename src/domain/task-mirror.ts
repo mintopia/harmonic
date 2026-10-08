@@ -131,7 +131,7 @@ export class TaskMirror {
 
   async demoteMirroredToContainer(workspaceId: number, trackerRef: TrackerRef): Promise<void> {
     await this.options.clearDismissal(workspaceId, trackerRef);
-    const row = await this.db.read((db) => db.select({ id: tasks.id, state: tasks.state, origin: tasks.origin, trackerRef: tasks.trackerRef, workspaceId: tasks.workspaceId }).from(tasks).where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.trackerRef, trackerRef))).get());
+    const row = await this.db.read((db) => db.select({ id: tasks.id, state: tasks.state, origin: tasks.origin, trackerRef: tasks.trackerRef, workspaceId: tasks.workspaceId, mergeStatus: tasks.mergeStatus }).from(tasks).where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.trackerRef, trackerRef))).get());
     if (!row || !decideTaskDeletion(row).ok) return;
     await this.options.removeTaskCascade(row.id, null);
   }
