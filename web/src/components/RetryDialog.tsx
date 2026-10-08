@@ -285,9 +285,9 @@ export function RetryDialog({
 
   return (
     <>
-      <Modal label={`Retry ${taskLabel(task.id)}`} onClose={onClose} onRequestClose={requestClose} className={`max-w-md ${pickerOpen ? 'overflow-visible' : ''}`}>
+      <Modal label={`Retry #${task.id}`} onClose={onClose} onRequestClose={requestClose} className={`max-w-md ${pickerOpen ? 'overflow-visible' : ''}`}>
         <div className="p-5">
-          <h2 className={`${panelTitle} mb-1`}>Retry {taskLabel(task.id)}</h2>
+          <h2 className={`${panelTitle} mb-1`}>Retry #{task.id}</h2>
           <p className="mb-4 text-muted">
             Sends the ticket back to the queue on the same branch; the attempt budget starts over. Optional guidance is
             recorded on the escalated attempt and given to the next one.
