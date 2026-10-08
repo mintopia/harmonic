@@ -3,18 +3,27 @@ import { baselineConfig } from '../src/config.js';
 import type { PromptFragments } from '../src/domain/prompt-fragments.js';
 import {
   composeAttemptPrompt,
+  composeCommitNudge,
   composeContinuePrompt,
   composeDriveOpening,
   composeEpicResolvePrompt,
+  composePauseMessage,
   composePeerContext,
   peerFrame,
-  peerMessagesSection,
+  placePriorContext,
+  planAttemptContext,
   renderConflictPrompt,
   renderEpicRefreshPrompt,
+  type AttemptContextFacts,
   type AttemptPromptInput,
+  type PeerEntry,
 } from '../src/execution/prompt-assembly.js';
+import { renderFragment } from '../src/execution/prompt-template.js';
 
 const defaults = (): PromptFragments => ({ ...baselineConfig().promptFragments });
+
+const peerSection = (held: readonly PeerEntry[], fragments: PromptFragments): string =>
+  composePeerContext(held, fragments).replace(`\n\n${renderFragment('peerLine', fragments)}`, '');
 
 const OPERATOR = '## Operator message\n\nfocus on X';
 const HEAL =
@@ -113,7 +122,7 @@ describe('peer context', () => {
   });
 
   it('never re-expands braces in peer text', () => {
-    expect(peerMessagesSection([{ taskId: 1, harness: 'claude', text: 'literal {messages} {text}' }], defaults())).toContain('literal {messages} {text}');
+    expect(peerSection([{ taskId: 1, harness: 'claude', text: 'literal {messages} {text}' }], defaults())).toContain('literal {messages} {text}');
     expect(peerFrame({ id: 1, harness: 'claude' }, '$& {taskId}', defaults())).toBe('Message from Task #1 (Claude):\n\n$& {taskId}');
   });
 });
@@ -167,5 +176,47 @@ describe('resolver prompts', () => {
       branch: 'epic/3',
     });
     expect(out).toBe('Fix 3 Epic three $& body http://x/3\n\nFAILED: tests red\n\nPush to epic/3.');
+  });
+});
+
+describe('attempt context planning', () => {
+  const facts = (over: Partial<AttemptContextFacts> = {}): AttemptContextFacts => ({
+    seeded: false,
+    healing: false,
+    continuesOpenAttempt: false,
+    freshSession: false,
+    condensedContinuation: false,
+    ...over,
+  });
+
+  it.each([
+    ['a seeded fresh Session puts the prior context in place of the opening', facts({ seeded: true, freshSession: true }), 'freshSessionContext'],
+    ['a seeded turn in an open Session needs no prior context', facts({ seeded: true }), null],
+    ['a self-heal condenses the prior Session', facts({ healing: true }), 'condensed'],
+    ['a self-heal outranks a fresh-Session seed', facts({ healing: true, seeded: true, freshSession: true }), 'condensed'],
+    ['a condensed continuation condenses the prior Session', facts({ condensedContinuation: true }), 'condensed'],
+    ['an unseeded plain turn needs none', facts(), null],
+  ] as const)('%s', (_name, input, slot) => {
+    expect(planAttemptContext(input).priorSlot).toBe(slot);
+  });
+
+  it('replaces the whole prompt only when the turn continues an open Attempt', () => {
+    expect(planAttemptContext(facts({ continuesOpenAttempt: true })).seedMode).toBe('replace-all');
+    expect(planAttemptContext(facts()).seedMode).toBe('append');
+  });
+
+  it('places the prior context in exactly the planned slot, treating empty text as absent', () => {
+    expect(placePriorContext('freshSessionContext', 'ctx')).toEqual({ freshSessionContext: 'ctx', condensed: null });
+    expect(placePriorContext('condensed', 'ctx')).toEqual({ freshSessionContext: null, condensed: 'ctx' });
+    expect(placePriorContext('condensed', '')).toEqual({ freshSessionContext: null, condensed: null });
+    expect(placePriorContext(null, 'ctx')).toEqual({ freshSessionContext: null, condensed: null });
+  });
+});
+
+describe('nudge templates', () => {
+  it('expands fragment references in the commit nudge and pause message', () => {
+    const fragments = { ...defaults(), conflictResolution: 'SHARED' };
+    expect(composeCommitNudge('Commit. {fragment.conflictResolution}', fragments)).toBe('Commit. SHARED');
+    expect(composePauseMessage('Stop. {fragment.conflictResolution}', fragments)).toBe('Stop. SHARED');
   });
 });

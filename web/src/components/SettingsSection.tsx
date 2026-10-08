@@ -97,15 +97,7 @@ export function FieldError({ message }: { message?: string }) {
   return <p role="alert" className="mt-1 text-label text-fail">{message}</p>;
 }
 
-/**
- * One prompt-template textarea with its placeholder legend and compiled preview
- * (the `{token}` help + the "Compiled preview" pane). Shared by both settings
- * surfaces so the drive/task/review prompt editors are written once: the global
- * page passes a `label`; the workspace page omits it (its `InheritField` wrapper
- * supplies the label) and drives it from the override slot. `preview` is
- * precomputed by the caller (via the `compile*Preview` helpers) so this stays a
- * dumb presentational field.
- */
+/** A prompt textarea with its `{token}` insert chips and an optional compiled preview. `label` is omitted when a wrapper already renders it. */
 export function PromptField({
   id,
   label,
@@ -119,7 +111,6 @@ export function PromptField({
   textareaClass = field,
 }: {
   id: string;
-  /** Omit when a wrapper (e.g. InheritField) already renders the label. */
   label?: string;
   description?: ReactNode;
   value: string;

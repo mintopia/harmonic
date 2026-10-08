@@ -3,8 +3,8 @@ import { baselineConfig } from '../src/config.js';
 import {
   PROMPT_ANATOMIES,
   anatomyPartKeys,
+  fragmentKey,
   templateKey,
-  topLevelOrder,
   type AnatomyNode,
   type PartKey,
   type PromptAnatomy,
@@ -61,20 +61,26 @@ function expectedShape(nodes: readonly AnatomyNode[], choices: Record<string, st
   });
 }
 
-function actualShape(segments: readonly (string | PreviewSegment)[]): Shape[] {
-  return segments.flatMap((segment): Shape[] =>
-    typeof segment === 'string' || segment.key === null ? [] : [{ key: segment.key, children: actualShape(segment.children) }],
-  );
+/** A part whose slot appears twice in its parent's text is declared once; keep the first occurrence, in order. */
+function firstOccurrences(shapes: Shape[]): Shape[] {
+  const seen = new Set<PartKey>();
+  return shapes.flatMap((s): Shape[] => {
+    if (seen.has(s.key)) return [];
+    seen.add(s.key);
+    return [{ key: s.key, children: firstOccurrences(s.children) }];
+  });
 }
 
-const byKey = (shapes: Shape[]): Shape[] => {
-  const unique = new Map(shapes.map((s) => [s.key, { key: s.key, children: byKey(s.children) }] as const));
-  return [...unique.values()].sort((a, b) => a.key.localeCompare(b.key));
-};
-const normalised = (shapes: Shape[]): Shape[] => shapes.map((s) => ({ key: s.key, children: byKey(s.children) }));
+function actualShape(segments: readonly (string | PreviewSegment)[]): Shape[] {
+  const shapes = segments.flatMap((segment): Shape[] =>
+    typeof segment === 'string' || segment.key === null ? [] : [{ key: segment.key, children: actualShape(segment.children) }],
+  );
+  return firstOccurrences(shapes);
+}
 
-/** Runtime couplings that are not a part's own flag: peer entries only exist when Agent Messages are on, and a seeded fresh Session opens with the prior-session context instead of the Task prompt. */
+/** Runtime couplings that are not a part's own flag: peer entries only exist when Agent Messages are on, a seeded fresh Session opens with the prior-session context instead of the Task prompt, and a dirty worktree on an identical base is reviewed as a diff. */
 function runtimeShape(a: PromptAnatomy, choices: Record<string, string>, flags: Flags): Shape[] {
+  if (a.id === 'criticReview' && flags.dirtyWorktree && choices.revision === 'identical') return expectedShape(a.parts, { ...choices, revision: 'diff' }, flags);
   if (a.id !== 'implementation') return expectedShape(a.parts, choices, flags);
   const effective: Flags = { ...flags, heldPeerMessages: flags.heldPeerMessages === true && flags.agentMessages === true };
   const shape = expectedShape(a.parts, choices, effective);
@@ -102,13 +108,13 @@ function markerView(): PromptSettingsView {
   const refText = (key: PartKey) =>
     (references.get(key) ?? []).map((child) => `{fragment.${child.replace('fragment:', '')}}`).join(' ');
   const fragments = Object.fromEntries(
-    PROMPT_FRAGMENT_NAMES.map((name) => [name, [...Object.keys(PROMPT_FRAGMENTS[name].fields).map((f) => `{${f}}`), refText(`fragment:${name}`)].join(' ')]),
+    PROMPT_FRAGMENT_NAMES.map((name) => [name, [...Object.keys(PROMPT_FRAGMENTS[name].fields).map((f) => `{${f}}`), refText(fragmentKey(name))].join(' ')]),
   );
   const base = promptSettingsView({ config: baselineConfig() });
   return {
     template: (id) => refText(templateKey(id)),
     fragments: { ...base.fragments, ...fragments },
-    criticPrompt: { issue: 'issue prompt', noIssue: 'no issue prompt' },
+    criticPrompt: { name: 'Marker critic', issue: 'issue prompt', noIssue: 'no issue prompt' },
   };
 }
 
@@ -125,9 +131,7 @@ describe.each(VIEWS)('prompt anatomy drift (%s)', (_name, makeView) => {
       'real assembly matches the anatomy with every flag on: %s',
       (_label, choices) => {
         const segments = assemblePreview(anatomy.id, makeView(), { flags: allOn, choices });
-        const top = segments.flatMap((s) => (s.key ? [s.key] : []));
-        if (anatomy.id !== 'implementation') expect(top).toEqual(topLevelOrder(anatomy, choices));
-        expect(normalised(actualShape(segments))).toEqual(normalised(runtimeShape(anatomy, choices, allOn)));
+        expect(actualShape(segments)).toEqual(runtimeShape(anatomy, choices, allOn));
       },
     );
 
@@ -136,7 +140,7 @@ describe.each(VIEWS)('prompt anatomy drift (%s)', (_name, makeView) => {
       (_label, flagId, choices) => {
         const flags = { ...allOn, [flagId]: false };
         const segments = assemblePreview(anatomy.id, makeView(), { flags, choices });
-        expect(normalised(actualShape(segments))).toEqual(normalised(runtimeShape(anatomy, choices, flags)));
+        expect(actualShape(segments)).toEqual(runtimeShape(anatomy, choices, flags));
       },
     );
 
@@ -144,7 +148,7 @@ describe.each(VIEWS)('prompt anatomy drift (%s)', (_name, makeView) => {
       const flags: Flags = Object.fromEntries(anatomy.flags.map((f) => [f.id, false]));
       for (const choices of combinations(anatomy)) {
         const segments = assemblePreview(anatomy.id, makeView(), { flags, choices });
-        expect(normalised(actualShape(segments))).toEqual(normalised(runtimeShape(anatomy, choices, flags)));
+        expect(actualShape(segments)).toEqual(runtimeShape(anatomy, choices, flags));
       }
     });
 
@@ -159,7 +163,7 @@ describe('prompt anatomy declarations', () => {
     const view = promptSettingsView({ config: baselineConfig() });
     const defaults = new Map<PartKey, string>([
       ...PROMPT_TEMPLATE_IDS.map((id): [PartKey, string] => [templateKey(id), view.template(id)]),
-      ...PROMPT_FRAGMENT_NAMES.map((name): [PartKey, string] => [`fragment:${name}`, view.fragments[name]]),
+      ...PROMPT_FRAGMENT_NAMES.map((name): [PartKey, string] => [fragmentKey(name), view.fragments[name]]),
     ]);
     const check = (nodes: readonly AnatomyNode[]) => {
       for (const node of nodes) {
@@ -177,9 +181,23 @@ describe('prompt anatomy declarations', () => {
     for (const a of PROMPT_ANATOMIES) check(a.parts);
   });
 
+  it('only gates parts on flags the anatomy declares', () => {
+    const check = (a: PromptAnatomy, nodes: readonly AnatomyNode[]) => {
+      for (const node of nodes) {
+        if (node.kind === 'oneOf') {
+          for (const option of node.options) check(a, option.parts);
+          continue;
+        }
+        if (node.when !== undefined) expect(a.flags.map((f) => f.id), `${a.id}: ${node.key}`).toContain(node.when);
+        check(a, node.nested ?? []);
+      }
+    };
+    for (const a of PROMPT_ANATOMIES) check(a, a.parts);
+  });
+
   it('places every fragment and template in at least one anatomy', () => {
     const placed = new Set(PROMPT_ANATOMIES.flatMap(anatomyPartKeys));
-    for (const name of PROMPT_FRAGMENT_NAMES) expect(placed.has(`fragment:${name}`), name).toBe(true);
+    for (const name of PROMPT_FRAGMENT_NAMES) expect(placed.has(fragmentKey(name)), name).toBe(true);
     for (const id of PROMPT_TEMPLATE_IDS) expect(placed.has(templateKey(id)), id).toBe(true);
   });
 

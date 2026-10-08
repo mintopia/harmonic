@@ -3,7 +3,9 @@ import type { AnatomyId, PromptAnatomy } from '../../../../src/domain/prompt-ana
 import { ANATOMY_PANEL_ID, anatomyTabId } from './AnatomyStack';
 import type { AnatomyCounts } from './prompts-tab-model';
 
-export function MessageList({
+export const ANATOMY_TABS_LABEL = 'Prompts the agent receives';
+
+export function AnatomyTabs({
   items,
   active,
   orientation,
@@ -33,7 +35,7 @@ export function MessageList({
   return (
     <div
       role="tablist"
-      aria-label="Prompts the agent receives"
+      aria-label={ANATOMY_TABS_LABEL}
       aria-orientation={orientation}
       onKeyDown={onKeyDown}
       className={

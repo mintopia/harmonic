@@ -30,7 +30,7 @@ import type { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { logger } from '../logger.js';
 import type { SpanContext } from '@opentelemetry/api';
 import type { AgentMessageRow } from '../db/schema.js';
-import { composeAttemptPrompt, composePeerContext } from './prompt-assembly.js';
+import { composeAttemptPrompt, composePeerContext, planAttemptContext, placePriorContext } from './prompt-assembly.js';
 import type { RunnerEvents, RunnerOptions, Workspace } from './runner.js';
 import { TurnListeners, TurnState } from './turn-listeners.js';
 import type { TaskArchive } from '../archive/task-archive.js';
@@ -742,28 +742,21 @@ export class TurnDriver {
           resolveTaskPrompt(workspaceRow, this.deps.getConfig()),
         );
     const operatorSeed = this.deps.activeRuns.takePendingOperatorSeed(task.id);
-    let condensed: string | null = null;
-    let freshSessionContext: string | null = null;
-    const continuesOpenAttempt = run.sessionRowId !== null && !opensAttempt;
-    const seedMode = continuesOpenAttempt ? 'replace-all' : 'append';
-    if (operatorSeed !== undefined && !healCtx) {
-      if (run.sessionRowId === null) {
-        // Fresh Session: the agent needs some context, not just the bare message.
-        const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
-        freshSessionContext = (src ? await this.deps.sessionContinuation.condensedContext(src.prior, fragments) : null) || null;
-      }
-    } else if (healCtx) {
-      condensed = healCtx.condensedContext ?? null;
-    } else if (task.continuationChoice === 'condensed') {
-      const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
-      condensed = src ? await this.deps.sessionContinuation.condensedContext(src.prior, fragments) : null;
-    }
+    const plan = planAttemptContext({
+      seeded: operatorSeed !== undefined,
+      healing: healCtx !== undefined,
+      continuesOpenAttempt: run.sessionRowId !== null && !opensAttempt,
+      freshSession: run.sessionRowId === null,
+      condensedContinuation: task.continuationChoice === 'condensed',
+    });
+    const prior = plan.priorSlot === null ? null : healCtx ? (healCtx.condensedContext ?? null) : await this.priorSessionContext(task, fragments);
+    const { freshSessionContext, condensed } = placePriorContext(plan.priorSlot, prior);
     const peer = await this.peerContext(task, fragments);
     const promptText = composeAttemptPrompt(
       {
         opening,
         seed: operatorSeed,
-        seedMode,
+        seedMode: plan.seedMode,
         freshSessionContext,
         heal: healCtx ? { attempt: healCtx.attempt, reason: healCtx.reason, output: healCtx.output } : undefined,
         condensed,
@@ -774,6 +767,11 @@ export class TurnDriver {
       fragments,
     );
     return { promptText, operatorSeed, heldMessages: peer.held };
+  }
+
+  private async priorSessionContext(task: TaskRow, fragments: PromptFragments): Promise<string | null> {
+    const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
+    return src ? this.deps.sessionContinuation.condensedContext(src.prior, fragments) : null;
   }
 
   /** Held peer messages from the database (left held until the prompt is sent), plus the peer line, when Agent Messages are on. */

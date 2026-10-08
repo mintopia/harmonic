@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   CRITIC_NO_ISSUE_PLACEHOLDERS,
-  EPIC_RESOLVE_PLACEHOLDERS,
   SAMPLE_DRIVE_FIELDS,
   compileCriticPreview,
   compileEpicCriticPreview,
@@ -54,7 +53,7 @@ describe('prompt-preview-model (settings compiled preview)', () => {
   });
 
   it('offers the Epic resolver prompt its supported tokens', () => {
-    expect(EPIC_RESOLVE_PLACEHOLDERS.map((p) => p.token)).toEqual(['{title}', '{description}', '{ref}', '{url}']);
+    expect(TEMPLATE_PLACEHOLDERS.epicResolvePrompt.map((p) => p.token)).toEqual(['{title}', '{description}', '{ref}', '{url}']);
   });
 
   it('compiles an Epic critic against its ticket context', () => {
@@ -108,6 +107,48 @@ describe('prompt-preview-model (settings compiled preview)', () => {
       if (!critic) throw new Error('no critic anatomy');
       const segments = assemblePreview('criticReview', view, defaultConditions(critic));
       expect(segments[0]).toEqual({ key: 'criticPrompt', children: ["(each critic's own prompt)"] });
+    });
+  });
+
+  describe('critic preview', () => {
+    const critic = PROMPT_ANATOMIES.find((a) => a.id === 'criticReview');
+    if (!critic) throw new Error('no critic anatomy');
+    const keys = (segments: ReturnType<typeof assemblePreview>) => JSON.stringify(segments);
+
+    it('reviews a dirty worktree on an identical base as a diff with the working-tree note, as the runtime does', () => {
+      const view = promptSettingsView({ config: baselineConfig() });
+      const dirty = assemblePreview('criticReview', view, { flags: { dirtyWorktree: true }, choices: { revision: 'identical', ticket: 'ticket' } });
+      expect(keys(dirty)).toContain('fragment:criticRevisionDiff');
+      expect(keys(dirty)).toContain('fragment:criticWorkingTreeNote');
+      expect(keys(dirty)).not.toContain('fragment:criticRevisionIdentical');
+      const clean = assemblePreview('criticReview', view, { flags: { dirtyWorktree: false }, choices: { revision: 'identical', ticket: 'ticket' } });
+      expect(keys(clean)).toContain('fragment:criticRevisionIdentical');
+      expect(keys(clean)).not.toContain('fragment:criticWorkingTreeNote');
+    });
+
+    it('labels the critic segment with the name of the critic whose prompt it shows', () => {
+      const config = baselineConfig();
+      config.verify.task.preMerge.critics = [
+        { id: 'c1', name: 'Security reviewer', issuePrompt: 'Look for holes.', noIssuePrompt: 'Look for holes.', model: 'm', harness: 'claude', timeoutSeconds: 300 },
+      ];
+      const [segment] = assemblePreview('criticReview', promptSettingsView({ config }), defaultConditions(critic));
+      expect(segment).toMatchObject({ key: 'criticPrompt', label: 'Critic prompt · Security reviewer' });
+    });
+  });
+
+  describe('previous Attempt feedback', () => {
+    const implementation = PROMPT_ANATOMIES.find((a) => a.id === 'implementation');
+    if (!implementation) throw new Error('no implementation anatomy');
+    const builtIn = (flags: Record<string, boolean>, origin: string) =>
+      assemblePreview('implementation', promptSettingsView({ config: baselineConfig() }), { flags, choices: { origin } })
+        .filter((s) => s.key === null)
+        .map((s) => s.children.join(''))
+        .join('\n');
+
+    it.each(['native', 'mirrored'])('shows the built-in feedback section for a %s Task only when the flag is on', (origin) => {
+      expect(implementation.flags.some((f) => f.id === 'feedback')).toBe(true);
+      expect(builtIn({ feedback: true }, origin)).toContain('## Feedback from the previous attempt');
+      expect(builtIn({ feedback: false }, origin)).not.toContain('## Feedback from the previous attempt');
     });
   });
 
