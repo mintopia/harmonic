@@ -440,9 +440,6 @@ export class Runner {
       choice = continuation.path === 'continued-session' ? 'full' : 'condensed';
     }
     if (startNow) choice = reuseSession ? 'full' : 'condensed';
-    // A retry always spawns a fresh Attempt (ADR-0038) — no setPendingManualResume
-    // here, so beginRun takes its create() branch; the prior Session binds via
-    // bindContinuationIfEligible unless the choice is `condensed`.
     await this.taskService.requeue(task.id, trimmed, choice);
     if (startNow) {
       if (continuation && reuseSession) this.activeRuns.setPendingContinuation(task.id, continuation);

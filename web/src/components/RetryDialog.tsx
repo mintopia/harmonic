@@ -32,8 +32,19 @@ async function fetchRouteGroups(): Promise<RouteGroup[]> {
   return Object.entries(config.harnesses).map(([harness, h]) => ({ harness, models: h.models.map((m) => m.id) }));
 }
 
-const chipClass = 'ml-1.5 inline-flex items-center gap-1 rounded-full bg-tool-tint px-2 text-micro font-semibold text-tool';
+const chipClass = 'ml-1.5 inline-flex align-middle items-center gap-1 rounded-full bg-tool-tint px-2 text-micro font-semibold text-tool';
 const noteClass = 'text-small text-muted';
+const chevron = (
+  <svg aria-hidden width="12" height="12" viewBox="0 0 12 12" className="shrink-0 text-faint">
+    <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+function ModelName({ model }: { model: string }) {
+  const label = formatModelLabel(model);
+  return label === model ? <span className="font-data">{label}</span> : <>{label}</>;
+}
+
 const warnClass = 'mb-3 rounded-sm bg-running-tint px-2.5 py-1.5 text-small text-running';
 
 function RoutePicker({
@@ -70,7 +81,7 @@ function RoutePicker({
     </span>
   );
   return (
-    <div ref={wrap} className="relative">
+    <div ref={wrap} className={`relative ${open ? 'mb-60' : ''}`}>
       <button
         type="button"
         id={id}
@@ -81,10 +92,10 @@ function RoutePicker({
         className={`${field} flex min-h-11 items-center justify-between text-left`}
       >
         <span>
-          {providerLabel(value.harness)} · {formatModelLabel(value.model)}
+          {providerLabel(value.harness)} · <ModelName model={value.model} />
           {chip}
         </span>
-        <span aria-hidden className="text-faint">▾</span>
+        {chevron}
       </button>
       {open && (
         <ul role="listbox" aria-labelledby={`${id}-label`} className="absolute inset-x-0 top-full z-10 mt-1 max-h-64 overflow-auto rounded-sm bg-surface py-1 shadow-float">
@@ -105,7 +116,7 @@ function RoutePicker({
                         }}
                       >
                         <span>
-                          {formatModelLabel(model)}
+                          <ModelName model={model} />
                           {label && isCurrent(group.harness, model) && (
                             <span className={chipClass}>
                               ↳ <code className="font-data">{label}</code>
@@ -131,8 +142,8 @@ export function RetryDialog({
   onClose,
   onDone,
   retry = (body) => api.retryTask(task.id, body),
-  loadPreview = () => api.continuationPreview(task.id),
-  loadRoute = fetchRouteGroups,
+  loadPreview,
+  loadRoute,
 }: {
   task: Pick<Task, 'id' | 'harness' | 'model' | 'routing'>;
   onClose: () => void;
@@ -158,30 +169,28 @@ export function RetryDialog({
   };
 
   useLiveEffect((live) => {
-    loadPreview()
+    (loadPreview ?? (() => api.continuationPreview(task.id)))()
       .then((p) => {
         if (live()) setPreview(p);
       })
       .catch((e) => console.warn('failed to load continuation preview', e));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- loaders default to fresh closures each render; reload only per Ticket
-  }, [task.id]);
+  }, [loadPreview, task.id]);
 
   useLiveEffect((live) => {
-    loadRoute()
+    (loadRoute ?? fetchRouteGroups)()
       .then((all) => {
         if (!live()) return;
-        const withCurrent = all.some((g) => g.harness === current.harness)
+        const withCurrent = all.some((g) => g.harness === task.harness)
           ? all
-          : [...all, { harness: current.harness, models: [] }];
+          : [...all, { harness: task.harness, models: [] }];
         setGroups(
           withCurrent.map((g) =>
-            g.harness === current.harness && !g.models.includes(current.model) ? { ...g, models: [current.model, ...g.models] } : g,
+            g.harness === task.harness && !g.models.includes(task.model) ? { ...g, models: [task.model, ...g.models] } : g,
           ),
         );
       })
       .catch((e) => console.warn('failed to load route options', e));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- loaders default to fresh closures each render; reload only per Ticket
-  }, [task.id]);
+  }, [loadRoute, task.harness, task.model]);
 
   const harnessChanged = route.harness !== current.harness;
   const routeChanged = harnessChanged || route.model !== current.model;
@@ -250,7 +259,7 @@ export function RetryDialog({
               autoFocus
               rows={4}
               disabled={busy}
-              className={`${field} resize-y`}
+              className={`${field} block resize-y`}
               placeholder="What was wrong, and what the next attempt should do differently…"
               value={guidance}
               onChange={(e) => setGuidance(e.target.value)}

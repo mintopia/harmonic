@@ -24,10 +24,6 @@ export interface RetryInput {
 }
 
 export interface EscalationHooks {
-  /** Resume the Attempt loop with the operator's guidance (Retry). Starts the
-   * next Attempt immediately only when `startNow` is set; otherwise the
-   * requeued Ticket waits for Auto-Runner capacity. `reuseSession` binds the
-   * prior Session (warm or cold); without it a started Attempt gets a fresh one. */
   resume: (task: TaskRow, guidance: string, options: { startNow: boolean; reuseSession: boolean }) => Promise<void>;
   /** Remove the ticket branch and worktree, and close the tracker issue (Close). Best-effort. */
   cleanup: (task: TaskRow, run: AttemptRow | undefined) => Promise<void>;
@@ -119,12 +115,6 @@ export class EscalationService {
     });
   }
 
-  /**
-   * Retry an escalated ticket, optionally on a different Harness/Model. A route
-   * change is saved as both operator fields on the Ticket, so it outranks the
-   * Routing Label (ADR-0049). Re-using the Session needs `startNow` and the same
-   * Harness: a Session cannot cross Harnesses.
-   */
   async retry(taskId: number, input: RetryInput): Promise<TaskRow> {
     const guidance = input.guidance.trim();
     const startNow = input.startNow ?? false;
