@@ -82,6 +82,41 @@ describe('ticket-timeline-route', () => {
       expect(lifecycleEvents).toContainEqual(expect.objectContaining({ data: { type: 'lifecycle', payload: { malformed: true } } }));
     });
 
+    it('serves the working folder per Attempt: bound worktree, derived worktree, or null in direct mode', async () => {
+      const dispatch = (harnessSessionId: string, cwd: string) => server.app.ctx.sessions.recordDispatch({
+        harness: 'claude', harnessSessionId, model: 'm', cwd, workspaceId: null,
+        transcriptPath: null, mcpTemplates: [], capabilities: undefined, adapterVersion: '0', now: Date.now(),
+      });
+      const workingDirs = async (taskId: number) => {
+        const response = await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`);
+        expect(response.status).toBe(200);
+        return response.body.attempts.map((attempt: { workingDir: string | null }) => attempt.workingDir);
+      };
+
+      const worktreeTask = await server.api('POST', '/api/tasks', { prompt: 'worktree', isolationMode: 'worktree' });
+      const bound = await dispatch('wd-bound', '/srv/worktrees/task-bound');
+      await server.app.ctx.sessions.bindWorktree(bound.id, '/srv/repo', '/srv/worktrees/task-bound', Date.now());
+      const first = await server.app.ctx.attempts.ensureForRun(worktreeTask.body.id, 1, 100);
+      await server.app.ctx.attempts.update(first.id, { sessionRowId: bound.id });
+      const unbound = await dispatch('wd-unbound', '/srv/worktrees/task-unbound');
+      const second = await server.app.ctx.attempts.ensureForRun(worktreeTask.body.id, 2, 200);
+      await server.app.ctx.attempts.update(second.id, { sessionRowId: unbound.id });
+      const unstarted = await server.app.ctx.attempts.ensureForRun(worktreeTask.body.id, 3, 300);
+      expect(unstarted.sessionRowId).toBeNull();
+
+      const [boundDir, derivedDir, noSessionDir] = await workingDirs(worktreeTask.body.id);
+      expect(boundDir).toBe('/srv/worktrees/task-bound');
+      expect(derivedDir).toBe(server.app.ctx.runner.worktreePathForTask(await server.app.ctx.tasks.get(worktreeTask.body.id)));
+      expect(derivedDir).toMatch(/worktrees\/task-\d+$/);
+      expect(noSessionDir).toBe(derivedDir);
+
+      const directTask = await server.api('POST', '/api/tasks', { prompt: 'direct', isolationMode: 'direct' });
+      const directSession = await dispatch('wd-direct', '/srv/repo');
+      const directAttempt = await server.app.ctx.attempts.ensureForRun(directTask.body.id, 1, 100);
+      await server.app.ctx.attempts.update(directAttempt.id, { sessionRowId: directSession.id });
+      expect(await workingDirs(directTask.body.id)).toEqual([null]);
+    });
+
     it('derives Reject with guidance from adjacent attempts without misreporting Close as Reject', async () => {
       const task = await server.api('POST', '/api/tasks', { prompt: 'disposition target' });
       const escalated = await server.app.ctx.attempts.ensureForRun(task.body.id, 1, 100);

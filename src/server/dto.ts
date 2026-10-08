@@ -88,6 +88,7 @@ export interface ApiAttempt {
   feedback: string | null;
   verifiedSha: string | null;
   escalationReason: string | null;
+  workingDir: string | null;
   continuation: z.infer<typeof attemptContinuationSchema> | null;
   verifierStatuses: VerifierStatus[];
   steps: ApiStep[];
@@ -137,6 +138,7 @@ export function attemptToTimelineApi(
   stepRows: readonly StepRow[],
   attemptVerifications: readonly VerificationAttemptRow[],
   verifiers: ReturnType<typeof resolveVerifiers>,
+  workingDir: string | null,
 ): ApiAttempt {
   const stepType = [...stepRows].reverse().find((row) => row.state === 'running')?.type ?? null;
   const escalationReason = attempt.state === 'escalated' ? attempt.reason : null;
@@ -150,6 +152,7 @@ export function attemptToTimelineApi(
     feedback: attempt.feedback,
     verifiedSha: verifiedShaOf(attemptVerifications),
     escalationReason,
+    workingDir,
     continuation: continuationToApi(attempt.continuation),
     verifierStatuses: verifierStatuses({ verifiers: verifiers.task.preMerge, attempts: attemptVerifications, stepType }),
     steps: stepRows.map(stepToApi),

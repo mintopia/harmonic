@@ -342,6 +342,10 @@ export class Runner {
     this.fireAndForget(op, report);
   }
 
+  worktreePathForTask(task: TaskRow): string {
+    return this.workspaceProvisioner.worktreePathForTask(task);
+  }
+
   hasLiveAgent(taskId: number): boolean {
     return this.activeRuns.hasTask(taskId);
   }

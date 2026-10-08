@@ -63,6 +63,8 @@ export interface Attempt {
   verifiedSha: string | null;
   /** Why this attempt handed the ticket to a human; null unless it escalated. */
   escalationReason: string | null;
+  /** The folder the agent worked in (its managed worktree); null in direct mode, where the Task's workingDir applies. */
+  workingDir: string | null;
   /** Read-time command and critic outcomes for this Attempt. */
   verifierStatuses: VerifierStatus[];
   continuation: {

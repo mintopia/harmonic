@@ -75,6 +75,8 @@ export const attemptSchema = z
     verifiedSha: z.string().nullable().meta({ example: '0f758cd2200565e7605902a86c2827c65ad25ce0' }),
     /** Why this attempt handed the ticket to a human (its `escalate` settle fact); null unless it escalated. */
     escalationReason: z.string().nullable().meta({ example: 'escalated to human: verification failed after 3 attempt(s)' }),
+    /** The folder this Attempt's agent worked in (its managed worktree); null in direct mode, where the Task's own working directory applies. */
+    workingDir: z.string().nullable().meta({ example: '/opt/harmonic/worktrees/task-4821' }),
     continuation: z.object({
       path: z.enum(['continued-session', 'new-session-condensed']),
       reason: z.enum(['continued-within-limits', 'context-tokens', 'session-cold', 'missing-context-tokens', 'missing-warm-window']),

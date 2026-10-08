@@ -165,6 +165,7 @@ const syntheticAttempt = (s: ReturnType<typeof timelineSpans>[number]): Attempt 
     endedAt: s.endedAt,
     feedback: null,
     verifiedSha: null,
+    workingDir: null,
     escalationReason: s.state === 'escalated' ? 'escalated to human' : null,
     verifierStatuses: [],
     continuation: null,

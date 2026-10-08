@@ -190,9 +190,9 @@ const steps3: Step[] = [
 ];
 
 export const attempts = [
-  { id: 501, taskId: 172, number: 1, state: 'failed', startedAt: T0 + min(3), endedAt: T0 + min(18), feedback: '2 assertions failed', verifiedSha: null, escalationReason: null, verifierStatuses: [], continuation: null, steps: [] },
-  { id: 502, taskId: 172, number: 2, state: 'failed', startedAt: T0 + min(20), endedAt: T0 + min(29), feedback: 'defaults leaked', verifiedSha: null, escalationReason: null, verifierStatuses: [], continuation: null, steps: [] },
-  { id: 503, taskId: 172, number: 3, state: 'passed', startedAt: T0 + min(31), endedAt: T0 + min(90), feedback: null, verifiedSha: 'e33b4ae', escalationReason: null, verifierStatuses: [], continuation: { path: 'continued-session', reason: 'continued-within-limits', contextTokens: 120_000, contextReuseTokenLimit: 400_000, lastActiveAt: T0 + min(89), lastActiveAgeMs: 15_000, warmWindowMs: 20 * 60_000 }, steps: steps3 },
+  { id: 501, taskId: 172, number: 1, state: 'failed', startedAt: T0 + min(3), endedAt: T0 + min(18), feedback: '2 assertions failed', verifiedSha: null, escalationReason: null, workingDir: null, verifierStatuses: [], continuation: null, steps: [] },
+  { id: 502, taskId: 172, number: 2, state: 'failed', startedAt: T0 + min(20), endedAt: T0 + min(29), feedback: 'defaults leaked', verifiedSha: null, escalationReason: null, workingDir: null, verifierStatuses: [], continuation: null, steps: [] },
+  { id: 503, taskId: 172, number: 3, state: 'passed', startedAt: T0 + min(31), endedAt: T0 + min(90), feedback: null, verifiedSha: 'e33b4ae', escalationReason: null, workingDir: null, verifierStatuses: [], continuation: { path: 'continued-session', reason: 'continued-within-limits', contextTokens: 120_000, contextReuseTokenLimit: 400_000, lastActiveAt: T0 + min(89), lastActiveAgeMs: 15_000, warmWindowMs: 20 * 60_000 }, steps: steps3 },
 ] satisfies Attempt[];
 
 export const attemptLog = [

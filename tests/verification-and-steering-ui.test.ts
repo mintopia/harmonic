@@ -132,4 +132,19 @@ describe('verification and steering UI (#537)', () => {
     expect(target?.textContent).toBe('src/x.ts');
     expect(target?.lastElementChild?.textContent).toBe('x.ts');
   });
+
+  it('shortens a tool row path under a managed worktree baseDir', async () => {
+    const abs = '/opt/harmonic/worktrees/task-7/src/x.ts';
+    const host = await mountComponent(
+      createElement(ChatTranscript, {
+        events: [{ id: 1, seq: 1, ts: 1, type: 'session_update', payload: { sessionUpdate: 'tool_call', toolCallId: 't1', title: `Read ${abs}`, status: 'completed' } }],
+        unavailable: false,
+        model: 'claude-sonnet-4-6',
+        agent: 'Claude',
+        baseDir: '/opt/harmonic/worktrees/task-7',
+      }),
+    );
+
+    expect(host.querySelector(`[title="${abs}"]`)?.textContent).toBe('src/x.ts');
+  });
 });
