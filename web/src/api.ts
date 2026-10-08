@@ -329,7 +329,6 @@ export const api = {
   acceptTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/accept`),
   rejectTask: (id: number, guidance: string, start = false) =>
     request<Task>('POST', `/api/tasks/${id}/reject`, { guidance, start }),
-  /** Re-queue an escalated Ticket whose route was changed; the guidance is recorded as the operator's reason. */
   retryTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/reject`, { guidance: 'Retry after changing the route.', start: false }),
   closeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/close`),
   // Hard-delete: cascades the Task's Attempts/history and

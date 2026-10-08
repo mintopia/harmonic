@@ -54,7 +54,6 @@ export const stackedCell = 'col-span-2 col-start-3 @[44rem]:col-span-1 @[44rem]:
 /** Trailing controls (Remove, or Global chip + switch): top-right of a stacked row. */
 export const trailingCell = 'col-start-4 row-start-1 justify-self-end @[44rem]:col-start-auto @[44rem]:row-start-auto';
 
-/** One sortable Routing Label row: grip, priority, then the caller's cells and an optional inline error. */
 export function RoutingRowShell({
   id,
   index,
@@ -110,7 +109,6 @@ export const arrowCell = (
   </span>
 );
 
-/** The editable label, Harness and Model cells of a row. */
 export function RouteCells({
   id,
   index,
@@ -206,7 +204,6 @@ export function Precedence() {
   );
 }
 
-/** Sortable tray with an add link: owns stable row ids and the touched set; callers own the data. */
 export function RoutingListFrame({
   count,
   onMove,

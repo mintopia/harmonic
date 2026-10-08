@@ -1,4 +1,3 @@
-/** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. */
 export interface TaskRouting {
   label: string;
   applied: boolean;

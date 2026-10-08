@@ -4,7 +4,6 @@ import { withMissingGlobals } from './verification-override-model.js';
 
 type RoutingLabel = AppConfig['routingLabels'][number];
 
-/** An issue's message split around the Global label it names, so the caller can style that label. */
 export type RoutingIssueText = { before: string; globalRef?: string; after: string };
 
 export function routingIssueText(issue: RoutingLabelIssue, label: string): RoutingIssueText {
@@ -35,7 +34,6 @@ export const isIssueVisible = (issue: RoutingLabelIssue | undefined, touched: bo
 export const issuesByIndex = (issues: readonly RoutingLabelIssue[]): Map<number, RoutingLabelIssue> =>
   new Map(issues.map((issue) => [issue.index, issue]));
 
-/** The first issue as a save-blocking sentence, numbered by displayed position. */
 export function firstIssueMessage(issues: readonly RoutingLabelIssue[], labelAt: (index: number) => string): string | null {
   const first = issues[0];
   return first ? `Routing Label ${first.index + 1}: ${routingIssueMessage(first, labelAt(first.index))}` : null;

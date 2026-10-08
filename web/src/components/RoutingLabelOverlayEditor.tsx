@@ -31,12 +31,7 @@ function ErrorText({ issue, label }: { issue: RoutingLabelIssue; label: string }
   );
 }
 
-/**
- * The Workspace-scope, additive Routing Label editor (ADR-0049): the global
- * labels render locked, reorderable and switchable, interleaved with the
- * Workspace's own editable labels in overlay order. A `ref` whose global no
- * longer exists renders as a muted, droppable "Removed" row.
- */
+/** Workspace Routing Label overlay editor (ADR-0049). */
 export function RoutingLabelOverlayEditor({
   overlay,
   config,

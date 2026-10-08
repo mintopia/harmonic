@@ -9,7 +9,6 @@ export function harnessConfig(config: HarnessRegistry, id: string): HarnessConfi
   return Object.entries(config.harnesses).find(([key]) => key === id)?.[1];
 }
 
-/** The Harness + Model a turn runs on, or why it cannot: the routed Harness is not configured. */
 export type ResolvedRoute =
   | { ok: true; harness: string; model: string; label: string | null; config: HarnessConfig }
   | { ok: false; harness: string; label: string | null; reason: string; cause: EscalationCause };

@@ -188,7 +188,6 @@ export interface TaskWithDeps extends TaskRow {
   /** The inheritable defaults as stored (`null` ⇒ inherited): lets the editor tell an
    * inherited field from a pinned one, since the row's own fields are resolved. */
   overrides: TaskOverrides;
-  /** The Routing Label matching this mirrored Ticket; `applied` is false when an operator override wins. */
   routing: { label: string; applied: boolean } | null;
 }
 
@@ -207,7 +206,6 @@ interface RoutingScope {
   labels: readonly RoutingLabel[];
 }
 
-/** True when no operator Harness/Model override stands between a Ticket and its Routing Label. */
 function routeApplies(over: Pick<TaskOverrides, 'harness' | 'model'>): boolean {
   return over.harness === null && over.model === null;
 }

@@ -171,7 +171,7 @@ export function routingLabelOverlayIssues(
   });
 }
 
-/** A Workspace's effective Routing Labels: `null` inherits every global in order; otherwise the ordered overlay (ADR-0049). An enabled local shadowed by an enabled global is dropped, so the global wins. */
+/** Effective Routing Labels: null inherits all globals; a local shadowed by an enabled global is dropped (ADR-0049). */
 export function resolveRoutingLabels(
   ws: Pick<WorkspaceRow, 'routingLabels'> | null | undefined,
   config: Pick<AppConfig, 'routingLabels'>,
