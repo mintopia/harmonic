@@ -6,6 +6,9 @@ import {
   setCommandField,
   setCriticField,
   startingHarness,
+  defaultHarnessId,
+  harnessChoices,
+  type HarnessChoices,
   summarizeCommand,
   summarizeCommands,
   summarizeCritic,
@@ -69,7 +72,7 @@ describe('setCriticField (issue #165)', () => {
 
 describe('summarizeCritic (issue #165)', () => {
   it('names the reviewer model for a configured critic', () => {
-    expect(summarizeCritic(baseCritic)).toBe('Test critic (claude · Opus 5)');
+    expect(summarizeCritic(baseCritic)).toBe('Test critic (Claude · Opus 5)');
   });
 
   it('reads the empty seed back as "Not configured"', () => {
@@ -78,9 +81,12 @@ describe('summarizeCritic (issue #165)', () => {
 });
 
 const start = { harness: 'claude', model: 'claude-opus-5' };
-const choices = {
-  claude: { models: ['claude-opus-5', 'claude-haiku-5'], defaultModel: 'claude-opus-5' },
-  codex: { models: ['gpt-5'], defaultModel: 'gpt-5' },
+const choices: HarnessChoices = {
+  defaultHarness: 'claude',
+  byId: {
+    claude: { models: ['claude-opus-5', 'claude-haiku-5'], defaultModel: 'claude-opus-5' },
+    codex: { models: ['gpt-5'], defaultModel: 'gpt-5' },
+  },
 };
 
 describe('newCommand/newCritic/newEpicCritic (ADR-0037)', () => {
@@ -92,7 +98,10 @@ describe('newCommand/newCritic/newEpicCritic (ADR-0037)', () => {
 });
 
 describe('Critic Harness choice', () => {
-  it('starts a new critic on the first configured Harness and its default model', () => {
+  it('starts a new critic on the default Harness and its default model, whatever the config order', () => {
+    const codexDefault = { ...choices, defaultHarness: 'codex' };
+    expect(startingHarness(codexDefault)).toEqual({ harness: 'codex', model: 'gpt-5' });
+
     expect(startingHarness(choices)).toEqual({ harness: 'claude', model: 'claude-opus-5' });
     expect(newCritic(startingHarness(choices))).toMatchObject({ harness: 'claude', model: 'claude-opus-5' });
   });
@@ -124,5 +133,26 @@ describe('withMissingGlobals (ADR-0037)', () => {
     const rows = withMissingGlobals(overlay, ['a']);
     expect(rows).toHaveLength(2);
     expect(rows[1]).toEqual({ kind: 'global', ref: 'a', enabled: true });
+  });
+});
+
+describe('defaultHarnessId / harnessChoices', () => {
+  const harness = (defaultModel: string) => ({ models: [{ id: defaultModel }], defaultModel });
+  const config = (defaultsHarness: string) => ({
+    defaults: { harness: defaultsHarness },
+    harnesses: { claude: harness('opus'), codex: harness('gpt') },
+  }) as unknown as Parameters<typeof defaultHarnessId>[0];
+
+  it('uses the configured default Harness, else the first configured one', () => {
+    expect(defaultHarnessId(config('codex'))).toBe('codex');
+    expect(defaultHarnessId(config('missing'))).toBe('claude');
+    expect(defaultHarnessId({ defaults: { harness: 'x' }, harnesses: {} } as unknown as Parameters<typeof defaultHarnessId>[0])).toBe('');
+  });
+
+  it('builds choices in config order with the default Harness recorded explicitly', () => {
+    const built = harnessChoices(config('codex'));
+    expect(Object.keys(built.byId)).toEqual(['claude', 'codex']);
+    expect(built.defaultHarness).toBe('codex');
+    expect(built.byId.codex).toEqual({ models: ['gpt'], defaultModel: 'gpt' });
   });
 });

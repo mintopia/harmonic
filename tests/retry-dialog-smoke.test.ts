@@ -2,7 +2,8 @@
 import { formatModelLabel } from '../web/src/components/TaskIdentity.js';
 import { act, createElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { RetryDialog, type RetryBody, type RouteGroup } from '../web/src/components/RetryDialog.js';
+import { RetryDialog, type RetryBody } from '../web/src/components/RetryDialog.js';
+import type { HarnessChoices } from '../web/src/components/verification-override-model.js';
 import type { ContinuationPreview } from '../web/src/types.js';
 import { cleanup, flush, mountComponent } from './component-smoke-harness.js';
 
@@ -24,10 +25,13 @@ const preview = (warm: boolean): ContinuationPreview => ({
   startCondensed: { session: 'new', conversation: 'condensed', estimate: { band: 'cold', note: 'Fresh session.' } },
 });
 const unavailable = async (): Promise<ContinuationPreview> => ({ available: false });
-const groups: RouteGroup[] = [
-  { harness: 'claude', models: ['claude-opus-5-5', 'claude-sonnet-5-5'] },
-  { harness: 'codex', models: ['gpt-5-codex'] },
-];
+const groups: HarnessChoices = {
+  defaultHarness: 'claude',
+  byId: {
+    claude: { models: ['claude-opus-5-5', 'claude-sonnet-5-5'], defaultModel: 'claude-opus-5-5' },
+    codex: { models: ['gpt-5-codex'], defaultModel: 'gpt-5-codex' },
+  },
+};
 const task = { id: 7, harness: 'claude', model: 'claude-opus-5-5', routing: { label: 'reasoning', applied: true } };
 
 const mount = (props: Partial<Parameters<typeof RetryDialog>[0]> = {}) =>
@@ -52,7 +56,7 @@ const click = (el: Element) =>
 const pickRoute = async (host: HTMLElement, optionText: string, groupLabel: string) => {
   await click(host.querySelector('#retry-route')!);
   const group = host.querySelector(`[role=group][aria-label="${groupLabel}"]`)!;
-  await click([...group.querySelectorAll('button')].find((b) => b.textContent?.startsWith(formatModelLabel(optionText)))!);
+  await click([...group.querySelectorAll('button')].find((b) => b.textContent?.includes(formatModelLabel(optionText)))!);
 };
 const retryNow = (host: HTMLElement) => click(host.querySelector('[role=radio]:not([aria-checked=true])')!);
 const checkbox = (host: HTMLElement) => host.querySelector<HTMLInputElement>('input[type=checkbox]');

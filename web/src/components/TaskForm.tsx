@@ -9,6 +9,7 @@ import { inheritSource } from './inherit-field-model';
 import { LoadError } from './LoadError';
 import { btnGhost, btnPrimary, field, panelTitle, labelType, selectField } from '../ui';
 import { taskLabel } from '../id-format.js';
+import { providerLabel } from './TaskIdentity';
 import { useAsyncResource } from '../useAsyncResource';
 
 const label = `mb-1 block ${labelType} text-muted`;
@@ -130,7 +131,7 @@ export function TaskForm({
               {({ id, value, onChange }) => (
                 <select id={id} className={`${selectField} w-full`} value={value} onChange={(e) => onChange(e.target.value)}>
                   {Object.keys(config.harnesses).map((h) => (
-                    <option key={h} value={h}>{h}</option>
+                    <option key={h} value={h}>{providerLabel(h)}</option>
                   ))}
                 </select>
               )}

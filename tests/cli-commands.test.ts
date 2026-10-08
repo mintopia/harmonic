@@ -289,6 +289,25 @@ describe('runCliCommand: restart', () => {
     expect(daemonTable.get('/d')).toMatchObject({ port: 47437, host: '127.0.0.1' });
   });
 
+  it('starts fresh on default args and says so when no server is running', async () => {
+    const { deps, spawnCalls, logs } = fakeDependencies();
+
+    await runCliCommand({ kind: 'restart', dataDir: '/d' }, [], deps);
+
+    expect(spawnCalls).toEqual([{ dataDir: '/d', args: ['--data-dir', '/d'] }]);
+    expect(logs.map((l) => l.message)).toContain('No running server; starting one.');
+  });
+
+  it('does not reuse the port and host from a dead pidfile', async () => {
+    const { deps, spawnCalls, logs } = fakeDependencies();
+    deps.daemon.daemonStatus = () => ({ running: false, info: { pid: 42, port: 47437, host: '10.0.0.1', startedAt: 0 } });
+
+    await runCliCommand({ kind: 'restart', dataDir: '/d' }, [], deps);
+
+    expect(spawnCalls).toEqual([{ dataDir: '/d', args: ['--data-dir', '/d'] }]);
+    expect(logs.map((l) => l.message)).toContain('No running server; starting one.');
+  });
+
   it('off-linux: restarts the background process instead of failing on the unsupported service manager', async () => {
     const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')!;
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });

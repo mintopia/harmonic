@@ -1,3 +1,4 @@
+import { reportIfSessionLost } from './api.js';
 import type { TrackerRef } from './types.js';
 import type {
   Attempt,
@@ -178,7 +179,9 @@ function connect(): void {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const socket = new WebSocket(`${proto}://${location.host}/api/ws`);
   ws = socket;
+  let opened = false;
   socket.onopen = () => {
+    opened = true;
     consecutiveFailedOpens = 0;
     setConnectionState('connected');
     for (const listener of listeners) listener.onOpen?.(socket);
@@ -193,6 +196,7 @@ function connect(): void {
     if (ws !== socket) return;
     ws = null;
     pendingPermissions.clear();
+    if (!opened) void reportIfSessionLost();
     if (listeners.size > 0) setConnectionState('connecting');
     if (listeners.size > 0 && retry === null) {
       const delay = fullJitterBackoffMs(consecutiveFailedOpens);
