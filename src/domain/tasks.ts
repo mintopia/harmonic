@@ -677,9 +677,22 @@ export class TaskService {
     return rows;
   }
 
+  /** The subset of `ids` whose Task is `done`, without loading full rows. */
+  async doneIds(ids: readonly number[]): Promise<Set<number>> {
+    if (ids.length === 0) return new Set();
+    const rows = await this.db.read((db) =>
+      db
+        .select({ id: tasks.id })
+        .from(tasks)
+        .where(and(inArray(tasks.id, [...ids]), eq(tasks.state, 'done')))
+        .all(),
+    );
+    return new Set(rows.map((row) => row.id));
+  }
+
   /** Read the active backlog and derive open blockers at pick time. */
   async orderedEligibleWork(workspaceId?: number): Promise<OrderedEligibleTask[]> {
-    const rows = await this.list(workspaceId === undefined ? {} : { workspaceId });
+    const rows = await this.list(workspaceId === undefined ? { state: 'ready' } : { workspaceId, state: 'ready' });
     const candidates: TaskRow[] = [];
     await forEachYielding(rows, (task) => {
       if (task.state === 'ready') candidates.push(task);

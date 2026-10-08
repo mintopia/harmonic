@@ -252,25 +252,22 @@ export class AutoRunner {
     workspacesById: Map<number, WorkspaceRow>;
   }): Promise<void> {
     const [all, readyWithDeps, running, runningByWorkspace] = await Promise.all([
-      this.taskService.list(),
+      this.taskService.list({ state: ['ready', 'working'] }),
       this.taskService.listWithDeps({ state: 'ready' }),
       this.runStore.countRunning(),
       this.runStore.countRunningByWorkspace(),
     ]);
-    const allById = new Map<number, TaskRow>();
-    await forEachYielding(all, (task) => {
-      allById.set(task.id, task);
-    });
     const occupied = await occupiedDirectContexts(all);
     const missingThisPass = new Map<number, number>();
     const next = new Map<number, string>();
     const record = (taskId: number, reason: string) => next.set(taskId, reason);
 
     const dependencyBlocked = new Set<number>();
+    const doneBlockers = await this.taskService.doneIds([...new Set(readyWithDeps.flatMap((t) => t.dependsOn))]);
     await forEachYielding(readyWithDeps, (task) => {
       if (task.openBlockerCount === 0) return;
       dependencyBlocked.add(task.id);
-      const blockers = task.dependsOn.filter((id) => allById.get(id)?.state !== 'done');
+      const blockers = task.dependsOn.filter((id) => !doneBlockers.has(id));
       record(
         task.id,
         blockers.length === 0 ? 'blocked by a dependency' : `blocked-by #${blockers.join(', #')}`,
@@ -327,7 +324,8 @@ export class AutoRunner {
     });
     const previous = this.schedulerSkipReasons;
     this.schedulerSkipReasons = next;
-    await forEachYielding(all, async ({ id }) => {
+    const changedIds = new Set([...previous.keys(), ...next.keys()]);
+    await forEachYielding(changedIds, async (id) => {
       if (previous.get(id) === next.get(id)) return;
       const fresh = await this.taskService.get(id).catch((error: unknown) => {
         if (error instanceof DomainError && error.code === 'not_found') return undefined;
@@ -351,7 +349,7 @@ export class AutoRunner {
   ): Promise<void> {
     const skip = new Set<number>();
     const [all, ordered, running0, runningByWorkspace0] = await Promise.all([
-      this.taskService.list(),
+      this.taskService.list({ state: ['ready', 'working'] }),
       this.taskService.orderedEligibleWork(),
       this.runStore.countRunning(),
       this.runStore.countRunningByWorkspace(),
@@ -360,7 +358,7 @@ export class AutoRunner {
     const runningByWorkspace = new Map(runningByWorkspace0);
     const occupied = await occupiedDirectContexts(all);
     const epicGate = new Map<number, boolean>();
-    if (this.epicBaseNotReady) {
+    if (this.epicBaseNotReady && running0 < ceiling) {
       const gate = this.epicBaseNotReady;
       await forEachYielding(all, async (t) => {
         if (t.state === 'ready' && t.origin === 'mirrored' && !skip.has(t.id)) {
