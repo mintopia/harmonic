@@ -160,7 +160,7 @@ exposing it on your network.
 Sign-ins are kept in the server's memory. After a restart, open tabs return to
 the Login screen, and you sign in again with the same password.
 
-## Routing labels and escalations
+## Routing Labels and escalations
 
 A **Routing Label** maps a tracker label to a Harness and a Model, so a ticket
 carrying that label runs on that agent. For example, `reasoning` can route to
