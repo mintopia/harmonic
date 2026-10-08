@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { api } from '../api';
 import { toastSuccess } from '../toast';
 import { useDismissOnOutsidePointer } from '../useDismissOnOutsidePointer';
@@ -62,10 +62,13 @@ function RoutePicker({
   onOpenChange: (open: boolean) => void;
 }) {
   const [open, setOpenState] = useState(false);
-  const setOpen = (next: boolean) => {
-    setOpenState(next);
-    onOpenChange(next);
-  };
+  const setOpen = useCallback(
+    (next: boolean) => {
+      setOpenState(next);
+      onOpenChange(next);
+    },
+    [onOpenChange],
+  );
   const wrap = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLUListElement>(null);
@@ -73,7 +76,7 @@ function RoutePicker({
   const [active, setActive] = useState(0);
   useDismissOnOutsidePointer(wrap, open, () => setOpen(false));
   const flat: Route[] = Object.entries(choices.byId).flatMap(([harness, choice]) => choice.models.map((model) => ({ harness, model })));
-  const optionId = (i: number) => `${listId}-opt-${i}`;
+  const optionId = useCallback((i: number) => `${listId}-opt-${i}`, [listId]);
   const openList = () => {
     setActive(Math.max(0, flat.findIndex((r) => r.harness === value.harness && r.model === value.model)));
     setOpen(true);
@@ -95,10 +98,10 @@ function RoutePicker({
     };
     dialog?.addEventListener('cancel', swallowCancel, true);
     return () => dialog?.removeEventListener('cancel', swallowCancel, true);
-  }, [open]);
+  }, [open, setOpen]);
   useEffect(() => {
     if (open) document.getElementById(optionId(active))?.scrollIntoView?.({ block: 'nearest' });
-  }, [open, active]);
+  }, [open, active, optionId]);
   const onListKeyDown = (e: KeyboardEvent<HTMLUListElement>) => {
     const last = Math.max(flat.length - 1, 0);
     if (e.key === 'ArrowDown') setActive((a) => Math.min(a + 1, last));
