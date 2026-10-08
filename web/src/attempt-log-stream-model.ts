@@ -3,17 +3,19 @@ import type { AttemptLogEvent } from './types.js';
 export const MAX_ATTEMPT_LOG_EVENTS = 4000;
 
 /**
- * Append firehose events once. Sequence numbers only grow, so anything at or
- * below the newest kept event is a reconnect replay or out-of-order duplicate.
+ * Append firehose events once. Ids only grow (REST ids sit below the live
+ * ids, which are offset-plus-seq), so anything at or below the newest kept id
+ * is a reconnect replay or out-of-order duplicate. Not `seq`: the REST
+ * transcript and the live stream number it separately.
  * The array is capped so a tab left open on a long run stays bounded.
  */
 export function appendAttemptLogEvents({ current, additions }: { current: AttemptLogEvent[]; additions: readonly AttemptLogEvent[] }): AttemptLogEvent[] {
-  let lastSeq = current.at(-1)?.seq ?? -Infinity;
+  let lastId = current.at(-1)?.id ?? -Infinity;
   const newEvents: AttemptLogEvent[] = [];
   for (const event of additions) {
-    if (event.seq <= lastSeq) continue;
+    if (event.id <= lastId) continue;
     newEvents.push(event);
-    lastSeq = event.seq;
+    lastId = event.id;
   }
   if (newEvents.length === 0) return current;
   const combined = [...current, ...newEvents];

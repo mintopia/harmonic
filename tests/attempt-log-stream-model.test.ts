@@ -34,6 +34,12 @@ describe('appendAttemptLogEvents', () => {
     expect(appendAttemptLogEvents({ current: [event(5)], additions: [event(7), event(6), event(7), event(8)] })).toEqual([event(5), event(7), event(8)]);
   });
 
+  it('keeps live events whose seq collides with hydrated transcript seqs', () => {
+    const rest = [event(1), event(2), event(3)];
+    const live = { ...event(1_000_000_001), seq: 1, attemptId: 1 };
+    expect(appendAttemptLogEvents({ current: rest, additions: [live] })).toEqual([...rest, live]);
+  });
+
   it('caps the buffer, keeping the newest events', () => {
     const current = Array.from({ length: MAX_ATTEMPT_LOG_EVENTS }, (_, i) => event(i + 1));
     const next = appendAttemptLogEvents({ current, additions: [event(MAX_ATTEMPT_LOG_EVENTS + 1), event(MAX_ATTEMPT_LOG_EVENTS + 2)] });
