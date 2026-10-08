@@ -30,7 +30,7 @@ import { taskExportTarget } from '../export-targets';
 import { ChangesPane, NoRunsYet } from './ticket/ChangesPane';
 import { AttemptsNav, PanelNav } from './ticket/AttemptsNav';
 import { AttemptPanel } from './ticket/AttemptPanel';
-import { parseUnconfiguredHarness, UnconfiguredHarnessGate, UnconfiguredHarnessMessage } from './ticket/UnconfiguredHarnessGate';
+import { UnconfiguredHarnessGate, UnconfiguredHarnessMessage } from './ticket/UnconfiguredHarnessGate';
 
 export function TicketPage({
   task,
@@ -131,7 +131,7 @@ export function TicketPage({
       ?
         (task.escalationReason ?? latestAttempt?.escalationReason)?.replace(/^escalated to human:\s*/i, '') ?? null
       : null;
-  const unconfiguredHarness = escalationReason ? parseUnconfiguredHarness(escalationReason) : null;
+  const unconfiguredHarness = task.state === 'escalated' && task.escalationCause?.kind === 'harness_unconfigured' ? task.escalationCause : null;
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
   const gateModel = gateForAttempt({ task, runs, selectedAttemptId: selectedRunId });
   const panel = contentPanel(resolved);
@@ -254,7 +254,7 @@ export function TicketPage({
                 </span>
                 {escalationReason && (
                   <div className="mt-0.5 whitespace-pre-wrap break-words text-ink">
-                    {unconfiguredHarness ? <UnconfiguredHarnessMessage {...unconfiguredHarness} /> : escalationReason}
+                    {unconfiguredHarness ? <UnconfiguredHarnessMessage label={unconfiguredHarness.label} harness={unconfiguredHarness.harness} /> : escalationReason}
                   </div>
                 )}
               </div>

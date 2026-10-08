@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { baselineConfig, type AppConfig } from '../src/config.js';
+import { resolveRoute } from '../src/domain/route.js';
 import { Git } from '../src/execution/git.js';
 import { MergeCoordinator, type MergeCoordinatorDeps } from '../src/execution/merge-coordinator.js';
 import { runMergePolicy } from '../src/execution/merge-policy.js';
@@ -114,7 +115,7 @@ describe('merge-conflict resolver prompts are archived (ADR-0047)', () => {
       attempts,
       onAttemptEvent,
       listWorkingTasks: async () => [],
-      routing: { epicRoute: async () => ({ harness: 'claude', model: 'm', label: null }) },
+      routing: { epicRoute: async () => resolveRoute(baselineConfig(), 'claude', 'm', null) },
       epicMergeEvents: { append: async () => {} },
       onEpicMergeStep: () => {},
     } as never).mergeEpicIntegration({
@@ -148,7 +149,7 @@ describe('merge-conflict resolver prompts are archived (ADR-0047)', () => {
     const outcome = await coordinator(dataDir, {
       attempts: { listForEpic: async () => [], addAgentDuration: vi.fn(async () => {}), appendEvent },
       listWorkingTasks: async () => [],
-      routing: { epicRoute: async () => ({ harness: 'claude', model: 'm', label: null }) },
+      routing: { epicRoute: async () => resolveRoute(baselineConfig(), 'claude', 'm', null) },
       epicMergeEvents: { append },
       onEpicMergeStep: () => {},
     } as never).mergeEpicIntegration({
@@ -181,7 +182,7 @@ describe('merge-conflict resolver prompts are archived (ADR-0047)', () => {
     const repo = await conflictedRepo('epic/9');
     const dataDir = tmp('harmonic-conflict-archive-data-');
     const member = { baseBranch: 'epic/9', harness: 'codex', model: 'cheap-model', conflictResolveTurns: 1 } as unknown as TaskRow;
-    const epicRoute = vi.fn(async () => ({ harness: 'claude', model: 'claude-opus-5-5', label: 'reasoning' }));
+    const epicRoute = vi.fn(async () => resolveRoute(baselineConfig(), 'claude', 'claude-opus-5-5', 'reasoning'));
     const outcome = await coordinator(dataDir, {
       attempts: { listForEpic: async () => [], addAgentDuration: vi.fn(async () => {}), appendEvent: vi.fn(async () => ({})) },
       listWorkingTasks: async () => [member],
@@ -209,7 +210,7 @@ describe('merge-conflict resolver prompts are archived (ADR-0047)', () => {
     const outcome = await coordinator(dataDir, {
       attempts: { listForEpic: async () => [], addAgentDuration: vi.fn(async () => {}), appendEvent: vi.fn(async () => ({})) },
       listWorkingTasks: async () => [],
-      routing: { epicRoute: async () => ({ harness: 'missing-harness', model: 'm', label: 'reasoning' }) },
+      routing: { epicRoute: async () => resolveRoute({ harnesses: {} }, 'missing-harness', 'm', 'reasoning') },
       epicMergeEvents: { append: async () => {} },
       onEpicMergeStep: () => {},
     } as never).mergeEpicIntegration({
@@ -222,6 +223,7 @@ describe('merge-conflict resolver prompts are archived (ADR-0047)', () => {
     });
 
     expect(outcome).toMatchObject({ kind: 'escalated', reason: 'conflict' });
+    expect(outcome.kind === 'escalated' && outcome.message).toContain("Routing Label 'reasoning' needs Harness 'missing-harness', which is not configured.");
     expect(sentPrompts).toEqual([]);
   });
 

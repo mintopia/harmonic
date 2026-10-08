@@ -10,8 +10,10 @@ afterEach(cleanup);
 const REASON = "Routing Label 'bulk' needs Harness 'opencode', which is not configured.";
 const calls: { method: string; path: string; body: unknown }[] = [];
 
-async function render(reason: string): Promise<HTMLDivElement> {
-  const task: Task = makeTask({ state: 'escalated', escalationReason: reason });
+const CAUSE = { kind: 'harness_unconfigured', harness: 'opencode', label: 'bulk' } as const;
+
+async function render(reason: string, escalationCause: Task['escalationCause'] = null): Promise<HTMLDivElement> {
+  const task: Task = makeTask({ state: 'escalated', escalationReason: reason, escalationCause });
   const workspace = makeWorkspace({ id: task.workspaceId });
   calls.length = 0;
   vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
@@ -43,14 +45,19 @@ const button = (host: HTMLElement, text: string) =>
   [...host.querySelectorAll('button')].find((b) => b.textContent?.includes(text));
 
 describe('unconfigured Harness escalation gate', () => {
-  it('shows the actions only for a not-configured reason', async () => {
-    const host = await render(REASON);
+  it('shows the actions only for a structured not-configured cause', async () => {
+    const host = await render(REASON, CAUSE);
     expect(button(host, 'Set Harness on this Ticket')).toBeDefined();
     expect(button(host, 'Retry')).toBeDefined();
     expect(button(host, 'Close')).toBeDefined();
     expect(host.textContent).toContain(
       "Routing Label bulk routes to Harness opencode, which is not configured. No Attempt was started. Configure the Harness in Global settings › Integrations › Harnesses, change the label's route in Settings › Execution › Routing Labels, or set a Harness on this Ticket.",
     );
+  });
+
+  it('ignores a reason that only reads like the harness message', async () => {
+    const host = await render(REASON);
+    expect(button(host, 'Retry')).toBeUndefined();
   });
 
   it('hides the actions for any other reason', async () => {
@@ -60,7 +67,7 @@ describe('unconfigured Harness escalation gate', () => {
   });
 
   it('the dialog PATCHes the chosen harness', async () => {
-    const host = await render(REASON);
+    const host = await render(REASON, CAUSE);
     await act(async () => button(host, 'Set Harness on this Ticket')!.click());
     await flush();
     await act(async () => button(document.body as HTMLElement, 'Save')!.click());
@@ -68,11 +75,11 @@ describe('unconfigured Harness escalation gate', () => {
     const patch = calls.find((c) => c.method === 'PATCH');
     expect(patch?.body).toEqual({ harness: 'claude' });
   });
-  it('Retry rejects the task with empty guidance', async () => {
-    const host = await render(REASON);
+  it('Retry rejects the task with descriptive guidance', async () => {
+    const host = await render(REASON, CAUSE);
     await act(async () => button(host, 'Retry')!.click());
     await flush();
-    expect(calls.find((c) => c.path.endsWith('/reject'))?.body).toMatchObject({ guidance: '' });
+    expect(calls.find((c) => c.path.endsWith('/reject'))?.body).toMatchObject({ guidance: 'Retry after changing the route.' });
   });
 
 });

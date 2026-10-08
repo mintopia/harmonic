@@ -315,6 +315,7 @@ CREATE TABLE `tasks` (
 	`workflow` text,
 	`wayfinder_type` text,
 	`escalation_reason` text,
+	`escalation_cause` text,
 	`merge_status` text,
 	`ticket_close_pending` integer DEFAULT false NOT NULL,
 	`map_ref` text,

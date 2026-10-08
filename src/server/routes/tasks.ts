@@ -28,6 +28,7 @@ import { adapterFor } from '../../execution/harness/registry.js';
 import { attemptTimelineToApi, attemptToApi, taskToApi, tasksToApi, ticketTimelineToApi, verifierStatusesToApi } from '../serialize.js';
 import { atRestWorkspaceId, costOfAttempts, epicToListRow, verificationAttemptToApi } from '../dto.js';
 import type { ApiTaskListItem } from '../dto.js';
+import type { EscalationCause, TaskRouting } from '../../domain/task-routing.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, attemptUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import { diffFilesResponseSchema } from './diff.js';
@@ -121,6 +122,13 @@ const depParamsSchema = z.object({
   depId: z.coerce.number().int().meta({ example: 4818 }),
 });
 
+const taskRoutingSchema = z.object({ label: z.string(), applied: z.boolean() }) satisfies z.ZodType<TaskRouting>;
+const escalationCauseSchema = z.object({
+  kind: z.literal('harness_unconfigured'),
+  harness: z.string(),
+  label: z.string().nullable(),
+}) satisfies z.ZodType<EscalationCause>;
+
 /** A task plus its dependency context (`TaskService.withDeps`) — no Cost, since not every caller derives it. */
 const taskWithDepsSchema = z
   .object({
@@ -142,6 +150,8 @@ const taskWithDepsSchema = z
     state: z.enum(TASK_STATES).meta({ example: 'working' }),
     /** Why the ticket is `escalated` — the trigger's recorded reason; null in every other state. */
     escalationReason: z.string().nullable().meta({ example: null }),
+    /** The machine-readable cause behind `escalationReason`, when it has one; null otherwise. */
+    escalationCause: escalationCauseSchema.nullable().meta({ example: null }),
     /** Live merge indicator, orthogonal to `state`: 'merging' while the candidate merges onto base, 'resolving-conflicts' once that merge conflicts; null at rest. */
     mergeStatus: z.enum(MERGE_STATUSES).nullable().meta({ example: null }),
     /** True while the Task is merged but its tracker ticket close is outstanding. */
@@ -193,7 +203,7 @@ const taskSchema = taskWithDepsSchema
     summary: z.string().meta({ example: 'Add rate limiting to POST /api/tasks' }),
     cost: costSchema.nullable(),
     /** The Routing Label matching a mirrored Ticket (ADR-0049); `applied` is false when an operator's Harness/Model override wins. Null when none matches or on native Tasks. */
-    routing: z.object({ label: z.string(), applied: z.boolean() }).nullable().meta({ example: { label: 'reasoning', applied: true } }),
+    routing: taskRoutingSchema.nullable().meta({ example: { label: 'reasoning', applied: true } }),
     /** The mirrored issue's tracker URL (from the last poll); null on native Tasks or before a poll. */
     url: z.string().nullable().meta({ example: 'https://github.com/mintopia/harmonic/issues/35' }),
     /** The parent Map's title (resolved from mapRef, last poll); null when unmapped or before a poll. */

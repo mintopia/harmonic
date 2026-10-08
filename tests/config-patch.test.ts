@@ -33,7 +33,7 @@ describe('baseline model catalog', () => {
       },
       {
         id: 'openrouter/anthropic/claude-sonnet-5.5',
-        price: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+        price: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
         contextWindow: 1_000_000,
       },
       {

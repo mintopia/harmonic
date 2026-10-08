@@ -168,7 +168,7 @@ describe('Routing Labels (ADR-0049)', () => {
       const attempts = new AttemptStore(asyncDb);
       const mirrored = await mirror(1, ['ready-for-agent', 'reasoning']);
       const claimed = (await tasks.claimReady(mirrored.id))!;
-      const attempt = await attempts.create(mirrored.id, undefined, { harness: claimed.harness, model: claimed.model });
+      const attempt = await attempts.create(mirrored.id, { route: { harness: claimed.harness, model: claimed.model } });
       expect(attempt).toMatchObject({ harness: 'claude', model: 'claude-opus-5-5' });
 
       await mirror(1, ['ready-for-agent', 'cheap']);
@@ -181,6 +181,46 @@ describe('Routing Labels (ADR-0049)', () => {
       const next = (await tasks.claimReady(mirrored.id))!;
       expect(next.harness).toBe('copilot');
       expect(await tasks.get(mirrored.id)).toMatchObject({ harness: 'copilot' });
+    });
+  });
+
+  describe('in-flight pinning while paused', () => {
+    async function pausedRoutedTask() {
+      const attempts = new AttemptStore(asyncDb);
+      const mirrored = await mirror(1, ['ready-for-agent', 'reasoning']);
+      const claimed = (await tasks.claimReady(mirrored.id))!;
+      const attempt = await attempts.create(mirrored.id, { route: { harness: claimed.harness, model: claimed.model } });
+      await tasks.pause(mirrored.id);
+      await mirror(1, ['ready-for-agent', 'cheap']);
+      return { mirrored, attempts, attempt };
+    }
+
+    it('get, list, listWithDeps and a state change all report the route the paused Attempt started with', async () => {
+      const { mirrored } = await pausedRoutedTask();
+      const started = { harness: 'claude', model: 'claude-opus-5-5' };
+      expect(await tasks.get(mirrored.id)).toMatchObject({ state: 'paused', ...started });
+      expect((await tasks.list()).find((t) => t.id === mirrored.id)).toMatchObject(started);
+      expect((await tasks.listWithDeps()).find((t) => t.id === mirrored.id)).toMatchObject(started);
+      expect(await tasks.list({ harness: ['claude'] })).toHaveLength(1);
+      expect(await tasks.resume(mirrored.id)).toMatchObject({ state: 'working', ...started });
+    });
+
+    it('the next Attempt after the paused one finishes re-routes to the new label', async () => {
+      const { mirrored, attempts, attempt } = await pausedRoutedTask();
+      await attempts.update(attempt.id, { state: 'failed', endedAt: Date.now() });
+      expect(await tasks.get(mirrored.id)).toMatchObject({ harness: 'codex' });
+    });
+  });
+
+  describe('editing an escalated Task', () => {
+    it('allows a route-only PATCH and refuses an empty or non-route one', async () => {
+      const mirrored = await mirror(1, ['ready-for-agent', 'reasoning']);
+      await tasks.claimReady(mirrored.id);
+      await tasks.escalate(mirrored.id, 'escalated to human: boom');
+      await expect(tasks.update(mirrored.id, {})).rejects.toMatchObject({ code: 'invalid_state' });
+      await expect(tasks.update(mirrored.id, { priority: 'high' })).rejects.toMatchObject({ code: 'invalid_state' });
+      await expect(tasks.update(mirrored.id, { harness: 'codex', priority: 'high' })).rejects.toMatchObject({ code: 'invalid_state' });
+      expect(await tasks.update(mirrored.id, { harness: 'codex' })).toMatchObject({ state: 'escalated', harness: 'codex' });
     });
   });
 
@@ -235,19 +275,19 @@ describe('Routing Labels (ADR-0049)', () => {
 
     it('an Epic labelled reasoning routes to reasoning even when its member is labelled cheap', async () => {
       const epicRef = await epic(10, ['epic', 'reasoning'], ['cheap']);
-      expect(await tasks.routing.epicRoute(wsId, epicRef)).toEqual({ harness: 'claude', model: 'claude-opus-5-5', label: 'reasoning' });
+      expect(await tasks.routing.epicRoute(wsId, epicRef)).toMatchObject({ ok: true, harness: 'claude', model: 'claude-opus-5-5', label: 'reasoning' });
     });
 
     it('an unlabelled Epic uses the defaults regardless of its members', async () => {
       const epicRef = await epic(12, ['epic'], ['reasoning']);
-      expect(await tasks.routing.epicRoute(wsId, epicRef)).toEqual({ harness: 'claude', model: 'claude-sonnet-5-5', label: null });
+      expect(await tasks.routing.epicRoute(wsId, epicRef)).toMatchObject({ ok: true, harness: 'claude', model: 'claude-sonnet-5-5', label: null });
     });
 
     it('a route with an empty model uses the Harness default model', async () => {
       const epicRef = await epic(14, ['epic', 'cheap'], []);
       const route = await tasks.routing.epicRoute(wsId, epicRef);
       expect(route).toMatchObject({ harness: 'codex', label: 'cheap' });
-      expect(route.model).toBe(config.harnesses.codex!.defaultModel);
+      expect(route.ok && route.model).toBe(config.harnesses.codex!.defaultModel);
     });
 
     it('reads the labels of an Epic persisted as a tracker container', async () => {

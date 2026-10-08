@@ -56,8 +56,7 @@ are never allowed, so authenticate with a bearer key.
 ## Read scope
 
 A \`read\`-scoped API key (created via \`POST /api/keys\` with
-\`{ "scope": "read" }\`) is a viz-client credential: it may \`GET\` ${readScopePathList()}, and open the WebSocket (filtered as
-above). Every mutation and the whole operator surface (keys, config,
+\`{ "scope": "read" }\`) is a viz-client credential: it may \`GET\` ${readScopePathList()}. Every mutation and the whole operator surface (keys, config,
 channels, Conversations) is blocked. There is no \`map_changed\` event — a
 client re-fetches \`/maps\` on reconnect or when it sees a \`mapRef\` it has
 not resolved yet.`;

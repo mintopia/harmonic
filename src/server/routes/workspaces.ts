@@ -249,9 +249,14 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     },
     async (req) => {
       if (req.body.routingLabels) {
-        const issues = routingLabelOverlayIssues(req.body.routingLabels, ctx.settingsStore.getGlobal());
+        const issues = routingLabelOverlayIssues(req.body.routingLabels, ctx.settingsStore.getGlobal().routingLabels);
         const first = issues[0];
-        if (first) throw new DomainError('validation', `routingLabels.${first.path.join('.')}: ${first.message}`);
+        if (first) {
+          const entry = req.body.routingLabels[first.index];
+          const label = entry?.kind === 'local' ? entry.routingLabel.label : '';
+          const message = first.kind === 'blank' ? 'routing label must not be blank' : `routing label "${label}" is already mapped`;
+          throw new DomainError('validation', `routingLabels.${first.index}.routingLabel.label: ${message}`);
+        }
       }
       if (req.body.guardrailBudget) {
         const unpriced = unpricedModelsForCostCap(req.body.guardrailBudget, ctx.settingsStore.getGlobal());

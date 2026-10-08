@@ -3,6 +3,7 @@ import type { RoutingService } from '../domain/routing.js';
 import { Git } from './git.js';
 import { reportFailure } from '../error-handling.js';
 import type { AppConfig } from '../config.js';
+import { harnessConfig } from '../domain/route.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { EpicMergeEventStore, EpicTimelineStep } from '../domain/epic-merge-events.js';
@@ -204,15 +205,15 @@ export class MergeCoordinator {
     const config = this.deps.getConfig();
     const epicAttempt = (await this.deps.attempts.listForEpic({ workspaceId: input.workspaceId, epicRef: input.epicRef })).at(-1);
     const host = (await this.deps.listWorkingTasks()).find((task) => task.baseBranch === input.integrationBranch);
-    const { harness: harnessId, model, label } = await this.deps.routing.epicRoute(input.workspaceId, input.epicRef);
-    const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
+    const route = await this.deps.routing.epicRoute(input.workspaceId, input.epicRef);
     const deps: MergePolicyDeps = {
       resolveConflictTurn: async (ctx) => {
         try {
-          if (!harness) {
-            logger.warn('epic conflict turn skipped: harness not configured', { epicRef: input.epicRef, harness: harnessId, routingLabel: label ?? '' });
+          if (!route.ok) {
+            logger.warn('epic conflict turn skipped: harness not configured', { epicRef: input.epicRef, harness: route.harness, routingLabel: route.label ?? '' });
             return;
           }
+          const { harness: harnessId, model, config: harness } = route;
           const drive = this.deps.criticDrive;
           const merge = resolveMergePrompts(await this.deps.getWorkspace?.(input.workspaceId), config);
           const prompt = renderConflictPrompt(merge.epicConflictPrompt, merge.fragments, ctx);
@@ -243,8 +244,8 @@ export class MergeCoordinator {
               baseBranch: ctx.baseBranch,
               taskBranch: ctx.taskBranch,
               unmergedPaths: ctx.unmergedPaths.length,
-              harnessId,
-              model,
+              harnessId: route.harness,
+              ...(route.ok ? { model: route.model } : {}),
             },
           });
         }
@@ -262,12 +263,13 @@ export class MergeCoordinator {
         })
         .catch((err) => logger.warn('epic merge step persist failed', { error: err instanceof Error ? err.message : String(err) }));
     };
+    const conflictResolveTurns = host?.conflictResolveTurns ?? config.defaults.conflictResolveTurns;
     const outcome = await runMergePolicy(
       {
         baseDir: input.repoDir,
         baseBranch: input.defaultBranch,
         taskBranch: input.integrationBranch,
-        conflictResolveTurns: host?.conflictResolveTurns ?? config.defaults.conflictResolveTurns,
+        conflictResolveTurns,
         postMergeCheck: config.merge.postMergeCheck,
       },
       deps,
@@ -275,6 +277,9 @@ export class MergeCoordinator {
     await persistChain;
     if (outcome.kind === 'merged') {
       await this.deps.postMerge?.({ repoDir: input.repoDir, baseBranch: input.defaultBranch });
+    }
+    if (outcome.kind === 'escalated' && outcome.reason === 'conflict' && conflictResolveTurns > 0 && !route.ok) {
+      return { ...outcome, message: `${route.reason} It cannot run the conflict resolution turn. ${outcome.message}` };
     }
     return outcome;
   }
@@ -300,7 +305,7 @@ export class MergeCoordinator {
         try {
           const config = this.deps.getConfig();
           const harnessId = task.harness;
-          const harness = config.harnesses[harnessId as keyof typeof config.harnesses];
+          const harness = harnessConfig(config, harnessId);
           if (!harness) return;
           const drive = this.deps.criticDrive;
           const merge = resolveMergePrompts(await this.deps.getWorkspace?.(task.workspaceId), config);

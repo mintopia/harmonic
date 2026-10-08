@@ -57,13 +57,9 @@ export class EpicRefreshResolver {
       await escalate(target.ref, reason);
       return { status: 'escalated', reason };
     };
-    const config = this.deps.getConfig();
-    const { harness: harnessId, model, label } = await this.deps.routing.epicRoute(target.workspaceId, target.ref);
-    const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
-    if (!harness) {
-      const via = label ? ` (routed by label '${label}')` : '';
-      return escalated(`harness '${harnessId}'${via} is not configured to run the refresh corrective turn for ${branch}: ${detail}`);
-    }
+    const route = await this.deps.routing.epicRoute(target.workspaceId, target.ref);
+    if (!route.ok) return escalated(`${route.reason} It cannot run the refresh corrective turn for ${branch}: ${detail}`);
+    const { harness: harnessId, model, config: harness } = route;
 
     mkdirSync(this.deps.worktreesDir, { recursive: true });
     const worktreePath = join(this.deps.worktreesDir, `epic-refresh-${target.ref}`);

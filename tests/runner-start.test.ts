@@ -63,7 +63,7 @@ describe('Runner.start (issue #272)', () => {
           guardrailConfig: baselineConfig().guardrails,
           priceTable: pricesForHarness(baselineConfig().harnesses.claude),
         };
-        return await runs.create(taskArg.id, snapshot);
+        return await runs.create(taskArg.id, { guardrails: snapshot });
       });
 
     const started = Promise.allSettled([runner.start(task.id), runner.start(task.id)]);

@@ -26,8 +26,10 @@ import {
   type EpicRow,
 } from '../db/schema.js';
 import { resolveWorkspace } from './workspaces.js';
-import { RoutingService } from './routing.js';
+import { routeApplies, RoutingService, type RoutingScope } from './routing.js';
 import { resolveScoped } from './setting-override.js';
+import { harnessConfig } from './route.js';
+import type { EscalationCause } from './task-routing.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
 import { logger } from '../logger.js';
@@ -187,7 +189,6 @@ export interface TaskWithDeps extends TaskRow {
   /** The inheritable defaults as stored (`null` ⇒ inherited): lets the editor tell an
    * inherited field from a pinned one, since the row's own fields are resolved. */
   overrides: TaskOverrides;
-  /** The Routing Label matching this mirrored Ticket; `applied` is false when an operator override wins. */
   routing: { label: string; applied: boolean } | null;
 }
 
@@ -199,6 +200,7 @@ export interface OrderedEligibleTask extends TaskRow {
 const EDITABLE_STATES: TaskState[] = ['draft', 'ready'];
 const CANCELLABLE_STATES: TaskState[] = ['draft', 'ready', 'working', 'paused', 'escalated'];
 const TERMINAL_STATES: TaskState[] = ['done', 'cancelled'];
+const IN_FLIGHT_STATES: readonly TaskState[] = ['working', 'paused'];
 
 /**
  * The whole legal Task lifecycle (ADR-0020). Terminal `done` has no outgoing
@@ -294,13 +296,13 @@ export class TaskService {
     return resolveWorkspace(await this.getWorkspaces(), workspaceId);
   }
 
-  private resolveDefaults(raw: RawTaskRow, workspace: WorkspaceRow) {
+  private resolveDefaults(raw: RawTaskRow, { workspace, labels }: RoutingScope) {
     const over = this.overridesOf(raw);
     const config = this.getConfig();
-    const route = over.harness === null && over.model === null ? this.routing.matchRoute(raw, workspace) : null;
+    const route = routeApplies(over) ? this.routing.matchRoute(raw, labels) : null;
     const harness = over.harness ?? route?.harness ?? resolveScoped('harness', workspace.harness, config.defaults.harness);
-    const harnessConfig = config.harnesses[harness as keyof typeof config.harnesses];
-    const model = over.model ?? (route ? route.model || harnessConfig?.defaultModel || '' : resolveScoped('model', workspace.model, harnessConfig?.defaultModel ?? ''));
+    const defaultModel = harnessConfig(config, harness)?.defaultModel;
+    const model = over.model ?? (route ? route.model || defaultModel || '' : resolveScoped('model', workspace.model, defaultModel ?? ''));
     return {
       harness,
       model,
@@ -310,9 +312,51 @@ export class TaskService {
     };
   }
 
+  /** A routed Attempt in flight (working or paused) keeps the Harness/Model it started with; relabelling or a config change applies from the next Attempt (ADR-0049). */
+  private isRoutePinned(raw: RawTaskRow, scope: RoutingScope): boolean {
+    return IN_FLIGHT_STATES.includes(raw.state) && routeApplies(raw) && this.routing.matchRoute(raw, scope.labels) !== null;
+  }
+
+  private async runningRoutes(taskIds: readonly number[]): Promise<Map<number, { harness: string; model: string }>> {
+    const rows = await this.db.read((db) =>
+      db
+        .select({ taskId: attempts.taskId, harness: attempts.harness, model: attempts.model })
+        .from(attempts)
+        .where(and(inArray(attempts.taskId, [...taskIds]), eq(attempts.state, 'running')))
+        .orderBy(desc(attempts.number))
+        .all(),
+    );
+    const routes = new Map<number, { harness: string; model: string }>();
+    await forEachYielding(rows, (row) => {
+      if (row.taskId !== null && row.harness && row.model !== null && !routes.has(row.taskId)) routes.set(row.taskId, { harness: row.harness, model: row.model });
+    });
+    return routes;
+  }
+
+  private async resolveRows(raws: readonly RawTaskRow[], scopeOf: (workspaceId: number | null) => RoutingScope): Promise<TaskRow[]> {
+    const rows: TaskRow[] = [];
+    const pinned: number[] = [];
+    await forEachYielding(raws, (raw) => {
+      const scope = scopeOf(raw.workspaceId);
+      rows.push({ ...raw, ...this.resolveDefaults(raw, scope) });
+      if (this.isRoutePinned(raw, scope)) pinned.push(raw.id);
+    });
+    if (pinned.length === 0) return rows;
+    const routes = await this.runningRoutes(pinned);
+    const result: TaskRow[] = [];
+    await forEachYielding(rows, (row) => {
+      const route = routes.get(row.id);
+      result.push(route ? { ...row, ...route } : row);
+    });
+    return result;
+  }
+
   private async resolve(raw: RawTaskRow): Promise<TaskRow> {
-    const workspace = await this.resolveWorkspace(raw.workspaceId ?? undefined);
-    return { ...raw, ...this.resolveDefaults(raw, workspace) };
+    const scope = await this.routing.scopeFor(raw.workspaceId);
+    const task: TaskRow = { ...raw, ...this.resolveDefaults(raw, scope) };
+    if (!this.isRoutePinned(raw, scope)) return task;
+    const route = (await this.runningRoutes([raw.id])).get(raw.id);
+    return route ? { ...task, ...route } : task;
   }
 
   private overridesOf(raw: RawTaskRow): TaskOverrides {
@@ -381,7 +425,7 @@ export class TaskService {
 
   private assertHarnessConfigured(harness: string | null | undefined): void {
     const config = this.getConfig();
-    if (harness && !config.harnesses[harness as keyof typeof config.harnesses]) {
+    if (harness && !harnessConfig(config, harness)) {
       throw new DomainError('validation', `harness '${harness}' is not configured`);
     }
   }
@@ -623,11 +667,7 @@ export class TaskService {
       ),
       this.getWorkspaces(),
     ]);
-    let rows: TaskRow[] = [];
-    await forEachYielding(rawRows, async (raw) => {
-      const workspace = resolveWorkspace(workspaceRows, raw.workspaceId ?? undefined);
-      rows.push({ ...raw, ...this.resolveDefaults(raw, workspace) });
-    });
+    let rows = await this.resolveRows(rawRows, this.routing.scopes(workspaceRows));
     const harnessList = filterList(query.harness);
     if (harnessList.length) rows = rows.filter((t) => harnessList.includes(t.harness));
     const priorityList = filterList(query.priority);
@@ -713,8 +753,8 @@ export class TaskService {
           .get(),
       );
       if (!claimed) return undefined;
-      const workspace = await this.resolveWorkspace(claimed.workspaceId ?? undefined);
-      const { harness, model, ...defaults } = this.resolveDefaults(claimed, workspace);
+      const scope = await this.routing.scopeFor(claimed.workspaceId);
+      const { harness, model, ...defaults } = this.resolveDefaults(claimed, scope);
       // A mirrored Ticket's Harness/Model are re-resolved at every Attempt start (ADR-0049), so never pinned.
       const pinned = claimed.origin === 'mirrored' ? defaults : { harness, model, ...defaults };
       const row = await this.db.write((db) =>
@@ -733,18 +773,7 @@ export class TaskService {
   }
 
   async get(id: number): Promise<TaskRow> {
-    const raw = await this.getRaw(id);
-    const task = await this.resolve(raw);
-    return raw.state === 'working' ? await this.withInFlightRoute(raw, task, await this.resolveWorkspace(raw.workspaceId ?? undefined)) : task;
-  }
-
-  /** A routed Attempt in flight keeps the Harness/Model it started with; relabelling or a config change applies from the next Attempt (ADR-0049). */
-  private async withInFlightRoute(raw: RawTaskRow, task: TaskRow, workspace: WorkspaceRow): Promise<TaskRow> {
-    if (!this.routing.matchRoute(raw, workspace) || raw.harness !== null || raw.model !== null) return task;
-    const latest = await this.db.read((db) =>
-      db.select({ harness: attempts.harness, model: attempts.model }).from(attempts).where(and(eq(attempts.taskId, raw.id), eq(attempts.state, 'running'))).orderBy(desc(attempts.number)).limit(1).get(),
-    );
-    return latest?.harness && latest.model !== null ? { ...task, harness: latest.harness, model: latest.model } : task;
+    return await this.resolve(await this.getRaw(id));
   }
 
   async ensureArchiveId(taskId: number): Promise<string> {
@@ -762,7 +791,8 @@ export class TaskService {
 
   async update(id: number, input: UpdateTaskInput): Promise<TaskRow> {
     const task = await this.get(id);
-    const routeOnly = Object.keys(input).every((key) => key === 'harness' || key === 'model');
+    const keys = Object.keys(input);
+    const routeOnly = keys.length > 0 && keys.every((key) => key === 'harness' || key === 'model');
     if (!EDITABLE_STATES.includes(task.state) && !(task.state === 'escalated' && routeOnly)) {
       throw new DomainError('invalid_state', `task ${id} is ${task.state}; only draft, ready, or blocked tasks can be edited`);
     }
@@ -812,6 +842,7 @@ export class TaskService {
       const patch: Partial<TaskRow> = {
         state: 'ready',
         escalationReason: null,
+        escalationCause: null,
         mergeStatus: null,
         updatedAt: Date.now(),
         feedback: null,
@@ -843,13 +874,13 @@ export class TaskService {
    * Hand the ticket to a human. `reason` is the trigger's recorded fact and
    * stays on the row until an operator Accepts, Rejects with guidance, or Closes it.
    */
-  async escalate(id: number, reason: string): Promise<TaskRow> {
+  async escalate(id: number, reason: string, cause?: EscalationCause): Promise<TaskRow> {
     return withTaskLock(id, async () => {
       assertTaskTransition(id, (await this.getRaw(id)).state, 'escalated');
       const row = await this.db.write((db) =>
         db
           .update(tasks)
-          .set({ state: 'escalated', escalationReason: reason, mergeStatus: null, updatedAt: Date.now() })
+          .set({ state: 'escalated', escalationReason: reason, escalationCause: cause ?? null, mergeStatus: null, updatedAt: Date.now() })
           .where(eq(tasks.id, id))
           .returning()
           .get(),
@@ -926,7 +957,7 @@ export class TaskService {
       const row = await this.db.write((db) =>
         db
           .update(tasks)
-          .set({ state, mergeStatus: null, updatedAt: Date.now(), ...(state === 'escalated' ? {} : { escalationReason: null }) })
+          .set({ state, mergeStatus: null, updatedAt: Date.now(), ...(state === 'escalated' ? {} : { escalationReason: null, escalationCause: null }) })
           .where(eq(tasks.id, id))
           .returning()
           .get(),
@@ -1119,7 +1150,7 @@ export class TaskService {
       humanOnly: this.humanOnly(task, containerRefs, triage),
       isEpic: this.isEpic(task, containerRefs),
       overrides: this.overridesOf(raw),
-      routing: this.routing.routingOf(raw, await this.resolveWorkspace(raw.workspaceId ?? undefined)),
+      routing: this.routing.routingOf(raw, await this.routing.scopeFor(raw.workspaceId)),
     };
   }
 
@@ -1143,10 +1174,8 @@ export class TaskService {
       ),
       this.getWorkspaces(),
     ]);
-    let listed = rawRows.map((raw) => {
-      const workspace = resolveWorkspace(workspaceRows, raw.workspaceId ?? undefined);
-      return { ...raw, ...this.resolveDefaults(raw, workspace) };
-    });
+    const scopeOf = this.routing.scopes(workspaceRows);
+    let listed = await this.resolveRows(rawRows, scopeOf);
     const harnessList = filterList(query.harness);
     if (harnessList.length) listed = listed.filter((task) => harnessList.includes(task.harness));
     const priorityList = filterList(query.priority);
@@ -1194,18 +1223,24 @@ export class TaskService {
     for (const edge of dependentRows) dependents.get(edge.dependsOnId)?.push(edge.taskId);
     const containerRefs = await this.containerRefs(query.workspaceId);
     const triage = await this.triageLabels(query.workspaceId);
-    return listed.map((task) => ({
-      ...task,
-      dependsOn: dependsOn.get(task.id) ?? [],
-      dependents: dependents.get(task.id) ?? [],
-      blockedOnFailed: task.state === 'ready' && failedDependencies.has(task.id),
-      openBlockerCount: openBlockerCounts.get(task.id) ?? 0,
-      agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0, containerRefs, triage),
-      humanOnly: this.humanOnly(task, containerRefs, triage),
-      isEpic: this.isEpic(task, containerRefs),
-      overrides: this.overridesOf(rawById.get(task.id) ?? task),
-      routing: rawById.has(task.id) ? this.routing.routingOf(rawById.get(task.id)!, resolveWorkspace(workspaceRows, task.workspaceId ?? undefined)) : null,
-    }));
+    const result: TaskWithDeps[] = [];
+    await forEachYielding(listed, (task) => {
+      const raw = rawById.get(task.id);
+      if (!raw) return;
+      result.push({
+        ...task,
+        dependsOn: dependsOn.get(task.id) ?? [],
+        dependents: dependents.get(task.id) ?? [],
+        blockedOnFailed: task.state === 'ready' && failedDependencies.has(task.id),
+        openBlockerCount: openBlockerCounts.get(task.id) ?? 0,
+        agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0, containerRefs, triage),
+        humanOnly: this.humanOnly(task, containerRefs, triage),
+        isEpic: this.isEpic(task, containerRefs),
+        overrides: this.overridesOf(raw),
+        routing: this.routing.routingOf(raw, scopeOf(task.workspaceId)),
+      });
+    });
+    return result;
   }
 
 }

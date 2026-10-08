@@ -122,11 +122,18 @@ function RoutingNote({ routing }: { routing: NonNullable<Task['routing']> }) {
 export function Properties({ task, allTasks, workspaceName }: { task: Task; allTasks: Task[]; workspaceName: string | null }) {
   const createdAt = new Date(task.createdAt);
   const created = `${createdAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${createdAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`;
+  const notStarted = task.state === 'escalated' && task.escalationCause?.kind === 'harness_unconfigured';
   return (
     <dl className="grid grid-cols-2 gap-x-6 gap-y-3.5">
       <Fact label="Priority">{task.priority}</Fact>
       <Fact label="Agent" className={task.routing ? 'col-span-2' : ''}>
-        {harnessLabel(task.harness)} <span className="font-data text-muted">{formatModelLabel(task.model)}</span>
+        {notStarted ? (
+          <span className="text-muted">Not started</span>
+        ) : (
+          <>
+            {harnessLabel(task.harness)} <span className="font-data text-muted">{formatModelLabel(task.model)}</span>
+          </>
+        )}
         {task.routing && <RoutingNote routing={task.routing} />}
       </Fact>
       <Fact label="Workspace">{workspaceName ?? '—'}</Fact>

@@ -6,7 +6,7 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { baselineConfig, type AppConfig, type RoutingLabel, type RoutingLabelOverlayEntry } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
-import { resolveRoutingLabels, routingLabelOverlayIssues } from '../src/domain/setting-override.js';
+import { resolveRoutingLabels, routingLabelIssues, routingLabelOverlayIssues } from '../src/domain/setting-override.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
 import { trackerRef, type Ticket } from '../src/tracker/adapter.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -47,6 +47,13 @@ describe('resolveRoutingLabels (ADR-0037 overlay)', () => {
 
   it('drops an overlay entry whose global was deleted', () => {
     expect(resolved([global('gone'), global('cheap')], [cheap])).toEqual(['cheap']);
+  });
+
+  it('drops an enabled local shadowed by an enabled global added later, so the global wins', () => {
+    const shadow = { ...fast, label: 'FAST', model: 'local-model' };
+    const result = resolveRoutingLabels(store([local(shadow), global('cheap')]), { routingLabels: [cheap, fast] });
+    expect(result).toEqual([cheap, fast]);
+    expect(resolved([local(shadow), global('fast', false), global('cheap')], [cheap, fast])).toEqual(['FAST', 'cheap']);
   });
 
   it('refs the global by lowercased label', () => {
@@ -183,9 +190,32 @@ describe('Workspace Routing Label overlay save validation', () => {
 });
 
 describe('routingLabelOverlayIssues', () => {
-  it('flags a local row whose harness is not configured', () => {
-    const { codex: _codex, ...harnesses } = baselineConfig().harnesses;
-    const issues = routingLabelOverlayIssues([local(fast)], { routingLabels: [], harnesses: harnesses as AppConfig['harnesses'] });
-    expect(issues).toEqual([{ path: [0, 'routingLabel', 'harness'], message: 'harness codex is not configured' }]);
+  const globals = [reasoning, cheap];
+
+  it('flags a local label duplicating an enabled global, case-insensitively, and names the global', () => {
+    expect(routingLabelOverlayIssues([local({ ...fast, label: 'REASONING' })], globals)).toEqual([
+      { index: 0, kind: 'duplicate-global', globalRef: 'reasoning' },
+    ]);
+  });
+
+  it('frees a label when its global is disabled, and skips disabled locals', () => {
+    expect(routingLabelOverlayIssues([global('reasoning', false), local({ ...fast, label: 'reasoning' })], globals)).toEqual([]);
+    expect(routingLabelOverlayIssues([local({ ...fast, label: 'cheap' }, false)], globals)).toEqual([]);
+  });
+
+  it('flags a blank and a repeated local label', () => {
+    expect(routingLabelOverlayIssues([local(fast), local({ ...fast, label: ' FAST ' }), local({ ...fast, label: ' ' })], globals)).toEqual([
+      { index: 1, kind: 'duplicate' },
+      { index: 2, kind: 'blank' },
+    ]);
+  });
+});
+
+describe('routingLabelIssues', () => {
+  it('flags blank and case-insensitive duplicates in a flat list', () => {
+    expect(routingLabelIssues([{ label: 'a' }, { label: ' A ' }, { label: '' }])).toEqual([
+      { index: 1, kind: 'duplicate' },
+      { index: 2, kind: 'blank' },
+    ]);
   });
 });

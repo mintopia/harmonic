@@ -363,6 +363,7 @@ export const api: typeof RealApi = {
     ok<EpicIntegrateOutcome>({ status: 'integrated', oid: 'a1b2c3d' }),
   acceptTask: (_id: number) => ok(f.task),
   rejectTask: (_id: number, _guidance: string, _start = false) => ok(f.task),
+  retryTask: (_id: number) => ok(f.task),
   closeTask: (_id: number) => ok(f.task),
   deleteTask: (id: number) => ok({ id }),
   runTask: (_id: number) => ok(f.runs[2] ?? f.runs[0]!),

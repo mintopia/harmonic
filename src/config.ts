@@ -7,6 +7,7 @@ import { parse } from 'yaml';
 import { z } from 'zod';
 import { verdictContractError } from './verification/critic-schema.js';
 import { isModelPriced, pricesForHarness } from './domain/pricing.js';
+import { routingLabelIssues } from './domain/setting-override.js';
 import {
   PROMPT_FRAGMENT_NAMES,
   PROMPT_FRAGMENTS,
@@ -423,17 +424,13 @@ export const appConfigSchema = z.object({
       message: `chat model must be one of the ${config.chat.harness} harness's models`,
     });
   }
-  const seenRoutingLabels = new Set<string>();
-  config.routingLabels.forEach((route, i) => {
-    const key = route.label.toLowerCase();
-    if (seenRoutingLabels.has(key)) {
-      ctx.addIssue({ code: 'custom', path: ['routingLabels', i, 'label'], message: `routing label "${route.label}" is already mapped` });
-    }
-    seenRoutingLabels.add(key);
-    if (!config.harnesses[route.harness]) {
-      ctx.addIssue({ code: 'custom', path: ['routingLabels', i, 'harness'], message: `harness ${route.harness} is not configured` });
-    }
-  });
+  for (const issue of routingLabelIssues(config.routingLabels)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['routingLabels', issue.index, 'label'],
+      message: issue.kind === 'blank' ? 'routing label must not be blank' : `routing label "${config.routingLabels[issue.index]?.label}" is already mapped`,
+    });
+  }
   const unpriced = unpricedModelsForCostCap(config.guardrails.budget, config);
   if (unpriced.length > 0) {
     ctx.addIssue({

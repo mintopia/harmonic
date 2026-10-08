@@ -39,7 +39,7 @@ describe('AttemptStore.create Guardrail snapshot (issue #126, ADR-0019)', () => 
       priceTable: pricesForHarness(config.harnesses.claude),
     };
 
-    const run = await runStore.create(task.id, snapshot);
+    const run = await runStore.create(task.id, { guardrails: snapshot });
 
     expect(JSON.parse(run.guardrailConfig!).budget.wallClockMinutes).toBe(60);
     expect(JSON.parse(run.priceTable!)['claude-sonnet-5']).toBeDefined();
@@ -53,7 +53,7 @@ describe('AttemptStore.create Guardrail snapshot (issue #126, ADR-0019)', () => 
       priceTable: pricesForHarness(config.harnesses.claude),
     };
 
-    const run = await runStore.create(task.id, originalSnapshot);
+    const run = await runStore.create(task.id, { guardrails: originalSnapshot });
     const originalPriceTable = run.priceTable;
 
     const laterPrices = { 'claude-sonnet-5': { input: 999, output: 999, cacheRead: 999, cacheWrite: 999 } };

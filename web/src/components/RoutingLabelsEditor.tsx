@@ -16,10 +16,12 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { routingLabelIssues } from '../../../src/domain/setting-override.js';
 import type { AppConfig } from '../types';
 import { field } from '../ui';
 import { DiscoveryModelPicker } from './DiscoveryModelPicker';
 import { fieldLabel } from './SettingsSection';
+import { firstIssueMessage, isIssueVisible, issuesByIndex, routingIssueMessage } from './routing-label-overlay-model';
 import { providerLabel } from './TaskIdentity';
 
 type RoutingLabel = AppConfig['routingLabels'][number];
@@ -41,27 +43,17 @@ const compactSelect =
   'hm-select min-h-9 w-full rounded-md border border-edge bg-field px-2.5 py-1 text-ink focus:border-accent focus:outline-none';
 const compactField = `${field} min-h-9 py-1 font-data text-data`;
 
-export function routingLabelErrors(labels: readonly RoutingLabel[]): (string | null)[] {
-  const seen = new Set<string>();
-  return labels.map(({ label }) => {
-    const key = label.trim().toLowerCase();
-    if (key === '') return 'Enter a label.';
-    if (seen.has(key)) return `“${label.trim()}” is already mapped above (labels match case-insensitively).`;
-    seen.add(key);
-    return null;
-  });
-}
-
 export function firstRoutingLabelError(labels: readonly RoutingLabel[]): string | null {
-  const errors = routingLabelErrors(labels);
-  const index = errors.findIndex((e) => e !== null);
-  return index === -1 ? null : `Routing Label ${index + 1}: ${errors[index]}`;
+  return firstIssueMessage(routingLabelIssues(labels), (index) => labels[index]?.label ?? '');
 }
 
 const cellsGrid =
-  'grid grid-cols-[16px_24px_minmax(120px,1.1fr)_20px_minmax(110px,0.8fr)_minmax(170px,1.3fr)_auto] items-center gap-2.5 px-3 py-2.5';
+  'grid grid-cols-[16px_24px_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-2 px-3 py-2.5 @[44rem]:grid-cols-[16px_24px_minmax(120px,1.1fr)_20px_minmax(110px,0.8fr)_minmax(170px,1.3fr)_104px] @[44rem]:gap-y-0';
+/** Harness and Model cells: their own full-width lines under the label until the tray is wide enough for one line. */
+export const stackedCell = 'col-span-2 col-start-3 @[44rem]:col-span-1 @[44rem]:col-start-auto';
+/** Trailing controls (Remove, or Global chip + switch): top-right of a stacked row. */
+export const trailingCell = 'col-start-4 row-start-1 justify-self-end @[44rem]:col-start-auto @[44rem]:row-start-auto';
 
-/** One sortable Routing Label row: grip, priority, then the caller's cells and an optional inline error. */
 export function RoutingRowShell({
   id,
   index,
@@ -89,7 +81,7 @@ export function RoutingRowShell({
           type="button"
           ref={setActivatorNodeRef}
           aria-label={`Reorder Routing Label ${n}`}
-          className="flex h-6 w-4 shrink-0 cursor-grab touch-none items-center justify-center text-faint hover:text-muted focus:text-accent focus:outline-none"
+          className="flex h-6 w-4 shrink-0 cursor-grab touch-none items-center justify-center text-faint hover:text-muted focus-visible:text-accent"
           {...attributes}
           {...listeners}
         >
@@ -112,12 +104,11 @@ export function RoutingRowShell({
 }
 
 export const arrowCell = (
-  <span className="text-center text-faint" aria-hidden="true">
+  <span className="hidden text-center text-faint @[44rem]:block" aria-hidden="true">
     →
   </span>
 );
 
-/** The editable label, Harness and Model cells of a row. */
 export function RouteCells({
   id,
   index,
@@ -150,7 +141,7 @@ export function RouteCells({
       {arrowCell}
       <select
         aria-label={`Harness for Routing Label ${n}`}
-        className={compactSelect}
+        className={`${compactSelect} ${stackedCell}`}
         value={item.harness}
         onChange={(e) => {
           const harness = e.target.value;
@@ -164,7 +155,7 @@ export function RouteCells({
         ))}
         {!config.harnesses[item.harness] && <option value={item.harness}>{item.harness} (not configured)</option>}
       </select>
-      <div className="min-w-0">
+      <div className={`min-w-0 ${stackedCell}`}>
         <DiscoveryModelPicker
           id={`routing-model-${id}`}
           ariaLabel={`Model for Routing Label ${n}`}
@@ -184,7 +175,7 @@ export function RemoveButton({ index, onRemove }: { index: number; onRemove: () 
     <button
       type="button"
       aria-label={`Remove Routing Label ${index + 1}`}
-      className="shrink-0 text-small text-faint hover:text-fail"
+      className={`-my-2 shrink-0 py-2 text-small text-faint hover:text-fail ${trailingCell}`}
       onClick={onRemove}
     >
       Remove
@@ -213,7 +204,6 @@ export function Precedence() {
   );
 }
 
-/** Sortable tray with an add link: owns stable row ids and the touched set; callers own the data. */
 export function RoutingListFrame({
   count,
   onMove,
@@ -271,7 +261,7 @@ export function RoutingListFrame({
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
-            <div className="flex flex-col gap-1.5 rounded-xl border border-hairline bg-sunken p-1.5">
+            <div className="@container flex flex-col gap-1.5 rounded-xl border border-hairline bg-sunken p-1.5">
               {rowIds.map((id, index) => (
                 <Fragment key={id}>
                   {renderRow({
@@ -306,7 +296,7 @@ export function RoutingLabelsEditor({
   config: AppConfig;
   onChange: (items: AppConfig['routingLabels']) => void;
 }) {
-  const errors = routingLabelErrors(items);
+  const issues = issuesByIndex(routingLabelIssues(items));
   return (
     <div>
       <Precedence />
@@ -317,16 +307,18 @@ export function RoutingLabelsEditor({
         onRemove={(index) => onChange(items.filter((_, i) => i !== index))}
         emptyText="No Routing Labels. Issues use the Workspace or Global default Harness and Model."
         renderRow={({ id, index, touched, touch, remove }) => {
-          const error = errors[index] ?? null;
-          const visibleError = error !== null && (error !== 'Enter a label.' || touched) ? error : null;
+          const item = items[index];
+          if (!item) return null;
+          const issue = issues.get(index);
+          const visibleIssue = isIssueVisible(issue, touched) ? issue : null;
           return (
-            <RoutingRowShell id={id} index={index} error={visibleError}>
+            <RoutingRowShell id={id} index={index} error={visibleIssue && routingIssueMessage(visibleIssue, item.label)}>
               <RouteCells
                 id={id}
                 index={index}
-                item={items[index]!}
+                item={item}
                 config={config}
-                invalid={visibleError !== null}
+                invalid={visibleIssue !== null}
                 onChange={(next) => onChange(items.map((current, i) => (i === index ? next : current)))}
                 onTouched={touch}
               />

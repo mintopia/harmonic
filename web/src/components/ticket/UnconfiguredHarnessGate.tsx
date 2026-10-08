@@ -4,13 +4,7 @@ import { useAsyncResource } from '../../useAsyncResource';
 import { btnGhost, btnPrimary, field, labelType, panelTitle } from '../../ui';
 import { taskLabel } from '../../id-format.js';
 import { Modal } from '../Modal';
-
-const UNCONFIGURED_HARNESS = /^(?:Routing Label '(.+)' needs )?Harness '([^']+)'(?: is|,) (?:which is )?not configured\.$/;
-
-export function parseUnconfiguredHarness(reason: string): { label: string | null; harness: string } | null {
-  const m = UNCONFIGURED_HARNESS.exec(reason.trim());
-  return m ? { label: m[1] ?? null, harness: m[2]! } : null;
-}
+import { providerLabel } from '../TaskIdentity';
 
 export function UnconfiguredHarnessMessage({ label, harness }: { label: string | null; harness: string }) {
   const code = 'rounded-[3px] bg-surface px-1.5 font-data text-small text-ink';
@@ -68,7 +62,7 @@ function SetHarnessDialog({ taskId, onClose, onDone }: { taskId: number; onClose
         >
           {names.map((n) => (
             <option key={n} value={n}>
-              {n}
+              {providerLabel(n)}
             </option>
           ))}
         </select>
@@ -95,7 +89,7 @@ export function UnconfiguredHarnessGate({ taskId, onChanged, onClose }: { taskId
     setBusy(true);
     setError(null);
     try {
-      await api.rejectTask(taskId, '');
+      await api.retryTask(taskId);
       onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -106,22 +100,23 @@ export function UnconfiguredHarnessGate({ taskId, onChanged, onClose }: { taskId
 
   return (
     <>
-      <div className="mt-4 flex flex-wrap items-center gap-2.5 rounded-b-lg border-t border-hairline bg-surface px-3.5 py-3 shadow-float">
-        <span className="text-small text-muted">Setting a Harness on the Ticket overrides the label for this Ticket only.</span>
-        <span className="flex-1" />
-        {onClose && (
-          <button type="button" className="px-2 py-1 text-muted hover:text-ink" onClick={onClose}>
-            Close
+      <div className="mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-2 rounded-b-lg border-t border-hairline bg-surface px-3.5 py-3 shadow-float">
+        <span className="min-w-48 flex-1 text-small text-muted">Setting a Harness on the Ticket overrides the label for this Ticket only.</span>
+        <span className="ml-auto flex flex-wrap items-center justify-end gap-2.5">
+          {onClose && (
+            <button type="button" className="min-h-11 px-2 text-muted hover:text-ink" onClick={onClose}>
+              Close
+            </button>
+          )}
+          <button type="button" className={btnGhost} disabled={busy} onClick={() => setOpen(true)}>
+            Set Harness on this Ticket…
           </button>
-        )}
-        <button type="button" className={btnGhost} disabled={busy} onClick={() => setOpen(true)}>
-          Set Harness on this Ticket…
-        </button>
-        <button type="button" className={btnPrimary} disabled={busy} onClick={retry}>
-          Retry
-        </button>
+          <button type="button" className={btnPrimary} disabled={busy} onClick={retry}>
+            Retry
+          </button>
+        </span>
       </div>
-      {error && <p role="alert" className="mt-1 text-fail">{error}</p>}
+      {error && <p role="alert" className="mt-2 text-small text-fail">{error}</p>}
       {open && (
         <SetHarnessDialog
           taskId={taskId}
