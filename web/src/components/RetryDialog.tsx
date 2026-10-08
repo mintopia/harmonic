@@ -50,6 +50,7 @@ function RoutePicker({
   label,
   disabled,
   onChange,
+  onOpenChange,
 }: {
   id: string;
   choices: HarnessChoices;
@@ -58,8 +59,13 @@ function RoutePicker({
   label: string | null;
   disabled: boolean;
   onChange: (route: Route) => void;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpenState] = useState(false);
+  const setOpen = (next: boolean) => {
+    setOpenState(next);
+    onOpenChange(next);
+  };
   const wrap = useRef<HTMLDivElement>(null);
   useDismissOnOutsidePointer(wrap, open, () => setOpen(false));
   const isCurrent = (harness: string, model: string) => harness === current.harness && model === current.model;
@@ -69,14 +75,14 @@ function RoutePicker({
     </span>
   );
   return (
-    <div ref={wrap} className={`relative ${open ? 'mb-60' : ''}`}>
+    <div ref={wrap} className="relative">
       <button
         type="button"
         id={id}
         aria-haspopup="listbox"
         aria-expanded={open}
         disabled={disabled}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(!open)}
         className={`${field} flex min-h-11 items-center justify-between text-left`}
       >
         <span>
@@ -150,6 +156,7 @@ export function RetryDialog({
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<ContinuationPreview>({ available: false });
   const [confirmClose, setConfirmClose] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const requestClose = () => {
     if (busy) return;
     if (guidance.length > 0) setConfirmClose(true);
@@ -223,7 +230,7 @@ export function RetryDialog({
 
   return (
     <>
-      <Modal label={`Retry ${taskLabel(task.id)}`} onClose={onClose} onRequestClose={requestClose} className="max-w-md">
+      <Modal label={`Retry ${taskLabel(task.id)}`} onClose={onClose} onRequestClose={requestClose} className={`max-w-md ${pickerOpen ? 'overflow-visible' : ''}`}>
         <div className="p-5">
           <h2 className={`${panelTitle} mb-1`}>Retry {taskLabel(task.id)}</h2>
           <p className="mb-4 text-muted">
@@ -257,6 +264,7 @@ export function RetryDialog({
               label={labelNote}
               disabled={busy}
               onChange={setRoute}
+              onOpenChange={setPickerOpen}
             />
             {routeChanged && (
               <p className={`${noteClass} mt-2`}>

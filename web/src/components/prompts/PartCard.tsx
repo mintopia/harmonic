@@ -130,10 +130,12 @@ export function PartCard({
         onClick={onToggle}
         className="block min-h-11 w-full text-left"
       >
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="font-semibold text-ink">{label}</span>
-          {tags}
-          <span className="ml-auto flex items-center gap-1.5">
+        <span className="flex items-start gap-2">
+          <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="font-semibold text-ink">{label}</span>
+            {tags}
+          </span>
+          <span className="flex shrink-0 items-center gap-1.5 pt-0.5">
             {state.error !== undefined && <Tag tone="fail">Fix</Tag>}
             {state.modified && <Tag tone="modified">Modified</Tag>}
             <Icon name="chevron-down" className={`text-muted transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`} />

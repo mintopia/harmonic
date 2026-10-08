@@ -66,6 +66,10 @@ function SetHarnessDialog({ taskId, onClose, onDone }: { taskId: number; onClose
             </option>
           ))}
         </select>
+        {config.error && <p role="alert" className="mb-3 text-fail">Could not load Harnesses: {config.error}</p>}
+        {!config.loading && !config.error && names.length === 0 && (
+          <p className="mb-3 text-small text-muted">No Harness is configured. Add one in Global settings › Integrations › Harnesses.</p>
+        )}
         {error && <p role="alert" className="mb-3 text-fail">{error}</p>}
         <div className="flex justify-end gap-2">
           <button type="button" className={`${btnGhost} px-3 py-1.5`} onClick={onClose} disabled={busy}>

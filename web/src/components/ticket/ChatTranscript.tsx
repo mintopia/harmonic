@@ -81,7 +81,7 @@ function ToolCard({ row, baseDir }: { row: Extract<ChatRow, { kind: 'tool' }>; b
     <div className="ml-10 overflow-hidden rounded-md border border-hairline bg-sunken">
       <div className="flex items-center gap-2.5 px-3 py-2">
         <span aria-hidden className={`size-2 shrink-0 rounded-full ${TOOL_DOT[row.status]}`} />
-        <span className="shrink-0 text-[12.5px] font-semibold text-ink">{row.verb}</span>
+        <span className="max-w-[60%] shrink-0 truncate text-[12.5px] font-semibold text-ink" title={row.verb}>{row.verb}</span>
         {row.subagent && (
           <span className="shrink-0 rounded-[4px] bg-raised px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.05em] text-muted">
             subagent

@@ -105,7 +105,7 @@ export function DependsOn({ task, allTasks }: { task: Task; allTasks: Task[] }) 
 }
 
 function RoutedByNote({ routing }: { routing: NonNullable<Task['routing']> }) {
-    return routing.applied ? (
+  return routing.applied ? (
     <span className="text-small text-muted">
       {' '}
       — routed by <code className={`${codeChip} bg-tool-tint text-tool`}>{routing.label}</code>
