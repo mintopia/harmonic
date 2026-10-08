@@ -18,6 +18,7 @@ import { DomainError } from '../domain/errors.js';
 import { NO_PROMPT_FRAGMENT_OVERRIDES, type PromptFragmentOverrideKey } from '../domain/prompt-fragments.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { SessionStore } from '../domain/sessions.js';
+import type { RoutingService } from '../domain/routing.js';
 import type { TaskService } from '../domain/tasks.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { resolveEpicResolverPrompts, resolvePromptFragments, resolveVerifiers, type ResolvedVerifiers } from '../domain/setting-override.js';
@@ -64,6 +65,7 @@ type VerifierWorkspace = Pick<
 
 export interface VerificationCoordinatorDeps {
   taskService: TaskService;
+  routing: Pick<RoutingService, 'unroutedHarness' | 'epicRoute'>;
   attempts: AttemptStore;
   verificationAttempts: VerificationAttemptStore;
   sessionStore: SessionStore;
@@ -302,7 +304,7 @@ export class VerificationCoordinator {
       if (!oid) {
         verdicts.push(await this.noVerifiedHeadVerdict(task, 'critic', record));
       } else {
-        const criticHarnessId = critic.harness ?? await this.deps.taskService.unroutedHarness(task.id);
+        const criticHarnessId = critic.harness ?? await this.deps.routing.unroutedHarness(task.id);
         const criticHarness = this.resolveCriticHarness(config, criticHarnessId);
         const baseOid =
           run.branch && run.baseBranch
@@ -396,7 +398,7 @@ export class VerificationCoordinator {
     const config = this.deps.getConfig();
     const resolver = resolveEpicResolverPrompts(await this.deps.getWorkspace?.(input.workspaceId), config);
     const branch = integrationBranchName(input.epicRef);
-    const route = await this.deps.taskService.epicRoute(input.workspaceId, input.epicRef);
+    const route = await this.deps.routing.epicRoute(input.workspaceId, input.epicRef);
     if (!route.ok) throw new Error(`${route.reason} It cannot run Epic verification resolution.`);
     const { harness: harnessId, model, config: harness } = route;
     const worktreePath = input.worktreePath;

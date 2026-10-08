@@ -26,10 +26,11 @@ import {
   type EpicRow,
 } from '../db/schema.js';
 import { resolveWorkspace } from './workspaces.js';
-import { resolveRoutingLabels, resolveScoped, routingLabelRef } from './setting-override.js';
-import { harnessConfig, resolveRoute, type ResolvedRoute } from './route.js';
-import type { EscalationCause, TaskRouting } from './task-routing.js';
-import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig, type RoutingLabel } from '../config.js';
+import { routeApplies, RoutingService, type RoutingScope } from './routing.js';
+import { resolveScoped } from './setting-override.js';
+import { harnessConfig } from './route.js';
+import type { EscalationCause } from './task-routing.js';
+import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
 import { logger } from '../logger.js';
 import { decideTaskDeletion, type DeletionDecision } from './task-deletion.js';
@@ -201,15 +202,6 @@ const CANCELLABLE_STATES: TaskState[] = ['draft', 'ready', 'working', 'paused', 
 const TERMINAL_STATES: TaskState[] = ['done', 'cancelled'];
 const IN_FLIGHT_STATES: readonly TaskState[] = ['working', 'paused'];
 
-interface RoutingScope {
-  workspace: WorkspaceRow;
-  labels: readonly RoutingLabel[];
-}
-
-function routeApplies(over: Pick<TaskOverrides, 'harness' | 'model'>): boolean {
-  return over.harness === null && over.model === null;
-}
-
 /**
  * The whole legal Task lifecycle (ADR-0020). Terminal `done` has no outgoing
  * edge; `cancelled` reopens only to `ready` (via `uncancel`). `ready → done` is
@@ -263,6 +255,7 @@ type TriageLabelsByWorkspace = ReadonlyMap<number, TriageLabels>;
 export class TaskService {
   private readonly blockerGraph: TaskBlockerGraph;
   private readonly mirror: TaskMirror;
+  readonly routing: RoutingService;
   private beforeDelete: (task: TaskRow) => Promise<void> = async () => {};
 
   constructor(
@@ -275,6 +268,7 @@ export class TaskService {
     private readonly onRemoved: (id: number) => void = () => {},
     private readonly onDisposition: (disposition: 'done' | 'cancelled', task: TaskRow) => void = () => {},
   ) {
+    this.routing = new RoutingService(this.db, this.getConfig, this.getWorkspaces);
     this.blockerGraph = new TaskBlockerGraph(this.db, {
       get: (id) => this.get(id),
       withDeps: (task) => this.withDeps(task),
@@ -302,68 +296,10 @@ export class TaskService {
     return resolveWorkspace(await this.getWorkspaces(), workspaceId);
   }
 
-  private routingScopes(workspaceRows: WorkspaceRow[]): (workspaceId: number | null) => RoutingScope {
-    const config = this.getConfig();
-    const labelsByWorkspace = new Map<number, RoutingLabel[]>();
-    return (workspaceId) => {
-      const workspace = resolveWorkspace(workspaceRows, workspaceId ?? undefined);
-      let labels = labelsByWorkspace.get(workspace.id);
-      if (!labels) {
-        labels = resolveRoutingLabels(workspace, config);
-        labelsByWorkspace.set(workspace.id, labels);
-      }
-      return { workspace, labels };
-    };
-  }
-
-  private matchRoute(row: Pick<RawTaskRow, 'origin' | 'trackerLabels'>, labels: readonly RoutingLabel[]): RoutingLabel | null {
-    if (row.origin !== 'mirrored' || !row.trackerLabels?.length) return null;
-    const have = new Set(row.trackerLabels.map((label) => routingLabelRef({ label })));
-    return labels.find((entry) => have.has(routingLabelRef(entry))) ?? null;
-  }
-
-  /** The Routing Label deciding this Ticket and whether it actually set Harness + Model (no operator override). */
-  private routingOf(raw: RawTaskRow, scope: RoutingScope): TaskRouting | null {
-    const route = this.matchRoute(raw, scope.labels);
-    return route ? { label: route.label, applied: routeApplies(raw) } : null;
-  }
-
-  async routingFor(taskId: number): Promise<TaskRouting | null> {
-    const raw = await this.getRaw(taskId);
-    return this.routingOf(raw, this.routingScopes(await this.getWorkspaces())(raw.workspaceId));
-  }
-
-  /** The Harness + Model this Ticket's next turn runs on, or why it cannot run. */
-  async ticketRoute(task: TaskRow): Promise<ResolvedRoute> {
-    const routing = await this.routingFor(task.id);
-    return resolveRoute(this.getConfig(), task.harness, task.model, routing?.applied ? routing.label : null);
-  }
-
-  /** The Harness a Critic without its own falls back to: never the Routing Label (ADR-0049). */
-  async unroutedHarness(taskId: number): Promise<string> {
-    const raw = await this.getRaw(taskId);
-    const workspace = await this.resolveWorkspace(raw.workspaceId ?? undefined);
-    return raw.harness ?? resolveScoped('harness', workspace.harness, this.getConfig().defaults.harness);
-  }
-
-  /** The Harness + Model an Epic-level turn runs on: the Epic issue's own Routing Label, else the Workspace/global default (ADR-0049). */
-  async epicRoute(workspaceId: number, epicRef: TrackerRef): Promise<ResolvedRoute> {
-    const config = this.getConfig();
-    const { workspace, labels } = this.routingScopes(await this.getWorkspaces())(workspaceId);
-    const [container, task] = await this.db.read(async (db) => [
-      await db.select({ trackerLabels: trackerContainers.trackerLabels }).from(trackerContainers).where(and(eq(trackerContainers.workspaceId, workspaceId), eq(trackerContainers.trackerRef, epicRef))).get(),
-      await db.select().from(tasks).where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.trackerRef, epicRef))).get(),
-    ] as const);
-    const route = container ? this.matchRoute({ origin: 'mirrored', trackerLabels: container.trackerLabels }, labels) : task ? this.matchRoute(task, labels) : null;
-    if (route) return resolveRoute(config, route.harness, route.model || harnessConfig(config, route.harness)?.defaultModel || '', route.label);
-    const harness = resolveScoped('harness', workspace.harness, config.defaults.harness);
-    return resolveRoute(config, harness, resolveScoped('model', workspace.model, harnessConfig(config, harness)?.defaultModel ?? ''), null);
-  }
-
   private resolveDefaults(raw: RawTaskRow, { workspace, labels }: RoutingScope) {
     const over = this.overridesOf(raw);
     const config = this.getConfig();
-    const route = routeApplies(over) ? this.matchRoute(raw, labels) : null;
+    const route = routeApplies(over) ? this.routing.matchRoute(raw, labels) : null;
     const harness = over.harness ?? route?.harness ?? resolveScoped('harness', workspace.harness, config.defaults.harness);
     const defaultModel = harnessConfig(config, harness)?.defaultModel;
     const model = over.model ?? (route ? route.model || defaultModel || '' : resolveScoped('model', workspace.model, defaultModel ?? ''));
@@ -378,7 +314,7 @@ export class TaskService {
 
   /** A routed Attempt in flight (working or paused) keeps the Harness/Model it started with; relabelling or a config change applies from the next Attempt (ADR-0049). */
   private isRoutePinned(raw: RawTaskRow, scope: RoutingScope): boolean {
-    return IN_FLIGHT_STATES.includes(raw.state) && routeApplies(raw) && this.matchRoute(raw, scope.labels) !== null;
+    return IN_FLIGHT_STATES.includes(raw.state) && routeApplies(raw) && this.routing.matchRoute(raw, scope.labels) !== null;
   }
 
   private async runningRoutes(taskIds: readonly number[]): Promise<Map<number, { harness: string; model: string }>> {
@@ -416,7 +352,7 @@ export class TaskService {
   }
 
   private async resolve(raw: RawTaskRow): Promise<TaskRow> {
-    const scope = this.routingScopes(await this.getWorkspaces())(raw.workspaceId);
+    const scope = await this.routing.scopeFor(raw.workspaceId);
     const task: TaskRow = { ...raw, ...this.resolveDefaults(raw, scope) };
     if (!this.isRoutePinned(raw, scope)) return task;
     const route = (await this.runningRoutes([raw.id])).get(raw.id);
@@ -731,7 +667,7 @@ export class TaskService {
       ),
       this.getWorkspaces(),
     ]);
-    let rows = await this.resolveRows(rawRows, this.routingScopes(workspaceRows));
+    let rows = await this.resolveRows(rawRows, this.routing.scopes(workspaceRows));
     const harnessList = filterList(query.harness);
     if (harnessList.length) rows = rows.filter((t) => harnessList.includes(t.harness));
     const priorityList = filterList(query.priority);
@@ -817,7 +753,7 @@ export class TaskService {
           .get(),
       );
       if (!claimed) return undefined;
-      const scope = this.routingScopes(await this.getWorkspaces())(claimed.workspaceId);
+      const scope = await this.routing.scopeFor(claimed.workspaceId);
       const { harness, model, ...defaults } = this.resolveDefaults(claimed, scope);
       // A mirrored Ticket's Harness/Model are re-resolved at every Attempt start (ADR-0049), so never pinned.
       const pinned = claimed.origin === 'mirrored' ? defaults : { harness, model, ...defaults };
@@ -1214,7 +1150,7 @@ export class TaskService {
       humanOnly: this.humanOnly(task, containerRefs, triage),
       isEpic: this.isEpic(task, containerRefs),
       overrides: this.overridesOf(raw),
-      routing: this.routingOf(raw, this.routingScopes(await this.getWorkspaces())(raw.workspaceId)),
+      routing: this.routing.routingOf(raw, await this.routing.scopeFor(raw.workspaceId)),
     };
   }
 
@@ -1238,7 +1174,7 @@ export class TaskService {
       ),
       this.getWorkspaces(),
     ]);
-    const scopeOf = this.routingScopes(workspaceRows);
+    const scopeOf = this.routing.scopes(workspaceRows);
     let listed = await this.resolveRows(rawRows, scopeOf);
     const harnessList = filterList(query.harness);
     if (harnessList.length) listed = listed.filter((task) => harnessList.includes(task.harness));
@@ -1301,7 +1237,7 @@ export class TaskService {
         humanOnly: this.humanOnly(task, containerRefs, triage),
         isEpic: this.isEpic(task, containerRefs),
         overrides: this.overridesOf(raw),
-        routing: this.routingOf(raw, scopeOf(task.workspaceId)),
+        routing: this.routing.routingOf(raw, scopeOf(task.workspaceId)),
       });
     });
     return result;

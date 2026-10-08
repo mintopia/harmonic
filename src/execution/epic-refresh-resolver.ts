@@ -6,7 +6,7 @@ import { bestEffort, reportFailure, type FireAndForget } from '../error-handling
 import { integrationBranchName, type EpicRefreshResolveDispatchOutcome, type EpicRefreshResolveTarget } from './epic-coordinator.js';
 import { RESOLVE_TURN_TIMEOUT_MS } from './merge-coordinator.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
-import type { TaskService } from '../domain/tasks.js';
+import type { RoutingService } from '../domain/routing.js';
 import type { RunnerOptions } from './runner.js';
 import type { RunnerEvents } from './runner-options.js';
 import type { AttemptStore } from '../domain/attempts.js';
@@ -17,7 +17,7 @@ import { resolveEpicResolverPrompts } from '../domain/setting-override.js';
 import { logger } from '../logger.js';
 
 export interface EpicRefreshResolverDeps {
-  taskService: TaskService;
+  routing: Pick<RoutingService, 'epicRoute'>;
   attempts: AttemptStore;
   archive?: TaskArchive | undefined;
   epicMergeEvents: Pick<EpicMergeEventStore, 'append'>;
@@ -57,7 +57,7 @@ export class EpicRefreshResolver {
       await escalate(target.ref, reason);
       return { status: 'escalated', reason };
     };
-    const route = await this.deps.taskService.epicRoute(target.workspaceId, target.ref);
+    const route = await this.deps.routing.epicRoute(target.workspaceId, target.ref);
     if (!route.ok) return escalated(`${route.reason} It cannot run the refresh corrective turn for ${branch}: ${detail}`);
     const { harness: harnessId, model, config: harness } = route;
 

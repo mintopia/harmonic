@@ -115,7 +115,7 @@ describe('merge-conflict resolver prompts are archived (ADR-0047)', () => {
       attempts,
       onAttemptEvent,
       listWorkingTasks: async () => [],
-      epicRoute: async () => resolveRoute(baselineConfig(), 'claude', 'm', null),
+      routing: { epicRoute: async () => resolveRoute(baselineConfig(), 'claude', 'm', null) },
       epicMergeEvents: { append: async () => {} },
       onEpicMergeStep: () => {},
     } as never).mergeEpicIntegration({
@@ -149,7 +149,7 @@ describe('merge-conflict resolver prompts are archived (ADR-0047)', () => {
     const outcome = await coordinator(dataDir, {
       attempts: { listForEpic: async () => [], addAgentDuration: vi.fn(async () => {}), appendEvent },
       listWorkingTasks: async () => [],
-      epicRoute: async () => resolveRoute(baselineConfig(), 'claude', 'm', null),
+      routing: { epicRoute: async () => resolveRoute(baselineConfig(), 'claude', 'm', null) },
       epicMergeEvents: { append },
       onEpicMergeStep: () => {},
     } as never).mergeEpicIntegration({
@@ -186,7 +186,7 @@ describe('merge-conflict resolver prompts are archived (ADR-0047)', () => {
     const outcome = await coordinator(dataDir, {
       attempts: { listForEpic: async () => [], addAgentDuration: vi.fn(async () => {}), appendEvent: vi.fn(async () => ({})) },
       listWorkingTasks: async () => [member],
-      epicRoute,
+      routing: { epicRoute },
       epicMergeEvents: { append: async () => {} },
       onEpicMergeStep: () => {},
     } as never).mergeEpicIntegration({
@@ -210,7 +210,7 @@ describe('merge-conflict resolver prompts are archived (ADR-0047)', () => {
     const outcome = await coordinator(dataDir, {
       attempts: { listForEpic: async () => [], addAgentDuration: vi.fn(async () => {}), appendEvent: vi.fn(async () => ({})) },
       listWorkingTasks: async () => [],
-      epicRoute: async () => resolveRoute({ harnesses: {} }, 'missing-harness', 'm', 'reasoning'),
+      routing: { epicRoute: async () => resolveRoute({ harnesses: {} }, 'missing-harness', 'm', 'reasoning') },
       epicMergeEvents: { append: async () => {} },
       onEpicMergeStep: () => {},
     } as never).mergeEpicIntegration({

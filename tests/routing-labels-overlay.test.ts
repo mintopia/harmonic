@@ -111,14 +111,14 @@ describe('Workspace Routing Label overlay resolves at Task resolution (ADR-0049)
     await workspaces.update(wsId, { routingLabels: [global('reasoning', false), global('cheap')] });
     const task = await mirror(1, ['reasoning']);
     expect(task).toMatchObject({ harness: 'claude', model: 'claude-sonnet-5-5' });
-    expect(await tasks.routingFor(task.id)).toBeNull();
+    expect(await tasks.routing.routingFor(task.id)).toBeNull();
   });
 
   it('reordering changes which label wins when a Ticket carries both', async () => {
     await workspaces.update(wsId, { routingLabels: [global('cheap'), global('reasoning')] });
     const task = await mirror(1, ['reasoning', 'cheap']);
     expect(task).toMatchObject({ harness: 'codex', model: 'gpt-5.6-sol' });
-    expect(await tasks.routingFor(task.id)).toEqual({ label: 'cheap', applied: true });
+    expect(await tasks.routing.routingFor(task.id)).toEqual({ label: 'cheap', applied: true });
   });
 
   it('a local row routes only that Workspace', async () => {

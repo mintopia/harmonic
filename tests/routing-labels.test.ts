@@ -97,20 +97,20 @@ describe('Routing Labels (ADR-0049)', () => {
   it('first match in list order wins, not issue label order', async () => {
     const task = await mirror(1, ['ready-for-agent', 'cheap', 'reasoning']);
     expect(task).toMatchObject({ harness: 'claude', model: 'claude-opus-5-5' });
-    expect(await tasks.routingFor(task.id)).toEqual({ label: 'reasoning', applied: true });
+    expect(await tasks.routing.routingFor(task.id)).toEqual({ label: 'reasoning', applied: true });
   });
 
   it('matches case-insensitively and reports the label as configured', async () => {
     const task = await mirror(1, ['ready-for-agent', 'REASONING']);
     expect(task.model).toBe('claude-opus-5-5');
-    expect(await tasks.routingFor(task.id)).toEqual({ label: 'reasoning', applied: true });
+    expect(await tasks.routing.routingFor(task.id)).toEqual({ label: 'reasoning', applied: true });
   });
 
   it('never routes a native Task', async () => {
     const native = await tasks.create({ prompt: 'native' });
     await asyncDb.write((db) => db.update(tasksTable).set({ trackerLabels: ['reasoning'] }).where(eq(tasksTable.id, native.id)).run());
     expect(await tasks.get(native.id)).toMatchObject({ harness: 'claude', model: 'claude-sonnet-5-5' });
-    expect(await tasks.routingFor(native.id)).toBeNull();
+    expect(await tasks.routing.routingFor(native.id)).toBeNull();
   });
 
   it('re-resolves when the Ticket is relabelled', async () => {
@@ -152,7 +152,7 @@ describe('Routing Labels (ADR-0049)', () => {
       expect(after.isolationMode).toBe('direct');
       expect(after.priority).toBe('normal');
       expect(after.conflictResolveTurns).toBe(2);
-      expect(await tasks.routingFor(mirrored.id)).toEqual({ label: 'reasoning', applied: true });
+      expect(await tasks.routing.routingFor(mirrored.id)).toEqual({ label: 'reasoning', applied: true });
     });
 
     it('re-resolves the route at the next Attempt start after a relabel', async () => {
@@ -228,13 +228,13 @@ describe('Routing Labels (ADR-0049)', () => {
     it('unroutedHarness skips the route: operator setting, then Workspace default, then global default', async () => {
       const routed = await mirror(1, ['ready-for-agent', 'cheap']);
       expect(routed.harness).toBe('codex');
-      expect(await tasks.unroutedHarness(routed.id)).toBe('claude');
+      expect(await tasks.routing.unroutedHarness(routed.id)).toBe('claude');
 
       await new WorkspaceService(asyncDb, settingsStore).update(wsId, { harness: 'copilot' });
-      expect(await tasks.unroutedHarness(routed.id)).toBe('copilot');
+      expect(await tasks.routing.unroutedHarness(routed.id)).toBe('copilot');
 
       await setOperator(routed.id, { harness: 'opencode' });
-      expect(await tasks.unroutedHarness(routed.id)).toBe('opencode');
+      expect(await tasks.routing.unroutedHarness(routed.id)).toBe('opencode');
     });
   });
 
@@ -275,17 +275,17 @@ describe('Routing Labels (ADR-0049)', () => {
 
     it('an Epic labelled reasoning routes to reasoning even when its member is labelled cheap', async () => {
       const epicRef = await epic(10, ['epic', 'reasoning'], ['cheap']);
-      expect(await tasks.epicRoute(wsId, epicRef)).toMatchObject({ ok: true, harness: 'claude', model: 'claude-opus-5-5', label: 'reasoning' });
+      expect(await tasks.routing.epicRoute(wsId, epicRef)).toMatchObject({ ok: true, harness: 'claude', model: 'claude-opus-5-5', label: 'reasoning' });
     });
 
     it('an unlabelled Epic uses the defaults regardless of its members', async () => {
       const epicRef = await epic(12, ['epic'], ['reasoning']);
-      expect(await tasks.epicRoute(wsId, epicRef)).toMatchObject({ ok: true, harness: 'claude', model: 'claude-sonnet-5-5', label: null });
+      expect(await tasks.routing.epicRoute(wsId, epicRef)).toMatchObject({ ok: true, harness: 'claude', model: 'claude-sonnet-5-5', label: null });
     });
 
     it('a route with an empty model uses the Harness default model', async () => {
       const epicRef = await epic(14, ['epic', 'cheap'], []);
-      const route = await tasks.epicRoute(wsId, epicRef);
+      const route = await tasks.routing.epicRoute(wsId, epicRef);
       expect(route).toMatchObject({ harness: 'codex', label: 'cheap' });
       expect(route.ok && route.model).toBe(config.harnesses.codex!.defaultModel);
     });
@@ -295,11 +295,11 @@ describe('Routing Labels (ADR-0049)', () => {
         trackerRef: trackerRef(20),
         facts: { state: 'open', parent: null, blockedBy: [], labels: ['Reasoning'], title: 'Epic', body: '', url: 'u', createdAt: '2026-08-07T00:00:00Z' },
       }]);
-      expect(await tasks.epicRoute(wsId, trackerRef(20))).toMatchObject({ harness: 'claude', model: 'claude-opus-5-5', label: 'reasoning' });
+      expect(await tasks.routing.epicRoute(wsId, trackerRef(20))).toMatchObject({ harness: 'claude', model: 'claude-opus-5-5', label: 'reasoning' });
     });
 
     it('an Epic with no stored row falls back to the defaults', async () => {
-      expect(await tasks.epicRoute(wsId, trackerRef(99))).toMatchObject({ harness: 'claude', label: null });
+      expect(await tasks.routing.epicRoute(wsId, trackerRef(99))).toMatchObject({ harness: 'claude', label: null });
     });
   });
 });
