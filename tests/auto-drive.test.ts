@@ -19,6 +19,7 @@ import type { OpenPRInput, RepositoryAdapter } from '../src/repository/adapter.j
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { executionPlumbing, allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import { trackerRef } from '../src/tracker/adapter.js';
+import { logger } from '../src/logger.js';
 
 const STUB = join(import.meta.dirname, 'stub-harness.mjs');
 
@@ -464,6 +465,27 @@ describe('Runner auto-drive settle (issue #33)', () => {
 
   const continueEvents = async (run: AttemptRow) =>
     (await eventsForRun(run)).filter((e) => e.type === 'lifecycle' && (e.payload as any).event === 'continue');
+
+  it('a crash inside the agent loop is logged and settles the Attempt escalated, freeing the slot (#853)', async () => {
+    build(config());
+    vi.spyOn((runner as any).turnDriver, 'drive').mockRejectedValue(new Error('db timeout'));
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
+    const task = await tasks.upsertMirrored(mirroredAfk(7));
+    await startMirrored(task.id);
+
+    const settled = await vi.waitFor(async () => {
+      const t = await tasks.get(task.id);
+      if (t.state === 'working') throw new Error('still working');
+      return t;
+    }, { timeout: 10_000 });
+
+    expect(settled.state).toBe('escalated');
+    expect(settled.escalationReason).toMatch(/agent loop crashed: db timeout/);
+    const [attempt] = await attempts.listForTask(task.id);
+    expect(attempt!.state).toBe('escalated');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('agent loop crashed: db timeout'));
+    expect((await tasks.list()).filter((t) => t.state === 'working')).toHaveLength(0);
+  });
 
   it('a Run blocking on a human prompt fails the Attempt (no human drives it); the exhausted cap then Escalates', async () => {
     build(config({ prompt: JSON.stringify({ requestPermission: { title: 'Write file' } }) }, 2));

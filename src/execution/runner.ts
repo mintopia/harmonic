@@ -586,8 +586,14 @@ export class Runner {
           await this.turnDriver.drive(task, bound, harness, operation.spanContext);
           await this.finishRunOperation(bound.id);
         } catch (error) {
-          operation.fail(error instanceof Error ? error.message : String(error));
+          operation.fail(errorMessage(error));
           this.activeRuns.deleteOperation(bound.id);
+          logger.error(`task ${task.id} attempt ${bound.id}: agent loop crashed: ${errorMessage(error)}`);
+          await bestEffort(async () => {
+            const current = await this.attempts.get(bound.id);
+            if (current.state !== 'running') return;
+            await this.settleEscalated(task, current, `agent loop crashed: ${errorMessage(error)}`, {});
+          }, { op: 'runner.drive.settleCrashed', level: 'warn', context: { taskId: task.id, attemptId: bound.id } });
         } finally {
           this.activeRuns.clearDriving(task.id);
           const leftoverSeed = this.activeRuns.takePendingOperatorSeed(task.id);
