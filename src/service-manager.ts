@@ -283,6 +283,7 @@ const parseEnvPassword = (envContents: string): { ok: true; password: string | u
 };
 
 const initdScriptPath = '/etc/init.d/harmonic';
+const initdEnvironmentPath = '/etc/default/harmonic';
 
 const ensureDataDir = async (dependencies: ServiceManagerDependencies, dataDir: string, user?: string): Promise<void> => {
   await dependencies.mkdir(dataDir);
@@ -312,7 +313,24 @@ export const shellWord = (value: string): string => /^[A-Za-z0-9_./:-]+$/.test(v
   ? value
   : `'${value.replaceAll("'", "'\"'\"'")}'`;
 
-export const initdScript = ({ dataDir, user, nodePath }: { dataDir: string; user: string; nodePath: string }): string => {
+const serveFlags = (serve: ServiceServeOptions): string[] => [
+  '--port', serve.port,
+  '--host', serve.host,
+  '--data-dir', serve.dataDir,
+  ...(serve.otelEndpoint === undefined ? [] : ['--otel-endpoint', serve.otelEndpoint]),
+  ...(serve.otelHeaders === undefined ? [] : ['--otel-headers', serve.otelHeaders]),
+  ...(serve.otelExport === undefined ? [] : ['--otel-export', serve.otelExport]),
+  ...(serve.otelMetricExportInterval === undefined ? [] : ['--otel-metric-export-interval', serve.otelMetricExportInterval]),
+  ...(serve.otelStdoutLogLevel === undefined ? [] : ['--otel-stdout-log-level', serve.otelStdoutLogLevel]),
+];
+
+export const initdScript = ({ serve, user, nodePath }: { serve: ServiceServeOptions; user: string; nodePath: string }): string => {
+  const { dataDir } = serve;
+  const startFlags = serveFlags(serve).map(shellWord).join(' ');
+  const loadPassword = serve.password === undefined ? '' : `    set -a
+    . ${shellWord(initdEnvironmentPath)}
+    set +a
+`;
   const cli = shellWord(join(dataDir, 'app', 'current', 'dist', 'cli.js'));
   const runCli = `HARMONIC_INITD_SERVICE=1 HARMONIC_MANAGED_BY=initd runuser -u ${shellWord(user)} -- ${shellWord(nodePath)} ${cli}`;
   // The guard's own code always exits 0 (ADR-0042); `|| true` guards against it failing to run at
@@ -340,7 +358,7 @@ case "$1" in
       exit 0
     fi
     ${runGuard}
-    ${runCli} start --data-dir ${shellWord(dataDir)}
+${loadPassword}    ${runCli} start ${startFlags}
     ;;
   stop)
     ${runCli} stop --data-dir ${shellWord(dataDir)}
@@ -388,14 +406,7 @@ class SystemdServiceManager implements ServiceManager {
       this.dependencies.nodePath,
       join(serve.dataDir, 'app', 'current', 'dist', 'cli.js'),
       'serve',
-      '--port', serve.port,
-      '--host', serve.host,
-      '--data-dir', serve.dataDir,
-      ...(serve.otelEndpoint === undefined ? [] : ['--otel-endpoint', serve.otelEndpoint]),
-      ...(serve.otelHeaders === undefined ? [] : ['--otel-headers', serve.otelHeaders]),
-      ...(serve.otelExport === undefined ? [] : ['--otel-export', serve.otelExport]),
-      ...(serve.otelMetricExportInterval === undefined ? [] : ['--otel-metric-export-interval', serve.otelMetricExportInterval]),
-      ...(serve.otelStdoutLogLevel === undefined ? [] : ['--otel-stdout-log-level', serve.otelStdoutLogLevel]),
+      ...serveFlags(serve),
     ].map(escapeUnitArgument).join(' ');
     const environmentFile = serve.password === undefined ? '' : `EnvironmentFile=${escapeUnitArgument(this.environmentPath)}\n`;
     const serviceUser = user === undefined ? '' : `User=${user}\nGroup=${user}\n`;
@@ -592,7 +603,13 @@ class InitdServiceManager implements ServiceManager {
     await copyBootGuard(this.dependencies, appDir, version);
     await this.dependencies.run('chown', ['-R', user, appDir]);
     await this.dependencies.run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
-    await this.dependencies.writeFile(initdScriptPath, initdScript({ dataDir, user, nodePath: this.dependencies.nodePath }));
+    if (options.serve.password === undefined) {
+      await this.dependencies.removeFile(initdEnvironmentPath);
+    } else {
+      await this.dependencies.writeFile(initdEnvironmentPath, `HARMONIC_PASSWORD=${shellWord(options.serve.password)}\n`);
+      await this.dependencies.chmod(initdEnvironmentPath, 0o600);
+    }
+    await this.dependencies.writeFile(initdScriptPath, initdScript({ serve: options.serve, user, nodePath: this.dependencies.nodePath }));
     await this.dependencies.chmod(initdScriptPath, 0o755);
     await this.dependencies.run('update-rc.d', ['harmonic', 'defaults']);
     // Restart (not start): the init.d script's own `start` case no-ops when already running, which would silently skip the upgrade.
@@ -604,6 +621,7 @@ class InitdServiceManager implements ServiceManager {
     await this.stop();
     await this.dependencies.run('update-rc.d', ['-f', 'harmonic', 'remove']);
     await this.dependencies.removeFile(initdScriptPath);
+    await this.dependencies.removeFile(initdEnvironmentPath);
   }
 
   async start(): Promise<void> { await this.dependencies.run('service', ['harmonic', 'start']); }
