@@ -49,8 +49,8 @@ describe('verifyEpicIntegration', () => {
           timeoutSeconds: 10,
         }],
         critics: [
-          { id: 'critic-epic', name: 'Test critic', prompt: 'Review the Epic.', model: 'stub-model', timeoutSeconds: 300 },
-          { id: 'critic-integration', name: 'Test critic', prompt: 'Review the integration.', model: 'stub-model', timeoutSeconds: 300 },
+          { id: 'critic-epic', name: 'Test critic', prompt: 'Review the Epic.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 },
+          { id: 'critic-integration', name: 'Test critic', prompt: 'Review the integration.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 },
         ],
       },
       runCritic: critic,
@@ -85,8 +85,8 @@ describe('verifyEpicIntegration', () => {
       verifiers: {
         commands: [],
         critics: [
-          { id: 'critic-migration', name: 'Test critic', prompt: 'Review the migration.', model: 'stub-model', timeoutSeconds: 300 },
-          { id: 'critic-epic', name: 'Test critic', prompt: 'Review the Epic.', model: 'stub-model', timeoutSeconds: 300 },
+          { id: 'critic-migration', name: 'Test critic', prompt: 'Review the migration.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 },
+          { id: 'critic-epic', name: 'Test critic', prompt: 'Review the Epic.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 },
         ],
       },
       runCritic: vi.fn()

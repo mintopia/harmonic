@@ -66,7 +66,7 @@ type VerifierWorkspace = Pick<
 
 export interface VerificationCoordinatorDeps {
   taskService: TaskService;
-  routing: Pick<RoutingService, 'defaultHarness' | 'epicRoute'>;
+  routing: Pick<RoutingService, 'epicRoute'>;
   attempts: AttemptStore;
   verificationAttempts: VerificationAttemptStore;
   sessionStore: SessionStore;
@@ -112,11 +112,11 @@ export class VerificationCoordinator {
     return { config, resolvedTask, fragments: resolvePromptFragments(ws ?? DEFAULT_VERIFIER_WORKSPACE, config) };
   }
 
-  private buildCriticInput(task: TaskRow, configuredCritic: TaskVerificationCritic): { prompt: string; model: string; harness?: string } {
+  private buildCriticInput(task: TaskRow, configuredCritic: TaskVerificationCritic): { prompt: string; model: string; harness: string } {
     return {
       prompt: task.trackerRef == null ? configuredCritic.noIssuePrompt : configuredCritic.issuePrompt,
       model: configuredCritic.model,
-      ...(configuredCritic.harness ? { harness: configuredCritic.harness } : {}),
+      harness: configuredCritic.harness,
     };
   }
 
@@ -305,7 +305,7 @@ export class VerificationCoordinator {
       if (!oid) {
         verdicts.push(await this.noVerifiedHeadVerdict(task, 'critic', record));
       } else {
-        const criticHarnessId = critic.harness ?? await this.deps.routing.defaultHarness(task.id);
+        const criticHarnessId = critic.harness;
         const criticHarness = this.resolveCriticHarness(config, criticHarnessId);
         const baseOid =
           run.branch && run.baseBranch

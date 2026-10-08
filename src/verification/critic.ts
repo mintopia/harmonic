@@ -196,7 +196,7 @@ export interface RunCriticArgs {
   baseOid?: string;
   /** True when the worktree still carries uncommitted work pending a pre-merge commit. */
   dirty?: boolean;
-  critic: { prompt: string; model: string; harness?: string };
+  critic: { prompt: string; model: string; harness: string };
   fragments: AppConfig['promptFragments'];
   /** The Drive-Prompt interpolation tokens filled into the operator's review prompt. */
   fields: DriveFields;

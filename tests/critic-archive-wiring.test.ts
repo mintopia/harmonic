@@ -26,7 +26,7 @@ const localCritics = (...critics: Array<{ id: string; prompt: string }>) =>
   critics.map(({ id, prompt }) => ({
     kind: 'local' as const,
     enabled: true,
-    critic: { id, name: id, prompt, issuePrompt: prompt, noIssuePrompt: prompt, model: 'stub-model', timeoutSeconds: 300 },
+    critic: { id, name: id, prompt, issuePrompt: prompt, noIssuePrompt: prompt, harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 },
   }));
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -83,6 +83,11 @@ function findDir(root: string, prefix: string): string {
 function criticConfig(logDir: string): AppConfig {
   const config = baselineConfig();
   return { ...config, harnesses: { ...config.harnesses, claude: { ...config.harnesses.claude, sessionLogDir: logDir } } };
+}
+
+function withoutClaude(config: AppConfig): AppConfig {
+  const { claude: _claude, ...harnesses } = config.harnesses;
+  return { ...config, harnesses: harnesses as AppConfig["harnesses"] };
 }
 
 describe('Critic Step archive wiring (#730)', () => {
@@ -162,7 +167,7 @@ describe('Critic Step archive wiring (#730)', () => {
       rmSync(repoDir, { recursive: true, force: true });
     });
 
-    it('runs a harness-less post-merge critic on the unrouted Harness, not the Task routed one', async () => {
+    it('runs a post-merge critic on its own Harness, not the Task routed one', async () => {
       const settingsStore = await makeSettingsStore(dir);
       const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
       const attempts = new AttemptStore(asyncDb);
@@ -176,7 +181,6 @@ describe('Critic Step archive wiring (#730)', () => {
         ...executionPlumbing(),
         getWorkspace: async () => ws,
         getConfig: () => criticConfig(logDir),
-        routing: { defaultHarness: async () => 'claude' },
         verificationAttempts,
         attempts,
         criticDrive: { run: (request) => { harnessIds.push(request.harnessId); return drive.run(request); } },
@@ -186,6 +190,31 @@ describe('Critic Step archive wiring (#730)', () => {
       await check({ task: { ...task, harness: 'codex' }, run, mergeOid: git(repoDir, 'rev-parse', 'HEAD'), baseDir: repoDir });
 
       expect(harnessIds).toEqual(['claude']);
+      transcripts.close();
+    });
+
+    it('rejects a post-merge critic whose Harness is not configured, naming it', async () => {
+      const settingsStore = await makeSettingsStore(dir);
+      const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
+      const attempts = new AttemptStore(asyncDb);
+      const task = await tasks.create({ prompt: 'unconfigured', state: 'ready', workingDir: repoDir, isolationMode: 'direct' });
+      const run = await attempts.create(task.id);
+      const ws = { taskPostMergeCommands: null, taskPostMergeCritics: JSON.stringify(twoCritics.slice(0, 1)), taskPreMergeCommands: null, taskPreMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null, ...NO_PROMPT_FRAGMENT_OVERRIDES };
+      const verificationAttempts = new VerificationAttemptStore(asyncDb);
+      const transcripts = new TranscriptCapture(new SessionStore(asyncDb), verificationAttempts, () => criticConfig(logDir));
+      const harnessIds: string[] = [];
+      const check = createPostMergeCheck({
+        ...executionPlumbing(),
+        getWorkspace: async () => ws,
+        getConfig: () => withoutClaude(criticConfig(logDir)),
+        verificationAttempts,
+        attempts,
+        criticDrive: { run: (request) => { harnessIds.push(request.harnessId); return drive.run(request); } },
+        transcripts,
+      });
+
+      await expect(check({ task, run, mergeOid: git(repoDir, 'rev-parse', 'HEAD'), baseDir: repoDir })).rejects.toThrow("critic harness 'claude' is not configured");
+      expect(harnessIds).toEqual([]);
       transcripts.close();
     });
 
@@ -205,7 +234,6 @@ describe('Critic Step archive wiring (#730)', () => {
         ...executionPlumbing(),
         getWorkspace: async () => ws,
         getConfig: () => criticConfig(logDir),
-        routing: { defaultHarness: async () => 'claude' },
         verificationAttempts,
         attempts,
         criticDrive: { run: (request) => { timeouts.push(request.timeoutMs); return drive.run(request); } },
@@ -267,6 +295,45 @@ describe('Critic Step archive wiring (#730)', () => {
       const rows = await epicVerificationAttempts.list(epicAttempt.id);
       expect(rows.map((row) => row.promptKey).sort()).toEqual(steps.map((step) => `verification/pre-merge/${step.id}/prompt.md`).sort());
       for (const row of rows) expect(await archive.readArchivedPrompt({ workspaceId: wsRow.id, epicRef: trackerRef(77) }, epicAttempt.number, row.promptKey!)).toContain('review-');
+    });
+
+    it('runs an Epic critic on its own Harness, not the configured default', async () => {
+      const wsRow = (await asyncDb.read((d) => d.select().from(workspacesTable).get()))!;
+      const workspace = { ...wsRow, epicPreMergeCommands: null, epicPreMergeCritics: JSON.stringify(twoCritics.slice(0, 1)) };
+      const harnessIds: string[] = [];
+      const config = criticConfig(logDir);
+      const runner = new EpicVerificationRunner({
+        commandSpawn: executionPlumbing().commandSpawn,
+        workspace: workspace as never,
+        getWorkspaces: async () => [workspace as never],
+        getConfig: () => ({ ...config, defaults: { ...config.defaults, harness: 'codex' } }),
+        worktrees: { acquire: async () => repoDir, get: () => repoDir } as unknown as EpicWorktreePool,
+        criticDrive: { run: (request) => { harnessIds.push(request.harnessId); return drive.run(request); } },
+      });
+
+      await runner.verify({ repoDir, epicRef: trackerRef(79), verifiedHeadOid: git(repoDir, 'rev-parse', 'HEAD') });
+
+      expect(harnessIds).toEqual(['claude']);
+    });
+
+    it('returns an inconclusive verdict naming an Epic critic Harness that is not configured', async () => {
+      const wsRow = (await asyncDb.read((d) => d.select().from(workspacesTable).get()))!;
+      const workspace = { ...wsRow, epicPreMergeCommands: null, epicPreMergeCritics: JSON.stringify(twoCritics.slice(0, 1)) };
+      const harnessIds: string[] = [];
+      const runner = new EpicVerificationRunner({
+        commandSpawn: executionPlumbing().commandSpawn,
+        workspace: workspace as never,
+        getWorkspaces: async () => [workspace as never],
+        getConfig: () => withoutClaude(criticConfig(logDir)),
+        worktrees: { acquire: async () => repoDir, get: () => repoDir } as unknown as EpicWorktreePool,
+        criticDrive: { run: (request) => { harnessIds.push(request.harnessId); return drive.run(request); } },
+      });
+
+      const decision = await runner.verify({ repoDir, epicRef: trackerRef(80), verifiedHeadOid: git(repoDir, 'rev-parse', 'HEAD') });
+
+      expect(JSON.stringify(decision)).toContain("critic harness 'claude' is not configured");
+      expect(decision.outcome).not.toBe('proceed');
+      expect(harnessIds).toEqual([]);
     });
 
     it('fails the Epic review Step instead of leaving it running when recording the critic throws', async () => {

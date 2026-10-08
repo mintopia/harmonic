@@ -193,7 +193,6 @@ export class Runner {
         commandSpawn: this.commandSpawn,
         fireAndForget: this.fireAndForget,
         getConfig: this.getConfig,
-        routing: this.taskService.routing,
         getWorkspace: async (workspaceId) => this.getWorkspace?.(workspaceId),
         verificationAttempts: this.verificationAttempts,
         attempts: this.attempts,

@@ -211,8 +211,9 @@ has set neither Harness nor Model on the Ticket; setting either disables the rou
 entirely. Re-resolved at every Attempt start, so relabelling an
 escalated Ticket retries it on the new route; an Attempt in flight is never
 re-routed. A route whose Harness is unavailable escalates the Ticket rather
-than falling back. An Epic is routed by its own labels; Critics are never
-routed. Distinct from Triage Labels, which mark workflow roles, not execution
+than falling back. An Epic is routed by its own labels. Critics are never
+routed: a Critic always has its own Harness and Model, with no fallback to the
+Workspace or global default. Distinct from Triage Labels, which mark workflow roles, not execution
 settings. Native Tasks carry no labels, so are never routed. (ADR-0049.)
 _Avoid_: agent label (an Agent is a running Session, not a configured choice),
 harness label, model label, profile
@@ -775,7 +776,9 @@ tracker issue (`trackerRef`): the issue variant interpolates
 so a bare-prompt Task is never reviewed against an empty `{title}`. An **epic
 Critic** carries a single prompt — an Epic is always a tracker container, so its
 no-issue variant never fires. Both bodies are editable with a live per-variant
-preview. Replaces the single Review (ADR-0028).
+preview. Replaces the single Review (ADR-0028). A Critic always has its own
+Harness and Model, with no fallback to the Workspace or global default; its
+Model must be in that Harness's model list (ADR-0049, #830).
 _Avoid_: review, reviewer Task (the single-critic name, superseded)
 
 **Resolved Prompt**:

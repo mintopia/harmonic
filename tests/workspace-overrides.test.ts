@@ -161,17 +161,17 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     const ws = (await workspaces.list())[0]!;
     const updated = await workspaces.update(ws.id, {
       taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-test', command: 'npm', args: ['test'] }) }],
-      taskPreMergeCritics: [{ kind: 'local', enabled: true, critic: taskVerificationCriticSchema.parse({ id: 'critic-test', name: 'Test critic', issuePrompt: 'review issue', noIssuePrompt: 'review Task', model: 'claude-opus-5' }) }],
+      taskPreMergeCritics: [{ kind: 'local', enabled: true, critic: taskVerificationCriticSchema.parse({ id: 'critic-test', name: 'Test critic', issuePrompt: 'review issue', noIssuePrompt: 'review Task', harness: 'claude', model: 'claude-opus-5' }) }],
     });
     expect(JSON.parse(updated.taskPreMergeCommands!)).toMatchObject([{ kind: 'local', command: { command: 'npm', args: ['test'] } }]);
-    expect(JSON.parse(updated.taskPreMergeCritics!)).toMatchObject([{ kind: 'local', critic: { name: 'Test critic', issuePrompt: 'review issue', noIssuePrompt: 'review Task', model: 'claude-opus-5' } }]);
+    expect(JSON.parse(updated.taskPreMergeCritics!)).toMatchObject([{ kind: 'local', critic: { name: 'Test critic', issuePrompt: 'review issue', noIssuePrompt: 'review Task', harness: 'claude', model: 'claude-opus-5' } }]);
   });
 
   it('clears staged verifier overlays back to inherit with null', async () => {
     const ws = (await workspaces.list())[0]!;
     await workspaces.update(ws.id, {
       taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-test', command: 'npm', args: ['test'] }) }],
-      taskPreMergeCritics: [{ kind: 'local', enabled: true, critic: taskVerificationCriticSchema.parse({ id: 'critic-test', name: 'Test critic', issuePrompt: 'review issue', noIssuePrompt: 'review Task', model: 'claude-opus-5' }) }],
+      taskPreMergeCritics: [{ kind: 'local', enabled: true, critic: taskVerificationCriticSchema.parse({ id: 'critic-test', name: 'Test critic', issuePrompt: 'review issue', noIssuePrompt: 'review Task', harness: 'claude', model: 'claude-opus-5' }) }],
     });
     const cleared = await workspaces.update(ws.id, {
       taskPreMergeCommands: null,
@@ -189,7 +189,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(JSON.parse(updated.taskPreMergeCritics!)).toEqual([{ kind: 'global', ref: 'critic-global', enabled: false }]);
     const resolved = resolveVerifiers(updated, {
       verify: {
-        task: { preMerge: { commands: [], critics: [{ id: 'critic-global', name: 'Test critic', issuePrompt: 'global issue review', noIssuePrompt: 'global Task review', model: 'claude-opus-5' }] }, postMerge: { commands: [], critics: [] } },
+        task: { preMerge: { commands: [], critics: [{ id: 'critic-global', name: 'Test critic', issuePrompt: 'global issue review', noIssuePrompt: 'global Task review', harness: 'claude', model: 'claude-opus-5' }] }, postMerge: { commands: [], critics: [] } },
         epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.', resolveSuffix: 'Branch {branch}.' },
       },
     } as any);

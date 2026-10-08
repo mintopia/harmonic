@@ -457,7 +457,7 @@ describe('escalation-routes', () => {
     return dir;
   }
 
-  const critic = () => ({ taskPreMergeCritics: [{ kind: 'local' as const, enabled: true, critic: { id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the issue diff for correctness.', noIssuePrompt: 'Review the Task diff for correctness.', model: 'stub-model', timeoutSeconds: 300 } }] });
+  const critic = () => ({ taskPreMergeCritics: [{ kind: 'local' as const, enabled: true, critic: { id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the issue diff for correctness.', noIssuePrompt: 'Review the Task diff for correctness.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 } }] });
 
   describe('escalation actions on a worktree ticket', () => {
     let server: TestServer;

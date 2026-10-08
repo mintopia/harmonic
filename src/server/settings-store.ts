@@ -8,13 +8,17 @@ import type { WorkspaceOverrides, ResolvedOverrides, WorkspaceSettingsStore } fr
 import {
   appConfigSchema,
   baselineConfig,
+  criticModelIssues,
   mergeConfig,
   type AppConfig,
   type DeepPartial,
 } from '../config.js';
+import { DomainError } from '../domain/errors.js';
+import { logger } from '../logger.js';
 import { isMaskedWorkspaceSecret, restoreConfigSecrets } from '../archive/export-secrets.js';
 
 export type { WorkspaceOverrides };
+export { fillCriticHarness, migrateGlobalCriticHarnesses, migrateWorkspaceCriticHarnesses, harnessCatalog };
 
 function blankOverrides(): ResolvedOverrides {
   const out = {} as ResolvedOverrides;
@@ -159,6 +163,78 @@ function migrateWorkspaceOverlays(entry: unknown): unknown {
   return migrated;
 }
 
+type HarnessCatalog = Record<string, string[]>;
+
+function modelIdsOf(models: unknown, base: string[]): string[] {
+  if (Array.isArray(models)) return models.flatMap((m) => typeof m === 'string' ? [m] : isRecord(m) && typeof m.id === 'string' ? [m.id] : []);
+  if (!isRecord(models)) return base;
+  const ids = new Set(base);
+  for (const [id, change] of Object.entries(models)) {
+    if (change === null) ids.delete(id);
+    else ids.add(id);
+  }
+  return [...ids];
+}
+
+function harnessCatalog(baseline: AppConfig, global: unknown): HarnessCatalog {
+  const patch = isRecord(global) && isRecord(global.harnesses) ? global.harnesses : {};
+  return Object.fromEntries(Object.entries(baseline.harnesses).map(([id, harness]) => {
+    const override = patch[id];
+    return [id, modelIdsOf(isRecord(override) ? override.models : undefined, harness.models.map((m) => m.id))];
+  }));
+}
+
+/**
+ * Give a stored Critic without a Harness the Harness whose catalog lists its Model; zero or several
+ * matches use the global default Harness and warn. Idempotent: a Critic that has a Harness is untouched.
+ */
+function fillCriticHarness(critic: unknown, catalog: HarnessCatalog, defaultHarness: string): unknown {
+  if (!isRecord(critic) || typeof critic.harness === 'string') return critic;
+  const matches = Object.keys(catalog).filter((id) => catalog[id]?.includes(String(critic.model)));
+  const harness = matches.length === 1 ? matches[0]! : defaultHarness;
+  if (matches.length !== 1) {
+    logger.warn(`critic "${String(critic.name ?? critic.id ?? '')}" model '${String(critic.model)}' matches ${matches.length} harnesses; assigned the default harness '${defaultHarness}'`);
+  }
+  return { ...critic, harness };
+}
+
+function migrateGlobalCriticHarnesses(global: unknown, baseline: AppConfig): unknown {
+  if (!isRecord(global) || !isRecord(global.verify)) return global;
+  const catalog = harnessCatalog(baseline, global);
+  const defaults = isRecord(global.defaults) ? global.defaults : {};
+  const defaultHarness = typeof defaults.harness === 'string' ? defaults.harness : baseline.defaults.harness;
+  const verify = structuredClone(global.verify) as Record<string, unknown>;
+  for (const stageKey of ['task', 'epic']) {
+    const stage = verify[stageKey];
+    if (!isRecord(stage)) continue;
+    for (const phaseKey of VERIFIER_PHASES) {
+      const phase = stage[phaseKey];
+      if (isRecord(phase) && Array.isArray(phase.critics)) phase.critics = phase.critics.map((c) => fillCriticHarness(c, catalog, defaultHarness));
+    }
+  }
+  return { ...global, verify };
+}
+
+function migrateWorkspaceCriticHarnesses(entry: unknown, catalog: HarnessCatalog, defaultHarness: string): unknown {
+  if (!isRecord(entry)) return entry;
+  const migrated: Record<string, unknown> = { ...entry };
+  for (const key of CRITIC_OVERLAY_KEYS) {
+    const list = migrated[key];
+    if (!Array.isArray(list)) continue;
+    migrated[key] = list.map((item) => isRecord(item) && item.kind === 'local'
+      ? { ...item, critic: fillCriticHarness(item.critic, catalog, defaultHarness) }
+      : item);
+  }
+  return migrated;
+}
+
+/** Save-time check (not a load-time one, so a migrated Critic with an unmatched Model never blocks boot). */
+function assertCriticModels(config: AppConfig): AppConfig {
+  const [first] = criticModelIssues(config.verify, config.harnesses);
+  if (first) throw new DomainError('validation', `${first.path.join('.')}: ${first.message}`);
+  return config;
+}
+
 function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
   let raw: RawSettingsFile;
   try {
@@ -167,7 +243,7 @@ function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
     throw new Error(`Invalid Harmonic settings file at ${path}: ${err instanceof Error ? err.message : String(err)}`);
   }
   try {
-    const migratedGlobal = migrateGlobalVerifierIds(raw.global ?? {});
+    const migratedGlobal = migrateGlobalCriticHarnesses(migrateGlobalVerifierIds(raw.global ?? {}), baseline);
     const storedGlobal = (migratedGlobal ?? {}) as DeepPartial<AppConfig>;
     // A flattened (whole-config) global is converted to a sparse patch in
     // inherit mode: a field it doesn't carry is treated as inherited from the
@@ -180,8 +256,9 @@ function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
       : storedGlobal;
     const global = mergeConfig(baseline, globalPatch);
     const workspaces: Record<string, WorkspaceOverrides> = {};
+    const catalog = harnessCatalog(baseline, migratedGlobal);
     for (const [id, entry] of Object.entries(raw.workspaces ?? {})) {
-      workspaces[id] = workspaceOverridesSchema.parse(migrateWorkspaceOverlays(entry));
+      workspaces[id] = workspaceOverridesSchema.parse(migrateWorkspaceCriticHarnesses(migrateWorkspaceOverlays(entry), catalog, global.defaults.harness));
     }
     return { globalPatch, global, workspaces };
   } catch (err) {
@@ -247,7 +324,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
 
   async updateGlobal(patch: DeepPartial<AppConfig>): Promise<AppConfig> {
     this.reloadIfChanged();
-    this.global = mergeConfig(this.global, restoreConfigSecrets(patch, this.global));
+    this.global = assertCriticModels(mergeConfig(this.global, restoreConfigSecrets(patch, this.global)));
     this.globalPatch = deepDiff(baselineConfig(), this.global) ?? {};
     this.persist();
     return this.global;
@@ -255,7 +332,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
 
   async replaceGlobal(config: AppConfig): Promise<AppConfig> {
     this.reloadIfChanged();
-    this.global = appConfigSchema.parse(restoreConfigSecrets(config, this.global));
+    this.global = assertCriticModels(appConfigSchema.parse(restoreConfigSecrets(config, this.global)));
     this.globalPatch = deepDiff(baselineConfig(), this.global) ?? {};
     this.persist();
     return this.global;

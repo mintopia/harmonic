@@ -134,8 +134,8 @@ const verificationCriticIdentitySchema = z.object({
   /** Operator-facing label; the critic's row title in settings. */
   name: z.string().default('').meta({ example: 'Correctness' }),
   model: z.string().min(1).meta({ example: 'claude-opus-5' }),
-  /** Reviewer harness; omitted = the Workspace/global default Harness. */
-  harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),
+  /** Reviewer Harness; required, with no fallback. `model` must be in this Harness's catalog. */
+  harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }),
   /** Hard timeout in seconds for the critic's single review turn; a run that
    * overruns is killed and reads inconclusive. Defaults to 300. */
   timeoutSeconds: z.number().int().positive().default(300).meta({ example: 300 }),
@@ -222,9 +222,8 @@ export function unpricedModelsForCostCap(
   }
   for (const stage of [config.verify.task.preMerge, config.verify.task.postMerge, config.verify.epic.preMerge]) {
     for (const critic of stage.critics) {
-      const harnessId = critic.harness ?? config.defaults.harness;
-      const harness = config.harnesses[harnessId];
-      if (harness && !isModelPriced(critic.model, pricesForHarness(harness))) configured.add(`${harnessId}/${critic.model}`);
+      const harness = config.harnesses[critic.harness];
+      if (harness && !isModelPriced(critic.model, pricesForHarness(harness))) configured.add(`${critic.harness}/${critic.model}`);
     }
   }
   return [...configured];
@@ -233,6 +232,28 @@ export function unpricedModelsForCostCap(
 /** Must stay free of `'; '`: the API error handler and the settings form's `parseFieldErrors` split `path: message` pairs on it. */
 export function costCapMessage(unpriced: string[]): string {
   return `a cost cap with no token fallback requires every configured model to be priced — unpriced: ${unpriced.join(', ')}`;
+}
+
+/** Message for a Critic whose Model its own Harness does not list; names both. */
+export function criticModelMessage(critic: { name: string; model: string; harness: string }): string {
+  return `critic${critic.name ? ` "${critic.name}"` : ''} model '${critic.model}' is not in the ${critic.harness} harness's model list`;
+}
+
+/** Every Critic in `verify` whose Model is missing from its Harness's non-empty catalog. */
+export function criticModelIssues(
+  verify: Pick<AppConfig, 'verify'>['verify'],
+  harnesses: AppConfig['harnesses'],
+): Array<{ path: (string | number)[]; message: string }> {
+  const stages = [
+    ['task', 'preMerge', verify.task.preMerge],
+    ['task', 'postMerge', verify.task.postMerge],
+    ['epic', 'preMerge', verify.epic.preMerge],
+  ] as const;
+  return stages.flatMap(([scope, phase, stage]) => stage.critics.flatMap((critic, index) => {
+    const models = harnesses[critic.harness]?.models ?? [];
+    if (models.length === 0 || models.some((m) => m.id === critic.model)) return [];
+    return [{ path: ['verify', scope, phase, 'critics', index, 'model'], message: criticModelMessage(critic) }];
+  }));
 }
 
 /** True when no verifier is configured for any stage. */

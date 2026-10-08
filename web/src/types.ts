@@ -495,8 +495,7 @@ export interface TaskVerificationCritic {
   issuePrompt: string;
   noIssuePrompt: string;
   model: string;
-  /** Reviewer harness; omitted = the Workspace/global default Harness. */
-  harness?: string;
+  harness: string;
   /** Hard timeout in seconds for the critic's review turn (default 300). */
   timeoutSeconds: number;
 }
@@ -508,8 +507,7 @@ export interface EpicVerificationCritic {
   name: string;
   prompt: string;
   model: string;
-  /** Reviewer harness; omitted = the Workspace/global default Harness. */
-  harness?: string;
+  harness: string;
   /** Hard timeout in seconds for the critic's review turn (default 300). */
   timeoutSeconds: number;
 }

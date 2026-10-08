@@ -75,7 +75,7 @@ describe('runCritic archive capture', () => {
       fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: dir,
       verifiedHeadOid: 'abc',
-      critic: { prompt: 'review it', model: 'stub-model' },
+      critic: { prompt: 'review it', harness: 'claude', model: 'stub-model' },
       fields: FIELDS,
       harness: harness(),
       harnessId: 'claude',
@@ -102,7 +102,7 @@ describe('runCritic archive capture', () => {
       fragments: DEFAULT_PROMPT_FRAGMENTS,
       cwd: dir,
       verifiedHeadOid: 'abc',
-      critic: { prompt: 'review it', model: 'stub-model' },
+      critic: { prompt: 'review it', harness: 'claude', model: 'stub-model' },
       fields: FIELDS,
       harness: harness(),
       harnessId: 'claude',
@@ -121,7 +121,7 @@ describe('runCritic archive capture', () => {
   it('reports the prompt locator only when the prompt reached the archive', async () => {
     const task = await tasks.create({ prompt: 'p' });
     const writer = archiveFor().criticStep(task, 1, 'pre-merge', 'critic-3');
-    const base = { fragments: DEFAULT_PROMPT_FRAGMENTS, cwd: dir, verifiedHeadOid: 'abc', critic: { prompt: 'review it', model: 'stub-model' }, fields: FIELDS, harness: harness(), harnessId: 'claude', drive, transcriptRetryDelaysMs: [1] };
+    const base = { fragments: DEFAULT_PROMPT_FRAGMENTS, cwd: dir, verifiedHeadOid: 'abc', critic: { prompt: 'review it', harness: 'claude', model: 'stub-model' }, fields: FIELDS, harness: harness(), harnessId: 'claude', drive, transcriptRetryDelaysMs: [1] };
     const archived = await runCritic({ ...base, archive: writer });
     expect(archived.promptKey).toBe('verification/pre-merge/critic-3/prompt.md');
     expect(readFileSync(join(await writer.dir, 'prompt.md'), 'utf8')).toBe(archived.prompt);
