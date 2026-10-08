@@ -20,8 +20,15 @@ export function providerLabel(harness: string): string {
   return PROVIDER_LABELS[normalized as keyof typeof PROVIDER_LABELS] ?? harness;
 }
 
+const CLAUDE_MODEL = /^(?:claude-)?(opus|sonnet|haiku)-(\d+)(?:[-.](\d{1,2}))?(?:-\d{8})?$/;
+
 export function formatModelLabel(model: string): string {
   const normalized = model.toLowerCase();
+  const claude = CLAUDE_MODEL.exec(normalized);
+  if (claude) {
+    const [, family = '', major = '', minor] = claude;
+    return `${family.charAt(0).toUpperCase()}${family.slice(1)} ${major}${minor === undefined ? '' : `.${minor}`}`;
+  }
   for (const prefix of MODEL_PREFIXES) {
     if (normalized.startsWith(prefix)) return model.slice(prefix.length);
   }

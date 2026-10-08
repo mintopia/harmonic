@@ -5,6 +5,7 @@ import { withTaskLock } from './task-lock.js';
 import type { SessionRetirementHook } from './session-retirement-coordinator.js';
 import type { RetirementCause } from './session-retirement.js';
 import { bestEffort } from '../error-handling.js';
+import type { EscalationCause } from './task-routing.js';
 
 export interface AttemptBranchRetirementHook {
   onAttemptSettled(task: TaskRow, attempt: AttemptRow): Promise<void>;
@@ -33,6 +34,8 @@ export interface SettleProjection {
   runState: AttemptTerminalState;
   taskAction: SettleTaskAction;
   reason: string | null;
+  /** Recorded on the Task when `taskAction` is `escalate`, for causes the UI branches on. */
+  cause?: EscalationCause;
 }
 
 /** Every ending-signal kind `settle` can be called with — persisted verbatim to `attempts.reason`. */
@@ -140,7 +143,7 @@ export class AttemptSettleCoordinator {
         break;
       }
       case 'escalate':
-        await this.taskService.escalate(taskId, projection.reason ?? 'escalated');
+        await this.taskService.escalate(taskId, projection.reason ?? 'escalated', projection.cause);
         break;
     }
   }

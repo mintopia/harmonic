@@ -11,6 +11,7 @@ import type {
   NotificationRow,
 } from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
+import type { TaskRouting } from '../domain/task-routing.js';
 import type { PersistedAttemptEvent } from '../domain/attempts.js';
 import type { IsolationMode, Priority } from '../config.js';
 import type { Ticket, TrackerRef } from '../tracker/adapter.js';
@@ -410,7 +411,7 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'isolationMode' | 'prio
     priority: Priority | null;
   };
   /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. Null when none matches. */
-  routing: { label: string; applied: boolean } | null;
+  routing: TaskRouting | null;
   /** The prompt's first line, bounded; the full `prompt` is item-GET-only. */
   summary: string;
   cost: Cost | null;
@@ -484,6 +485,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListR
     conflictResolveTurns: 0,
     state: 'ready',
     escalationReason: null,
+    escalationCause: null,
     mergeStatus: null,
     ticketClosePending: false,
     feedback: null,

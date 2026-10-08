@@ -128,38 +128,61 @@ export function routingLabelRef(route: Pick<RoutingLabel, 'label'>): string {
   return route.label.trim().toLowerCase();
 }
 
-/** A Workspace's effective Routing Labels: `null` inherits every global in order; otherwise the ordered overlay (ADR-0049). */
+/** A Routing Label list problem at `index`; `duplicate-global` names the enabled Global label it repeats. */
+export type RoutingLabelIssue =
+  | { index: number; kind: 'blank' | 'duplicate' }
+  | { index: number; kind: 'duplicate-global'; globalRef: string };
+
+/** Blank and case-insensitively repeated labels in a flat (Global) list. */
+export function routingLabelIssues(labels: readonly Pick<RoutingLabel, 'label'>[]): RoutingLabelIssue[] {
+  const seen = new Set<string>();
+  return labels.flatMap((route, index): RoutingLabelIssue[] => {
+    const ref = routingLabelRef(route);
+    if (ref === '') return [{ index, kind: 'blank' }];
+    if (seen.has(ref)) return [{ index, kind: 'duplicate' }];
+    seen.add(ref);
+    return [];
+  });
+}
+
+/**
+ * Problems that make a Workspace overlay unsavable: an enabled local label may
+ * not be blank, repeat an enabled Global label (a disabled Global frees its
+ * label), or repeat an earlier enabled local one. Disabled locals are not checked.
+ */
+export function routingLabelOverlayIssues(
+  overlay: readonly (
+    | { kind: 'global'; ref: string; enabled: boolean }
+    | { kind: 'local'; enabled: boolean; routingLabel: Pick<RoutingLabel, 'label'> }
+  )[],
+  globals: readonly Pick<RoutingLabel, 'label'>[],
+): RoutingLabelIssue[] {
+  const disabled = new Set(overlay.flatMap((e) => (e.kind === 'global' && !e.enabled ? [e.ref] : [])));
+  const globalRefs = new Set(globals.map(routingLabelRef).filter((ref) => !disabled.has(ref)));
+  const seen = new Set<string>();
+  return overlay.flatMap((entry, index): RoutingLabelIssue[] => {
+    if (entry.kind !== 'local' || !entry.enabled) return [];
+    const ref = routingLabelRef(entry.routingLabel);
+    if (ref === '') return [{ index, kind: 'blank' }];
+    if (globalRefs.has(ref)) return [{ index, kind: 'duplicate-global', globalRef: ref }];
+    if (seen.has(ref)) return [{ index, kind: 'duplicate' }];
+    seen.add(ref);
+    return [];
+  });
+}
+
+/** A Workspace's effective Routing Labels: `null` inherits every global in order; otherwise the ordered overlay (ADR-0049). An enabled local shadowed by an enabled global is dropped, so the global wins. */
 export function resolveRoutingLabels(
   ws: Pick<WorkspaceRow, 'routingLabels'> | null | undefined,
   config: Pick<AppConfig, 'routingLabels'>,
 ): RoutingLabel[] {
   const stored = isOverridable('routingLabels') ? ws?.routingLabels : null;
   const overlay = stored == null ? null : (JSON.parse(stored) as RoutingLabelOverlayEntry[]);
-  return mergeOverlay<RoutingLabel, RoutingLabelOverlayEntry>(overlay, config.routingLabels, routingLabelRef, (e) => e.ref, (e) => e.routingLabel);
-}
-
-/** Issues (path relative to the overlay array) that make a Workspace Routing Label overlay unsavable. */
-export function routingLabelOverlayIssues(
-  overlay: readonly RoutingLabelOverlayEntry[],
-  config: Pick<AppConfig, 'routingLabels' | 'harnesses'>,
-): { path: (string | number)[]; message: string }[] {
-  const issues: { path: (string | number)[]; message: string }[] = [];
-  const disabledGlobals = new Set(overlay.flatMap((e) => (e.kind === 'global' && !e.enabled ? [e.ref] : [])));
-  const taken = new Set(config.routingLabels.map(routingLabelRef).filter((ref) => !disabledGlobals.has(ref)));
-  overlay.forEach((entry, i) => {
-    if (entry.kind !== 'local') return;
-    const route = entry.routingLabel;
-    if (!config.harnesses[route.harness]) {
-      issues.push({ path: [i, 'routingLabel', 'harness'], message: `harness ${route.harness} is not configured` });
-    }
-    if (!entry.enabled) return;
-    const key = routingLabelRef(route);
-    if (taken.has(key)) {
-      issues.push({ path: [i, 'routingLabel', 'label'], message: `routing label "${route.label}" is already mapped` });
-    }
-    taken.add(key);
-  });
-  return issues;
+  const merged = mergeOverlay<RoutingLabel, RoutingLabelOverlayEntry>(overlay, config.routingLabels, routingLabelRef, (e) => e.ref, (e) => e.routingLabel);
+  if (overlay == null) return merged;
+  const globals = new Set<RoutingLabel>(config.routingLabels);
+  const enabledGlobalRefs = new Set(merged.filter((route) => globals.has(route)).map(routingLabelRef));
+  return merged.filter((route) => globals.has(route) || !enabledGlobalRefs.has(routingLabelRef(route)));
 }
 
 function resolveTaskStage(

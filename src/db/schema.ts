@@ -3,6 +3,7 @@ import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, check, type
 import type { Verdict } from '../verification/critic-schema.js';
 import type { PromptFragmentOverrides } from '../domain/prompt-fragments.js';
 import type { TicketRef, TicketState, TrackerRef } from '../tracker/adapter.js';
+import type { EscalationCause } from '../domain/task-routing.js';
 
 /** A Task is either authored here or a 1:1 projection of a tracker issue. */
 export const TASK_ORIGINS = ['native', 'mirrored'] as const;
@@ -119,6 +120,8 @@ export const tasks = sqliteTable('tasks', {
   wayfinderType: text('wayfinder_type').$type<WayfinderType>(),
   /** Why the Ticket is `escalated`; null otherwise. */
   escalationReason: text('escalation_reason'),
+  /** The machine-readable form of `escalationReason` when the cause has one; null otherwise. */
+  escalationCause: text('escalation_cause', { mode: 'json' }).$type<EscalationCause>(),
   /** Live merge indicator, orthogonal to `state`; null at rest. */
   mergeStatus: text('merge_status').$type<MergeStatus>(),
   /** Merged, but the tracker ticket close failed and is outstanding. */

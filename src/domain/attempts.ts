@@ -80,7 +80,8 @@ export class AttemptStore {
    * `startedAt`. Fills in an existing `running` placeholder row (pre-created
    * by {@link ensureForRun} on the resume path) rather than inserting beside it.
    */
-  async create(taskId: number, snapshot?: AttemptGuardrailSnapshot, route?: { harness: string; model: string }): Promise<TaskAttemptRow> {
+  async create(taskId: number, options: { guardrails?: AttemptGuardrailSnapshot; route?: { harness: string; model: string } } = {}): Promise<TaskAttemptRow> {
+    const { guardrails: snapshot, route } = options;
     const row = await this.db.write(async (db) => {
       const values = {
         state: 'running' as const,

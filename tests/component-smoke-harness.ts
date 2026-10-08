@@ -153,6 +153,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     overrides: { harness: null, model: null, isolationMode: null, priority: null, conflictResolveTurns: null },
     state: 'ready',
     escalationReason: null,
+    escalationCause: null,
     mergeStatus: null, ticketClosePending: false,
     feedback: null,
     createdAt: Date.now() - 3_600_000,

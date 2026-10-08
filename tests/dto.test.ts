@@ -81,6 +81,7 @@ const taskRow = (over: Partial<TaskRow> = {}): TaskRow => ({
   workflow: null,
   wayfinderType: null,
   escalationReason: null,
+  escalationCause: null,
   mergeStatus: null, ticketClosePending: false,
   mapRef: null,
   baseBranch: null,

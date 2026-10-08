@@ -1,4 +1,5 @@
 import { arrayMove } from '@dnd-kit/sortable';
+import { routingLabelOverlayIssues, routingLabelRef, type RoutingLabelIssue } from '../../../src/domain/setting-override.js';
 import type { AppConfig, RoutingLabelOverlayEntry } from '../types';
 import { chip } from '../ui';
 import {
@@ -11,19 +12,18 @@ import {
   arrowCell,
   defaultRoute,
 } from './RoutingLabelsEditor';
-import { newLocalEntry, type RoutingOverlayError, overlayRows, routingLabelKey, routingOverlayErrors } from './routing-label-overlay-model';
+import { isIssueVisible, issuesByIndex, newLocalEntry, overlayRows, routingIssueText } from './routing-label-overlay-model';
 import { Switch } from './Switch';
 import { providerLabel } from './TaskIdentity';
 
 const globalChip = `${chip} bg-raised text-muted`;
 
-function ErrorText({ error }: { error: RoutingOverlayError }) {
-  const [before, ref, after] = error.message.split('`');
-  if (error.globalRef === undefined || ref === undefined) return <>{error.message}</>;
+function ErrorText({ issue, label }: { issue: RoutingLabelIssue; label: string }) {
+  const { before, globalRef, after } = routingIssueText(issue, label);
   return (
     <>
       {before}
-      <code className="font-data">{ref}</code>
+      {globalRef !== undefined && <code className="font-data">{globalRef}</code>}
       {after}
     </>
   );
@@ -45,9 +45,9 @@ export function RoutingLabelOverlayEditor({
   onChange: (overlay: RoutingLabelOverlayEntry[]) => void;
 }) {
   const globals = config.routingLabels;
-  const globalByRef = new Map(globals.map((g) => [routingLabelKey(g.label), g]));
+  const globalByRef = new Map(globals.map((g) => [routingLabelRef(g), g]));
   const rows = overlayRows(overlay, globals);
-  const errors = routingOverlayErrors(rows, globals);
+  const issues = issuesByIndex(routingLabelOverlayIssues(rows, globals));
   const set = (index: number, next: RoutingLabelOverlayEntry) => onChange(rows.map((row, i) => (i === index ? next : row)));
 
   return (
@@ -63,16 +63,17 @@ export function RoutingLabelOverlayEditor({
         onRemove={(index) => onChange(rows.filter((_, i) => i !== index))}
         emptyText="No Routing Labels. Issues use the Workspace or Global default Harness and Model."
         renderRow={({ id, index, touched, touch, remove }) => {
-          const entry = rows[index]!;
+          const entry = rows[index];
+          if (!entry) return null;
           const n = index + 1;
           if (entry.kind === 'local') {
-            const error = errors[index];
-            const visible = error && (error.message !== 'Enter a label.' || touched) ? error : null;
+            const issue = issues.get(index);
+            const visible = isIssueVisible(issue, touched) ? issue : null;
             return (
               <RoutingRowShell
                 id={id}
                 index={index}
-                error={visible && <ErrorText error={visible} />}
+                error={visible && <ErrorText issue={visible} label={entry.routingLabel.label} />}
               >
                 <RouteCells
                   id={id}

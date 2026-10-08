@@ -341,7 +341,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
       delete (config.harnesses as Record<string, unknown>).claude;
       const { driveCalls, error } = await resolveOn(['epic', 'reasoning'], config);
       expect(driveCalls).toEqual([]);
-      expect(error?.message).toContain("routed by label 'reasoning'");
+      expect(error?.message).toContain("Routing Label 'reasoning' needs Harness 'claude', which is not configured.");
     });
 
     it('an Epic labelled reasoning refreshes on the reasoning route while its member is labelled cheap', async () => {
@@ -362,7 +362,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
       const { outcome, driveCalls, escalations } = await refreshOn(['epic', 'reasoning'], config);
       expect(outcome.status).toBe('escalated');
       expect(driveCalls).toEqual([]);
-      expect(escalations[0]).toContain("routed by label 'reasoning'");
+      expect(escalations[0]).toContain("Routing Label 'reasoning' needs Harness 'claude', which is not configured.");
     });
   });
 

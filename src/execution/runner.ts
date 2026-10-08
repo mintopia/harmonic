@@ -23,6 +23,7 @@ import { SessionStore } from '../domain/sessions.js';
 import { type DeterministicContinuation } from '../domain/session-continuation.js';
 import { DomainError } from '../domain/errors.js';
 import { AttemptStore, type AttemptGuardrailSnapshot } from '../domain/attempts.js';
+import type { EscalationCause } from '../domain/task-routing.js';
 import { AttemptSettleCoordinator, type SettleProjection, type DispositionKind } from '../domain/attempt-settle.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
 import type { TaskService } from '../domain/tasks.js';
@@ -513,7 +514,10 @@ export class Runner {
     return this.beginRun(task, parent, resumedAttempt);
   }
 
-  private async beginRun(task: TaskRow, parent?: SpanContext, resumedAttempt?: AttemptRow): Promise<AttemptRow> {
+  private async beginRun(requested: TaskRow, parent?: SpanContext, resumedAttempt?: AttemptRow): Promise<AttemptRow> {
+    const task: TaskRow = resumedAttempt?.harness
+      ? { ...requested, harness: resumedAttempt.harness, model: resumedAttempt.model ?? requested.model }
+      : requested;
     // Covers the pre-spawn/between-turns gaps too, so a steer can't mistake a healthy Task for stranded.
     this.activeRuns.markDriving(task.id);
     let created: AttemptRow | undefined;
@@ -526,17 +530,14 @@ export class Runner {
         );
       }
       const config = this.getConfig();
-      const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
-      if (!harness) {
-        const route = await this.taskService.routingFor(task.id);
-        const reason = route?.applied
-          ? `Routing Label '${route.label}' needs Harness '${task.harness}', which is not configured.`
-          : `Harness '${task.harness}' is not configured.`;
+      const route = await this.taskService.ticketRoute(task);
+      if (!route.ok) {
         const unspawned = await this.attempts.create(task.id);
-        await this.settleEscalated(task, unspawned, reason, {});
+        await this.settleEscalated(task, unspawned, route.reason, {}, route.cause);
         this.activeRuns.clearDriving(task.id);
         return unspawned;
       }
+      const harness = route.config;
       const ws = (await this.getWorkspace?.(task.workspaceId)) ?? { guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null };
       const snapshot: AttemptGuardrailSnapshot = {
         guardrailConfig: resolveGuardrails(ws, config),
@@ -551,11 +552,11 @@ export class Runner {
             detail: null,
             guardrailConfig: JSON.stringify(snapshot.guardrailConfig),
             priceTable: JSON.stringify(snapshot.priceTable),
-            harness: resumedAttempt.harness ?? task.harness,
-            model: resumedAttempt.model ?? task.model,
+            harness: task.harness,
+            model: task.model,
             ...(task.continuationChoice === 'condensed' ? { sessionRowId: null, sessionId: null } : {}),
           })
-        : await this.attempts.create(task.id, snapshot, { harness: task.harness, model: task.model });
+        : await this.attempts.create(task.id, { guardrails: snapshot, route: { harness: task.harness, model: task.model } });
       const pendingContinuation = this.activeRuns.takePendingContinuation(task.id);
       if (pendingContinuation !== undefined) {
         await this.attempts.setContinuation(created.id, pendingContinuation);
@@ -944,11 +945,12 @@ export class Runner {
     );
   }
 
-  private async settleEscalated(task: TaskRow, run: AttemptRow, reason: string, patch: Partial<AttemptRow>): Promise<void> {
+  private async settleEscalated(task: TaskRow, run: AttemptRow, reason: string, patch: Partial<AttemptRow>, cause?: EscalationCause): Promise<void> {
     await this.coordinateSettle(task, run, 'escalate', {
       runState: 'failed',
       taskAction: 'escalate',
       reason: `escalated to human: ${reason}`,
+      ...(cause ? { cause } : {}),
     }, patch);
   }
 

@@ -1,5 +1,6 @@
 import type { TrackerResolveFailureCode } from '../../src/tracker/adapter.js';
 import type { PromptFragmentOverrides, PromptFragments } from '../../src/domain/prompt-fragments.js';
+import type { EscalationCause, TaskRouting } from '../../src/domain/task-routing.js';
 import type { Verdict } from '../../src/verification/critic-schema.js';
 
 /** The stored Ticket states; blocked-ness and agent-workability are derived, never stored. */
@@ -598,10 +599,12 @@ export interface Task {
     conflictResolveTurns: number | null;
   };
   /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. */
-  routing: { label: string; applied: boolean } | null;
+  routing: TaskRouting | null;
   state: TaskState;
   /** Why the ticket is `escalated` — the trigger's recorded reason; null in every other state. */
   escalationReason: string | null;
+  /** The machine-readable cause behind `escalationReason`, when it has one; null otherwise. */
+  escalationCause: EscalationCause | null;
   /** Live merge indicator, orthogonal to `state`: 'merging' while the candidate merges onto base, 'resolving-conflicts' once that merge conflicts a human must settle; null at rest. */
   mergeStatus: MergeStatus | null;
   /** Merged, but the tracker ticket close is outstanding. */

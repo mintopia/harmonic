@@ -5,13 +5,6 @@ import { btnGhost, btnPrimary, field, labelType, panelTitle } from '../../ui';
 import { taskLabel } from '../../id-format.js';
 import { Modal } from '../Modal';
 
-const UNCONFIGURED_HARNESS = /^(?:Routing Label '(.+)' needs )?Harness '([^']+)'(?: is|,) (?:which is )?not configured\.$/;
-
-export function parseUnconfiguredHarness(reason: string): { label: string | null; harness: string } | null {
-  const m = UNCONFIGURED_HARNESS.exec(reason.trim());
-  return m ? { label: m[1] ?? null, harness: m[2]! } : null;
-}
-
 export function UnconfiguredHarnessMessage({ label, harness }: { label: string | null; harness: string }) {
   const code = 'rounded-[3px] bg-surface px-1.5 font-data text-small text-ink';
   return (
@@ -95,7 +88,7 @@ export function UnconfiguredHarnessGate({ taskId, onChanged, onClose }: { taskId
     setBusy(true);
     setError(null);
     try {
-      await api.rejectTask(taskId, '');
+      await api.retryTask(taskId);
       onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

@@ -11,6 +11,7 @@ import type { RunnerEvents } from './runner.js';
 import type { ActiveRuns } from './active-runs.js';
 import type { TaskArchive } from '../archive/task-archive.js';
 import type { TranscriptCapture } from './transcript-capture.js';
+import { harnessConfig } from '../domain/route.js';
 import type { AppConfig, HarnessConfig, TaskVerificationCritic, VerificationCommand } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow, StepRow, VerificationAttemptRow } from '../db/schema.js';
 import { DomainError } from '../domain/errors.js';
@@ -117,7 +118,7 @@ export class VerificationCoordinator {
   }
 
   private resolveCriticHarness(config: AppConfig, criticHarnessId: string): HarnessConfig {
-    const criticHarness = config.harnesses[criticHarnessId as keyof typeof config.harnesses];
+    const criticHarness = harnessConfig(config, criticHarnessId);
     if (!criticHarness) throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
     return criticHarness;
   }
@@ -395,9 +396,9 @@ export class VerificationCoordinator {
     const config = this.deps.getConfig();
     const resolver = resolveEpicResolverPrompts(await this.deps.getWorkspace?.(input.workspaceId), config);
     const branch = integrationBranchName(input.epicRef);
-    const { harness: harnessId, model, label } = await this.deps.taskService.epicRoute(input.workspaceId, input.epicRef);
-    const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
-    if (!harness) throw new Error(`harness '${harnessId}'${label ? ` (routed by label '${label}')` : ''} is not configured for Epic verification resolution`);
+    const route = await this.deps.taskService.epicRoute(input.workspaceId, input.epicRef);
+    if (!route.ok) throw new Error(`${route.reason} It cannot run Epic verification resolution.`);
+    const { harness: harnessId, model, config: harness } = route;
     const worktreePath = input.worktreePath;
 
     const step = await this.deps.attempts.createStep(input.attempt.id, { type: 'implementation' });

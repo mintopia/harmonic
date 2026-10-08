@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Board } from '../web/src/components/Board.js';
+import { Board, TaskCard } from '../web/src/components/Board.js';
 import { cleanup, makeTask, mountComponent } from './component-smoke-harness.js';
 
 afterEach(async () => {
@@ -44,5 +44,20 @@ describe('Board card strip', () => {
     expect(cue()?.textContent).toContain('1 more');
     await act(async () => { strip.scrollLeft = 864; strip.dispatchEvent(new Event('scroll')); });
     expect(cue()).toBeNull();
+  });
+});
+
+describe('Board card escalation of a routed Task', () => {
+  it('shows the escalation reason line and the routed label chip', async () => {
+    const task = makeTask({
+      state: 'escalated',
+      escalationReason: 'escalated to human: Harness codex is not configured',
+      routing: { label: 'reasoning', applied: true },
+    });
+    const host = await mountComponent(createElement(TaskCard, { task, onOpen: () => {} }));
+    expect(host.textContent).toContain('Harness codex is not configured');
+    expect(host.textContent).not.toContain('escalated to human:');
+    expect(host.querySelector('code')?.textContent).toBe('reasoning');
+    expect(host.textContent).toContain('↳');
   });
 });

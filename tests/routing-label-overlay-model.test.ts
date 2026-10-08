@@ -3,8 +3,11 @@ import {
   firstRoutingOverlayError,
   newLocalEntry,
   overlayRows,
-  routingOverlayErrors,
+  isIssueVisible,
+  routingIssueMessage,
+  routingIssueText,
 } from '../web/src/components/routing-label-overlay-model.js';
+import { routingLabelOverlayIssues } from '../src/domain/setting-override.js';
 import type { RoutingLabelOverlayEntry } from '../web/src/types.js';
 
 const globals = [
@@ -31,26 +34,21 @@ describe('overlayRows', () => {
   });
 });
 
-describe('routingOverlayErrors', () => {
-  it('flags a local label that duplicates an enabled global, case-insensitively', () => {
+describe('routing overlay issue messages', () => {
+  it('names the enabled global a local label duplicates', () => {
     const rows = overlayRows([local('REASONING')], globals);
-    const [error] = routingOverlayErrors(rows, globals);
-    expect(error?.globalRef).toBe('reasoning');
-    expect(error?.message).toContain('duplicates the enabled Global label');
+    const [issue] = routingLabelOverlayIssues(rows, globals);
+    expect(issue).toEqual({ index: 0, kind: 'duplicate-global', globalRef: 'reasoning' });
+    expect(routingIssueText(issue!, 'REASONING').globalRef).toBe('reasoning');
+    expect(routingIssueMessage(issue!, 'REASONING')).toContain('duplicates the enabled Global label reasoning');
   });
 
-  it('lets a local label reuse a disabled global label', () => {
-    const rows = overlayRows([local('cheap'), { kind: 'global', ref: 'cheap', enabled: false }], globals);
-    expect(routingOverlayErrors(rows, globals)[0]).toBeNull();
-  });
-
-  it('flags a repeated local label and an empty one, and skips disabled locals', () => {
-    const rows = [local('a'), local('A'), local(' '), local('reasoning', false)];
-    const errors = routingOverlayErrors(rows, globals);
-    expect(errors[0]).toBeNull();
-    expect(errors[1]?.message).toContain('already mapped above');
-    expect(errors[2]?.message).toBe('Enter a label.');
-    expect(errors[3]).toBeNull();
+  it('shows the blank-label prompt only once the row was touched', () => {
+    const blank = { index: 0, kind: 'blank' } as const;
+    expect(isIssueVisible(blank, false)).toBe(false);
+    expect(isIssueVisible(blank, true)).toBe(true);
+    expect(isIssueVisible({ index: 0, kind: 'duplicate' }, false)).toBe(true);
+    expect(isIssueVisible(undefined, true)).toBe(false);
   });
 
   it('numbers the first error by displayed position', () => {
