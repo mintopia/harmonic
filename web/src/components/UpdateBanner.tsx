@@ -4,15 +4,22 @@ import { btnPrimary, btnQuiet } from '../ui.js';
 import { CopyButton } from './CopyButton.js';
 import { Icon } from './Icon.js';
 
-type UpdateBannerProps = {
-  update: UpdateState | null;
-  /** The version this web bundle was built from; null when unknown. */
-  bundleVersion: string | null;
+type BannerActions = {
   pending: boolean;
   onArm: () => void;
   onCancel: () => void;
   onDismiss: () => void;
 };
+
+type UpdateBannerProps = BannerActions & {
+  update: UpdateState | null;
+  /** The version this web bundle was built from; null when unknown. */
+  bundleVersion: string | null;
+};
+
+function isSelfUpgradeActive(update: UpdateState): boolean {
+  return update.upgradingVersion !== null || update.armedVersion !== null || update.failed !== null || update.migrationRequired;
+}
 
 function isIdle(update: UpdateState): boolean {
   return update.idle.runningAttempts === 0 && !update.idle.mergingOrIntegrating && !update.idle.conversationMidTurn;
@@ -51,17 +58,17 @@ function VersionSkewNotice({ skew }: { skew: VersionSkew }) {
 
 export function UpdateBanner({ update, bundleVersion, pending, onArm, onCancel, onDismiss }: UpdateBannerProps) {
   if (update === null) return null;
-  const skew = versionSkew(bundleVersion, update.currentVersion);
+  const skew = isSelfUpgradeActive(update) ? null : versionSkew(bundleVersion, update.currentVersion);
 
   return (
     <>
       {update.guardMissing && <GuardMissingNotice />}
-      {skew !== null ? <VersionSkewNotice skew={skew} /> : primaryBanner({ update, bundleVersion, pending, onArm, onCancel, onDismiss })}
+      {skew !== null ? <VersionSkewNotice skew={skew} /> : primaryBanner({ update, pending, onArm, onCancel, onDismiss })}
     </>
   );
 }
 
-function primaryBanner({ update, pending, onArm, onCancel, onDismiss }: UpdateBannerProps & { update: UpdateState }) {
+function primaryBanner({ update, pending, onArm, onCancel, onDismiss }: BannerActions & { update: UpdateState }) {
   if (update.migrationRequired) {
     return (
       <div role="alert" className="shrink-0 border-b border-await bg-await-tint px-6 py-2.5 text-small text-ink">
