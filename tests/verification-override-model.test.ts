@@ -5,15 +5,17 @@ import {
   newEpicCritic,
   setCommandField,
   setCriticField,
+  startingHarness,
   summarizeCommand,
   summarizeCommands,
   summarizeCritic,
+  withHarness,
   withMissingGlobals,
 } from '../web/src/components/verification-override-model.js';
 import type { CommandOverlayEntry, TaskVerificationCritic, VerificationCommand } from '../web/src/types.js';
 
 const baseCommand: VerificationCommand = { id: 'cmd-1', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-const baseCritic: TaskVerificationCritic = { id: 'critic-1', name: 'Test critic', issuePrompt: 'review the issue diff', noIssuePrompt: 'review the Task diff', model: 'claude-opus-5', timeoutSeconds: 300 };
+const baseCritic: TaskVerificationCritic = { id: 'critic-1', name: 'Test critic', issuePrompt: 'review the issue diff', noIssuePrompt: 'review the Task diff', harness: 'claude', model: 'claude-opus-5', timeoutSeconds: 300 };
 
 describe('setCommandField (issue #165)', () => {
   it('sets the executable from a text input', () => {
@@ -67,19 +69,40 @@ describe('setCriticField (issue #165)', () => {
 
 describe('summarizeCritic (issue #165)', () => {
   it('names the reviewer model for a configured critic', () => {
-    expect(summarizeCritic(baseCritic)).toBe('Test critic (claude-opus-5)');
+    expect(summarizeCritic(baseCritic)).toBe('Test critic (claude · claude-opus-5)');
   });
 
   it('reads the empty seed back as "Not configured"', () => {
-    expect(summarizeCritic(newCritic())).toBe('Not configured');
+    expect(summarizeCritic(newCritic({ harness: 'claude', model: '' }))).toBe('Not configured');
   });
 });
+
+const start = { harness: 'claude', model: 'claude-opus-5' };
+const choices = {
+  claude: { models: ['claude-opus-5', 'claude-haiku-5'], defaultModel: 'claude-opus-5' },
+  codex: { models: ['gpt-5'], defaultModel: 'gpt-5' },
+};
 
 describe('newCommand/newCritic/newEpicCritic (ADR-0037)', () => {
   it('seeds each with its own id, never the same one twice', () => {
     expect(newCommand().id).not.toBe(newCommand().id);
-    expect(newCritic().id).not.toBe(newCritic().id);
-    expect(newEpicCritic().id).not.toBe(newEpicCritic().id);
+    expect(newCritic(start).id).not.toBe(newCritic(start).id);
+    expect(newEpicCritic(start).id).not.toBe(newEpicCritic(start).id);
+  });
+});
+
+describe('Critic Harness choice', () => {
+  it('starts a new critic on the first configured Harness and its default model', () => {
+    expect(startingHarness(choices)).toEqual({ harness: 'claude', model: 'claude-opus-5' });
+    expect(newCritic(startingHarness(choices))).toMatchObject({ harness: 'claude', model: 'claude-opus-5' });
+  });
+
+  it('resets the model to the new Harness default when the current one is not in its list', () => {
+    expect(withHarness(baseCritic, 'codex', choices)).toMatchObject({ harness: 'codex', model: 'gpt-5' });
+  });
+
+  it('keeps the model when the new Harness also lists it', () => {
+    expect(withHarness({ ...baseCritic, model: 'gpt-5' }, 'codex', choices).model).toBe('gpt-5');
   });
 });
 

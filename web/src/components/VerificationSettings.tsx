@@ -16,6 +16,7 @@ import {
   TaskCriticOverlayEditor,
 } from "./CriticListEditor";
 import { Tabs } from "./Tabs";
+import type { HarnessChoice, HarnessChoices } from "./verification-override-model";
 
 type EditorProps = {
   commands: VerificationCommand[];
@@ -25,10 +26,13 @@ type EditorProps = {
   fieldErrors: Record<string, string>;
 };
 
-function harnessModelMap(config: AppConfig): Record<string, string[]> {
-  return Object.fromEntries(
-    Object.entries(config.harnesses).map(([id, harness]) => [id, harness.models.map((m) => m.id)]),
-  );
+function harnessModelMap(config: AppConfig): HarnessChoices {
+  const choices = Object.entries(config.harnesses).map(([id, harness]): [string, HarnessChoice] => [
+    id,
+    { models: harness.models.map((m) => m.id), defaultModel: harness.defaultModel },
+  ]);
+  const preferred = choices.filter(([id]) => id === config.defaults.harness);
+  return Object.fromEntries([...preferred, ...choices.filter(([id]) => id !== config.defaults.harness)]);
 }
 
 const SCOPE_TABS = [
@@ -93,7 +97,7 @@ function TaskStage({
 }: EditorProps & {
   critics: TaskVerificationCritic[];
   onCritics: (critics: TaskVerificationCritic[]) => void;
-  harnessModels: Record<string, string[]>;
+  harnessModels: HarnessChoices;
 }) {
   return (
     <div className="flex flex-col gap-5">
@@ -130,7 +134,7 @@ function EpicStage({
 }: EditorProps & {
   critics: EpicVerificationCritic[];
   onCritics: (critics: EpicVerificationCritic[]) => void;
-  harnessModels: Record<string, string[]>;
+  harnessModels: HarnessChoices;
 }) {
   return (
     <div className="flex flex-col gap-5">

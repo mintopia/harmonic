@@ -1,4 +1,3 @@
-import type { RoutingService } from '../domain/routing.js';
 import type { TaskArchive } from '../archive/task-archive.js';
 import type { AppConfig } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow } from '../db/schema.js';
@@ -35,7 +34,6 @@ type PostMergeInput = {
 export function createPostMergeCheck(deps: {
   getWorkspace: (workspaceId: number | null) => Promise<VerifierWorkspace | undefined>;
   getConfig: () => AppConfig;
-  routing: Pick<RoutingService, 'defaultHarness'>;
   verificationAttempts: VerificationAttemptStore;
   attempts: AttemptStore;
   criticDrive: CriticHarnessDrive;
@@ -44,7 +42,7 @@ export function createPostMergeCheck(deps: {
   archive?: TaskArchive | undefined;
   transcripts: TranscriptCapture;
 }): (input: PostMergeInput) => Promise<PostMergeCheckResult> {
-  const { getWorkspace, getConfig, routing, verificationAttempts, attempts, criticDrive, commandSpawn, fireAndForget, archive: taskArchive, transcripts } = deps;
+  const { getWorkspace, getConfig, verificationAttempts, attempts, criticDrive, commandSpawn, fireAndForget, archive: taskArchive, transcripts } = deps;
   return async ({
     task,
     run,
@@ -84,9 +82,9 @@ export function createPostMergeCheck(deps: {
       const critic = {
         prompt: task.trackerRef == null ? configuredCritic.noIssuePrompt : configuredCritic.issuePrompt,
         model: configuredCritic.model,
-        ...(configuredCritic.harness ? { harness: configuredCritic.harness } : {}),
+        harness: configuredCritic.harness,
       };
-      const harnessId = critic.harness ?? await routing.defaultHarness(task.id);
+      const harnessId = critic.harness;
       const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
       if (!harness) throw new DomainError('validation', `critic harness '${harnessId}' is not configured`);
       const stepId = `critic-${index + 1}`;

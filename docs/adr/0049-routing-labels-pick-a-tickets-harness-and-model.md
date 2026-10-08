@@ -6,7 +6,8 @@ Date: 2026-10-07
 An operator maps tracker labels to a Harness + Model (`reasoning` → Claude,
 Opus 5.5) so a mirrored Ticket's execution settings follow how the issue is
 labelled. The route is resolved live at every Attempt start, Epics route by
-their own labels, and Critics are never routed.
+their own labels, and Critics are never routed. Every Critic has its own
+Harness and Model (#830).
 
 ## Context
 
@@ -45,10 +46,14 @@ Model.
 - **Epic-level turns route by the Epic's own labels**, else the defaults. They
   stop borrowing the Harness and Model of whichever member Task happens to be
   working.
-- **Critics are never routed.** A Critic keeps its own Model; when it has no
-  Harness of its own, it falls back to the Workspace/global default Harness,
-  never the Task's Harness (amended by #818), because a routed Harness would
-  not serve the Critic's Model.
+- **Critics are never routed, and every Critic has its own Harness and Model
+  (amended by #830).** There is no fallback to the Workspace or global default
+  Harness, and never the Task's Harness. A Critic's Model must be in its
+  Harness's model list: saving a Critic whose Model is not in that list is
+  rejected with a 400 naming both. On config load, a Critic without a Harness
+  is migrated to the one Harness whose model catalog lists its Model. If none
+  or several match, the global default Harness is used and a warning naming
+  the Critic is logged. No Critic is dropped.
 - Native Tasks carry no labels and are never routed.
 
 ## Considered Options
@@ -67,9 +72,13 @@ Model.
 
 - Epic resolve, refresh and integration-merge turns change behaviour: they no
   longer follow a member Task's settings.
-- A Critic without its own Harness falls back to the Workspace/global default Harness, never the Task's Harness (#818).
+- A Critic without its own Harness is migrated on config load (see Decision). The #818 fallback to the Workspace/global default Harness is replaced (#830).
 - Retry offers a Harness and Model picker that saves both as operator settings on the Ticket (#817); the Routing Label then no longer applies (#826).
 
 ## Supersedes
 
 None. Extends ADR-0037 (overlay shape) and ADR-0022 (Model catalog).
+
+Amended by #830: the Critic Harness fallback clause (#818) is replaced by the
+own-Harness rule in Decision. Model ids remain unvalidated for Tasks; the
+Critic Model check applies only to Critics.

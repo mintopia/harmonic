@@ -6215,14 +6215,14 @@
                               "example": "claude-opus-5"
                             },
                             "harness": {
-                              "example": "claude",
                               "type": "string",
                               "enum": [
                                 "claude",
                                 "codex",
                                 "copilot",
                                 "opencode"
-                              ]
+                              ],
+                              "example": "claude"
                             },
                             "timeoutSeconds": {
                               "default": 300,
@@ -6244,6 +6244,7 @@
                           },
                           "required": [
                             "model",
+                            "harness",
                             "issuePrompt",
                             "noIssuePrompt"
                           ]
@@ -6427,14 +6428,14 @@
                               "example": "claude-opus-5"
                             },
                             "harness": {
-                              "example": "claude",
                               "type": "string",
                               "enum": [
                                 "claude",
                                 "codex",
                                 "copilot",
                                 "opencode"
-                              ]
+                              ],
+                              "example": "claude"
                             },
                             "timeoutSeconds": {
                               "default": 300,
@@ -6456,6 +6457,7 @@
                           },
                           "required": [
                             "model",
+                            "harness",
                             "issuePrompt",
                             "noIssuePrompt"
                           ]
@@ -6639,14 +6641,14 @@
                               "example": "claude-opus-5"
                             },
                             "harness": {
-                              "example": "claude",
                               "type": "string",
                               "enum": [
                                 "claude",
                                 "codex",
                                 "copilot",
                                 "opencode"
-                              ]
+                              ],
+                              "example": "claude"
                             },
                             "timeoutSeconds": {
                               "default": 300,
@@ -6663,6 +6665,7 @@
                           },
                           "required": [
                             "model",
+                            "harness",
                             "prompt"
                           ]
                         }
@@ -8402,14 +8405,14 @@
                               "example": "claude-opus-5"
                             },
                             "harness": {
-                              "example": "claude",
                               "type": "string",
                               "enum": [
                                 "claude",
                                 "codex",
                                 "copilot",
                                 "opencode"
-                              ]
+                              ],
+                              "example": "claude"
                             },
                             "timeoutSeconds": {
                               "default": 300,
@@ -8431,6 +8434,7 @@
                           },
                           "required": [
                             "model",
+                            "harness",
                             "issuePrompt",
                             "noIssuePrompt"
                           ]
@@ -8523,14 +8527,14 @@
                               "example": "claude-opus-5"
                             },
                             "harness": {
-                              "example": "claude",
                               "type": "string",
                               "enum": [
                                 "claude",
                                 "codex",
                                 "copilot",
                                 "opencode"
-                              ]
+                              ],
+                              "example": "claude"
                             },
                             "timeoutSeconds": {
                               "default": 300,
@@ -8552,6 +8556,7 @@
                           },
                           "required": [
                             "model",
+                            "harness",
                             "issuePrompt",
                             "noIssuePrompt"
                           ]
@@ -8649,14 +8654,14 @@
                               "example": "claude-opus-5"
                             },
                             "harness": {
-                              "example": "claude",
                               "type": "string",
                               "enum": [
                                 "claude",
                                 "codex",
                                 "copilot",
                                 "opencode"
-                              ]
+                              ],
+                              "example": "claude"
                             },
                             "timeoutSeconds": {
                               "default": 300,
@@ -8673,6 +8678,7 @@
                           },
                           "required": [
                             "model",
+                            "harness",
                             "prompt"
                           ]
                         }
@@ -15923,14 +15929,14 @@
                               "example": "claude-opus-5"
                             },
                             "harness": {
-                              "example": "claude",
                               "type": "string",
                               "enum": [
                                 "claude",
                                 "codex",
                                 "copilot",
                                 "opencode"
-                              ]
+                              ],
+                              "example": "claude"
                             },
                             "timeoutSeconds": {
                               "default": 300,
@@ -15954,6 +15960,7 @@
                             "id",
                             "name",
                             "model",
+                            "harness",
                             "timeoutSeconds",
                             "issuePrompt",
                             "noIssuePrompt"
@@ -16148,14 +16155,14 @@
                               "example": "claude-opus-5"
                             },
                             "harness": {
-                              "example": "claude",
                               "type": "string",
                               "enum": [
                                 "claude",
                                 "codex",
                                 "copilot",
                                 "opencode"
-                              ]
+                              ],
+                              "example": "claude"
                             },
                             "timeoutSeconds": {
                               "default": 300,
@@ -16179,6 +16186,7 @@
                             "id",
                             "name",
                             "model",
+                            "harness",
                             "timeoutSeconds",
                             "issuePrompt",
                             "noIssuePrompt"
@@ -16373,14 +16381,14 @@
                               "example": "claude-opus-5"
                             },
                             "harness": {
-                              "example": "claude",
                               "type": "string",
                               "enum": [
                                 "claude",
                                 "codex",
                                 "copilot",
                                 "opencode"
-                              ]
+                              ],
+                              "example": "claude"
                             },
                             "timeoutSeconds": {
                               "default": 300,
@@ -16399,6 +16407,7 @@
                             "id",
                             "name",
                             "model",
+                            "harness",
                             "timeoutSeconds",
                             "prompt"
                           ],
@@ -18174,14 +18183,14 @@
                               "example": "claude-opus-5"
                             },
                             "harness": {
-                              "example": "claude",
                               "type": "string",
                               "enum": [
                                 "claude",
                                 "codex",
                                 "copilot",
                                 "opencode"
-                              ]
+                              ],
+                              "example": "claude"
                             },
                             "timeoutSeconds": {
                               "default": 300,
@@ -18205,6 +18214,7 @@
                             "id",
                             "name",
                             "model",
+                            "harness",
                             "timeoutSeconds",
                             "issuePrompt",
                             "noIssuePrompt"
@@ -18305,14 +18315,14 @@
                               "example": "claude-opus-5"
                             },
                             "harness": {
-                              "example": "claude",
                               "type": "string",
                               "enum": [
                                 "claude",
                                 "codex",
                                 "copilot",
                                 "opencode"
-                              ]
+                              ],
+                              "example": "claude"
                             },
                             "timeoutSeconds": {
                               "default": 300,
@@ -18336,6 +18346,7 @@
                             "id",
                             "name",
                             "model",
+                            "harness",
                             "timeoutSeconds",
                             "issuePrompt",
                             "noIssuePrompt"
@@ -18442,14 +18453,14 @@
                               "example": "claude-opus-5"
                             },
                             "harness": {
-                              "example": "claude",
                               "type": "string",
                               "enum": [
                                 "claude",
                                 "codex",
                                 "copilot",
                                 "opencode"
-                              ]
+                              ],
+                              "example": "claude"
                             },
                             "timeoutSeconds": {
                               "default": 300,
@@ -18468,6 +18479,7 @@
                             "id",
                             "name",
                             "model",
+                            "harness",
                             "timeoutSeconds",
                             "prompt"
                           ],
@@ -23775,14 +23787,14 @@
                                       "example": "claude-opus-5"
                                     },
                                     "harness": {
-                                      "example": "claude",
                                       "type": "string",
                                       "enum": [
                                         "claude",
                                         "codex",
                                         "copilot",
                                         "opencode"
-                                      ]
+                                      ],
+                                      "example": "claude"
                                     },
                                     "timeoutSeconds": {
                                       "default": 300,
@@ -23804,6 +23816,7 @@
                                   },
                                   "required": [
                                     "model",
+                                    "harness",
                                     "issuePrompt",
                                     "noIssuePrompt"
                                   ]
@@ -23993,14 +24006,14 @@
                                       "example": "claude-opus-5"
                                     },
                                     "harness": {
-                                      "example": "claude",
                                       "type": "string",
                                       "enum": [
                                         "claude",
                                         "codex",
                                         "copilot",
                                         "opencode"
-                                      ]
+                                      ],
+                                      "example": "claude"
                                     },
                                     "timeoutSeconds": {
                                       "default": 300,
@@ -24022,6 +24035,7 @@
                                   },
                                   "required": [
                                     "model",
+                                    "harness",
                                     "issuePrompt",
                                     "noIssuePrompt"
                                   ]
@@ -24211,14 +24225,14 @@
                                       "example": "claude-opus-5"
                                     },
                                     "harness": {
-                                      "example": "claude",
                                       "type": "string",
                                       "enum": [
                                         "claude",
                                         "codex",
                                         "copilot",
                                         "opencode"
-                                      ]
+                                      ],
+                                      "example": "claude"
                                     },
                                     "timeoutSeconds": {
                                       "default": 300,
@@ -24235,6 +24249,7 @@
                                   },
                                   "required": [
                                     "model",
+                                    "harness",
                                     "prompt"
                                   ]
                                 }
@@ -27038,14 +27053,14 @@
                                         "example": "claude-opus-5"
                                       },
                                       "harness": {
-                                        "example": "claude",
                                         "type": "string",
                                         "enum": [
                                           "claude",
                                           "codex",
                                           "copilot",
                                           "opencode"
-                                        ]
+                                        ],
+                                        "example": "claude"
                                       },
                                       "timeoutSeconds": {
                                         "default": 300,
@@ -27069,6 +27084,7 @@
                                       "id",
                                       "name",
                                       "model",
+                                      "harness",
                                       "timeoutSeconds",
                                       "issuePrompt",
                                       "noIssuePrompt"
@@ -27169,14 +27185,14 @@
                                         "example": "claude-opus-5"
                                       },
                                       "harness": {
-                                        "example": "claude",
                                         "type": "string",
                                         "enum": [
                                           "claude",
                                           "codex",
                                           "copilot",
                                           "opencode"
-                                        ]
+                                        ],
+                                        "example": "claude"
                                       },
                                       "timeoutSeconds": {
                                         "default": 300,
@@ -27200,6 +27216,7 @@
                                       "id",
                                       "name",
                                       "model",
+                                      "harness",
                                       "timeoutSeconds",
                                       "issuePrompt",
                                       "noIssuePrompt"
@@ -27310,14 +27327,14 @@
                                         "example": "claude-opus-5"
                                       },
                                       "harness": {
-                                        "example": "claude",
                                         "type": "string",
                                         "enum": [
                                           "claude",
                                           "codex",
                                           "copilot",
                                           "opencode"
-                                        ]
+                                        ],
+                                        "example": "claude"
                                       },
                                       "timeoutSeconds": {
                                         "default": 300,
@@ -27336,6 +27353,7 @@
                                       "id",
                                       "name",
                                       "model",
+                                      "harness",
                                       "timeoutSeconds",
                                       "prompt"
                                     ],
@@ -28391,14 +28409,14 @@
                                         "example": "claude-opus-5"
                                       },
                                       "harness": {
-                                        "example": "claude",
                                         "type": "string",
                                         "enum": [
                                           "claude",
                                           "codex",
                                           "copilot",
                                           "opencode"
-                                        ]
+                                        ],
+                                        "example": "claude"
                                       },
                                       "timeoutSeconds": {
                                         "default": 300,
@@ -28422,6 +28440,7 @@
                                       "id",
                                       "name",
                                       "model",
+                                      "harness",
                                       "timeoutSeconds",
                                       "issuePrompt",
                                       "noIssuePrompt"
@@ -28522,14 +28541,14 @@
                                         "example": "claude-opus-5"
                                       },
                                       "harness": {
-                                        "example": "claude",
                                         "type": "string",
                                         "enum": [
                                           "claude",
                                           "codex",
                                           "copilot",
                                           "opencode"
-                                        ]
+                                        ],
+                                        "example": "claude"
                                       },
                                       "timeoutSeconds": {
                                         "default": 300,
@@ -28553,6 +28572,7 @@
                                       "id",
                                       "name",
                                       "model",
+                                      "harness",
                                       "timeoutSeconds",
                                       "issuePrompt",
                                       "noIssuePrompt"
@@ -28663,14 +28683,14 @@
                                         "example": "claude-opus-5"
                                       },
                                       "harness": {
-                                        "example": "claude",
                                         "type": "string",
                                         "enum": [
                                           "claude",
                                           "codex",
                                           "copilot",
                                           "opencode"
-                                        ]
+                                        ],
+                                        "example": "claude"
                                       },
                                       "timeoutSeconds": {
                                         "default": 300,
@@ -28689,6 +28709,7 @@
                                       "id",
                                       "name",
                                       "model",
+                                      "harness",
                                       "timeoutSeconds",
                                       "prompt"
                                     ],
@@ -29709,14 +29730,14 @@
                                       "example": "claude-opus-5"
                                     },
                                     "harness": {
-                                      "example": "claude",
                                       "type": "string",
                                       "enum": [
                                         "claude",
                                         "codex",
                                         "copilot",
                                         "opencode"
-                                      ]
+                                      ],
+                                      "example": "claude"
                                     },
                                     "timeoutSeconds": {
                                       "default": 300,
@@ -29738,6 +29759,7 @@
                                   },
                                   "required": [
                                     "model",
+                                    "harness",
                                     "issuePrompt",
                                     "noIssuePrompt"
                                   ]
@@ -29830,14 +29852,14 @@
                                       "example": "claude-opus-5"
                                     },
                                     "harness": {
-                                      "example": "claude",
                                       "type": "string",
                                       "enum": [
                                         "claude",
                                         "codex",
                                         "copilot",
                                         "opencode"
-                                      ]
+                                      ],
+                                      "example": "claude"
                                     },
                                     "timeoutSeconds": {
                                       "default": 300,
@@ -29859,6 +29881,7 @@
                                   },
                                   "required": [
                                     "model",
+                                    "harness",
                                     "issuePrompt",
                                     "noIssuePrompt"
                                   ]
@@ -29960,14 +29983,14 @@
                                       "example": "claude-opus-5"
                                     },
                                     "harness": {
-                                      "example": "claude",
                                       "type": "string",
                                       "enum": [
                                         "claude",
                                         "codex",
                                         "copilot",
                                         "opencode"
-                                      ]
+                                      ],
+                                      "example": "claude"
                                     },
                                     "timeoutSeconds": {
                                       "default": 300,
@@ -29984,6 +30007,7 @@
                                   },
                                   "required": [
                                     "model",
+                                    "harness",
                                     "prompt"
                                   ]
                                 }
@@ -31000,14 +31024,14 @@
                                         "example": "claude-opus-5"
                                       },
                                       "harness": {
-                                        "example": "claude",
                                         "type": "string",
                                         "enum": [
                                           "claude",
                                           "codex",
                                           "copilot",
                                           "opencode"
-                                        ]
+                                        ],
+                                        "example": "claude"
                                       },
                                       "timeoutSeconds": {
                                         "default": 300,
@@ -31031,6 +31055,7 @@
                                       "id",
                                       "name",
                                       "model",
+                                      "harness",
                                       "timeoutSeconds",
                                       "issuePrompt",
                                       "noIssuePrompt"
@@ -31131,14 +31156,14 @@
                                         "example": "claude-opus-5"
                                       },
                                       "harness": {
-                                        "example": "claude",
                                         "type": "string",
                                         "enum": [
                                           "claude",
                                           "codex",
                                           "copilot",
                                           "opencode"
-                                        ]
+                                        ],
+                                        "example": "claude"
                                       },
                                       "timeoutSeconds": {
                                         "default": 300,
@@ -31162,6 +31187,7 @@
                                       "id",
                                       "name",
                                       "model",
+                                      "harness",
                                       "timeoutSeconds",
                                       "issuePrompt",
                                       "noIssuePrompt"
@@ -31272,14 +31298,14 @@
                                         "example": "claude-opus-5"
                                       },
                                       "harness": {
-                                        "example": "claude",
                                         "type": "string",
                                         "enum": [
                                           "claude",
                                           "codex",
                                           "copilot",
                                           "opencode"
-                                        ]
+                                        ],
+                                        "example": "claude"
                                       },
                                       "timeoutSeconds": {
                                         "default": 300,
@@ -31298,6 +31324,7 @@
                                       "id",
                                       "name",
                                       "model",
+                                      "harness",
                                       "timeoutSeconds",
                                       "prompt"
                                     ],
@@ -32348,14 +32375,14 @@
                                             "example": "claude-opus-5"
                                           },
                                           "harness": {
-                                            "example": "claude",
                                             "type": "string",
                                             "enum": [
                                               "claude",
                                               "codex",
                                               "copilot",
                                               "opencode"
-                                            ]
+                                            ],
+                                            "example": "claude"
                                           },
                                           "timeoutSeconds": {
                                             "default": 300,
@@ -32379,6 +32406,7 @@
                                           "id",
                                           "name",
                                           "model",
+                                          "harness",
                                           "timeoutSeconds",
                                           "issuePrompt",
                                           "noIssuePrompt"
@@ -32479,14 +32507,14 @@
                                             "example": "claude-opus-5"
                                           },
                                           "harness": {
-                                            "example": "claude",
                                             "type": "string",
                                             "enum": [
                                               "claude",
                                               "codex",
                                               "copilot",
                                               "opencode"
-                                            ]
+                                            ],
+                                            "example": "claude"
                                           },
                                           "timeoutSeconds": {
                                             "default": 300,
@@ -32510,6 +32538,7 @@
                                           "id",
                                           "name",
                                           "model",
+                                          "harness",
                                           "timeoutSeconds",
                                           "issuePrompt",
                                           "noIssuePrompt"
@@ -32620,14 +32649,14 @@
                                             "example": "claude-opus-5"
                                           },
                                           "harness": {
-                                            "example": "claude",
                                             "type": "string",
                                             "enum": [
                                               "claude",
                                               "codex",
                                               "copilot",
                                               "opencode"
-                                            ]
+                                            ],
+                                            "example": "claude"
                                           },
                                           "timeoutSeconds": {
                                             "default": 300,
@@ -32646,6 +32675,7 @@
                                           "id",
                                           "name",
                                           "model",
+                                          "harness",
                                           "timeoutSeconds",
                                           "prompt"
                                         ],
@@ -33667,14 +33697,14 @@
                                             "example": "claude-opus-5"
                                           },
                                           "harness": {
-                                            "example": "claude",
                                             "type": "string",
                                             "enum": [
                                               "claude",
                                               "codex",
                                               "copilot",
                                               "opencode"
-                                            ]
+                                            ],
+                                            "example": "claude"
                                           },
                                           "timeoutSeconds": {
                                             "default": 300,
@@ -33698,6 +33728,7 @@
                                           "id",
                                           "name",
                                           "model",
+                                          "harness",
                                           "timeoutSeconds",
                                           "issuePrompt",
                                           "noIssuePrompt"
@@ -33798,14 +33829,14 @@
                                             "example": "claude-opus-5"
                                           },
                                           "harness": {
-                                            "example": "claude",
                                             "type": "string",
                                             "enum": [
                                               "claude",
                                               "codex",
                                               "copilot",
                                               "opencode"
-                                            ]
+                                            ],
+                                            "example": "claude"
                                           },
                                           "timeoutSeconds": {
                                             "default": 300,
@@ -33829,6 +33860,7 @@
                                           "id",
                                           "name",
                                           "model",
+                                          "harness",
                                           "timeoutSeconds",
                                           "issuePrompt",
                                           "noIssuePrompt"
@@ -33939,14 +33971,14 @@
                                             "example": "claude-opus-5"
                                           },
                                           "harness": {
-                                            "example": "claude",
                                             "type": "string",
                                             "enum": [
                                               "claude",
                                               "codex",
                                               "copilot",
                                               "opencode"
-                                            ]
+                                            ],
+                                            "example": "claude"
                                           },
                                           "timeoutSeconds": {
                                             "default": 300,
@@ -33965,6 +33997,7 @@
                                           "id",
                                           "name",
                                           "model",
+                                          "harness",
                                           "timeoutSeconds",
                                           "prompt"
                                         ],
@@ -35048,14 +35081,14 @@
                                         "example": "claude-opus-5"
                                       },
                                       "harness": {
-                                        "example": "claude",
                                         "type": "string",
                                         "enum": [
                                           "claude",
                                           "codex",
                                           "copilot",
                                           "opencode"
-                                        ]
+                                        ],
+                                        "example": "claude"
                                       },
                                       "timeoutSeconds": {
                                         "default": 300,
@@ -35079,6 +35112,7 @@
                                       "id",
                                       "name",
                                       "model",
+                                      "harness",
                                       "timeoutSeconds",
                                       "issuePrompt",
                                       "noIssuePrompt"
@@ -35179,14 +35213,14 @@
                                         "example": "claude-opus-5"
                                       },
                                       "harness": {
-                                        "example": "claude",
                                         "type": "string",
                                         "enum": [
                                           "claude",
                                           "codex",
                                           "copilot",
                                           "opencode"
-                                        ]
+                                        ],
+                                        "example": "claude"
                                       },
                                       "timeoutSeconds": {
                                         "default": 300,
@@ -35210,6 +35244,7 @@
                                       "id",
                                       "name",
                                       "model",
+                                      "harness",
                                       "timeoutSeconds",
                                       "issuePrompt",
                                       "noIssuePrompt"
@@ -35320,14 +35355,14 @@
                                         "example": "claude-opus-5"
                                       },
                                       "harness": {
-                                        "example": "claude",
                                         "type": "string",
                                         "enum": [
                                           "claude",
                                           "codex",
                                           "copilot",
                                           "opencode"
-                                        ]
+                                        ],
+                                        "example": "claude"
                                       },
                                       "timeoutSeconds": {
                                         "default": 300,
@@ -35346,6 +35381,7 @@
                                       "id",
                                       "name",
                                       "model",
+                                      "harness",
                                       "timeoutSeconds",
                                       "prompt"
                                     ],

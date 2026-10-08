@@ -10,7 +10,7 @@ describe('verifyChannelsUnconfigured', () => {
   it('is true only when all stage lists are empty', () => {
     expect(verifyChannelsUnconfigured(verify())).toBe(true);
     const configured = verify();
-    configured.epic.preMerge.critics.push({ id: 'critic-epic', name: 'Test critic', prompt: 'Review.', model: 'claude-opus-5', timeoutSeconds: 300 });
+    configured.epic.preMerge.critics.push({ id: 'critic-epic', name: 'Test critic', prompt: 'Review.', harness: 'claude' as const, model: 'claude-opus-5', timeoutSeconds: 300 });
     expect(verifyChannelsUnconfigured(configured)).toBe(false);
   });
 });

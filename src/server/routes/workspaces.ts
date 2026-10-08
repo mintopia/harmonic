@@ -16,6 +16,7 @@ import {
   epicVerificationCriticOverrideSchema,
   budgetGuardrailSchema,
   unpricedModelsForCostCap,
+  criticModelMessage,
   costCapMessage,
 } from '../../config.js';
 import { forEachYielding } from '../../reliability/yield.js';
@@ -257,6 +258,16 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
           const message = first.kind === 'blank' ? 'routing label must not be blank' : `routing label "${label}" is already mapped`;
           throw new DomainError('validation', `routingLabels.${first.index}.routingLabel.label: ${message}`);
         }
+      }
+      const harnesses = ctx.settingsStore.getGlobal().harnesses;
+      for (const [key, list] of [['taskPreMergeCritics', req.body.taskPreMergeCritics], ['taskPostMergeCritics', req.body.taskPostMergeCritics], ['epicPreMergeCritics', req.body.epicPreMergeCritics]] as const) {
+        list?.forEach((entry, index) => {
+          if (entry.kind !== 'local') return;
+          const models = harnesses[entry.critic.harness]?.models ?? [];
+          if (models.length > 0 && !models.some((m) => m.id === entry.critic.model)) {
+            throw new DomainError('validation', `${key}.${index}.critic.model: ${criticModelMessage(entry.critic)}`);
+          }
+        });
       }
       if (req.body.guardrailBudget) {
         const unpriced = unpricedModelsForCostCap(req.body.guardrailBudget, ctx.settingsStore.getGlobal());

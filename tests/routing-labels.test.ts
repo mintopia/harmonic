@@ -224,20 +224,6 @@ describe('Routing Labels (ADR-0049)', () => {
     });
   });
 
-  describe('Critic fallback harness', () => {
-    it('defaultHarness ignores the Task Harness: Workspace default, then global default', async () => {
-      const routed = await mirror(1, ['ready-for-agent', 'cheap']);
-      expect(routed.harness).toBe('codex');
-      expect(await tasks.routing.defaultHarness(routed.id)).toBe('claude');
-
-      await new WorkspaceService(asyncDb, settingsStore).update(wsId, { harness: 'copilot' });
-      expect(await tasks.routing.defaultHarness(routed.id)).toBe('copilot');
-
-      await setOperator(routed.id, { harness: 'opencode' });
-      expect(await tasks.routing.defaultHarness(routed.id)).toBe('copilot');
-    });
-  });
-
   describe('config schema', () => {
     const parse = (routingLabels: AppConfig['routingLabels']) => appConfigSchema.safeParse({ ...baselineConfig(), routingLabels });
 

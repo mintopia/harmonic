@@ -38,7 +38,7 @@ function setAt(root: unknown, path: readonly string[], text: string): void {
   else setAt(record[head], rest, text);
 }
 
-const CRITIC = { id: 'critic-1', name: 'c', model: 'claude-opus-5', timeoutSeconds: 300, issuePrompt: 'i', noIssuePrompt: 'n', prompt: 'p' };
+const CRITIC = { id: 'critic-1', name: 'c', harness: 'claude' as const, model: 'claude-opus-5', timeoutSeconds: 300, issuePrompt: 'i', noIssuePrompt: 'n', prompt: 'p' };
 
 function configWithCritics(): AppConfig {
   const config = clone(baselineConfig());

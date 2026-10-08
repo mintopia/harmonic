@@ -66,13 +66,6 @@ export class RoutingService {
     return resolveRoute(this.getConfig(), task.harness, task.model, routing?.applied ? routing.label : null);
   }
 
-  /** The Harness a Critic without its own falls back to: the Workspace/global default, never the Task's Harness (ADR-0049). */
-  async defaultHarness(taskId: number): Promise<string> {
-    const raw = await this.getRaw(taskId);
-    const workspace = await this.resolveWorkspace(raw.workspaceId ?? undefined);
-    return resolveScoped('harness', workspace.harness, this.getConfig().defaults.harness);
-  }
-
   /** The Harness + Model an Epic-level turn runs on: the Epic issue's own Routing Label, else the Workspace/global default (ADR-0049). */
   async epicRoute(workspaceId: number, epicRef: TrackerRef): Promise<ResolvedRoute> {
     const config = this.getConfig();
@@ -85,10 +78,6 @@ export class RoutingService {
     if (route) return resolveRoute(config, route.harness, route.model || harnessConfig(config, route.harness)?.defaultModel || '', route.label);
     const harness = resolveScoped('harness', workspace.harness, config.defaults.harness);
     return resolveRoute(config, harness, resolveScoped('model', workspace.model, harnessConfig(config, harness)?.defaultModel ?? ''), null);
-  }
-
-  private async resolveWorkspace(workspaceId?: number): Promise<WorkspaceRow> {
-    return resolveWorkspace(await this.getWorkspaces(), workspaceId);
   }
 
   private async getRaw(id: number): Promise<RawTaskRow> {

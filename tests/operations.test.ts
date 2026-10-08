@@ -285,7 +285,7 @@ describe('Run operations (issue #290)', () => {
       const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
       await server.app.ctx.workspaces.update(wsId, {
         workingDir: repo,
-        taskPreMergeCritics: [{ kind: 'local', enabled: true, critic: { id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.', model: 'stub-model', timeoutSeconds: 300 } }],
+        taskPreMergeCritics: [{ kind: 'local', enabled: true, critic: { id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 } }],
       });
       const task = await server.api('POST', '/api/tasks', {
         prompt: JSON.stringify({ writeFiles: { 'ops.txt': 'work\n' } }),

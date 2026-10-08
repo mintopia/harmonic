@@ -280,7 +280,14 @@ already customised their list.
   *Route changed* event.
 - An Epic's own turns (resolving it, Refresh, and merge conflicts) route by
   the Epic's own labels, not by whichever Member happens to be running.
-- Verification Critics aren't routed. They keep the default Harness.
+- Verification Critics aren't routed by labels. Each Critic picks its own
+  Harness and Model, with no fallback to the default Harness. A Critic's Model
+  list is limited to the models of its chosen Harness, and saving a Critic
+  whose Model isn't in that list is rejected.
+- Critics saved before this rule were migrated when Harmonic loaded its
+  config. A Critic with no Harness got the one Harness whose model catalog
+  lists its Model. If none or several matched, it got the global default
+  Harness and a warning naming the Critic was logged. No Critic was removed.
 
 ### What you see
 

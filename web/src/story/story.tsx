@@ -105,7 +105,7 @@ function SettingsStory() {
       harness: 'codex',
       timeoutSeconds: 300,
     },
-    { id: 'critic-narration', name: '', issuePrompt: 'Flag narration comments and commented-out code in the diff.', noIssuePrompt: 'Flag narration comments.', model: '', timeoutSeconds: 300 },
+    { id: 'critic-narration', name: '', issuePrompt: 'Flag narration comments and commented-out code in the diff.', noIssuePrompt: 'Flag narration comments.', model: '', harness: 'claude', timeoutSeconds: 300 },
   ];
   const [config, setConfig] = useState(seed);
   return (
