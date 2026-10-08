@@ -28,6 +28,8 @@ harmonic start --password 'a long passphrase'     # or the HARMONIC_PASSWORD env
 - Setting a new value **rotates** it. Minimum length is 4 characters.
 - To go back to ungated, clear it explicitly, and only on a local
   binding: `harmonic start --password ''`.
+- Signing in lasts until the server restarts. After a restart, including
+  `harmonic restart` and an upgrade, open tabs return to the Login screen.
 
 ## Host binding
 

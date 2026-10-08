@@ -3,7 +3,8 @@
 Point Harmonic at your issue tracker (GitHub, GitLab, Forgejo, Jira or local
 Markdown files) and it works through your backlog on its own. Choose the
 tracker, the code host and your triage labels per Workspace under Settings →
-Integrations; see [Settings](https://mintopia.github.io/harmonic/run/settings/#integrations). Forgejo and Jira require a stored Secret for API access. The code
+Integrations. Forgejo and Jira need an API token, which you store as a
+Workspace Secret in the same place. The code
 host can be GitHub, GitLab, Forgejo, or a generic git push-only remote. Write
 a spec, break it into tickets, and Harmonic runs the ready ones out to merged
 code: for each ticket it starts a coding agent, implements the change, runs
@@ -42,8 +43,13 @@ Then open http://localhost:4700. Manage the background server with:
 
 ```sh
 harmonic status         # is it running, and where?
+harmonic restart        # restart the installed service or background server
 harmonic stop           # shut it down
 ```
+
+If you upgrade by hand with `npm i -g`, the running server keeps the old
+version until it restarts. Run `harmonic restart`. Until then the app shows a
+banner naming the installed and running versions.
 
 Harmonic checks npm hourly and shows a banner in the app when a newer release
 is out. The check uses your npm config, so a private registry or mirror sees
@@ -126,6 +132,8 @@ harmonic serve
 | `uninstall` | Remove the OS service and stop it. Leaves the data dir untouched. |
 | `status` | Report whether a background server is running (exits non-zero if not). |
 | `stop` | Stop the background server. |
+| `restart` | Restart the installed service, or the background server started with `start`. Accepts only `--data-dir`; a running background server keeps its port and host. |
+| `version` | Print the installed version. Also `--version` or `-v`. |
 | `help` | Show usage. Also `--help`, or running with no command. |
 
 ### Options
@@ -148,6 +156,30 @@ harmonic serve
 With no password set, Harmonic runs **ungated** — anyone who can reach the
 address has full access. Bind to `127.0.0.1`, or set a password, before
 exposing it on your network.
+
+Sign-ins are kept in the server's memory. After a restart, open tabs return to
+the Login screen, and you sign in again with the same password.
+
+## Routing labels and escalations
+
+A **Routing Label** maps a tracker label to a Harness and a Model, so a ticket
+carrying that label runs on that agent. For example, `reasoning` can route to
+Claude with a stronger Model. Set them under Settings → Execution → Routing
+Labels, globally or per Workspace. When a ticket has several routing labels,
+the first in the list wins. A ticket's own Harness or Model setting, if you
+have set one, overrides its label. The label is then ignored for that ticket.
+A label applies when the next Attempt starts, so relabelling a ticket and
+retrying moves it to the new route. An Attempt already running is not moved.
+
+A ticket that needs a person is escalated. Its page offers three actions:
+
+- **Accept** overrides the step that failed and carries on. Accepting at the
+  final review merges the candidate as it is.
+- **Retry** requeues the ticket with optional guidance, resetting its attempt
+  budget. You can choose a different Harness and Model, and **Retry Now**
+  starts it immediately, optionally re-using the prior Session.
+- **Close** ends the ticket without merging. It removes the branch and
+  worktree and closes the tracker issue.
 
 ## Development
 

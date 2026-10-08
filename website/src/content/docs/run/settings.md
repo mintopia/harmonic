@@ -16,8 +16,8 @@ whole instance:
 
 - the harnesses and their models (see [Harnesses](/harmonic/run/harnesses/)),
 - model prices (so cost is accurate),
-- prompts and prompt fragments (how Harmonic talks to agents and how agents
-  talk to each other),
+- prompts and prompt fragments, on the Prompts tab (how Harmonic talks to
+  agents and how agents talk to each other),
 - the verification checks that run before a merge (commands and named
   critics, in the order you set),
 - Routing Labels (see [Routing Labels](#routing-labels)),
@@ -58,78 +58,103 @@ you can re-point something that's still waiting in the queue.
 
 ## Prompts
 
-The **Prompts** tab holds the prompts and prompt fragments Harmonic sends when
-it runs work. Most fields can be overridden per Workspace. A Workspace field
-reads *Inherited from global default* until you set its own value. Editing a
-prompt or fragment affects the next time Harmonic sends it. A prompt already
-sent is not rewritten; you can read it on the Task page (see
-[Reviewing and merging](/harmonic/work/reviewing-and-merging/)).
+The **Prompts** tab shows every prompt Harmonic sends to an agent, organised
+by **Prompt Anatomy**: one anatomy for each kind of prompt, listed in the
+order the prompts are sent.
 
-### Task prompt
+- **Implementation turn**: what an agent receives when an Attempt starts a turn.
+- **Nudges mid-Attempt**: the messages sent to a running Attempt between turns.
+- **Merge conflicts**: what the agent receives when it resolves a Task merge
+  conflict, an Epic merge conflict or an Epic refresh conflict.
+- **Epic verification fix**: what the agent receives when it fixes a failing
+  Epic verification.
+- **Critic review**: what a Critic receives when it reviews a candidate.
 
-Wraps a native Task's own prompt before it goes to the agent. Placeholders are
-filled per Task, and the default, a bare `{prompt}`, sends the prompt as
-written. Mirrored tickets use the Drive prompt instead.
+The tab has three columns on a wide window. The left column lists the anatomies
+and a search box. The middle column holds the parts of the selected anatomy as
+cards, in send order. The right column is the **compiled preview**, the text
+Harmonic would send. On a narrower window the anatomies appear as tabs across
+the top, and the compiled preview is behind a **Show compiled preview** button
+under the parts.
 
-### Drive prompt
+### Parts
 
-The prompt Harmonic sends when it runs a mirrored ticket unattended. The same
-section holds these fields:
+Each card is one piece of a prompt. The card's tags show what it is:
 
-- **Unattended reminder**: appended to every auto-driven turn.
+- **Template**: a prompt Harmonic sends as a whole, such as the Task prompt or
+  the Continue prompt.
+- **Fragment**: a named piece of text that other prompts include. A fragment
+  used by more than one prompt is tagged **Shared**, and editing it changes
+  every prompt that uses it.
+- **Per critic**: the Critic prompt, which is set on each Critic on the
+  Verification tab. The card links there.
+- **Modified**: the part has been changed. On a Workspace, it overrides the
+  global text.
+- **Fix**: the text is not valid yet. The card says what it must still contain.
+
+Some parts depend on the Task or the Attempt. A part that is sent only under
+a condition shows the condition, for example *when the previous Attempt failed
+Verification*. When a prompt has alternatives, such as a native Task or a
+mirrored one, the alternatives are shown as a group. The one used in the
+compiled preview is tagged **In preview**.
+
+Click a card to open its editor. A template's editor lists the placeholders it
+accepts. A fragment's editor says which placeholders must stay in its text.
+
+### Compiled preview
+
+The compiled preview shows the text that would be sent, joined in the same
+order the agent receives it. Its **Sample conditions** switch conditions on
+and off, such as *Previous Attempt failed Verification* or *Agent Messages on*,
+and choose between alternatives. Use it to check what an agent actually reads
+under a given situation. Changing a switch in the preview changes only the
+preview; it does not change any setting.
+
+### Search
+
+The **Search prompts…** box finds parts by their name, their description or
+their prompt text. It reports how many parts match and where, and selecting a
+match opens that part. Press Escape to clear the search.
+
+### Overriding per Workspace
+
+On a Workspace, a part that is not overridden shows the global text dimmed.
+Editing it saves a Workspace copy, which is then tagged **Modified**. **Revert**
+puts the part back to inheriting the global text. On the global settings,
+**Revert** restores the default Harmonic ships with.
+
+The **Epic resolve prompt** is global only. Its text is shown on a Workspace
+but can't be changed there.
+
+### What the parts are
+
+The parts include these prompt templates:
+
+- **Task prompt**: wraps a native Task's own prompt. The default, a bare
+  `{prompt}`, sends the prompt as written.
+- **Drive prompt**: the prompt for a mirrored ticket that Harmonic runs
+  unattended, with **Unattended reminder** added to every auto-driven turn.
 - **Continue prompt**: the re-prompt sent when a turn ends without the task
-  finishing.
-- **Commit nudge**: sent when an Attempt ends its turn with uncommitted changes.
-- **Merge fate**: what happens to completed work. The options are
-  **Merge automatically** (the default, merges the branch), **Open a pull
-  request** (leaves the ticket open) and **Leave the branch** (for you or CI to
-  pick up).
-- **Continue attempts**: how many times Harmonic re-prompts an unfinished
-  Attempt before treating it as unresolved.
+  finishing or escalating.
+- **Commit nudge**: sent when a turn ends with uncommitted changes.
+- **Pause message**: sent to a running Task when you pause it, asking the agent
+  to finish its turn and wait.
+- **Merge conflict resolver**, **Epic merge conflict resolver** and **Epic
+  refresh resolver**: the turns that resolve a merge conflict, or a conflict
+  when an Epic branch is refreshed from the default branch.
+- **Epic resolve prompt** and **Epic verification resolver suffix**: the turns
+  that fix a failing Epic verification.
 
-### Pause message
+Prompt fragments are shared text, referenced from other prompts as
+`{fragment.<name>}`. They include **Read-only restraint**, **Conflict
+resolution**, **Self-heal**, **Operator message**, **Prior session**, the
+peer message fragments that shape how Attempts see each other's messages, and
+the Critic fragments such as **Critic role** and **Critic verdict contract**,
+which set the reply a Critic must give.
 
-Sent to a running Task when you pause it, asking the agent to finish its turn
-and wait.
-
-### Prompt fragments
-
-Named pieces of prompt text, defined once and referenced from other prompts as
-`{fragment.<name>}`. Each fragment shows its own description and the
-placeholders it accepts. Some placeholders must stay in the text, and the page
-tells you which. The fragments are:
-
-- **Read-only restraint**, **Conflict resolution**, **Operator message**,
-  **Self-heal**, **Prior session**, **Rebase conflict** and **Code index
-  guidance**.
-- **Peer messages section**, **Peer message entry**, **Peer line** and
-  **Live peer message**, which shape how Attempts see each other's messages.
-- **Critic role**, **Critic security notice**, **Critic ticket pointer**,
-  **Critic instructions pointer**, **Critic specification (ticket)**, **Critic
-  specification (instructions)**, **Critic uncommitted changes note**, the
-  three **Critic revision block** variants and **Critic verdict contract**,
-  which shape what a Critic is told and the reply it must give.
-- **Failing Epic verification**, which describes a failed Epic verification to
-  the agent fixing it.
-
-If a fragment edit is rejected, the page tells you what the text must still
-contain.
-
-### Merge and Epic resolver prompts
-
-What Harmonic sends to the agents that resolve merge conflicts and Epic
-verification failures:
-
-- **Merge conflict resolver**: opens each turn that resolves a Task merge
-  conflict.
-- **Epic merge conflict resolver**: opens each turn that resolves an Epic
-  integration merge conflict.
-- **Epic refresh resolver**: sent when the Epic integration branch is
-  refreshed from the default branch and conflicts.
-- **Epic verification resolver suffix**: appended to the Epic resolve prompt
-  when the agent fixes a failing Epic verification.
-
-Edits apply to the next resolver turn.
+A prompt already sent is not rewritten. Edits apply the next time Harmonic
+sends that prompt. To see the prompt an Attempt was sent, read its archive on
+the Task page (see [Reviewing and merging](/harmonic/work/reviewing-and-merging/)).
 
 ## How much runs at once
 
@@ -247,7 +272,8 @@ Set them on the **Execution** tab, under **Routing Labels**, next to the Task
 defaults. Each row is a label, a Harness and a Model. Drag a row to reorder
 the list. Labels are free text and match case-insensitively. A label can
 appear only once in the list. The Harness picker lists the Harnesses you
-have configured.
+have configured. Changing a row's Harness resets its Model to that Harness's
+default model. A row with an empty Model uses the Harness's default model.
 
 When an issue carries more than one Routing Label, the first one in the list
 wins. A ticket's Harness and Model come from the first of these that is set:
@@ -274,16 +300,18 @@ already customised their list.
 
 - The route is worked out each time an Attempt starts, so relabelling a ticket
   and retrying runs the next Attempt on the new route. An Attempt already
-  running is never moved. Changing the Harness starts a fresh agent Session,
-  while changing only the Model keeps the warm one. When a relabel moves an
-  Attempt to a different Harness or Model, the ticket's Activity records a
-  *Route changed* event.
+  running is never moved. A new Harness or Model starts a fresh Session. The
+  previous Session is continued only when the Harness and Model are unchanged
+  and it is still warm, or when you choose to re-use it with **Retry Now** (see
+  [Steering the fleet](/harmonic/work/steering-the-fleet/#retry-accept-and-close)).
+  When an Attempt runs on a different Harness or Model from the one before, the
+  ticket's timeline records a *Route changed* event.
 - An Epic's own turns (resolving it, Refresh, and merge conflicts) route by
   the Epic's own labels, not by whichever Member happens to be running.
-- Verification Critics aren't routed by labels. Each Critic picks its own
-  Harness and Model, with no fallback to the default Harness. A Critic's Model
-  list is limited to the models of its chosen Harness, and saving a Critic
-  whose Model isn't in that list is rejected.
+- Verification Critics aren't routed by labels. Each Critic has its own
+  Harness and Model, and has no fallback to the Workspace or global default
+  Harness. A Critic's Model is picked from its Harness's model list, and saving
+  a Critic whose Model isn't in that list is rejected with an error naming both.
 - Critics saved before this rule were migrated when Harmonic loaded its
   config. A Critic with no Harness got the one Harness whose model catalog
   lists its Model. If none or several matched, it got the global default
@@ -291,10 +319,11 @@ already customised their list.
 
 ### What you see
 
-A ticket on the Board shows a small *routed by* tag with the label next to its
-Harness and Model. The ticket page shows the same beside the Agent. If you set
-the Harness or Model on the ticket yourself, the page says *set on this
-Ticket* and shows the label struck through as not applied.
+A ticket on the Board shows its label as a small tag, marked with an arrow
+(↳), next to its Harness and Model. The ticket page says *routed by* followed
+by the label, beside the Agent. If you set the Harness or Model on the ticket
+yourself, the page says *set on this Ticket* and shows the label struck through
+as not applied.
 
 ### When the Harness isn't configured
 
@@ -303,10 +332,29 @@ was removed after the label was saved), the ticket is escalated instead of
 running on a default, and no Attempt starts. The ticket page names the label
 and the Harness and offers two ways out:
 
-- **Set Harness on this Ticket** overrides the label for that ticket only. To
-  fix it for every ticket, configure the Harness in Global settings under
-  **Integrations**, **Harnesses**, or change the label's route.
-- **Retry** starts a new Attempt once the problem is fixed.
+- **Set Harness on this Ticket…** saves a Harness for that ticket only, which
+  overrides the label. The Model then comes from the Workspace or global
+  default. To fix it for every ticket, configure the Harness in Global settings
+  under **Integrations** › **Harnesses**, or change the label's route under
+  **Execution** › **Routing Labels**.
+- **Retry** requeues the ticket and starts a new Attempt once the problem is
+  fixed. See [Steering the fleet](/harmonic/work/steering-the-fleet/#retry-accept-and-close).
+
+## Unattended drive
+
+These settings are on the **Execution** tab, under **Unattended drive**. They
+apply to mirrored tickets that Harmonic runs without anyone watching.
+
+- **Merge fate**: what happens to a finished Attempt's work. **Merge
+  automatically** (the default) merges the branch. **Open a pull request**
+  pushes the branch and opens one. **Leave the branch** keeps the branch for you
+  or CI to pick up. Merge fate applies to worktree-isolated Tasks, which have a
+  branch of their own.
+- **Continue attempts**: how many times an unfinished auto-driven Attempt is
+  re-prompted before it is treated as unresolved. The default is 10.
+
+Each can be overridden per Workspace. The text of the prompts these settings
+work with is on the [Prompts](#prompts) tab.
 
 ## Agent Messages
 
