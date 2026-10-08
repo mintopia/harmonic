@@ -267,6 +267,13 @@ Working weights: 400 body / 500–600 UI emphasis / 700–800 headings. `tabular
 - **Small** (400, 0.75rem/1.45): metadata lines, notes, telemetry, run-chip sublines.
 - **Label** (700, 0.625rem, +0.09em, uppercase): section headers, field labels, table headers. The only uppercase.
 - **Code** (mono, 0.8125rem/1.5): file paths, shell commands, branch/epic refs, commit oids, session ids, inline code.
+- **Intermediate sizes** (size tokens only; none sets a `--line-height`, so each inherits the line-height of its container rather than a Paper size/line-height pair):
+  - `text-badge` (0.625rem): the same 10px as Label but with no baked-in uppercase tracking or 1.2 line-height; kept distinct from `text-label` for badges that set their own case and spacing.
+  - `text-chip` (0.65625rem): chips.
+  - `text-micro` (0.6875rem): compact counters and sublines.
+  - `text-note` (0.71875rem): transcript footnotes and tool output.
+  - `text-meta` (0.78125rem): transcript row headings.
+  - `text-prose` (0.84375rem): chat message body.
 
 ### Named rules
 **The Mono Is Code Rule.** Monospace appears *only* where the operator reads genuine code or a code-identity token. Everything read as language or a plain figure is sans with `tabular-nums` — model/harness names, costs, token counts, ordinary ids, timestamps, statuses. A whole metadata line in mono is a regression.
