@@ -31,7 +31,7 @@ export interface TaskMirrorOptions {
 
 /** Whether the existing Task's `state` should resolve to `closed`→`done`, a stale-open snapshot ignored, a genuine reopen, or left alone. */
 function resolveMirroredState(existing: RawTaskRow, input: MirrorInput, reopenFromDone: boolean, observedAfterClose: boolean): TaskState {
-  if (existing.state === 'working' || existing.state === 'escalated') return existing.state;
+  if (existing.state === 'working' || existing.state === 'paused' || existing.state === 'escalated') return existing.state;
   if (input.closed) return 'done';
   if (reopenFromDone && observedAfterClose) return 'ready';
   return existing.state;
