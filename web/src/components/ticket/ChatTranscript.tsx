@@ -47,7 +47,7 @@ function Avatar({ operator, initial }: { operator: boolean; initial: string }) {
       <Icon name="user" className="size-3.5" />
     </span>
   ) : (
-    <span className="grid size-7 shrink-0 place-items-center rounded-md bg-accent-tint text-[11px] font-bold text-accent">{initial}</span>
+    <span className="grid size-7 shrink-0 place-items-center rounded-md bg-accent-tint text-micro font-bold text-accent">{initial}</span>
   );
 }
 
@@ -58,17 +58,17 @@ function MessageRow({ row, model, agent }: { row: Extract<ChatRow, { kind: 'mess
       <Avatar operator={operator} initial={agent.charAt(0).toUpperCase()} />
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-baseline gap-2">
-          <span className="text-[12.5px] font-semibold text-ink">{operator ? 'You' : agent}</span>
-          <span className="font-data text-[11px] text-faint">
+          <span className="text-meta font-semibold text-ink">{operator ? 'You' : agent}</span>
+          <span className="font-data text-micro text-faint">
             {operator ? 'steered' : formatModelLabel(model)} · {clockTime(row.at)}
           </span>
-          {row.pending && <span className="rounded-[4px] bg-running-tint px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.05em] text-running">Pending delivery</span>}
+          {row.pending && <span className="rounded-[4px] bg-running-tint px-1.5 py-px text-badge font-bold uppercase tracking-[0.05em] text-running">Pending delivery</span>}
           {!row.pending && <CopyButton text={row.text} label="Copy message" className={`ml-auto self-center ${revealOnHover}`} />}
         </div>
         {operator ? (
-          <p className="whitespace-pre-wrap break-words text-[13.5px] leading-relaxed text-ink">{row.text}</p>
+          <p className="whitespace-pre-wrap break-words text-prose leading-relaxed text-ink">{row.text}</p>
         ) : (
-          <Markdown source={row.text} className="text-[13.5px] leading-relaxed text-ink" />
+          <Markdown source={row.text} className="text-prose leading-relaxed text-ink" />
         )}
       </div>
     </div>
@@ -81,24 +81,24 @@ function ToolCard({ row, baseDir }: { row: Extract<ChatRow, { kind: 'tool' }>; b
     <div className="ml-10 overflow-hidden rounded-md border border-hairline bg-sunken">
       <div className="flex items-center gap-2.5 px-3 py-2">
         <span aria-hidden className={`size-2 shrink-0 rounded-full ${TOOL_DOT[row.status]}`} />
-        <span className="max-w-[60%] shrink-0 truncate text-[12.5px] font-semibold text-ink" title={row.verb}>{row.verb}</span>
+        <span className="max-w-[60%] shrink-0 truncate text-meta font-semibold text-ink" title={row.verb}>{row.verb}</span>
         {row.subagent && (
-          <span className="shrink-0 rounded-[4px] bg-raised px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.05em] text-muted">
+          <span className="shrink-0 rounded-[4px] bg-raised px-1.5 py-px text-badge font-bold uppercase tracking-[0.05em] text-muted">
             subagent
           </span>
         )}
         {row.target &&
           (looksLikePath(row.target) ? (
-            <PathTail path={row.target} display={displayPath(row.target, baseDir)} className="flex-1 font-data text-[12px] text-accent" />
+            <PathTail path={row.target} display={displayPath(row.target, baseDir)} className="flex-1 font-data text-small text-accent" />
           ) : (
-            <span className="min-w-0 flex-1 truncate font-data text-[12px] text-accent" title={row.target}>{row.target}</span>
+            <span className="min-w-0 flex-1 truncate font-data text-small text-accent" title={row.target}>{row.target}</span>
           ))}
         {badge && (
-          <span className={`ml-auto shrink-0 text-[10px] font-bold uppercase tracking-[0.05em] ${badge.tone}`}>{badge.label}</span>
+          <span className={`ml-auto shrink-0 text-badge font-bold uppercase tracking-[0.05em] ${badge.tone}`}>{badge.label}</span>
         )}
       </div>
       {row.diffs?.length ? row.diffs.map((diff, index) => <DiffViewer key={`${diff.path}-${index}`} file={toolDiffFile(diff)} />) : row.output && (
-        <pre className="max-h-60 overflow-auto border-t border-hairline px-3 py-2 font-data text-[11.5px] leading-[1.55] text-muted">
+        <pre className="max-h-60 overflow-auto border-t border-hairline px-3 py-2 font-data text-note leading-[1.55] text-muted">
           {row.output}
         </pre>
       )}
@@ -107,12 +107,12 @@ function ToolCard({ row, baseDir }: { row: Extract<ChatRow, { kind: 'tool' }>; b
 }
 
 function ThoughtMessage({ text }: { text: string }) {
-  return <Markdown source={text} className="ml-10 break-words border-l-2 border-hairline pl-3 text-[13px] italic leading-relaxed text-muted" />;
+  return <Markdown source={text} className="ml-10 break-words border-l-2 border-hairline pl-3 text-data italic leading-relaxed text-muted" />;
 }
 
 function Note({ row }: { row: Extract<ChatRow, { kind: 'note' }> }) {
   return (
-    <p className="text-center text-[11.5px] text-faint">
+    <p className="text-center text-note text-faint">
       <span className="font-semibold uppercase tracking-[0.06em]">{row.label}</span>
       {row.text && <span className="ml-1.5">{row.text}</span>}
     </p>
@@ -125,8 +125,8 @@ function Note({ row }: { row: Extract<ChatRow, { kind: 'note' }> }) {
 function SubagentLane({ label, rows, model, agent, baseDir }: { label: string; rows: ChatRow[]; model: string; agent: string; baseDir?: string }) {
   return (
     <details className="ml-10 overflow-hidden rounded-md border border-hairline bg-surface">
-      <summary className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-[12.5px] font-semibold text-ink hover:bg-raised">
-        <span className="rounded-[4px] bg-raised px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.05em] text-muted">subagent</span>
+      <summary className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-meta font-semibold text-ink hover:bg-raised">
+        <span className="rounded-[4px] bg-raised px-1.5 py-px text-badge font-bold uppercase tracking-[0.05em] text-muted">subagent</span>
         <span className="min-w-0 flex-1 truncate">{label}</span>
         <span className={railSectionCount}>{rows.length}</span>
       </summary>
@@ -245,7 +245,7 @@ export function ChatTranscript({
           <h2 className={CAPS}>Transcript{stepLabel && ` · ${stepLabel}`}</h2>
           {fromArchive ? (
             <>
-              <span className="inline-flex items-center gap-[5px] whitespace-nowrap rounded-[4px] border border-hairline px-[7px] py-px text-[10.5px] font-semibold tracking-[0.02em] text-muted">
+              <span className="inline-flex items-center gap-[5px] whitespace-nowrap rounded-[4px] border border-hairline px-[7px] py-px text-chip font-semibold tracking-[0.02em] text-muted">
                 <Icon name="files" className="size-3" />
                 from Archive
               </span>
@@ -266,7 +266,7 @@ export function ChatTranscript({
       ) : (
         <div className="flex flex-col gap-4">
           {hidden > 0 && (
-            <p className="text-center text-[11.5px] text-faint">
+            <p className="text-center text-note text-faint">
               {hidden.toLocaleString()} earlier event{hidden === 1 ? '' : 's'} hidden — showing the live tail
             </p>
           )}
