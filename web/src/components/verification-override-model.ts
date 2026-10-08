@@ -3,6 +3,7 @@ import type {
   TaskVerificationCritic,
   VerificationCommand,
 } from '../types.js';
+import { formatModelLabel } from './TaskIdentity.js';
 
 /** A freshly added command verifier, own id via `crypto.randomUUID()` — a
  * shared static seed would hand every add the same id (ADR-0037: commands are
@@ -134,6 +135,6 @@ export function setEpicCriticField(
  */
 export function summarizeCritic(critic: Pick<TaskVerificationCritic, 'name' | 'harness' | 'model'>): string {
   if (critic.model.trim() === '') return 'Not configured';
-  const runtime = critic.harness ? `${critic.harness} · ${critic.model}` : critic.model;
+  const runtime = critic.harness ? `${critic.harness} · ${formatModelLabel(critic.model)}` : formatModelLabel(critic.model);
   return `${criticLabel(critic.name)} (${runtime})`;
 }

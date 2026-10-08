@@ -1,3 +1,4 @@
+import { formatModelLabel } from '../TaskIdentity';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api';
 import { errorText } from '../../error-text';
@@ -43,7 +44,7 @@ function criticModel(run: AttemptSummary): string | null {
 function mechanismName(mechanism: string, run: AttemptSummary): string {
   if (mechanism === 'critic') {
     const model = criticModel(run);
-    return model ? `Critic · ${model}` : 'Critic';
+    return model ? `Critic · ${formatModelLabel(model)}` : 'Critic';
   }
   return mechanism.charAt(0).toUpperCase() + mechanism.slice(1);
 }

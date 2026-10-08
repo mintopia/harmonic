@@ -52,7 +52,7 @@ const click = (el: Element) =>
 const pickRoute = async (host: HTMLElement, optionText: string, groupLabel: string) => {
   await click(host.querySelector('#retry-route')!);
   const group = host.querySelector(`[role=group][aria-label="${groupLabel}"]`)!;
-  await click([...group.querySelectorAll('button')].find((b) => b.textContent?.startsWith(formatModelLabel(optionText)) || b.textContent?.startsWith(optionText))!);
+  await click([...group.querySelectorAll('button')].find((b) => b.textContent?.startsWith(formatModelLabel(optionText)))!);
 };
 const retryNow = (host: HTMLElement) => click(host.querySelector('[role=radio]:not([aria-checked=true])')!);
 const checkbox = (host: HTMLElement) => host.querySelector<HTMLInputElement>('input[type=checkbox]');

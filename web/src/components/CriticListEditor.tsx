@@ -1,3 +1,4 @@
+import { formatModelLabel } from './TaskIdentity';
 import { createContext, useContext } from "react";
 import type {
   AppConfig,
@@ -162,7 +163,7 @@ function CriticRunChip({ critic }: { critic: Pick<TaskVerificationCritic, "model
           {critic.model && (
             <>
               {" · "}
-              <span className="font-data">{critic.model}</span>
+              <span className="font-data" title={critic.model}>{formatModelLabel(critic.model)}</span>
             </>
           )}
         </>

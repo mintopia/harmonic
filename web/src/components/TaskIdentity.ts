@@ -18,7 +18,7 @@ export function providerLabel(harness: string): string {
   return PROVIDER_LABELS[normalized as keyof typeof PROVIDER_LABELS] ?? harness;
 }
 
-const CLAUDE_MODEL = /^(?:claude-)?(opus|sonnet|haiku)-(\d+)(?:[-.](\d{1,2}))?(?:-\d{8})?$/;
+const CLAUDE_MODEL = /^(?:[\w.-]+\/)*(?:claude-)?(opus|sonnet|haiku)-(\d+)(?:[-.](\d{1,2}))?(?:-\d{8})?$/;
 
 export function formatModelLabel(model: string): string {
   const normalized = model.toLowerCase();
@@ -47,6 +47,13 @@ export function ProviderChip({
     { className: `${toolChip} inline-flex items-center ${modeClass} ${className}`.trim(), title: label },
     label,
   );
+}
+
+const ROLE_SEPARATOR = ' · ';
+
+export function formatModelKey(key: string): string {
+  const at = key.indexOf(ROLE_SEPARATOR);
+  return at < 0 ? formatModelLabel(key) : `${formatModelLabel(key.slice(0, at))}${key.slice(at)}`;
 }
 
 export function ModelLabel({ model, className = '' }: { model: string; className?: string }) {

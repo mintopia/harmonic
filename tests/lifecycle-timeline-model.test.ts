@@ -102,8 +102,8 @@ describe('lifecycleTimelineRows', () => {
     ]);
 
     expect(rows.map((row) => [row.label, row.detail])).toEqual([
-      ['Route changed: Claude claude-haiku-4-5-20251001 → Claude claude-opus-5-5', "label 'reasoning'; warm Session kept"],
-      ['Route changed: Claude claude-haiku-4-5-20251001 → Codex', "label 'reasoning'; fresh Session started"],
+      ['Route changed: Claude Haiku 4.5 → Claude Opus 5.5', "label 'reasoning'; warm Session kept"],
+      ['Route changed: Claude Haiku 4.5 → Codex', "label 'reasoning'; fresh Session started"],
     ]);
   });
 
