@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,6 +10,7 @@ import { TaskService } from '../src/domain/tasks.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { steps as stepsTable, verificationAttempts, attempts as attemptsTable } from '../src/db/schema.js';
 import { trackerRef } from '../src/tracker/adapter.js';
 
 describe('AttemptStore', () => {
@@ -93,5 +95,21 @@ describe('AttemptStore', () => {
       { id: second.id, number: 2, state: 'running' },
     ]);
     expect(await attempts.listForTask(taskId)).toHaveLength(0);
+  });
+  it('deletes a Workspace whose Epic Attempt has a step and a verification attempt', async () => {
+    const workspace = new WorkspaceService(db, settingsStore);
+    const workspaceId = (await workspace.create({ name: 'Epic delete', workingDir: dir, trackerEnabled: true })).id;
+    await new TaskService(db, () => baselineConfig(), allWorkspaces(db, settingsStore)).syncEpics(workspaceId, [{ ref: trackerRef(526), kind: 'epic' }]);
+    const epicAttempt = await attempts.createForEpic({ workspaceId, epicRef: trackerRef(526) });
+    await attempts.createStep(epicAttempt.id, { type: 'verification', command: 'npm test', logLocator: 'output:1' });
+    await db.write((d) =>
+      d.insert(verificationAttempts).values({ attemptId: epicAttempt.id, seq: 1, ts: 1, mechanism: 'command', inputOid: 'abc', verdict: 'pass', summary: 's', output: 'o' }).run(),
+    );
+
+    await workspace.delete(workspaceId);
+
+    expect(await db.read((d) => d.select().from(attemptsTable).where(eq(attemptsTable.id, epicAttempt.id)).all())).toHaveLength(0);
+    expect(await db.read((d) => d.select().from(stepsTable).where(eq(stepsTable.attemptId, epicAttempt.id)).all())).toHaveLength(0);
+    expect(await db.read((d) => d.select().from(verificationAttempts).where(eq(verificationAttempts.attemptId, epicAttempt.id)).all())).toHaveLength(0);
   });
 });
