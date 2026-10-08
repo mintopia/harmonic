@@ -86,10 +86,21 @@ function RoutePicker({
   useEffect(() => {
     if (!open) return;
     list.current?.focus();
-    document.getElementById(optionId(active))?.scrollIntoView?.({ block: 'nearest' });
-  });
+    const dialog = wrap.current?.closest('dialog');
+    const swallowCancel = (e: Event) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      setOpen(false);
+      trigger.current?.focus();
+    };
+    dialog?.addEventListener('cancel', swallowCancel, true);
+    return () => dialog?.removeEventListener('cancel', swallowCancel, true);
+  }, [open]);
+  useEffect(() => {
+    if (open) document.getElementById(optionId(active))?.scrollIntoView?.({ block: 'nearest' });
+  }, [open, active]);
   const onListKeyDown = (e: KeyboardEvent<HTMLUListElement>) => {
-    const last = flat.length - 1;
+    const last = Math.max(flat.length - 1, 0);
     if (e.key === 'ArrowDown') setActive((a) => Math.min(a + 1, last));
     else if (e.key === 'ArrowUp') setActive((a) => Math.max(a - 1, 0));
     else if (e.key === 'Home') setActive(0);
@@ -101,8 +112,10 @@ function RoutePicker({
       e.stopPropagation();
       setOpen(false);
       trigger.current?.focus();
-    } else if (e.key === 'Tab') setOpen(false);
-    else return;
+    } else if (e.key === 'Tab') {
+      setOpen(false);
+      trigger.current?.focus();
+    } else return;
     if (e.key !== 'Tab') e.preventDefault();
   };
   const isCurrent = (harness: string, model: string) => harness === current.harness && model === current.model;
