@@ -72,7 +72,7 @@ export function PromptIndex({
           ref={inputRef}
           type="search"
           aria-label="Search prompts and fragments"
-          placeholder="Search prompts and fragments…"
+          placeholder="Search prompts…"
           value={query}
           onChange={(e) => onQuery(e.target.value)}
           onKeyDown={onInputKeyDown}

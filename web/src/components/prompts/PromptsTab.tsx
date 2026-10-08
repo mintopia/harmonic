@@ -94,7 +94,7 @@ export function PromptsTab({ ctx }: { ctx: RenderCtx }) {
       {mode === 'medium' && (
         <div className="rounded-lg bg-surface shadow-card">
           <div className="rounded-t-lg border-b border-hairline bg-shell p-3">{index}</div>
-          <div className="grid grid-cols-[minmax(0,1fr)_18rem]">
+          <div className="grid grid-cols-[minmax(0,1fr)_20rem]">
             <div className="min-w-0 p-4">{stack}</div>
             <div className="rounded-br-lg border-l border-hairline bg-sunken">
               <div className={`${STICKY} p-3`}>{preview}</div>

@@ -28,6 +28,8 @@ export function Tag({ tone, title, children }: { tone: TagTone; title?: string; 
 
 const SUMMARY_CHIPS = 4;
 
+export const excerptOf = (text: string): string => text.trim().replace(/\s*\n\s*/g, ' ⏎ ');
+
 function placeholdersFor(key: PartKey): Placeholder[] {
   const ref = partRef(key);
   if (ref.kind === 'template') return TEMPLATE_PLACEHOLDERS[ref.id];
@@ -167,7 +169,7 @@ export function PartCard({
           <>
             {part.note && <span className="mt-1 block text-small text-muted">{part.note}</span>}
             <ChipSummary placeholders={placeholders} />
-            <span className="mt-1.5 line-clamp-2 block break-words font-data text-small text-muted">{state.value}</span>
+            <span data-excerpt className="mt-1.5 line-clamp-2 break-words font-data text-small text-muted">{excerptOf(state.value)}</span>
           </>
         )}
       </button>

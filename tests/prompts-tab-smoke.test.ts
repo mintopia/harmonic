@@ -88,6 +88,17 @@ describe('PromptsTab', () => {
     expect(host.querySelector('[role=tabpanel]')?.getAttribute('aria-labelledby')).toBe(tab(host, /Implementation turn/)?.id);
   });
 
+  it('clamps collapsed excerpts to two lines without newlines', async () => {
+    const host = await mountComponent(createElement(GlobalHarness));
+    const excerpts = [...host.querySelectorAll('[data-excerpt]')];
+    expect(excerpts.length).toBeGreaterThan(0);
+    for (const e of excerpts) {
+      expect(e.className).toContain('line-clamp-2');
+      expect(e.className).not.toMatch(/\bblock\b/);
+      expect(e.textContent).not.toContain('\n');
+    }
+  });
+
   it('expands a part, focuses its textarea, and collapses on Escape back to the header', async () => {
     const host = await mountComponent(createElement(GlobalHarness));
     const header = card(host, 'Drive prompt');

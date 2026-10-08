@@ -27,7 +27,7 @@ function FlagToggle({ label, on, onChange }: { label: string; on: boolean; onCha
       role="switch"
       aria-checked={on}
       onClick={() => onChange(!on)}
-      className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 text-small transition-colors ${
+      className={`inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full border px-3 py-1 text-left text-small transition-colors ${
         on ? 'border-transparent bg-accent-tint text-accent' : 'border-edge text-muted hover:border-edge-strong hover:text-ink'
       }`}
     >
