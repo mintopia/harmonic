@@ -8,6 +8,8 @@ import type { AttemptLogEvent } from '../../types';
 import { railSectionCount } from '../../ui';
 import { CopyButton, revealOnHover } from '../CopyButton';
 import { Icon } from '../Icon';
+import { PathTail } from '../PathTail';
+import { displayPath, looksLikePath } from '../../path';
 import { Markdown } from '../Markdown';
 import { DiffViewer } from '../DiffViewer';
 import { toolDiffFile } from '../../tool-diff';
@@ -72,7 +74,7 @@ function MessageRow({ row, model, agent }: { row: Extract<ChatRow, { kind: 'mess
   );
 }
 
-function ToolCard({ row }: { row: Extract<ChatRow, { kind: 'tool' }> }) {
+function ToolCard({ row, baseDir }: { row: Extract<ChatRow, { kind: 'tool' }>; baseDir?: string }) {
   const badge = row.status === 'pending' ? null : TOOL_BADGE[row.status];
   return (
     <div className="ml-10 overflow-hidden rounded-md border border-hairline bg-sunken">
@@ -84,7 +86,12 @@ function ToolCard({ row }: { row: Extract<ChatRow, { kind: 'tool' }> }) {
             subagent
           </span>
         )}
-        {row.target && <span className="min-w-0 flex-1 truncate font-data text-[12px] text-accent">{row.target}</span>}
+        {row.target &&
+          (looksLikePath(row.target) ? (
+            <PathTail path={row.target} display={displayPath(row.target, baseDir)} className="flex-1 font-data text-[12px] text-accent" />
+          ) : (
+            <span className="min-w-0 flex-1 truncate font-data text-[12px] text-accent" title={row.target}>{row.target}</span>
+          ))}
         {badge && (
           <span className={`ml-auto shrink-0 text-[10px] font-bold uppercase tracking-[0.05em] ${badge.tone}`}>{badge.label}</span>
         )}
@@ -114,7 +121,7 @@ function Note({ row }: { row: Extract<ChatRow, { kind: 'note' }> }) {
 /** A spawned Subagent's own transcript, folded under the Agent call that
  * spawned it — collapsed by default so the main agent's thread stays legible,
  * one click away when the operator wants the detail. */
-function SubagentLane({ label, rows, model, agent }: { label: string; rows: ChatRow[]; model: string; agent: string }) {
+function SubagentLane({ label, rows, model, agent, baseDir }: { label: string; rows: ChatRow[]; model: string; agent: string; baseDir?: string }) {
   return (
     <details className="ml-10 overflow-hidden rounded-md border border-hairline bg-surface">
       <summary className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-[12.5px] font-semibold text-ink hover:bg-raised">
@@ -124,7 +131,7 @@ function SubagentLane({ label, rows, model, agent }: { label: string; rows: Chat
       </summary>
       <div className="flex flex-col gap-3 border-t border-hairline px-3 py-3">
         {rows.map((row) => (
-          <Row key={row.key} row={row} model={model} agent={agent} />
+          <Row key={row.key} row={row} model={model} agent={agent} baseDir={baseDir} />
         ))}
       </div>
     </details>
@@ -135,14 +142,14 @@ function TurnPrompt({ turn, text }: { turn: number; text: string }) {
   return <PromptSent prompt={text} label={`Prompt sent · turn ${turn}`} className="ml-10" />;
 }
 
-function Row({ row, model, agent, attemptId }: { row: ChatRow; model: string; agent: string; attemptId?: number }) {
+function Row({ row, model, agent, attemptId, baseDir }: { row: ChatRow; model: string; agent: string; attemptId?: number; baseDir?: string }) {
   switch (row.kind) {
     case 'message':
       return <MessageRow row={row} model={model} agent={agent} />;
     case 'thought':
       return <ThoughtMessage text={row.text} />;
     case 'tool':
-      return <ToolCard row={row} />;
+      return <ToolCard row={row} baseDir={baseDir} />;
     case 'note':
       return <Note row={row} />;
     case 'resolved-prompt':
@@ -173,6 +180,7 @@ export function ChatTranscript({
   agent,
   stepLabel,
   attemptId,
+  baseDir,
   pendingSteers = [],
   turnPrompts = [],
 }: {
@@ -190,6 +198,8 @@ export function ChatTranscript({
   stepLabel?: string;
   /** Enables inline Resolved Prompts for nudge and resolver rows. */
   attemptId?: number;
+  /** Working directory that tool-row paths are shown relative to. */
+  baseDir?: string;
   pendingSteers?: readonly PendingSteer[];
   /** Resolved Prompts for turn 2 onward, shown where each was sent; turn 1's is shown above the transcript. */
   turnPrompts?: readonly string[];
@@ -266,8 +276,8 @@ export function ChatTranscript({
                 {prompts.before.get(row.key)?.map((p) => (
                   <TurnPrompt key={p.turn} turn={p.turn} text={p.text} />
                 ))}
-                <Row row={row} model={model} agent={agent} attemptId={attemptId} />
-                {lane && <SubagentLane label={lane.label} rows={lane.rows} model={model} agent={agent} />}
+                <Row row={row} model={model} agent={agent} attemptId={attemptId} baseDir={baseDir} />
+                {lane && <SubagentLane label={lane.label} rows={lane.rows} model={model} agent={agent} baseDir={baseDir} />}
               </div>
             );
           })}
@@ -275,7 +285,7 @@ export function ChatTranscript({
             <TurnPrompt key={p.turn} turn={p.turn} text={p.text} />
           ))}
           {[...lanes].filter(([id]) => !anchored.has(id)).map(([id, lane]) => (
-            <SubagentLane key={id} label={lane.label} rows={lane.rows} model={model} agent={agent} />
+            <SubagentLane key={id} label={lane.label} rows={lane.rows} model={model} agent={agent} baseDir={baseDir} />
           ))}
         </div>
       )}
