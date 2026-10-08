@@ -198,7 +198,6 @@ async function runLifecycleCommand(
     deps.log.info('Service uninstalled.');
     return { kind: 'continue' };
   }
-  if (dispatch.kind === 'restart' && process.platform !== 'linux') deps.serviceManager();
   const manager = deps.installedServiceManager();
   if (manager && (await manager.isInstalled())) {
     if (dispatch.kind === 'stop') {
@@ -221,10 +220,12 @@ async function runLifecycleCommand(
     return { kind: 'continue' };
   }
   if (dispatch.kind === 'restart') {
+    const previous = deps.daemon.daemonStatus(dataDir).info;
     await deps.daemon.stopDaemon(dataDir);
-    const values = dispatchCli(['start', '--data-dir', dataDir]);
+    const args = ['--data-dir', dataDir, ...(previous ? ['--port', String(previous.port), '--host', previous.host] : [])];
+    const values = dispatchCli(['start', ...args]);
     if (values.kind !== 'start') throw new Error('Unable to build restart command');
-    await startStandalone(values.values, ['--data-dir', dataDir], deps);
+    await startStandalone(values.values, args, deps);
     return { kind: 'continue' };
   }
   const { running, info } = deps.daemon.daemonStatus(dataDir);

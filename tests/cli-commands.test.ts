@@ -269,6 +269,7 @@ describe('runCliCommand: restart', () => {
 
     expect(spawnCalls).toEqual([{ dataDir: '/d', args: ['--data-dir', '/d'] }]);
     expect(trace).toEqual([
+      'daemonStatus:/d',
       'stopDaemon:/d',
       'daemonStatus:/d',
       'spawnServe:/d',
@@ -278,18 +279,28 @@ describe('runCliCommand: restart', () => {
     ]);
   });
 
-  it('off-linux: serviceManager() throw escapes runCliCommand un-swallowed', async () => {
+  it('standalone path restarts on the port and host the running process was started with', async () => {
+    const { deps, spawnCalls, daemonTable } = fakeDependencies();
+    daemonTable.set('/d', { pid: 42, port: 47437, host: '127.0.0.1', startedAt: 0 });
+
+    await runCliCommand({ kind: 'restart', dataDir: '/d' }, [], deps);
+
+    expect(spawnCalls).toEqual([{ dataDir: '/d', args: ['--data-dir', '/d', '--port', '47437', '--host', '127.0.0.1'] }]);
+    expect(daemonTable.get('/d')).toMatchObject({ port: 47437, host: '127.0.0.1' });
+  });
+
+  it('off-linux: restarts the background process instead of failing on the unsupported service manager', async () => {
     const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')!;
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
     try {
-      const { deps } = fakeDependencies();
+      const { deps, spawnCalls } = fakeDependencies();
       deps.serviceManager = () => {
         throw new UnsupportedServicePlatformError('darwin');
       };
+      deps.installedServiceManager = () => null;
 
-      await expect(runCliCommand({ kind: 'restart', dataDir: '/d' }, [], deps)).rejects.toThrow(
-        UnsupportedServicePlatformError,
-      );
+      await expect(runCliCommand({ kind: 'restart', dataDir: '/d' }, [], deps)).resolves.toEqual({ kind: 'continue' });
+      expect(spawnCalls).toEqual([{ dataDir: '/d', args: ['--data-dir', '/d'] }]);
     } finally {
       Object.defineProperty(process, 'platform', platformDescriptor);
     }
