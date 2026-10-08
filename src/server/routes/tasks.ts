@@ -206,7 +206,7 @@ const taskSchema = taskWithDepsSchema
     /** The prompt's first line, bounded: the card title; the full `prompt` is item-GET-only. */
     summary: z.string().meta({ example: 'Add rate limiting to POST /api/tasks' }),
     cost: costSchema.nullable(),
-    /** The Routing Label matching a mirrored Ticket (ADR-0049); `applied` is false when an operator's Harness/Model override wins. Null when none matches or on native Tasks. */
+    /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. Null when none matches or on native Tasks. */
     routing: taskRoutingSchema.nullable().meta({ example: { label: 'reasoning', applied: true } }),
     /** The mirrored issue's tracker URL (from the last poll); null on native Tasks or before a poll. */
     url: z.string().nullable().meta({ example: 'https://github.com/mintopia/harmonic/issues/35' }),

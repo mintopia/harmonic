@@ -37,11 +37,7 @@ export function TaskActions({
   const actions = taskActions(task.state, task.wallClockDeadline);
   const escalation = escalationActions(task);
   const accept = acceptPresentation(failedStep);
-  // An Accept in flight (merging) is persisted on the Task, not just in this
-  // component's `accepting` flag — so the actions stay disabled across a reload
-  // or a leave-and-return, never handing the operator a second Accept/Retry
-  // that would race it. `resolving-conflicts` is excluded: that merge stalled on
-  // a conflict and the operator may want to bail (Close).
+  // Persisted on the Task so actions stay disabled across a reload; `resolving-conflicts` is excluded so the operator can still Close.
   const acceptInFlight = task.mergeStatus === 'merging';
   if (variant === 'footer' && actions.length === 0) return null;
   const escalatedFooter = variant === 'footer' && task.state === 'escalated';

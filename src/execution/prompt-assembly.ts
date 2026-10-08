@@ -144,7 +144,7 @@ export function renderEpicRefreshPrompt(
     branch: ctx.branch,
     detail: ctx.detail,
     baseDir: ctx.worktreePath,
-    // The shared Conflict resolution fragment speaks of a merge into baseBranch; a refresh merges the default branch into the Epic branch.
+    // The Conflict resolution fragment merges baseBranch into taskBranch; a refresh merges the default branch into the Epic branch.
     baseBranch: ctx.branch,
     taskBranch: ctx.defaultBranch,
   });
@@ -175,7 +175,6 @@ export interface BuildCriticPromptArgs {
   /** The operator's configured critic prompt; supports the Drive Prompt's
    * `{taskId}/{skill}/{ref}/{url}/{title}/{description}` interpolation. */
   operatorPrompt: string;
-  /** The Drive-Prompt interpolation tokens. */
   fields: DriveFields;
   /** The candidate revision the worktree is checked out at. */
   verifiedHeadOid: string;
@@ -198,10 +197,6 @@ export function buildCriticPrompt({
 }: BuildCriticPromptArgs): string {
   const hasTicket = fields.ref.trim() !== '' || fields.url.trim() !== '';
   const interpolated = fillTemplate(expandFragments(operatorPrompt, fragments), fields);
-  // A native (board-authored) Task has no mirrored issue: `ref`/`url` are empty,
-  // so the critic must judge against the instructions themselves, not a ticket
-  // that does not exist. `taskId`/`title`/`description` still resolve — they come
-  // from the Task itself, not the ticket.
   const spec = renderFragment(hasTicket ? 'criticSpecTicket' : 'criticSpecInstructions', fragments);
   const ticketFirst = renderFragment(hasTicket ? 'criticTicketFirst' : 'criticInstructionsFirst', fragments);
   const workingTreeNote = dirty

@@ -31,7 +31,6 @@ function ErrorText({ issue, label }: { issue: RoutingLabelIssue; label: string }
   );
 }
 
-/** Workspace Routing Label overlay editor (ADR-0049). */
 export function RoutingLabelOverlayEditor({
   overlay,
   config,

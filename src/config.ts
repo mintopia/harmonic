@@ -300,7 +300,7 @@ export const routingLabelSchema = z.object({
 });
 export type RoutingLabel = z.infer<typeof routingLabelSchema>;
 
-/** Global Routing Labels carry no id, so a `global` overlay entry's `ref` is the lowercased label (ADR-0049). */
+/** Global Routing Labels carry no id, so a `global` overlay entry's `ref` is the lowercased label. */
 export const routingLabelOverlayEntrySchema = overlayEntrySchema('routingLabel', routingLabelSchema);
 export type RoutingLabelOverlayEntry = z.infer<typeof routingLabelOverlayEntrySchema>;
 export const routingLabelOverrideSchema = z.array(routingLabelOverlayEntrySchema);
@@ -327,7 +327,7 @@ export const appConfigSchema = z.object({
     /** Agentic resolve-turns a rebase conflict gets before it escalates; 0 escalates on the first conflict. */
     conflictResolveTurns: z.number().int().min(0).meta({ example: 2 }),
   }),
-  /** Ordered tracker-label → Harness + Model mappings for mirrored Tickets (ADR-0049); the first match in list order wins. */
+  /** Ordered tracker-label → Harness + Model mappings for mirrored Tickets; the first match in list order wins. */
   routingLabels: z.array(routingLabelSchema).meta({ example: [{ label: 'reasoning', harness: 'claude', model: 'claude-opus-5-5' }] }),
   /** The default Harness and model a new Conversation starts with; a Workspace stores `null` to inherit. */
   chat: z.object({

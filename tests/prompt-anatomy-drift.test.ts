@@ -61,7 +61,6 @@ function expectedShape(nodes: readonly AnatomyNode[], choices: Record<string, st
   });
 }
 
-/** A part whose slot appears twice in its parent's text is declared once; keep the first occurrence, in order. */
 function firstOccurrences(shapes: Shape[]): Shape[] {
   const seen = new Set<PartKey>();
   return shapes.flatMap((s): Shape[] => {
@@ -78,7 +77,6 @@ function actualShape(segments: readonly (string | PreviewSegment)[]): Shape[] {
   return firstOccurrences(shapes);
 }
 
-/** Runtime couplings that are not a part's own flag: peer entries only exist when Agent Messages are on, a seeded fresh Session opens with the prior-session context instead of the Task prompt, and a dirty worktree on an identical base is reviewed as a diff. */
 function runtimeShape(a: PromptAnatomy, choices: Record<string, string>, flags: Flags): Shape[] {
   if (a.id === 'criticReview' && flags.dirtyWorktree && choices.revision === 'identical') return expectedShape(a.parts, { ...choices, revision: 'diff' }, flags);
   if (a.id !== 'implementation') return expectedShape(a.parts, choices, flags);
