@@ -71,6 +71,16 @@ export function isInterrupted(payload: unknown): boolean {
   return p?.event === 'finished' && p.stopReason === 'cancelled';
 }
 
+const WHOLE_FENCE = /^(`{3,})[^`\n]*\n([\s\S]*?)\n?\1[ \t]*\n?$/;
+
+/** The body of text that is exactly one markdown code fence; anything else unchanged. */
+function unwrapFence(text: string): string {
+  const match = WHOLE_FENCE.exec(text);
+  if (!match) return text;
+  const [, fence, body = ''] = match;
+  return body.split('\n').some((line) => line.trimEnd() === fence) ? text : body;
+}
+
 function toolContentOutput(content: unknown): { output: string | null; diffs: ToolDiff[] | null } {
   if (!Array.isArray(content)) return { output: null, diffs: null };
   const texts: string[] = [];
@@ -78,7 +88,7 @@ function toolContentOutput(content: unknown): { output: string | null; diffs: To
   for (const block of content) {
     const b = block as { text?: unknown; content?: { text?: unknown } } | null;
     const text = typeof b?.content?.text === 'string' ? b.content.text : typeof b?.text === 'string' ? b.text : null;
-    if (text && text.trim()) texts.push(text);
+    if (text && text.trim()) texts.push(unwrapFence(text));
     if (typeof block !== 'object' || block === null || Array.isArray(block)) continue;
     if (!('type' in block) || !('path' in block) || !('newText' in block)) continue;
     if (block.type === 'diff' && typeof block.path === 'string' && typeof block.newText === 'string' &&
