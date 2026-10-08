@@ -27,6 +27,7 @@ function makeUpdate(overrides: Partial<UpdateState> = {}): UpdateState {
 
 async function renderBanner(props: {
   update: UpdateState | null;
+  bundleVersion?: string | null;
   pending?: boolean;
   onArm?: () => void;
   onCancel?: () => void;
@@ -35,6 +36,7 @@ async function renderBanner(props: {
   host = await mountComponent(
     createElement(UpdateBanner, {
       update: props.update,
+      bundleVersion: props.bundleVersion ?? null,
       pending: props.pending ?? false,
       onArm: props.onArm ?? (() => {}),
       onCancel: props.onCancel ?? (() => {}),
@@ -48,6 +50,26 @@ function buttonByText(text: string): HTMLButtonElement | undefined {
 }
 
 describe('UpdateBanner', () => {
+  it('asks the operator to restart the service when the installed bundle is newer than the running server', async () => {
+    await renderBanner({ update: makeUpdate({ currentVersion: '2.21.0', availableVersion: '2.25.0' }), bundleVersion: '2.25.0' });
+
+    expect(host!.querySelector('[role="alert"]')?.textContent).toMatch(/v2\.25\.0 is installed.*v2\.21\.0 is still running.*[Rr]estart the Harmonic service/);
+    expect(buttonByText('Upgrade')).toBeUndefined();
+  });
+
+  it('offers a reload when the server was upgraded under an open tab', async () => {
+    await renderBanner({ update: makeUpdate({ currentVersion: '2.25.0' }), bundleVersion: '2.24.0' });
+
+    expect(host!.textContent).toContain('v2.25.0');
+    expect(buttonByText('Reload')).toBeDefined();
+  });
+
+  it('shows no version notice when the bundle matches the running server', async () => {
+    await renderBanner({ update: makeUpdate({ currentVersion: '2.25.0' }), bundleVersion: '2.25.0' });
+
+    expect(host!.textContent).toBe('');
+  });
+
   it('shows the manual command for an external (npm-global) install instead of an Upgrade button', async () => {
     await renderBanner({
       update: makeUpdate({

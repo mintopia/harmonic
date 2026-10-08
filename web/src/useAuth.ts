@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { onSessionLost } from './api';
 import { useLiveEffect } from './useLiveEffect';
 
 export interface AuthState {
@@ -22,6 +23,8 @@ export function useAuth(fetchImpl: typeof fetch = fetch): AuthState {
       })
       .catch(() => live() && setAuthed(false));
   }, [fetchImpl]);
+
+  useEffect(() => onSessionLost(() => setAuthed(false)), []);
 
   const login = useCallback(() => setAuthed(true), []);
   const logout = useCallback(() => {
