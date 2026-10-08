@@ -31,7 +31,7 @@ async function click(el: Element | undefined) {
 
 async function openPartEditor(host: HTMLElement, tabName: RegExp, label: string) {
   await click([...host.querySelectorAll('[role=tab]')].find((t) => tabName.test(t.textContent ?? '')));
-  await click([...host.querySelectorAll('button[aria-expanded]')].find((b) => b.querySelector('span > span')?.textContent === label));
+  await click([...host.querySelectorAll('button[aria-expanded]')].find((b) => b.querySelector('span.font-semibold')?.textContent === label));
 }
 
 describe('Prompts tab resolver fields', () => {

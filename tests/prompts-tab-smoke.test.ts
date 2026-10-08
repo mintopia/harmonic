@@ -47,7 +47,7 @@ function WorkspaceHarness() {
 
 const tab = (host: HTMLElement, name: RegExp) => [...host.querySelectorAll<HTMLElement>('[role=tab]')].find((t) => name.test(t.textContent ?? ''));
 const card = (host: HTMLElement, label: string) =>
-  [...host.querySelectorAll<HTMLButtonElement>('button[aria-expanded]')].find((b) => b.querySelector('span > span')?.textContent === label);
+  [...host.querySelectorAll<HTMLButtonElement>('button[aria-expanded]')].find((b) => b.querySelector('span.font-semibold')?.textContent === label);
 
 async function click(el: Element | undefined | null) {
   await act(async () => {
