@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import Fastify from 'fastify';
 import { openAsyncDb } from '../src/db/async.js';
-import { conversationEvents, conversations, processGroups, sessions } from '../src/db/schema.js';
+import { attempts, conversationEvents, conversations, processGroups, sessions } from '../src/db/schema.js';
 import { logger } from '../src/logger.js';
 import { baselineConfig, type AppConfig, type DeepPartial } from '../src/config.js';
 import { ConversationStore } from '../src/domain/conversations.js';
@@ -61,9 +61,12 @@ describe('app.close() — ordered shutdown', () => {
     const logs = captureLogs();
 
     const task = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ exit: 'hang' }) });
-    await server.api('POST', `/api/tasks/${task.body.id}/run`);
+    const { body: attempt } = await server.api('POST', `/api/tasks/${task.body.id}/run`);
     const attemptPid = await waitFor(async () =>
       (await server!.app.ctx.asyncDb.read((d) => d.select().from(processGroups).all())).find((row) => row.owner === `attempt harness for task ${task.body.id}`)?.pgid);
+    // finalize only touches a Session the Attempt has already linked, which happens after session/new returns.
+    await waitFor(async () =>
+      (await server!.app.ctx.asyncDb.read((d) => d.select().from(attempts).where(eq(attempts.id, attempt.id)).get()))?.sessionRowId ?? undefined);
 
     const { body: convo } = await server.api('POST', '/api/conversations', {});
     await server.api('POST', `/api/conversations/${convo.id}/turns`, { text: JSON.stringify({ waitForSteer: true }) });
