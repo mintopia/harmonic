@@ -56,7 +56,7 @@ const click = (el: Element) =>
 const pickRoute = async (host: HTMLElement, optionText: string, groupLabel: string) => {
   await click(host.querySelector('#retry-route')!);
   const group = host.querySelector(`[role=group][aria-label="${groupLabel}"]`)!;
-  await click([...group.querySelectorAll('button')].find((b) => b.textContent?.includes(formatModelLabel(optionText)))!);
+  await click([...group.querySelectorAll('[role=option]')].find((b) => b.textContent?.includes(formatModelLabel(optionText)))!);
 };
 const retryNow = (host: HTMLElement) => click(host.querySelector('[role=radio]:not([aria-checked=true])')!);
 const checkbox = (host: HTMLElement) => host.querySelector<HTMLInputElement>('input[type=checkbox]');
@@ -135,6 +135,47 @@ describe('RetryDialog', () => {
     expect(submitButton(host).textContent).toBe('Retry Now');
     await click(submitButton(host));
     expect(retry).toHaveBeenCalledWith({ guidance: '', startNow: true, reuseSession: false, harness: 'codex', model: 'gpt-5-codex' });
+  });
+});
+
+describe('RetryDialog route picker keyboard', () => {
+  const key = (el: Element, k: string) =>
+    act(async () => {
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+      await flush();
+    });
+  const activeText = (host: HTMLElement, list: Element) => host.querySelector(`#${CSS.escape(list.getAttribute('aria-activedescendant')!)}`)!.textContent;
+
+  it('has no button nested in an option and moves with arrows, Home and End', async () => {
+    const host = await mount();
+    await click(host.querySelector('#retry-route')!);
+    const list = host.querySelector('[role=listbox]')!;
+    expect(list.querySelectorAll('[role=option] button').length).toBe(0);
+    expect(document.activeElement).toBe(list);
+    expect(activeText(host, list)).toContain(formatModelLabel('claude-opus-5-5'));
+    await key(list, 'ArrowDown');
+    expect(activeText(host, list)).toContain(formatModelLabel('claude-sonnet-5-5'));
+    await key(list, 'End');
+    expect(activeText(host, list)).toContain(formatModelLabel('gpt-5-codex'));
+    await key(list, 'Home');
+    expect(activeText(host, list)).toContain(formatModelLabel('claude-opus-5-5'));
+  });
+
+  it('selects the active option with Enter and closes with Escape without closing the dialog', async () => {
+    const onClose = vi.fn();
+    const retry = vi.fn(async (_body: RetryBody) => {});
+    const host = await mount({ onClose, retry });
+    await click(host.querySelector('#retry-route')!);
+    await key(host.querySelector('[role=listbox]')!, 'ArrowDown');
+    await key(host.querySelector('[role=listbox]')!, 'Enter');
+    expect(host.querySelector('[role=listbox]')).toBeNull();
+    expect(host.querySelector('#retry-route')!.textContent).toContain(formatModelLabel('claude-sonnet-5-5'));
+    await click(host.querySelector('#retry-route')!);
+    await key(host.querySelector('[role=listbox]')!, 'Escape');
+    expect(host.querySelector('[role=listbox]')).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    await click(submitButton(host));
+    expect(retry).toHaveBeenCalledWith({ guidance: '', startNow: false, harness: 'claude', model: 'claude-sonnet-5-5' });
   });
 });
 

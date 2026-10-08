@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { api } from '../api';
 import { toastSuccess } from '../toast';
 import { useDismissOnOutsidePointer } from '../useDismissOnOutsidePointer';
@@ -67,7 +67,44 @@ function RoutePicker({
     onOpenChange(next);
   };
   const wrap = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLUListElement>(null);
+  const listId = useId();
+  const [active, setActive] = useState(0);
   useDismissOnOutsidePointer(wrap, open, () => setOpen(false));
+  const flat: Route[] = Object.entries(choices.byId).flatMap(([harness, choice]) => choice.models.map((model) => ({ harness, model })));
+  const optionId = (i: number) => `${listId}-opt-${i}`;
+  const openList = () => {
+    setActive(Math.max(0, flat.findIndex((r) => r.harness === value.harness && r.model === value.model)));
+    setOpen(true);
+  };
+  const choose = (route: Route) => {
+    onChange(route);
+    setOpen(false);
+    trigger.current?.focus();
+  };
+  useEffect(() => {
+    if (!open) return;
+    list.current?.focus();
+    document.getElementById(optionId(active))?.scrollIntoView?.({ block: 'nearest' });
+  });
+  const onListKeyDown = (e: KeyboardEvent<HTMLUListElement>) => {
+    const last = flat.length - 1;
+    if (e.key === 'ArrowDown') setActive((a) => Math.min(a + 1, last));
+    else if (e.key === 'ArrowUp') setActive((a) => Math.max(a - 1, 0));
+    else if (e.key === 'Home') setActive(0);
+    else if (e.key === 'End') setActive(last);
+    else if (e.key === 'Enter' || e.key === ' ') {
+      const route = flat[active];
+      if (route) choose(route);
+    } else if (e.key === 'Escape') {
+      e.stopPropagation();
+      setOpen(false);
+      trigger.current?.focus();
+    } else if (e.key === 'Tab') setOpen(false);
+    else return;
+    if (e.key !== 'Tab') e.preventDefault();
+  };
   const isCurrent = (harness: string, model: string) => harness === current.harness && model === current.model;
   const chip = label && isCurrent(value.harness, value.model) && (
     <span className={chipClass}>
@@ -77,12 +114,20 @@ function RoutePicker({
   return (
     <div ref={wrap} className="relative">
       <button
+        ref={trigger}
         type="button"
         id={id}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls={open ? listId : undefined}
         disabled={disabled}
-        onClick={() => setOpen(!open)}
+        onClick={() => (open ? setOpen(false) : openList())}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown' && !open) {
+            e.preventDefault();
+            openList();
+          }
+        }}
         className={`${field} flex min-h-11 items-center justify-between text-left`}
       >
         <span>
@@ -92,33 +137,43 @@ function RoutePicker({
         {chevron}
       </button>
       {open && (
-        <ul role="listbox" aria-labelledby={`${id}-label`} className="absolute inset-x-0 top-full z-10 mt-1 max-h-64 overflow-auto rounded-sm bg-surface py-1 shadow-float">
+        <ul
+          ref={list}
+          id={listId}
+          role="listbox"
+          tabIndex={-1}
+          aria-labelledby={`${id}-label`}
+          aria-activedescendant={flat.length > 0 ? optionId(active) : undefined}
+          onKeyDown={onListKeyDown}
+          className="absolute inset-x-0 top-full z-10 mt-1 max-h-64 overflow-auto rounded-sm bg-surface py-1 shadow-float focus:outline-none"
+        >
           {Object.entries(choices.byId).map(([harness, choice]) => (
             <li key={harness} role="presentation">
               <div className={`${labelType} px-2.5 pb-0.5 pt-1.5 text-faint`}>{providerLabel(harness)}</div>
               <ul role="group" aria-label={providerLabel(harness)}>
                 {choice.models.map((model) => {
                   const selected = value.harness === harness && value.model === model;
+                  const index = flat.findIndex((r) => r.harness === harness && r.model === model);
                   return (
-                    <li key={model} role="option" aria-selected={selected}>
-                      <button
-                        type="button"
-                        className={`flex w-full items-center justify-between px-2.5 py-1.5 text-left hover:bg-raised ${selected ? 'bg-raised' : ''}`}
-                        onClick={() => {
-                          onChange({ harness, model });
-                          setOpen(false);
-                        }}
-                      >
-                        <span>
-                          <ModelLabel model={model} />
-                          {label && isCurrent(harness, model) && (
-                            <span className={chipClass}>
-                              ↳ <code className="font-data">{label}</code>
-                            </span>
-                          )}
-                        </span>
-                        {selected ? <span className="text-accent">✓</span> : isCurrent(harness, model) ? <span className="text-micro text-faint">current</span> : null}
-                      </button>
+                    <li
+                      key={model}
+                      id={optionId(index)}
+                      role="option"
+                      aria-selected={selected}
+                      className={`flex w-full cursor-pointer items-center justify-between px-2.5 py-1.5 text-left hover:bg-raised ${selected || index === active ? 'bg-raised' : ''}`}
+                      onPointerDown={(e) => e.preventDefault()}
+                      onClick={() => choose({ harness, model })}
+                      onMouseEnter={() => setActive(index)}
+                    >
+                      <span>
+                        <ModelLabel model={model} />
+                        {label && isCurrent(harness, model) && (
+                          <span className={chipClass}>
+                            ↳ <code className="font-data">{label}</code>
+                          </span>
+                        )}
+                      </span>
+                      {selected ? <span className="text-accent">✓</span> : isCurrent(harness, model) ? <span className="text-micro text-faint">current</span> : null}
                     </li>
                   );
                 })}
