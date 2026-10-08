@@ -206,7 +206,9 @@ unique within the resolved list. When an issue
 carries several, the first in the list wins, and the Ticket shows which label
 decided. Labels match case-insensitively. Precedence: an operator's explicit
 setting on the Ticket, then the Routing Label, then the Workspace default, then
-the global default. Re-resolved at every Attempt start, so relabelling an
+the global default. All-or-nothing: a Routing Label applies only when the operator
+has set neither Harness nor Model on the Ticket; setting either disables the route
+entirely. Re-resolved at every Attempt start, so relabelling an
 escalated Ticket retries it on the new route; an Attempt in flight is never
 re-routed. A route whose Harness is unavailable escalates the Ticket rather
 than falling back. An Epic is routed by its own labels; Critics are never
