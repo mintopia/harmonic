@@ -333,9 +333,11 @@ reaches it only via: (1) attempt counter exhausted, (2) a guardrail trip
 (branch-contract included), (3) permanent infrastructure failure, (4) an
 unresolved merge conflict after the bounded resolve turns, (5) a red
 post-merge check (its revert recorded on the timeline). Exactly three
-actions there: **Reject with guidance** (guidance becomes feedback, counter
-resets, the Ticket **requeues** to *ready* — capacity picks it up, or the
-warm-Session "start now" override starts it immediately), **Accept** (counts
+actions there: **Retry** (optional guidance becomes feedback, counter
+resets, the Ticket **requeues** to *ready* — capacity picks it up, or **Retry
+Now** starts it immediately on a fresh Session, or on the prior one when the
+operator asks to re-use it; the operator may also pick a Harness and Model,
+saved on the Ticket so they replace its Routing Label), **Accept** (counts
 as success; the normal merge/close/cleanup path continues), **Close** (closes
 the Ticket and cleans up: branch, worktree, tracker issue). Escalated Epics
 surface in the same attention section.
@@ -603,7 +605,7 @@ _Avoid_: master switch (that is the automation gate), stop-all, freeze-all
 
 **Manual Resume**:
 The single surface for every operator-initiated resume — from *paused*, from
-*escalated* (Reject-with-guidance / the warm-Session continue), and an operator
+*escalated* (Retry-with-guidance / Retry Now re-using the Session), and an operator
 retry — generalising what was formerly the human-reject-only continuation
 choice. It offers two **always-available** paths: **continue-full** (reuse the
 same Session, full conversation) and **start-condensed** (a fresh Session
@@ -675,7 +677,7 @@ _Avoid_: model string, model name (a Model is a catalog entry, not a bare id)
 One ACP conversation with a Harness — 1:1 with the harness's own session
 (`sessionId`), the unit an Attempt or Conversation prompts over `session/prompt`, and
 a durable first-class resource. A Session outlives a single Attempt: a retry, an
-automated or human rejection, or a crash-recovery continue in the **same**
+automated rejection, a human Retry, or a crash-recovery continue in the **same**
 Session — reloaded into a fresh harness process via `session/load` (supported by
 all three harnesses) as a **new Attempt and new prompt turn**, never by
 reattaching a dead process. Reuse is always valid; the provider prompt-cache being warm only

@@ -321,15 +321,16 @@ export const api = {
   removeDependency: (id: number, depId: number) =>
     request<Task>('DELETE', `/api/tasks/${id}/dependencies/${depId}`),
   continuationPreview: (id: number) => request<ContinuationPreview>('GET', `/api/tasks/${id}/continuation`),
-  rejectEpic: (workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh') =>
-    request<EpicIntegrateOutcome>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/reject`, { guidance, continuation }),
+  retryEpic: (workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh') =>
+    request<EpicIntegrateOutcome>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/retry`, { guidance, continuation }),
   // The three escalation actions, escalated tickets only.
   // Accept merges the candidate as-is — the operator's judgement is the gate,
   // no verification runs.
   acceptTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/accept`),
-  rejectTask: (id: number, guidance: string, start = false) =>
-    request<Task>('POST', `/api/tasks/${id}/reject`, { guidance, start }),
-  retryTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/reject`, { guidance: 'Retry after changing the route.', start: false }),
+  retryTask: (
+    id: number,
+    body: { guidance: string; startNow?: boolean; reuseSession?: boolean; harness?: string; model?: string },
+  ) => request<Task>('POST', `/api/tasks/${id}/retry`, body),
   closeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/close`),
   // Hard-delete: cascades the Task's Attempts/history and
   // vanishes it from the board/graph via the `task_removed` WS broadcast

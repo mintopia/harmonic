@@ -82,9 +82,9 @@ describe('operator inputs are recorded (#732)', () => {
 
   it('records Reject with its guidance', async () => {
     const taskId = await escalatedTask();
-    const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'share the limiter across workers' });
+    const rejected = await server.api('POST', `/api/tasks/${taskId}/retry`, { guidance: 'share the limiter across workers' });
     expect(rejected.status).toBe(200);
-    expect(inputs(dataDir, taskId)).toMatchObject([{ actor: 'operator', action: 'reject', text: 'share the limiter across workers' }]);
+    expect(inputs(dataDir, taskId)).toMatchObject([{ actor: 'operator', action: 'retry', text: 'share the limiter across workers' }]);
   });
 
   it('records Close with its reason and adds a timeline Fact', async () => {

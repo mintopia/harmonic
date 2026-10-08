@@ -206,20 +206,20 @@ describe('Agent fact routing', () => {
   it('names the Routing Label that routed the Ticket', async () => {
     const host = await mountProps(makeTask({ routing: { label: 'reasoning', applied: true } }));
     const fact = agentFact(host);
-    expect(fact.textContent?.replace(/\s+/g, ' ').trim()).toBe('Claude Sonnet 4.6 — routed by reasoning');
+    expect(fact.textContent?.replace(/\s+/g, ' ').trim()).toBe('Claude · Sonnet 4.6 — routed by reasoning');
     expect(fact.querySelector('code')?.textContent).toBe('reasoning');
   });
 
   it('explains that an operator setting won over the label', async () => {
     const host = await mountProps(makeTask({ routing: { label: 'reasoning', applied: false } }));
     const fact = agentFact(host);
-    expect(fact.textContent?.replace(/\s+/g, ' ').trim()).toBe('Claude Sonnet 4.6 — set on this Ticket · label reasoning not applied');
+    expect(fact.textContent?.replace(/\s+/g, ' ').trim()).toBe('Claude · Sonnet 4.6 — set on this Ticket · label reasoning not applied');
     expect(fact.querySelector('code')?.className).toContain('line-through');
   });
 
   it('adds nothing when no label matched', async () => {
     const host = await mountProps(makeTask({ routing: null }));
-    expect(agentFact(host).textContent?.replace(/\s+/g, ' ').trim()).toBe('Claude Sonnet 4.6');
+    expect(agentFact(host).textContent?.replace(/\s+/g, ' ').trim()).toBe('Claude · Sonnet 4.6');
   });
 });
 

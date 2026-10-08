@@ -3,7 +3,7 @@
   "info": {
     "title": "@mintopia/harmonic",
     "version": "2.24.0",
-    "description": "Queue, run, and review autonomous coding-agent tasks over ACP\n\n## MCP\n\n`POST /mcp` is a stateless streamable-HTTP MCP server (not a REST\nendpoint, so it has no entry in this spec's paths). It authenticates the\nsame way as the REST API — a bearer token, either an operator API key or\nthe Attempt Key Harmonic injects into a spawned harness — and exposes the\nagent task surface as MCP tools (task CRUD, dependencies, queue/cancel,\nattempts and events). Accept/Reject are human-only and are never exposed as\nMCP tools — a verifier's pass is the accept (#140, ADR-0021). An attempt-scoped\nAttempt Key may call `/mcp` regardless of the REST restrictions noted per\nendpoint below.\n\n## WebSocket\n\n`GET /api/ws` is a single firehose WebSocket (also outside this spec's\npaths): every attempt event, attempt state change, task state change/removal, and\nConversation event/change is broadcast to every connected client as JSON\nmessages of the form `{ type: 'attempt_event' | 'attempt_changed' | 'attempt_timeline_changed' |\n'attempt_usage' | 'task_changed' | 'task_removed' | 'epic_changed' | 'epic_integrated' |\n'agent_messages_changed' | 'scheduled-jobs' | 'operations' | 'worktrees' | 'host_load' |\n'export_failed' | 'notification_created' | 'notifications_read' | 'fs_changed' | 'git_status' |\n'attempt_log_event' | 'critic_log_event' | 'heartbeat' | 'conversation_event' |\n'conversation_changed' | 'conversation_commands' | 'permission_request' |\n'elicitation_request', ... }`, using the same Task/Attempt/Conversation/Scheduled Job/Operation shapes\nserved over REST. `attempt_usage` is a live-usage snapshot for a running Attempt\n(tokens, context fill, derived Cost, current-activity line, and Process\nTree), pushed about once a second while the Attempt tails its native log.\n`task_removed` (issue #162) announces a hard-deleted Task's id (`{ type:\n'task_removed', id }`) — the row is gone, not another state change.\n`scheduled-jobs` announces the full Scheduled Job registry snapshot, matching\n`GET /api/scheduled-jobs`.\n`operations` announces an Operation lifecycle event, matching the operation shape\nserved by `GET /api/operations`.\n`permission_request` announces a Harness blocked on an\noperator permission decision in a Conversation (ADR-0007), answered via\n`POST /conversations/:id/permissions/:reqId`. Authenticate by offering the\nsession token or an API key as the sole WebSocket subprotocol\n(`new WebSocket(url, [token])`) — never as a query parameter, which leaks\ninto logs and browser history. A browser client authenticated by session\ncookie needs no subprotocol. A `read`-scoped key gets the firehose minus the Conversation and permission\ntraffic (`conversation_event`, `conversation_changed`, `conversation_commands`,\n`permission_request`, `elicitation_request`); everything else, including\n`attempt_timeline_changed` and the `epic_*` events, is delivered. The server\nsends a protocol ping and a `{ type: 'heartbeat', intervalMs, ts }` message every\n30 seconds (browsers cannot see protocol pings); a client that sees nothing for\ntwo intervals can treat the connection as dead and reconnect. A connection that\nmisses a pong is terminated. Cross-origin REST calls are allowed for origins\nlisted in `HARMONIC_CORS_ORIGINS` (comma-separated, `*` for any); credentials\nare never allowed, so authenticate with a bearer key.\n\n## Read scope\n\nA `read`-scoped API key (created via `POST /api/keys` with\n`{ \"scope\": \"read\" }`) is a viz-client credential: it may `GET` Workspaces and their Epics (`/api/workspaces/:id/epics[/:ref]`), tasks, attempts, the WebSocket (`/api/ws`, filtered as above), Workspaces (`/api/workspaces`), maps, the instance-wide Activity snapshot (`/api/activity`, filtered to Attempts only for a read key), Operations (`/api/operations`), Scheduled Jobs (`/api/scheduled-jobs`), Notifications (`/api/notifications`). Every mutation and the whole operator surface (keys, config,\nchannels, Conversations) is blocked. There is no `map_changed` event — a\nclient re-fetches `/maps` on reconnect or when it sees a `mapRef` it has\nnot resolved yet."
+    "description": "Queue, run, and review autonomous coding-agent tasks over ACP\n\n## MCP\n\n`POST /mcp` is a stateless streamable-HTTP MCP server (not a REST\nendpoint, so it has no entry in this spec's paths). It authenticates the\nsame way as the REST API — a bearer token, either an operator API key or\nthe Attempt Key Harmonic injects into a spawned harness — and exposes the\nagent task surface as MCP tools (task CRUD, dependencies, queue/cancel,\nattempts and events). Accept/Retry are human-only and are never exposed as\nMCP tools — a verifier's pass is the accept (#140, ADR-0021). An attempt-scoped\nAttempt Key may call `/mcp` regardless of the REST restrictions noted per\nendpoint below.\n\n## WebSocket\n\n`GET /api/ws` is a single firehose WebSocket (also outside this spec's\npaths): every attempt event, attempt state change, task state change/removal, and\nConversation event/change is broadcast to every connected client as JSON\nmessages of the form `{ type: 'attempt_event' | 'attempt_changed' | 'attempt_timeline_changed' |\n'attempt_usage' | 'task_changed' | 'task_removed' | 'epic_changed' | 'epic_integrated' |\n'agent_messages_changed' | 'scheduled-jobs' | 'operations' | 'worktrees' | 'host_load' |\n'export_failed' | 'notification_created' | 'notifications_read' | 'fs_changed' | 'git_status' |\n'attempt_log_event' | 'critic_log_event' | 'heartbeat' | 'conversation_event' |\n'conversation_changed' | 'conversation_commands' | 'permission_request' |\n'elicitation_request', ... }`, using the same Task/Attempt/Conversation/Scheduled Job/Operation shapes\nserved over REST. `attempt_usage` is a live-usage snapshot for a running Attempt\n(tokens, context fill, derived Cost, current-activity line, and Process\nTree), pushed about once a second while the Attempt tails its native log.\n`task_removed` (issue #162) announces a hard-deleted Task's id (`{ type:\n'task_removed', id }`) — the row is gone, not another state change.\n`scheduled-jobs` announces the full Scheduled Job registry snapshot, matching\n`GET /api/scheduled-jobs`.\n`operations` announces an Operation lifecycle event, matching the operation shape\nserved by `GET /api/operations`.\n`permission_request` announces a Harness blocked on an\noperator permission decision in a Conversation (ADR-0007), answered via\n`POST /conversations/:id/permissions/:reqId`. Authenticate by offering the\nsession token or an API key as the sole WebSocket subprotocol\n(`new WebSocket(url, [token])`) — never as a query parameter, which leaks\ninto logs and browser history. A browser client authenticated by session\ncookie needs no subprotocol. A `read`-scoped key gets the firehose minus the Conversation and permission\ntraffic (`conversation_event`, `conversation_changed`, `conversation_commands`,\n`permission_request`, `elicitation_request`); everything else, including\n`attempt_timeline_changed` and the `epic_*` events, is delivered. The server\nsends a protocol ping and a `{ type: 'heartbeat', intervalMs, ts }` message every\n30 seconds (browsers cannot see protocol pings); a client that sees nothing for\ntwo intervals can treat the connection as dead and reconnect. A connection that\nmisses a pong is terminated. Cross-origin REST calls are allowed for origins\nlisted in `HARMONIC_CORS_ORIGINS` (comma-separated, `*` for any); credentials\nare never allowed, so authenticate with a bearer key.\n\n## Read scope\n\nA `read`-scoped API key (created via `POST /api/keys` with\n`{ \"scope\": \"read\" }`) is a viz-client credential: it may `GET` Workspaces and their Epics (`/api/workspaces/:id/epics[/:ref]`), tasks, attempts, the WebSocket (`/api/ws`, filtered as above), Workspaces (`/api/workspaces`), maps, the instance-wide Activity snapshot (`/api/activity`, filtered to Attempts only for a read key), Operations (`/api/operations`), Scheduled Jobs (`/api/scheduled-jobs`), Notifications (`/api/notifications`). Every mutation and the whole operator surface (keys, config,\nchannels, Conversations) is blocked. There is no `map_changed` event — a\nclient re-fetches `/maps` on reconnect or when it sees a `mapRef` it has\nnot resolved yet."
   },
   "components": {
     "securitySchemes": {
@@ -20597,12 +20597,12 @@
         }
       }
     },
-    "/api/tasks/{id}/reject": {
+    "/api/tasks/{id}/retry": {
       "post": {
         "tags": [
           "Tasks"
         ],
-        "description": "Reject an escalated ticket: optional guidance becomes feedback for the next Attempt and the attempt budget resets. The ticket requeues to `ready` — the Auto-Runner starts the next Attempt when capacity frees; it is not force-started here unless `start: true` (the warm-Session \"start now\" override, which bypasses the capacity ceiling). The escalated Attempt's branch is retained as evidence until its Session retires. Human-only. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "description": "Retry an escalated ticket: optional guidance becomes feedback for the next Attempt and the attempt budget resets. `harness`/`model` save both as operator settings on the Ticket, which outrank its Routing Label. The ticket requeues to `ready` — the Auto-Runner starts the next Attempt when capacity frees; with `startNow` it starts immediately, bypassing the capacity ceiling, on a fresh Session unless `reuseSession` re-uses the prior one (400 when the Harness changed or `startNow` is not set). The escalated Attempt's branch is retained as evidence until its Session retires. Human-only. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -20614,9 +20614,27 @@
                     "type": "string",
                     "example": "The limiter is per-process; it needs to be shared across workers."
                   },
-                  "start": {
+                  "startNow": {
                     "example": false,
                     "type": "boolean"
+                  },
+                  "reuseSession": {
+                    "example": false,
+                    "type": "boolean"
+                  },
+                  "harness": {
+                    "example": "claude",
+                    "type": "string",
+                    "enum": [
+                      "claude",
+                      "codex",
+                      "copilot",
+                      "opencode"
+                    ]
+                  },
+                  "model": {
+                    "example": "claude-opus-5-5",
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -20646,6 +20664,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Session re-use was requested without `startNow` or with a changed Harness.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -21125,7 +21153,7 @@
                               "lifecycle",
                               "verification",
                               "guardrail",
-                              "operator-reject",
+                              "operator-retry",
                               "agent-message",
                               "fact"
                             ]
@@ -42693,12 +42721,12 @@
         }
       }
     },
-    "/api/workspaces/{workspaceId}/epics/{epicRef}/reject": {
+    "/api/workspaces/{workspaceId}/epics/{epicRef}/retry": {
       "post": {
         "tags": [
           "Epics"
         ],
-        "description": "Reject an escalated Epic with guidance. The guidance is recorded on the escalated Epic Attempt and included in the next whole-Epic resolver turn. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "description": "Retry an escalated Epic with guidance. The guidance is recorded on the escalated Epic Attempt and included in the next whole-Epic resolver turn. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -42761,7 +42789,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The outcome of rejecting the Epic and requeuing it with operator guidance.",
+            "description": "The outcome of retrying the Epic and requeuing it with operator guidance.",
             "content": {
               "application/json": {
                 "schema": {

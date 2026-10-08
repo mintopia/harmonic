@@ -1,7 +1,7 @@
 import type { TaskRow, AttemptRow, StepRow } from '../db/schema.js';
 import { DomainError } from './errors.js';
 import type { AttemptStore } from './attempts.js';
-import type { TaskService } from './tasks.js';
+import type { TaskService, UpdateTaskInput } from './tasks.js';
 import type { MergeEffectExec } from './merge.js';
 import type { AttemptSettleCoordinator } from './attempt-settle.js';
 import { withTaskLock } from './task-lock.js';
@@ -15,11 +15,20 @@ import { errorMessage } from '../error-handling.js';
  */
 export type MergeEffectsHook = (task: TaskRow, run: AttemptRow) => MergeEffectExec[];
 
+export interface RetryInput {
+  guidance: string;
+  startNow?: boolean | undefined;
+  reuseSession?: boolean | undefined;
+  harness?: NonNullable<UpdateTaskInput['harness']> | undefined;
+  model?: string | undefined;
+}
+
 export interface EscalationHooks {
-  /** Resume the Attempt loop with the operator's guidance (Reject). Starts the
+  /** Resume the Attempt loop with the operator's guidance (Retry). Starts the
    * next Attempt immediately only when `startNow` is set; otherwise the
-   * requeued Ticket waits for Auto-Runner capacity. */
-  resume: (task: TaskRow, guidance: string, startNow: boolean) => Promise<void>;
+   * requeued Ticket waits for Auto-Runner capacity. `reuseSession` binds the
+   * prior Session (warm or cold); without it a started Attempt gets a fresh one. */
+  resume: (task: TaskRow, guidance: string, options: { startNow: boolean; reuseSession: boolean }) => Promise<void>;
   /** Remove the ticket branch and worktree, and close the tracker issue (Close). Best-effort. */
   cleanup: (task: TaskRow, run: AttemptRow | undefined) => Promise<void>;
   /** The candidate commit an Accept would merge, or null when the branch has no commits ahead of its base. */
@@ -37,7 +46,7 @@ export interface EscalationHooks {
  * the operator's judgement that a specific failed Step is fine: at the final
  * `review` Step this merges the candidate as-is and settles the Attempt under
  * `operator-accept` with no further verification; at an earlier Step it
- * overrides that Step and resumes the remaining pipeline (ADR-0038). Reject
+ * overrides that Step and resumes the remaining pipeline (ADR-0038). Retry
  * optionally records guidance as feedback, resets the attempt budget, and
  * requeues the ticket to `ready` (or starts the next Attempt immediately).
  * Close cancels the ticket and cleans up. Nothing else moves a ticket out of
@@ -110,10 +119,28 @@ export class EscalationService {
     });
   }
 
-  async reject(taskId: number, guidance: string, startNow = false): Promise<TaskRow> {
-    const trimmed = guidance.trim();
+  /**
+   * Retry an escalated ticket, optionally on a different Harness/Model. A route
+   * change is saved as both operator fields on the Ticket, so it outranks the
+   * Routing Label (ADR-0049). Re-using the Session needs `startNow` and the same
+   * Harness: a Session cannot cross Harnesses.
+   */
+  async retry(taskId: number, input: RetryInput): Promise<TaskRow> {
+    const guidance = input.guidance.trim();
+    const startNow = input.startNow ?? false;
+    const reuseSession = input.reuseSession ?? false;
     const { task } = await this.escalated(taskId);
-    await this.hooks.resume(task, trimmed, startNow);
+    if (reuseSession && !startNow) {
+      throw new DomainError('validation', 'reuseSession needs startNow: only an immediate retry can re-use the Session');
+    }
+    if (reuseSession && input.harness !== undefined && input.harness !== task.harness) {
+      throw new DomainError('validation', `Harness ${input.harness} differs from ${task.harness}: a different Harness needs a new Session`);
+    }
+    let current = task;
+    if (input.harness !== undefined || input.model !== undefined) {
+      current = await this.taskService.update(taskId, { harness: input.harness ?? (task.harness as UpdateTaskInput['harness']), model: input.model ?? task.model });
+    }
+    await this.hooks.resume(current, guidance, { startNow, reuseSession });
     return await this.taskService.get(taskId);
   }
 

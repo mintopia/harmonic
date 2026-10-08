@@ -59,7 +59,7 @@ export function criticPromptKey(stage: CriticArchiveStage, stepId: string): stri
   return `verification/${stage}/${stepId}/prompt.md`;
 }
 
-export type OperatorAction = 'steer' | 'reject' | 'accept' | 'pause' | 'resume' | 'close' | 'cancel';
+export type OperatorAction = 'steer' | 'retry' | 'accept' | 'pause' | 'resume' | 'close' | 'cancel';
 export type OperatorActor = 'operator' | 'agent';
 
 export interface OperatorInput {

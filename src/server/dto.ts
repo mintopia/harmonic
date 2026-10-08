@@ -162,7 +162,7 @@ export type TicketTimelineKind =
   | 'lifecycle'
   | 'verification'
   | 'guardrail'
-  | 'operator-reject'
+  | 'operator-retry'
   | 'agent-message'
   | 'fact';
 

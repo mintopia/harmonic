@@ -12,14 +12,14 @@ describe('lifecycleTimelineRows', () => {
       event('verification', 10, { verdict: 'pass', summary: 'checks passed' }),
       event('verification', 20, { outcome: 'skipped', command: 'npm test' }),
       lifecycle(30, { event: 'escalated' }),
-      event('operator-reject', 40, { feedback: 'Use the documented timeout.' }),
+      event('operator-retry', 40, { feedback: 'Use the documented timeout.' }),
     ]);
 
     expect(rows.map((row) => [row.at, row.label, row.detail, row.tone])).toEqual([
       [10, 'Verify passed', 'checks passed', 'passed'],
       [20, 'Verify skipped', 'npm test', 'neutral'],
       [30, 'Escalated → awaiting review', null, 'awaiting'],
-      [40, 'Operator rejected with guidance', 'Use the documented timeout.', 'awaiting'],
+      [40, 'Operator retried with guidance', 'Use the documented timeout.', 'awaiting'],
     ]);
   });
 

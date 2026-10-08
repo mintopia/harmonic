@@ -11,7 +11,7 @@ it('enforces operator-only routes for encoded and noncanonical task ids', async 
       const { token } = await server.app.ctx.auth.createKey('scope regression', { scope });
       const headers = { authorization: `Bearer ${token}` };
       for (const id of [String(task.id), `%${task.id.toString().charCodeAt(0).toString(16)}${String(task.id).slice(1)}`, `${task.id}e0`]) {
-        for (const action of ['accept', 'reject', 'close', 'complete', 'steer']) {
+        for (const action of ['accept', 'retry', 'close', 'complete', 'steer']) {
           const response = await server.app.inject({ method: 'POST', url: `/api/tasks/${id}/${action}`, headers, payload: {} });
           expect(response.statusCode, `${scope} ${id}/${action}`).toBe(403);
         }
@@ -97,14 +97,14 @@ describe('scopedKeyAllowed', () => {
     expect(scopedKeyAllowed('/api/tasks/42/steer')).toBe(false);
   });
 
-  it('blocks the human-only accept/reject/close dispositions', () => {
+  it('blocks the human-only accept/retry/close dispositions', () => {
     expect(scopedKeyAllowed('/api/tasks/1/accept')).toBe(false);
-    expect(scopedKeyAllowed('/api/tasks/1/reject')).toBe(false);
+    expect(scopedKeyAllowed('/api/tasks/1/retry')).toBe(false);
     expect(scopedKeyAllowed('/api/tasks/1/close')).toBe(false);
   });
 
   it('blocks epic-reject on Epics', () => {
-    expect(scopedKeyAllowed('/api/workspaces/1/epics/2/reject')).toBe(false);
+    expect(scopedKeyAllowed('/api/workspaces/1/epics/2/retry')).toBe(false);
   });
 
   it('blocks the Epic surface generally, listed or by id', () => {

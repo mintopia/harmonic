@@ -422,7 +422,8 @@ export class Runner {
   }
 
   /** Resume an escalated ticket, optionally recording guidance for its next Attempt. */
-  async resumeWithGuidance(task: TaskRow, guidance: string, startNow = false): Promise<void> {
+  async resumeWithGuidance(task: TaskRow, guidance: string, options: { startNow: boolean; reuseSession: boolean }): Promise<void> {
+    const { startNow, reuseSession } = options;
     const trimmed = guidance.trim();
     if (!trimmed && !startNow) {
       await this.taskService.requeue(task.id);
@@ -438,12 +439,13 @@ export class Runner {
       continuation = await this.sessionContinuation.decideContinuation(task, run, await this.getWorkspace?.(task.workspaceId));
       choice = continuation.path === 'continued-session' ? 'full' : 'condensed';
     }
-    // A reject always spawns a fresh Attempt (ADR-0038) — no setPendingManualResume
-    // here, so beginRun takes its create() branch; the warm Session still binds
-    // via bindContinuationIfEligible's Task-scoped lookup.
+    if (startNow) choice = reuseSession ? 'full' : 'condensed';
+    // A retry always spawns a fresh Attempt (ADR-0038) — no setPendingManualResume
+    // here, so beginRun takes its create() branch; the prior Session binds via
+    // bindContinuationIfEligible unless the choice is `condensed`.
     await this.taskService.requeue(task.id, trimmed, choice);
     if (startNow) {
-      if (continuation) this.activeRuns.setPendingContinuation(task.id, continuation);
+      if (continuation && reuseSession) this.activeRuns.setPendingContinuation(task.id, continuation);
       await this.start(task.id);
     }
   }

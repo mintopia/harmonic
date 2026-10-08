@@ -396,7 +396,7 @@ function HintsStory() {
       </HintBanner>
       <HintBanner tone="await" onDismiss={() => {}}>
         A ticket is escalated. Open it to read why and the changes so far, then <span className="font-semibold text-ink">Accept</span> to merge as-is,{' '}
-        <span className="font-semibold text-ink">Reject</span> with guidance for the next attempt, or <span className="font-semibold text-ink">Close</span> it.
+        <span className="font-semibold text-ink">Retry</span> with guidance for the next attempt, or <span className="font-semibold text-ink">Close</span> it.
       </HintBanner>
     </StoryFrame>
   );

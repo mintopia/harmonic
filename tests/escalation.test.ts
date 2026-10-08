@@ -62,7 +62,7 @@ describe('escalation', () => {
 
       expect((await server.api('POST', `/api/tasks/${taskId}/cancel`)).status).toBe(409);
       expect((await server.api('POST', `/api/tasks/${taskId}/accept`)).status).toBe(409);
-      expect((await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'x' })).status).toBe(409);
+      expect((await server.api('POST', `/api/tasks/${taskId}/retry`, { guidance: 'x' })).status).toBe(409);
       expect((await server.api('POST', `/api/tasks/${taskId}/close`)).status).toBe(409);
 
       const run = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts[0];
@@ -94,9 +94,9 @@ describe('escalation', () => {
 
     it('Reject with start now resumes the loop: the guidance is feedback and the budget resets', async () => {
       const taskId = await runToEscalated();
-      const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, {
+      const rejected = await server.api('POST', `/api/tasks/${taskId}/retry`, {
         guidance: 'Do not crash; write the CSV header first.',
-        start: true,
+        startNow: true,
       });
       expect(rejected.status).toBe(200);
       expect(['working', 'escalated']).toContain(rejected.body.state);
@@ -126,7 +126,7 @@ describe('escalation', () => {
 
     it('Reject without start requeues to ready and records the guidance, but does not force-start', async () => {
       const taskId = await runToEscalated();
-      const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, {
+      const rejected = await server.api('POST', `/api/tasks/${taskId}/retry`, {
         guidance: 'Do not crash; write the CSV header first.',
       });
       expect(rejected.status).toBe(200);
@@ -144,7 +144,7 @@ describe('escalation', () => {
       const taskId = await runToEscalated();
       const branch = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body.branch;
       const feedbackBefore = (await timeline(taskId)).find((attempt) => attempt.number === 1)!.feedback;
-      const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: '   ' });
+      const rejected = await server.api('POST', `/api/tasks/${taskId}/retry`, { guidance: '   ' });
       expect(rejected.status).toBe(200);
       expect(rejected.body).toMatchObject({ state: 'ready', escalationReason: null, feedback: null });
       await new Promise((r) => setTimeout(r, 50));
@@ -172,7 +172,7 @@ describe('escalation', () => {
     it('the disposition actions apply to escalated tickets only', async () => {
       const created = await server.api('POST', '/api/tasks', { prompt: 'p' });
       expect((await server.api('POST', `/api/tasks/${created.body.id}/accept`)).status).toBe(409);
-      expect((await server.api('POST', `/api/tasks/${created.body.id}/reject`, { guidance: 'x' })).status).toBe(409);
+      expect((await server.api('POST', `/api/tasks/${created.body.id}/retry`, { guidance: 'x' })).status).toBe(409);
       expect((await server.api('POST', `/api/tasks/${created.body.id}/requeue`, {})).status).toBe(404);
       expect((await server.api('POST', `/api/tasks/${created.body.id}/close`)).status).toBe(409);
       expect((await server.api('POST', `/api/tasks/${created.body.id}/unescalate`)).status).toBe(404);
@@ -212,7 +212,7 @@ describe('escalation-service', () => {
     let tasks: TaskService;
     let attempts: AttemptStore;
     let settle: AttemptSettleCoordinator;
-    let resumed: Array<{ taskId: number; guidance: string; startNow: boolean }>;
+    let resumed: Array<{ taskId: number; guidance: string; startNow: boolean; reuseSession: boolean; harness: string; model: string }>;
     let cleaned: Array<{ taskId: number; attemptId: number | undefined }>;
     let effects: MergeEffectExec[];
     let candidateHeadValue: string | null;
@@ -233,8 +233,8 @@ describe('escalation-service', () => {
       candidateHeadValue = 'cand-oid';
       candidateHeadCalls = [];
       service = new EscalationService(attempts, tasks, settle, () => effects, {
-        resume: async (task, guidance, startNow) => {
-          resumed.push({ taskId: task.id, guidance, startNow });
+        resume: async (task, guidance, { startNow, reuseSession }) => {
+          resumed.push({ taskId: task.id, guidance, startNow, reuseSession, harness: task.harness, model: task.model });
         },
         cleanup: async (task, run) => {
           cleaned.push({ taskId: task.id, attemptId: run?.id });
@@ -271,7 +271,7 @@ describe('escalation-service', () => {
       const ready = await tasks.create({ prompt: 'p', state: 'ready' });
       for (const call of [
         () => service.accept(ready.id),
-        () => service.reject(ready.id, 'guidance'),
+        () => service.retry(ready.id, { guidance: 'guidance' }),
         () => service.close(ready.id),
       ]) {
         const err = await call().catch((e: unknown) => e);
@@ -359,25 +359,66 @@ describe('escalation-service', () => {
       });
     });
 
-    describe('reject with guidance', () => {
+    describe('retry with guidance', () => {
       it('hands the trimmed guidance to the loop and requeues without a forced start by default', async () => {
         const { task } = await escalated();
-        await service.reject(task.id, '  use the shared limiter  ');
-        expect(resumed).toEqual([{ taskId: task.id, guidance: 'use the shared limiter', startNow: false }]);
+        await service.retry(task.id, { guidance: '  use the shared limiter  ' });
+        expect(resumed).toMatchObject([{ taskId: task.id, guidance: 'use the shared limiter', startNow: false, reuseSession: false }]);
         expect(cleaned).toEqual([]);
       });
 
-      it('propagates the warm-Session "start now" override when requested', async () => {
+      it('passes startNow and reuseSession to the loop independently', async () => {
         const { task } = await escalated();
-        await service.reject(task.id, 'use the shared limiter', true);
-        expect(resumed).toEqual([{ taskId: task.id, guidance: 'use the shared limiter', startNow: true }]);
+        await service.retry(task.id, { guidance: 'a', startNow: true });
+        await service.retry(task.id, { guidance: 'b', startNow: true, reuseSession: true });
+        expect(resumed).toMatchObject([
+          { guidance: 'a', startNow: true, reuseSession: false },
+          { guidance: 'b', startNow: true, reuseSession: true },
+        ]);
       });
 
       it('hands empty guidance to the loop', async () => {
         const { task } = await escalated();
-        await service.reject(task.id, '   ');
-        expect(resumed).toEqual([{ taskId: task.id, guidance: '', startNow: false }]);
+        await service.retry(task.id, { guidance: '   ' });
+        expect(resumed).toMatchObject([{ taskId: task.id, guidance: '', startNow: false }]);
         expect((await tasks.get(task.id)).state).toBe('escalated');
+      });
+
+      it('saves a changed route as both operator fields and the loop sees them', async () => {
+        const { task } = await escalated();
+        await service.retry(task.id, { guidance: '', harness: 'codex', model: 'gpt-x' });
+        expect(resumed).toMatchObject([{ harness: 'codex', model: 'gpt-x' }]);
+        expect((await tasks.withDeps(await tasks.get(task.id))).overrides).toMatchObject({ harness: 'codex', model: 'gpt-x' });
+      });
+
+      it('a Model-only change keeps the current Harness and saves it too', async () => {
+        const { task } = await escalated();
+        const before = (await tasks.get(task.id)).harness;
+        await service.retry(task.id, { guidance: '', model: 'opus-x' });
+        expect((await tasks.withDeps(await tasks.get(task.id))).overrides).toMatchObject({ harness: before, model: 'opus-x' });
+      });
+
+      it('re-using the Session with a different Harness is a 400 and changes nothing', async () => {
+        const { task } = await escalated();
+        const err = await service.retry(task.id, { guidance: '', startNow: true, reuseSession: true, harness: 'codex' }).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(DomainError);
+        expect((err as DomainError).code).toBe('validation');
+        expect((err as DomainError).httpStatus).toBe(400);
+        expect(resumed).toEqual([]);
+        expect((await tasks.withDeps(await tasks.get(task.id))).overrides).toMatchObject({ harness: null, model: null });
+      });
+
+      it('re-using the Session without startNow is a 400', async () => {
+        const { task } = await escalated();
+        const err = await service.retry(task.id, { guidance: '', reuseSession: true }).catch((e: unknown) => e);
+        expect((err as DomainError).code).toBe('validation');
+      });
+
+      it('re-using the Session on the same Harness with a changed Model is allowed', async () => {
+        const { task } = await escalated();
+        const current = (await tasks.get(task.id)).harness as 'claude';
+        await service.retry(task.id, { guidance: '', startNow: true, reuseSession: true, harness: current, model: 'opus-x' });
+        expect(resumed).toMatchObject([{ reuseSession: true, model: 'opus-x' }]);
       });
     });
 
@@ -617,15 +658,15 @@ describe('escalation-routes', () => {
       });
     });
 
-    describe('POST /tasks/:id/reject', () => {
+    describe('POST /tasks/:id/retry', () => {
       it('resumes the loop on the same ticket and branch with the guidance as feedback and the budget reset', async () => {
         const { taskId } = await escalateViaCriticFail();
         const branch = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body.branch as string;
 
         criticResult = { verdict: 'pass', summary: 'the guidance was followed' };
-        const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, {
+        const rejected = await server.api('POST', `/api/tasks/${taskId}/retry`, {
           guidance: 'The timeout is intentional; see the linked ticket.',
-          start: true,
+          startNow: true,
         });
         expect(rejected.status).toBe(200);
         expect(rejected.body.escalationReason).toBeNull();
@@ -655,7 +696,7 @@ describe('escalation-routes', () => {
 
       it('accepts empty guidance and returns the ticket to ready', async () => {
         const { taskId } = await escalateViaCriticFail();
-        const res = await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: '' });
+        const res = await server.api('POST', `/api/tasks/${taskId}/retry`, { guidance: '' });
         expect(res.status).toBe(200);
         expect((await server.api('GET', `/api/tasks/${taskId}`)).body).toMatchObject({ state: 'ready', feedback: null });
       });

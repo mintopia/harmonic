@@ -41,11 +41,12 @@ describe('TaskActions smoke (issue #469)', () => {
     await renderActions({ task, variant: 'footer' });
 
     const buttons = [...host!.querySelectorAll('button')].map((b) => b.textContent);
-    expect(buttons).toContain('Reject…');
+    expect(buttons).toContain('Retry…');
     expect(buttons).not.toContain('Requeue');
     expect(buttons).toContain('Close task');
     expect(buttons.some((b) => b?.includes('Accept'))).toBe(true);
     expect(buttons).not.toContain('Delete');
+    expect(buttons.map((b) => b?.replace(/ .*/, '').replace('…', ''))).toEqual(['Close', 'Retry', 'Accept']);
   });
 
   it('disables Accept when the escalated task has no candidate to merge', async () => {

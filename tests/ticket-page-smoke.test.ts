@@ -69,7 +69,7 @@ describe('TicketPage smoke (issue #469)', () => {
     expect(host!.textContent).toContain('Escalated');
     expect(host!.textContent).toContain('repeated verification failures');
     expect(host!.textContent).toContain('Accept');
-    expect(host!.textContent).toContain('Reject');
+    expect(host!.textContent).toContain('Retry');
   });
 });
 
@@ -94,7 +94,7 @@ describe('Ticket Escape navigation', () => {
       task, onEdit: () => {}, onChanged: () => {}, onClose,
       onOpenTask: () => {}, selection: { kind: 'none' }, onSelect: () => {},
     }));
-    await act(async () => [...host.querySelectorAll('button')].find((button) => button.textContent === 'Reject…')!.click());
+    await act(async () => [...host.querySelectorAll('button')].find((button) => button.textContent === 'Retry…')!.click());
     expect(host.querySelector('dialog[open]')).not.toBeNull();
     await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
     expect(onClose).not.toHaveBeenCalled();

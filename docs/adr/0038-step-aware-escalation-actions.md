@@ -91,6 +91,28 @@ operator gets the same three actions at that Step.
 - Bulk reject stays safe: N rejects leave N Tasks `ready` (ADR-0002), now each
   with a fresh Attempt rather than a reused row.
 
+## Amendment: Reject becomes Retry (#817)
+
+The escalation action **Reject** is renamed **Retry** across the UI, routes
+(`POST /tasks/:id/retry`, `POST /workspaces/:id/epics/:ref/retry`), domain
+(`EscalationService.retry`) and GLOSSARY. Behaviour is otherwise as above: a
+fresh Attempt, the budget reset, guidance recorded on the escalated Attempt.
+Three things change:
+
+- **Harness and Model choice.** The operator may pick a Harness and Model. The
+  choice is saved as both operator fields on the Ticket, so it outranks the
+  Routing Label (ADR-0049) and, under the all-or-nothing rule (#826), the label
+  no longer applies.
+- **Retry vs Retry Now.** Retry requeues; Retry Now (`startNow`) starts the
+  Attempt immediately, bypassing the capacity ceiling.
+- **Session re-use is a separate flag.** `reuseSession` (only with `startNow`)
+  binds the prior Session; without it, Retry Now starts a fresh Session.
+  Re-use is allowed when the Session is cold (the UI warns it costs more) and
+  when only the Model changed (the cached context is lost, which the UI also
+  warns about). Re-use with a different Harness is refused with a 400: a
+  Session cannot cross Harnesses. Previously `start` implied re-use and was
+  offered only for a warm Session.
+
 ## Supersedes
 
 Amends the escalation-surface section of ADR-0002 (Accept semantics; the

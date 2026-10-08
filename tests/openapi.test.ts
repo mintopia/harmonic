@@ -132,9 +132,9 @@ describe('openapi spec', () => {
     expect(doc.paths['/api/attempts/{id}'].get.description).toContain('Key scopes: full, attempt');
 
     expect(doc.paths['/api/tasks/{id}/accept'].post.description).toContain('Human-only');
-    expect(doc.paths['/api/tasks/{id}/reject'].post.description).toContain('Human-only');
+    expect(doc.paths['/api/tasks/{id}/retry'].post.description).toContain('Human-only');
     expect(doc.paths['/api/tasks/{id}/accept'].post.description).not.toContain('agentReview');
-    expect(doc.paths['/api/tasks/{id}/reject'].post.description).not.toContain('agentReview');
+    expect(doc.paths['/api/tasks/{id}/retry'].post.description).not.toContain('agentReview');
 
     expect(doc.paths['/api/config'].get.description).toContain('Operator only');
     expect(doc.paths['/api/config'].patch.description).toContain('Operator only');

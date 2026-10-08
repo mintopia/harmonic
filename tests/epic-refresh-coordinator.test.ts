@@ -824,7 +824,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
       return row?.state === 'escalated' ? row : undefined;
     });
 
-    await expect(service.rejectEpic(workspace.id, trackerRef(5), 'Keep the public API compatible.', 'fresh')).resolves.toMatchObject({ status: 'waiting' });
+    await expect(service.retryEpic(workspace.id, trackerRef(5), 'Keep the public API compatible.', 'fresh')).resolves.toMatchObject({ status: 'waiting' });
     expect(await attempts.get(escalated.id)).toMatchObject({ id: escalated.id, number: escalated.number, state: 'failed', feedback: 'Keep the public API compatible.' });
     expect(guidance.at(-1)).toContain('Keep the public API compatible.');
   });
