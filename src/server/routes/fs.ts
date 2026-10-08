@@ -126,6 +126,7 @@ export async function fsRoutes(fastify: FastifyInstance, ctx: Pick<TrackingConte
       logger.error(`workspace file stream failed for ${req.url}: ${err.message}`, { errorId: String(req.id), route: '/fs/raw', url: req.url, stack: err.stack });
       reply.raw.destroy(err);
     });
+    reply.raw.once('close', () => file.stream.destroy());
     file.stream.pipe(reply.raw);
   });
 
