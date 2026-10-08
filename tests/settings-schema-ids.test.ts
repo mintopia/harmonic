@@ -8,6 +8,9 @@ import {
 } from '../web/src/components/settings-schema.js';
 import { blankPromptFragments } from './prompt-fragment-fixtures.js';
 import { NO_PROMPT_FRAGMENT_OVERRIDES, PROMPT_FRAGMENT_NAMES } from '../src/domain/prompt-fragments.js';
+import { templateKey } from '../src/domain/prompt-anatomy.js';
+import { PROMPT_TEMPLATES, PROMPT_TEMPLATE_IDS } from '../src/domain/prompt-templates.js';
+import { PROMPT_PART_FIELDS } from '../web/src/components/prompts/prompt-part-fields.js';
 import type { AppConfig, Workspace } from '../web/src/types.js';
 
 function makeConfig(): AppConfig {
@@ -110,7 +113,7 @@ function makeWorkspace(): Workspace {
   };
 }
 
-// A field's id sits on a `descriptor` prop for most fields but directly on an `id` prop for PromptField, so collect both.
+// A field's id sits on a `descriptor` prop for most fields but directly on an `id` prop for some, so collect both.
 function collectDescriptorIds(node: unknown, out: string[]): void {
   if (node == null || typeof node !== 'object') return;
   if (Array.isArray(node)) {
@@ -182,40 +185,56 @@ describe('Settings schema field ids are unique (issue #472)', () => {
     expect(duplicates(ids)).toEqual([]);
   });
 
-  it('declares the Prompt Fragments section on both surfaces', () => {
-    const section = SETTINGS_SCHEMA.find((s) => s.title === 'Prompt fragments');
-    expect(section?.tab).toBe('prompts');
-    expect(section?.surfaces).toEqual(expect.arrayContaining(['global', 'workspace']));
+  it('declares the Prompts tab as one bare full-width section on both surfaces', () => {
+    const sections = SETTINGS_SCHEMA.filter((s) => s.tab === 'prompts');
+    expect(sections).toHaveLength(1);
+    expect(sections[0]).toMatchObject({ bare: true, wide: true });
+    expect(sections[0]?.surfaces).toEqual(expect.arrayContaining(['global', 'workspace']));
   });
 
-  it('renders an editable field for every Prompt Fragment on both surfaces', () => {
-    const section = SETTINGS_SCHEMA.find((s) => s.title === 'Prompt fragments')!;
-    const config = makeConfig();
-    const workspace = makeWorkspace();
-    const globalCtx: GlobalRenderCtx = {
-      surface: 'global', config, baseline: config, setConfig: () => {}, errors: {}, harnessPermissionModes: {},
-      channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
-    };
-    const workspaceCtx: WorkspaceRenderCtx = {
-      surface: 'workspace', config, workspace, pristineWorkspace: workspace, setWorkspace: () => {}, errors: {},
-      blockedByRunningTask: false, onRequestDelete: () => {},
-    };
-    for (const ctx of [globalCtx, workspaceCtx]) {
-      const fields = (renderSection(section, ctx).body as { props: { children: unknown[] } }).props.children.flat().filter(Boolean) as { key: string }[];
-      const kebab = (name: string) => name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
-      expect(fields.map((f) => f.key)).toEqual(PROMPT_FRAGMENT_NAMES.map((name) => `fragment-${kebab(name)}`));
+  it('keeps prompt part field ids unique per surface and disjoint from the schema fields', () => {
+    for (const surface of ['global', 'workspace'] as const) {
+      const partIds = PROMPT_PART_FIELDS.map((f) => (surface === 'global' ? f.globalId : f.workspaceId)).filter((id): id is string => id !== null);
+      expect(partIds.length).toBeGreaterThan(0);
+      expect(duplicates(partIds)).toEqual([]);
+      const schemaIds = new Set(fieldIdsForSurface(surface));
+      expect(partIds.filter((id) => schemaIds.has(id))).toEqual([]);
     }
   });
 
-  it('lets a Workspace override the Epic refresh prompt and the Epic verification suffix, like the other resolver prompts', () => {
-    const section = SETTINGS_SCHEMA.find((s) => s.title === 'Merge and Epic resolver prompts')!;
+  it('gives every Prompt Fragment and every overridable template a Workspace field, and the Epic resolve prompt none', () => {
+    const byKey = new Map(PROMPT_PART_FIELDS.map((f) => [f.key, f]));
+    for (const name of PROMPT_FRAGMENT_NAMES) expect(byKey.get(`fragment:${name}`)?.workspaceId, name).toBeTruthy();
+    for (const id of PROMPT_TEMPLATE_IDS) {
+      const info = byKey.get(templateKey(id));
+      expect(info?.workspaceId === null, id).toBe(PROMPT_TEMPLATES[id].workspace === null);
+    }
+    expect(byKey.get(templateKey('epicResolvePrompt'))?.workspaceId).toBeNull();
+  });
+
+  it('puts Merge fate and Continue attempts in the Execution tab Unattended drive section with stable ids', () => {
+    const section = SETTINGS_SCHEMA.find((s) => s.title === 'Unattended drive');
+    expect(section?.tab).toBe('execution');
+    expect(section?.surfaces).toEqual(expect.arrayContaining(['global', 'workspace']));
     const config = makeConfig();
     const workspace = makeWorkspace();
-    const ctx: WorkspaceRenderCtx = {
-      surface: 'workspace', config, workspace, pristineWorkspace: workspace, setWorkspace: () => {}, errors: {},
-      blockedByRunningTask: false, onRequestDelete: () => {},
-    };
-    const fields = (renderSection(section, ctx).body as { props: { children: unknown[] } }).props.children.flat().filter(Boolean) as { key: string }[];
-    expect(fields.map((f) => f.key)).toEqual(['merge-conflict-prompt', 'epic-conflict-prompt', 'epic-refresh-prompt', 'epic-resolve-suffix']);
+    const globalIds: string[] = [];
+    collectDescriptorIds(
+      renderSection(section!, {
+        surface: 'global', config, baseline: config, setConfig: () => {}, errors: {}, harnessPermissionModes: {},
+        channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
+      }).body,
+      globalIds,
+    );
+    const workspaceIds: string[] = [];
+    collectDescriptorIds(
+      renderSection(section!, {
+        surface: 'workspace', config, workspace, pristineWorkspace: workspace, setWorkspace: () => {}, errors: {},
+        blockedByRunningTask: false, onRequestDelete: () => {},
+      }).body,
+      workspaceIds,
+    );
+    expect(globalIds).toEqual(['settings-merge-fate', 'settings-continue-attempts']);
+    expect(workspaceIds).toEqual(['workspace-merge-fate', 'workspace-continue-attempts']);
   });
 });

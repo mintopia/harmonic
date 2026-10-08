@@ -6,7 +6,6 @@ import type {
   VerificationCommand,
   Workspace,
 } from "../types";
-import { EPIC_RESOLVE_PLACEHOLDERS, compileEpicResolvePreview } from "../prompt-preview-model";
 import { resolvePromptFragments } from "../../../src/domain/setting-override.js";
 import { CommandListEditor, CommandOverlayEditor } from "./CommandListEditor";
 import {
@@ -16,7 +15,6 @@ import {
   TaskCriticListEditor,
   TaskCriticOverlayEditor,
 } from "./CriticListEditor";
-import { PromptField } from "./SettingsSection";
 import { Tabs } from "./Tabs";
 
 type EditorProps = {
@@ -269,28 +267,9 @@ export function GlobalVerificationSettings({
                 harnessModels={harnessModels}
               />
             </StageBlock>
-            <StageBlock
-              title="Resolve prompt"
-              hint="sent to the agent that fixes a failing epic verification"
-            >
-              <PromptField
-                id="settings-epic-resolve-prompt"
-                value={config.verify.epic.resolvePrompt}
-                onChange={(resolvePrompt) =>
-                  setConfig({
-                    ...config,
-                    verify: {
-                      ...config.verify,
-                      epic: { ...config.verify.epic, resolvePrompt },
-                    },
-                  })
-                }
-                placeholders={EPIC_RESOLVE_PLACEHOLDERS}
-                preview={compileEpicResolvePreview(config.verify.epic.resolvePrompt, config.verify.epic.resolveSuffix, config.promptFragments)}
-                error={fieldErrors["verify.epic.resolvePrompt"]}
-                rows={5}
-              />
-            </StageBlock>
+            <p className="text-small text-faint">
+              The prompt for fixing a failing Epic verification is on the Prompts tab (Epic verification fix).
+            </p>
           </>
         )}
       </div>

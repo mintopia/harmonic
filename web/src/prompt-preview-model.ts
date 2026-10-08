@@ -1,4 +1,4 @@
-import { expandFragments, fillTemplate, type DriveFields } from '../../src/execution/prompt-template.js';
+import { expandFragments, type DriveFields } from '../../src/execution/prompt-template.js';
 import { PROMPT_FRAGMENTS, PROMPT_FRAGMENT_NAMES, type PromptFragmentName, type PromptFragments } from '../../src/domain/prompt-fragments.js';
 import { PROMPT_ANATOMIES, templateKey, type AnatomyId, type PartKey, type PromptAnatomy } from '../../src/domain/prompt-anatomy.js';
 import { PROMPT_TEMPLATES, PROMPT_TEMPLATE_IDS, type PromptTemplateId } from '../../src/domain/prompt-templates.js';
@@ -96,42 +96,6 @@ export function fragmentPlaceholders(name: PromptFragmentName): Placeholder[] {
   return Object.entries<string>(spec.fields).map(([token, desc]) => ({ token: `{${token}}`, desc, core: required.includes(token) }));
 }
 
-export function compileFragmentPreview(name: PromptFragmentName): (template: string, config: Pick<AppConfig, 'promptFragments'>) => string {
-  const samples = Object.fromEntries(
-    Object.entries<string>(PROMPT_FRAGMENTS[name].fields).map(([token, desc]) => [token, token === 'taskId' ? '123' : `[${desc}]`]),
-  );
-  return (template, config) => fillTemplate(expandFragments(template, config.promptFragments), samples);
-}
-
-/** Fill the five Drive tokens with the sample values. */
-export function compileDrivePreview(template: string, config: Pick<AppConfig, 'promptFragments'>): string {
-  return fillTemplate(expandFragments(template, config.promptFragments), SAMPLE_DRIVE_FIELDS);
-}
-
-/** Fill the five Task-prompt tokens with sample values. */
-export function compileTaskPreview(template: string, config: Pick<AppConfig, 'defaults' | 'harnesses' | 'promptFragments'>): string {
-  const harness = config.defaults.harness;
-  const selectedHarness = config.harnesses[harness];
-  if (!selectedHarness) throw new Error(`Missing configured harness: ${harness}`);
-  return fillTemplate(expandFragments(template, config.promptFragments), {
-    prompt: 'Example task prompt.',
-    id: 123,
-    workingDir: '/repo',
-    harness,
-    model: selectedHarness.defaultModel,
-  });
-}
-
-/** Fill the `{taskId}` token with the sample value. */
-export function compileTaskIdPreview(template: string, config: Pick<AppConfig, 'promptFragments'>): string {
-  return fillTemplate(expandFragments(template, config.promptFragments), { taskId: SAMPLE_TASK_ID });
-}
-
-/** Preview a prompt that takes no runtime tokens: only its fragment references expand. */
-export function compileFragmentsOnlyPreview(template: string, config: Pick<AppConfig, 'promptFragments'>): string {
-  return expandFragments(template, config.promptFragments);
-}
-
 /** Compile the critic review prompt exactly as `runCritic` would: the operator
  * note interpolated, plus the appended revision block, restraint instruction, and
  * JSON-verdict scaffolding. Sample revisions stand in for a live Task's. The same
@@ -156,19 +120,6 @@ export function compileCriticPreview(
   ];
 }
 
-export type CriticRevisionVariant = 'diff' | 'identical' | 'alone' | 'dirty';
-
-export function compileCriticFragmentPreview(fragments: AppConfig['promptFragments'], variant: CriticRevisionVariant): string {
-  return buildCriticPrompt({
-    operatorPrompt: '(the operator review prompt)',
-    fields: SAMPLE_DRIVE_FIELDS,
-    verifiedHeadOid: SAMPLE_VERIFIED_HEAD_OID,
-    ...(variant === 'alone' ? {} : { baseOid: variant === 'identical' ? SAMPLE_VERIFIED_HEAD_OID : SAMPLE_BASE_OID }),
-    ...(variant === 'dirty' ? { dirty: true } : {}),
-    fragments,
-  });
-}
-
 export function compileEpicCriticPreview(prompt: string, fragments: AppConfig['promptFragments']): string {
   return buildCriticPrompt({
     operatorPrompt: prompt,
@@ -177,21 +128,6 @@ export function compileEpicCriticPreview(prompt: string, fragments: AppConfig['p
     baseOid: SAMPLE_BASE_OID,
     fragments,
   });
-}
-
-export function compileEpicResolvePreview(template: string, suffix: string, fragments: AppConfig['promptFragments']): string {
-  const prompt = expandFragments(template, fragments)
-    .replaceAll('{ref}', SAMPLE_DRIVE_FIELDS.ref)
-    .replaceAll('{title}', SAMPLE_DRIVE_FIELDS.title)
-    .replaceAll('{description}', SAMPLE_DRIVE_FIELDS.description)
-    .replaceAll('{url}', SAMPLE_DRIVE_FIELDS.url);
-  return [
-    prompt,
-    '',
-    renderFragment('epicFailingVerification', fragments, { reason: 'Example verifier feedback.' }),
-    '',
-    fillTemplate(expandFragments(suffix, fragments), { branch: `epic/${SAMPLE_DRIVE_FIELDS.ref}` }),
-  ].join('\n');
 }
 
 export const COMMIT_NUDGE_PLACEHOLDERS: Placeholder[] = [];
@@ -223,21 +159,6 @@ const SAMPLE_CONFLICT_VALUES: Record<string, string> = {
   defaultBranch: 'develop',
   detail: 'Both branches changed src/app.ts.',
 };
-
-/** Fill sample values into any `{token}` the sample set knows; unknown tokens stay literal. */
-export function compileConflictPreview(template: string): string {
-  return template.replace(/\{(\w+)\}/g, (match, name: string) => SAMPLE_CONFLICT_VALUES[name] ?? match);
-}
-
-/** Preview a merge prompt with `{fragment.conflictResolution}` expanded from the configured fragment. */
-export function compileMergeConflictPreview(template: string, config: Pick<AppConfig, 'promptFragments'>): string {
-  return compileConflictPreview(expandFragments(template, config.promptFragments));
-}
-
-/** Preview the Epic refresh prompt: the Epic branch is the checkout the merge runs in, the default branch is what merges into it. */
-export function compileEpicRefreshPreview(template: string, config: Pick<AppConfig, 'promptFragments'>): string {
-  return compileConflictPreview(fillTemplate(expandFragments(template, config.promptFragments), { baseBranch: 'epic/example', taskBranch: 'develop' }));
-}
 
 export const TEMPLATE_PLACEHOLDERS: Record<PromptTemplateId, Placeholder[]> = {
   taskPrompt: TASK_PLACEHOLDERS,

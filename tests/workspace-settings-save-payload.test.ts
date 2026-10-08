@@ -2,7 +2,8 @@
 import { act, createElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceSettingsPage } from '../web/src/components/WorkspaceSettingsPage.js';
-import { SETTINGS_SCHEMA, renderSection, type GlobalRenderCtx, type WorkspaceRenderCtx } from '../web/src/components/settings-schema.js';
+import type { WorkspaceRenderCtx } from '../web/src/components/settings-schema.js';
+import { PROMPT_PART_FIELDS } from '../web/src/components/prompts/prompt-part-fields.js';
 import { settingsRegistry, isOverridable, type SettingKey } from '../src/domain/settings-registry.js';
 import { cleanup, makeConfig, makeWorkspace, mountComponent } from './component-smoke-harness.js';
 
@@ -49,34 +50,12 @@ describe('Workspace settings save payload', () => {
     expect(apiMocks.updateWorkspace.mock.calls[0]![1]).toMatchObject({ mergeEpicRefreshPrompt: 'custom refresh', pauseMessage: 'hold on' });
   });
 
-  it('labels each Workspace prompt the same as its global counterpart', async () => {
-    const config = makeConfig();
-    const workspace = makeWorkspace();
-    const globalCtx: GlobalRenderCtx = {
-      surface: 'global', config, baseline: config, setConfig: () => {}, errors: {}, harnessPermissionModes: {},
-      channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
-    };
-    const workspaceCtx: WorkspaceRenderCtx = {
-      surface: 'workspace', config, workspace, pristineWorkspace: workspace, setWorkspace: () => {}, errors: {},
-      blockedByRunningTask: false, onRequestDelete: () => {},
-    };
-    const labelsBySuffix = async (ctx: GlobalRenderCtx | WorkspaceRenderCtx, prefix: string) => {
-      const out = new Map<string, string>();
-      for (const section of SETTINGS_SCHEMA.filter((s) => s.tab === 'prompts' && s.surfaces.includes(ctx.surface))) {
-        const host = await mountComponent(createElement('div', null, renderSection(section, ctx).body));
-        for (const label of host.querySelectorAll('label[for]')) {
-          const id = label.getAttribute('for')!;
-          if (id.startsWith(prefix)) out.set(id.slice(prefix.length), label.textContent!.trim());
-        }
-        await cleanup();
-      }
-      return out;
-    };
-    const global = await labelsBySuffix(globalCtx, 'settings-');
-    const scoped = await labelsBySuffix(workspaceCtx, 'workspace-');
-    expect(scoped.size).toBeGreaterThan(0);
-    for (const [suffix, label] of scoped) {
-      if (global.has(suffix)) expect({ suffix, label }).toEqual({ suffix, label: global.get(suffix) });
+  it('gives each overridable prompt part a Workspace field id that mirrors its global id and label', () => {
+    const scoped = PROMPT_PART_FIELDS.filter((f) => f.workspaceId !== null);
+    expect(scoped.length).toBeGreaterThan(0);
+    for (const f of scoped) {
+      expect(f.label).not.toBe('');
+      expect(f.workspaceId!.replace(/^workspace-/, '')).toBe(f.globalId.replace(/^settings-/, ''));
     }
   });
 });

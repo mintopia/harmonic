@@ -1,34 +1,12 @@
-import { Fragment, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { AppConfig, Channel, ConfigLayers, Workspace } from '../types';
 import { btnGhost, field } from '../ui';
 import { Icon } from './Icon';
-import { FieldError, PromptField, fieldLabel } from './SettingsSection';
-import {
-  DRIVE_PLACEHOLDERS,
-  TASK_ID_PLACEHOLDER,
-  TASK_PLACEHOLDERS,
-  compileCriticFragmentPreview,
-  compileDrivePreview,
-  compileFragmentsOnlyPreview,
-  compileFragmentPreview,
-  compileEpicRefreshPreview,
-  compileMergeConflictPreview,
-  COMMIT_NUDGE_PLACEHOLDERS,
-  MERGE_CONFLICT_PLACEHOLDERS,
-  EPIC_REFRESH_PLACEHOLDERS,
-  EPIC_RESOLVE_SUFFIX_PLACEHOLDERS,
-  compileTaskIdPreview,
-  compileTaskPreview,
-  fragmentPlaceholders,
-  type CriticRevisionVariant,
-  type LabeledPreview,
-  type Placeholder,
-} from '../prompt-preview-model';
+import { FieldError, fieldLabel } from './SettingsSection';
 import { setBudgetField, summarizeBudget } from './guardrail-budget-model';
 import { ConfigField, registryField, toOptions, withCurrent, type FieldOption, type ScalarDescriptor } from './settings-fields';
 import { OverrideField, type OverridableDescriptor } from './settings-override-fields';
 import { InheritField } from './InheritField';
-import { LayerField } from './LayerField';
 import { Switch } from './Switch';
 import { CodeRepositorySection, IssueTrackerSection, TriageLabelsSection } from './TrackerSettings';
 import { HarnessesSection } from './HarnessSettings';
@@ -39,10 +17,9 @@ import { RoutingLabelsEditor } from './RoutingLabelsEditor';
 import { SecuritySection } from './SecuritySection';
 import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection } from './ArchiveExportSettings';
 import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './VerificationSettings';
-import { PROMPT_FRAGMENTS, PROMPT_FRAGMENT_NAMES, promptFragmentOverrideKey, type CriticFragmentName, type PromptFragmentName } from '../../../src/domain/prompt-fragments.js';
-import { settingsRegistry, type SettingKey, type SettingTab } from '../../../src/domain/settings-registry.js';
+import type { SettingTab } from '../../../src/domain/settings-registry.js';
 import { WORKSPACE_COLORS } from '../../../src/domain/workspace-colors.js';
-import { resolvePromptFragments } from '../../../src/domain/setting-override.js';
+import { PromptsTab } from './prompts/PromptsTab';
 
 export type Surface = 'global' | 'workspace';
 
@@ -57,6 +34,7 @@ export interface GlobalRenderCtx {
   harnessPermissionModes: ConfigLayers['harnessPermissionModes'];
   /** Unsaved edits exist; a Destination test runs against saved settings. */
   dirty?: boolean;
+  onTab?: (tab: SettingTab) => void;
   channels: {
     list: Channel[];
     onToggleEvent: (id: number, event: string) => void;
@@ -78,6 +56,7 @@ export interface WorkspaceRenderCtx {
   blockedByRunningTask: boolean;
   onRequestDelete: () => void;
   dirty?: boolean;
+  onTab?: (tab: SettingTab) => void;
 }
 
 export type RenderCtx = GlobalRenderCtx | WorkspaceRenderCtx;
@@ -97,155 +76,24 @@ function harnessOptions(config: AppConfig, current: string | null | undefined): 
   return options;
 }
 
-interface GlobalPrompt {
-  id: string;
-  label?: string;
-  description?: ReactNode;
-  errorKey: string;
-  get: (c: AppConfig) => string;
-  set: (c: AppConfig, value: string) => AppConfig;
-  placeholders: Placeholder[];
-  compile: (text: string, config: AppConfig) => string | LabeledPreview[];
-  rows?: number;
-  textareaClass?: string;
-}
-
-interface OverridablePrompt {
-  key: SettingKey;
-  id: string;
-  errorKey: string;
-  label?: string;
-  description?: string;
-  get: (w: Workspace) => string | null;
-  set: (w: Workspace, value: string | null) => Workspace;
-  inherited: (c: AppConfig) => string;
-  placeholders: Placeholder[];
-  compile: (text: string, config: AppConfig) => string | LabeledPreview[];
-  rows?: number;
-  textareaClass?: string;
-}
-
-function renderGlobalPrompt(d: GlobalPrompt, ctx: GlobalRenderCtx): ReactNode {
-  const value = d.get(ctx.config);
-  const baseline = d.get(ctx.baseline);
-  return (
-    <LayerField
-      label={d.label ?? ''}
-      htmlFor={d.id}
-      value={value}
-      inheritedValue={baseline}
-      inherited={value === baseline}
-      dim={false}
-      onChange={(next) => ctx.setConfig(d.set(ctx.config, next))}
-      onRevert={() => ctx.setConfig(d.set(ctx.config, baseline))}
-    >
-      {({ value, onChange }) => (
-        <PromptField
-          id={d.id}
-          description={d.description}
-          value={value}
-          onChange={onChange}
-          placeholders={d.placeholders}
-          preview={d.compile(value, ctx.config)}
-          error={ctx.errors[d.errorKey]}
-          rows={d.rows}
-          textareaClass={d.textareaClass}
-        />
-      )}
-    </LayerField>
-  );
-}
-
-function OverridePrompt({
-  descriptor,
-  config,
-  workspace,
-  errors,
-  onWorkspace,
-}: {
-  descriptor: OverridablePrompt;
-  config: AppConfig;
-  workspace: Workspace;
-  errors: Record<string, string>;
-  onWorkspace: (w: Workspace) => void;
-}) {
-  const d = descriptor;
-  const spec = settingsRegistry[d.key];
-  return (
-    <LayerField<string>
-      label={d.label ?? spec.label}
-      htmlFor={d.id}
-      value={d.get(workspace) ?? d.inherited(config)}
-      inheritedValue={d.inherited(config)}
-      inherited={d.get(workspace) === null || d.get(workspace) === undefined}
-      onChange={(next) => onWorkspace(d.set(workspace, next))}
-      onRevert={() => onWorkspace(d.set(workspace, null))}
-    >
-      {({ id, value, onChange }) => (
-        <PromptField
-          id={id ?? d.id}
-          description={d.description}
-          value={value}
-          onChange={onChange}
-          placeholders={d.placeholders}
-          preview={d.compile(value, { ...config, promptFragments: resolvePromptFragments(workspace, config) })}
-          error={errors[d.errorKey]}
-          rows={d.rows}
-          textareaClass={d.textareaClass}
-        />
-      )}
-    </LayerField>
-  );
-}
-
-
-interface ScalarFieldNode {
-  kind: 'scalar';
+interface FieldNode {
   id: string;
   global: ScalarDescriptor | null;
   workspace: OverridableDescriptor | null;
 }
 
-interface PromptFieldNode {
-  kind: 'prompt';
-  id: string;
-  global: GlobalPrompt | null;
-  workspace: OverridablePrompt | null;
-}
-
-type FieldNode = ScalarFieldNode | PromptFieldNode;
-
-function scalar(global: ScalarDescriptor | null, workspace: OverridableDescriptor | null): ScalarFieldNode {
-  return { kind: 'scalar', id: global?.id ?? workspace?.id ?? '', global, workspace };
-}
-
-function prompt(id: string, global: GlobalPrompt | null, workspace: OverridablePrompt | null): PromptFieldNode {
-  return { kind: 'prompt', id, global, workspace };
+function scalar(global: ScalarDescriptor | null, workspace: OverridableDescriptor | null): FieldNode {
+  return { id: global?.id ?? workspace?.id ?? '', global, workspace };
 }
 
 function renderField(node: FieldNode, ctx: RenderCtx): ReactNode {
-  if (node.kind === 'scalar') {
-    if (ctx.surface === 'global') {
-      return node.global ? (
-        <ConfigField key={node.id} descriptor={node.global} config={ctx.config} baseline={ctx.baseline} errors={ctx.errors} onConfig={ctx.setConfig} />
-      ) : null;
-    }
-    return node.workspace ? (
-      <OverrideField
-        key={node.id}
-        descriptor={node.workspace}
-        config={ctx.config}
-        workspace={ctx.workspace}
-        errors={ctx.errors}
-        onWorkspace={ctx.setWorkspace}
-      />
+  if (ctx.surface === 'global') {
+    return node.global ? (
+      <ConfigField key={node.id} descriptor={node.global} config={ctx.config} baseline={ctx.baseline} errors={ctx.errors} onConfig={ctx.setConfig} />
     ) : null;
   }
-  if (ctx.surface === 'global') {
-    return node.global ? <Fragment key={node.id}>{renderGlobalPrompt(node.global, ctx)}</Fragment> : null;
-  }
   return node.workspace ? (
-    <OverridePrompt
+    <OverrideField
       key={node.id}
       descriptor={node.workspace}
       config={ctx.config}
@@ -608,322 +456,6 @@ const driveContinueAttempts = scalar(
   },
 );
 
-const taskPromptField = prompt(
-  'task-prompt',
-  {
-    id: 'settings-task-prompt',
-    label: 'Task prompt',
-    errorKey: 'taskPrompt',
-    get: (c) => c.taskPrompt,
-    set: (c, v) => ({ ...c, taskPrompt: v }),
-    placeholders: TASK_PLACEHOLDERS,
-    compile: compileTaskPreview,
-    textareaClass: `${field} min-h-36`,
-  },
-  {
-    key: 'taskPrompt',
-    id: 'workspace-task-prompt',
-    errorKey: 'taskPrompt',
-    get: (w) => w.taskPrompt,
-    set: (w, v) => ({ ...w, taskPrompt: v }),
-    inherited: (c) => c.taskPrompt,
-    placeholders: TASK_PLACEHOLDERS,
-    compile: compileTaskPreview,
-    textareaClass: `${field} min-h-36`,
-  },
-);
-
-const pauseMessageField = prompt(
-  'pause-message',
-  {
-    id: 'settings-pause-message',
-    label: 'Pause message',
-    errorKey: 'pauseMessage',
-    get: (c) => c.pauseMessage,
-    set: (c, v) => ({ ...c, pauseMessage: v }),
-    placeholders: [],
-    compile: compileFragmentsOnlyPreview,
-    textareaClass: `${field} min-h-24`,
-  },
-  {
-    key: 'pauseMessage',
-    id: 'workspace-pause-message',
-    errorKey: 'pauseMessage',
-    get: (w) => w.pauseMessage,
-    set: (w, v) => ({ ...w, pauseMessage: v }),
-    inherited: (c) => c.pauseMessage,
-    placeholders: [],
-    compile: compileFragmentsOnlyPreview,
-    textareaClass: `${field} min-h-24`,
-  },
-);
-
-const drivePromptField = prompt(
-  'drive-prompt',
-  {
-    id: 'settings-drive-prompt',
-    label: 'Drive prompt',
-    errorKey: 'drive.prompt',
-    get: (c) => c.drive.prompt,
-    set: (c, v) => ({ ...c, drive: { ...c.drive, prompt: v } }),
-    placeholders: DRIVE_PLACEHOLDERS,
-    compile: compileDrivePreview,
-    textareaClass: `${field} min-h-36`,
-  },
-  {
-    key: 'drivePrompt',
-    id: 'workspace-drive-prompt',
-    errorKey: 'drivePrompt',
-    get: (w) => w.drivePrompt,
-    set: (w, v) => ({ ...w, drivePrompt: v }),
-    inherited: (c) => c.drive.prompt,
-    placeholders: DRIVE_PLACEHOLDERS,
-    compile: compileDrivePreview,
-    textareaClass: `${field} min-h-36`,
-  },
-);
-
-const unattendedReminderField = prompt(
-  'unattended-reminder',
-  {
-    id: 'settings-unattended-reminder',
-    label: 'Unattended reminder',
-    description: 'Appended to every auto-driven turn — the checkpoint reminder and the finish/escalate signals.',
-    errorKey: 'drive.unattendedReminder',
-    get: (c) => c.drive.unattendedReminder,
-    set: (c, v) => ({ ...c, drive: { ...c.drive, unattendedReminder: v } }),
-    placeholders: TASK_ID_PLACEHOLDER,
-    compile: compileTaskIdPreview,
-    textareaClass: `${field} min-h-36`,
-  },
-  {
-    key: 'driveUnattendedReminder',
-    id: 'workspace-unattended-reminder',
-    errorKey: 'driveUnattendedReminder',
-    description: 'Appended to every auto-driven turn — the checkpoint reminder and the finish/escalate signals.',
-    get: (w) => w.driveUnattendedReminder,
-    set: (w, v) => ({ ...w, driveUnattendedReminder: v }),
-    inherited: (c) => c.drive.unattendedReminder,
-    placeholders: TASK_ID_PLACEHOLDER,
-    compile: compileTaskIdPreview,
-    textareaClass: `${field} min-h-36`,
-  },
-);
-
-const continuePromptField = prompt(
-  'continue-prompt',
-  {
-    id: 'settings-continue-prompt',
-    label: 'Continue prompt',
-    description: 'The re-prompt nudge when a turn ends without finishing. The unattended reminder is appended after it.',
-    errorKey: 'drive.continuePrompt',
-    get: (c) => c.drive.continuePrompt,
-    set: (c, v) => ({ ...c, drive: { ...c.drive, continuePrompt: v } }),
-    placeholders: TASK_ID_PLACEHOLDER,
-    compile: compileTaskIdPreview,
-    textareaClass: `${field} min-h-24`,
-  },
-  {
-    key: 'driveContinuePrompt',
-    id: 'workspace-continue-prompt',
-    errorKey: 'driveContinuePrompt',
-    description: 'The re-prompt nudge when a turn ends without finishing. The unattended reminder is appended after it.',
-    get: (w) => w.driveContinuePrompt,
-    set: (w, v) => ({ ...w, driveContinuePrompt: v }),
-    inherited: (c) => c.drive.continuePrompt,
-    placeholders: TASK_ID_PLACEHOLDER,
-    compile: compileTaskIdPreview,
-    textareaClass: `${field} min-h-24`,
-  },
-);
-
-
-const kebab = (name: string): string => name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
-
-const CRITIC_PREVIEW_VARIANT: Partial<Record<CriticFragmentName, CriticRevisionVariant>> = {
-  criticRevisionIdentical: 'identical',
-  criticRevisionAlone: 'alone',
-  criticWorkingTreeNote: 'dirty',
-};
-
-/** A critic fragment previews as the whole critic prompt it lands in, with the text being edited swapped in. */
-function criticFragmentPreview(name: PromptFragmentName) {
-  if (!name.startsWith('critic')) return undefined;
-  const variant = CRITIC_PREVIEW_VARIANT[name as CriticFragmentName] ?? 'diff';
-  return (text: string, c: Pick<AppConfig, 'promptFragments'>) => compileCriticFragmentPreview({ ...c.promptFragments, [name]: text }, variant);
-}
-
-const promptFragmentFields = PROMPT_FRAGMENT_NAMES.map((name) => {
-  const spec = PROMPT_FRAGMENTS[name];
-  const required = spec.required.map((token) => `{${token}}`).join(' ');
-  const description = `${spec.help}${required ? ` Must keep ${required}.` : ''}`;
-  const key = promptFragmentOverrideKey(name);
-  const placeholders = fragmentPlaceholders(name);
-  const compile = criticFragmentPreview(name) ?? compileFragmentPreview(name);
-  const textareaClass = `${field} min-h-24`;
-  return prompt(
-    `fragment-${kebab(name)}`,
-    {
-      id: `settings-fragment-${kebab(name)}`,
-      label: spec.label,
-      description,
-      errorKey: `promptFragments.${name}`,
-      get: (c) => c.promptFragments[name],
-      set: (c, v) => ({ ...c, promptFragments: { ...c.promptFragments, [name]: v } }),
-      placeholders,
-      compile,
-      textareaClass,
-    },
-    {
-      key,
-      id: `workspace-fragment-${kebab(name)}`,
-      errorKey: key,
-      description,
-      get: (w) => w[key],
-      set: (w, v) => ({ ...w, [key]: v }),
-      inherited: (c) => c.promptFragments[name],
-      placeholders,
-      compile,
-      textareaClass,
-    },
-  );
-});
-
-const commitNudgeField = prompt(
-  'commit-nudge',
-  {
-    id: 'settings-commit-nudge',
-    label: 'Commit nudge',
-    description: 'Sent when an Attempt finishes its turn with uncommitted changes. No placeholders.',
-    errorKey: 'drive.commitNudge',
-    get: (c) => c.drive.commitNudge,
-    set: (c, v) => ({ ...c, drive: { ...c.drive, commitNudge: v } }),
-    placeholders: COMMIT_NUDGE_PLACEHOLDERS,
-    compile: compileFragmentsOnlyPreview,
-    textareaClass: `${field} min-h-24`,
-  },
-  {
-    key: 'driveCommitNudge',
-    id: 'workspace-commit-nudge',
-    errorKey: 'driveCommitNudge',
-    description: 'Sent when an Attempt finishes its turn with uncommitted changes. No placeholders.',
-    get: (w) => w.driveCommitNudge,
-    set: (w, v) => ({ ...w, driveCommitNudge: v }),
-    inherited: (c) => c.drive.commitNudge,
-    placeholders: COMMIT_NUDGE_PLACEHOLDERS,
-    compile: compileFragmentsOnlyPreview,
-    textareaClass: `${field} min-h-24`,
-  },
-);
-
-const mergeConflictPromptField = prompt(
-  'merge-conflict-prompt',
-  {
-    id: 'settings-merge-conflict-prompt',
-    label: 'Merge conflict resolver',
-    description: 'Opens each turn of the agent that resolves a Task merge conflict.',
-    errorKey: 'merge.conflictPrompt',
-    get: (c) => c.merge.conflictPrompt,
-    set: (c, v) => ({ ...c, merge: { ...c.merge, conflictPrompt: v } }),
-    placeholders: MERGE_CONFLICT_PLACEHOLDERS,
-    compile: compileMergeConflictPreview,
-    textareaClass: `${field} min-h-36`,
-  },
-  {
-    key: 'mergeConflictPrompt',
-    id: 'workspace-merge-conflict-prompt',
-    errorKey: 'mergeConflictPrompt',
-    description: 'Opens each turn of the agent that resolves a Task merge conflict.',
-    get: (w) => w.mergeConflictPrompt,
-    set: (w, v) => ({ ...w, mergeConflictPrompt: v }),
-    inherited: (c) => c.merge.conflictPrompt,
-    placeholders: MERGE_CONFLICT_PLACEHOLDERS,
-    compile: compileMergeConflictPreview,
-    textareaClass: `${field} min-h-36`,
-  },
-);
-
-const epicConflictPromptField = prompt(
-  'epic-conflict-prompt',
-  {
-    id: 'settings-epic-conflict-prompt',
-    label: 'Epic merge conflict resolver',
-    description: 'Opens each turn of the agent that resolves an Epic integration merge conflict.',
-    errorKey: 'merge.epicConflictPrompt',
-    get: (c) => c.merge.epicConflictPrompt,
-    set: (c, v) => ({ ...c, merge: { ...c.merge, epicConflictPrompt: v } }),
-    placeholders: MERGE_CONFLICT_PLACEHOLDERS,
-    compile: compileMergeConflictPreview,
-    textareaClass: `${field} min-h-36`,
-  },
-  {
-    key: 'mergeEpicConflictPrompt',
-    id: 'workspace-epic-conflict-prompt',
-    errorKey: 'mergeEpicConflictPrompt',
-    description: 'Opens each turn of the agent that resolves an Epic integration merge conflict.',
-    get: (w) => w.mergeEpicConflictPrompt,
-    set: (w, v) => ({ ...w, mergeEpicConflictPrompt: v }),
-    inherited: (c) => c.merge.epicConflictPrompt,
-    placeholders: MERGE_CONFLICT_PLACEHOLDERS,
-    compile: compileMergeConflictPreview,
-    textareaClass: `${field} min-h-36`,
-  },
-);
-
-const epicRefreshPromptField = prompt(
-  'epic-refresh-prompt',
-  {
-    id: 'settings-epic-refresh-prompt',
-    label: 'Epic refresh resolver',
-    description: 'Sent to the agent that resolves a conflict when the Epic integration branch is refreshed from the default branch.',
-    errorKey: 'merge.epicRefreshPrompt',
-    get: (c) => c.merge.epicRefreshPrompt,
-    set: (c, v) => ({ ...c, merge: { ...c.merge, epicRefreshPrompt: v } }),
-    placeholders: EPIC_REFRESH_PLACEHOLDERS,
-    compile: compileEpicRefreshPreview,
-    textareaClass: `${field} min-h-36`,
-  },
-  {
-    key: 'mergeEpicRefreshPrompt',
-    id: 'workspace-epic-refresh-prompt',
-    errorKey: 'mergeEpicRefreshPrompt',
-    description: 'Sent to the agent that resolves a conflict when the Epic integration branch is refreshed from the default branch.',
-    get: (w) => w.mergeEpicRefreshPrompt,
-    set: (w, v) => ({ ...w, mergeEpicRefreshPrompt: v }),
-    inherited: (c) => c.merge.epicRefreshPrompt,
-    placeholders: EPIC_REFRESH_PLACEHOLDERS,
-    compile: compileEpicRefreshPreview,
-    textareaClass: `${field} min-h-36`,
-  },
-);
-
-const epicResolveSuffixField = prompt(
-  'epic-resolve-suffix',
-  {
-    id: 'settings-epic-resolve-suffix',
-    label: 'Epic verification resolver suffix',
-    description: 'Appended to the Epic resolve prompt (set on the Verification tab) when the agent fixes a failing Epic verification.',
-    errorKey: 'verify.epic.resolveSuffix',
-    get: (c) => c.verify.epic.resolveSuffix,
-    set: (c, v) => ({ ...c, verify: { ...c.verify, epic: { ...c.verify.epic, resolveSuffix: v } } }),
-    placeholders: EPIC_RESOLVE_SUFFIX_PLACEHOLDERS,
-    compile: compileMergeConflictPreview,
-    textareaClass: `${field} min-h-24`,
-  },
-  {
-    key: 'verifyEpicResolveSuffix',
-    id: 'workspace-epic-resolve-suffix',
-    errorKey: 'verifyEpicResolveSuffix',
-    description: 'Appended to the Epic resolve prompt when the agent fixes a failing Epic verification.',
-    get: (w) => w.verifyEpicResolveSuffix,
-    set: (w, v) => ({ ...w, verifyEpicResolveSuffix: v }),
-    inherited: (c) => c.verify.epic.resolveSuffix,
-    placeholders: EPIC_RESOLVE_SUFFIX_PLACEHOLDERS,
-    compile: compileMergeConflictPreview,
-    textareaClass: `${field} min-h-24`,
-  },
-);
-
 const guardrailScalarFields: OverridableDescriptor[] = [
   {
     key: 'guardrailProgress',
@@ -1261,6 +793,8 @@ interface SectionNode {
   body: (ctx: RenderCtx) => ReactNode;
   /** Span both columns of the settings grid — for wide, table-shaped bodies. */
   wide?: boolean;
+  /** Render the body without the SettingsSection card — the body owns its own chrome. */
+  bare?: boolean;
 }
 
 const BOTH: Surface[] = ['global', 'workspace'];
@@ -1415,6 +949,15 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
 
   {
+    tab: 'execution',
+    surfaces: BOTH,
+    title: 'Unattended drive',
+    description:
+      'What happens to a mirrored Task\'s finished work, and how many times Harmonic re-prompts a turn that ends without `finish_task`.',
+    body: (ctx) => grid('flex flex-wrap items-start gap-x-8 gap-y-4', [driveMergeFate, driveContinueAttempts], ctx),
+  },
+
+  {
     tab: 'verification',
     surfaces: BOTH,
     title: 'Verification',
@@ -1436,76 +979,11 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   {
     tab: 'prompts',
     surfaces: BOTH,
-    title: 'Task prompt',
-    description: {
-      global:
-        "Wraps a native task's own prompt before it's sent to the agent. Placeholders are filled per Task; the default bare {prompt} sends the prompt verbatim. Mirrored tickets use the Drive prompt instead.",
-      workspace:
-        "Wraps a native Task's own prompt before it's sent to the agent. Inherits the global Task Prompt until overridden; mirrored tickets use the Drive prompt instead.",
-    },
-    body: (ctx) => renderField(taskPromptField, ctx),
-  },
-  {
-    tab: 'prompts',
-    surfaces: BOTH,
-    title: 'Drive prompt',
-    description: {
-      global:
-        'The prompt Harmonic sends when it runs a mirrored ticket unattended. Placeholders are filled per Task; merge fate governs what happens to completed work.',
-      workspace:
-        'How Harmonic drives a mirrored Task unattended here. Each field inherits the global default until overridden; merge fate governs what happens to completed work.',
-    },
-    body: (ctx) => (
-      <div className="flex flex-col gap-4">
-        {[drivePromptField, unattendedReminderField, continuePromptField, commitNudgeField].map((p) => renderField(p, ctx))}
-        {grid('flex flex-wrap items-start gap-x-8 gap-y-4', [driveMergeFate, driveContinueAttempts], ctx)}
-      </div>
-    ),
-  },
-  {
-    tab: 'prompts',
-    surfaces: BOTH,
-    title: 'Pause message',
-    description: {
-      global: 'Sent to a running Task when it is paused, asking the agent to finish its turn and wait.',
-      workspace: 'Sent to a running Task here when it is paused. Inherits the global message until overridden.',
-    },
-    body: (ctx) => renderField(pauseMessageField, ctx),
-  },
-
-  {
-    tab: 'prompts',
-    surfaces: BOTH,
-    title: 'Merge and Epic resolver prompts',
-    description: {
-      global:
-        'What Harmonic sends to the agents that resolve merge conflicts and Epic verification failures. Edits apply to the next resolver turn.',
-      workspace:
-        'What Harmonic sends to the agents that resolve merge conflicts and Epic verification failures here. Each field inherits the global default until overridden.',
-    },
-    body: (ctx) => (
-      <div className="flex flex-col gap-4">
-        {[mergeConflictPromptField, epicConflictPromptField, epicRefreshPromptField, epicResolveSuffixField].map((p) => renderField(p, ctx))}
-      </div>
-    ),
-  },
-
-  {
-    tab: 'prompts',
-    surfaces: BOTH,
+    bare: true,
     wide: true,
-    title: 'Prompt fragments',
-    description: {
-      global:
-        'Named pieces of prompt text defined once and referenced from prompts as {fragment.<name>}. Edit a fragment here and every prompt that references it changes.',
-      workspace:
-        'Named pieces of prompt text shared across prompts. Each inherits the global fragment until overridden.',
-    },
-    body: (ctx) => (
-      <div className="grid items-start gap-4 xl:grid-cols-2">
-        {promptFragmentFields.map((f) => renderField(f, ctx))}
-      </div>
-    ),
+    title: 'Prompts',
+    description: '',
+    body: (ctx) => <PromptsTab ctx={ctx} />,
   },
 
   {

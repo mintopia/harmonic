@@ -48,7 +48,6 @@ export function SettingsForm({
   headerActions?: ReactNode;
 }) {
   const sections = sectionsForTab(ctx.surface, tab);
-  const masonry = tab === 'prompts';
   const label = ctx.surface === 'workspace' ? 'Workspace settings sections' : 'Settings sections';
   return (
     <div>
@@ -62,24 +61,23 @@ export function SettingsForm({
         id={panelId(tab)}
         role="tabpanel"
         aria-labelledby={tabId(tab)}
-        className={`mt-5 grid min-w-0 grid-cols-1 gap-4 ${masonry ? 'xl:block xl:columns-2' : 'xl:grid-cols-2 xl:items-start'}`}
+        className="mt-5 grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-2 xl:items-start"
       >
         {sections.map((section) => {
-          const { title: sectionTitle, description, body } = renderSection(section, { ...ctx, dirty });
+          const { title: sectionTitle, description, body } = renderSection(section, { ...ctx, dirty, onTab });
+          if (section.bare) {
+            return (
+              <div key={`${section.tab}:${sectionTitle}`} className="min-w-0 xl:col-span-2">
+                {body}
+              </div>
+            );
+          }
           return (
             <SettingsSection
               key={`${section.tab}:${sectionTitle}`}
               title={sectionTitle}
               description={description}
-              className={
-                masonry
-                  ? section.wide
-                    ? 'xl:mb-4 xl:[column-span:all]'
-                    : 'xl:mb-4 xl:break-inside-avoid'
-                  : section.wide
-                    ? 'xl:col-span-2'
-                    : undefined
-              }
+              className={section.wide ? 'xl:col-span-2' : undefined}
             >
               {body}
             </SettingsSection>
