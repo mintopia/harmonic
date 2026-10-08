@@ -1,4 +1,5 @@
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
+import { setTimeout as sleepMs } from 'node:timers/promises';
 import { and, desc, eq, inArray, isNull, notInArray, or } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import type { AsyncDbHandle } from '../db/async.js';
@@ -14,15 +15,26 @@ interface StoredAuth {
   hash: string;
 }
 
+const FREE_FAILURES = 5;
+const BACKOFF_BASE_MS = 1000;
+const BACKOFF_MAX_MS = 60_000;
+
 const hashPassword = (password: string, salt: string) =>
-  scryptSync(password, salt, 64).toString('hex');
+  new Promise<string>((resolve, reject) => {
+    scrypt(password, salt, 64, (err, key) => (err ? reject(err) : resolve(key.toString('hex'))));
+  });
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
 export class AuthService {
   private sessions = new Set<string>();
 
-  constructor(private readonly db: AsyncDbHandle) {}
+  private loginAttempts = 0;
+
+  constructor(
+    private readonly db: AsyncDbHandle,
+    private readonly sleep: (ms: number) => Promise<unknown> = sleepMs,
+  ) {}
 
   async hasPassword(): Promise<boolean> {
     return (await this.readAuth()) !== null;
@@ -31,7 +43,7 @@ export class AuthService {
   async setPassword(password: string): Promise<void> {
     if (password.length < 4) throw new DomainError('validation', 'password too short');
     const salt = randomBytes(16).toString('hex');
-    const value = JSON.stringify({ salt, hash: hashPassword(password, salt) } satisfies StoredAuth);
+    const value = JSON.stringify({ salt, hash: await hashPassword(password, salt) } satisfies StoredAuth);
     await this.db.write((db) =>
       db
         .insert(settings)
@@ -45,12 +57,17 @@ export class AuthService {
     await this.db.write((db) => db.delete(settings).where(eq(settings.key, AUTH_KEY)).run());
   }
 
+  /** Global back-off: attempts count as failures from entry until one succeeds, so a parallel flood can't beat the free allowance. */
   async verifyLogin(password: string): Promise<boolean> {
+    const over = this.loginAttempts++ - FREE_FAILURES;
+    if (over >= 0) await this.sleep(Math.min(BACKOFF_BASE_MS * 2 ** over, BACKOFF_MAX_MS));
     const stored = await this.readAuth();
     if (!stored) return false;
-    const candidate = Buffer.from(hashPassword(password, stored.salt), 'hex');
+    const candidate = Buffer.from(await hashPassword(password, stored.salt), 'hex');
     const expected = Buffer.from(stored.hash, 'hex');
-    return candidate.length === expected.length && timingSafeEqual(candidate, expected);
+    const ok = candidate.length === expected.length && timingSafeEqual(candidate, expected);
+    if (ok) this.loginAttempts = 0;
+    return ok;
   }
 
   private async readAuth(): Promise<StoredAuth | null> {
