@@ -73,10 +73,39 @@ export class EventBus {
   private emitter = new EventEmitter();
   private readonly attemptLogEvents = new Map<number, LiveAttemptEvent[]>();
   private readonly criticLogEvents = new Map<number, LiveAttemptEvent[]>();
+  private readonly clearTimers = new Map<number, NodeJS.Timeout>();
   private static readonly maxRunLogEvents = 2_048;
 
-  constructor() {
+  /** `logRetentionMs` is how long a finished Attempt's replay buffers outlive it,
+   * so a browser mid-reconnect still catches the tail. */
+  constructor(private readonly logRetentionMs = 60_000) {
     this.emitter.setMaxListeners(100);
+    this.emitter.on('attempt_changed', (run: AttemptRow) => {
+      if (run.endedAt != null) this.scheduleClear(run.id);
+      else this.cancelClear(run.id);
+    });
+  }
+
+  private scheduleClear(attemptId: number): void {
+    if (this.clearTimers.has(attemptId)) return;
+    const timer = setTimeout(() => {
+      this.clearTimers.delete(attemptId);
+      this.clearAttemptLog(attemptId);
+    }, this.logRetentionMs);
+    timer.unref();
+    this.clearTimers.set(attemptId, timer);
+  }
+
+  private cancelClear(attemptId: number): void {
+    const timer = this.clearTimers.get(attemptId);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this.clearTimers.delete(attemptId);
+  }
+
+  clearAttemptLog(attemptId: number): void {
+    this.attemptLogEvents.delete(attemptId);
+    this.criticLogEvents.delete(attemptId);
   }
 
   emit<K extends keyof BusEvents>(event: K, ...args: Parameters<BusEvents[K]>): void {
