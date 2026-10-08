@@ -148,13 +148,19 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
     await api(`${proj}/issues/${iid}${assigneeQuery(ids)}`, 'PUT');
   };
 
-  const readIssue = async (ref: TrackerRef): Promise<RawIssue> => {
+  const findIssue = async (ref: TrackerRef): Promise<RawIssue | null> => {
     try {
       return await api<RawIssue>(`${proj}/issues/${ref}`);
     } catch (err) {
-      if (err instanceof GlabError && /404/.test(err.stderr + err.message)) throw new Error(`GitLab: no issue #${ref} in ${config.project}`);
+      if (err instanceof GlabError && /404/.test(err.stderr + err.message)) return null;
       throw err;
     }
+  };
+
+  const readIssue = async (ref: TrackerRef): Promise<RawIssue> => {
+    const found = await findIssue(ref);
+    if (!found) throw new Error(`GitLab: no issue #${ref} in ${config.project}`);
+    return found;
   };
 
   const scanAll = async (): Promise<Ticket[]> => {
@@ -183,14 +189,15 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
 
     async readTicket(ref: TicketRef) {
       const raw = await readIssue(ref.ref);
-      const blockedBy: TicketRef[] = [];
-      await Promise.all(
-        parseBlockedBySection(raw.description ?? '').map(async (iid) => {
-          if (iid === raw.iid) return;
-          const blocker = await readIssue(trackerRef(iid)).catch(() => null);
-          if (blocker) blockedBy.push({ ref: trackerRef(iid), title: blocker.title, state: state(blocker.state) });
-        }),
+      const blockers = await Promise.all(
+        parseBlockedBySection(raw.description ?? '')
+          .filter((iid) => iid !== raw.iid)
+          .map(async (iid): Promise<TicketRef | null> => {
+            const blocker = await findIssue(trackerRef(iid));
+            return blocker ? { ref: trackerRef(iid), title: blocker.title, state: state(blocker.state) } : null;
+          }),
       );
+      const blockedBy = blockers.filter((b): b is TicketRef => b !== null);
       const parent = parsePartOfParent(raw.description ?? '');
       return { ...normaliseBase(raw), parent: parent === null ? null : trackerRef(parent), blockedBy, blocking: [] };
     },

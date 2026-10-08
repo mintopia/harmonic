@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { logger } from '../src/logger.js';
 import { resolveTracker, resolveTrackerAdapter, trackerRef } from '../src/tracker/adapter.js';
 import { githubAdapter, type GhRunner } from '../src/tracker/github.js';
-import { gitlabAdapter, type GlabRunner } from '../src/tracker/gitlab.js';
+import { gitlabAdapter, GlabError, type GlabRunner } from '../src/tracker/gitlab.js';
 import { localMarkdownAdapter } from '../src/tracker/local-markdown.js';
 
 const issue29 = {
@@ -575,6 +575,15 @@ describe('gitlab tracker adapter', () => {
     expect(open).toMatchObject({ ref: '36', parent: '19' });
     expect(open.blockedBy).toEqual([{ ref: '22', title: 'The Tracker Adapter interface', state: 'closed' }]);
     expect(reads.some((r) => r.startsWith('/issues?'))).toBe(false);
+  });
+
+  it('readTicket surfaces a non-404 blocker lookup failure instead of dropping the blocker', async () => {
+    const { run } = fakeGlab();
+    const failing: GlabRunner = async (args, cwd) => {
+      if (/\/issues\/22$/.test(args[args.length - 1]!)) throw new GlabError('glab api failed: 500', '500 Server Error');
+      return run(args, cwd);
+    };
+    await expect(gitlabAdapter(cfg, failing).readTicket({ ref: trackerRef(36), title: '', state: 'open' })).rejects.toThrow('500');
   });
 
   it('readState issues one single-issue request', async () => {
