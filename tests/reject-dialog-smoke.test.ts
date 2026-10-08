@@ -79,6 +79,46 @@ describe('RejectDialog', () => {
   });
 });
 
+describe('RejectDialog Model picker', () => {
+  const models = async () => ({ harness: 'claude', current: 'sonnet', options: ['sonnet', 'opus'] });
+  const click = (host: HTMLElement, text: string) =>
+    act(async () => {
+      [...host.querySelectorAll('button')].find((b) => b.textContent === text)!.click();
+      await flush();
+    });
+
+  it('saves a changed Model on the Ticket before rejecting', async () => {
+    const calls: string[] = [];
+    const host = await mountComponent(createElement(RejectDialog, {
+      taskId: 7, onClose: () => {}, onDone: () => {},
+      reject: async () => { calls.push('reject'); },
+      setModel: async (m: string) => { calls.push(`model:${m}`); },
+      loadModels: models,
+      loadPreview: async (): Promise<ContinuationPreview> => ({ available: false }),
+    }));
+    const input = host.querySelector<HTMLInputElement>('#reject-model')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    await act(async () => {
+      setValue.call(input, 'opus');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click(host, 'Reject');
+    expect(calls).toEqual(['model:opus', 'reject']);
+  });
+
+  it('leaves the Model alone when unchanged', async () => {
+    const setModel = vi.fn(async () => {});
+    const reject = vi.fn(async () => {});
+    const host = await mountComponent(createElement(RejectDialog, {
+      taskId: 7, onClose: () => {}, onDone: () => {}, reject, setModel, loadModels: models,
+      loadPreview: async (): Promise<ContinuationPreview> => ({ available: false }),
+    }));
+    await click(host, 'Reject');
+    expect(setModel).not.toHaveBeenCalled();
+    expect(reject).toHaveBeenCalledWith('', false);
+  });
+});
+
 describe('Reject guidance recovery', () => {
   it('keeps guidance when a dirty backdrop dismissal is cancelled', async () => {
     const onClose = vi.fn();

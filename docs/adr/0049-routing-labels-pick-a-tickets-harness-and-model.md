@@ -68,7 +68,7 @@ Model.
 - Epic resolve, refresh and integration-merge turns change behaviour: they no
   longer follow a member Task's settings.
 - A Critic without its own Harness falls back to the Workspace/global default Harness, never the Task's Harness (#818).
-- Changing a Model on escalated Reject/Retry without relabelling is out of scope.
+- Retry offers a Harness and Model picker that saves both as operator settings on the Ticket (#817); the Routing Label then no longer applies (#826).
 
 ## Supersedes
 

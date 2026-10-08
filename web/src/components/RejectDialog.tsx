@@ -2,10 +2,17 @@ import { useState } from 'react';
 import { api } from '../api';
 import { toastSuccess } from '../toast';
 import { useLiveEffect } from '../useLiveEffect';
+import { DiscoveryModelPicker } from './DiscoveryModelPicker';
 import { Modal } from './Modal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { btnGhost, btnPrimary, btnQuietDestructive, field, panelTitle, labelType } from '../ui';
 import { taskLabel } from '../id-format.js';
+
+async function fetchModelInfo(taskId: number) {
+  const [task, config] = await Promise.all([api.task(taskId), api.config()]);
+  const harness = task.harness ?? config.defaults.harness ?? '';
+  return { harness, current: task.model ?? '', options: (config.harnesses[harness]?.models ?? []).map((m) => m.id) };
+}
 
 export function RejectDialog({
   taskId,
@@ -13,13 +20,19 @@ export function RejectDialog({
   onDone,
   reject = (guidance, start) => api.rejectTask(taskId, guidance, start),
   loadPreview = () => api.continuationPreview(taskId),
+  loadModels,
+  setModel = (model) => api.updateTask(taskId, { model }),
 }: {
   taskId: number;
   onClose: () => void;
   onDone: () => void;
   reject?: (guidance: string, start: boolean) => Promise<unknown>;
   loadPreview?: () => Promise<import('../types').ContinuationPreview>;
+  loadModels?: () => Promise<{ harness: string; current: string; options: string[] }>;
+  setModel?: (model: string) => Promise<unknown>;
 }) {
+  const [modelInfo, setModelInfo] = useState<{ harness: string; current: string; options: string[] } | null>(null);
+  const [model, setModelChoice] = useState('');
   const [guidance, setGuidance] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,10 +55,22 @@ export function RejectDialog({
       });
   }, [loadPreview]);
 
+  useLiveEffect((live) => {
+    (loadModels ?? (() => fetchModelInfo(taskId)))()
+      .then((info) => {
+        if (live()) {
+          setModelInfo(info);
+          setModelChoice(info.current);
+        }
+      })
+      .catch((e) => console.warn('failed to load model options', e));
+  }, [loadModels, taskId]);
+
   const submit = async (start: boolean) => {
     setBusy(true);
     setError(null);
     try {
+      if (modelInfo && model.trim() && model.trim() !== modelInfo.current) await setModel(model.trim());
       await reject(guidance.trim(), start);
       toastSuccess(
         start
@@ -84,6 +109,17 @@ export function RejectDialog({
           value={guidance}
           onChange={(e) => setGuidance(e.target.value)}
         />
+        {modelInfo && (
+          <div className="mb-4">
+            <label className={`${labelType} mb-1 block text-muted`} htmlFor="reject-model">
+              Model
+            </label>
+            <DiscoveryModelPicker id="reject-model" harness={modelInfo.harness} value={model} options={modelInfo.options} onChange={setModelChoice} />
+            <p className="mt-1 text-small text-muted">
+              Changing the Model is saved on this Ticket and replaces its Routing Label for every Attempt.
+            </p>
+          </div>
+        )}
         {error && <p role="alert" className="mb-3 text-fail">{error}</p>}
         <div className="flex justify-end gap-2">
           <button type="button" className={`${btnGhost} px-3 py-1.5`} onClick={requestClose} disabled={busy}>
