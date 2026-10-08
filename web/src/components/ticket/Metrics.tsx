@@ -131,7 +131,7 @@ export function Properties({ task, allTasks, workspaceName }: { task: Task; allT
           <span className="text-muted">Not started</span>
         ) : (
           <>
-            {harnessLabel(task.harness)} <span className="font-data text-muted">{formatModelLabel(task.model)}</span>
+            {harnessLabel(task.harness)} · <span className="font-data text-muted">{formatModelLabel(task.model)}</span>
           </>
         )}
         {task.routing && <RoutingNote routing={task.routing} />}

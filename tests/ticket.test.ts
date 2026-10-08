@@ -93,7 +93,7 @@ describe('ticket-timeline-route', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.events).toContainEqual(expect.objectContaining({
-        kind: 'operator-reject',
+        kind: 'operator-retry',
         ts: 200,
         data: { attempt: 1, feedback: 'Use the documented timeout.' },
       }));
@@ -102,7 +102,7 @@ describe('ticket-timeline-route', () => {
         ts: 150,
         data: { attempt: 1, state: 'escalated', feedback: 'Use the documented timeout.', reason: 'escalate' },
       }));
-      expect(response.body.events.filter((event: { kind: string }) => event.kind === 'operator-reject')).toHaveLength(1);
+      expect(response.body.events.filter((event: { kind: string }) => event.kind === 'operator-retry')).toHaveLength(1);
     });
 
     it('renders a Task-level event (no owning Attempt) as a visible lifecycle row (owner decision: task_events)', async () => {

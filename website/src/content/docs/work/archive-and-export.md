@@ -20,7 +20,7 @@ don't need to configure anything. It holds:
   and for every Critic;
 - a copy of each agent harness's own log, taken when its step ends;
 - the complete output of every verify command, with nothing cut;
-- everything you did to the task: steers, Accept, Reject with its reason,
+- everything you did to the task: steers, Accept, Retry with its reason,
   Pause and Resume, Close and Cancel.
 
 The Archive lives in Harmonic's data directory (`~/.harmonic` unless you set

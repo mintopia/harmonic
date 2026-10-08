@@ -11,7 +11,7 @@ describe('retrying an escalated Ticket after changing its route', () => {
     await server.close();
   });
 
-  it('PATCH harness then reject resumes on the new Harness; the never-spawned placeholder does not eat the attempt budget', async () => {
+  it('PATCH harness then retry resumes on the new Harness; the never-spawned placeholder does not eat the attempt budget', async () => {
     const created = await server.api('POST', '/api/tasks', { prompt: 'do the thing', harness: 'codex' });
     const taskId = created.body.id as number;
     delete (server.app.ctx.settingsStore.getGlobal().harnesses as Record<string, unknown>).codex;
@@ -28,7 +28,7 @@ describe('retrying an escalated Ticket after changing its route', () => {
     expect(placeholder.budgetBase).toBe(1);
 
     expect((await server.api('PATCH', `/api/tasks/${taskId}`, { harness: 'claude' })).status).toBe(200);
-    expect((await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'Retry after changing the route.', start: true })).status).toBe(200);
+    expect((await server.api('POST', `/api/tasks/${taskId}/retry`, { guidance: 'Retry after changing the route.', startNow: true })).status).toBe(200);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
 
     const after = (await server.api('GET', `/api/tasks/${taskId}`)).body;

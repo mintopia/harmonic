@@ -34,9 +34,9 @@ describe('unified corrective attempts', () => {
 
   it('Reject with guidance spawns a new Attempt carrying the recorded guidance (ADR-0038)', async () => {
     const ticket = await startEscalatedTicket({ baseBranch: 'integration/x' });
-    const rejected = await server.api('POST', `/api/tasks/${ticket.id}/reject`, {
+    const rejected = await server.api('POST', `/api/tasks/${ticket.id}/retry`, {
       guidance: 'Add the CSV header and cover an empty result.',
-      start: true,
+      startNow: true,
     });
     expect(rejected.status).toBe(200);
 
@@ -87,7 +87,7 @@ describe('unified corrective attempts', () => {
       return task.state === 'escalated' ? task : undefined;
     });
 
-    const rejected = await server.api('POST', `/api/tasks/${mirrored.id}/reject`, { guidance: 'Keep the tracker link.', start: true });
+    const rejected = await server.api('POST', `/api/tasks/${mirrored.id}/retry`, { guidance: 'Keep the tracker link.', startNow: true });
     expect(rejected.status).toBe(200);
     // ADR-0038: the corrective run is a new Attempt (number 2), but it stays
     // on the same mirrored Task — no detached duplicate ticket.

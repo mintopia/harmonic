@@ -22,7 +22,7 @@ const epicListParamsSchema = z.object({
   workspaceId: z.coerce.number().int().meta({ example: 1 }),
 });
 
-const rejectEpicInputSchema = z.object({
+const retryEpicInputSchema = z.object({
   guidance: z.string().trim().min(1).meta({ example: 'Fix the failing integration test before trying again.' }),
   continuation: z.enum(['continue', 'fresh']).meta({ example: 'continue' }),
 });
@@ -325,16 +325,16 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
   );
 
   app.post(
-    '/workspaces/:workspaceId/epics/:epicRef/reject',
+    '/workspaces/:workspaceId/epics/:epicRef/retry',
     {
       schema: {
         tags: ['Epics'],
-        description: 'Reject an escalated Epic with guidance. The guidance is recorded on the escalated Epic Attempt and included in the next whole-Epic resolver turn.',
+        description: 'Retry an escalated Epic with guidance. The guidance is recorded on the escalated Epic Attempt and included in the next whole-Epic resolver turn.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: epicParamsSchema,
-        body: rejectEpicInputSchema,
+        body: retryEpicInputSchema,
         response: {
-          200: epicIntegrateOutcomeSchema.describe('The outcome of rejecting the Epic and requeuing it with operator guidance.'),
+          200: epicIntegrateOutcomeSchema.describe('The outcome of retrying the Epic and requeuing it with operator guidance.'),
           404: errorResponse('No Workspace has that id.'),
           409: errorResponse('The Epic is not escalated or has no active whole-Epic coordinator.'),
         },
@@ -342,7 +342,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
-      const outcome = await ctx.trackerManager.rejectEpic(req.params.workspaceId, req.params.epicRef, req.body.guidance, req.body.continuation);
+      const outcome = await ctx.trackerManager.retryEpic(req.params.workspaceId, req.params.epicRef, req.body.guidance, req.body.continuation);
       if (!outcome) throw new DomainError('conflict', `Epic ${req.params.epicRef} is not escalated`);
       return outcome;
     },

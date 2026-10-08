@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { api } from '../api';
 import type { Task, StepType } from '../types';
 import { acceptPresentation, acceptedOutcome, escalationActions, taskActions, type TaskAction } from '../task-actions-model';
-import { btnAccept, btnGhost, btnQuiet, btnQuietDestructive, btnReject } from '../ui';
+import { btnAccept, btnGhost, btnQuiet, btnQuietDestructive, btnRetry } from '../ui';
 import { toastError, toastSuccess } from '../toast';
-import { RejectDialog } from './RejectDialog';
+import { RetryDialog } from './RetryDialog';
 import { ResumeDialog } from './ResumeDialog';
 import { ExtendGuardrailDialog } from './ExtendGuardrailDialog';
 import { DeleteTaskDialog } from './DeleteTaskDialog';
@@ -26,7 +26,7 @@ export function TaskActions({
   onEdit: (task: Task) => void;
   onChanged: () => void;
 }) {
-  const [rejecting, setRejecting] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirming, setConfirming] = useState<Confirming | null>(null);
   const [accepting, setAccepting] = useState(false);
@@ -39,11 +39,12 @@ export function TaskActions({
   const accept = acceptPresentation(failedStep);
   // An Accept in flight (merging) is persisted on the Task, not just in this
   // component's `accepting` flag — so the actions stay disabled across a reload
-  // or a leave-and-return, never handing the operator a second Accept/Reject
+  // or a leave-and-return, never handing the operator a second Accept/Retry
   // that would race it. `resolving-conflicts` is excluded: that merge stalled on
   // a conflict and the operator may want to bail (Close).
   const acceptInFlight = task.mergeStatus === 'merging';
   if (variant === 'footer' && actions.length === 0) return null;
+  const escalatedFooter = variant === 'footer' && task.state === 'escalated';
 
   const secondary = variant === 'card' ? btnQuiet : btnGhost;
   const act = (fn: () => Promise<unknown>) => () => fn().then(onChanged, toastError);
@@ -92,17 +93,22 @@ export function TaskActions({
           </button>
         );
       }
-      case 'reject':
+      case 'retry':
         return (
-          <button key={action} className={btnReject} disabled={acceptInFlight} onClick={() => setRejecting(true)}>
-            {variant === 'footer' ? 'Reject…' : 'Reject'}
+          <button
+            key={action}
+            className={`${btnRetry} ${escalatedFooter ? 'ml-auto' : ''}`}
+            disabled={acceptInFlight}
+            onClick={() => setRetrying(true)}
+          >
+            {variant === 'footer' ? 'Retry…' : 'Retry'}
           </button>
         );
       case 'close':
         return (
           <button
             key={action}
-            className={btnQuietDestructive}
+            className={escalatedFooter ? `${btnGhost} border-fail text-fail` : btnQuietDestructive}
             disabled={acceptInFlight}
             onClick={() => setConfirming('close')}
           >
@@ -172,11 +178,12 @@ export function TaskActions({
     }
   };
 
-  const container =
-    variant === 'footer'
+  const container = escalatedFooter
+    ? 'flex flex-wrap items-center gap-2.5'
+    : variant === 'footer'
       ? 'flex flex-col gap-2 [&>button]:w-full [&>button]:justify-center'
       : 'flex flex-wrap items-center justify-end gap-2.5';
-  const ordered = (variant === 'footer' ? [...actions].reverse() : actions).filter(
+  const ordered = (variant === 'footer' && !escalatedFooter ? [...actions].reverse() : actions).filter(
     (action) => !(variant === 'footer' && task.state === 'escalated' && action === 'delete'),
   );
   const done = (close: () => void) => () => {
@@ -190,11 +197,11 @@ export function TaskActions({
         <p className="text-small text-muted">{accept.description}</p>
       )}
       <div className={container}>{ordered.map(button)}</div>
-      {rejecting && (
-        <RejectDialog
-          taskId={task.id}
-          onClose={() => setRejecting(false)}
-          onDone={done(() => setRejecting(false))}
+      {retrying && (
+        <RetryDialog
+          task={task}
+          onClose={() => setRetrying(false)}
+          onDone={done(() => setRetrying(false))}
         />
       )}
       {resumeOpen && (

@@ -359,11 +359,10 @@ export const api: typeof RealApi = {
   addDependency: (_id: number, _dependsOnId: number) => ok(f.task),
   removeDependency: (_id: number, _depId: number) => ok(f.task),
   continuationPreview: (_id: number) => ok({ available: false as const }),
-  rejectEpic: (_workspaceId: number, _epicRef: TrackerRef, _guidance: string, _continuation: 'continue' | 'fresh') =>
+  retryEpic: (_workspaceId: number, _epicRef: TrackerRef, _guidance: string, _continuation: 'continue' | 'fresh') =>
     ok<EpicIntegrateOutcome>({ status: 'integrated', oid: 'a1b2c3d' }),
   acceptTask: (_id: number) => ok(f.task),
-  rejectTask: (_id: number, _guidance: string, _start = false) => ok(f.task),
-  retryTask: (_id: number) => ok(f.task),
+  retryTask: (_id: number, _body: { guidance: string }) => ok(f.task),
   closeTask: (_id: number) => ok(f.task),
   deleteTask: (id: number) => ok({ id }),
   runTask: (_id: number) => ok(f.runs[2] ?? f.runs[0]!),

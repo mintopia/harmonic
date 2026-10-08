@@ -174,7 +174,7 @@ export class AttemptStore {
     return row && isEpicAttempt(row) ? row : undefined;
   }
 
-  /** Get-or-create the Attempt for an explicit `(taskId, number)` — the reject/resume path. */
+  /** Get-or-create the Attempt for an explicit `(taskId, number)` — the retry/resume path. */
   async ensureForRun(taskId: number, number: number, startedAt: number): Promise<TaskAttemptRow> {
     const row = await this.db.write(async (db) => {
       const existing = await db.select().from(attempts).where(and(eq(attempts.taskId, taskId), eq(attempts.number, number))).get();

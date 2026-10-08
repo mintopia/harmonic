@@ -89,7 +89,7 @@ export function UnconfiguredHarnessGate({ taskId, onChanged, onClose }: { taskId
     setBusy(true);
     setError(null);
     try {
-      await api.retryTask(taskId);
+      await api.retryTask(taskId, { guidance: 'Retry after changing the route.' });
       onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

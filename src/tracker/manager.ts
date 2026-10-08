@@ -100,7 +100,7 @@ export class TrackerPollerManager {
 
   adapterFor(workspace: WorkspaceRow): Promise<TrackerAdapter> { return this.resolveAdapter(workspace.workingDir, undefined, workspaceTrackerSettings(workspace)); }
   resolvedTracker(workspaceId: number): ResolvedTracker | null { return this.resolved.get(workspaceId) ?? null; }
-  async rejectEpic(workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null> { return this.epicService.rejectEpic(workspaceId, epicRef, guidance, continuation); }
+  async retryEpic(workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null> { return this.epicService.retryEpic(workspaceId, epicRef, guidance, continuation); }
   async epicBaseNotReady(task: TaskRow): Promise<boolean> { return this.epicService.epicBaseNotReady(task); }
   async refreshAfterDefaultBranchAdvance(workingDir: string, defaultBranch: string): Promise<void> { await this.epicService.refreshAfterDefaultBranchAdvance(workingDir, defaultBranch); }
   async listEpics(workspaceId: number): Promise<Epic[]> { return this.epicService.listEpics(workspaceId); }

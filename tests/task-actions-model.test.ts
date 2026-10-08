@@ -4,10 +4,10 @@ import { TASK_STATES } from '../web/src/types.js';
 
 describe('taskActions', () => {
   it('offers the escalation dispositions on escalated, accept last, delete first', () => {
-    expect(taskActions('escalated')).toEqual(['delete', 'close', 'reject', 'accept']);
+    expect(taskActions('escalated')).toEqual(['delete', 'close', 'retry', 'accept']);
   });
 
-  it('never offers plain cancel or run on escalated — the dispositions are Reject, Close, Accept', () => {
+  it('never offers plain cancel or run on escalated — the dispositions are Retry, Close, Accept', () => {
     expect(taskActions('escalated')).not.toContain('cancel');
     expect(taskActions('escalated')).not.toContain('run');
   });
@@ -41,10 +41,10 @@ describe('taskActions', () => {
     }
   });
 
-  it('offers accept/reject/close only on escalated', () => {
+  it('offers accept/retry/close only on escalated', () => {
     for (const state of TASK_STATES) {
       const actions = taskActions(state);
-      for (const action of ['accept', 'reject', 'close'] as const) {
+      for (const action of ['accept', 'retry', 'close'] as const) {
         expect(actions.includes(action)).toBe(state === 'escalated');
       }
     }
@@ -70,13 +70,13 @@ describe('escalationActions', () => {
   it('offers all three when the escalated ticket has a candidate', () => {
     expect(escalationActions({ state: 'escalated', hasCandidate: true })).toEqual({
       accept: true,
-      reject: true,
+      retry: true,
       close: true,
     });
   });
 
   it('withholds only Accept when the branch has no candidate', () => {
-    expect(escalationActions({ state: 'escalated', hasCandidate: false })).toEqual({ accept: false, reject: true, close: true });
+    expect(escalationActions({ state: 'escalated', hasCandidate: false })).toEqual({ accept: false, retry: true, close: true });
   });
 });
 

@@ -323,9 +323,9 @@ export function lifecycleTimelineRows(events: TicketTimelineEvent[]): LifecycleT
         return { ...base, ...verificationRow(data) };
       case 'guardrail':
         return { ...base, label: 'Guardrail tripped', detail: text(data?.dimension), tone: 'failed', tag: null };
-      case 'operator-reject': {
+      case 'operator-retry': {
         const n = num(data?.attempt);
-        return { ...base, label: 'Operator rejected with guidance', detail: clip(text(data?.feedback)) ?? (n !== null ? `Attempt ${n}` : null), tone: 'awaiting', tag: null };
+        return { ...base, label: 'Operator retried with guidance', detail: clip(text(data?.feedback)) ?? (n !== null ? `Attempt ${n}` : null), tone: 'awaiting', tag: null };
       }
       case 'agent-message':
         return { ...base, ...agentMessageRow(data) };

@@ -872,7 +872,7 @@ export class TaskService {
 
   /**
    * Hand the ticket to a human. `reason` is the trigger's recorded fact and
-   * stays on the row until an operator Accepts, Rejects with guidance, or Closes it.
+   * stays on the row until an operator Accepts, Retries with guidance, or Closes it.
    */
   async escalate(id: number, reason: string, cause?: EscalationCause): Promise<TaskRow> {
     return withTaskLock(id, async () => {

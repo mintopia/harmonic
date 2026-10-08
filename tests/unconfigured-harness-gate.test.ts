@@ -41,8 +41,8 @@ async function render(reason: string, escalationCause: Task['escalationCause'] =
   );
 }
 
-const button = (host: HTMLElement, text: string) =>
-  [...host.querySelectorAll('button')].find((b) => b.textContent?.includes(text));
+const button = (host: HTMLElement, text: string, exact = false) =>
+  [...host.querySelectorAll('button')].find((b) => (exact ? b.textContent === text : b.textContent?.includes(text)));
 
 describe('unconfigured Harness escalation gate', () => {
   it('shows the actions only for a structured not-configured cause', async () => {
@@ -57,13 +57,13 @@ describe('unconfigured Harness escalation gate', () => {
 
   it('ignores a reason that only reads like the harness message', async () => {
     const host = await render(REASON);
-    expect(button(host, 'Retry')).toBeUndefined();
+    expect(button(host, 'Retry', true)).toBeUndefined();
   });
 
   it('hides the actions for any other reason', async () => {
     const host = await render('verification failed');
     expect(host.textContent).toContain('verification failed');
-    expect(button(host, 'Retry')).toBeUndefined();
+    expect(button(host, 'Retry', true)).toBeUndefined();
   });
 
   it('the dialog PATCHes the chosen harness', async () => {
@@ -75,11 +75,11 @@ describe('unconfigured Harness escalation gate', () => {
     const patch = calls.find((c) => c.method === 'PATCH');
     expect(patch?.body).toEqual({ harness: 'claude' });
   });
-  it('Retry rejects the task with descriptive guidance', async () => {
+  it('Retry retries the task with descriptive guidance', async () => {
     const host = await render(REASON, CAUSE);
     await act(async () => button(host, 'Retry')!.click());
     await flush();
-    expect(calls.find((c) => c.path.endsWith('/reject'))?.body).toMatchObject({ guidance: 'Retry after changing the route.' });
+    expect(calls.find((c) => c.path.endsWith('/retry'))?.body).toMatchObject({ guidance: 'Retry after changing the route.' });
   });
 
 });
