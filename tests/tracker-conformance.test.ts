@@ -218,7 +218,9 @@ describe.each(TRACKER_KINDS.map((k) => [k.id, k] as const))('tracker conformance
 
   it('scan returns every ticket with portable number, title and state', async () => {
     const h = harness();
-    const tickets = await h.adapter.scan();
+    const scanned = await h.adapter.scan();
+    const closed = h.adapter.scansOpenOnly && !scanned.some((t) => t.ref === refFor(h, 3)) ? [await h.adapter.readTicket({ ref: trackerRef(refFor(h, 3)), title: '', state: 'closed' })] : [];
+    const tickets = [...scanned, ...closed];
     expect(tickets.map((t) => [t.ref, t.title, t.state]).sort((a, b) => a[0]!.localeCompare(b[0]!))).toEqual([
       [refFor(h, 1), 'Alpha', 'open'],
       [refFor(h, 2), 'Beta', 'open'],

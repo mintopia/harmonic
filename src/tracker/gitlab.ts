@@ -2,10 +2,11 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { logger } from '../logger.js';
 import { z } from 'zod';
+import { forEachYielding } from '../reliability/yield.js';
 import { parseBlockedBySection, parsePartOfParent } from './relationships.js';
 import type { TrackerKind } from './kind.js';
 import { type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
-import { EPIC_LABEL, MAP_LABEL, trackerRef } from './ref.js';
+import { EPIC_LABEL, MAP_LABEL, trackerRef, type TrackerRef } from './ref.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -84,15 +85,15 @@ function normaliseBase(raw: RawIssue): Omit<Ticket, 'parent' | 'blockedBy' | 'bl
   };
 }
 
-function synthesise(raws: RawIssue[]): Ticket[] {
+function synthesise(raws: RawIssue[], unscanned: ReadonlyMap<number, RawIssue> = new Map()): Ticket[] {
   const parsed = raws.map((raw) => {
     const desc = raw.description ?? '';
     return { raw, parent: parsePartOfParent(desc), blockedBy: parseBlockedBySection(desc) };
   });
   const byId = new Map(parsed.map((p) => [p.raw.iid, p]));
   const mkRef = (iid: number): TicketRef | null => {
-    const p = byId.get(iid);
-    return p ? { ref: trackerRef(iid), title: p.raw.title, state: state(p.raw.state) } : null;
+    const raw = byId.get(iid)?.raw ?? unscanned.get(iid);
+    return raw ? { ref: trackerRef(iid), title: raw.title, state: state(raw.state) } : null;
   };
   const blockedBy = new Map<number, Set<number>>(parsed.map((p) => [p.raw.iid, new Set(p.blockedBy)]));
   const blocking = new Map<number, Set<number>>(parsed.map((p) => [p.raw.iid, new Set<number>()]));
@@ -148,22 +149,46 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
     await api(`${proj}/issues/${iid}${assigneeQuery(ids)}`, 'PUT');
   };
 
+  const findIssue = async (ref: TrackerRef): Promise<RawIssue | null> => {
+    try {
+      return await api<RawIssue>(`${proj}/issues/${ref}`);
+    } catch (err) {
+      if (err instanceof GlabError && /404/.test(err.stderr + err.message)) return null;
+      throw err;
+    }
+  };
+
+  const readIssue = async (ref: TrackerRef): Promise<RawIssue> => {
+    const found = await findIssue(ref);
+    if (!found) throw new Error(`GitLab: no issue #${ref} in ${config.project}`);
+    return found;
+  };
+
   const scanAll = async (): Promise<Ticket[]> => {
     const raws: RawIssue[] = [];
     let page = 1;
     for (; page <= SCAN_SAFETY_VALVE_PAGES; page++) {
-      const batch = await api<RawIssue[]>(`${proj}/issues?per_page=100&page=${page}`);
+      const batch = await api<RawIssue[]>(`${proj}/issues?state=opened&per_page=100&page=${page}`);
       raws.push(...batch);
       if (batch.length < 100) break;
     }
     if (page > SCAN_SAFETY_VALVE_PAGES) {
       logger.warn(`GitLab tracker scan hit the ${SCAN_SAFETY_VALVE_PAGES}-page safety valve — results may be truncated`);
     }
-    return synthesise(raws);
+    const scanned = new Set(raws.map((r) => r.iid));
+    const missing = new Set<number>();
+    for (const raw of raws) for (const iid of parseBlockedBySection(raw.description ?? '')) if (!scanned.has(iid)) missing.add(iid);
+    const unscanned = new Map<number, RawIssue>();
+    await forEachYielding(missing, async (iid) => {
+      const found = await findIssue(trackerRef(iid));
+      if (found) unscanned.set(iid, found);
+    });
+    return synthesise(raws, unscanned);
   };
 
   return {
     name: 'gitlab',
+    scansOpenOnly: true,
 
     async identify() {
       return (await ensureMe()).username;
@@ -172,9 +197,22 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
     scan: scanAll,
 
     async readTicket(ref: TicketRef) {
-      const found = (await scanAll()).find((t) => t.ref === ref.ref);
-      if (!found) throw new Error(`GitLab: no issue #${ref.ref} in ${config.project}`);
-      return found;
+      const raw = await readIssue(ref.ref);
+      const blockers = await Promise.all(
+        parseBlockedBySection(raw.description ?? '')
+          .filter((iid) => iid !== raw.iid)
+          .map(async (iid): Promise<TicketRef | null> => {
+            const blocker = await findIssue(trackerRef(iid));
+            return blocker ? { ref: trackerRef(iid), title: blocker.title, state: state(blocker.state) } : null;
+          }),
+      );
+      const blockedBy = blockers.filter((b): b is TicketRef => b !== null);
+      const parent = parsePartOfParent(raw.description ?? '');
+      return { ...normaliseBase(raw), parent: parent === null ? null : trackerRef(parent), blockedBy, blocking: [] };
+    },
+
+    async readState(ref: TicketRef) {
+      return state((await readIssue(ref.ref)).state);
     },
 
     async claim(ticket: TicketRef) {

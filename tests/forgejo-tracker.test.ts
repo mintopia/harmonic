@@ -31,6 +31,16 @@ describe('Forgejo tracker', () => {
     expect(off.find((t) => t.ref === '3')!.blockedBy.map((r) => r.ref)).toEqual(['1']);
   });
 
+  it('scans only open issues and still reports closed blockers as closed', async () => {
+    const issues = [issue(1, 'Done', { state: 'closed' }), issue(2, 'Done too', { state: 'closed' }), issue(3, 'C', { body: 'Blocked by #1' }), issue(4, 'D')];
+    const { adapter } = build({ issues, dependencies: { 4: [2] } });
+    expect(adapter.scansOpenOnly).toBe(true);
+    const tickets = await adapter.scan();
+    expect(tickets.map((t) => t.ref)).toEqual(['3', '4']);
+    expect(tickets.find((t) => t.ref === '3')!.blockedBy).toEqual([{ ref: '1', title: 'Done', state: 'closed' }]);
+    expect(tickets.find((t) => t.ref === '4')!.blockedBy).toEqual([{ ref: '2', title: 'Done too', state: 'closed' }]);
+  });
+
   it('claim assigns the token account and release removes only it', async () => {
     const { fake, adapter } = build({ issues: [issue(1, 'A', { assignees: ['someone'] })] });
     await adapter.claim(ref(1));

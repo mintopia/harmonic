@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { logger } from '../src/logger.js';
 import { resolveTracker, resolveTrackerAdapter, trackerRef } from '../src/tracker/adapter.js';
 import { githubAdapter, type GhRunner } from '../src/tracker/github.js';
-import { gitlabAdapter, type GlabRunner } from '../src/tracker/gitlab.js';
+import { gitlabAdapter, GlabError, type GlabRunner } from '../src/tracker/gitlab.js';
 import { localMarkdownAdapter } from '../src/tracker/local-markdown.js';
 
 const issue29 = {
@@ -516,15 +516,19 @@ describe('gitlab tracker adapter', () => {
 
   function fakeGlab() {
     const writes: { method: string; path: string }[] = [];
+    const reads: string[] = [];
     const run: GlabRunner = async (args) => {
       const xi = args.indexOf('-X');
       const method = xi === -1 ? 'GET' : args[xi + 1]!;
       const path = '/' + args[args.length - 1]!.replace(/^projects\/[^/]+\//, '');
       if (method !== 'GET') writes.push({ method, path });
+      else reads.push(path);
       if (args[args.length - 1] === 'user') return JSON.stringify({ id: 7, username: 'harmonic-bot' });
       if (/^\/issues\?.*per_page/.test(path)) {
         const page = Number(new URLSearchParams(path.split('?')[1]).get('page') ?? '1');
-        return JSON.stringify(page === 1 ? Object.values(issues) : []);
+        const wantedState = new URLSearchParams(path.split('?')[1]).get('state');
+        const matching = Object.values(issues).filter((i) => wantedState === null || wantedState === 'all' || (wantedState === 'opened' ? i.state !== 'closed' : i.state === wantedState));
+        return JSON.stringify(page === 1 ? matching : []);
       }
       const notes = path.match(/\/issues\/(\d+)\/notes/);
       if (notes) {
@@ -538,16 +542,19 @@ describe('gitlab tracker adapter', () => {
       if (single) return JSON.stringify(issues[Number(single[1])]);
       return JSON.stringify({});
     };
-    return { run, writes };
+    return { run, writes, reads };
   }
 
   const cfg = { project: 'mintopia/harmonic', repoRoot: '/repo' };
 
-  it('scan normalises iid/opened-state and synthesises directional edges', async () => {
-    const { run } = fakeGlab();
-    const tickets = await gitlabAdapter(cfg, run).scan();
+  it('scan asks only for open issues and synthesises directional edges', async () => {
+    const { run, reads } = fakeGlab();
+    const gl = gitlabAdapter(cfg, run);
+    expect(gl.scansOpenOnly).toBe(true);
+    const tickets = await gl.scan();
+    expect(reads.filter((r) => r.startsWith('/issues?'))).toEqual([expect.stringContaining('state=opened')]);
     const t36 = tickets.find((t) => t.ref === '36')!;
-    const t22 = tickets.find((t) => t.ref === '22')!;
+    expect(tickets.find((t) => t.ref === '22')).toBeUndefined();
     expect(t36).toMatchObject({
       ref: '36',
       state: 'open',
@@ -557,15 +564,33 @@ describe('gitlab tracker adapter', () => {
       url: 'https://gitlab.com/mintopia/harmonic/-/issues/36',
     });
     expect(t36.blockedBy).toEqual([{ ref: '22', title: 'The Tracker Adapter interface', state: 'closed' }]);
-    expect(t22.blocking).toEqual([{ ref: '36', title: 'GitLab tracker adapter', state: 'open' }]);
-    expect(t22).toMatchObject({ state: 'closed', isMap: true });
-    expect(t22.assignees).toEqual(['mintopia']);
+    expect(reads).toContain('/issues/22');
   });
 
-  it('readTicket returns the scanned ticket', async () => {
+  it('readTicket reads a closed ticket with single-issue requests, never a scan', async () => {
+    const { run, reads } = fakeGlab();
+    const gl = gitlabAdapter(cfg, run);
+    const closed = await gl.readTicket({ ref: trackerRef(22), title: '', state: 'closed' });
+    expect(closed).toMatchObject({ ref: '22', state: 'closed', isMap: true, assignees: ['mintopia'] });
+    const open = await gl.readTicket({ ref: trackerRef(36), title: '', state: 'open' });
+    expect(open).toMatchObject({ ref: '36', parent: '19' });
+    expect(open.blockedBy).toEqual([{ ref: '22', title: 'The Tracker Adapter interface', state: 'closed' }]);
+    expect(reads.some((r) => r.startsWith('/issues?'))).toBe(false);
+  });
+
+  it('readTicket surfaces a non-404 blocker lookup failure instead of dropping the blocker', async () => {
     const { run } = fakeGlab();
-    const t = await gitlabAdapter(cfg, run).readTicket({ ref: trackerRef(36), title: '', state: 'open' });
-    expect(t.ref).toBe('36');
+    const failing: GlabRunner = async (args, cwd) => {
+      if (/\/issues\/22$/.test(args[args.length - 1]!)) throw new GlabError('glab api failed: 500', '500 Server Error');
+      return run(args, cwd);
+    };
+    await expect(gitlabAdapter(cfg, failing).readTicket({ ref: trackerRef(36), title: '', state: 'open' })).rejects.toThrow('500');
+  });
+
+  it('readState issues one single-issue request', async () => {
+    const { run, reads } = fakeGlab();
+    expect(await gitlabAdapter(cfg, run).readState!({ ref: trackerRef(22), title: '', state: 'open' })).toBe('closed');
+    expect(reads).toEqual(['/issues/22']);
   });
 
   it('claim unions our id onto the current assignees; close comments then closes', async () => {
