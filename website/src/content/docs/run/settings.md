@@ -20,6 +20,7 @@ whole instance:
   talk to each other),
 - the verification checks that run before a merge (commands and named
   critics, in the order you set),
+- Routing Labels (see [Routing Labels](#routing-labels)),
 - notification channels,
 - permission rules,
 - security (the operator password),
@@ -32,6 +33,8 @@ whole instance:
   which forge hosts its code, and its [triage labels](#integrations),
 - whether the Auto-Runner is on for it,
 - whether agents may send each other messages, and how many each may send,
+- its [Routing Labels](#routing-labels): reorder or turn off the global ones
+  and add its own,
 - and its defaults for new tickets (harness, model,
   [isolation](/harmonic/work/branches-and-worktrees/), priority) and how
   many agents it may run at once.
@@ -232,6 +235,68 @@ The label names your tracker uses for each role Harmonic acts on: **Ready for
 agent**, **Ready for human**, **Epic** and **Wayfinder map**. Leave a field
 empty to inherit it from the repo's `docs/agents/triage-labels.md`, then the
 defaults shown as placeholders.
+
+## Routing Labels
+
+A Routing Label maps a tracker label to a Harness and a Model, so the label
+on a mirrored ticket decides which agent works it. For example, `reasoning`
+can route to Claude with a stronger model, and `cheap` to a smaller one.
+Native Tasks have no tracker labels, so they are never routed.
+
+Set them on the **Execution** tab, under **Routing Labels**, next to the Task
+defaults. Each row is a label, a Harness and a Model. Drag a row to reorder
+the list. Labels are free text and match case-insensitively. A label can
+appear only once in the list. The Harness picker lists the Harnesses you
+have configured.
+
+When an issue carries more than one routing label, the first one in the list
+wins. The ticket's Harness and Model are chosen in this order:
+
+1. The Harness or Model you set on the ticket yourself.
+2. The Routing Label.
+3. The Workspace default.
+4. The global default.
+
+### In a Workspace
+
+Global rows are managed in Global settings. In a Workspace's settings you
+can reorder them, turn individual ones off, and add labels that exist only in
+that Workspace. You can't edit a global row there. To send a global label
+somewhere else in one Workspace, turn the global row off and add a local row
+with the same label. A label added globally later reaches Workspaces that have
+already customised their list.
+
+### When a route applies
+
+- The route is worked out each time an Attempt starts, so relabelling a ticket
+  and retrying runs the next Attempt on the new route. An Attempt already
+  running is never moved. Changing the Harness starts a fresh agent Session,
+  while changing only the Model keeps the warm one. When a relabel moves an
+  Attempt to a different Harness or Model, the ticket's Activity records a
+  *Route changed* event.
+- An Epic's own turns (resolving it, Refresh, and merge conflicts) route by
+  the Epic's own labels, not by whichever Member happens to be running.
+- Verification Critics aren't routed. They keep the default Harness.
+
+### What you see
+
+A ticket on the Board shows a small *routed by* tag with the label next to its
+Harness and model. The ticket page shows the same beside the Agent. If you set
+the Harness or Model on the ticket yourself, the page says *set on this
+Ticket* and shows the label struck through as not applied.
+
+### When the Harness isn't configured
+
+There is no fallback. If a route's Harness isn't configured (for example it
+was removed after the label was saved), the ticket is escalated instead of
+running on a default, and no Attempt starts. The ticket page names the label
+and the Harness and offers two ways out:
+
+- **Set Harness on this Ticket**, which overrides the label for that ticket
+  only, or fix the problem for every ticket by configuring the Harness in
+  Global settings under **Integrations**, **Harnesses**, or by changing the
+  label's route.
+- **Retry**, which starts a new Attempt once the problem is fixed.
 
 ## Agent Messages
 
