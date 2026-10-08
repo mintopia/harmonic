@@ -1,3 +1,4 @@
+import { formatModelLabel } from '../TaskIdentity';
 import { useMemo, type ReactNode } from 'react';
 import { eventCount } from '../../id-format';
 import { coalesceEvents, coalesceTail } from '../../event-stream-model';
@@ -59,7 +60,7 @@ function MessageRow({ row, model, agent }: { row: Extract<ChatRow, { kind: 'mess
         <div className="mb-1 flex items-baseline gap-2">
           <span className="text-[12.5px] font-semibold text-ink">{operator ? 'You' : agent}</span>
           <span className="font-data text-[11px] text-faint">
-            {operator ? 'steered' : model} · {clockTime(row.at)}
+            {operator ? 'steered' : formatModelLabel(model)} · {clockTime(row.at)}
           </span>
           {row.pending && <span className="rounded-[4px] bg-running-tint px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.05em] text-running">Pending delivery</span>}
           {!row.pending && <CopyButton text={row.text} label="Copy message" className={`ml-auto self-center ${revealOnHover}`} />}

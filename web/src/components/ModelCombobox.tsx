@@ -1,8 +1,8 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { field } from "../ui";
-import { Icon } from "./Icon";
-import { filterModels } from "./modelFilter";
-import { formatModelLabel } from "./TaskIdentity";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { field } from '../ui';
+import { Icon } from './Icon';
+import { filterModels } from './modelFilter';
+import { formatModelLabel } from './TaskIdentity';
 
 export function ModelCombobox({
   id,
@@ -25,24 +25,21 @@ export function ModelCombobox({
   const listId = useId();
 
   const shown = filterModels(options, value);
-  const custom = value.trim() !== "" && shown.length === 0;
+  const custom = value.trim() !== '' && shown.length === 0;
   const panelOpen = open && (shown.length > 0 || custom);
 
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
-      if (wrap.current && !wrap.current.contains(e.target as Node))
-        setOpen(false);
+      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
     };
-    document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
   }, [open]);
 
   useEffect(() => {
     if (highlight >= 0) {
-      document
-        .getElementById(`${listId}-opt-${highlight}`)
-        ?.scrollIntoView({ block: "nearest" });
+      document.getElementById(`${listId}-opt-${highlight}`)?.scrollIntoView({ block: 'nearest' });
     }
   }, [highlight, listId]);
 
@@ -58,24 +55,23 @@ export function ModelCombobox({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "ArrowDown") {
+    if (e.key === 'ArrowDown') {
       e.preventDefault();
       if (!open) {
         openList();
         return;
       }
       setHighlight((h) => Math.min(h + 1, shown.length - 1));
-    } else if (e.key === "ArrowUp") {
+    } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setHighlight((h) => Math.max(h - 1, 0));
-    } else if (e.key === "Enter") {
+    } else if (e.key === 'Enter') {
       if (panelOpen) {
         e.preventDefault();
-        if (highlight >= 0 && highlight < shown.length)
-          commit(shown[highlight]!);
+        if (highlight >= 0 && highlight < shown.length) commit(shown[highlight]!);
         else setOpen(false);
       }
-    } else if (e.key === "Escape") {
+    } else if (e.key === 'Escape') {
       // Swallow Escape so the surrounding <dialog> stays open.
       if (panelOpen) {
         e.preventDefault();
@@ -94,10 +90,8 @@ export function ModelCombobox({
         aria-expanded={panelOpen}
         aria-controls={panelOpen ? listId : undefined}
         aria-autocomplete="list"
-        aria-activedescendant={
-          highlight >= 0 ? `${listId}-opt-${highlight}` : undefined
-        }
-        className={`${field} ${compact ? "min-h-9 font-data text-data" : "min-h-11"} pr-8`}
+        aria-activedescendant={highlight >= 0 ? `${listId}-opt-${highlight}` : undefined}
+        className={`${field} ${compact ? 'min-h-9 font-data text-data' : 'min-h-11'} pr-8`}
         value={open ? value : formatModelLabel(value)}
         onChange={(e) => {
           onChange(e.target.value);
@@ -113,13 +107,13 @@ export function ModelCombobox({
       <button
         type="button"
         tabIndex={-1}
-        aria-label={open ? "Hide models" : "Show models"}
+        aria-label={open ? 'Hide models' : 'Show models'}
         className="absolute inset-y-0 right-0 flex items-center px-2.5 text-muted transition-colors duration-150 hover:text-ink"
         onClick={() => (open ? setOpen(false) : openList())}
       >
         <Icon
           name="chevron-down"
-          className={`transition-transform duration-150 ${open ? "rotate-0" : "-rotate-90"}`}
+          className={`transition-transform duration-150 ${open ? 'rotate-0' : '-rotate-90'}`}
         />
       </button>
 
@@ -138,7 +132,7 @@ export function ModelCombobox({
                 role="option"
                 aria-selected={m === value}
                 className={`flex cursor-pointer items-center justify-between px-2.5 py-1.5 text-data ${
-                  i === highlight ? "bg-raised" : ""
+                  i === highlight ? 'bg-raised' : ''
                 }`}
                 onPointerDown={(e) => {
                   e.preventDefault();
@@ -148,21 +142,15 @@ export function ModelCombobox({
               >
                 <span>
                   {label}
-                  {label !== m && (
-                    <span className="ml-2 font-data text-muted">{m}</span>
-                  )}
+                  {label !== m && <span className="ml-2 font-data text-muted">{m}</span>}
                 </span>
                 {m === value && <Icon name="check" className="text-accent" />}
               </li>
             );
           })}
           {custom && (
-            <li
-              role="presentation"
-              className="px-2.5 py-1.5 text-data text-muted"
-            >
-              Use custom ID:{" "}
-              <span className="font-medium text-ink">{value}</span>
+            <li role="presentation" className="px-2.5 py-1.5 text-data text-muted">
+              Use custom ID: <span className="font-medium text-ink">{value}</span>
             </li>
           )}
         </ul>
