@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CURRENT_UNIT_REVISION, createServiceManager, unitRevision, type ServiceEnvironment, type ServiceManagerDependencies } from '../src/service-manager.js';
@@ -232,6 +232,50 @@ describe('systemd unit (real filesystem)', () => {
     if (!systemdAnalyzeAvailable) return;
     const unitPath = join(unitDir, '.config', 'systemd', 'user', 'harmonic.service');
     expect(() => execFileSync('systemd-analyze', ['verify', unitPath], { stdio: 'pipe' })).not.toThrow();
+  });
+
+  it.each([
+    ['user-systemd', environment({ userSystemdUsable: true })],
+    ['init.d', environment({ isRoot: true, initdAvailable: true })],
+  ])('%s install() from an older CLI refuses and leaves current unchanged', async (_name, env) => {
+    const dataDir = tempDir('service-manager-downgrade-');
+    const appDir = join(dataDir, 'app');
+    mkdirSync(join(appDir, 'versions', '2.26.0'), { recursive: true });
+    mkdirSync(join(appDir, 'versions', '2.20.0'), { recursive: true });
+    symlinkSync('versions/2.26.0', join(appDir, 'current'));
+    const run = vi.fn(async () => ({ stdout: '' }));
+    const manager = createServiceManager(env, {
+      currentVersion: '2.20.0',
+      nodePath: process.execPath,
+      path: '/usr/bin',
+      homeDir: tempDir('service-manager-downgrade-home-'),
+      userName: 'workspace',
+      sudoUser: 'workspace',
+      run,
+      mkdir: async (path) => { mkdirSync(path, { recursive: true }); },
+      writeFile: async (path, contents) => { writeFileSync(path, contents); },
+      chmod: async () => {},
+      removeFile: async () => {},
+      rename: async () => {},
+      fileExists: (path) => existsSync(path),
+      readFile: (path) => readFileSync(path, 'utf8'),
+      readTextFile: async () => null,
+      readlink: (path) => {
+        try {
+          return readlinkSync(path);
+        } catch {
+          return null;
+        }
+      },
+    });
+
+    await expect(manager.install({
+      startSelfManaged: async () => {},
+      serve: { port: '9000', host: '127.0.0.1', dataDir },
+    })).rejects.toThrow('npm i -g @mintopia/harmonic@latest');
+
+    expect(readlinkSync(join(appDir, 'current'))).toBe('versions/2.26.0');
+    expect(run).not.toHaveBeenCalled();
   });
 });
 

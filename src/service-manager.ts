@@ -5,6 +5,7 @@ import { homedir, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { z } from 'zod';
+import { compareStableVersions } from './domain/stable-version.js';
 import { installVersion } from './upgrade/version-install.js';
 
 const execFileAsync = promisify(execFile);
@@ -296,6 +297,17 @@ const copyBootGuard = async (dependencies: ServiceManagerDependencies, appDir: s
   }
 };
 
+/** Refuses to repoint `current` at an older CLI than the one the service already runs, which would put old code on a newer database with no snapshot for the boot guard to roll back to. */
+const refuseDowngrade = (dependencies: ServiceManagerDependencies, appDir: string, version: string): void => {
+  const target = dependencies.readlink(join(appDir, 'current'));
+  const installed = target === null ? undefined : /^(?:.*\/)?versions\/([^/]+)\/?$/.exec(target)?.[1];
+  if (installed === undefined) return;
+  const comparison = compareStableVersions(installed, version);
+  if (comparison !== null && comparison > 0) {
+    throw new Error(`The installed service is version ${installed}, newer than this CLI (${version}); run \`npm i -g @mintopia/harmonic@latest\` first.`);
+  }
+};
+
 export const shellWord = (value: string): string => /^[A-Za-z0-9_./:-]+$/.test(value)
   ? value
   : `'${value.replaceAll("'", "'\"'\"'")}'`;
@@ -407,12 +419,13 @@ class SystemdServiceManager implements ServiceManager {
     const user = this.userUnit ? undefined : systemdServiceUser(resolveServiceUser({ user: options.user, sudoUser: this.dependencies.sudoUser }));
     if (user === 'root') warn(this.dependencies, 'Harmonic will run as root. Pass --user to run it as a non-root user.');
     if (this.userUnit && options.user !== undefined) warn(this.dependencies, '--user is ignored for user-level systemd.');
+    const version = packageVersionSchema.parse(this.dependencies.currentVersion);
+    refuseDowngrade(this.dependencies, join(options.serve.dataDir, 'app'), version);
     // Captured before any change: a fresh install (never run before) must still `start`, not `restart`.
     const wasRunning = (await this.status()).running;
     if (this.userUnit) await this.dependencies.run('loginctl', ['enable-linger', this.dependencies.userName]);
     await ensureDataDir(this.dependencies, options.serve.dataDir, user);
     const appDir = join(options.serve.dataDir, 'app');
-    const version = packageVersionSchema.parse(this.dependencies.currentVersion);
     await installVersion({
       appDir,
       version,
@@ -557,11 +570,12 @@ class InitdServiceManager implements ServiceManager {
       warn(this.dependencies, 'Harmonic will run as root. Pass --user to run it as a non-root user.');
     }
     const dataDir = options.serve.dataDir;
+    const version = packageVersionSchema.parse(this.dependencies.currentVersion);
+    refuseDowngrade(this.dependencies, join(dataDir, 'app'), version);
     // Captured before any change: a fresh install (never run before) must still `start`, not `restart`.
     const wasRunning = (await this.status()).running;
     await ensureDataDir(this.dependencies, dataDir, user);
     const appDir = join(dataDir, 'app');
-    const version = packageVersionSchema.parse(this.dependencies.currentVersion);
     await installVersion({
       appDir,
       version,
