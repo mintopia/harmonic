@@ -11,6 +11,8 @@ import {
   RoutingRowShell,
   arrowCell,
   defaultRoute,
+  stackedCell,
+  trailingCell,
 } from './RoutingLabelsEditor';
 import { isIssueVisible, issuesByIndex, newLocalEntry, overlayRows, routingIssueText } from './routing-label-overlay-model';
 import { Switch } from './Switch';
@@ -92,19 +94,21 @@ export function RoutingLabelOverlayEditor({
           const dim = entry.enabled ? '' : 'opacity-55 line-through';
           return (
             <RoutingRowShell id={id} index={index} locked>
-              <span className={`min-w-0 truncate font-data text-data ${global ? 'text-ink' : 'italic text-faint line-through'} ${dim}`}>
+              <span title={global?.label} className={`min-w-0 truncate font-data text-data ${global ? 'text-ink' : 'italic text-faint line-through'} ${dim}`}>
                 {global ? global.label : entry.ref}
               </span>
               {arrowCell}
               {global ? (
                 <>
-                  <span className={`text-ink ${dim}`}>{providerLabel(global.harness)}</span>
-                  <span className={`min-w-0 truncate font-data text-data text-ink ${dim}`}>{global.model}</span>
+                  <span className={`${stackedCell} text-ink ${dim}`}>{providerLabel(global.harness)}</span>
+                  <span className={`${stackedCell} min-w-0 truncate font-data text-data text-ink ${dim}`} title={global.model}>
+                    {global.model}
+                  </span>
                 </>
               ) : (
-                <span className="col-span-2 text-small italic text-faint">Removed: this global label no longer exists.</span>
+                <span className="col-span-2 col-start-3 text-small italic text-faint @[44rem]:col-start-auto">Removed: this global label no longer exists.</span>
               )}
-              <span className="flex items-center justify-end gap-2">
+              <span className={`flex items-center justify-end gap-2 ${trailingCell}`}>
                 {global ? (
                   <>
                     <span className={globalChip}>Global</span>

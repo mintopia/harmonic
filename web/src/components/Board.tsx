@@ -163,7 +163,9 @@ function WhoLine({ harness, model, routedBy }: { harness: string; model: string;
       {providerLabel(harness)} · {formatModelLabel(model)}
       {routedBy && (
         <span className="ml-1.5 rounded-full bg-tool-tint px-[7px] py-px text-[10px] font-semibold text-tool">
-          ↳ <code className="font-data text-[10.5px]">{routedBy}</code>
+          <span className="sr-only">Routed by </span>
+          <span aria-hidden="true">↳ </span>
+          <code className="font-data text-[10.5px]">{routedBy}</code>
         </span>
       )}
     </span>
