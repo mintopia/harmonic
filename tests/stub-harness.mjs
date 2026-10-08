@@ -24,7 +24,7 @@
 // Set STUB_NO_STEERING to simulate a harness without the method (a JSON-RPC
 // "method not found" error), exercising Harmonic's boundary-queue fallback.
 import { createInterface } from 'node:readline';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 
@@ -276,7 +276,9 @@ async function handlePrompt(msg) {
     // needs the injected value reads it from this file instead of run_events.
     if (scenario.echoEnvFile) {
       mkdirSync(dirname(scenario.echoEnvFile), { recursive: true });
-      writeFileSync(scenario.echoEnvFile, JSON.stringify(values));
+      // The reader polls for the file, so publish it whole via rename.
+      writeFileSync(`${scenario.echoEnvFile}.tmp`, JSON.stringify(values));
+      renameSync(`${scenario.echoEnvFile}.tmp`, scenario.echoEnvFile);
     }
   }
 
