@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Retry dialog - mockups</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* Paper tokens copied from web/src/index.css (light = :root, dark = [data-theme=dark]) */
+:root{
+  color-scheme:light;
+  --canvas:#edeeeb;--shell:#fff;--surface:#fff;--sunken:#f5f5f3;--field:#fff;--raised:#ededea;
+  --hairline:#e0e0db;--edge:#d0d0ca;--edge-strong:#c3c3bc;--switch-off:#858983;
+  --ink:#1b1e24;--muted:#656b73;--faint:#61676f;
+  --accent:#077067;--accent-hot:#0a6f66;--accent-tint:#b6ece4;--on-accent:#fff;
+  --running:#a74d08;--running-tint:#fdeacc;--ready:#1160ae;--ready-tint:#cee3fa;
+  --await:#4740c6;--await-tint:#d6d2fc;--on-await:#fff;
+  --merged:#0d7734;--merged-tint:#c2f2cd;--fail:#b3253f;--fail-tint:#ffccd6;
+  --tool:#077067;--tool-tint:#b6ece4;--paused:#205f99;--paused-tint:#cde4fb;
+  --shadow-card:0 1px 2px rgb(27 30 36/.06),0 6px 18px rgb(27 30 36/.07);
+  --shadow-float:0 8px 20px rgb(23 26 34/.12),0 24px 60px rgb(23 26 34/.16);
+  --shadow-bar:0 16px 44px rgb(27 30 36/.16),0 0 0 1px var(--hairline);
+  --shadow-btn:0 1px 2px rgb(13 114 113/.32);
+  --font-data:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --font:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+}
+:root[data-theme=dark]{
+  color-scheme:dark;
+  --canvas:#141416;--shell:#191a1c;--surface:#1e1f22;--sunken:#141416;--field:#191a1c;--raised:#292a2e;
+  --hairline:#2f3035;--edge:#414248;--edge-strong:#4e4f55;--switch-off:#696c73;
+  --ink:#e9e9ec;--muted:#a5a6ab;--faint:#949599;
+  --accent:#2ed3c4;--accent-hot:#5fe6da;--accent-tint:#0f3e38;--on-accent:#04120f;
+  --running:#ffb524;--running-tint:#51360a;--ready:#4ca8f5;--ready-tint:#0b2740;
+  --await:#bd9dff;--await-tint:#372f97;--on-await:#0b0b18;
+  --merged:#2bf58e;--merged-tint:#0d5531;--fail:#ff5570;--fail-tint:#4d121f;
+  --tool:#2ed3c4;--tool-tint:#0f3e38;--paused:#57b0ff;--paused-tint:#10395c;
+  --shadow-card:0 0 0 1px var(--hairline),0 2px 10px rgb(0 0 0/.4);
+  --shadow-float:0 8px 24px rgb(0 0 0/.5),0 0 0 1px var(--edge);
+  --shadow-bar:0 16px 44px rgb(0 0 0/.55),0 0 0 1px var(--edge);
+  --shadow-btn:0 1px 2px rgb(0 0 0/.4);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--canvas);color:var(--ink);font:400 14px/1.5 var(--font);font-variant-numeric:tabular-nums}
+code,.data{font-family:var(--font-data);font-size:13px}
+.page{max-width:1040px;margin:0 auto;padding:24px 24px 80px}
+.topbar{display:flex;justify-content:flex-end;margin-bottom:4px}
+.topbar button{font:inherit;font-size:12px;color:var(--muted);background:none;border:1px solid var(--edge);border-radius:3px;padding:4px 10px;cursor:pointer}
+h2.sec{font-size:23px;line-height:1.2;letter-spacing:-.025em;font-weight:750;margin:44px 0 2px}
+p.sub{margin:0 0 16px;color:var(--muted)}
+.label{font-size:10px;line-height:1.2;letter-spacing:.09em;font-weight:600;text-transform:uppercase;color:var(--muted)}
+.small{font-size:12px;line-height:1.45}
+.card{background:var(--surface);border-radius:4px;box-shadow:var(--shadow-card)}
+
+/* Settings shell */
+.tabs{display:flex;gap:20px;border-bottom:1px solid var(--hairline);margin-bottom:16px;overflow-x:auto}
+.tab{min-height:44px;display:inline-flex;align-items:center;padding:0 4px;border-bottom:2px solid transparent;color:var(--muted);font-weight:500;white-space:nowrap}
+.tab.on{border-color:var(--accent);color:var(--ink)}
+.scope{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.scope .crumb{font-size:12px;color:var(--muted)}
+.scopechip{border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.09em;background:var(--raised);color:var(--muted)}
+.scopechip.ws{background:var(--accent-tint);color:var(--accent)}
+.section{padding:20px;margin-bottom:12px}
+.section h3{font-size:15px;line-height:1.4;font-weight:600;margin:0}
+.section .desc{margin:2px 0 16px;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:640px}
+.fl{display:block;margin-bottom:6px}
+.field,.select{width:100%;min-height:44px;border:1px solid var(--edge);background:var(--field);color:var(--ink);border-radius:3px;padding:6px 10px;font:inherit;display:flex;align-items:center}
+.select{justify-content:space-between}
+.select:after,.combo:after{content:"";width:12px;height:12px;background:no-repeat center/12px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%238A8F98' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");flex:none}
+.field.focus{border-color:var(--accent)}
+.field.err{border-color:var(--fail)}
+.errmsg{margin:4px 0 0;font-size:10px;color:var(--fail);line-height:1.3}
+.hr{border:0;border-top:1px solid var(--hairline);margin:20px 0}
+
+/* Precedence hint */
+.prec{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:var(--muted);background:var(--sunken);border:1px solid var(--hairline);border-radius:3px;padding:8px 12px;margin-bottom:14px}
+.prec b{font-weight:600;color:var(--ink)}
+.prec .arrow{color:var(--faint)}
+.prec .lead{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin-right:4px}
+.prec .hl{color:var(--accent);font-weight:600}
+
+/* EntryList (copied structure: sunken tray, surface rows, grip, Global chip, Switch) */
+.elhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.addlink{font-size:12px;font-weight:600;color:var(--accent);background:none;border:0;padding:0;cursor:pointer;font-family:inherit}
+.tray{display:flex;flex-direction:column;gap:6px;border:1px solid var(--hairline);background:var(--sunken);border-radius:4px;padding:6px}
+.row{background:var(--surface);border-radius:4px;box-shadow:var(--shadow-card);overflow:visible;position:relative}
+.row.locked{opacity:.85}
+.row.dragging{box-shadow:var(--shadow-float),0 0 0 1px color-mix(in srgb,var(--accent) 40%,transparent)}
+.rowh{display:grid;grid-template-columns:16px 24px minmax(120px,1.1fr) 20px minmax(110px,.8fr) minmax(170px,1.3fr) auto;align-items:center;gap:10px;padding:10px 12px}
+.rowh.nopick{grid-template-columns:16px 24px minmax(120px,1.1fr) 20px minmax(110px,.8fr) minmax(170px,1.3fr) auto}
+.grip{color:var(--faint);display:flex;align-items:center;justify-content:center;width:16px;height:24px;cursor:grab}
+.pri{font-size:10px;font-weight:700;color:var(--faint);text-align:center}
+.arr{color:var(--faint);text-align:center}
+.rowc{display:flex;align-items:center;gap:8px;justify-content:flex-end;font-size:12px;color:var(--faint)}
+.rm{font-size:12px;color:var(--faint);background:none;border:0;cursor:pointer;font-family:inherit;padding:0}
+.rm:hover{color:var(--fail)}
+.gchip{border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;text-transform:uppercase;background:var(--raised);color:var(--muted)}
+.lbl{font-family:var(--font-data);font-size:13px;color:var(--ink);display:inline-flex;align-items:center;gap:6px}
+.lbl .hash{color:var(--faint)}
+.off .lbl,.off .static{opacity:.55;text-decoration:line-through}
+.static{display:inline-flex;align-items:center;gap:7px;color:var(--ink)}
+.static svg{color:var(--muted)}
+.static .mono{font-family:var(--font-data);font-size:13px}
+.compact{min-height:36px;padding:4px 10px}
+.combo{position:relative;display:flex;align-items:center;min-height:36px;border:1px solid var(--edge);background:var(--field);border-radius:3px;padding:4px 10px;font-family:var(--font-data);font-size:13px;gap:6px;justify-content:space-between}
+.combo:after{margin-left:auto}
+.combo.focus{border-color:var(--accent)}
+.rowc .sw{display:inline-flex}
+.switch{position:relative;display:inline-block;height:18px;width:32px;border-radius:999px;background:var(--switch-off);flex:none}
+.switch:after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 1px rgb(0 0 0/.2)}
+.switch.on{background:var(--accent)}
+.switch.on:after{transform:translateX(14px)}
+.listbox{position:absolute;z-index:10;top:calc(100% + 4px);left:0;right:0;background:var(--surface);border-radius:3px;box-shadow:var(--shadow-bar);padding:4px 0;font-size:13px}
+.listbox div{display:flex;justify-content:space-between;padding:6px 10px;font-family:var(--font-data)}
+.listbox div.hl{background:var(--raised)}
+.listbox div .ck{color:var(--accent);font-family:var(--font)}
+.listbox .grp{font:600 10px/1.2 var(--font);letter-spacing:.09em;text-transform:uppercase;color:var(--faint);padding:6px 10px 2px}
+.rowerr{padding:0 12px 10px 62px}
+.reserve{height:150px}
+.note{font-size:12px;color:var(--faint);margin-top:8px}
+.btnghost{display:inline-flex;min-height:44px;align-items:center;border:1px solid var(--edge);background:var(--surface);color:var(--ink);border-radius:3px;padding:8px 14px;font:500 14px var(--font)}
+.btnprimary{display:inline-flex;min-height:44px;align-items:center;border-radius:3px;background:var(--accent);color:var(--on-accent);padding:8px 14px;font:600 14px var(--font);box-shadow:var(--shadow-btn);background-image:linear-gradient(180deg,rgb(255 255 255/.15),rgb(255 255 255/0) 52%,rgb(0 0 0/.09))}
+.btnquiet{display:inline-flex;min-height:44px;align-items:center;color:var(--muted);font:500 14px var(--font);padding:0 4px}
+.btngo{display:inline-flex;min-height:36px;align-items:center;border-radius:3px;background:var(--await);color:var(--on-await);padding:4px 12px;font:600 13px var(--font)}
+
+/* Ticket page bits */
+.pill{display:inline-flex;align-items:center;border-radius:3px;padding:4px 10px;font-size:11px;font-weight:600}
+.pill.working{background:var(--running-tint);color:var(--running)}
+.pill.escalated{background:var(--await-tint);color:var(--await)}
+.pill.ready{background:var(--ready-tint);color:var(--ready)}
+.tickethead{padding:20px 24px}
+.tickethead h1{margin:0;font-size:26px;font-weight:800;line-height:1.15;letter-spacing:-.03em;max-width:680px}
+.thr{display:flex;gap:16px;align-items:flex-start}
+.epicref{display:inline-flex;align-items:center;gap:7px;color:var(--tool);margin-bottom:10px}
+.epicref .k{border-radius:3px;background:var(--tool-tint);padding:1px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.epicref .r{font-family:var(--font-data);font-size:12.5px}
+dl.props{display:grid;grid-template-columns:1fr 1fr;gap:14px 24px;margin:16px 0 0;max-width:620px}
+dl.props dt{margin:0 0 2px}
+dl.props dd{margin:0}
+.dim{color:var(--muted)}
+.rtag{font-size:12px;color:var(--muted)}
+.rtag code{font-size:12px;color:var(--tool);background:var(--tool-tint);padding:0 5px;border-radius:3px}
+.rtag.ovr code{color:var(--muted);background:var(--raised);text-decoration:line-through}
+.rtag .em{color:var(--ink);font-weight:500}
+.tchip{display:inline-flex;align-items:center;gap:4px;vertical-align:middle;border-radius:999px;padding:1px 8px;font-size:10px;font-weight:600;background:var(--tool-tint);color:var(--tool);cursor:help;position:relative}
+.tchip code{font-size:11px;font-weight:600}
+.tchip.ovr{background:var(--raised);color:var(--muted)}
+.tip{position:absolute;z-index:5;left:0;top:calc(100% + 8px);width:290px;background:var(--surface);color:var(--ink);box-shadow:var(--shadow-bar);border-radius:4px;padding:10px 12px;font-size:12px;line-height:1.45;font-weight:400;text-transform:none;letter-spacing:0;white-space:normal;cursor:default}
+.tip b{font-weight:600}
+.tip .row2{display:block;color:var(--muted);margin-top:4px}
+.tip code{font-size:11.5px}
+.vlabel{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin:16px 0 8px}
+.vspace{margin-top:16px}
+.variantbox{margin-bottom:12px}
+.tkreserve{height:78px}
+
+/* Board card */
+.cards{display:flex;gap:14px;flex-wrap:wrap}
+.bcard{position:relative;width:340px;max-width:100%;border-radius:4px;background:var(--surface);box-shadow:var(--shadow-card);overflow:hidden}
+.bcard .bar{position:absolute;inset:0 auto 0 0;width:5px}
+.bcard.working .bar{background:var(--running)}
+.bcard.escalated{background:var(--await-tint)}
+.bcard.escalated .bar{background:var(--await)}
+.bcard .in{padding:16px 16px 14px 20px}
+.bcard .top{display:flex;align-items:center;gap:8px}
+.bd{width:8px;height:8px;border-radius:50%;flex:none}
+.working .bd{background:var(--running)}
+.escalated .bd{background:var(--await)}
+.bcard .id{font-family:var(--font-data);font-size:12px;color:var(--faint)}
+.bcard .chip{margin-left:auto;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;text-transform:uppercase}
+.working .chip{background:var(--running-tint);color:var(--running)}
+.escalated .chip{background:var(--await-tint);color:var(--await)}
+.bcard .tt{margin-top:8px;font-size:15px;font-weight:600;line-height:1.3}
+.bcard .who{margin-top:8px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.bcard .who code{font-size:11px;color:var(--tool)}
+.bcard .why{margin-top:6px;font-size:12.5px;color:var(--await)}
+.bcard .foot{display:flex;align-items:center;margin-top:12px;font-size:12px;color:var(--muted);gap:8px}
+.bcard .foot .br{font-family:var(--font-data);color:var(--faint)}
+.bcard .foot .go{margin-left:auto}
+.mchip{border-radius:999px;padding:1px 7px;font-size:10px;font-weight:600;background:var(--tool-tint);color:var(--tool)}
+.mchip code{font-size:10.5px}
+.mchip.ovr{background:var(--raised);color:var(--muted)}
+.cardcap{font-size:12px;color:var(--muted);margin:0 0 6px}
+
+/* Escalation banner */
+.banner{border-radius:3px;background:var(--await-tint);padding:8px 12px;font-size:12px}
+.banner .hd{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--await)}
+.banner .bd2{margin-top:2px;color:var(--ink)}
+.banner code{font-size:12px;background:var(--surface);padding:0 5px;border-radius:3px;color:var(--ink)}
+.gate{display:flex;align-items:center;gap:10px;border-top:1px solid var(--hairline);background:var(--surface);padding:12px 14px;box-shadow:var(--shadow-float);margin-top:16px;border-radius:0 0 4px 4px;flex-wrap:wrap}
+.gate .sp{flex:1}
+.hint-inline{font-size:12px;color:var(--muted)}
+.linkbtn{color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:2px}
+
+/* Options (companion helper expects .options > .option[data-choice] with .letter + .content) */
+.options{display:flex;flex-direction:column;gap:16px}
+.option{display:flex;gap:14px;align-items:flex-start;border:2px solid var(--edge);border-radius:6px;padding:16px;background:var(--canvas);cursor:pointer;transition:border-color .15s}
+.listbox div{font-family:var(--font);align-items:center}
+.listbox div .raw{font-family:var(--font-data);font-size:13px}
+.listbox div .cur{font-size:10px;color:var(--faint);margin-left:8px}
+.scrim{background:rgb(23 26 34/.45);border-radius:4px;padding:40px 16px;display:flex;justify-content:center;position:relative}
+.modal{width:100%;max-width:448px;background:var(--surface);border-radius:6px;box-shadow:var(--shadow-float);padding:20px}
+.modal h2{margin:0 0 4px;font-size:20px;font-weight:750;letter-spacing:-.02em;line-height:1.2}
+.modal p.lead{margin:0 0 16px;color:var(--muted)}
+.ta{min-height:84px;border:1px solid var(--edge);background:var(--field);border-radius:3px;padding:8px 10px;color:var(--faint);margin-bottom:16px}
+.acts{display:flex;justify-content:flex-end;gap:8px}
+.acts .btnghost,.acts .btnprimary,.acts .btndanger{min-height:36px;padding:6px 12px}
+.btndanger{display:inline-flex;align-items:center;border-radius:3px;color:var(--fail);font:500 14px var(--font)}
+.btnquiet-d{color:var(--fail)}
+.routebox{border:1px solid var(--hairline);background:var(--sunken);border-radius:3px;padding:10px 12px;margin-bottom:16px}
+.routebox .pk{display:flex;gap:8px;margin-top:6px}
+.routebox .pk .combo{flex:1;min-height:44px;font-family:var(--font);font-size:14px}
+.notice{margin-top:8px;font-size:12px;color:var(--muted)}
+.notice code{font-size:12px;color:var(--tool);background:var(--tool-tint);padding:0 5px;border-radius:3px}
+.hint{display:flex;gap:12px;align-items:flex-start;border-left:4px solid var(--await);background:var(--await-tint);border-radius:8px;padding:10px 16px;font-size:12px;margin-bottom:12px}
+.hint .dot{width:8px;height:8px;border-radius:50%;background:var(--await);margin-top:5px;flex:none}
+.hint p{margin:0;flex:1}
+.hint b{font-weight:600}
+.dis{color:var(--muted);font-size:12px}
+.bannerrow{display:flex;align-items:center;gap:10px;margin-top:8px;font-size:12px;flex-wrap:wrap}
+.bannerrow .k{color:var(--faint)}
+.changelink{color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.footerbar{display:flex;align-items:center;gap:10px;margin-top:16px;padding-top:12px;border-top:1px solid var(--hairline);flex-wrap:wrap}
+.footerbar .sp{flex:1}
+.verdict{border-left:3px solid var(--accent);background:var(--sunken);padding:10px 14px;border-radius:0 3px 3px 0;margin:24px 0 0;font-size:13px}
+.seg{display:flex;border:1px solid var(--edge);border-radius:3px;overflow:hidden;margin-bottom:10px}
+.seg span{flex:1;text-align:center;padding:9px 10px;font-weight:500;color:var(--muted);background:var(--field)}
+.seg span.on{background:var(--accent);color:var(--on-accent);font-weight:600}
+.seg span+span{border-left:1px solid var(--edge)}
+.cb{display:flex;align-items:flex-start;gap:8px;margin:0 0 8px}
+.cb i{flex:none;width:16px;height:16px;border:1.5px solid var(--edge-strong);border-radius:3px;margin-top:2px;display:inline-flex;align-items:center;justify-content:center;font-style:normal;font-size:11px;line-height:1}
+.cb.on i{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.cb.dis{color:var(--faint)}
+.cb.dis i{background:var(--raised);border-color:var(--edge)}
+.warn{font-size:12px;line-height:1.4;color:var(--running);background:var(--running-tint);border-radius:3px;padding:6px 10px;margin:0 0 12px}
+.why{font-size:12px;color:var(--muted);margin:-4px 0 12px 24px}
+.fl2{display:block;margin-bottom:4px}
+.blk{margin-bottom:16px}
+.lead2{margin:0 0 16px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="page">
+<div class="topbar"><button type="button" onclick="var r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark'">Toggle light / dark</button></div>
+
+<h2 class="sec" style="margin-top:8px">Retry dialog with Harness + Model picker (#817)</h2>
+<p class="sub">One design. Reject is renamed Retry. The dialog is today's RejectDialog plus a Harness + Model picker, a When choice, and a Session re-use option. Model ids show as friendly names when known, else the raw id (#828).</p>
+
+<h2 class="sec">1. Escalated Ticket footer</h2>
+<div class="card tickethead">
+  <div class="thr"><h1>Summarise release notes</h1><span class="pill escalated" style="margin-top:10px">escalated</span></div>
+  <dl class="props" style="margin-bottom:16px">
+    <div><dt class="label">Priority</dt><dd>normal</dd></div>
+    <div><dt class="label">Agent</dt><dd>Claude &middot; Opus 5.5 <span class="tchip">&#8627; <code>reasoning</code></span></dd></div>
+  </dl>
+  <div class="banner"><span class="hd">Escalated</span><div class="bd2">Attempt 1 failed: the Model hit its context limit after 3 retries.</div></div>
+  <div class="footerbar">
+    <span class="btnghost" style="color:var(--fail);border-color:var(--fail)">Close task</span><span class="sp"></span>
+    <span class="btnghost">Retry&hellip;</span><span class="btnprimary">Accept</span>
+  </div>
+  <div class="note">Close task ends the Ticket without merging and cannot be undone; it keeps its confirm dialog.</div>
+</div>
+
+<h2 class="sec">2. Dialog default: same route, Retry</h2>
+<div class="scrim"><div class="modal">
+  <h2>Retry #421</h2>
+  <p class="lead2">Sends the ticket back to the queue on the same branch; the attempt budget starts over. Optional guidance is recorded on the escalated attempt and given to the next one.</p>
+  <div class="blk"><label class="label fl2">Guidance (optional)</label><div class="ta" style="margin:0">What was wrong, and what the next attempt should do differently&hellip;</div></div>
+  <div class="blk"><label class="label fl2">Harness and Model</label>
+    <div class="select"><span>Claude &middot; Opus 5.5 <span class="tchip" style="margin-left:6px">&#8627; <code>reasoning</code></span></span></div></div>
+  <div class="blk"><label class="label fl2">When</label><div class="seg"><span class="on">Retry</span><span>Retry Now</span></div>
+    <div class="dis">Queues a fresh Attempt.</div></div>
+  <div class="acts"><span class="btnghost">Cancel</span><span class="btnprimary">Retry</span></div>
+</div></div>
+
+<h2 class="sec">2b. Picker open (grouped by Harness)</h2>
+<div class="scrim"><div class="modal">
+  <h2>Retry #421</h2>
+  <div class="blk"><label class="label fl2">Harness and Model</label>
+    <div style="position:relative"><div class="select" style="border-color:var(--accent)"><span>Claude &middot; Sonnet 5.5</span></div>
+      <div class="listbox"><div class="grp">Claude</div>
+        <div><span>Opus 5.5 <span class="tchip" style="margin-left:6px">&#8627; <code>reasoning</code></span></span><span class="cur">current</span></div>
+        <div class="hl"><span>Sonnet 5.5</span><span class="ck">&#10003;</span></div><div><span>Haiku 5.5</span></div>
+        <div class="grp">Codex</div><div><span class="raw">gpt-5-codex</span></div>
+        <div class="grp">Copilot</div><div><span class="raw">gpt-5.1</span></div></div></div></div>
+  <div style="height:250px"></div>
+  <div class="acts"><span class="btnghost">Cancel</span><span class="btnprimary">Retry</span></div>
+</div></div>
+
+<h2 class="sec">3. Retry Now, same Harness, warm Session, re-use ticked</h2>
+<div class="scrim"><div class="modal">
+  <h2>Retry #421</h2>
+  <div class="blk"><label class="label fl2">Guidance (optional)</label><div class="ta" style="margin:0">Keep the summary under 200 words.</div></div>
+  <div class="blk"><label class="label fl2">Harness and Model</label>
+    <div class="select"><span>Claude &middot; Opus 5.5 <span class="tchip" style="margin-left:6px">&#8627; <code>reasoning</code></span></span></div></div>
+  <div class="blk"><label class="label fl2">When</label><div class="seg"><span>Retry</span><span class="on">Retry Now</span></div>
+    <div class="cb on"><i>&#10003;</i><span>Re-use the same Session</span></div>
+    <div class="dis" style="margin-left:24px">Session is warm: the cached context is reused.</div></div>
+  <div class="acts"><span class="btnghost">Cancel</span><span class="btnprimary">Retry Now in this Session</span></div>
+</div></div>
+
+<h2 class="sec">4. Retry Now, same Harness, Model changed, re-use ticked</h2>
+<div class="scrim"><div class="modal">
+  <h2>Retry #421</h2>
+  <div class="blk"><label class="label fl2">Harness and Model</label>
+    <div class="select"><span>Claude &middot; Sonnet 5.5</span></div>
+    <div class="notice">Saved on this Ticket. Label <code>reasoning</code> will no longer apply.</div></div>
+  <div class="blk"><label class="label fl2">When</label><div class="seg"><span>Retry</span><span class="on">Retry Now</span></div>
+    <div class="cb on"><i>&#10003;</i><span>Re-use the same Session</span></div>
+    <div class="warn">Switching Model in this Session costs more: the cached context can't be reused.</div></div>
+  <div class="acts"><span class="btnghost">Cancel</span><span class="btnprimary">Retry Now in this Session</span></div>
+</div></div>
+
+<h2 class="sec">5. Retry Now, cold Session</h2>
+<div class="scrim"><div class="modal">
+  <h2>Retry #421</h2>
+  <div class="blk"><label class="label fl2">Harness and Model</label>
+    <div class="select"><span>Claude &middot; Opus 5.5 <span class="tchip" style="margin-left:6px">&#8627; <code>reasoning</code></span></span></div></div>
+  <div class="blk"><label class="label fl2">When</label><div class="seg"><span>Retry</span><span class="on">Retry Now</span></div>
+    <div class="cb on"><i>&#10003;</i><span>Re-use the same Session</span></div>
+    <div class="warn">This Session is cold, so re-using it costs more than usual.</div></div>
+  <div class="acts"><span class="btnghost">Cancel</span><span class="btnprimary">Retry Now in this Session</span></div>
+</div></div>
+
+<h2 class="sec">6. Harness changed: re-use disabled</h2>
+<div class="scrim"><div class="modal">
+  <h2>Retry #421</h2>
+  <div class="blk"><label class="label fl2">Harness and Model</label>
+    <div class="select"><span>Codex &middot; <span class="raw">gpt-5-codex</span></span></div>
+    <div class="notice">Saved on this Ticket. Label <code>reasoning</code> will no longer apply.</div></div>
+  <div class="blk"><label class="label fl2">When</label><div class="seg"><span>Retry</span><span class="on">Retry Now</span></div>
+    <div class="cb dis"><i></i><span>Re-use the same Session</span></div>
+    <div class="why">Different Harness: needs a new Session.</div></div>
+  <div class="acts"><span class="btnghost">Cancel</span><span class="btnprimary">Retry Now</span></div>
+</div></div>
+
+<h2 class="sec">7. After Retry</h2>
+<div class="card tickethead">
+  <div class="thr"><h1>Summarise release notes</h1><span class="pill working" style="margin-top:10px">working</span></div>
+  <dl class="props"><div><dt class="label">Agent</dt><dd>Codex &middot; <span class="data">gpt-5-codex</span> <span class="rtag">&mdash; set on this Ticket &middot; label <code style="text-decoration:line-through">reasoning</code> not applied</span></dd></div></dl>
+</div>
+
+</div>
+</body>
+</html>
