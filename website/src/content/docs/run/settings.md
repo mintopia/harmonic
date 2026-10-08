@@ -106,8 +106,8 @@ accepts. A fragment's editor says which placeholders must stay in its text.
 The compiled preview shows the text that would be sent, joined in the same
 order the agent receives it. Its **Sample conditions** switch conditions on
 and off, such as *Previous Attempt failed Verification* or *Agent Messages on*,
-and choose between alternatives. Use it to check what an agent actually reads
-under a given situation. Changing a switch in the preview changes only the
+and choose between alternatives. Use it to check what an agent reads
+in a given situation. Changing a switch in the preview changes only the
 preview; it does not change any setting.
 
 ### Search
