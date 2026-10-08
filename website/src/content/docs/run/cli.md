@@ -22,6 +22,8 @@ npx @mintopia/harmonic <command> [options]
 | `install` | Install Harmonic as an OS service. Run `harmonic install --help` for the available options and platform-specific details. |
 | `status` | Report whether a background server is running, and where. Exits **non-zero** if it isn't, usable in scripts. |
 | `stop` | Stop the background server started with `start`. |
+| `restart` | Restart the installed service, or the background server started with `start`. |
+| `version` | Print the installed version. Also `--version` or `-v`. |
 | `help` | Show usage. Also `--help`, or running with no command. |
 
 ## Standalone or installed service
@@ -36,6 +38,12 @@ Only one standalone background server runs per data directory. `start` launches 
 `status` inspects it, and `stop` shuts it down. All three read the same
 `--data-dir` to find each other, so pass a matching `--data-dir` to every
 command when you run off the default.
+
+`restart` stops and starts the server again. If an installed service exists,
+it restarts that service. Otherwise, if a background server is running, it
+restarts that server on the same port and host. If nothing is running, it
+starts a background server with the default port (`4700`) and host (`0.0.0.0`).
+`restart` accepts only `--data-dir`, like `status` and `stop`.
 
 ## Options
 
@@ -98,10 +106,14 @@ instead. From a source checkout Harmonic doesn't self-update; pull and
 rebuild instead.
 
 Upgrading the package by hand (`npm i -g`) replaces the files on disk, but
-the running server keeps the old version until it restarts. Until you
-restart the Harmonic service, a banner says which version is installed and
-which is still running, and some pages may not work. If the server was
-upgraded while a tab was open, the banner offers a Reload instead.
+the running server keeps the old version until it restarts. Run
+`harmonic restart` to switch over. Until then, a banner says which version is
+installed and which is still running, and some pages may not work. If the
+server was upgraded while a tab was open, the banner offers a Reload instead.
+
+A restart signs everyone out. Sessions are kept in the server's memory, so
+when a password is set, open tabs return to the Login screen after the server
+restarts, and you sign in again with the same password.
 
 ## See also
 
