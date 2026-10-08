@@ -11,6 +11,16 @@ export const PUBLIC_API_PATHS: ReadonlySet<string> = new Set([
   '/api/openapi.yaml',
 ]);
 
+// SameSite=Strict still sends the cookie from sibling subdomains, so compare Origin to Host.
+function originMismatch(origin: string | undefined, host: string | undefined): boolean {
+  if (!origin) return false;
+  try {
+    return new URL(origin).host !== host;
+  } catch {
+    return true;
+  }
+}
+
 export function registerAuthHook(app: App, auth: AuthService): void {
   app.addHook('onRequest', async (req, reply) => {
     const path = req.routeOptions.url ?? req.url.split('?')[0] ?? req.url;
@@ -39,7 +49,12 @@ export function registerAuthHook(app: App, auth: AuthService): void {
         scopedKeyRejected = true;
       }
     }
-    if (auth.validateSession(req.cookies[SESSION_COOKIE])) return;
+    if (auth.validateSession(req.cookies[SESSION_COOKIE])) {
+      if (originMismatch(req.headers.origin, req.headers.host)) {
+        return reply.status(403).send({ error: { code: 'forbidden', message: 'cross-origin request rejected' } });
+      }
+      return;
+    }
     if (path === '/api/ws') {
       const wsToken = req.headers['sec-websocket-protocol']?.split(',')[0]?.trim();
       if (wsToken) {
