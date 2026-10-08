@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { field } from '../ui';
 import { Icon } from './Icon';
 import { filterModels } from './modelFilter';
+import { formatModelLabel } from './TaskIdentity';
 
 export function ModelCombobox({
   id,
@@ -91,7 +92,7 @@ export function ModelCombobox({
         aria-autocomplete="list"
         aria-activedescendant={highlight >= 0 ? `${listId}-opt-${highlight}` : undefined}
         className={`${field} ${compact ? 'min-h-9 font-data text-data' : 'min-h-11'} pr-8`}
-        value={value}
+        value={open ? value : formatModelLabel(value)}
         onChange={(e) => {
           onChange(e.target.value);
           setOpen(true);
@@ -137,7 +138,10 @@ export function ModelCombobox({
               }}
               onMouseEnter={() => setHighlight(i)}
             >
-              <span>{m}</span>
+              <span>
+                {formatModelLabel(m)}
+                {formatModelLabel(m) !== m && <span className="ml-2 font-data text-muted">{m}</span>}
+              </span>
               {m === value && <Icon name="check" className="text-accent" />}
             </li>
           ))}
