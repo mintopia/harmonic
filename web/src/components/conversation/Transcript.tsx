@@ -139,10 +139,10 @@ export function Transcript({ events, conversation }: { events: ConversationEvent
                   <div className="mb-1 flex items-center gap-2">
                     <span className={userRoleLabel}>You</span>
                     {turn.userTurn.ts && !userPending && (
-                      <span className="font-data text-[11px] text-faint">{clockTime(turn.userTurn.ts)}</span>
+                      <span className="font-data text-micro text-faint">{clockTime(turn.userTurn.ts)}</span>
                     )}
                     {userPending && (
-                      <span role="status" className="inline-flex items-center gap-1 text-[11px] font-medium text-faint">
+                      <span role="status" className="inline-flex items-center gap-1 text-micro font-medium text-faint">
                         <span aria-hidden className="size-1.5 rounded-full bg-running-dot motion-safe:animate-dot-pulse" />
                         Sending…
                       </span>
@@ -168,7 +168,7 @@ export function Transcript({ events, conversation }: { events: ConversationEvent
                 <div className="flex flex-col items-center">
                   <span
                     aria-hidden
-                    className="grid size-7 shrink-0 place-items-center rounded-md bg-accent text-[11px] font-bold text-on-accent shadow-btn"
+                    className="grid size-7 shrink-0 place-items-center rounded-md bg-accent text-micro font-bold text-on-accent shadow-btn"
                   >
                     {agentLabel.charAt(0)}
                   </span>
@@ -177,7 +177,7 @@ export function Transcript({ events, conversation }: { events: ConversationEvent
                 <div className="min-w-0 pb-1">
                   <div className="mb-1.5 flex items-center gap-2">
                     <span className={agentRoleLabel}>{agentLabel}</span>
-                    {at && <span className="font-data text-[11px] text-faint">{clockTime(at)}</span>}
+                    {at && <span className="font-data text-micro text-faint">{clockTime(at)}</span>}
                     {agentText && (
                       <CopyButton
                         text={agentText}
@@ -201,7 +201,7 @@ export function Transcript({ events, conversation }: { events: ConversationEvent
           <button
             type="button"
             onClick={jumpToLatest}
-            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-edge bg-surface/95 px-3 py-1.5 text-[11.5px] font-semibold text-muted shadow-bar backdrop-blur-sm transition-colors hover:bg-raised hover:text-ink"
+            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-edge bg-surface/95 px-3 py-1.5 text-note font-semibold text-muted shadow-bar backdrop-blur-sm transition-colors hover:bg-raised hover:text-ink"
           >
             <Icon name="chevron-down" className="size-3" />
             Jump to latest

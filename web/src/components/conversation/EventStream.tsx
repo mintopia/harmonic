@@ -95,7 +95,7 @@ function ReadCard({ tool, baseDir }: { tool: ToolCallView; baseDir?: string }) {
     <>
       <span className={`${toolChip} shrink-0`}>read</span>
       <ToolTarget target={path} className="text-muted" baseDir={baseDir} />
-      {range && <span className="shrink-0 font-data text-[11px] text-faint">{range}</span>}
+      {range && <span className="shrink-0 font-data text-micro text-faint">{range}</span>}
       <ToolStatus status={tool.status} />
     </>
   );
@@ -201,7 +201,7 @@ function renderEventLine(event: StreamEvent): ReactNode {
     if (sessionUpdate === 'plan') {
       return (
         <div className="rounded-md bg-surface px-3 py-2.5 shadow-card">
-          <div className={`${labelType} mb-2 text-[10px] tracking-[0.09em] text-faint`}>Plan</div>
+          <div className={`${labelType} mb-2 text-badge tracking-[0.09em] text-faint`}>Plan</div>
           <ul className="space-y-1">
             {(Array.isArray(entries) ? entries : []).map((entry, i) => {
               const glyph = planGlyph(payloadValue(entry, 'status'));

@@ -330,6 +330,11 @@
   --text-data--line-height: 1.5;
 
   --text-micro: 0.6875rem;
+  --text-badge: 0.625rem; /* 10px — uppercase badges, no tracking baked in */
+  --text-chip: 0.65625rem; /* 10.5px */
+  --text-note: 0.71875rem; /* 11.5px — transcript footnotes, tool output */
+  --text-meta: 0.78125rem; /* 12.5px — transcript row headings */
+  --text-prose: 0.84375rem; /* 13.5px — chat message body */
 
   --tracking-caps: 0.09em;
   --tracking-caps-tight: 0.06em;
