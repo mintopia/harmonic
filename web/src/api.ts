@@ -51,6 +51,7 @@ import type {
 } from './types.js';
 import type { Epic, EpicIntegrateOutcome } from './epic-model.js';
 import type { Stats } from './stats-model.js';
+import type { OperationForest } from './operations-model.js';
 import type { WorktreeInventoryEntry } from './worktree-inventory-model.js';
 
 /** Where a Resolved Prompt is archived: an Attempt by id, or an Epic's Attempt by number (an Epic may have no Attempt row). */
@@ -75,6 +76,25 @@ export function onSessionLost(listener: () => void): () => void {
   return () => sessionLostListeners.delete(listener);
 }
 
+function notifySessionLost(): void {
+  sessionLostListeners.forEach((listener) => listener());
+}
+
+/**
+ * Browsers hide why a WebSocket upgrade failed, so a socket that never opened asks
+ * the public `/api/auth/me` whether the session is still valid. Network errors are
+ * ignored: an unreachable server is a restart, not a lost session.
+ */
+export async function reportIfSessionLost(): Promise<void> {
+  try {
+    const res = await fetch('/api/auth/me');
+    const me = (await res.json()) as { authenticated: boolean; passwordConfigured: boolean };
+    if (me.passwordConfigured && !me.authenticated) notifySessionLost();
+  } catch {
+    // Server unreachable or not JSON: nothing to conclude about the session.
+  }
+}
+
 async function send(method: string, path: string, body?: unknown): Promise<{ res: Response; text: string }> {
   const res = await fetch(path, {
     method,
@@ -83,7 +103,7 @@ async function send(method: string, path: string, body?: unknown): Promise<{ res
       : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
   });
   // `/api/auth/*` 401s mean a wrong password typed into a form, not a lost session.
-  if (res.status === 401 && !path.startsWith('/api/auth/')) sessionLostListeners.forEach((listener) => listener());
+  if (res.status === 401 && !path.startsWith('/api/auth/')) notifySessionLost();
   return { res, text: await res.text() };
 }
 
@@ -118,6 +138,8 @@ async function requestText(path: string, unavailable = 'Full output unavailable'
 }
 
 export const api = {
+  scheduledJobs: () => request<unknown>('GET', '/api/scheduled-jobs'),
+  operations: () => request<OperationForest>('GET', '/api/operations'),
   trackerKinds: () => request<{ kinds: TrackerKindInfo[] }>('GET', '/api/tracker-kinds'),
   trackerDetection: (workspaceId: number) => request<TrackerDetection>('GET', `/api/workspaces/${workspaceId}/tracker-detection`),
   verifyTracker: (workspaceId: number) => request<VerifyResult>('POST', `/api/workspaces/${workspaceId}/tracker/verify`),

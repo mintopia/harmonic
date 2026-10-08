@@ -6,6 +6,7 @@ import {
   mergeScheduledJobs,
   type ScheduledJob,
 } from '../scheduled-jobs-model.js';
+import { api } from '../api.js';
 import { subscribe } from '../ws.js';
 import { labelType, tableHeadRow, tableShell } from '../ui.js';
 import { useLiveEffect } from '../useLiveEffect.js';
@@ -77,8 +78,8 @@ export function ScheduledJobsView() {
     const load = () => {
       snapshotLoaded = false;
       pending = [];
-      fetch('/api/scheduled-jobs')
-        .then((response) => (response.ok ? response.json() : { jobs: [] }))
+      api
+        .scheduledJobs()
         .then((snapshot: unknown) => installSnapshot(isScheduledJobsSnapshot(snapshot) ? snapshot.jobs : []))
         .catch(() => installSnapshot([]));
     };
