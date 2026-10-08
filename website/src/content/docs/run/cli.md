@@ -63,9 +63,10 @@ harmonic serve --host 127.0.0.1 --port 8080
 Start a password-protected background server with its own data directory:
 
 ```sh
-harmonic start --password 'correct horse' --data-dir ~/harmonic-work
-harmonic status --data-dir ~/harmonic-work
-harmonic stop   --data-dir ~/harmonic-work
+harmonic start   --password 'correct horse' --data-dir ~/harmonic-work
+harmonic status  --data-dir ~/harmonic-work
+harmonic restart --data-dir ~/harmonic-work
+harmonic stop    --data-dir ~/harmonic-work
 ```
 
 Remove a previously set password (run ungated again):
