@@ -39,10 +39,32 @@ describe('login back-off', () => {
     expect(delays).toEqual([1000, 2000]);
   });
 
-  it('counts concurrent attempts so a parallel flood cannot beat the free failures', async () => {
+  it('rejects concurrent attempts during back-off instead of hashing them', async () => {
     const delays: number[] = [];
     const auth = makeAuth(delays);
-    await Promise.all(Array.from({ length: 8 }, () => auth.verifyLogin('wrong-password')));
-    expect(delays).toEqual([1000, 2000, 4000]);
+    const results = await Promise.allSettled(
+      Array.from({ length: 1000 }, () => auth.verifyLogin('wrong-password')),
+    );
+    const rejected = results.filter(
+      (r) => r.status === 'rejected' && (r.reason as { code?: string }).code === 'rate_limited',
+    );
+    expect(delays).toEqual([1000]);
+    expect(rejected).toHaveLength(1000 - 6);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(6);
+  });
+
+  it('answers 429 over HTTP once back-off is active', async () => {
+    const s = await startServer();
+    try {
+      const codes: number[] = [];
+      for (let i = 0; i < 6; i++) codes.push((await s.anonApi('POST', '/api/auth/login', { password: 'nope' })).status);
+      expect(codes.slice(0, 5)).toEqual([401, 401, 401, 401, 401]);
+      const flood = await Promise.all(
+        Array.from({ length: 5 }, () => s.anonApi('POST', '/api/auth/login', { password: 'nope' })),
+      );
+      expect(flood.filter((r) => r.status === 429).length).toBeGreaterThanOrEqual(4);
+    } finally {
+      await s.close();
+    }
   });
 });

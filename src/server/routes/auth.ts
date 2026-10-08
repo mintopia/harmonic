@@ -69,6 +69,7 @@ export async function authRoutes(fastify: FastifyInstance, ctx: Pick<Persistence
         response: {
           200: okResponseSchema.describe('The password matched; a session cookie is set on this response.'),
           401: errorResponse('The password did not match, or no operator password has been set yet.'),
+          429: errorResponse('Too many failed attempts: after 5 failures logins are throttled to one at a time with a delay that doubles from 1s up to 60s; further concurrent attempts are rejected.'),
         },
       },
     },

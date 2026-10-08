@@ -30,6 +30,7 @@ export class AuthService {
   private sessions = new Set<string>();
 
   private loginAttempts = 0;
+  private backoffActive = false;
 
   constructor(
     private readonly db: AsyncDbHandle,
@@ -57,17 +58,30 @@ export class AuthService {
     await this.db.write((db) => db.delete(settings).where(eq(settings.key, AUTH_KEY)).run());
   }
 
-  /** Global back-off: attempts count as failures from entry until one succeeds, so a parallel flood can't beat the free allowance. */
+  /**
+   * Global back-off: the first FREE_FAILURES attempts run freely; after that a single
+   * attempt at a time waits out a doubling delay, and concurrent callers are rejected
+   * (429) rather than queued, so a parallel flood cannot multiply its guess rate.
+   */
   async verifyLogin(password: string): Promise<boolean> {
-    const over = this.loginAttempts++ - FREE_FAILURES;
-    if (over >= 0) await this.sleep(Math.min(BACKOFF_BASE_MS * 2 ** over, BACKOFF_MAX_MS));
-    const stored = await this.readAuth();
-    if (!stored) return false;
-    const candidate = Buffer.from(await hashPassword(password, stored.salt), 'hex');
-    const expected = Buffer.from(stored.hash, 'hex');
-    const ok = candidate.length === expected.length && timingSafeEqual(candidate, expected);
-    if (ok) this.loginAttempts = 0;
-    return ok;
+    const over = this.loginAttempts - FREE_FAILURES;
+    if (over >= 0) {
+      if (this.backoffActive) throw new DomainError('rate_limited', 'too many login attempts; try again shortly');
+      this.backoffActive = true;
+    }
+    this.loginAttempts++;
+    try {
+      if (over >= 0) await this.sleep(Math.min(BACKOFF_BASE_MS * 2 ** over, BACKOFF_MAX_MS));
+      const stored = await this.readAuth();
+      if (!stored) return false;
+      const candidate = Buffer.from(await hashPassword(password, stored.salt), 'hex');
+      const expected = Buffer.from(stored.hash, 'hex');
+      const ok = candidate.length === expected.length && timingSafeEqual(candidate, expected);
+      if (ok) this.loginAttempts = 0;
+      return ok;
+    } finally {
+      if (over >= 0) this.backoffActive = false;
+    }
   }
 
   private async readAuth(): Promise<StoredAuth | null> {

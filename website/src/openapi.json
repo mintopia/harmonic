@@ -36983,6 +36983,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Too many failed attempts: after 5 failures logins are throttled to one at a time with a delay that doubles from 1s up to 60s; further concurrent attempts are rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
