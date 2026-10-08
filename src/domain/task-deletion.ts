@@ -1,5 +1,5 @@
 import type { TrackerRef } from '../tracker/adapter.js';
-import type { TaskState } from '../db/schema.js';
+import type { MergeStatus, TaskState } from '../db/schema.js';
 
 /** The facet of a Task this decision reads. Structurally assignable from a
  * `TaskRow`/`RawTaskRow`, so callers pass either directly. */
@@ -8,6 +8,7 @@ export interface DeletableTaskFacts {
   origin: string;
   trackerRef: TrackerRef | null;
   workspaceId: number | null;
+  mergeStatus: MergeStatus | null;
 }
 
 export interface DeletionDecision {
@@ -22,6 +23,9 @@ export interface DeletionDecision {
 export function decideTaskDeletion(task: DeletableTaskFacts): DeletionDecision {
   if (task.state === 'working') {
     return { ok: false, reason: 'task is working; stop it before deleting', tombstone: null };
+  }
+  if (task.mergeStatus != null) {
+    return { ok: false, reason: 'task is merging; wait for the merge to finish before deleting', tombstone: null };
   }
   const tombstone =
     task.origin === 'mirrored' && task.trackerRef != null

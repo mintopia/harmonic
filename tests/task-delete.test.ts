@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
+import { withTaskLock } from '../src/domain/task-lock.js';
 import { attempts, attemptEvents, sessions, taskDependencies, trackerDismissals, tasks } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
@@ -36,6 +37,27 @@ describe('TaskService.delete (issue #162)', () => {
   afterEach(async () => {
     await asyncDb.close();
     rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it('refuses to delete a Task whose merge is in progress', async () => {
+    const task = await tasksSvc.create({ prompt: 'merging' });
+    await asyncDb.write((d) => d.update(tasks).set({ state: 'escalated', mergeStatus: 'merging' }).where(eq(tasks.id, task.id)).run());
+    await expect(tasksSvc.delete(task.id)).rejects.toThrow(/merging/);
+    expect((await tasksSvc.get(task.id)).id).toBe(task.id);
+  });
+
+  it('waits on the Task lock held by an in-flight Accept before deleting', async () => {
+    const task = await tasksSvc.create({ prompt: 'locked' });
+    let release!: () => void;
+    const held = withTaskLock(task.id, () => new Promise<void>((r) => { release = r; }));
+    let deleted = false;
+    const deletion = tasksSvc.delete(task.id).then(() => { deleted = true; });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(deleted).toBe(false);
+    release();
+    await held;
+    await deletion;
+    await expect(tasksSvc.get(task.id)).rejects.toThrow(/not found/);
   });
 
   it('removes the tasks row for a native task', async () => {
