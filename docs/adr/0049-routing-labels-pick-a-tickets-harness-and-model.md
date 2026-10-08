@@ -30,6 +30,9 @@ Model.
   Configured on Settings › Execution beside the Task defaults.
 - **Precedence**: an operator's explicit setting on the Ticket, then the Routing
   Label, then the Workspace default, then the global default.
+  All-or-nothing: a Routing Label applies only when the operator has set neither
+  Harness nor Model on the Ticket. Setting either one disables the route
+  entirely; it never fills in the other field.
 - **Re-resolved at every Attempt start.** Relabelling an escalated Ticket and
   retrying runs the next Attempt on the new route. An Attempt in flight is never
   re-routed. A Harness change cannot reuse the warm Session (session-resume
