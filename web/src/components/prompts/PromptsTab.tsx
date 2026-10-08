@@ -17,7 +17,7 @@ import {
   totals,
 } from './prompts-tab-model';
 import { useLayoutMode } from './use-layout-mode';
-import { assemblePreview, promptSettingsView } from './ws2-stub';
+import { assemblePreview, promptSettingsView } from '../../prompt-preview-model';
 
 const STICKY = 'sticky top-0 max-h-[calc(100dvh-4rem)] overflow-y-auto';
 

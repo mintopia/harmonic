@@ -21,7 +21,7 @@ import {
 import { PROMPT_TEMPLATES, PROMPT_TEMPLATE_IDS, type PromptTemplateId } from '../../../../src/domain/prompt-templates.js';
 import type { AppConfig, Workspace } from '../../types';
 import type { RenderCtx } from '../settings-schema';
-import { defaultConditions, type SampleConditions } from './ws2-stub';
+import { defaultConditions, type SampleConditions } from '../../prompt-preview-model';
 
 interface TemplateAccess {
   get: (c: AppConfig) => string;
@@ -152,13 +152,6 @@ export function writePart(key: PartKey, ctx: RenderCtx, value: string | null): v
   }
   if (b.workspaceKey === null) return;
   ctx.setWorkspace({ ...ctx.workspace, [b.workspaceKey]: value });
-}
-
-export function templateText(id: PromptTemplateId, config: AppConfig, workspace: Workspace | null): string {
-  const inherited = TEMPLATE_ACCESS[id].get(config);
-  const wsKey = PROMPT_TEMPLATES[id].workspace;
-  if (!workspace || wsKey === null) return inherited;
-  return workspaceOverride(workspace, wsKey) ?? inherited;
 }
 
 export interface AnatomyCounts {

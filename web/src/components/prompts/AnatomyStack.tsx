@@ -3,7 +3,7 @@ import type { PartKey, PromptAnatomy } from '../../../../src/domain/prompt-anato
 import type { RenderCtx } from '../settings-schema';
 import { PartCard, Tag } from './PartCard';
 import { anatomyLayout, type ExpandedPart, type LayoutNode } from './prompts-tab-model';
-import type { SampleConditions } from './ws2-stub';
+import type { SampleConditions } from '../../prompt-preview-model';
 
 export const ANATOMY_PANEL_ID = 'prompt-anatomy-panel';
 export const anatomyTabId = (id: string): string => `prompt-anatomy-tab-${id}`;

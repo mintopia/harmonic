@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { PROMPT_ANATOMIES, anatomyPartKeys } from '../src/domain/prompt-anatomy.js';
 import { PROMPT_FRAGMENT_NAMES } from '../src/domain/prompt-fragments.js';
@@ -16,7 +17,7 @@ import {
   writePart,
 } from '../web/src/components/prompts/prompts-tab-model.js';
 import { layoutModeFor } from '../web/src/components/prompts/use-layout-mode.js';
-import { promptSettingsView } from '../web/src/components/prompts/ws2-stub.js';
+import { promptSettingsView } from '../web/src/prompt-preview-model.js';
 import { makeConfig, makeWorkspace } from './component-smoke-harness.js';
 
 function valueAt(root: unknown, path: readonly string[]): unknown {

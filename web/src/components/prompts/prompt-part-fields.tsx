@@ -8,7 +8,7 @@ import { LayerField } from '../LayerField';
 import { PromptField } from '../SettingsSection';
 import type { RenderCtx } from '../settings-schema';
 import { errorKey, fieldId, partRef, partState, writePart, type EditableRef } from './prompts-tab-model';
-import { TEMPLATE_PLACEHOLDERS } from './ws2-stub';
+import { TEMPLATE_PLACEHOLDERS } from '../../prompt-preview-model';
 
 export interface PromptPartFieldInfo {
   key: PartKey;

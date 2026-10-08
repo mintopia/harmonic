@@ -5,7 +5,7 @@ import { Icon } from '../Icon';
 import type { RenderCtx } from '../settings-schema';
 import { renderPromptPart } from './prompt-part-fields';
 import { partRef, partState } from './prompts-tab-model';
-import { TEMPLATE_PLACEHOLDERS } from './ws2-stub';
+import { TEMPLATE_PLACEHOLDERS } from '../../prompt-preview-model';
 
 type TagTone = 'template' | 'fragment' | 'conditional' | 'modified' | 'fail' | 'accent';
 

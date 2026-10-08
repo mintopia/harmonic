@@ -97,7 +97,7 @@ describe('PromptsTab', () => {
     const area = host.querySelector<HTMLTextAreaElement>('textarea#settings-drive-prompt');
     expect(area).not.toBeNull();
     expect(document.activeElement).toBe(area);
-    expect(host.querySelector(`#${header?.getAttribute('aria-controls')}`)?.getAttribute('role')).toBe('region');
+    expect(document.getElementById(header?.getAttribute('aria-controls') ?? '')?.getAttribute('role')).toBe('region');
     await key(area, 'Escape');
     expect(header?.getAttribute('aria-expanded')).toBe('false');
     expect(document.activeElement).toBe(header);

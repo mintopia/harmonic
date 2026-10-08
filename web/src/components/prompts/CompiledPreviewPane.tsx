@@ -3,7 +3,7 @@ import { partLabel, type PartKey, type PromptAnatomy } from '../../../../src/dom
 import { labelType } from '../../ui';
 import { Icon } from '../Icon';
 import { anatomyLayout, anatomySelectors, isConditionalKey, stepOfKey, type SelectorChoice } from './prompts-tab-model';
-import type { PreviewSegment, SampleConditions } from './ws2-stub';
+import type { PreviewSegment, SampleConditions } from '../../prompt-preview-model';
 
 function renderChildren(children: readonly (string | PreviewSegment)[], expandedKey: PartKey | null): ReactNode {
   return children.map((child, i) =>
