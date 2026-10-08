@@ -220,7 +220,9 @@ async function runLifecycleCommand(
     return { kind: 'continue' };
   }
   if (dispatch.kind === 'restart') {
-    const previous = deps.daemon.daemonStatus(dataDir).info;
+    const status = deps.daemon.daemonStatus(dataDir);
+    const previous = status.running ? status.info : null;
+    if (previous === null) deps.log.info('No running server; starting one.');
     await deps.daemon.stopDaemon(dataDir);
     const args = ['--data-dir', dataDir, ...(previous ? ['--port', String(previous.port), '--host', previous.host] : [])];
     const values = dispatchCli(['start', ...args]);
