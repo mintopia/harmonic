@@ -702,6 +702,15 @@ describe('escalation-routes', () => {
       });
     });
 
+    describe('POST /tasks/:id/retry route pair', () => {
+      it.each([{ harness: 'codex' }, { model: 'gpt-x' }])('400s when only one of harness/model is sent: %j', async (route) => {
+        const { taskId } = await escalateViaCriticFail();
+        const res = await server.api('POST', `/api/tasks/${taskId}/retry`, { guidance: '', ...route });
+        expect(res.status).toBe(400);
+        expect((await server.api('GET', `/api/tasks/${taskId}`)).body.escalationReason).not.toBeNull();
+      });
+    });
+
     describe('POST /tasks/:id/close', () => {
       it('cancels the ticket and removes its branch and worktree', async () => {
         const { taskId } = await escalateViaCriticFail();

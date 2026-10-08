@@ -41,17 +41,22 @@ const worktreeGone = (err: unknown): boolean =>
 
 /** Optional operator guidance on an escalated ticket: becomes the next Attempt's feedback. */
 const guidanceExample = 'The limiter is per-process; it needs to be shared across workers.';
-const retryInputSchema = z.object({
-  guidance: z.string().trim().meta({ example: guidanceExample }),
-  /** Start the next Attempt now, bypassing Auto-Runner capacity; omitted/false requeues to `ready`. */
-  startNow: z.boolean().optional().meta({ example: false }),
-  /** Re-use the prior Session (needs `startNow` and an unchanged Harness); omitted/false starts a fresh Session. */
-  reuseSession: z.boolean().optional().meta({ example: false }),
-  /** Operator Harness for this Ticket; saved with `model`, replacing the Routing Label. */
-  harness: createTaskInputSchema.shape.harness,
-  /** Operator Model for this Ticket; saved with `harness`, replacing the Routing Label. */
-  model: z.string().optional().meta({ example: 'claude-opus-5-5' }),
-});
+const retryInputSchema = z
+  .object({
+    guidance: z.string().trim().meta({ example: guidanceExample }),
+    /** Start the next Attempt now, bypassing Auto-Runner capacity; omitted/false requeues to `ready`. */
+    startNow: z.boolean().optional().meta({ example: false }),
+    /** Re-use the prior Session (needs `startNow` and an unchanged Harness); omitted/false starts a fresh Session. */
+    reuseSession: z.boolean().optional().meta({ example: false }),
+    /** Operator Harness for this Ticket; saved with `model`, replacing the Routing Label. */
+    harness: createTaskInputSchema.shape.harness,
+    /** Operator Model for this Ticket; saved with `harness`, replacing the Routing Label. */
+    model: z.string().optional().meta({ example: 'claude-opus-5-5' }),
+  })
+  .refine((input) => (input.harness === undefined) === (input.model === undefined), {
+    message: '`harness` and `model` must be sent together',
+    path: ['model'],
+  });
 /** Omitted/false verifies the candidate first; `true` skips verification and merges it as-is. */
 const cancelInputSchema = z
   .object({
@@ -774,12 +779,12 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Tasks'],
         description:
-          'Retry an escalated ticket: optional guidance becomes feedback for the next Attempt and the attempt budget resets. `harness`/`model` save both as operator settings on the Ticket, which outrank its Routing Label. The ticket requeues to `ready` — the Auto-Runner starts the next Attempt when capacity frees; with `startNow` it starts immediately, bypassing the capacity ceiling, on a fresh Session unless `reuseSession` re-uses the prior one (400 when the Harness changed or `startNow` is not set). The escalated Attempt\'s branch is retained as evidence until its Session retires. Human-only.',
+          'Retry an escalated ticket: optional guidance becomes feedback for the next Attempt and the attempt budget resets. `harness`/`model` save both as operator settings on the Ticket, which outrank its Routing Label. The ticket requeues to `ready` — the Auto-Runner starts the next Attempt when capacity frees; with `startNow` it starts immediately, bypassing the capacity ceiling, on a fresh Session unless `reuseSession` re-uses the prior one (400 when the Harness changed or `startNow` is not set). `harness` and `model` must be sent together (400 otherwise). The escalated Attempt\'s branch is retained as evidence until its Session retires. Human-only.',
         params: idParamsSchema,
         body: retryInputSchema,
         response: {
           200: taskSchema.describe('The task, back in the Attempt loop.'),
-          400: errorResponse('Session re-use was requested without `startNow` or with a changed Harness.'),
+          400: errorResponse('Session re-use was requested without `startNow` or with a changed Harness, or only one of `harness`/`model` was sent.'),
           409: errorResponse('The task is not escalated.'),
         },
       },
