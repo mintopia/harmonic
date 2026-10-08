@@ -16,7 +16,7 @@ const BOARD = readFileSync(
 );
 
 describe('formatModelLabel', () => {
-  it('drops the provider prefix from the task model label', () => {
+  it('shows a friendly name for known Claude ids', () => {
     expect(formatModelLabel('claude-sonnet-4-6')).toBe('Sonnet 4.6');
     expect(formatModelLabel('claude-opus-5-5')).toBe('Opus 5.5');
     expect(formatModelLabel('claude-haiku-5-5')).toBe('Haiku 5.5');
@@ -24,11 +24,12 @@ describe('formatModelLabel', () => {
     expect(formatModelLabel('claude-opus-4-20250514')).toBe('Opus 4');
     expect(formatModelLabel('opus-4.8')).toBe('Opus 4.8');
     expect(formatModelLabel('sonnet-5')).toBe('Sonnet 5');
-    expect(formatModelLabel('gpt-5.3-codex')).toBe('5.3-codex');
-    expect(formatModelLabel('gpt-5-mini')).toBe('5-mini');
   });
 
-  it('leaves unknown model shapes alone', () => {
+  it('leaves Codex, Copilot and unknown ids as the full raw id', () => {
+    expect(formatModelLabel('gpt-5-codex')).toBe('gpt-5-codex');
+    expect(formatModelLabel('gpt-5.3-codex')).toBe('gpt-5.3-codex');
+    expect(formatModelLabel('gpt-5-mini')).toBe('gpt-5-mini');
     expect(formatModelLabel('stub-model')).toBe('stub-model');
   });
 });

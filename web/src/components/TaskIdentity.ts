@@ -1,8 +1,6 @@
 import { createElement, type ReactNode } from 'react';
 import { toolChip } from '../ui.js';
 
-const MODEL_PREFIXES = ['claude-', 'gpt-', 'copilot-', 'cursor-'] as const;
-
 const PROVIDER_LABELS = {
   claude: 'Claude',
   codex: 'Codex',
@@ -28,9 +26,6 @@ export function formatModelLabel(model: string): string {
   if (claude) {
     const [, family = '', major = '', minor] = claude;
     return `${family.charAt(0).toUpperCase()}${family.slice(1)} ${major}${minor === undefined ? '' : `.${minor}`}`;
-  }
-  for (const prefix of MODEL_PREFIXES) {
-    if (normalized.startsWith(prefix)) return model.slice(prefix.length);
   }
   return model;
 }
