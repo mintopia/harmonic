@@ -144,7 +144,7 @@ function RoutePicker({
             openList();
           }
         }}
-        className={`${field} flex min-h-11 items-center justify-between text-left`}
+        className={`${field} flex min-h-11 items-center justify-between text-left ${open ? 'border-accent' : ''}`}
       >
         <span>
           {providerLabel(value.harness)} · <ModelLabel model={value.model} />
