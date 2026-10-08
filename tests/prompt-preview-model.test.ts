@@ -12,8 +12,16 @@ import {
   compileEpicResolvePreview,
   compileTaskIdPreview,
   compileTaskPreview,
+  TEMPLATE_PLACEHOLDERS,
+  assemblePreview,
+  defaultConditions,
+  fragmentPlaceholders,
+  parseMarked,
+  promptSettingsView,
 } from '../web/src/prompt-preview-model.js';
 import { baselineConfig } from '../src/config.js';
+import { PROMPT_ANATOMIES } from '../src/domain/prompt-anatomy.js';
+import { PROMPT_TEMPLATE_IDS } from '../src/domain/prompt-templates.js';
 
 const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
 
@@ -103,5 +111,56 @@ describe('prompt-preview-model (settings compiled preview)', () => {
     const fragments = { ...DEFAULT_PROMPT_FRAGMENTS, criticWorkingTreeNote: 'DIRTY against {base}' };
     expect(compileCriticFragmentPreview(fragments, 'dirty')).toContain('DIRTY against ba5e');
     expect(compileCriticFragmentPreview(fragments, 'diff')).not.toContain('DIRTY against');
+  });
+
+  describe('parseMarked', () => {
+    const open = (key: string) => `\uE000${key}\uE001`;
+    const close = '\uE002';
+
+    it('splits marked parts, nests them, and labels unmarked text as built in', () => {
+      const text = `${open('fragment:peerMessages')}head ${open('fragment:peerMessage')}one${close} tail${close}\n\nglue\n\n${open('template:pauseMessage')}pause${close}`;
+      expect(parseMarked(text)).toEqual([
+        {
+          key: 'fragment:peerMessages',
+          children: ['head ', { key: 'fragment:peerMessage', children: ['one'] }, ' tail'],
+        },
+        { key: null, children: ['glue'] },
+        { key: 'template:pauseMessage', children: ['pause'] },
+      ]);
+    });
+
+    it('drops whitespace-only gaps and rejects unknown markers', () => {
+      expect(parseMarked(`${open('template:pauseMessage')}a${close}\n\n  \n${open('template:commitNudge')}b${close}`).map((s) => s.key)).toEqual([
+        'template:pauseMessage',
+        'template:commitNudge',
+      ]);
+      expect(() => parseMarked(`${open('template:nope')}a${close}`)).toThrow(/Unknown prompt part/);
+    });
+  });
+
+  describe('assemblePreview', () => {
+    it('compiles the default Implementation turn with the configured Task prompt filled', () => {
+      const config = baselineConfig();
+      config.taskPrompt = 'DO: {prompt}';
+      const view = promptSettingsView({ config });
+      const [anatomy] = PROMPT_ANATOMIES;
+      if (!anatomy) throw new Error('no anatomy');
+      const segments = assemblePreview(anatomy.id, view, defaultConditions(anatomy));
+      expect(segments[0]).toEqual({ key: 'template:taskPrompt', children: ['DO: Example task prompt.'] });
+      expect(segments.map((s) => s.key)).toContain('fragment:peerLine');
+    });
+
+    it('falls back to a placeholder when no critic is configured', () => {
+      const view = promptSettingsView({ config: baselineConfig() });
+      const critic = PROMPT_ANATOMIES.find((a) => a.id === 'criticReview');
+      if (!critic) throw new Error('no critic anatomy');
+      const segments = assemblePreview('criticReview', view, defaultConditions(critic));
+      expect(segments[0]).toEqual({ key: 'criticPrompt', children: ["(each critic's own prompt)"] });
+    });
+  });
+
+  it('offers placeholders for every template and fragment', () => {
+    for (const id of PROMPT_TEMPLATE_IDS) expect(TEMPLATE_PLACEHOLDERS[id], id).toBeDefined();
+    expect(fragmentPlaceholders('selfHeal').filter((p) => p.core).map((p) => p.token)).toEqual(['{reason}', '{output}']);
   });
 });
