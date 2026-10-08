@@ -6,7 +6,6 @@ const PROVIDER_LABELS = {
   codex: 'Codex',
   copilot: 'Copilot',
   opencode: 'OpenCode',
-  cursor: 'Cursor',
 } as const;
 
 function el(type: string, props: Record<string, unknown>, ...children: ReactNode[]) {
