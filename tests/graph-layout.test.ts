@@ -28,6 +28,7 @@ const task = (id: number, state: TaskState = 'ready', extra: Partial<Task> = {})
   workflow: null,
   wayfinderType: null,
   escalationReason: null,
+  escalationCause: null,
   mergeStatus: null, ticketClosePending: false,
   openBlockerCount: 0,
   agentWorkable: true,
@@ -48,7 +49,7 @@ const task = (id: number, state: TaskState = 'ready', extra: Partial<Task> = {})
   verifiedRef: null,
   hasCandidate: false,
   wallClockDeadline: null,
-  skipReason: null,
+  skipReason: null, routing: null,
   ...extra,
 });
 

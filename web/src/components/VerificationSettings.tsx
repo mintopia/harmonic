@@ -6,7 +6,6 @@ import type {
   VerificationCommand,
   Workspace,
 } from "../types";
-import { EPIC_RESOLVE_PLACEHOLDERS, compileEpicResolvePreview } from "../prompt-preview-model";
 import { resolvePromptFragments } from "../../../src/domain/setting-override.js";
 import { CommandListEditor, CommandOverlayEditor } from "./CommandListEditor";
 import {
@@ -16,8 +15,8 @@ import {
   TaskCriticListEditor,
   TaskCriticOverlayEditor,
 } from "./CriticListEditor";
-import { PromptField } from "./SettingsSection";
 import { Tabs } from "./Tabs";
+import type { HarnessChoice, HarnessChoices } from "./verification-override-model";
 
 type EditorProps = {
   commands: VerificationCommand[];
@@ -27,10 +26,13 @@ type EditorProps = {
   fieldErrors: Record<string, string>;
 };
 
-function harnessModelMap(config: AppConfig): Record<string, string[]> {
-  return Object.fromEntries(
-    Object.entries(config.harnesses).map(([id, harness]) => [id, harness.models.map((m) => m.id)]),
-  );
+function harnessModelMap(config: AppConfig): HarnessChoices {
+  const choices = Object.entries(config.harnesses).map(([id, harness]): [string, HarnessChoice] => [
+    id,
+    { models: harness.models.map((m) => m.id), defaultModel: harness.defaultModel },
+  ]);
+  const preferred = choices.filter(([id]) => id === config.defaults.harness);
+  return Object.fromEntries([...preferred, ...choices.filter(([id]) => id !== config.defaults.harness)]);
 }
 
 const SCOPE_TABS = [
@@ -95,7 +97,7 @@ function TaskStage({
 }: EditorProps & {
   critics: TaskVerificationCritic[];
   onCritics: (critics: TaskVerificationCritic[]) => void;
-  harnessModels: Record<string, string[]>;
+  harnessModels: HarnessChoices;
 }) {
   return (
     <div className="flex flex-col gap-5">
@@ -132,7 +134,7 @@ function EpicStage({
 }: EditorProps & {
   critics: EpicVerificationCritic[];
   onCritics: (critics: EpicVerificationCritic[]) => void;
-  harnessModels: Record<string, string[]>;
+  harnessModels: HarnessChoices;
 }) {
   return (
     <div className="flex flex-col gap-5">
@@ -269,28 +271,9 @@ export function GlobalVerificationSettings({
                 harnessModels={harnessModels}
               />
             </StageBlock>
-            <StageBlock
-              title="Resolve prompt"
-              hint="sent to the agent that fixes a failing epic verification"
-            >
-              <PromptField
-                id="settings-epic-resolve-prompt"
-                value={config.verify.epic.resolvePrompt}
-                onChange={(resolvePrompt) =>
-                  setConfig({
-                    ...config,
-                    verify: {
-                      ...config.verify,
-                      epic: { ...config.verify.epic, resolvePrompt },
-                    },
-                  })
-                }
-                placeholders={EPIC_RESOLVE_PLACEHOLDERS}
-                preview={compileEpicResolvePreview(config.verify.epic.resolvePrompt, config.verify.epic.resolveSuffix, config.promptFragments)}
-                error={fieldErrors["verify.epic.resolvePrompt"]}
-                rows={5}
-              />
-            </StageBlock>
+            <p className="text-small text-faint">
+              The prompt for fixing a failing Epic verification is on the Prompts tab (Epic verification fix).
+            </p>
           </>
         )}
       </div>

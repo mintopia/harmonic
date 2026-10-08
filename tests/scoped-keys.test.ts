@@ -55,7 +55,7 @@ describe('attempt-scoped key restrictions', () => {
     await server.app.ctx.tasks.escalate(done.body.id, 'escalated to human: attempt 2 of 2 failed');
 
     expect(await asAgent('POST', `/api/tasks/${done.body.id}/accept`)).toBe(403);
-    expect(await asAgent('POST', `/api/tasks/${done.body.id}/reject`, { guidance: 'x' })).toBe(403);
+    expect(await asAgent('POST', `/api/tasks/${done.body.id}/retry`, { guidance: 'x' })).toBe(403);
     expect(await asAgent('POST', `/api/tasks/${done.body.id}/close`)).toBe(403);
   });
 
@@ -99,7 +99,7 @@ describe('read-scoped key (issue #35)', () => {
     expect(await asRead('GET', '/api/workspaces')).toBe(200);
     expect(await asRead('GET', '/api/workspaces/1/epics')).toBe(200);
     expect(await asRead('POST', '/api/workspaces', { name: 'x' })).toBe(403);
-    expect(await asRead('POST', '/api/workspaces/1/epics/a/reject')).toBe(403);
+    expect(await asRead('POST', '/api/workspaces/1/epics/a/retry')).toBe(403);
     expect(await asRead('GET', '/api/workspaces/1/epics/a/diff/files')).toBe(403);
   });
 

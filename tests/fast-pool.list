@@ -28,6 +28,8 @@ tests/auto-drive.test.ts
 tests/board-sections-model.test.ts
 tests/channels-save-model.test.ts
 tests/claim-pins-defaults.test.ts
+tests/route-change-event.test.ts
+tests/routing-labels.test.ts
 tests/cli-dispatch.test.ts
 tests/contrast.test.ts
 tests/conversation-attention-model.test.ts

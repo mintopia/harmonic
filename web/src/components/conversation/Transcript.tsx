@@ -186,7 +186,7 @@ export function Transcript({ events, conversation }: { events: ConversationEvent
                       />
                     )}
                   </div>
-                  <EventStream events={turn.agentEvents} />
+                  <EventStream events={turn.agentEvents} baseDir={conversation?.workingDir} />
                 </div>
               </div>
             )}

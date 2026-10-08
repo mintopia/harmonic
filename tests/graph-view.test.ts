@@ -40,6 +40,7 @@ const task = ({
   workflow: null,
   wayfinderType: null,
   escalationReason: null,
+  escalationCause: null,
   mergeStatus: null, ticketClosePending: false,
   openBlockerCount: 0,
   agentWorkable: true,
@@ -60,7 +61,7 @@ const task = ({
   verifiedRef: null,
   hasCandidate: false,
   wallClockDeadline: null,
-  skipReason: null,
+  skipReason: null, routing: null,
 });
 
 describe('CardNode', () => {

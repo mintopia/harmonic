@@ -13,6 +13,8 @@ function makeSupervisor(state: { startedAt: number }, onTrip: () => void) {
     startedAt: state.startedAt,
     guardrailConfig: JSON.stringify({ budget: { wallClockMinutes: 60 }, progress: false, toolTimeoutMinutes: 20 }),
     priceTable: null,
+    harness: null,
+    model: null,
   });
   const deps = {
     attempts: {

@@ -428,7 +428,7 @@ export async function createRuntime(deps: {
   await backfillCriticPromptKeys({ db: asyncDb, archive, getTask: (taskId) => tasks.get(taskId) });
   touchStartupProgress(opts.dataDir);
   const escalation = new EscalationService(attempts, tasks, operatorSettle, mergeEffectsFor, {
-    resume: (task, guidance, startNow) => runner.resumeWithGuidance(task, guidance, startNow),
+    resume: (task, guidance, options) => runner.resumeWithGuidance(task, guidance, options),
     cleanup: (task, run) => runner.cleanupClosed(task, run),
     candidateHead: (task, run) => runner.candidateHead(task, run),
     advance: (task, run, failedStep) => runner.advanceAccepted(task, run, failedStep),

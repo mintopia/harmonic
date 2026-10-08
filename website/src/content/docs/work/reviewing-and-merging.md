@@ -38,7 +38,7 @@ already filled in.
 
 Successful Tasks complete automatically after their configured checks.
 This applies to both manually created and mirrored Tasks. There is no
-separate Accept or Reject gate for a manually created Task.
+separate Accept or Retry gate for a manually created Task.
 
 With **Direct** isolation, the agent works in the Workspace's Working
 Directory and completes in place. With **Worktree** isolation, the Task

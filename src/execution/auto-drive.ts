@@ -5,7 +5,8 @@ import { formatWorkspaceTrackerRef, resolveTrackerAdapter, workspaceTrackerSetti
 import type { FeatureIndex } from '../tracker/local-markdown.js';
 import { resolveRepositoryWithoutSecrets, type RepositoryResolver } from '../repository/resolve.js';
 import { resolveDrive, type ResolvedDrive } from '../domain/setting-override.js';
-import { driveFields, fillTemplate, splitTitleBody } from './prompt-template.js';
+import { driveFields, splitTitleBody } from './prompt-template.js';
+import { composeContinuePrompt, composeDriveOpening } from './prompt-assembly.js';
 import { Git } from './git.js';
 import { withBaseCheckoutLock } from './repo-lock.js';
 import { logger } from '../logger.js';
@@ -64,14 +65,7 @@ export class AutoDrive {
   async prompt(task: TaskRow): Promise<string> {
     const drive = await this.resolvedDrive(task);
     const epicKind = await this.epicKindFor(task);
-    const filled = fillTemplate(drive.prompt, driveFields({ ...task, epicKind }, this.urlFor));
-    const feedback = task.feedback?.trim();
-    const withFeedback = feedback ? `${filled}\n\n## Feedback from the previous attempt\n\n${feedback}` : filled;
-    return `${withFeedback}\n\n${this.reminderFrom(drive, task)}`;
-  }
-
-  private reminderFrom(drive: ResolvedDrive, task: TaskRow): string {
-    return drive.unattendedReminder.replace(/\{taskId\}/g, String(task.id));
+    return composeDriveOpening(drive, driveFields({ ...task, epicKind }, this.urlFor), task.feedback);
   }
 
   /**
@@ -80,9 +74,7 @@ export class AutoDrive {
    * unattended reminder (working memory is short across turns).
    */
   async continuePrompt(task: TaskRow): Promise<string> {
-    const drive = await this.resolvedDrive(task);
-    const nudge = drive.continuePrompt.replace(/\{taskId\}/g, String(task.id));
-    return `${nudge}\n\n${this.reminderFrom(drive, task)}`;
+    return composeContinuePrompt(await this.resolvedDrive(task), task.id);
   }
 
   /** How many times to re-prompt an unfinished Attempt before treating it as unresolved. */

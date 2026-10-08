@@ -125,7 +125,7 @@ export function excludeEpicDrivers<T extends Pick<Task, 'trackerRef' | 'isEpic'>
 
 /**
  * A whole-Epic integrate attempt's outcome, shared by the automatic poll
- * trigger and `POST …/epics/:ref/reject`.
+ * trigger and `POST …/epics/:ref/retry`.
  */
 export type EpicIntegrateOutcome =
   | { status: 'integrated'; oid: string }

@@ -24,6 +24,7 @@ import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
 import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import {
   verificationCommandOverrideSchema,
+  routingLabelOverrideSchema,
   taskVerificationCriticOverrideSchema,
   epicVerificationCriticOverrideSchema,
   budgetGuardrailSchema,
@@ -88,6 +89,8 @@ export const workspaceOverridesSchema = z.object({
   taskPostMergeCritics: taskVerificationCriticOverrideSchema.nullable().optional(),
   epicPreMergeCommands: verificationCommandOverrideSchema.nullable().optional(),
   epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().optional(),
+  /** Routing Label overlay; null inherits every global Routing Label in order. */
+  routingLabels: routingLabelOverrideSchema.nullable().optional(),
   /** Budget-Guardrail override; null inherits `config.guardrails.budget`. */
   guardrailBudget: budgetGuardrailSchema.nullable().optional(),
   /** Progress-detector toggle override; null inherits `config.guardrails.progress`. */
@@ -169,6 +172,7 @@ export const OVERRIDE_KEYS = [
   'taskPostMergeCritics',
   'epicPreMergeCommands',
   'epicPreMergeCritics',
+  'routingLabels',
   'guardrailBudget',
   'guardrailProgress',
   'toolTimeoutMinutes',
@@ -268,6 +272,7 @@ export class WorkspaceService {
       taskPostMergeCritics: o.taskPostMergeCritics != null ? JSON.stringify(o.taskPostMergeCritics) : null,
       epicPreMergeCommands: o.epicPreMergeCommands != null ? JSON.stringify(o.epicPreMergeCommands) : null,
       epicPreMergeCritics: o.epicPreMergeCritics != null ? JSON.stringify(o.epicPreMergeCritics) : null,
+      routingLabels: o.routingLabels != null ? JSON.stringify(o.routingLabels) : null,
       guardrailBudget: o.guardrailBudget != null ? JSON.stringify(o.guardrailBudget) : null,
       guardrailProgress: o.guardrailProgress,
       toolTimeoutMinutes: o.toolTimeoutMinutes,

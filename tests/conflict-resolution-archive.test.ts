@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { baselineConfig, type AppConfig } from '../src/config.js';
+import { resolveRoute } from '../src/domain/route.js';
 import { Git } from '../src/execution/git.js';
 import { MergeCoordinator, type MergeCoordinatorDeps } from '../src/execution/merge-coordinator.js';
 import { runMergePolicy } from '../src/execution/merge-policy.js';
@@ -47,9 +48,11 @@ async function conflictedRepo(branch: string): Promise<string> {
 
 const sentPrompts: string[] = [];
 let sentCwd = '';
+const sentRoutes: Array<{ harnessId: string; model: string }> = [];
 const resolvingDrive = {
   run: async (req: CriticDriveRequest) => {
     sentPrompts.push(req.prompt);
+    sentRoutes.push({ harnessId: req.harnessId, model: req.model });
     sentCwd = req.cwd;
     writeFileSync(join(req.cwd, 'base.txt'), 'resolved\n');
     git(req.cwd, 'add', 'base.txt');
@@ -112,6 +115,7 @@ describe('merge-conflict resolver prompts are archived (ADR-0047)', () => {
       attempts,
       onAttemptEvent,
       listWorkingTasks: async () => [],
+      routing: { epicRoute: async () => resolveRoute(baselineConfig(), 'claude', 'm', null) },
       epicMergeEvents: { append: async () => {} },
       onEpicMergeStep: () => {},
     } as never).mergeEpicIntegration({
@@ -145,6 +149,7 @@ describe('merge-conflict resolver prompts are archived (ADR-0047)', () => {
     const outcome = await coordinator(dataDir, {
       attempts: { listForEpic: async () => [], addAgentDuration: vi.fn(async () => {}), appendEvent },
       listWorkingTasks: async () => [],
+      routing: { epicRoute: async () => resolveRoute(baselineConfig(), 'claude', 'm', null) },
       epicMergeEvents: { append },
       onEpicMergeStep: () => {},
     } as never).mergeEpicIntegration({
@@ -169,6 +174,57 @@ describe('merge-conflict resolver prompts are archived (ADR-0047)', () => {
       locator: 'resolution/epic-conflict-1/prompt.md',
       promptIndex: 0,
     });
+  });
+
+  it('runs the Epic integration conflict turn on the Epic route, not a working member of another route', async () => {
+    sentPrompts.length = 0;
+    sentRoutes.length = 0;
+    const repo = await conflictedRepo('epic/9');
+    const dataDir = tmp('harmonic-conflict-archive-data-');
+    const member = { baseBranch: 'epic/9', harness: 'codex', model: 'cheap-model', conflictResolveTurns: 1 } as unknown as TaskRow;
+    const epicRoute = vi.fn(async () => resolveRoute(baselineConfig(), 'claude', 'claude-opus-5-5', 'reasoning'));
+    const outcome = await coordinator(dataDir, {
+      attempts: { listForEpic: async () => [], addAgentDuration: vi.fn(async () => {}), appendEvent: vi.fn(async () => ({})) },
+      listWorkingTasks: async () => [member],
+      routing: { epicRoute },
+      epicMergeEvents: { append: async () => {} },
+      onEpicMergeStep: () => {},
+    } as never).mergeEpicIntegration({
+      workspaceId: 4,
+      repoDir: repo,
+      epicRef: trackerRef(9),
+      defaultBranch: 'main',
+      integrationBranch: 'epic/9',
+      runPostMergeCheck: async () => ({ pass: true, output: '' }),
+    });
+
+    expect(outcome.kind).toBe('merged');
+    expect(epicRoute).toHaveBeenCalledWith(4, trackerRef(9));
+    expect(sentRoutes).toEqual([{ harnessId: 'claude', model: 'claude-opus-5-5' }]);
+  });
+
+  it('escalates the Epic integration conflict without driving a turn when the routed Harness is not configured', async () => {
+    sentPrompts.length = 0;
+    const repo = await conflictedRepo('epic/10');
+    const dataDir = tmp('harmonic-conflict-archive-data-');
+    const outcome = await coordinator(dataDir, {
+      attempts: { listForEpic: async () => [], addAgentDuration: vi.fn(async () => {}), appendEvent: vi.fn(async () => ({})) },
+      listWorkingTasks: async () => [],
+      routing: { epicRoute: async () => resolveRoute({ harnesses: {} }, 'missing-harness', 'm', 'reasoning') },
+      epicMergeEvents: { append: async () => {} },
+      onEpicMergeStep: () => {},
+    } as never).mergeEpicIntegration({
+      workspaceId: 4,
+      repoDir: repo,
+      epicRef: trackerRef(10),
+      defaultBranch: 'main',
+      integrationBranch: 'epic/10',
+      runPostMergeCheck: async () => ({ pass: true, output: '' }),
+    });
+
+    expect(outcome).toMatchObject({ kind: 'escalated', reason: 'conflict' });
+    expect(outcome.kind === 'escalated' && outcome.message).toContain("Routing Label 'reasoning' needs Harness 'missing-harness', which is not configured.");
+    expect(sentPrompts).toEqual([]);
   });
 
   it('still resolves the conflict when the Archive write fails', async () => {

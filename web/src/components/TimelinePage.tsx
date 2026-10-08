@@ -1,3 +1,4 @@
+import { formatModelLabel } from './TaskIdentity';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import type { Attempt, TimelineAttempt } from '../types';
@@ -621,7 +622,7 @@ function HoverCard({ hover, now }: { hover: NonNullable<Hover>; now: number }) {
         <dt className="text-muted">Harness</dt>
         <dd className="text-right font-data text-data text-ink">{span.harness}</dd>
         <dt className="text-muted">Model</dt>
-        <dd className="truncate text-right font-data text-data text-ink" title={span.model}>{span.model}</dd>
+        <dd className="truncate text-right font-data text-data text-ink" title={span.model}>{formatModelLabel(span.model)}</dd>
         <dt className="text-muted">Duration</dt>
         <dd className="text-right tabular-nums text-ink">
           {span.endedAt ? fmtDuration(end - span.startedAt) : `${fmtDuration(end - span.startedAt)} · live`}
@@ -706,7 +707,7 @@ function AttemptInspector({
             <span aria-hidden="true">·</span>
             <span>attempt #{span.number}</span>
             <span aria-hidden="true">·</span>
-            <span className="font-data text-data">{span.harness} / {span.model}</span>
+            <span className="font-data text-data">{span.harness} / {formatModelLabel(span.model)}</span>
             <span aria-hidden="true">·</span>
             <span className="tabular-nums">{fmtDuration(to - from)}</span>
             {formatCost(span.cost) && (

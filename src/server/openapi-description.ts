@@ -10,7 +10,7 @@ endpoint, so it has no entry in this spec's paths). It authenticates the
 same way as the REST API — a bearer token, either an operator API key or
 the Attempt Key Harmonic injects into a spawned harness — and exposes the
 agent task surface as MCP tools (task CRUD, dependencies, queue/cancel,
-attempts and events). Accept/Reject are human-only and are never exposed as
+attempts and events). Accept/Retry are human-only and are never exposed as
 MCP tools — a verifier's pass is the accept (#140, ADR-0021). An attempt-scoped
 Attempt Key may call \`/mcp\` regardless of the REST restrictions noted per
 endpoint below.
@@ -56,8 +56,7 @@ are never allowed, so authenticate with a bearer key.
 ## Read scope
 
 A \`read\`-scoped API key (created via \`POST /api/keys\` with
-\`{ "scope": "read" }\`) is a viz-client credential: it may \`GET\` ${readScopePathList()}, and open the WebSocket (filtered as
-above). Every mutation and the whole operator surface (keys, config,
+\`{ "scope": "read" }\`) is a viz-client credential: it may \`GET\` ${readScopePathList()}. Every mutation and the whole operator surface (keys, config,
 channels, Conversations) is blocked. There is no \`map_changed\` event — a
 client re-fetches \`/maps\` on reconnect or when it sees a \`mapRef\` it has
 not resolved yet.`;

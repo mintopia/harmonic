@@ -46,8 +46,10 @@ the box; the settings you're likely to touch are the models:
 | Default model | The one used when a ticket doesn't choose its own. |
 | Permission mode | How an unattended Attempt handles the harness's permission requests. |
 
-Pick a harness and model per ticket, or set them as a workspace default;
-see [Settings & overrides](/harmonic/run/settings/).
+Pick a harness and model per ticket, set them as a workspace default, or
+let a tracker label choose them with
+[Routing Labels](/harmonic/run/settings/#routing-labels). See
+[Settings & overrides](/harmonic/run/settings/).
 
 ### Model choice and cost
 

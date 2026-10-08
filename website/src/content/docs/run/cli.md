@@ -63,9 +63,10 @@ harmonic serve --host 127.0.0.1 --port 8080
 Start a password-protected background server with its own data directory:
 
 ```sh
-harmonic start --password 'correct horse' --data-dir ~/harmonic-work
-harmonic status --data-dir ~/harmonic-work
-harmonic stop   --data-dir ~/harmonic-work
+harmonic start   --password 'correct horse' --data-dir ~/harmonic-work
+harmonic status  --data-dir ~/harmonic-work
+harmonic restart --data-dir ~/harmonic-work
+harmonic stop    --data-dir ~/harmonic-work
 ```
 
 Remove a previously set password (run ungated again):
@@ -95,6 +96,12 @@ Docker), Harmonic doesn't upgrade itself, because it can't restart safely
 under a supervisor it doesn't control. The banner shows the command to run
 instead. From a source checkout Harmonic doesn't self-update; pull and
 rebuild instead.
+
+Upgrading the package by hand (`npm i -g`) replaces the files on disk, but
+the running server keeps the old version until it restarts. Until you
+restart the Harmonic service, a banner says which version is installed and
+which is still running, and some pages may not work. If the server was
+upgraded while a tab was open, the banner offers a Reload instead.
 
 ## See also
 

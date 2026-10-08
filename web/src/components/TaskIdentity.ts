@@ -1,8 +1,6 @@
 import { createElement, type ReactNode } from 'react';
 import { toolChip } from '../ui.js';
 
-const MODEL_PREFIXES = ['claude-', 'gpt-', 'copilot-', 'cursor-'] as const;
-
 const PROVIDER_LABELS = {
   claude: 'Claude',
   codex: 'Codex',
@@ -20,10 +18,14 @@ export function providerLabel(harness: string): string {
   return PROVIDER_LABELS[normalized as keyof typeof PROVIDER_LABELS] ?? harness;
 }
 
+const CLAUDE_MODEL = /^(?:[\w.-]+\/)*(?:claude-)?(opus|sonnet|haiku)-(\d+)(?:[-.](\d{1,2}))?(?:-\d{8})?$/;
+
 export function formatModelLabel(model: string): string {
   const normalized = model.toLowerCase();
-  for (const prefix of MODEL_PREFIXES) {
-    if (normalized.startsWith(prefix)) return model.slice(prefix.length);
+  const claude = CLAUDE_MODEL.exec(normalized);
+  if (claude) {
+    const [, family = '', major = '', minor] = claude;
+    return `${family.charAt(0).toUpperCase()}${family.slice(1)} ${major}${minor === undefined ? '' : `.${minor}`}`;
   }
   return model;
 }
@@ -45,6 +47,13 @@ export function ProviderChip({
     { className: `${toolChip} inline-flex items-center ${modeClass} ${className}`.trim(), title: label },
     label,
   );
+}
+
+const ROLE_SEPARATOR = ' · ';
+
+export function formatModelKey(key: string): string {
+  const at = key.indexOf(ROLE_SEPARATOR);
+  return at < 0 ? formatModelLabel(key) : `${formatModelLabel(key.slice(0, at))}${key.slice(at)}`;
 }
 
 export function ModelLabel({ model, className = '' }: { model: string; className?: string }) {

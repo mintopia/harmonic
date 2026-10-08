@@ -92,6 +92,6 @@ the blocked column when you expand the band.
 If the Epic's own verification is stuck, failed and out of automatic
 attempts, the Epic page shows an escalation panel of its own: a text box
 for guidance and two ways forward, **Continue with guidance** (keeps
-working from where it left off) or **Reject and start fresh** (requeues
+working from where it left off) or **Retry and start fresh** (requeues
 with a clean run). Either way, add what the resolver got wrong and it
 picks the work back up.

@@ -11,6 +11,7 @@ import type {
   NotificationRow,
 } from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
+import type { TaskRouting } from '../domain/task-routing.js';
 import type { PersistedAttemptEvent } from '../domain/attempts.js';
 import type { IsolationMode, Priority } from '../config.js';
 import type { Ticket, TrackerRef } from '../tracker/adapter.js';
@@ -87,6 +88,7 @@ export interface ApiAttempt {
   feedback: string | null;
   verifiedSha: string | null;
   escalationReason: string | null;
+  workingDir: string | null;
   continuation: z.infer<typeof attemptContinuationSchema> | null;
   verifierStatuses: VerifierStatus[];
   steps: ApiStep[];
@@ -136,6 +138,7 @@ export function attemptToTimelineApi(
   stepRows: readonly StepRow[],
   attemptVerifications: readonly VerificationAttemptRow[],
   verifiers: ReturnType<typeof resolveVerifiers>,
+  workingDir: string | null,
 ): ApiAttempt {
   const stepType = [...stepRows].reverse().find((row) => row.state === 'running')?.type ?? null;
   const escalationReason = attempt.state === 'escalated' ? attempt.reason : null;
@@ -149,6 +152,7 @@ export function attemptToTimelineApi(
     feedback: attempt.feedback,
     verifiedSha: verifiedShaOf(attemptVerifications),
     escalationReason,
+    workingDir,
     continuation: continuationToApi(attempt.continuation),
     verifierStatuses: verifierStatuses({ verifiers: verifiers.task.preMerge, attempts: attemptVerifications, stepType }),
     steps: stepRows.map(stepToApi),
@@ -161,7 +165,7 @@ export type TicketTimelineKind =
   | 'lifecycle'
   | 'verification'
   | 'guardrail'
-  | 'operator-reject'
+  | 'operator-retry'
   | 'agent-message'
   | 'fact';
 
@@ -409,6 +413,8 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'isolationMode' | 'prio
     isolationMode: IsolationMode | null;
     priority: Priority | null;
   };
+  /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. Null when none matches. */
+  routing: TaskRouting | null;
   /** The prompt's first line, bounded; the full `prompt` is item-GET-only. */
   summary: string;
   cost: Cost | null;
@@ -482,6 +488,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListR
     conflictResolveTurns: 0,
     state: 'ready',
     escalationReason: null,
+    escalationCause: null,
     mergeStatus: null,
     ticketClosePending: false,
     feedback: null,
@@ -501,6 +508,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListR
     humanOnly: true,
     isEpic: true,
     overrides: { harness: null, model: null, isolationMode: null, priority: null, conflictResolveTurns: null },
+    routing: null,
     summary: ticket.title,
     cost: null,
     url: ticket.url,

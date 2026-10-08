@@ -138,7 +138,7 @@ export class EpicVerificationRunner {
   }): Promise<VerifierVerdict & { summary?: string; output?: string }> {
     const { epicAttempts, verificationAttemptStore, criticDrive, getConfig } = this.deps;
     const config = getConfig();
-    const harnessId = critic.harness ?? config.defaults.harness;
+    const harnessId = critic.harness;
     const harness = config.harnesses[harnessId];
     if (!harness) {
       return {
@@ -164,7 +164,7 @@ export class EpicVerificationRunner {
         cwd,
         verifiedHeadOid: criticHeadOid,
         ...(baseOid ? { baseOid } : {}),
-        critic: { prompt: critic.prompt, model: critic.model, ...(critic.harness ? { harness: critic.harness } : {}) },
+        critic: { prompt: critic.prompt, model: critic.model, harness: critic.harness },
         fragments: resolvePromptFragments(this.deps.workspace, config),
         timeoutMs: critic.timeoutSeconds * 1000,
         fields: { taskId: '', skill: '/implement', ref: String(epicRef), url: '', title: `Epic #${epicRef}`, description: '' },

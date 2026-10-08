@@ -7,6 +7,7 @@ import { parse } from 'yaml';
 import { z } from 'zod';
 import { verdictContractError } from './verification/critic-schema.js';
 import { isModelPriced, pricesForHarness } from './domain/pricing.js';
+import { routingLabelIssues } from './domain/setting-override.js';
 import {
   PROMPT_FRAGMENT_NAMES,
   PROMPT_FRAGMENTS,
@@ -133,8 +134,8 @@ const verificationCriticIdentitySchema = z.object({
   /** Operator-facing label; the critic's row title in settings. */
   name: z.string().default('').meta({ example: 'Correctness' }),
   model: z.string().min(1).meta({ example: 'claude-opus-5' }),
-  /** Reviewer harness; omitted = reuse the builder task's harness. */
-  harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),
+  /** Reviewer Harness; required, with no fallback. `model` must be in this Harness's catalog. */
+  harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }),
   /** Hard timeout in seconds for the critic's single review turn; a run that
    * overruns is killed and reads inconclusive. Defaults to 300. */
   timeoutSeconds: z.number().int().positive().default(300).meta({ example: 300 }),
@@ -221,9 +222,8 @@ export function unpricedModelsForCostCap(
   }
   for (const stage of [config.verify.task.preMerge, config.verify.task.postMerge, config.verify.epic.preMerge]) {
     for (const critic of stage.critics) {
-      const harnessId = critic.harness ?? config.defaults.harness;
-      const harness = config.harnesses[harnessId];
-      if (harness && !isModelPriced(critic.model, pricesForHarness(harness))) configured.add(`${harnessId}/${critic.model}`);
+      const harness = config.harnesses[critic.harness];
+      if (harness && !isModelPriced(critic.model, pricesForHarness(harness))) configured.add(`${critic.harness}/${critic.model}`);
     }
   }
   return [...configured];
@@ -232,6 +232,28 @@ export function unpricedModelsForCostCap(
 /** Must stay free of `'; '`: the API error handler and the settings form's `parseFieldErrors` split `path: message` pairs on it. */
 export function costCapMessage(unpriced: string[]): string {
   return `a cost cap with no token fallback requires every configured model to be priced — unpriced: ${unpriced.join(', ')}`;
+}
+
+/** Message for a Critic whose Model its own Harness does not list; names both. */
+export function criticModelMessage(critic: { name: string; model: string; harness: string }): string {
+  return `critic${critic.name ? ` "${critic.name}"` : ''} model '${critic.model}' is not in the ${critic.harness} harness's model list`;
+}
+
+/** Every Critic in `verify` whose Model is missing from its Harness's non-empty catalog. */
+export function criticModelIssues(
+  verify: Pick<AppConfig, 'verify'>['verify'],
+  harnesses: AppConfig['harnesses'],
+): Array<{ path: (string | number)[]; message: string }> {
+  const stages = [
+    ['task', 'preMerge', verify.task.preMerge],
+    ['task', 'postMerge', verify.task.postMerge],
+    ['epic', 'preMerge', verify.epic.preMerge],
+  ] as const;
+  return stages.flatMap(([scope, phase, stage]) => stage.critics.flatMap((critic, index) => {
+    const models = harnesses[critic.harness]?.models ?? [];
+    if (models.length === 0 || models.some((m) => m.id === critic.model)) return [];
+    return [{ path: ['verify', scope, phase, 'critics', index, 'model'], message: criticModelMessage(critic) }];
+  }));
 }
 
 /** True when no verifier is configured for any stage. */
@@ -270,6 +292,19 @@ export const redactPatternSchema = z.object({
 export type RedactPattern = z.infer<typeof redactPatternSchema>;
 export const redactPatternsSchema = z.array(redactPatternSchema);
 
+export const routingLabelSchema = z.object({
+  label: z.string().trim().min(1).meta({ example: 'reasoning' }),
+  harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }),
+  /** Empty means the Harness's default model; ids are not validated against the catalog. */
+  model: z.string().meta({ example: 'claude-opus-5-5' }),
+});
+export type RoutingLabel = z.infer<typeof routingLabelSchema>;
+
+/** Global Routing Labels carry no id, so a `global` overlay entry's `ref` is the lowercased label (ADR-0049). */
+export const routingLabelOverlayEntrySchema = overlayEntrySchema('routingLabel', routingLabelSchema);
+export type RoutingLabelOverlayEntry = z.infer<typeof routingLabelOverlayEntrySchema>;
+export const routingLabelOverrideSchema = z.array(routingLabelOverlayEntrySchema);
+
 export const appConfigSchema = z.object({
   /** Operator-chosen display name; feeds the sidebar heading and browser title. Empty (the default) falls back to "Harmonic". */
   name: z.string().meta({ example: 'Production' }),
@@ -292,6 +327,8 @@ export const appConfigSchema = z.object({
     /** Agentic resolve-turns a rebase conflict gets before it escalates; 0 escalates on the first conflict. */
     conflictResolveTurns: z.number().int().min(0).meta({ example: 2 }),
   }),
+  /** Ordered tracker-label → Harness + Model mappings for mirrored Tickets (ADR-0049); the first match in list order wins. */
+  routingLabels: z.array(routingLabelSchema).meta({ example: [{ label: 'reasoning', harness: 'claude', model: 'claude-opus-5-5' }] }),
   /** The default Harness and model a new Conversation starts with; a Workspace stores `null` to inherit. */
   chat: z.object({
     harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }),
@@ -406,6 +443,13 @@ export const appConfigSchema = z.object({
       code: 'custom',
       path: ['chat', 'model'],
       message: `chat model must be one of the ${config.chat.harness} harness's models`,
+    });
+  }
+  for (const issue of routingLabelIssues(config.routingLabels)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['routingLabels', issue.index, 'label'],
+      message: issue.kind === 'blank' ? 'routing label must not be blank' : `routing label "${config.routingLabels[issue.index]?.label}" is already mapped`,
     });
   }
   const unpriced = unpricedModelsForCostCap(config.guardrails.budget, config);

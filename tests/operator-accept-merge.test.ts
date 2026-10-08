@@ -14,7 +14,7 @@ const failingCritic = () => ({
     {
       kind: 'local' as const,
       enabled: true,
-      critic: { id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.', model: 'stub-model', timeoutSeconds: 300 },
+      critic: { id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 },
     },
   ],
 });

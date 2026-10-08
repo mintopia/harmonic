@@ -9,7 +9,7 @@ describe('verifierStatuses', () => {
           { id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 },
           { id: 'cmd-lint', command: 'npm', args: ['run', 'lint'], env: {}, timeoutSeconds: 600 },
         ],
-        critics: [{ id: 'critic-review', name: 'Test critic', prompt: 'Review.', model: 'stub-model', timeoutSeconds: 300 }, { id: 'critic-check', name: 'Test critic', prompt: 'Check.', model: 'stub-model', timeoutSeconds: 300 }],
+        critics: [{ id: 'critic-review', name: 'Test critic', prompt: 'Review.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 }, { id: 'critic-check', name: 'Test critic', prompt: 'Check.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 }],
       },
       attempts: [],
     });
@@ -23,7 +23,7 @@ describe('verifierStatuses', () => {
       verifierStatuses({
         verifiers: {
           commands: [{ id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
-          critics: [{ id: 'critic-review-it', name: 'Test critic', prompt: 'Review it.', model: 'stub-model', timeoutSeconds: 300 }],
+          critics: [{ id: 'critic-review-it', name: 'Test critic', prompt: 'Review it.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 }],
         },
         attempts: [
           { mechanism: 'command', seq: 1, verdict: 'fail' },
@@ -33,7 +33,7 @@ describe('verifierStatuses', () => {
       }),
     ).toEqual([
       { mechanism: 'command', state: 'passed', reason: null, commands: ['npm test'] },
-      { mechanism: 'critic', state: 'inconclusive', reason: null },
+      { mechanism: 'critic', state: 'inconclusive', reason: null, harness: 'claude' },
     ]);
   });
 
@@ -43,7 +43,7 @@ describe('verifierStatuses', () => {
         verifierStatuses({
           verifiers: {
             commands: [{ id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
-            critics: [{ id: 'critic-review-it', name: 'Test critic', prompt: 'Review it.', model: 'stub-model', timeoutSeconds: 300 }],
+            critics: [{ id: 'critic-review-it', name: 'Test critic', prompt: 'Review it.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 }],
           },
           attempts: [],
           stepType,
@@ -59,6 +59,7 @@ describe('verifierStatuses', () => {
           mechanism: 'critic',
           state: 'planned',
           reason: 'Configured to run — the attempt has not reached verification yet.',
+          harness: 'claude',
         },
       ]);
     }
@@ -67,15 +68,15 @@ describe('verifierStatuses', () => {
   it('shows the verifier whose Step is live as running, the one after it as planned', () => {
     const verifiers = {
       commands: [{ id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
-      critics: [{ id: 'critic-review-it', name: 'Test critic', prompt: 'Review it.', model: 'stub-model', timeoutSeconds: 300 }],
+      critics: [{ id: 'critic-review-it', name: 'Test critic', prompt: 'Review it.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 }],
     };
     expect(verifierStatuses({ verifiers, attempts: [], stepType: 'verification' })).toEqual([
       { mechanism: 'command', state: 'running', reason: 'Running the command checks now.', commands: ['npm test'] },
-      { mechanism: 'critic', state: 'planned', reason: 'Configured to run — the attempt has not reached verification yet.' },
+      { mechanism: 'critic', state: 'planned', reason: 'Configured to run — the attempt has not reached verification yet.', harness: 'claude' },
     ]);
     expect(verifierStatuses({ verifiers, attempts: [{ mechanism: 'command', seq: 1, verdict: 'pass' }], stepType: 'review' })).toEqual([
       { mechanism: 'command', state: 'passed', reason: null, commands: ['npm test'] },
-      { mechanism: 'critic', state: 'running', reason: 'The critic is reviewing the candidate now.' },
+      { mechanism: 'critic', state: 'running', reason: 'The critic is reviewing the candidate now.', harness: 'claude' },
     ]);
   });
 
@@ -96,14 +97,14 @@ describe('verifierStatuses', () => {
       verifierStatuses({
         verifiers: {
           commands: [{ id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
-          critics: [{ id: 'critic-review-it', name: 'Test critic', prompt: 'Review it.', model: 'stub-model', timeoutSeconds: 300 }],
+          critics: [{ id: 'critic-review-it', name: 'Test critic', prompt: 'Review it.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 }],
         },
         attempts: [],
         stepType: 'review',
       }),
     ).toEqual([
       { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this attempt.', commands: ['npm test'] },
-      { mechanism: 'critic', state: 'running', reason: 'The critic is reviewing the candidate now.' },
+      { mechanism: 'critic', state: 'running', reason: 'The critic is reviewing the candidate now.', harness: 'claude' },
     ]);
   });
 
@@ -119,11 +120,12 @@ describe('verifierStatuses', () => {
         mechanism: 'critic',
         state: 'planned',
         reason: 'Configured to run — the attempt has not reached verification yet.',
+        harness: 'claude',
       },
     ];
     const verifiers = {
       commands: [{ id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
-      critics: [{ id: 'critic-review-it', name: 'Test critic', prompt: 'Review it.', model: 'stub-model', timeoutSeconds: 300 }],
+      critics: [{ id: 'critic-review-it', name: 'Test critic', prompt: 'Review it.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 }],
     };
     expect(verifierStatuses({ verifiers, attempts: [] })).toEqual(expected);
     expect(verifierStatuses({ verifiers, attempts: [], stepType: null })).toEqual(expected);

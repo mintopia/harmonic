@@ -6,7 +6,7 @@ import { btnQuiet, panelTitle, touchTarget } from '../ui';
 import { ConfirmDialog } from './ConfirmDialog';
 import { EmptyState } from './EmptyState';
 import { Icon } from './Icon';
-import { providerLabel } from './TaskIdentity';
+import { formatModelLabel, providerLabel } from './TaskIdentity';
 import { elapsedShort } from '../relative-time';
 
 function statusDot(conversation: Conversation, needsAttention: boolean): string {
@@ -65,7 +65,7 @@ function ConversationRow({
             <span>{providerLabel(conversation.harness)} · ended</span>
           ) : (
             <span>
-              {providerLabel(conversation.harness)} · {conversation.model}
+              {providerLabel(conversation.harness)} · {formatModelLabel(conversation.model)}
             </span>
           )}
         </div>

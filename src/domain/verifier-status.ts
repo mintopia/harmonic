@@ -83,13 +83,13 @@ export function verifierStatuses({
       }),
       ...verifiers.critics.map((critic, index): VerifierStatus => {
         const attempt = attemptsFor('critic')[index];
-        if (attempt) return { mechanism: 'critic', verifier: `critic:${index}`, state: verdictStates[attempt.verdict], reason: null, ...(critic.harness ? { harness: critic.harness } : {}) };
+        if (attempt) return { mechanism: 'critic', verifier: `critic:${index}`, state: verdictStates[attempt.verdict], reason: null, harness: critic.harness };
         const state = configuredVerifierState('review', stepType, attempts.length);
         return {
           mechanism: 'critic', verifier: `critic:${index}`,
           state,
           reason: state === 'running' ? 'The critic is reviewing the candidate now.' : state === 'planned' ? 'Configured to run — the attempt has not reached verification yet.' : 'No critic verification attempt was recorded for this attempt.',
-          ...(critic.harness ? { harness: critic.harness } : {}),
+          harness: critic.harness,
         };
       }),
     ];

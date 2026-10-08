@@ -82,9 +82,9 @@ export function createPostMergeCheck(deps: {
       const critic = {
         prompt: task.trackerRef == null ? configuredCritic.noIssuePrompt : configuredCritic.issuePrompt,
         model: configuredCritic.model,
-        ...(configuredCritic.harness ? { harness: configuredCritic.harness } : {}),
+        harness: configuredCritic.harness,
       };
-      const harnessId = critic.harness ?? task.harness;
+      const harnessId = critic.harness;
       const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
       if (!harness) throw new DomainError('validation', `critic harness '${harnessId}' is not configured`);
       const stepId = `critic-${index + 1}`;

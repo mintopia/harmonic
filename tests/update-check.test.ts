@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer, type Server } from 'node:http';
-import { UpdateCheck, compareStableVersions, fetchLatestVersion, parseLatestDistTag, type UpdateAvailabilityStore } from '../src/upgrade/update-check.js';
+import { UpdateCheck, fetchLatestVersion, parseLatestDistTag, type UpdateAvailabilityStore } from '../src/upgrade/update-check.js';
+import { compareStableVersions } from '../src/domain/stable-version.js';
 
 function store(initial: string | null = null): UpdateAvailabilityStore {
   let version = initial;

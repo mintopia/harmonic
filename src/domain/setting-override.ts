@@ -11,6 +11,8 @@ import {
   type EpicVerificationStage,
   type BudgetGuardrail,
   type MergeFate,
+  type RoutingLabel,
+  type RoutingLabelOverlayEntry,
 } from '../config.js';
 import { expandFragments } from '../execution/prompt-template.js';
 import {
@@ -81,14 +83,15 @@ export function resolveVerifiers(
  * already-customised Workspace. `null` inherits every global, in global
  * order, enabled.
  */
-function mergeOverlay<TItem extends { id: string }, TEntry extends { kind: 'global' | 'local'; enabled: boolean }>(
+function mergeOverlay<TItem, TEntry extends { kind: 'global' | 'local'; enabled: boolean }>(
   overlay: readonly TEntry[] | null,
   globals: readonly TItem[],
+  idOf: (item: TItem) => string,
   ref: (entry: TEntry & { kind: 'global' }) => string,
   local: (entry: TEntry & { kind: 'local' }) => TItem,
 ): TItem[] {
   if (overlay == null) return [...globals];
-  const globalById = new Map(globals.map((item) => [item.id, item] as const));
+  const globalById = new Map(globals.map((item) => [idOf(item), item] as const));
   const named = new Set<string>();
   const result: TItem[] = [];
   for (const entry of overlay) {
@@ -103,7 +106,7 @@ function mergeOverlay<TItem extends { id: string }, TEntry extends { kind: 'glob
     if (!entry.enabled) continue;
     result.push(local(entry as TEntry & { kind: 'local' }));
   }
-  for (const item of globals) if (!named.has(item.id)) result.push(item);
+  for (const item of globals) if (!named.has(idOf(item))) result.push(item);
   return result;
 }
 
@@ -117,7 +120,69 @@ function resolveOverlay<TItem extends { id: string }, TEntry extends { kind: 'gl
 ): TItem[] {
   if (!isOverridable(key)) return [...globals];
   const overlay = stored == null ? null : (JSON.parse(stored) as TEntry[]);
-  return mergeOverlay(overlay, globals, ref, local);
+  return mergeOverlay(overlay, globals, (item) => item.id, ref, local);
+}
+
+/** Defined here, not in config.ts: the web bundle imports this module and config.ts pulls in node builtins. */
+export function routingLabelRef(route: Pick<RoutingLabel, 'label'>): string {
+  return route.label.trim().toLowerCase();
+}
+
+/** A Routing Label list problem at `index`; `duplicate-global` names the enabled Global label it repeats. */
+export type RoutingLabelIssue =
+  | { index: number; kind: 'blank' | 'duplicate' }
+  | { index: number; kind: 'duplicate-global'; globalRef: string };
+
+/** Blank and case-insensitively repeated labels in a flat (Global) list. */
+export function routingLabelIssues(labels: readonly Pick<RoutingLabel, 'label'>[]): RoutingLabelIssue[] {
+  const seen = new Set<string>();
+  return labels.flatMap((route, index): RoutingLabelIssue[] => {
+    const ref = routingLabelRef(route);
+    if (ref === '') return [{ index, kind: 'blank' }];
+    if (seen.has(ref)) return [{ index, kind: 'duplicate' }];
+    seen.add(ref);
+    return [];
+  });
+}
+
+/**
+ * Problems that make a Workspace overlay unsavable: an enabled local label may
+ * not be blank, repeat an enabled Global label (a disabled Global frees its
+ * label), or repeat an earlier enabled local one. Disabled locals are not checked.
+ */
+export function routingLabelOverlayIssues(
+  overlay: readonly (
+    | { kind: 'global'; ref: string; enabled: boolean }
+    | { kind: 'local'; enabled: boolean; routingLabel: Pick<RoutingLabel, 'label'> }
+  )[],
+  globals: readonly Pick<RoutingLabel, 'label'>[],
+): RoutingLabelIssue[] {
+  const disabled = new Set(overlay.flatMap((e) => (e.kind === 'global' && !e.enabled ? [e.ref] : [])));
+  const globalRefs = new Set(globals.map(routingLabelRef).filter((ref) => !disabled.has(ref)));
+  const seen = new Set<string>();
+  return overlay.flatMap((entry, index): RoutingLabelIssue[] => {
+    if (entry.kind !== 'local' || !entry.enabled) return [];
+    const ref = routingLabelRef(entry.routingLabel);
+    if (ref === '') return [{ index, kind: 'blank' }];
+    if (globalRefs.has(ref)) return [{ index, kind: 'duplicate-global', globalRef: ref }];
+    if (seen.has(ref)) return [{ index, kind: 'duplicate' }];
+    seen.add(ref);
+    return [];
+  });
+}
+
+/** Effective Routing Labels: null inherits all globals; a local shadowed by an enabled global is dropped (ADR-0049). */
+export function resolveRoutingLabels(
+  ws: Pick<WorkspaceRow, 'routingLabels'> | null | undefined,
+  config: Pick<AppConfig, 'routingLabels'>,
+): RoutingLabel[] {
+  const stored = isOverridable('routingLabels') ? ws?.routingLabels : null;
+  const overlay = stored == null ? null : (JSON.parse(stored) as RoutingLabelOverlayEntry[]);
+  const merged = mergeOverlay<RoutingLabel, RoutingLabelOverlayEntry>(overlay, config.routingLabels, routingLabelRef, (e) => e.ref, (e) => e.routingLabel);
+  if (overlay == null) return merged;
+  const globals = new Set<RoutingLabel>(config.routingLabels);
+  const enabledGlobalRefs = new Set(merged.filter((route) => globals.has(route)).map(routingLabelRef));
+  return merged.filter((route) => globals.has(route) || !enabledGlobalRefs.has(routingLabelRef(route)));
 }
 
 function resolveTaskStage(

@@ -64,6 +64,11 @@ key, and Harmonic never allows credentialed cross-origin requests, so the
 page can't use your login session. Give such pages a Read Key, which can
 view work but change nothing.
 
+Create keys on the API page and choose **Read only** for a Read Key. It can
+read Tasks, Attempts, Workspaces and their Epics, maps, activity, Operations,
+Scheduled Jobs and Notifications, and can listen on the WebSocket, which is
+filtered to what the key may read. Everything else needs a full-access key.
+
 ## Secret key backup
 
 Workspace tokens for Forgejo and Jira are encrypted with an instance key

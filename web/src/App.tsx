@@ -8,6 +8,7 @@ import { AppContent } from './components/AppContent';
 import { AppContextProvider } from './app-context';
 import { Login } from './components/Login';
 import { UpdateBanner } from './components/UpdateBanner';
+import { BUILD_VERSION } from './build-version';
 import { AboutOverlay } from './components/AboutOverlay';
 import { HeaderStatusBar } from './components/HeaderStatusBar';
 import { NewWorkspaceForm } from './components/WorkspaceSwitcher';
@@ -381,6 +382,7 @@ export function App() {
         />
         <UpdateBanner
           update={update}
+          bundleVersion={BUILD_VERSION}
           pending={updatePending}
           onArm={() => changeUpdate(api.armUpdate)}
           onCancel={() => changeUpdate(api.cancelUpdate)}

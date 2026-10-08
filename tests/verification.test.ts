@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { type HarnessId, type VerificationCommand, verificationCommandSchema } from '../src/config.js';
+import { type AppConfig, baselineConfig, type HarnessId, type VerificationCommand, verificationCommandSchema } from '../src/config.js';
+import { VerificationCoordinator } from '../src/execution/verification-coordinator.js';
 import { TaskArchive } from '../src/archive/task-archive.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
@@ -80,7 +81,7 @@ describe('verification-attempts-route', () => {
     it('reconciles recorded attempts with configured verifier statuses', async () => {
       const configured = await startServer({
         ...stubHarness(),
-        verify: { task: { preMerge: { commands: [{ id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [{ id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the issue diff.', noIssuePrompt: 'Review the Task diff.', model: 'stub-model', timeoutSeconds: 300 }] } } },
+        verify: { task: { preMerge: { commands: [{ id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [{ id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the issue diff.', noIssuePrompt: 'Review the Task diff.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 }] } } },
       });
       try {
         const created = await configured.api('POST', '/api/tasks', { prompt: 'verification status target' });
@@ -100,7 +101,7 @@ describe('verification-attempts-route', () => {
         expect(res.status).toBe(200);
         expect(res.body.verifierStatuses).toEqual([
           { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this attempt.', commands: ['npm test'] },
-          { mechanism: 'critic', state: 'passed', reason: null },
+          { mechanism: 'critic', state: 'passed', reason: null, harness: 'claude' },
         ]);
       } finally {
         await configured.close();
@@ -110,7 +111,7 @@ describe('verification-attempts-route', () => {
     it('reconciles recorded attempts with configured verifier statuses', async () => {
       const configured = await startServer({
         ...stubHarness(),
-        verify: { task: { preMerge: { commands: [{ id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [{ id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the issue diff.', noIssuePrompt: 'Review the Task diff.', model: 'stub-model', timeoutSeconds: 300 }] } } },
+        verify: { task: { preMerge: { commands: [{ id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [{ id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the issue diff.', noIssuePrompt: 'Review the Task diff.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 }] } } },
       });
       try {
         const created = await configured.api('POST', '/api/tasks', { prompt: 'verification status target' });
@@ -130,7 +131,7 @@ describe('verification-attempts-route', () => {
         expect(res.status).toBe(200);
         expect(res.body.verifierStatuses).toEqual([
           { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this attempt.', commands: ['npm test'] },
-          { mechanism: 'critic', state: 'passed', reason: null },
+          { mechanism: 'critic', state: 'passed', reason: null, harness: 'claude' },
         ]);
       } finally {
         await configured.close();
@@ -461,7 +462,7 @@ describe('verification-critic', () => {
     return dir;
   }
 
-  const critic = () => ({ taskPreMergeCritics: localCritics({ id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the issue diff for correctness.', noIssuePrompt: 'Review the Task diff for correctness.', model: 'stub-model', timeoutSeconds: 300 }) });
+  const critic = () => ({ taskPreMergeCritics: localCritics({ id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the issue diff for correctness.', noIssuePrompt: 'Review the Task diff for correctness.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 }) });
 
   const criticWithHarness = (harness: HarnessId) => ({ taskPreMergeCritics: localCritics({ id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the issue diff for correctness.', noIssuePrompt: 'Review the Task diff for correctness.', model: 'stub-model', harness, timeoutSeconds: 300 }) });
 
@@ -653,8 +654,8 @@ describe('verification-critic', () => {
       criticResult = { verdict: 'fail', summary: 'the change matches the ticket' };
       await server.app.ctx.workspaces.update(workspaceId, {
         taskPreMergeCritics: localCritics(
-          { id: 'critic-api', name: 'Test critic', issuePrompt: 'Check the API.', noIssuePrompt: 'Check the API.', model: 'stub-model', timeoutSeconds: 300 },
-          { id: 'critic-database', name: 'Test critic', issuePrompt: 'Check the database.', noIssuePrompt: 'Check the database.', model: 'stub-model', timeoutSeconds: 300 },
+          { id: 'critic-api', name: 'Test critic', issuePrompt: 'Check the API.', noIssuePrompt: 'Check the API.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 },
+          { id: 'critic-database', name: 'Test critic', issuePrompt: 'Check the database.', noIssuePrompt: 'Check the database.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 },
         ),
       });
       const { taskId } = await createAndRun();
@@ -836,6 +837,30 @@ describe('verification-critic', () => {
       });
       expect(task.state).toBe('done');
       expect(lastCriticHarnessId).toBe('codex');
+    });
+
+    it('issue #830: a Task routed to codex still runs its claude critic on claude', async () => {
+      criticResult = { verdict: 'pass', summary: 'looks correct' };
+      await server.app.ctx.settingsStore.updateGlobal(stubHarness('codex'));
+      await server.app.ctx.workspaces.update(workspaceId, criticWithHarness('claude'));
+      const created = await server.api('POST', '/api/tasks', {
+        prompt: JSON.stringify({ writeFiles: { 'critic-routed-codex.txt': 'work\n' } }),
+        workingDir: repoDir,
+        isolationMode: 'worktree',
+        harness: 'codex',
+        model: 'stub-model',
+      });
+      expect(created.status).toBe(201);
+      expect((await server.api('POST', `/api/tasks/${created.body.id}/run`)).status).toBe(201);
+
+      await waitFor(async () => ((await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done' ? true : undefined));
+      expect(lastCriticHarnessId).toBe('claude');
+    });
+
+    it('issue #830: a critic naming a Harness that is not configured is rejected with that Harness named', () => {
+      const coordinator = Object.create(VerificationCoordinator.prototype) as unknown as { resolveCriticHarness(config: AppConfig, id: string): unknown };
+      const { codex: _codex, ...harnesses } = baselineConfig().harnesses;
+      expect(() => coordinator.resolveCriticHarness({ ...baselineConfig(), harnesses: harnesses as AppConfig["harnesses"] }, 'codex')).toThrow("critic harness 'codex' is not configured");
     });
 
     it('issue #428: refreshes the worktree code index to the candidate head before the critic reviews', async () => {

@@ -12,14 +12,14 @@ describe('lifecycleTimelineRows', () => {
       event('verification', 10, { verdict: 'pass', summary: 'checks passed' }),
       event('verification', 20, { outcome: 'skipped', command: 'npm test' }),
       lifecycle(30, { event: 'escalated' }),
-      event('operator-reject', 40, { feedback: 'Use the documented timeout.' }),
+      event('operator-retry', 40, { feedback: 'Use the documented timeout.' }),
     ]);
 
     expect(rows.map((row) => [row.at, row.label, row.detail, row.tone])).toEqual([
       [10, 'Verify passed', 'checks passed', 'passed'],
       [20, 'Verify skipped', 'npm test', 'neutral'],
       [30, 'Escalated → awaiting review', null, 'awaiting'],
-      [40, 'Operator rejected with guidance', 'Use the documented timeout.', 'awaiting'],
+      [40, 'Operator retried with guidance', 'Use the documented timeout.', 'awaiting'],
     ]);
   });
 
@@ -86,6 +86,24 @@ describe('lifecycleTimelineRows', () => {
 
     expect(rows.map((row) => [row.label, row.detail, row.tone])).toEqual([
       ['Steer not delivered', 'left over from a turn that never came', 'failed'],
+    ]);
+  });
+
+  it('shows a Routing Label route change with the deciding label and whether the Session was kept', () => {
+    const route = {
+      event: 'route-changed',
+      from: { harness: 'claude', model: 'claude-haiku-4-5-20251001' },
+      to: { harness: 'claude', model: 'claude-opus-5-5' },
+      label: 'reasoning',
+    };
+    const rows = lifecycleTimelineRows([
+      lifecycle(10, { ...route, sessionKept: true }),
+      lifecycle(20, { ...route, to: { harness: 'codex', model: '' }, sessionKept: false }),
+    ]);
+
+    expect(rows.map((row) => [row.label, row.detail])).toEqual([
+      ['Route changed: Claude Haiku 4.5 → Claude Opus 5.5', "label 'reasoning'; warm Session kept"],
+      ['Route changed: Claude Haiku 4.5 → Codex', "label 'reasoning'; fresh Session started"],
     ]);
   });
 

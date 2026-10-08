@@ -1,7 +1,9 @@
 import type { TrackerRef } from '../tracker/adapter.js';
+import type { RoutingService } from '../domain/routing.js';
 import { Git } from './git.js';
 import { reportFailure } from '../error-handling.js';
 import type { AppConfig } from '../config.js';
+import { harnessConfig } from '../domain/route.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { EpicMergeEventStore, EpicTimelineStep } from '../domain/epic-merge-events.js';
@@ -15,22 +17,9 @@ import type { RunnerOptions } from './runner.js';
 import type { RunnerEvents } from './runner-options.js';
 import type { TaskArchive } from '../archive/task-archive.js';
 import { resolveMergePrompts } from '../domain/setting-override.js';
-import { expandFragments, fillTemplate } from './prompt-template.js';
+import { renderConflictPrompt } from './prompt-assembly.js';
 
 export const RESOLVE_TURN_TIMEOUT_MS = 10 * 60 * 1000;
-
-type ConflictCtx = { turn: number; baseBranch: string; taskBranch: string; unmergedPaths: string[]; baseDir: string };
-
-/** Render a conflict-resolution turn prompt from its configured template, expanding Prompt Fragments and filling the merge placeholders. */
-export function renderConflictPrompt(template: string, fragments: Record<string, string>, ctx: ConflictCtx): string {
-  return fillTemplate(expandFragments(template, fragments), {
-    turn: ctx.turn,
-    taskBranch: ctx.taskBranch,
-    baseBranch: ctx.baseBranch,
-    baseDir: ctx.baseDir,
-    paths: ctx.unmergedPaths.map((path) => `- ${path}`).join('\n'),
-  });
-}
 
 /**
  * Thrown by {@link MergeCoordinator.resolveBaseBranch} when a worktree Attempt's base branch
@@ -79,6 +68,7 @@ export interface MergeCoordinatorDeps {
   postMerge: RunnerOptions['postMerge'];
   urlFor: (task: TaskRow) => string | null;
   listWorkingTasks: () => Promise<TaskRow[]>;
+  routing: Pick<RoutingService, 'epicRoute'>;
   latestAttemptFor: (task: Pick<TaskRow, 'id'>) => Promise<AttemptRow>;
   updateStep: (taskId: number, id: number, patch: Parameters<AttemptStore['updateStep']>[1]) => Promise<Awaited<ReturnType<AttemptStore['updateStep']>>>;
   criticUpdateRelay: (attemptId: number) => (update: { sessionUpdate: string; [key: string]: unknown }) => void;
@@ -194,21 +184,23 @@ export class MergeCoordinator {
 
   /**
    * Integrate an Epic's `epic/<ref>` branch into the default branch under the
-   * one merge policy. The harness/model is resolved from a live member (else
-   * the Workspace default). Escalation is returned to the caller, which owns
+   * one merge policy. The conflict turn's harness/model is the Epic's own
+   * Routing Label, else the Workspace/global default. Escalation is returned to the caller, which owns
    * the Epic-level escalation surface, rather than settled here.
    */
   async mergeEpicIntegration(input: EpicIntegrationMergeInput): Promise<MergePolicyOutcome> {
     const config = this.deps.getConfig();
     const epicAttempt = (await this.deps.attempts.listForEpic({ workspaceId: input.workspaceId, epicRef: input.epicRef })).at(-1);
     const host = (await this.deps.listWorkingTasks()).find((task) => task.baseBranch === input.integrationBranch);
-    const harnessId = host?.harness ?? config.defaults.harness;
-    const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
-    const model = host?.model ?? harness?.defaultModel ?? '';
+    const route = await this.deps.routing.epicRoute(input.workspaceId, input.epicRef);
     const deps: MergePolicyDeps = {
       resolveConflictTurn: async (ctx) => {
         try {
-          if (!harness) return;
+          if (!route.ok) {
+            logger.warn('epic conflict turn skipped: harness not configured', { epicRef: input.epicRef, harness: route.harness, routingLabel: route.label ?? '' });
+            return;
+          }
+          const { harness: harnessId, model, config: harness } = route;
           const drive = this.deps.criticDrive;
           const merge = resolveMergePrompts(await this.deps.getWorkspace?.(input.workspaceId), config);
           const prompt = renderConflictPrompt(merge.epicConflictPrompt, merge.fragments, ctx);
@@ -239,8 +231,8 @@ export class MergeCoordinator {
               baseBranch: ctx.baseBranch,
               taskBranch: ctx.taskBranch,
               unmergedPaths: ctx.unmergedPaths.length,
-              harnessId,
-              model,
+              harnessId: route.harness,
+              ...(route.ok ? { model: route.model } : {}),
             },
           });
         }
@@ -258,12 +250,13 @@ export class MergeCoordinator {
         })
         .catch((err) => logger.warn('epic merge step persist failed', { error: err instanceof Error ? err.message : String(err) }));
     };
+    const conflictResolveTurns = host?.conflictResolveTurns ?? config.defaults.conflictResolveTurns;
     const outcome = await runMergePolicy(
       {
         baseDir: input.repoDir,
         baseBranch: input.defaultBranch,
         taskBranch: input.integrationBranch,
-        conflictResolveTurns: host?.conflictResolveTurns ?? config.defaults.conflictResolveTurns,
+        conflictResolveTurns,
         postMergeCheck: config.merge.postMergeCheck,
       },
       deps,
@@ -271,6 +264,9 @@ export class MergeCoordinator {
     await persistChain;
     if (outcome.kind === 'merged') {
       await this.deps.postMerge?.({ repoDir: input.repoDir, baseBranch: input.defaultBranch });
+    }
+    if (outcome.kind === 'escalated' && outcome.reason === 'conflict' && conflictResolveTurns > 0 && !route.ok) {
+      return { ...outcome, message: `${route.reason} It cannot run the conflict resolution turn. ${outcome.message}` };
     }
     return outcome;
   }
@@ -296,7 +292,7 @@ export class MergeCoordinator {
         try {
           const config = this.deps.getConfig();
           const harnessId = task.harness;
-          const harness = config.harnesses[harnessId as keyof typeof config.harnesses];
+          const harness = harnessConfig(config, harnessId);
           if (!harness) return;
           const drive = this.deps.criticDrive;
           const merge = resolveMergePrompts(await this.deps.getWorkspace?.(task.workspaceId), config);

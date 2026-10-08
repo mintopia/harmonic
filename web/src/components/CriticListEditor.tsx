@@ -1,3 +1,4 @@
+import { formatModelLabel } from './TaskIdentity';
 import { createContext, useContext } from "react";
 import type {
   AppConfig,
@@ -17,12 +18,15 @@ import { EntryList } from "./EntryList";
 import { Switch } from "./Switch";
 import { FieldError, PromptField, fieldLabel } from "./SettingsSection";
 import {
+  type HarnessChoices,
   criticLabel,
   newCritic,
   newEpicCritic,
   setCriticField,
   setEpicCriticField,
+  startingHarness,
   summarizeCritic,
+  withHarness,
   withMissingGlobals,
 } from "./verification-override-model";
 
@@ -40,7 +44,7 @@ type SharedProps = {
   idPrefix: string;
   errorPrefix: string;
   fieldErrors: Record<string, string>;
-  harnessModels: Record<string, string[]>;
+  harnessModels: HarnessChoices;
   emptyText: string;
 };
 
@@ -51,14 +55,15 @@ function CriticRuntimeFields({
   idPrefix,
   harnessModels,
   onChange,
+  onHarnessChange,
 }: {
   critic: Pick<TaskVerificationCritic, "model" | "harness" | "timeoutSeconds">;
   idPrefix: string;
-  harnessModels: Record<string, string[]>;
-  onChange: (field: "model" | "harness" | "timeoutSeconds", value: string) => void;
+  harnessModels: HarnessChoices;
+  onChange: (field: "model" | "timeoutSeconds", value: string) => void;
+  onHarnessChange: (harness: string) => void;
 }) {
-  const models = critic.harness ? harnessModels[critic.harness] ?? [] : [];
-  const listId = `${idPrefix}-models`;
+  const models = harnessModels[critic.harness]?.models ?? [];
   return (
     <div className="grid gap-3 rounded-md border border-hairline bg-sunken p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem]">
       <div>
@@ -69,10 +74,12 @@ function CriticRuntimeFields({
         <select
           id={`${idPrefix}-harness`}
           className={selectField}
-          value={critic.harness ?? ""}
-          onChange={(e) => onChange("harness", e.target.value)}
+          value={critic.harness}
+          onChange={(e) => onHarnessChange(e.target.value)}
         >
-          <option value="">Same as Task</option>
+          {!(critic.harness in harnessModels) && (
+            <option value={critic.harness}>{critic.harness}</option>
+          )}
           {Object.keys(harnessModels).map((harness) => (
             <option key={harness} value={harness}>
               {harness}
@@ -85,21 +92,21 @@ function CriticRuntimeFields({
           <span className="grid size-3.5 place-items-center rounded-sm bg-raised text-[9px] text-muted">2</span>
           Model
         </label>
-        <input
+        <select
           id={`${idPrefix}-model`}
-          className={`${field} font-data`}
-          list={models.length > 0 ? listId : undefined}
-          placeholder={critic.harness ? "" : "inherits the task's model"}
+          className={`${selectField} font-data`}
           value={critic.model}
           onChange={(e) => onChange("model", e.target.value)}
-        />
-        {models.length > 0 && (
-          <datalist id={listId}>
-            {models.map((model) => (
-              <option key={model} value={model} />
-            ))}
-          </datalist>
-        )}
+        >
+          {!models.includes(critic.model) && (
+            <option value={critic.model}>{critic.model || "Choose a model"}</option>
+          )}
+          {models.map((model) => (
+            <option key={model} value={model}>
+              {model}
+            </option>
+          ))}
+        </select>
       </div>
       <div>
         <label className={runStepLabel} htmlFor={`${idPrefix}-timeout`}>
@@ -156,18 +163,12 @@ function CriticRunChip({ critic }: { critic: Pick<TaskVerificationCritic, "model
   return (
     <span className="hidden items-center gap-1.5 rounded-full bg-raised px-2 py-0.5 text-small text-muted sm:inline-flex">
       <span className="size-1.5 rounded-full bg-tool" aria-hidden="true" />
-      {critic.harness ? (
+      <span className="font-semibold">{critic.harness}</span>
+      {critic.model && (
         <>
-          <span className="font-semibold">{critic.harness}</span>
-          {critic.model && (
-            <>
-              {" · "}
-              <span className="font-data">{critic.model}</span>
-            </>
-          )}
+          {" · "}
+          <span className="font-data" title={critic.model}>{formatModelLabel(critic.model)}</span>
         </>
-      ) : (
-        "Same as Task"
       )}
     </span>
   );
@@ -188,7 +189,7 @@ function TaskCriticFields({
   idPrefix: string;
   errorPrefix: string;
   fieldErrors: Record<string, string>;
-  harnessModels: Record<string, string[]>;
+  harnessModels: HarnessChoices;
   set: (critic: TaskVerificationCritic) => void;
 }) {
   const fragments = usePromptFragments();
@@ -205,6 +206,7 @@ function TaskCriticFields({
         idPrefix={`${idPrefix}-${index}`}
         harnessModels={harnessModels}
         onChange={(name, value) => set(setCriticField(critic, name, value))}
+        onHarnessChange={(harness) => set(withHarness(critic, harness, harnessModels))}
       />
       <FieldError message={fieldErrors[`${errorPrefix}.${index}.model`]} />
       <PromptField
@@ -247,7 +249,7 @@ function EpicCriticFields({
   idPrefix: string;
   errorPrefix: string;
   fieldErrors: Record<string, string>;
-  harnessModels: Record<string, string[]>;
+  harnessModels: HarnessChoices;
   set: (critic: EpicVerificationCritic) => void;
 }) {
   const fragments = usePromptFragments();
@@ -263,6 +265,7 @@ function EpicCriticFields({
         idPrefix={`${idPrefix}-${index}`}
         harnessModels={harnessModels}
         onChange={(name, value) => set(setEpicCriticField(critic, name, value))}
+        onHarnessChange={(harness) => set(withHarness(critic, harness, harnessModels))}
       />
       <FieldError message={fieldErrors[`${errorPrefix}.${index}.model`]} />
       <PromptField
@@ -310,7 +313,7 @@ export function TaskCriticListEditor({
       addLabel="+ Add critic"
       emptyText={emptyText}
       itemNoun="critic"
-      makeItem={newCritic}
+      makeItem={() => newCritic(startingHarness(harnessModels))}
       renderTitle={(critic) => <CriticRowTitle name={critic.name} />}
       renderMeta={(critic) => <CriticRunChip critic={critic} />}
       renderBody={(critic, index, set) => (
@@ -348,7 +351,7 @@ export function EpicCriticListEditor({
       addLabel="+ Add critic"
       emptyText={emptyText}
       itemNoun="critic"
-      makeItem={newEpicCritic}
+      makeItem={() => newEpicCritic(startingHarness(harnessModels))}
       renderTitle={(critic) => <CriticRowTitle name={critic.name} />}
       renderMeta={(critic) => <CriticRunChip critic={critic} />}
       renderBody={(critic, index, set) => (
@@ -401,7 +404,7 @@ export function TaskCriticOverlayEditor({
       addLabel="+ Add critic"
       emptyText={emptyText}
       itemNoun="critic"
-      makeItem={() => ({ kind: "local" as const, enabled: true, critic: newCritic() })}
+      makeItem={() => ({ kind: "local" as const, enabled: true, critic: newCritic(startingHarness(harnessModels)) })}
       isLocked={(entry) => entry.kind === "global"}
       canRemoveLocked={(entry) => entry.kind === "global" && !globalById.has(entry.ref)}
       renderRowControl={(entry, index) => (
@@ -481,7 +484,7 @@ export function EpicCriticOverlayEditor({
       addLabel="+ Add critic"
       emptyText={emptyText}
       itemNoun="critic"
-      makeItem={() => ({ kind: "local" as const, enabled: true, critic: newEpicCritic() })}
+      makeItem={() => ({ kind: "local" as const, enabled: true, critic: newEpicCritic(startingHarness(harnessModels)) })}
       isLocked={(entry) => entry.kind === "global"}
       canRemoveLocked={(entry) => entry.kind === "global" && !globalById.has(entry.ref)}
       renderRowControl={(entry, index) => (

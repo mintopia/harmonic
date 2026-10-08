@@ -12,7 +12,7 @@ import {
   resolveVerifiers,
 } from '../src/domain/setting-override.js';
 import { AutoDrive } from '../src/execution/auto-drive.js';
-import { renderConflictPrompt } from '../src/execution/merge-coordinator.js';
+import { renderConflictPrompt } from '../src/execution/prompt-assembly.js';
 import { promptForTask } from '../src/execution/prompt-template.js';
 import { buildCriticPrompt } from '../src/verification/critic-prompt.js';
 import type { TaskRow } from '../src/db/schema.js';
@@ -38,7 +38,7 @@ function setAt(root: unknown, path: readonly string[], text: string): void {
   else setAt(record[head], rest, text);
 }
 
-const CRITIC = { id: 'critic-1', name: 'c', model: 'claude-opus-5', timeoutSeconds: 300, issuePrompt: 'i', noIssuePrompt: 'n', prompt: 'p' };
+const CRITIC = { id: 'critic-1', name: 'c', harness: 'claude' as const, model: 'claude-opus-5', timeoutSeconds: 300, issuePrompt: 'i', noIssuePrompt: 'n', prompt: 'p' };
 
 function configWithCritics(): AppConfig {
   const config = clone(baselineConfig());

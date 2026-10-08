@@ -35,6 +35,7 @@ import type {
   CommandOverlayEntry,
   TaskCriticOverlayEntry,
   EpicCriticOverlayEntry,
+  RoutingLabelOverlayEntry,
   VerifierStatus,
   Workspace,
   TrackerKindInfo,
@@ -66,6 +67,14 @@ export class ApiError extends Error {
   }
 }
 
+const sessionLostListeners = new Set<() => void>();
+
+/** Called when the server stops accepting this tab's session (e.g. it restarted); returns an unsubscribe. */
+export function onSessionLost(listener: () => void): () => void {
+  sessionLostListeners.add(listener);
+  return () => sessionLostListeners.delete(listener);
+}
+
 async function send(method: string, path: string, body?: unknown): Promise<{ res: Response; text: string }> {
   const res = await fetch(path, {
     method,
@@ -73,6 +82,8 @@ async function send(method: string, path: string, body?: unknown): Promise<{ res
       ? {}
       : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
   });
+  // `/api/auth/*` 401s mean a wrong password typed into a form, not a lost session.
+  if (res.status === 401 && !path.startsWith('/api/auth/')) sessionLostListeners.forEach((listener) => listener());
   return { res, text: await res.text() };
 }
 
@@ -251,6 +262,7 @@ export const api = {
       taskPostMergeCritics?: TaskCriticOverlayEntry[] | null;
       epicPreMergeCommands?: CommandOverlayEntry[] | null;
       epicPreMergeCritics?: EpicCriticOverlayEntry[] | null;
+      routingLabels?: RoutingLabelOverlayEntry[] | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
       exportEnabled?: boolean | null;
@@ -319,14 +331,16 @@ export const api = {
   removeDependency: (id: number, depId: number) =>
     request<Task>('DELETE', `/api/tasks/${id}/dependencies/${depId}`),
   continuationPreview: (id: number) => request<ContinuationPreview>('GET', `/api/tasks/${id}/continuation`),
-  rejectEpic: (workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh') =>
-    request<EpicIntegrateOutcome>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/reject`, { guidance, continuation }),
+  retryEpic: (workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh') =>
+    request<EpicIntegrateOutcome>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/retry`, { guidance, continuation }),
   // The three escalation actions, escalated tickets only.
   // Accept merges the candidate as-is — the operator's judgement is the gate,
   // no verification runs.
   acceptTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/accept`),
-  rejectTask: (id: number, guidance: string, start = false) =>
-    request<Task>('POST', `/api/tasks/${id}/reject`, { guidance, start }),
+  retryTask: (
+    id: number,
+    body: { guidance: string; startNow?: boolean; reuseSession?: boolean; harness?: string; model?: string },
+  ) => request<Task>('POST', `/api/tasks/${id}/retry`, body),
   closeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/close`),
   // Hard-delete: cascades the Task's Attempts/history and
   // vanishes it from the board/graph via the `task_removed` WS broadcast

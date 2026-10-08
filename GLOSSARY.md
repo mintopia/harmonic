@@ -196,6 +196,28 @@ column one, this tracker's label in column two), else the instance defaults
 resolves independently.
 _Avoid_: hard-coded labels, label names
 
+**Routing Label**:
+An operator-defined tracker label that picks a mirrored Ticket's execution
+settings — today a **Harness + Model** pair (e.g. `reasoning` → Claude, Opus
+5.5); the set of settings a Routing Label may carry can grow. Defined globally
+as an **ordered list** that a Workspace overlays additively — it may reorder or
+disable global entries and add its own, never edit a global one; a label is
+unique within the resolved list. When an issue
+carries several, the first in the list wins, and the Ticket shows which label
+decided. Labels match case-insensitively. Precedence: an operator's explicit
+setting on the Ticket, then the Routing Label, then the Workspace default, then
+the global default. All-or-nothing: a Routing Label applies only when the operator
+has set neither Harness nor Model on the Ticket; setting either disables the route
+entirely. Re-resolved at every Attempt start, so relabelling an
+escalated Ticket retries it on the new route; an Attempt in flight is never
+re-routed. A route whose Harness is unavailable escalates the Ticket rather
+than falling back. An Epic is routed by its own labels. Critics are never
+routed: a Critic always has its own Harness and Model, with no fallback to the
+Workspace or global default. Distinct from Triage Labels, which mark workflow roles, not execution
+settings. Native Tasks carry no labels, so are never routed. (ADR-0049.)
+_Avoid_: agent label (an Agent is a running Session, not a configured choice),
+harness label, model label, profile
+
 **Secret**:
 A per-Workspace named credential (a Forgejo token, a Jira API token) stored
 encrypted at rest and never readable back through the API or UI — only
@@ -312,9 +334,13 @@ reaches it only via: (1) attempt counter exhausted, (2) a guardrail trip
 (branch-contract included), (3) permanent infrastructure failure, (4) an
 unresolved merge conflict after the bounded resolve turns, (5) a red
 post-merge check (its revert recorded on the timeline). Exactly three
-actions there: **Reject with guidance** (guidance becomes feedback, counter
-resets, the Ticket **requeues** to *ready* — capacity picks it up, or the
-warm-Session "start now" override starts it immediately), **Accept** (counts
+actions there: **Retry** (optional guidance becomes feedback, counter
+resets, the Ticket **requeues** to *ready* — capacity picks it up, and the
+Attempt continues the prior Session only if it is still warm and the Harness
+and Model are unchanged, else starts a fresh one — or **Retry
+Now** starts it immediately on a fresh Session, or on the prior one when the
+operator asks to re-use it; the operator may also pick a Harness and Model,
+saved on the Ticket so they replace its Routing Label), **Accept** (counts
 as success; the normal merge/close/cleanup path continues), **Close** (closes
 the Ticket and cleans up: branch, worktree, tracker issue). Escalated Epics
 surface in the same attention section.
@@ -582,7 +608,7 @@ _Avoid_: master switch (that is the automation gate), stop-all, freeze-all
 
 **Manual Resume**:
 The single surface for every operator-initiated resume — from *paused*, from
-*escalated* (Reject-with-guidance / the warm-Session continue), and an operator
+*escalated* (Retry-with-guidance / Retry Now re-using the Session), and an operator
 retry — generalising what was formerly the human-reject-only continuation
 choice. It offers two **always-available** paths: **continue-full** (reuse the
 same Session, full conversation) and **start-condensed** (a fresh Session
@@ -654,7 +680,7 @@ _Avoid_: model string, model name (a Model is a catalog entry, not a bare id)
 One ACP conversation with a Harness — 1:1 with the harness's own session
 (`sessionId`), the unit an Attempt or Conversation prompts over `session/prompt`, and
 a durable first-class resource. A Session outlives a single Attempt: a retry, an
-automated or human rejection, or a crash-recovery continue in the **same**
+automated rejection, a human Retry, or a crash-recovery continue in the **same**
 Session — reloaded into a fresh harness process via `session/load` (supported by
 all three harnesses) as a **new Attempt and new prompt turn**, never by
 reattaching a dead process. Reuse is always valid; the provider prompt-cache being warm only
@@ -750,7 +776,9 @@ tracker issue (`trackerRef`): the issue variant interpolates
 so a bare-prompt Task is never reviewed against an empty `{title}`. An **epic
 Critic** carries a single prompt — an Epic is always a tracker container, so its
 no-issue variant never fires. Both bodies are editable with a live per-variant
-preview. Replaces the single Review (ADR-0028).
+preview. Replaces the single Review (ADR-0028). A Critic always has its own
+Harness and Model, with no fallback to the Workspace or global default; its
+Model must be in that Harness's model list (ADR-0049, #830).
 _Avoid_: review, reviewer Task (the single-critic name, superseded)
 
 **Resolved Prompt**:
@@ -771,6 +799,14 @@ ADR-0022); a Fragment shared across prompts (the restraint) is defined once and
 reused rather than copied. Structural glue — ordering and whitespace — stays in
 code and is not a Fragment.
 _Avoid_: prompt piece, prompt section, snippet, segment
+
+**Prompt Anatomy**:
+The ordered Prompt Templates and Prompt Fragments that compose one kind of
+Resolved Prompt (Implementation turn, mid-Attempt nudges, merge conflict
+resolvers, Epic verification fix, critic review), and the condition under which
+each is included. Declared once in `src/domain/prompt-anatomy.ts`; the Prompts
+tab, its counts and search, and the compiled preview are generated from it.
+_Avoid_: message anatomy, prompt pieces
 
 **Continuation rule**:
 The deterministic choice at Attempt N+1: continue the prior Session (feedback

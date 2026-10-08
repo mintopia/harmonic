@@ -28,9 +28,11 @@ import type { MergeStepEvent } from '../merge-progress-model';
 import { HintBanner } from '../components/HintBanner';
 import { SettingsPage } from '../components/SettingsPage';
 import { ExportPanel } from '../components/ticket/ExportPanel';
-import type { TaskExportStatus, Workspace } from '../types';
+import type { RoutingLabelOverlayEntry, TaskExportStatus, Workspace } from '../types';
+import { RoutingLabelOverlayEditor } from '../components/RoutingLabelOverlayEditor';
 import { SecretField, IssueTrackerSection, CodeRepositorySection, TriageLabelsSection } from '../components/TrackerSettings';
 import { SettingsSection } from '../components/SettingsSection';
+import { PromptsTab } from '../components/prompts/PromptsTab';
 import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline, verificationAttempts as storyVerificationAttempts, verifierStatuses } from './fixtures';
 
 const mergedSteps: MergeStepEvent[] = [
@@ -103,7 +105,7 @@ function SettingsStory() {
       harness: 'codex',
       timeoutSeconds: 300,
     },
-    { id: 'critic-narration', name: '', issuePrompt: 'Flag narration comments and commented-out code in the diff.', noIssuePrompt: 'Flag narration comments.', model: '', timeoutSeconds: 300 },
+    { id: 'critic-narration', name: '', issuePrompt: 'Flag narration comments and commented-out code in the diff.', noIssuePrompt: 'Flag narration comments.', model: '', harness: 'claude', timeoutSeconds: 300 },
   ];
   const [config, setConfig] = useState(seed);
   return (
@@ -124,6 +126,31 @@ function SettingsStory() {
           <GlobalVerificationSettings config={config} setConfig={setConfig} fieldErrors={{}} />
         </section>
       </div>
+    </div>
+  );
+}
+
+function PromptsTabStory() {
+  const baseline = structuredClone(storyConfig);
+  const seed = structuredClone(storyConfig);
+  seed.promptFragments.selfHeal = `${seed.promptFragments.selfHeal}\nRe-read the failing output before you change anything.`;
+  seed.verify.task.preMerge.critics = [
+    { id: 'critic-correctness', name: 'Correctness', issuePrompt: 'Review the diff for {title}.', noIssuePrompt: 'Review the diff for correctness.', model: 'claude-opus-5', harness: 'claude', timeoutSeconds: 300 },
+  ];
+  const [config, setConfig] = useState(seed);
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24 }}>
+      <PromptsTab
+        ctx={{
+          surface: 'global',
+          config,
+          baseline,
+          setConfig,
+          errors: {},
+          harnessPermissionModes: {},
+          channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
+        }}
+      />
     </div>
   );
 }
@@ -395,7 +422,7 @@ function HintsStory() {
       </HintBanner>
       <HintBanner tone="await" onDismiss={() => {}}>
         A ticket is escalated. Open it to read why and the changes so far, then <span className="font-semibold text-ink">Accept</span> to merge as-is,{' '}
-        <span className="font-semibold text-ink">Reject</span> with guidance for the next attempt, or <span className="font-semibold text-ink">Close</span> it.
+        <span className="font-semibold text-ink">Retry</span> with guidance for the next attempt, or <span className="font-semibold text-ink">Close</span> it.
       </HintBanner>
     </StoryFrame>
   );
@@ -482,8 +509,29 @@ function SecretsStory() {
   );
 }
 
+function RoutingOverlayStory() {
+  const route = (label: string, harness: string, model: string) => ({ label, harness, model });
+  const config = { ...storyConfig, routingLabels: [route('reasoning', 'claude', 'claude-opus-5-5'), route('cheap', 'claude', 'claude-haiku-4-5')] };
+  const [overlay, setOverlay] = useState<RoutingLabelOverlayEntry[] | null>([
+    { kind: 'local', enabled: true, routingLabel: route('security-review', 'claude', 'claude-sonnet-4-6') },
+    { kind: 'global', ref: 'reasoning', enabled: true },
+    { kind: 'global', ref: 'cheap', enabled: false },
+    { kind: 'local', enabled: true, routingLabel: route('Reasoning', 'claude', 'claude-sonnet-4-6') },
+  ]);
+  return (
+    <StoryFrame style={{ padding: 24 }}>
+      <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+        <SettingsSection title="Routing Labels" description="Global rows are managed in Global settings. You can reorder them and turn them off here; labels you add are local to this Workspace.">
+          <RoutingLabelOverlayEditor overlay={overlay} config={config} onChange={setOverlay} />
+        </SettingsSection>
+      </div>
+    </StoryFrame>
+  );
+}
+
 const STORIES: Record<string, () => JSX.Element> = {
   settings: SettingsStory,
+  'prompts-tab': PromptsTabStory,
   board: BoardStory,
   'critic-running': CriticRunningStory,
   'critic-prompts': CriticPromptsStory,
@@ -512,6 +560,7 @@ const STORIES: Record<string, () => JSX.Element> = {
   archive: ArchiveStory,
   tracker: TrackerStory,
   secrets: SecretsStory,
+  'routing-overlay': RoutingOverlayStory,
 };
 
 function Story() {

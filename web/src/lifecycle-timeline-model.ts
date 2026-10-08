@@ -1,5 +1,6 @@
 import type { TicketTimelineEvent } from './types.js';
 import { exportFactRows } from './task-export-model.js';
+import { formatModelLabel } from './components/TaskIdentity.js';
 import { harnessLabel } from './task-detail-model.js';
 import { mergeStepRow, type MergeStepEvent } from './merge-progress-model.js';
 import { epicLabel, issueRef, taskKey, taskLabel } from './id-format.js';
@@ -147,6 +148,18 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
     case 'continue': {
       const n = num(payload?.attempt);
       return { label: n !== null ? `Continued as Attempt ${n}` : 'Continued', detail: null, tone: 'running', tag: null };
+    }
+    case 'route-changed': {
+      const side = (value: unknown): string => {
+        const route = record(value);
+        const harness = text(route?.harness);
+        const model = text(route?.model);
+        return harness ? (model ? `${harnessLabel(harness)} ${formatModelLabel(model)}` : harnessLabel(harness)) : 'default';
+      };
+      const label = text(payload?.label);
+      const session = payload?.sessionKept === true ? 'warm Session kept' : 'fresh Session started';
+      const via = label ? `label '${label}'; ` : '';
+      return { label: `Route changed: ${side(payload?.from)} → ${side(payload?.to)}`, detail: `${via}${session}`, tone: 'neutral', tag: null };
     }
     case 'session-reloaded':
       return { label: 'Resumed prior session', detail: null, tone: 'neutral', tag: null };
@@ -311,9 +324,9 @@ export function lifecycleTimelineRows(events: TicketTimelineEvent[]): LifecycleT
         return { ...base, ...verificationRow(data) };
       case 'guardrail':
         return { ...base, label: 'Guardrail tripped', detail: text(data?.dimension), tone: 'failed', tag: null };
-      case 'operator-reject': {
+      case 'operator-retry': {
         const n = num(data?.attempt);
-        return { ...base, label: 'Operator rejected with guidance', detail: clip(text(data?.feedback)) ?? (n !== null ? `Attempt ${n}` : null), tone: 'awaiting', tag: null };
+        return { ...base, label: 'Operator retried with guidance', detail: clip(text(data?.feedback)) ?? (n !== null ? `Attempt ${n}` : null), tone: 'awaiting', tag: null };
       }
       case 'agent-message':
         return { ...base, ...agentMessageRow(data) };

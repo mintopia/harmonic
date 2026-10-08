@@ -6,18 +6,18 @@ import { bestEffort, reportFailure, type FireAndForget } from '../error-handling
 import { integrationBranchName, type EpicRefreshResolveDispatchOutcome, type EpicRefreshResolveTarget } from './epic-coordinator.js';
 import { RESOLVE_TURN_TIMEOUT_MS } from './merge-coordinator.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
-import type { TaskService } from '../domain/tasks.js';
+import type { RoutingService } from '../domain/routing.js';
 import type { RunnerOptions } from './runner.js';
 import type { RunnerEvents } from './runner-options.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import type { TaskArchive } from '../archive/task-archive.js';
-import { expandFragments, fillTemplate } from './prompt-template.js';
+import { renderEpicRefreshPrompt } from './prompt-assembly.js';
 import { resolveEpicResolverPrompts } from '../domain/setting-override.js';
 import { logger } from '../logger.js';
 
 export interface EpicRefreshResolverDeps {
-  taskService: TaskService;
+  routing: Pick<RoutingService, 'epicRoute'>;
   attempts: AttemptStore;
   archive?: TaskArchive | undefined;
   epicMergeEvents: Pick<EpicMergeEventStore, 'append'>;
@@ -36,8 +36,8 @@ export class EpicRefreshResolver {
    * Dispatch the bounded corrective turn for an integration refresh: check
    * `epic/<ref>` out into a dedicated worktree, reproduce the conflicted merge
    * of the default branch there, and drive one agent turn against that
-   * worktree to resolve and commit it. A live member supplies the harness/model
-   * when one is running, else the Workspace default harness. Every pre-turn
+   * worktree to resolve and commit it. The Epic's own Routing Label supplies the
+   * harness/model, else the Workspace/global default. Every pre-turn
    * failure returns `escalated` synchronously; the agent turn itself is
    * fire-and-forget (it must NOT hold the caller's repo lock), after which
    * `retry` re-runs the refresh.
@@ -57,14 +57,9 @@ export class EpicRefreshResolver {
       await escalate(target.ref, reason);
       return { status: 'escalated', reason };
     };
-    const config = this.deps.getConfig();
-    const host = (await this.deps.taskService.list({ state: 'working' })).find((task) => task.baseBranch === branch);
-    const harnessId = host?.harness ?? config.defaults.harness;
-    const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
-    if (!harness) {
-      return escalated(`harness '${harnessId}' is not configured to run the refresh corrective turn for ${branch}: ${detail}`);
-    }
-    const model = host?.model ?? harness.defaultModel;
+    const route = await this.deps.routing.epicRoute(target.workspaceId, target.ref);
+    if (!route.ok) return escalated(`${route.reason} It cannot run the refresh corrective turn for ${branch}: ${detail}`);
+    const { harness: harnessId, model, config: harness } = route;
 
     mkdirSync(this.deps.worktreesDir, { recursive: true });
     const worktreePath = join(this.deps.worktreesDir, `epic-refresh-${target.ref}`);
@@ -137,13 +132,11 @@ export class EpicRefreshResolver {
       if (args.conflicted) {
         const drive = this.deps.criticDrive;
         const resolver = resolveEpicResolverPrompts(await this.deps.getWorkspace?.(args.target.workspaceId), this.deps.getConfig());
-        const prompt = fillTemplate(expandFragments(resolver.refreshPrompt, resolver.fragments), {
+        const prompt = renderEpicRefreshPrompt(resolver.refreshPrompt, resolver.fragments, {
           defaultBranch: args.target.defaultBranch,
           branch: args.branch,
           detail: args.conflictDetail,
-          baseDir: args.worktreePath,
-          baseBranch: args.branch,
-          taskBranch: args.target.defaultBranch,
+          worktreePath: args.worktreePath,
         });
         await this.archiveAndRecord(args.target, prompt);
         await drive.run({

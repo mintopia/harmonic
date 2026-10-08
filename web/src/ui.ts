@@ -52,13 +52,13 @@ export const btnDestructive =
  * is the one place a second cobalt primary is sanctioned alongside the view's
  * own ("One per view (plus the escalation surface's Accept)"). Accept is that
  * primary: the loudest thing on the card or the detail footer, and deliberately
- * unguarded, because the operator's read IS the review. Reject is the Ghost
+ * unguarded, because the operator's read IS the review. Retry is the Ghost
  * beside it — present and readable, never loud; its dialog exists to take a
  * reason, not to guard the action. (It is deliberately not quiet-destructive:
- * rejecting is a normal outcome of a review, not a destructive act. Cancel,
+ * retrying is a normal outcome of a review, not a destructive act. Cancel,
  * which abandons a Task, is the one that gets that treatment.) */
 export const btnAccept = btnPrimary;
-export const btnReject = btnGhost;
+export const btnRetry = btnGhost;
 
 /** The needs-you review confirm — indigo (DESIGN.md § 2's "await" hue), the one
  * other case besides Escalated itself where that tone is sanctioned: accepting
@@ -150,7 +150,7 @@ export function continuationCostChip(band: 'warm' | 'cold' | 'unknown'): string 
  * `allow_always` options as a review-gate-style tinted pill (affirmative,
  * loudest) and a secondary ghost variant — both in Tooling cyan, since this is
  * harness chrome, not a task-state action, so it must not read as the
- * accept/reject task vocabulary or spend the One Cobalt Rule's budget. */
+ * accept/retry task vocabulary or spend the One Cobalt Rule's budget. */
 export const btnPermAllow =
   'inline-flex min-h-11 items-center justify-center rounded-md bg-tool-tint px-3.5 py-2 font-semibold text-tool transition-opacity duration-150 hover:opacity-80 disabled:opacity-50 disabled:hover:opacity-100';
 export const btnPermAllowSecondary =
@@ -166,7 +166,7 @@ const PERMISSION_OPTION_STYLES: Record<PermissionAcpRequest['options'][number]['
 /** Maps an ACP option's `kind` to its button treatment: allow
  * once is the affirmative pill, allow-always a secondary ghost, both
  * reject kinds the quiet-destructive link — never the task-review
- * accept/reject vocabulary (that means something else: Task state). */
+ * accept/retry vocabulary (that means something else: Task state). */
 export function permissionOptionButtonClass(kind: PermissionAcpRequest['options'][number]['kind']): string {
   return PERMISSION_OPTION_STYLES[kind] ?? btnQuiet;
 }
