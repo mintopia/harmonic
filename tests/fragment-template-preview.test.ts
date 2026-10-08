@@ -5,7 +5,7 @@ import { PROMPT_TEMPLATES, PROMPT_TEMPLATE_IDS, type PromptTemplateId } from '..
 import { templateKey, type AnatomyId } from '../src/domain/prompt-anatomy.js';
 import { assemblePreview, compileCriticPreview, defaultConditions, promptSettingsView, type PreviewSegment } from '../web/src/prompt-preview-model.js';
 import { PROMPT_ANATOMIES } from '../src/domain/prompt-anatomy.js';
-import { buildCriticPrompt } from '../src/verification/critic-prompt.js';
+import { buildCriticPrompt } from '../src/execution/prompt-assembly.js';
 import { makeConfig, makeWorkspace } from './component-smoke-harness.js';
 
 const FRAGMENT = 'conflictResolution';

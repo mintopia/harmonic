@@ -1,44 +1,11 @@
 import type { ReactNode } from 'react';
-import { PROMPT_FRAGMENTS, PROMPT_FRAGMENT_NAMES } from '../../../../src/domain/prompt-fragments.js';
-import { partHelp, partLabel, templateKey, type PartKey } from '../../../../src/domain/prompt-anatomy.js';
-import { PROMPT_TEMPLATE_IDS } from '../../../../src/domain/prompt-templates.js';
+import { PROMPT_FRAGMENTS } from '../../../../src/domain/prompt-fragments.js';
+import { partHelp, partLabel, type PartKey } from '../../../../src/domain/prompt-anatomy.js';
 import { field } from '../../ui';
-import { fragmentPlaceholders, type Placeholder } from '../../prompt-preview-model';
 import { LayerField } from '../LayerField';
 import { PromptField } from '../SettingsSection';
 import type { RenderCtx } from '../settings-schema';
-import { errorKey, fieldId, partRef, partState, writePart, type EditableRef } from './prompts-tab-model';
-import { TEMPLATE_PLACEHOLDERS } from '../../prompt-preview-model';
-
-export interface PromptPartFieldInfo {
-  key: PartKey;
-  label: string;
-  globalId: string;
-  workspaceId: string | null;
-  globalErrorKey: string;
-  workspaceErrorKey: string | null;
-}
-
-function fieldInfo(key: PartKey, ref: EditableRef): PromptPartFieldInfo {
-  const workspaceErrorKey = errorKey(ref, 'workspace');
-  return {
-    key,
-    label: partLabel(key),
-    globalId: fieldId(ref, 'global'),
-    workspaceId: workspaceErrorKey === null ? null : fieldId(ref, 'workspace'),
-    globalErrorKey: errorKey(ref, 'global') ?? '',
-    workspaceErrorKey,
-  };
-}
-
-export const PROMPT_PART_FIELDS: readonly PromptPartFieldInfo[] = [
-  ...PROMPT_TEMPLATE_IDS.map((id) => fieldInfo(templateKey(id), { kind: 'template', id })),
-  ...PROMPT_FRAGMENT_NAMES.map((name) => fieldInfo(`fragment:${name}`, { kind: 'fragment', name })),
-];
-
-function placeholdersFor(ref: EditableRef): Placeholder[] {
-  return ref.kind === 'template' ? TEMPLATE_PLACEHOLDERS[ref.id] : fragmentPlaceholders(ref.name);
-}
+import { editableState, fieldId, partRef, placeholdersForKey, writePart, type EditableRef } from './prompts-tab-model';
 
 function descriptionFor(key: PartKey, ref: EditableRef): string {
   if (ref.kind === 'template') return partHelp(key);
@@ -49,8 +16,7 @@ function descriptionFor(key: PartKey, ref: EditableRef): string {
 const textareaClass = `${field} font-data min-h-36`;
 
 function PromptPartField({ partKey, target, ctx }: { partKey: PartKey; target: EditableRef; ctx: RenderCtx }) {
-  const state = partState(partKey, ctx);
-  if (!state) return null;
+  const state = editableState(target, ctx);
   const id = fieldId(target, ctx.surface);
   if (!state.editable) {
     return (
@@ -80,7 +46,7 @@ function PromptPartField({ partKey, target, ctx }: { partKey: PartKey; target: E
           description={descriptionFor(partKey, target)}
           value={value}
           onChange={onChange}
-          placeholders={placeholdersFor(target)}
+          placeholders={placeholdersForKey(partKey)}
           error={state.error}
           textareaClass={textareaClass}
         />

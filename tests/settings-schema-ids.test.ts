@@ -8,9 +8,9 @@ import {
 } from '../web/src/components/settings-schema.js';
 import { blankPromptFragments } from './prompt-fragment-fixtures.js';
 import { NO_PROMPT_FRAGMENT_OVERRIDES, PROMPT_FRAGMENT_NAMES } from '../src/domain/prompt-fragments.js';
-import { templateKey } from '../src/domain/prompt-anatomy.js';
+import { fragmentKey, templateKey } from '../src/domain/prompt-anatomy.js';
 import { PROMPT_TEMPLATES, PROMPT_TEMPLATE_IDS } from '../src/domain/prompt-templates.js';
-import { PROMPT_PART_FIELDS } from '../web/src/components/prompts/prompt-part-fields.js';
+import { PROMPT_PART_FIELDS } from './prompt-part-fields.js';
 import type { AppConfig, Workspace } from '../web/src/types.js';
 
 function makeConfig(): AppConfig {
@@ -203,7 +203,7 @@ describe('Settings schema field ids are unique (issue #472)', () => {
 
   it('gives every Prompt Fragment and every overridable template a Workspace field, and the Epic resolve prompt none', () => {
     const byKey = new Map(PROMPT_PART_FIELDS.map((f) => [f.key, f]));
-    for (const name of PROMPT_FRAGMENT_NAMES) expect(byKey.get(`fragment:${name}`)?.workspaceId, name).toBeTruthy();
+    for (const name of PROMPT_FRAGMENT_NAMES) expect(byKey.get(fragmentKey(name))?.workspaceId, name).toBeTruthy();
     for (const id of PROMPT_TEMPLATE_IDS) {
       const info = byKey.get(templateKey(id));
       expect(info?.workspaceId === null, id).toBe(PROMPT_TEMPLATES[id].workspace === null);

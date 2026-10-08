@@ -1,6 +1,7 @@
 import {
   PROMPT_ANATOMIES,
   anatomyPartKeys,
+  fragmentKey,
   partHelp,
   partLabel,
   templateKey,
@@ -21,7 +22,7 @@ import {
 import { PROMPT_TEMPLATES, PROMPT_TEMPLATE_IDS, type PromptTemplateId } from '../../../../src/domain/prompt-templates.js';
 import type { AppConfig, Workspace } from '../../types';
 import type { RenderCtx } from '../settings-schema';
-import { defaultConditions, type SampleConditions } from '../../prompt-preview-model';
+import { defaultConditions, fragmentPlaceholders, TEMPLATE_PLACEHOLDERS, type Placeholder, type SampleConditions } from '../../prompt-preview-model';
 
 interface TemplateAccess {
   get: (c: AppConfig) => string;
@@ -55,8 +56,6 @@ export type PartRef =
 
 export type EditableRef = Exclude<PartRef, { kind: 'critic' }>;
 
-const fragmentKey = (name: PromptFragmentName): PartKey => `fragment:${name}`;
-
 const TEMPLATE_BY_KEY = new Map<PartKey, PromptTemplateId>(PROMPT_TEMPLATE_IDS.map((id): [PartKey, PromptTemplateId] => [templateKey(id), id]));
 const FRAGMENT_BY_KEY = new Map<PartKey, PromptFragmentName>(PROMPT_FRAGMENT_NAMES.map((name): [PartKey, PromptFragmentName] => [fragmentKey(name), name]));
 
@@ -66,6 +65,13 @@ export function partRef(key: PartKey): PartRef {
   const name = FRAGMENT_BY_KEY.get(key);
   if (name) return { kind: 'fragment', name };
   return { kind: 'critic' };
+}
+
+export function placeholdersForKey(key: PartKey): Placeholder[] {
+  const ref = partRef(key);
+  if (ref.kind === 'template') return TEMPLATE_PLACEHOLDERS[ref.id];
+  if (ref.kind === 'fragment') return fragmentPlaceholders(ref.name);
+  return [];
 }
 
 export const kebab = (name: string): string => name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
@@ -126,19 +132,24 @@ export interface PartState {
   error: string | undefined;
 }
 
-export function partState(key: PartKey, ctx: RenderCtx): PartState | null {
-  const ref = partRef(key);
-  if (ref.kind === 'critic') return null;
+export function editableState(ref: EditableRef, ctx: RenderCtx): PartState {
   const b = binding(ref);
+  const key = errorKey(ref, ctx.surface);
+  const error = key === null ? undefined : ctx.errors[key];
   if (ctx.surface === 'global') {
     const value = b.getGlobal(ctx.config);
     const inheritedValue = b.getGlobal(ctx.baseline);
-    return { value, inheritedValue, modified: value !== inheritedValue, editable: true, error: ctx.errors[b.globalError] };
+    return { value, inheritedValue, modified: value !== inheritedValue, editable: true, error };
   }
   const inheritedValue = b.getGlobal(ctx.config);
-  if (b.workspaceKey === null) return { value: inheritedValue, inheritedValue, modified: false, editable: false, error: undefined };
+  if (b.workspaceKey === null) return { value: inheritedValue, inheritedValue, modified: false, editable: false, error };
   const override = workspaceOverride(ctx.workspace, b.workspaceKey);
-  return { value: override ?? inheritedValue, inheritedValue, modified: override !== null, editable: true, error: ctx.errors[b.workspaceKey] };
+  return { value: override ?? inheritedValue, inheritedValue, modified: override !== null, editable: true, error };
+}
+
+export function partState(key: PartKey, ctx: RenderCtx): PartState | null {
+  const ref = partRef(key);
+  return ref.kind === 'critic' ? null : editableState(ref, ctx);
 }
 
 /** `null` reverts: to the distributed default on the global surface, to inheriting on a Workspace. */

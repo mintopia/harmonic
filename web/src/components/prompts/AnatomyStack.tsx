@@ -1,12 +1,15 @@
 import type { ReactNode } from 'react';
 import type { PartKey, PromptAnatomy } from '../../../../src/domain/prompt-anatomy.js';
 import type { RenderCtx } from '../settings-schema';
-import { PartCard, Tag } from './PartCard';
+import { PartCard } from './PartCard';
+import { Tag } from './Tag';
 import { anatomyLayout, type ExpandedPart, type LayoutNode } from './prompts-tab-model';
 import type { SampleConditions } from '../../prompt-preview-model';
 
 export const ANATOMY_PANEL_ID = 'prompt-anatomy-panel';
 export const anatomyTabId = (id: string): string => `prompt-anatomy-tab-${id}`;
+
+const nodeKey = (node: LayoutNode, index: number): string => (node.kind === 'part' ? `${node.part.key}:${node.occurrence}` : `oneOf:${index}`);
 
 export function AnatomyStack({
   anatomy,
@@ -41,7 +44,7 @@ export function AnatomyStack({
                   {option.value === selected && <Tag tone="accent">In preview</Tag>}
                 </p>
                 {nodes.map((child, i) => (
-                  <div key={child.kind === 'part' ? `${child.part.key}:${child.occurrence}` : `oneOf:${i}`}>{renderNode(child, parentKey)}</div>
+                  <div key={nodeKey(child, i)}>{renderNode(child, parentKey)}</div>
                 ))}
               </div>
             ))}
@@ -65,7 +68,7 @@ export function AnatomyStack({
         {node.nested.length > 0 && (
           <div className="mt-2.5 flex flex-col gap-2 border-l border-hairline pl-3">
             {node.nested.map((child, i) => (
-              <div key={child.kind === 'part' ? `${child.part.key}:${child.occurrence}` : `oneOf:${i}`}>{renderNode(child, part.key)}</div>
+              <div key={nodeKey(child, i)}>{renderNode(child, part.key)}</div>
             ))}
           </div>
         )}

@@ -1,20 +1,39 @@
-import { expandFragments, type DriveFields } from '../../src/execution/prompt-template.js';
+import { expandFragments, promptForTask, renderFragment, type DriveFields } from '../../src/execution/prompt-template.js';
 import { PROMPT_FRAGMENTS, PROMPT_FRAGMENT_NAMES, type PromptFragmentName, type PromptFragments } from '../../src/domain/prompt-fragments.js';
-import { PROMPT_ANATOMIES, templateKey, type AnatomyId, type PartKey, type PromptAnatomy } from '../../src/domain/prompt-anatomy.js';
+import {
+  ORIGIN,
+  NUDGE_EVENT,
+  RESOLVER,
+  REVISION,
+  TICKET,
+  fragmentKey,
+  partLabel,
+  selectOption,
+  templateKey,
+  type AnatomyId,
+  type CriticFlagId,
+  type ImplementationFlagId,
+  type PartKey,
+  type PromptAnatomy,
+} from '../../src/domain/prompt-anatomy.js';
 import { PROMPT_TEMPLATES, PROMPT_TEMPLATE_IDS, type PromptTemplateId } from '../../src/domain/prompt-templates.js';
 import { resolvePromptFragments } from '../../src/domain/setting-override.js';
 import {
+  buildCriticPrompt,
   composeAttemptPrompt,
+  composeCommitNudge,
   composeContinuePrompt,
   composeDriveOpening,
   composeEpicResolvePrompt,
+  composePauseMessage,
   composePeerContext,
   peerFrame,
+  placePriorContext,
+  planAttemptContext,
   renderConflictPrompt,
   renderEpicRefreshPrompt,
+  type ConflictPromptContext,
 } from '../../src/execution/prompt-assembly.js';
-import { promptForTask, renderFragment } from '../../src/execution/prompt-template.js';
-import { buildCriticPrompt } from '../../src/verification/critic-prompt.js';
 import type { AppConfig, TaskCriticOverlayEntry, TaskVerificationCritic, Workspace } from './types';
 
 /** Illustrative values for the `{taskId}/{skill}/{ref}/{url}/{title}/{description}` tokens. */
@@ -30,7 +49,7 @@ export const SAMPLE_DRIVE_FIELDS: DriveFields = {
 /** A native (board-authored) Task has no mirrored issue: `ref`/`url` are empty, so
  * `buildCriticPrompt` compiles its no-ticket variant. `taskId`/`title`/`description`
  * still come from the Task itself, so they stay populated. */
-export const SAMPLE_NATIVE_DRIVE_FIELDS: DriveFields = {
+const SAMPLE_NATIVE_DRIVE_FIELDS: DriveFields = {
   ...SAMPLE_DRIVE_FIELDS,
   ref: '',
   url: '',
@@ -43,8 +62,7 @@ export interface LabeledPreview {
   text: string;
 }
 
-/** Illustrative value for the `{taskId}` token. */
-export const SAMPLE_TASK_ID = '123';
+const SAMPLE_TASK_ID = '123';
 
 const SAMPLE_VERIFIED_HEAD_OID = 'ec5ed1f1edead000000000000000000000000000';
 const SAMPLE_BASE_OID = 'ba5e0000000000000000000000000000000000000';
@@ -73,16 +91,16 @@ export const DRIVE_PLACEHOLDERS: Placeholder[] = [
 
 export const CRITIC_NO_ISSUE_PLACEHOLDERS: Placeholder[] = [...CORE_TASK, SKILL_PLACEHOLDER];
 
-export const EPIC_RESOLVE_PLACEHOLDERS: Placeholder[] = [
+const EPIC_RESOLVE_PLACEHOLDERS: Placeholder[] = [
   { token: '{title}', desc: 'Epic title', core: true },
   { token: '{description}', desc: 'Epic description', core: true },
   { token: '{ref}', desc: 'Epic issue number' },
   { token: '{url}', desc: 'Epic issue URL' },
 ];
 
-export const TASK_ID_PLACEHOLDER: Placeholder[] = [{ token: '{taskId}', desc: 'Harmonic task id', core: true }];
+const TASK_ID_PLACEHOLDER: Placeholder[] = [{ token: '{taskId}', desc: 'Harmonic task id', core: true }];
 
-export const TASK_PLACEHOLDERS: Placeholder[] = [
+const TASK_PLACEHOLDERS: Placeholder[] = [
   { token: '{prompt}', desc: "the task's own prompt" },
   { token: '{id}', desc: 'task id', core: true },
   { token: '{workingDir}', desc: 'working directory' },
@@ -130,9 +148,7 @@ export function compileEpicCriticPreview(prompt: string, fragments: AppConfig['p
   });
 }
 
-export const COMMIT_NUDGE_PLACEHOLDERS: Placeholder[] = [];
-
-export const MERGE_CONFLICT_PLACEHOLDERS: Placeholder[] = [
+const MERGE_CONFLICT_PLACEHOLDERS: Placeholder[] = [
   { token: '{turn}', desc: 'resolution turn number' },
   { token: '{taskBranch}', desc: 'branch being merged' },
   { token: '{baseBranch}', desc: 'branch being merged into' },
@@ -140,32 +156,31 @@ export const MERGE_CONFLICT_PLACEHOLDERS: Placeholder[] = [
   { token: '{fragment.conflictResolution}', desc: 'the Conflict resolution fragment' },
 ];
 
-export const EPIC_REFRESH_PLACEHOLDERS: Placeholder[] = [
+const EPIC_REFRESH_PLACEHOLDERS: Placeholder[] = [
   { token: '{defaultBranch}', desc: 'Default branch merged into the Epic' },
   { token: '{branch}', desc: 'Epic integration branch' },
   { token: '{detail}', desc: 'Conflict detail from the merge attempt' },
   { token: '{fragment.conflictResolution}', desc: 'the Conflict resolution fragment' },
 ];
 
-export const EPIC_RESOLVE_SUFFIX_PLACEHOLDERS: Placeholder[] = [{ token: '{branch}', desc: 'Epic integration branch' }];
+const EPIC_RESOLVE_SUFFIX_PLACEHOLDERS: Placeholder[] = [{ token: '{branch}', desc: 'Epic integration branch' }];
 
-const SAMPLE_CONFLICT_VALUES: Record<string, string> = {
-  baseDir: '/repo',
+const SAMPLE_CONFLICT: ConflictPromptContext = {
+  turn: 1,
   baseBranch: 'develop',
   taskBranch: 'harmonic/task-123',
-  turn: '1',
-  paths: '- src/app.ts',
-  branch: 'epic/example',
-  defaultBranch: 'develop',
-  detail: 'Both branches changed src/app.ts.',
+  unmergedPaths: ['src/app.ts'],
+  baseDir: '/repo',
 };
+
+const SAMPLE_EPIC_REFRESH = { defaultBranch: 'develop', branch: 'epic/example', detail: 'Both branches changed src/app.ts.', worktreePath: '/repo' };
 
 export const TEMPLATE_PLACEHOLDERS: Record<PromptTemplateId, Placeholder[]> = {
   taskPrompt: TASK_PLACEHOLDERS,
   drivePrompt: DRIVE_PLACEHOLDERS,
   unattendedReminder: TASK_ID_PLACEHOLDER,
   continuePrompt: TASK_ID_PLACEHOLDER,
-  commitNudge: COMMIT_NUDGE_PLACEHOLDERS,
+  commitNudge: [],
   pauseMessage: [],
   mergeConflictPrompt: MERGE_CONFLICT_PLACEHOLDERS,
   epicConflictPrompt: MERGE_CONFLICT_PLACEHOLDERS,
@@ -178,8 +193,8 @@ export interface PromptSettingsView {
   /** Effective raw template text: the Workspace override when set, else the global value. */
   template(id: PromptTemplateId): string;
   fragments: PromptFragments;
-  /** The first configured Task critic's own prompts, or null when none is configured. */
-  criticPrompt: { issue: string; noIssue: string } | null;
+  /** The first configured Task critic's name and own prompts, or null when none is configured. */
+  criticPrompt: { name: string; issue: string; noIssue: string } | null;
 }
 
 function readString(root: unknown, path: readonly string[]): string | undefined {
@@ -224,7 +239,7 @@ export function promptSettingsView(ctx: { config: AppConfig; workspace?: Workspa
       return readString(workspace, [spec.workspace]) ?? inherited;
     },
     fragments: resolvePromptFragments(workspace, config),
-    criticPrompt: critic ? { issue: critic.issuePrompt, noIssue: critic.noIssuePrompt } : null,
+    criticPrompt: critic ? { name: critic.name, issue: critic.issuePrompt, noIssue: critic.noIssuePrompt } : null,
   };
 }
 
@@ -240,9 +255,12 @@ export function defaultConditions(a: PromptAnatomy): SampleConditions {
 /** One contiguous span of a compiled preview: `key` null is Built-in text, otherwise the text of that part with any nested parts inside. */
 export interface PreviewSegment {
   key: PartKey | null;
+  /** Overrides the part's label when one part stands for something named, such as a critic. */
+  label?: string;
   children: (string | PreviewSegment)[];
 }
 
+// Private-use code points never occur in prompt text, so a marker cannot be mistaken for content.
 const MARK_OPEN = '\uE000';
 const MARK_KEY_END = '\uE001';
 const MARK_CLOSE = '\uE002';
@@ -250,7 +268,7 @@ const MARK_CLOSE = '\uE002';
 const PART_KEYS: ReadonlyMap<string, PartKey> = new Map<string, PartKey>([
   ['criticPrompt', 'criticPrompt'],
   ...PROMPT_TEMPLATE_IDS.map((id): [string, PartKey] => [templateKey(id), templateKey(id)]),
-  ...PROMPT_FRAGMENT_NAMES.map((name): [string, PartKey] => [`fragment:${name}`, `fragment:${name}`]),
+  ...PROMPT_FRAGMENT_NAMES.map((name): [string, PartKey] => [fragmentKey(name), fragmentKey(name)]),
 ]);
 
 const mark = (key: PartKey, text: string): string => `${MARK_OPEN}${key}${MARK_KEY_END}${text}${MARK_CLOSE}`;
@@ -291,6 +309,7 @@ export function parseMarked(text: string): PreviewSegment[] {
   });
 }
 
+const SAMPLE_FEEDBACK = 'The tests in tests/app.test.ts still fail.';
 const SAMPLE_SEED = 'Please also update the changelog.';
 const SAMPLE_HEAL = { attempt: 1, reason: 'Verification failed: 2 tests failing.', output: 'FAIL tests/app.test.ts > renders the title' };
 const SAMPLE_PEERS = [{ taskId: 87, harness: 'codex', text: 'I renamed the shared helper; pull before editing it.' }];
@@ -309,36 +328,49 @@ interface Toolkit {
 
 function toolkit(view: PromptSettingsView): Toolkit {
   const fragments = { ...view.fragments };
-  for (const name of PROMPT_FRAGMENT_NAMES) fragments[name] = mark(`fragment:${name}`, view.fragments[name]);
+  for (const name of PROMPT_FRAGMENT_NAMES) fragments[name] = mark(fragmentKey(name), view.fragments[name]);
   const raw = (id: PromptTemplateId) => mark(templateKey(id), view.template(id));
   return { fragments, raw, expanded: (id) => expandFragments(raw(id), fragments) };
 }
 
-type Assembler = (tools: Toolkit, view: PromptSettingsView, flag: (id: string) => boolean, choice: (by: string) => string) => string;
+type Assembler = (tools: Toolkit, view: PromptSettingsView, c: SampleConditions) => string;
 
-const assembleImplementation: Assembler = (tools, _view, flag, choice) => {
+const flagReader =
+  <F extends string>(c: SampleConditions) =>
+  (id: F): boolean =>
+    c.flags[id] === true;
+
+const assembleImplementation: Assembler = (tools, _view, c) => {
+  const flag = flagReader<ImplementationFlagId>(c);
+  const feedback = flag('feedback') ? SAMPLE_FEEDBACK : null;
   const opening =
-    choice('origin') === 'mirrored'
+    selectOption(ORIGIN, c.choices.origin, 'native') === 'mirrored'
       ? composeDriveOpening(
           { prompt: tools.expanded('drivePrompt'), unattendedReminder: tools.expanded('unattendedReminder') },
           SAMPLE_DRIVE_FIELDS,
+          feedback,
         )
       : promptForTask(
-          { id: 172, prompt: 'Example task prompt.', workingDir: '/repo', harness: 'claude', model: 'sonnet' },
+          { id: 172, prompt: 'Example task prompt.', workingDir: '/repo', harness: 'claude', model: 'sonnet', feedback },
           tools.expanded('taskPrompt'),
         );
-  const prior = flag('priorSession') ? renderFragment('priorSession', tools.fragments, SAMPLE_PRIOR_SESSION) : null;
   const heal = flag('selfHeal') ? SAMPLE_HEAL : undefined;
   const seeded = flag('operatorSeeded');
-  const replacesOpening = seeded && !heal && prior !== null;
+  const plan = planAttemptContext({
+    seeded,
+    healing: heal !== undefined,
+    continuesOpenAttempt: false,
+    freshSession: true,
+    condensedContinuation: true,
+  });
+  const prior = flag('priorSession') ? renderFragment('priorSession', tools.fragments, SAMPLE_PRIOR_SESSION) : null;
   return composeAttemptPrompt(
     {
       opening,
       seed: seeded ? SAMPLE_SEED : undefined,
-      seedMode: 'append',
-      freshSessionContext: replacesOpening ? prior : null,
+      seedMode: plan.seedMode,
+      ...placePriorContext(plan.priorSlot, prior),
       heal,
-      condensed: replacesOpening ? null : prior,
       peerText: flag('agentMessages') ? composePeerContext(flag('heldPeerMessages') ? SAMPLE_PEERS : [], tools.fragments) : '',
       rebaseConflict: flag('rebaseConflict'),
       codeIndexRepoId: flag('codeIndex') ? SAMPLE_CODE_INDEX_REPO : null,
@@ -347,39 +379,31 @@ const assembleImplementation: Assembler = (tools, _view, flag, choice) => {
   );
 };
 
-const assembleNudge: Assembler = (tools, _view, _flag, choice) => {
-  switch (choice('event')) {
-    case 'commit':
-      return tools.expanded('commitNudge');
-    case 'pause':
-      return tools.expanded('pauseMessage');
-    case 'peer':
-      return peerFrame({ id: 87, harness: 'codex' }, SAMPLE_PEERS[0]?.text ?? '', tools.fragments);
-    default:
+const assembleNudge: Assembler = (tools, _view, c) => {
+  switch (selectOption(NUDGE_EVENT, c.choices.event, 'continue')) {
+    case 'continue':
       return composeContinuePrompt(
         { continuePrompt: tools.expanded('continuePrompt'), unattendedReminder: tools.expanded('unattendedReminder') },
         SAMPLE_TASK_ID,
       );
+    case 'commit':
+      return composeCommitNudge(tools.raw('commitNudge'), tools.fragments);
+    case 'pause':
+      return composePauseMessage(tools.raw('pauseMessage'), tools.fragments);
+    case 'peer':
+      return peerFrame({ id: 87, harness: 'codex' }, SAMPLE_PEERS[0]?.text ?? '', tools.fragments);
   }
 };
 
-const assembleMergeConflict: Assembler = (tools, _view, _flag, choice) => {
-  const resolver = choice('resolver');
-  if (resolver === 'refresh') {
-    return renderEpicRefreshPrompt(tools.raw('epicRefreshPrompt'), tools.fragments, {
-      defaultBranch: SAMPLE_CONFLICT_VALUES.defaultBranch ?? '',
-      branch: SAMPLE_CONFLICT_VALUES.branch ?? '',
-      detail: SAMPLE_CONFLICT_VALUES.detail ?? '',
-      worktreePath: SAMPLE_CONFLICT_VALUES.baseDir ?? '',
-    });
+const assembleMergeConflict: Assembler = (tools, _view, c) => {
+  switch (selectOption(RESOLVER, c.choices.resolver, 'task')) {
+    case 'task':
+      return renderConflictPrompt(tools.raw('mergeConflictPrompt'), tools.fragments, SAMPLE_CONFLICT);
+    case 'epic':
+      return renderConflictPrompt(tools.raw('epicConflictPrompt'), tools.fragments, SAMPLE_CONFLICT);
+    case 'refresh':
+      return renderEpicRefreshPrompt(tools.raw('epicRefreshPrompt'), tools.fragments, SAMPLE_EPIC_REFRESH);
   }
-  return renderConflictPrompt(tools.raw(resolver === 'epic' ? 'epicConflictPrompt' : 'mergeConflictPrompt'), tools.fragments, {
-    turn: 1,
-    baseBranch: SAMPLE_CONFLICT_VALUES.baseBranch ?? '',
-    taskBranch: SAMPLE_CONFLICT_VALUES.taskBranch ?? '',
-    unmergedPaths: ['src/app.ts'],
-    baseDir: SAMPLE_CONFLICT_VALUES.baseDir ?? '',
-  });
 };
 
 const assembleEpicFix: Assembler = (tools) =>
@@ -392,16 +416,17 @@ const assembleEpicFix: Assembler = (tools) =>
     branch: `epic/${SAMPLE_DRIVE_FIELDS.ref}`,
   });
 
-const assembleCritic: Assembler = (tools, view, flag, choice) => {
-  const hasTicket = choice('ticket') !== 'instructions';
-  const revision = choice('revision');
+const assembleCritic: Assembler = (tools, view, c) => {
+  const flag = flagReader<CriticFlagId>(c);
+  const hasTicket = selectOption(TICKET, c.choices.ticket, 'ticket') === 'ticket';
+  const revision = selectOption(REVISION, c.choices.revision, 'diff');
   const own = view.criticPrompt ? (hasTicket ? view.criticPrompt.issue : view.criticPrompt.noIssue) : SAMPLE_CRITIC_PROMPT;
   return buildCriticPrompt({
     operatorPrompt: mark('criticPrompt', own),
     fields: hasTicket ? SAMPLE_DRIVE_FIELDS : SAMPLE_NATIVE_DRIVE_FIELDS,
     verifiedHeadOid: SAMPLE_VERIFIED_HEAD_OID,
     ...(revision === 'alone' ? {} : { baseOid: revision === 'identical' ? SAMPLE_VERIFIED_HEAD_OID : SAMPLE_BASE_OID }),
-    ...(flag('dirtyWorktree') && revision !== 'identical' ? { dirty: true } : {}),
+    ...(flag('dirtyWorktree') ? { dirty: true } : {}),
     fragments: tools.fragments,
   });
 };
@@ -416,8 +441,8 @@ const ASSEMBLERS: Record<AnatomyId, Assembler> = {
 
 /** Compile one anatomy's prompt through the runtime's own compose functions with sample values, as segments keyed by the part that produced each span. */
 export function assemblePreview(id: AnatomyId, view: PromptSettingsView, c: SampleConditions): PreviewSegment[] {
-  const anatomy = PROMPT_ANATOMIES.find((a) => a.id === id);
-  const choices = { ...anatomy?.selectorDefaults, ...c.choices };
-  const text = ASSEMBLERS[id](toolkit(view), view, (flagId) => c.flags[flagId] === true, (by) => choices[by] ?? '');
-  return parseMarked(text);
+  const segments = parseMarked(ASSEMBLERS[id](toolkit(view), view, c));
+  const criticName = view.criticPrompt?.name;
+  if (criticName === undefined) return segments;
+  return segments.map((segment) => (segment.key === 'criticPrompt' ? { ...segment, label: `${partLabel(segment.key)} · ${criticName}` } : segment));
 }

@@ -14,6 +14,7 @@ import {
   type RoutingLabel,
   type RoutingLabelOverlayEntry,
 } from '../config.js';
+import { composeCommitNudge, composePauseMessage } from '../execution/prompt-assembly.js';
 import { expandFragments } from '../execution/prompt-template.js';
 import {
   PROMPT_FRAGMENT_NAMES,
@@ -294,7 +295,7 @@ export function resolvePauseMessage(
   ws: (Partial<PromptFragmentOverrides> & Pick<WorkspaceRow, 'pauseMessage'>) | null | undefined,
   config: Pick<AppConfig, 'pauseMessage' | 'promptFragments'>,
 ): string {
-  return expandFragments(resolveScoped('pauseMessage', ws?.pauseMessage, config.pauseMessage), resolvePromptFragments(ws, config));
+  return composePauseMessage(resolveScoped('pauseMessage', ws?.pauseMessage, config.pauseMessage), resolvePromptFragments(ws, config));
 }
 
 /** Resolve the nudge sent when an Attempt ends its turn with uncommitted changes. */
@@ -302,7 +303,7 @@ export function resolveCommitNudge(
   ws: (Partial<PromptFragmentOverrides> & Pick<WorkspaceRow, 'driveCommitNudge'>) | null | undefined,
   config: Pick<AppConfig, 'drive' | 'promptFragments'>,
 ): string {
-  return expandFragments(resolveScoped('driveCommitNudge', ws?.driveCommitNudge, config.drive.commitNudge), resolvePromptFragments(ws, config));
+  return composeCommitNudge(resolveScoped('driveCommitNudge', ws?.driveCommitNudge, config.drive.commitNudge), resolvePromptFragments(ws, config));
 }
 
 /** Resolve the Prompt Fragments a Workspace's prompts reference, each `workspace ?? global`. */

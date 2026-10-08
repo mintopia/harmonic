@@ -3,7 +3,7 @@ import { act, createElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceSettingsPage } from '../web/src/components/WorkspaceSettingsPage.js';
 import type { WorkspaceRenderCtx } from '../web/src/components/settings-schema.js';
-import { PROMPT_PART_FIELDS } from '../web/src/components/prompts/prompt-part-fields.js';
+import { PROMPT_PART_FIELDS } from './prompt-part-fields.js';
 import { settingsRegistry, isOverridable, type SettingKey } from '../src/domain/settings-registry.js';
 import { cleanup, makeConfig, makeWorkspace, mountComponent } from './component-smoke-harness.js';
 

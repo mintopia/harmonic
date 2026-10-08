@@ -1,8 +1,8 @@
 import { useRef, type KeyboardEvent } from 'react';
 import type { AnatomyId, PartKey, PromptAnatomy } from '../../../../src/domain/prompt-anatomy.js';
 import { labelType, searchField } from '../../ui';
-import { MessageList } from './MessageList';
-import { Tag } from './PartCard';
+import { ANATOMY_TABS_LABEL, AnatomyTabs } from './AnatomyTabs';
+import { Tag } from './Tag';
 import type { AnatomyCounts, SearchHit } from './prompts-tab-model';
 import type { LayoutMode } from './use-layout-mode';
 
@@ -107,8 +107,8 @@ export function PromptIndex({
         </div>
       )}
       <div hidden={searching}>
-        {mode === 'wide' && <p className={`mb-1.5 px-2.5 ${labelType} text-faint`}>Prompts the agent receives</p>}
-        <MessageList
+        {mode === 'wide' && <p className={`mb-1.5 px-2.5 ${labelType} text-faint`}>{ANATOMY_TABS_LABEL}</p>}
+        <AnatomyTabs
           items={items}
           active={active}
           orientation={mode === 'wide' ? 'vertical' : 'horizontal'}

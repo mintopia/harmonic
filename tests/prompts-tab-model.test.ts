@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { PROMPT_ANATOMIES, anatomyPartKeys } from '../src/domain/prompt-anatomy.js';
+import { PROMPT_ANATOMIES, anatomyPartKeys, fragmentKey } from '../src/domain/prompt-anatomy.js';
 import { PROMPT_FRAGMENT_NAMES } from '../src/domain/prompt-fragments.js';
 import { PROMPT_TEMPLATES, PROMPT_TEMPLATE_IDS } from '../src/domain/prompt-templates.js';
 import type { GlobalRenderCtx, WorkspaceRenderCtx } from '../web/src/components/settings-schema.js';
@@ -217,7 +217,7 @@ describe('anatomy coverage and layout mode', () => {
   it('places every template and fragment in some anatomy', () => {
     const keys = new Set(PROMPT_ANATOMIES.flatMap(anatomyPartKeys));
     for (const id of PROMPT_TEMPLATE_IDS) expect(keys.has(`template:${id}`), id).toBe(true);
-    for (const name of PROMPT_FRAGMENT_NAMES) expect(keys.has(`fragment:${name}`), name).toBe(true);
+    for (const name of PROMPT_FRAGMENT_NAMES) expect(keys.has(fragmentKey(name)), name).toBe(true);
   });
 
   it('picks the layout from the panel width, treating an unmeasured panel as wide', () => {

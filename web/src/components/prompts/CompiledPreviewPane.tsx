@@ -123,7 +123,7 @@ export function CompiledPreviewPane({
             >
               <span className={`block ${labelType} text-faint`}>
                 {step !== null && `${step} · `}
-                {key === null ? 'Built in' : partLabel(key)}
+                {key === null ? 'Built in' : (segment.label ?? partLabel(key))}
               </span>
               <pre className="m-0 mt-1 whitespace-pre-wrap break-words font-data text-small text-muted">
                 {renderChildren(segment.children, expandedKey)}

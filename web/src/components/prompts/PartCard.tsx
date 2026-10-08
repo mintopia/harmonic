@@ -1,41 +1,15 @@
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { partAnatomies, partLabel, type AnatomyFlag, type AnatomyPart, type PartKey } from '../../../../src/domain/prompt-anatomy.js';
-import { fragmentPlaceholders, type Placeholder } from '../../prompt-preview-model';
+import type { Placeholder } from '../../prompt-preview-model';
 import { Icon } from '../Icon';
 import type { RenderCtx } from '../settings-schema';
 import { renderPromptPart } from './prompt-part-fields';
-import { partRef, partState } from './prompts-tab-model';
-import { TEMPLATE_PLACEHOLDERS } from '../../prompt-preview-model';
-
-type TagTone = 'template' | 'fragment' | 'conditional' | 'modified' | 'fail' | 'accent';
-
-const TAG_TONE: Record<TagTone, string> = {
-  template: 'bg-accent-tint text-accent',
-  fragment: 'bg-raised text-muted',
-  conditional: 'border border-dashed border-edge-strong text-faint',
-  modified: 'bg-running-tint text-running',
-  fail: 'bg-fail-tint text-fail',
-  accent: 'bg-accent-tint text-accent',
-};
-
-export function Tag({ tone, title, children }: { tone: TagTone; title?: string; children: ReactNode }) {
-  return (
-    <span title={title} className={`min-w-0 max-w-full rounded-xl px-2 py-0.5 text-small ${TAG_TONE[tone]}`}>
-      {children}
-    </span>
-  );
-}
+import { editableState, partRef, placeholdersForKey } from './prompts-tab-model';
+import { Tag } from './Tag';
 
 const SUMMARY_CHIPS = 4;
 
 export const excerptOf = (text: string): string => text.trim().replace(/\s*\n\s*/g, ' ⏎ ');
-
-function placeholdersFor(key: PartKey): Placeholder[] {
-  const ref = partRef(key);
-  if (ref.kind === 'template') return TEMPLATE_PLACEHOLDERS[ref.id];
-  if (ref.kind === 'fragment') return fragmentPlaceholders(ref.name);
-  return [];
-}
 
 function ChipSummary({ placeholders }: { placeholders: Placeholder[] }) {
   if (placeholders.length === 0) return null;
@@ -86,7 +60,6 @@ export function PartCard({
 }) {
   const { key } = part;
   const ref = partRef(key);
-  const state = partState(key, ctx);
   const headerRef = useRef<HTMLButtonElement>(null);
   const regionRef = useRef<HTMLDivElement>(null);
   const wasOpen = useRef(false);
@@ -100,7 +73,7 @@ export function PartCard({
   const sharedWith = partAnatomies(key);
   const tags = (
     <>
-      {ref.kind === 'template' && <Tag tone="template">Template</Tag>}
+      {ref.kind === 'template' && <Tag tone="accent">Template</Tag>}
       {ref.kind === 'fragment' && <Tag tone="fragment">Fragment</Tag>}
       {caption && <Tag tone="fragment">{caption}</Tag>}
       {sharedWith.length > 1 && (
@@ -112,7 +85,7 @@ export function PartCard({
     </>
   );
 
-  if (ref.kind === 'critic' || !state) {
+  if (ref.kind === 'critic') {
     return (
       <div className="rounded-lg border border-hairline bg-shell p-3">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -140,8 +113,9 @@ export function PartCard({
     headerRef.current?.focus();
   };
 
+  const state = editableState(ref, ctx);
   const editorId = `prompt-part-editor-${key}`;
-  const placeholders = placeholdersFor(key);
+  const placeholders = placeholdersForKey(key);
   return (
     <div
       className={`rounded-lg border bg-shell p-3 transition-colors ${
