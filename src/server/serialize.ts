@@ -60,6 +60,13 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
   ]);
   const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
   const configuredVerifiers = resolveVerifiers(workspace, ctx.settingsStore.getGlobal());
+  const sessionPaths = task.isolationMode === 'worktree'
+    ? await ctx.sessions.worktreePaths(rows.flatMap((attempt) => (attempt.sessionRowId === null ? [] : [attempt.sessionRowId])))
+    : new Map<number, string>();
+  const workingDirOf = (attempt: TaskAttemptRow): string | null => {
+    if (task.isolationMode !== 'worktree') return null;
+    return (attempt.sessionRowId === null ? undefined : sessionPaths.get(attempt.sessionRowId)) ?? ctx.runner.worktreePathForTask(task);
+  };
   return {
     budgetBase,
     attempts: await Promise.all(rows.map(async (attempt) => {
@@ -67,7 +74,7 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
         ctx.attempts.listSteps(attempt.id),
         ctx.verificationAttempts.list(attempt.id),
       ]);
-      return attemptToTimelineApi(attempt, stepRows, attemptVerifications, configuredVerifiers);
+      return attemptToTimelineApi(attempt, stepRows, attemptVerifications, configuredVerifiers, workingDirOf(attempt));
     })),
   };
 }

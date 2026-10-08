@@ -312,6 +312,17 @@
             ],
             "example": "escalated to human: verification failed after 3 attempt(s)"
           },
+          "workingDir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "/opt/harmonic/worktrees/task-4821"
+          },
           "continuation": {
             "anyOf": [
               {
@@ -402,6 +413,7 @@
           "feedback",
           "verifiedSha",
           "escalationReason",
+          "workingDir",
           "continuation",
           "verifierStatuses",
           "steps"
@@ -9918,6 +9930,17 @@
             ],
             "example": "escalated to human: verification failed after 3 attempt(s)"
           },
+          "workingDir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "/opt/harmonic/worktrees/task-4821"
+          },
           "continuation": {
             "anyOf": [
               {
@@ -10009,6 +10032,7 @@
           "feedback",
           "verifiedSha",
           "escalationReason",
+          "workingDir",
           "continuation",
           "verifierStatuses",
           "steps"

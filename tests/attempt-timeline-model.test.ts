@@ -18,7 +18,7 @@ const task = (over: Partial<Step> = {}): Step => ({
   id: 1, attemptId: 1, type: 'verification', position: 3, state: 'passed', command: 'npm test', verdict: 'pass', logLocator: null, startedAt: 1_000, endedAt: 3_000, ...over,
 });
 const attempt = (over: Partial<Attempt> = {}): Attempt => ({
-  id: 1, taskId: 7, number: 1, state: 'failed', startedAt: 1_000, endedAt: 3_000, feedback: null, verifiedSha: null, escalationReason: null, verifierStatuses: [], continuation: null, steps: [], ...over,
+  id: 1, taskId: 7, number: 1, state: 'failed', startedAt: 1_000, endedAt: 3_000, feedback: null, verifiedSha: null, escalationReason: null, workingDir: null, verifierStatuses: [], continuation: null, steps: [], ...over,
 });
 const run = (over: Partial<AttemptSummary> = {}): AttemptSummary => ({
   pullRequestUrl: null, id: 1, taskId: 7, number: 1, state: 'running', reason: null, stopReason: null, sessionId: null, prompt: null, branch: null, baseBranch: null,

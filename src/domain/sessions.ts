@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, ne } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, ne } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { sessions, type SessionRow, type SessionRetireReason } from '../db/schema.js';
 import type { AcpInitializeResult } from '../acp/driver.js';
@@ -224,6 +224,15 @@ export class SessionStore {
     const row = await this.db.read((db) => db.select().from(sessions).where(eq(sessions.id, id)).get());
     if (!row) throw new DomainError('not_found', `session ${id} not found`);
     return row;
+  }
+
+  /** The bound builder-worktree path of each given Session that has one, keyed by Session id. */
+  async worktreePaths(ids: readonly number[]): Promise<Map<number, string>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.db.read((db) =>
+      db.select({ id: sessions.id, worktreePath: sessions.worktreePath }).from(sessions).where(inArray(sessions.id, [...ids])).all(),
+    );
+    return new Map(rows.flatMap((row) => (row.worktreePath === null ? [] : [[row.id, row.worktreePath] as const])));
   }
 
   /** The Session for a harness's own session id, or undefined. */
