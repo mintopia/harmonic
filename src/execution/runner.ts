@@ -193,7 +193,7 @@ export class Runner {
         commandSpawn: this.commandSpawn,
         fireAndForget: this.fireAndForget,
         getConfig: this.getConfig,
-        unroutedHarness: (taskId) => this.taskService.unroutedHarness(taskId),
+        routing: this.taskService.routing,
         getWorkspace: async (workspaceId) => this.getWorkspace?.(workspaceId),
         verificationAttempts: this.verificationAttempts,
         attempts: this.attempts,
@@ -204,7 +204,7 @@ export class Runner {
       postMerge: this.postMerge,
       urlFor: this.urlFor,
       listWorkingTasks: () => this.taskService.list({ state: 'working' }),
-      epicRoute: (workspaceId, epicRef) => this.taskService.epicRoute(workspaceId, epicRef),
+      routing: this.taskService.routing,
       latestAttemptFor: (task) => this.latestAttemptFor(task),
       updateStep: (taskId, id, patch) => this.updateStep(taskId, id, patch),
       criticUpdateRelay: (attemptId) => this.criticUpdateRelay(attemptId),
@@ -216,7 +216,7 @@ export class Runner {
 
   private epicRefreshResolverDeps(): EpicRefreshResolverDeps {
     return {
-      taskService: this.taskService,
+      routing: this.taskService.routing,
       attempts: this.attempts,
       archive: this.archive,
       epicMergeEvents: new EpicMergeEventStore(this.asyncDb),
@@ -246,6 +246,7 @@ export class Runner {
   private verificationCoordinatorDeps(): VerificationCoordinatorDeps {
     return {
       taskService: this.taskService,
+      routing: this.taskService.routing,
       attempts: this.attempts,
       verificationAttempts: this.verificationAttempts,
       sessionStore: this.sessionStore,
@@ -528,7 +529,7 @@ export class Runner {
       const config = this.getConfig();
       const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
       if (!harness) {
-        const route = await this.taskService.routingFor(task.id);
+        const route = await this.taskService.routing.routingFor(task.id);
         const reason = route?.applied
           ? `Routing Label '${route.label}' needs Harness '${task.harness}', which is not configured.`
           : `Harness '${task.harness}' is not configured.`;
@@ -612,7 +613,7 @@ export class Runner {
     await bestEffort(async () => {
       const prior = (await this.attempts.listForTask(task.id)).findLast((a) => a.id !== bound.id && a.harness);
       if (!prior?.harness || (prior.harness === task.harness && prior.model === task.model)) return;
-      const route = await this.taskService.routingFor(task.id);
+      const route = await this.taskService.routing.routingFor(task.id);
       const payload = {
         event: 'route-changed',
         from: { harness: prior.harness, model: prior.model },

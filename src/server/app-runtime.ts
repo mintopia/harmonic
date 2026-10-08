@@ -301,7 +301,7 @@ export async function createRuntime(deps: {
       return result.ok ? result.value : undefined;
     },
     getConfig: () => settingsStore.getGlobal(),
-    unroutedHarness: (taskId) => tasks.unroutedHarness(taskId),
+    routing: tasks.routing,
     verificationAttempts,
     attempts,
     criticDrive,
