@@ -36,7 +36,7 @@ export function LayerField<T>({
         <label className={hideLabel ? 'sr-only' : `${labelType} whitespace-nowrap text-muted`} htmlFor={htmlFor}>
           {label}
         </label>
-        {state.modified && !hideLabel && <span className="shrink-0 text-small text-amber">Modified</span>}
+        {state.modified && !hideLabel && <span className="shrink-0 text-small text-running">Modified</span>}
         {state.modified && (
           <button
             type="button"
