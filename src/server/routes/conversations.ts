@@ -185,11 +185,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
     },
     async (req) => {
       const { workspaceId, limit, offset } = req.query;
-      const conversations = await Promise.all(
-        (await ctx.conversations.list(workspaceId)).map((c) => conversationToApi(ctx, c)),
-      );
-      const { items, total } = paginate(conversations, { limit, offset });
-      return { conversations: items, total };
+      const { items: page, total } = paginate(await ctx.conversations.list(workspaceId), { limit, offset });
+      return { conversations: await Promise.all(page.map((c) => conversationToApi(ctx, c))), total };
     },
   );
 
