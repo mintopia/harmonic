@@ -123,10 +123,10 @@ describe('route-changed Activity event (ADR-0049)', () => {
     expect(await events(bound.id)).toEqual([]);
   });
 
-  it('keeps the prior Session across a Model-only change and reports sessionKept', async () => {
+  it('starts a fresh Session across a Model-only change and reports sessionKept false', async () => {
     const bound = await retryAfterRelabel('cheap', 'reasoning', true);
-    expect(bound.sessionRowId).not.toBeNull();
-    expect(await events(bound.id)).toEqual([expect.objectContaining({ event: 'route-changed', sessionKept: true })]);
+    expect(bound.sessionRowId).toBeNull();
+    expect(await events(bound.id)).toEqual([expect.objectContaining({ event: 'route-changed', sessionKept: false })]);
   });
 
   it('starts a fresh Session across a Harness change and reports sessionKept false', async () => {

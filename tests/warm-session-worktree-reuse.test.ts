@@ -47,6 +47,7 @@ describe('Retry Now Session re-use (worktree isolation)', () => {
       chat: { harness: 'claude', model: 'stub-model' },
       defaults: { isolationMode: 'worktree' },
       maxAttempts: 3,
+      routingLabels: [{ label: 'reasoning', harness: 'claude', model: 'stub-model' }],
     });
     const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
     await server.app.ctx.workspaces.update(wsId, { workingDir: makeRepo() });
@@ -58,7 +59,15 @@ describe('Retry Now Session re-use (worktree isolation)', () => {
   async function escalatedTicket() {
     const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
     const mirrored = await server.app.ctx.tasks.upsertMirrored(
-      { trackerRef: trackerRef(nextRef++), prompt: 'reuse ticket', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+      {
+        trackerRef: trackerRef(nextRef++),
+        prompt: 'reuse ticket',
+        workflow: 'implement',
+        wayfinderType: null,
+        mapRef: null,
+        closed: false,
+        facts: { state: 'open', parent: null, blockedBy: [], labels: ['reasoning'], title: 'reuse ticket', body: '', url: 'u', createdAt: '2026-08-07T00:00:00Z' },
+      },
       wsId,
     );
     await server.api('POST', `/api/tasks/${mirrored.id}/run`);
@@ -103,8 +112,84 @@ describe('Retry Now Session re-use (worktree isolation)', () => {
     const retried = await server.api('POST', `/api/tasks/${taskId}/retry`, { guidance: 'again', startNow: true, reuseSession: true, harness: 'claude', model: 'other-model' });
     expect(retried.status).toBe(200);
     expect(retried.body.overrides).toMatchObject({ harness: 'claude', model: 'other-model' });
+    expect(retried.body.routing.applied).toBe(false);
     const corrective = await nextAttempt(taskId, prior.number);
     expect(corrective.sessionRowId).toBe(prior.sessionRowId);
+  });
+});
+
+describe('queued Retry Session re-use', () => {
+  let server: TestServer;
+  let nextRef = 99_100;
+  afterAll(async () => {
+    await server?.close();
+  });
+
+  const harness = (cacheWarmSeconds: number) => ({
+    command: process.execPath,
+    args: [STUB_HARNESS],
+    env: { STUB_UNIQUE_SESSION_ID: '1' },
+    models: [{ id: 'stub-model' }, { id: 'other-model' }],
+    defaultModel: 'stub-model',
+    cacheWarmSeconds,
+  });
+
+  async function boot(cacheWarmSeconds: number) {
+    server = await startServer({
+      harnesses: { claude: harness(cacheWarmSeconds) },
+      chat: { harness: 'claude', model: 'stub-model' },
+      defaults: { isolationMode: 'worktree' },
+      maxAttempts: 3,
+    });
+    const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
+    await server.app.ctx.workspaces.update(wsId, { workingDir: makeRepo() });
+    await server.app.ctx.settingsStore.updateGlobal({
+      drive: { prompt: JSON.stringify({ mcpEscalate: { reason: 'need a human' }, usage: { inputTokens: 5000, outputTokens: 100 } }) },
+    });
+    const mirrored = await server.app.ctx.tasks.upsertMirrored(
+      { trackerRef: trackerRef(nextRef++), prompt: 'queued retry ticket', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+      wsId,
+    );
+    await server.api('POST', `/api/tasks/${mirrored.id}/run`);
+    await waitFor(async () => ((await server.api('GET', `/api/tasks/${mirrored.id}`)).body.state === 'escalated' ? true : undefined));
+    const prior = (await server.app.ctx.attempts.listForTask(mirrored.id)).at(-1)!;
+    expect(prior.sessionRowId).not.toBeNull();
+    return { taskId: mirrored.id, prior };
+  }
+
+  const nextAttempt = (taskId: number, priorNumber: number) =>
+    waitFor(async () => {
+      const latest = (await server.app.ctx.attempts.listForTask(taskId)).find((a) => a.number > priorNumber);
+      return latest && latest.sessionRowId != null ? latest : undefined;
+    });
+
+  it('re-uses a warm Session on an unchanged route, with or without guidance', async () => {
+    const { taskId, prior } = await boot(300);
+    const retried = await server.api('POST', `/api/tasks/${taskId}/retry`, { guidance: 'again' });
+    expect(retried.status).toBe(200);
+    await server.api('POST', `/api/tasks/${taskId}/run`);
+    expect((await nextAttempt(taskId, prior.number)).sessionRowId).toBe(prior.sessionRowId);
+    await server.close();
+  });
+
+  it('starts a fresh Session after a Model change', async () => {
+    const { taskId, prior } = await boot(300);
+    const retried = await server.api('POST', `/api/tasks/${taskId}/retry`, { guidance: 'again', harness: 'claude', model: 'other-model' });
+    expect(retried.status).toBe(200);
+    await server.api('POST', `/api/tasks/${taskId}/run`);
+    expect((await nextAttempt(taskId, prior.number)).sessionRowId).not.toBe(prior.sessionRowId);
+    await server.close();
+  });
+
+  it('starts a fresh Session when the prior Session is cold', async () => {
+    const { taskId, prior } = await boot(1);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const preview = await server.api('GET', `/api/tasks/${taskId}/continuation`);
+    expect(preview.body.continueFull.estimate.warm).toBe(false);
+    const retried = await server.api('POST', `/api/tasks/${taskId}/retry`, { guidance: 'again' });
+    expect(retried.status).toBe(200);
+    await server.api('POST', `/api/tasks/${taskId}/run`);
+    expect((await nextAttempt(taskId, prior.number)).sessionRowId).not.toBe(prior.sessionRowId);
   });
 });
 

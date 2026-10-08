@@ -112,6 +112,11 @@ Three things change:
   warns about). Re-use with a different Harness is refused with a 400: a
   Session cannot cross Harnesses. Previously `start` implied re-use and was
   offered only for a warm Session.
+- **Queued Retry re-uses automatically, but only on an unchanged route.** A
+  queued Retry (not Retry Now) binds the prior Session when it is still warm at
+  Attempt start and the Retry kept the same Harness and Model. A Harness or
+  Model change, or a cold Session, starts a fresh Session. Guidance does not
+  change this. Retry Now keeps the explicit `reuseSession` flag.
 
 ## Supersedes
 

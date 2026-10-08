@@ -295,7 +295,7 @@ export function RetryDialog({
               {seg('later', 'Retry')}
               {seg('now', 'Retry Now')}
             </div>
-            {!now && <p className={noteClass}>Queues a fresh Attempt.</p>}
+            {!now && <p className={noteClass}>Queues the next Attempt. It continues the current Session if that is still warm and you kept the same Harness and Model.</p>}
             {now && canReuse && (
               <>
                 <label className={`mb-2 flex items-start gap-2 ${harnessChanged ? 'text-faint' : ''}`}>
