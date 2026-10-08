@@ -40,20 +40,17 @@ export interface OperatorControlsProps {
   onOpenActivity?: () => void;
 }
 
-function RunningReadout({ config, runningCount, onOpen }: { config: AppConfig; runningCount: number; onOpen?: () => void }) {
+function RunningReadout({ config, runningCount, onOpen, title }: { config: AppConfig; runningCount: number; onOpen?: () => void; title?: string }) {
   const body = (
     <>
-      <span
-        aria-hidden="true"
-        className={`size-[7px] rounded-full ${runningCount > 0 ? 'bg-running-dot motion-safe:animate-pulse' : 'bg-faint'}`}
-      />
+      <span aria-hidden="true" className={`size-[7px] rounded-full ${runningCount > 0 ? 'bg-running-dot motion-safe:animate-pulse' : 'bg-faint'}`} />
       <span>
         <b className={`font-semibold ${runningCount > 0 ? 'text-ink' : 'text-muted'}`}>{runningCount}</b> running
       </span>
-      <span aria-hidden="true" className="text-faint">
+      <span aria-hidden="true" className="text-faint @max-[50rem]:hidden">
         ·
       </span>
-      <span title="Host worker slots in use / ceiling">
+      <span title="Host worker slots in use / ceiling" className="@max-[50rem]:hidden">
         <span className="tabular-nums">
           {runningCount}/{config.autoRunner.maxConcurrentAttempts}
         </span>{' '}
@@ -67,13 +64,18 @@ function RunningReadout({ config, runningCount, onOpen }: { config: AppConfig; r
         type="button"
         onClick={onOpen}
         aria-label={`${runningCount} running across all workspaces — open Activity`}
-        className="flex items-center gap-2 rounded-md text-[13px] text-muted transition-colors duration-150 hover:text-ink"
+        title={title}
+        className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md text-[13px] text-muted transition-colors duration-150 hover:text-ink"
       >
         {body}
       </button>
     );
   }
-  return <span className="flex items-center gap-2 text-[13px] text-muted">{body}</span>;
+  return (
+    <span title={title} className="flex shrink-0 items-center gap-2 whitespace-nowrap text-[13px] text-muted">
+      {body}
+    </span>
+  );
 }
 
 /**
@@ -112,6 +114,14 @@ export function OperatorControls(props: OperatorControlsProps) {
   );
   const pauseText = globalPausePending ? 'Updating…' : globalPaused ? 'Resume' : 'Pause';
   const showRefresh = view === 'board' && trackerEnabled;
+  const readoutTitle =
+    [
+      config ? `${runningCount}/${config.autoRunner.maxConcurrentAttempts} host` : null,
+      cost24h ? `last 24h ${cost24h}` : null,
+      hostLoad ? `load ${hostLoad.load1.toFixed(2)} / ${hostLoad.load5.toFixed(2)} / ${hostLoad.load15.toFixed(2)} · ${hostLoad.cores} cores` : null,
+    ]
+      .filter((part) => part !== null)
+      .join(' · ') || undefined;
 
   if (layout === 'drawer') {
     return (
@@ -156,11 +166,18 @@ export function OperatorControls(props: OperatorControlsProps) {
               <dt className="text-label font-bold uppercase tracking-[0.08em] text-faint">Running</dt>
               <dd className="mt-0.5 tabular-nums text-ink">
                 {onOpenActivity ? (
-                  <button type="button" onClick={onOpenActivity} className="tabular-nums transition-colors duration-150 hover:text-accent" aria-label={`${runningCount} running across all workspaces — open Activity`}>
+                  <button
+                    type="button"
+                    onClick={onOpenActivity}
+                    className="tabular-nums transition-colors duration-150 hover:text-accent"
+                    aria-label={`${runningCount} running across all workspaces — open Activity`}
+                  >
                     {runningCount} / {config.autoRunner.maxConcurrentAttempts}
                   </button>
                 ) : (
-                  <>{runningCount} / {config.autoRunner.maxConcurrentAttempts}</>
+                  <>
+                    {runningCount} / {config.autoRunner.maxConcurrentAttempts}
+                  </>
                 )}
               </dd>
             </div>
@@ -227,11 +244,9 @@ export function OperatorControls(props: OperatorControlsProps) {
     <>
       {config && (
         <Switch checked={config.autoRunner.enabled} label="Auto-runner" onChange={onAutoRunnerChange}>
-          <span
-            className="text-[13px] text-muted"
-            title={`Host Ceiling: ${config.autoRunner.maxConcurrentAttempts}`}
-          >
-            Auto-runner <b className="font-semibold text-ink">{config.autoRunner.enabled ? 'on' : 'off'}</b>
+          <span className="whitespace-nowrap text-[13px] text-muted" title={`Host Ceiling: ${config.autoRunner.maxConcurrentAttempts}`}>
+            <span className="@max-[68rem]:hidden">Auto-runner </span>
+            <b className="font-semibold text-ink">{config.autoRunner.enabled ? 'on' : 'off'}</b>
           </span>
         </Switch>
       )}
@@ -241,31 +256,34 @@ export function OperatorControls(props: OperatorControlsProps) {
           aria-pressed={globalPaused}
           aria-label={globalPaused ? 'Resume fleet' : 'Pause fleet'}
           title={globalPaused ? 'Fleet paused — resume all execution' : 'Pause all execution'}
-          className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] font-semibold transition-colors duration-150 disabled:opacity-60 ${
+          className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] font-semibold @max-[82rem]:min-h-11 @max-[82rem]:min-w-11 transition-colors duration-150 disabled:opacity-60 ${
             globalPaused ? 'bg-paused-tint text-paused' : 'text-muted hover:bg-raised hover:text-ink'
           }`}
           disabled={globalPausePending}
           onClick={() => onGlobalPauseChange(!globalPaused)}
         >
           {pauseIcon}
-          {pauseText}
+          <span className="@max-[82rem]:sr-only">{pauseText}</span>
         </button>
       )}
-      {config && <RunningReadout config={config} runningCount={runningCount} onOpen={onOpenActivity} />}
+      {config && <RunningReadout config={config} runningCount={runningCount} onOpen={onOpenActivity} title={readoutTitle} />}
       {cost24h && (
-        <span className="text-[13px] text-muted" title="Cost over the last 24 hours">
-          <span className="text-faint">last 24h</span>{' '}
+        <span className="whitespace-nowrap text-[13px] text-muted @max-[68rem]:hidden" title="Cost over the last 24 hours">
+          <span className="text-faint">
+            <span className="@max-[82rem]:hidden">last </span>24h
+          </span>{' '}
           <b className="font-semibold tabular-nums text-ink">{cost24h}</b>
         </span>
       )}
       {hostLoad && (
-        <span
-          className="text-[13px] text-muted"
-          title={`Load average (1/5/15 min) · ${hostLoad.cores} cores`}
-        >
+        <span className="whitespace-nowrap text-[13px] text-muted @max-[68rem]:hidden" title={`Load average (1/5/15 min) · ${hostLoad.cores} cores`}>
           <span className="text-faint">load</span>{' '}
           <b className={`font-semibold tabular-nums ${hostLoad.saturated ? 'text-fail' : 'text-ink'}`}>
-            {hostLoad.load1.toFixed(2)} / {hostLoad.load5.toFixed(2)} / {hostLoad.load15.toFixed(2)}
+            {hostLoad.load1.toFixed(2)}
+            <span className="@max-[82rem]:hidden">
+              {' '}
+              / {hostLoad.load5.toFixed(2)} / {hostLoad.load15.toFixed(2)}
+            </span>
           </b>
         </span>
       )}
@@ -274,52 +292,54 @@ export function OperatorControls(props: OperatorControlsProps) {
         <button
           type="button"
           title="Rescan the tracker and mirror ticket changes now"
-          className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] font-medium text-muted transition-colors duration-150 hover:bg-raised hover:text-ink disabled:opacity-60"
+          className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] font-medium text-muted transition-colors duration-150 hover:bg-raised hover:text-ink disabled:opacity-60 @max-[82rem]:min-h-11 @max-[82rem]:min-w-11"
           disabled={refreshingTracker}
           onClick={onRefreshTracker}
         >
           <Icon name="refresh" className={refreshingTracker ? 'motion-safe:animate-spin' : ''} />
-          {refreshingTracker ? 'Refreshing…' : 'Refresh tickets'}
+          <span className="@max-[82rem]:sr-only">{refreshingTracker ? 'Refreshing…' : 'Refresh tickets'}</span>
         </button>
       )}
-      <button
-        type="button"
-        aria-label="About"
-        title="About"
-        className={`${touchTarget} rounded-md text-muted transition-colors duration-150 hover:bg-raised hover:text-ink`}
-        onClick={onOpenAbout}
-      >
-        <Icon name="help" />
-      </button>
-      <button
-        aria-label={THEME_LABELS[theme]}
-        title={THEME_LABELS[theme]}
-        className={`${touchTarget} rounded-md text-muted transition-colors duration-150 hover:bg-raised hover:text-ink`}
-        onClick={onThemeCycle}
-      >
-        <Icon name={THEME_ICONS[theme]} />
-      </button>
-      <button
-        aria-label="Settings"
-        aria-current={view === 'settings' ? 'page' : undefined}
-        title="Settings"
-        className={`${touchTarget} rounded-md transition-colors duration-150 ${
-          view === 'settings' ? 'bg-accent-tint text-accent' : 'text-muted hover:bg-raised hover:text-ink'
-        }`}
-        onClick={onSettingsClick}
-      >
-        <Icon name="settings" />
-      </button>
-      {passwordSet && (
+      <div className="flex items-center gap-x-3 @max-[50rem]:gap-x-0">
         <button
-          aria-label="Log out"
-          title="Log out"
+          type="button"
+          aria-label="About"
+          title="About"
           className={`${touchTarget} rounded-md text-muted transition-colors duration-150 hover:bg-raised hover:text-ink`}
-          onClick={onLogout}
+          onClick={onOpenAbout}
         >
-          <Icon name="logout" />
+          <Icon name="help" />
         </button>
-      )}
+        <button
+          aria-label={THEME_LABELS[theme]}
+          title={THEME_LABELS[theme]}
+          className={`${touchTarget} rounded-md text-muted transition-colors duration-150 hover:bg-raised hover:text-ink`}
+          onClick={onThemeCycle}
+        >
+          <Icon name={THEME_ICONS[theme]} />
+        </button>
+        <button
+          aria-label="Settings"
+          aria-current={view === 'settings' ? 'page' : undefined}
+          title="Settings"
+          className={`${touchTarget} rounded-md transition-colors duration-150 ${
+            view === 'settings' ? 'bg-accent-tint text-accent' : 'text-muted hover:bg-raised hover:text-ink'
+          }`}
+          onClick={onSettingsClick}
+        >
+          <Icon name="settings" />
+        </button>
+        {passwordSet && (
+          <button
+            aria-label="Log out"
+            title="Log out"
+            className={`${touchTarget} rounded-md text-muted transition-colors duration-150 hover:bg-raised hover:text-ink`}
+            onClick={onLogout}
+          >
+            <Icon name="logout" />
+          </button>
+        )}
+      </div>
     </>
   );
 }
