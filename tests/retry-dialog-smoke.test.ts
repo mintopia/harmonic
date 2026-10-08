@@ -177,6 +177,59 @@ describe('RetryDialog route picker keyboard', () => {
     await click(submitButton(host));
     expect(retry).toHaveBeenCalledWith({ guidance: '', startNow: false, harness: 'claude', model: 'claude-sonnet-5-5' });
   });
+  it('Tab closes the list and returns focus to the trigger so Tab continues from it', async () => {
+    const host = await mount();
+    const triggerButton = host.querySelector<HTMLElement>('#retry-route')!;
+    await click(triggerButton);
+    const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+    await act(async () => {
+      host.querySelector('[role=listbox]')!.dispatchEvent(event);
+      await flush();
+    });
+    expect(host.querySelector('[role=listbox]')).toBeNull();
+    expect(document.activeElement).toBe(triggerButton);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('tolerates End and ArrowUp with an empty catalog', async () => {
+    const host = await mount({ loadRoute: () => new Promise<HarnessChoices>(() => {}) });
+    await click(host.querySelector('#retry-route')!);
+    const list = host.querySelector('[role=listbox]')!;
+    await key(list, 'End');
+    await key(list, 'ArrowUp');
+    await key(list, 'Enter');
+    expect(host.querySelector('[role=listbox]')).not.toBeNull();
+    expect(list.hasAttribute('aria-activedescendant')).toBe(false);
+  });
+
+  it('focuses the list only when it opens, not on later renders', async () => {
+    const host = await mount();
+    await click(host.querySelector('#retry-route')!);
+    const textarea = host.querySelector<HTMLTextAreaElement>('#retry-guidance')!;
+    textarea.focus();
+    await act(async () => {
+      host.querySelector('[role=option]')!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      await flush();
+    });
+    await key(host.querySelector('[role=listbox]')!, 'ArrowDown');
+    expect(document.activeElement).toBe(textarea);
+  });
+
+  it('a native cancel (Escape) while the list is open closes only the list', async () => {
+    const onClose = vi.fn();
+    const host = await mount({ onClose });
+    await click(host.querySelector('#retry-route')!);
+    const cancel = new Event('cancel', { cancelable: true });
+    await act(async () => {
+      host.querySelector('dialog')!.dispatchEvent(cancel);
+      await flush();
+    });
+    expect(cancel.defaultPrevented).toBe(true);
+    expect(host.querySelector('[role=listbox]')).toBeNull();
+    expect(host.querySelector('dialog')).not.toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(host.querySelector('#retry-route'));
+  });
 });
 
 describe('Retry guidance recovery', () => {

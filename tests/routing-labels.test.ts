@@ -348,6 +348,54 @@ describe('Routing Labels (ADR-0049)', () => {
       expect(await tasks.routing.epicRoute(wsId, epicRef)).toMatchObject({ harness: 'codex', label: null });
     });
 
+    const containerOnly = (ref: number, labels: string[]) =>
+      tasks.syncTrackerContainers(wsId, [{
+        trackerRef: trackerRef(ref),
+        facts: { state: 'open', parent: null, blockedBy: [], labels, title: 'Epic', body: '', url: 'u', createdAt: '2026-08-07T00:00:00Z' },
+      }]);
+
+    it('falls through to the container row when the Task row labels match nothing', async () => {
+      await mirror(40, []);
+      await containerOnly(40, ['reasoning']);
+      expect(await tasks.routing.epicRoute(wsId, trackerRef(40))).toMatchObject({ harness: 'claude', model: 'claude-opus-5-5', label: 'reasoning' });
+    });
+
+    it('falls through to the defaults when neither the Task row nor the container row matches', async () => {
+      await mirror(42, ['bug']);
+      await containerOnly(42, ['epic']);
+      expect(await tasks.routing.epicRoute(wsId, trackerRef(42))).toMatchObject({ harness: 'claude', model: 'claude-sonnet-5-5', label: null });
+    });
+
+    it('a Model-only override keeps the default Harness and ignores the label', async () => {
+      const epicTask = await mirror(44, ['reasoning']);
+      await setOperator(epicTask.id, { model: 'claude-haiku-5-5' });
+      expect(await tasks.routing.epicRoute(wsId, trackerRef(44))).toMatchObject({ harness: 'claude', model: 'claude-haiku-5-5', label: null });
+    });
+
+    describe('a Harness-only override never inherits the Workspace Model of another Harness', () => {
+      beforeEach(async () => {
+        await settingsStore.setOverrides(wsId, { harness: 'claude', model: 'claude-opus-5-5' });
+      });
+
+      it('on an Epic', async () => {
+        const epicTask = await mirror(46, []);
+        await setOperator(epicTask.id, { harness: 'codex' });
+        const route = await tasks.routing.epicRoute(wsId, trackerRef(46));
+        expect(route).toMatchObject({ harness: 'codex' });
+        expect(route.ok && route.model).toBe(config.harnesses.codex!.defaultModel);
+      });
+
+      it('on a Ticket', async () => {
+        const ticketTask = await mirror(48, []);
+        await setOperator(ticketTask.id, { harness: 'codex' });
+        expect(await tasks.get(ticketTask.id)).toMatchObject({ harness: 'codex', model: config.harnesses.codex!.defaultModel });
+      });
+
+      it('keeps the Workspace Model when the Harness is unchanged', async () => {
+        expect((await tasks.get((await mirror(50, [])).id))).toMatchObject({ harness: 'claude', model: 'claude-opus-5-5' });
+      });
+    });
+
     it('an Epic with no stored row falls back to the defaults', async () => {
       expect(await tasks.routing.epicRoute(wsId, trackerRef(99))).toMatchObject({ harness: 'claude', label: null });
     });

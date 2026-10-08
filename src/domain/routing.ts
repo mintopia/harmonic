@@ -26,9 +26,11 @@ export function defaultRoute(
   route: RoutingLabel | null,
   harnessOverride: string | null = null,
 ): { harness: string; model: string } {
-  const harness = harnessOverride ?? route?.harness ?? resolveScoped('harness', workspace.harness, config.defaults.harness);
+  const scopeHarness = resolveScoped('harness', workspace.harness, config.defaults.harness);
+  const harness = harnessOverride ?? route?.harness ?? scopeHarness;
   const defaultModel = harnessConfig(config, harness)?.defaultModel ?? '';
-  return { harness, model: route ? route.model || defaultModel : resolveScoped('model', workspace.model, defaultModel) };
+  if (route) return { harness, model: route.model || defaultModel };
+  return { harness, model: harness === scopeHarness ? resolveScoped('model', workspace.model, defaultModel) : defaultModel };
 }
 
 export class RoutingService {
@@ -88,7 +90,11 @@ export class RoutingService {
       await db.select().from(tasks).where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.trackerRef, epicRef))).get(),
     ] as const);
     const overridden = !!task && !routeApplies(task);
-    const route = overridden ? null : task ? this.matchRoute(task, labels) : container ? this.matchRoute({ origin: 'mirrored', trackerLabels: container.trackerLabels }, labels) : null;
+    const route = overridden
+      ? null
+      : (task && this.matchRoute(task, labels)) ||
+        (container && this.matchRoute({ origin: 'mirrored', trackerLabels: container.trackerLabels }, labels)) ||
+        null;
     const target = defaultRoute(config, workspace, route, task?.harness ?? null);
     return resolveRoute(config, target.harness, task?.model ?? target.model, route?.label ?? null);
   }
