@@ -43,14 +43,17 @@ export interface OperatorControlsProps {
 function RunningReadout({ config, runningCount, onOpen, title }: { config: AppConfig; runningCount: number; onOpen?: () => void; title?: string }) {
   const body = (
     <>
-      <span aria-hidden="true" className={`size-[7px] rounded-full ${runningCount > 0 ? 'bg-running-dot motion-safe:animate-pulse' : 'bg-faint'}`} />
+      <span
+        aria-hidden="true"
+        className={`size-[7px] rounded-full ${runningCount > 0 ? 'bg-running-dot motion-safe:animate-pulse' : 'bg-faint'}`}
+      />
       <span>
         <b className={`font-semibold ${runningCount > 0 ? 'text-ink' : 'text-muted'}`}>{runningCount}</b> running
       </span>
-      <span aria-hidden="true" className="text-faint @max-[50rem]:hidden">
+      <span aria-hidden="true" className="text-faint @max-[56rem]:hidden">
         ·
       </span>
-      <span title="Host worker slots in use / ceiling" className="@max-[50rem]:hidden">
+      <span title="Host worker slots in use / ceiling" className="@max-[56rem]:hidden">
         <span className="tabular-nums">
           {runningCount}/{config.autoRunner.maxConcurrentAttempts}
         </span>{' '}
@@ -71,11 +74,7 @@ function RunningReadout({ config, runningCount, onOpen, title }: { config: AppCo
       </button>
     );
   }
-  return (
-    <span title={title} className="flex shrink-0 items-center gap-2 whitespace-nowrap text-[13px] text-muted">
-      {body}
-    </span>
-  );
+  return <span title={title} className="flex shrink-0 items-center gap-2 whitespace-nowrap text-[13px] text-muted">{body}</span>;
 }
 
 /**
@@ -166,18 +165,11 @@ export function OperatorControls(props: OperatorControlsProps) {
               <dt className="text-label font-bold uppercase tracking-[0.08em] text-faint">Running</dt>
               <dd className="mt-0.5 tabular-nums text-ink">
                 {onOpenActivity ? (
-                  <button
-                    type="button"
-                    onClick={onOpenActivity}
-                    className="tabular-nums transition-colors duration-150 hover:text-accent"
-                    aria-label={`${runningCount} running across all workspaces — open Activity`}
-                  >
+                  <button type="button" onClick={onOpenActivity} className="tabular-nums transition-colors duration-150 hover:text-accent" aria-label={`${runningCount} running across all workspaces — open Activity`}>
                     {runningCount} / {config.autoRunner.maxConcurrentAttempts}
                   </button>
                 ) : (
-                  <>
-                    {runningCount} / {config.autoRunner.maxConcurrentAttempts}
-                  </>
+                  <>{runningCount} / {config.autoRunner.maxConcurrentAttempts}</>
                 )}
               </dd>
             </div>
@@ -244,9 +236,11 @@ export function OperatorControls(props: OperatorControlsProps) {
     <>
       {config && (
         <Switch checked={config.autoRunner.enabled} label="Auto-runner" onChange={onAutoRunnerChange}>
-          <span className="whitespace-nowrap text-[13px] text-muted" title={`Host Ceiling: ${config.autoRunner.maxConcurrentAttempts}`}>
-            <span className="@max-[68rem]:hidden">Auto-runner </span>
-            <b className="font-semibold text-ink">{config.autoRunner.enabled ? 'on' : 'off'}</b>
+          <span
+            className="whitespace-nowrap text-[13px] text-muted"
+            title={`Host Ceiling: ${config.autoRunner.maxConcurrentAttempts}`}
+          >
+            <span className="@max-[46rem]:hidden">Auto-runner </span><b className="font-semibold text-ink">{config.autoRunner.enabled ? 'on' : 'off'}</b>
           </span>
         </Switch>
       )}
@@ -269,21 +263,19 @@ export function OperatorControls(props: OperatorControlsProps) {
       {config && <RunningReadout config={config} runningCount={runningCount} onOpen={onOpenActivity} title={readoutTitle} />}
       {cost24h && (
         <span className="whitespace-nowrap text-[13px] text-muted @max-[68rem]:hidden" title="Cost over the last 24 hours">
-          <span className="text-faint">
-            <span className="@max-[82rem]:hidden">last </span>24h
-          </span>{' '}
+          <span className="text-faint"><span className="@max-[82rem]:hidden">last </span>24h</span>{' '}
           <b className="font-semibold tabular-nums text-ink">{cost24h}</b>
         </span>
       )}
       {hostLoad && (
-        <span className="whitespace-nowrap text-[13px] text-muted @max-[68rem]:hidden" title={`Load average (1/5/15 min) · ${hostLoad.cores} cores`}>
+        <span
+          className="whitespace-nowrap text-[13px] text-muted @max-[68rem]:hidden"
+          title={`Load average (1/5/15 min) · ${hostLoad.cores} cores`}
+        >
           <span className="text-faint">load</span>{' '}
           <b className={`font-semibold tabular-nums ${hostLoad.saturated ? 'text-fail' : 'text-ink'}`}>
             {hostLoad.load1.toFixed(2)}
-            <span className="@max-[82rem]:hidden">
-              {' '}
-              / {hostLoad.load5.toFixed(2)} / {hostLoad.load15.toFixed(2)}
-            </span>
+            <span className="@max-[82rem]:hidden"> / {hostLoad.load5.toFixed(2)} / {hostLoad.load15.toFixed(2)}</span>
           </b>
         </span>
       )}
