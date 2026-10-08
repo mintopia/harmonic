@@ -32,6 +32,7 @@ import type { RoutingLabelOverlayEntry, TaskExportStatus, Workspace } from '../t
 import { RoutingLabelOverlayEditor } from '../components/RoutingLabelOverlayEditor';
 import { SecretField, IssueTrackerSection, CodeRepositorySection, TriageLabelsSection } from '../components/TrackerSettings';
 import { SettingsSection } from '../components/SettingsSection';
+import { PromptsTab } from '../components/prompts/PromptsTab';
 import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline, verificationAttempts as storyVerificationAttempts, verifierStatuses } from './fixtures';
 
 const mergedSteps: MergeStepEvent[] = [
@@ -125,6 +126,31 @@ function SettingsStory() {
           <GlobalVerificationSettings config={config} setConfig={setConfig} fieldErrors={{}} />
         </section>
       </div>
+    </div>
+  );
+}
+
+function PromptsTabStory() {
+  const baseline = structuredClone(storyConfig);
+  const seed = structuredClone(storyConfig);
+  seed.promptFragments.selfHeal = `${seed.promptFragments.selfHeal}\nRe-read the failing output before you change anything.`;
+  seed.verify.task.preMerge.critics = [
+    { id: 'critic-correctness', name: 'Correctness', issuePrompt: 'Review the diff for {title}.', noIssuePrompt: 'Review the diff for correctness.', model: 'claude-opus-5', harness: 'claude', timeoutSeconds: 300 },
+  ];
+  const [config, setConfig] = useState(seed);
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24 }}>
+      <PromptsTab
+        ctx={{
+          surface: 'global',
+          config,
+          baseline,
+          setConfig,
+          errors: {},
+          harnessPermissionModes: {},
+          channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
+        }}
+      />
     </div>
   );
 }
@@ -505,6 +531,7 @@ function RoutingOverlayStory() {
 
 const STORIES: Record<string, () => JSX.Element> = {
   settings: SettingsStory,
+  'prompts-tab': PromptsTabStory,
   board: BoardStory,
   'critic-running': CriticRunningStory,
   'critic-prompts': CriticPromptsStory,
