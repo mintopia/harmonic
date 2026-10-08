@@ -102,6 +102,10 @@ export async function registerRoutes(app: App, ctx: AppContext, contexts: AppCon
   if (existsSync(webRoot)) {
     await app.register(fastifyStatic, {
       root: webRoot,
+      // Release tarballs pin mtimes and index.html keeps its size across versions, so
+      // size+mtime validators would 304 an upgraded browser onto the previous bundle.
+      etag: false,
+      lastModified: false,
       setHeaders(reply, filePath) {
         const cacheControl = cacheControlForStaticFile(filePath);
         if (cacheControl) reply.header('Cache-Control', cacheControl);
