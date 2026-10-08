@@ -20,7 +20,6 @@ import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig } from '../config.js';
 import type { TaskRow, AttemptRow, StepRow } from '../db/schema.js';
 import { SessionStore } from '../domain/sessions.js';
-import { type DeterministicContinuation } from '../domain/session-continuation.js';
 import { DomainError } from '../domain/errors.js';
 import { AttemptStore, type AttemptGuardrailSnapshot } from '../domain/attempts.js';
 import type { EscalationCause } from '../domain/task-routing.js';
@@ -433,16 +432,15 @@ export class Runner {
     const run = attempts.at(-1);
     const escalated = attempts.findLast((attempt) => attempt.state === 'escalated');
     if (escalated && trimmed) await this.attempts.setFeedback(escalated.id, trimmed);
-    let choice: 'full' | 'condensed' | undefined;
-    let continuation: DeterministicContinuation | undefined;
-    if (run) {
-      continuation = await this.sessionContinuation.decideContinuation(task, run, await this.getWorkspace?.(task.workspaceId));
-      choice = continuation.path === 'continued-session' ? 'full' : 'condensed';
-    }
-    if (startNow) choice = reuseSession ? 'full' : 'condensed';
+    const choice = startNow ? (reuseSession ? 'full' : 'condensed') : undefined;
     await this.taskService.requeue(task.id, trimmed, choice);
     if (startNow) {
-      if (continuation && reuseSession) this.activeRuns.setPendingContinuation(task.id, continuation);
+      if (run && reuseSession) {
+        this.activeRuns.setPendingContinuation(
+          task.id,
+          await this.sessionContinuation.decideContinuation(task, run, await this.getWorkspace?.(task.workspaceId)),
+        );
+      }
       await this.start(task.id);
     }
   }

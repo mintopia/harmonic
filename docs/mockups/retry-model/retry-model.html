@@ -250,7 +250,7 @@ dl.props dd{margin:0}
   <div class="thr"><h1>Summarise release notes</h1><span class="pill escalated" style="margin-top:10px">escalated</span></div>
   <dl class="props" style="margin-bottom:16px">
     <div><dt class="label">Priority</dt><dd>normal</dd></div>
-    <div><dt class="label">Agent</dt><dd>Claude &middot; Opus 5.5 <span class="tchip">&#8627; <code>reasoning</code></span></dd></div>
+    <div><dt class="label">Agent</dt><dd>Claude &middot; Opus 5.5 <span class="rtag">&mdash; routed by <code>reasoning</code></span></dd></div>
   </dl>
   <div class="banner"><span class="hd">Escalated</span><div class="bd2">Attempt 1 failed: the Model hit its context limit after 3 retries.</div></div>
   <div class="footerbar">
@@ -268,7 +268,7 @@ dl.props dd{margin:0}
   <div class="blk"><label class="label fl2">Harness and Model</label>
     <div class="select"><span>Claude &middot; Opus 5.5 <span class="tchip" style="margin-left:6px">&#8627; <code>reasoning</code></span></span></div></div>
   <div class="blk"><label class="label fl2">When</label><div class="seg"><span class="on">Retry</span><span>Retry Now</span></div>
-    <div class="dis">Queues a fresh Attempt.</div></div>
+    <div class="dis">Queues the next Attempt. It continues the current Session if that is still warm and you kept the same Harness and Model.</div></div>
   <div class="acts"><span class="btnghost">Cancel</span><span class="btnprimary">Retry</span></div>
 </div></div>
 

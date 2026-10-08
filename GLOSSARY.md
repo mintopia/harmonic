@@ -334,7 +334,9 @@ reaches it only via: (1) attempt counter exhausted, (2) a guardrail trip
 unresolved merge conflict after the bounded resolve turns, (5) a red
 post-merge check (its revert recorded on the timeline). Exactly three
 actions there: **Retry** (optional guidance becomes feedback, counter
-resets, the Ticket **requeues** to *ready* — capacity picks it up, or **Retry
+resets, the Ticket **requeues** to *ready* — capacity picks it up, and the
+Attempt continues the prior Session only if it is still warm and the Harness
+and Model are unchanged, else starts a fresh one — or **Retry
 Now** starts it immediately on a fresh Session, or on the prior one when the
 operator asks to re-use it; the operator may also pick a Harness and Model,
 saved on the Ticket so they replace its Routing Label), **Accept** (counts

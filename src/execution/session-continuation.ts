@@ -81,7 +81,8 @@ export class SessionContinuation {
     try {
       const src = await this.resolveContinuationSource(task);
       if (!src) return run;
-      if (!this.resumeEligibilityFor(task, src.session).eligible) return run;
+      const eligibility = this.resumeEligibilityFor(task, src.session);
+      if (!eligibility.eligible) return run;
 
       const cacheWarmSeconds = configuredCacheWarmSeconds(this.getConfig(), task.harness);
       if (cacheWarmSeconds === undefined) return run;
@@ -89,6 +90,10 @@ export class SessionContinuation {
 
       if (plan.mode === 'offer-choice' && task.continuationChoice === 'condensed') {
         return run;
+      }
+      if (task.continuationChoice !== 'full') {
+        const warm = plan.mode === 'offer-choice' && plan.continueFull.estimate.band === 'warm';
+        if (eligibility.modelChanged || !warm) return run;
       }
 
       const bound = await this.attempts.update(run.id, {

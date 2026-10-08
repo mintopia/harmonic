@@ -103,7 +103,7 @@ describe('scopedKeyAllowed', () => {
     expect(scopedKeyAllowed('/api/tasks/1/close')).toBe(false);
   });
 
-  it('blocks epic-reject on Epics', () => {
+  it('blocks Retry on Epics', () => {
     expect(scopedKeyAllowed('/api/workspaces/1/epics/2/retry')).toBe(false);
   });
 
