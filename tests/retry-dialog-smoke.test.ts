@@ -65,7 +65,7 @@ describe('RetryDialog', () => {
   it('queues a Retry with empty guidance and sends no route when unchanged', async () => {
     const retry = vi.fn(async (_body: RetryBody) => {});
     const host = await mount({ retry });
-    expect(host.textContent).toContain('Retry Task 7');
+    expect(host.textContent).toContain('Retry #7');
     expect(host.textContent).toContain('Guidance (optional)');
     expect(host.textContent).toContain('reasoning');
     expect(submitButton(host).textContent).toBe('Retry');
