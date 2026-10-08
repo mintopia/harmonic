@@ -257,6 +257,10 @@ wins. A ticket's Harness and Model come from the first of these that is set:
 3. The Workspace default.
 4. The global default.
 
+The label is all or nothing. If you set either the Harness or the Model on
+a ticket, the Routing Label is skipped, and the field you didn't set comes
+from the Workspace default, then the global default.
+
 ### In a Workspace
 
 Global rows are managed in Global settings. In a Workspace's settings you
