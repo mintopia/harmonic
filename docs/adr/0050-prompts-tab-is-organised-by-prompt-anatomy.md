@@ -37,7 +37,8 @@ from the runtime.
   "Unattended drive" section on the Execution tab. They are behaviour, not
   prompt text.
 - The Prompts tab is one bare section; layout responds to the panel width
-  (container query), not the viewport.
+  (measured with a ResizeObserver so the tablist orientation and the narrow
+  preview disclosure share one source), not the viewport.
 
 ## Consequences
 
