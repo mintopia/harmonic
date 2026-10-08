@@ -1,5 +1,6 @@
 import type { TicketTimelineEvent } from './types.js';
 import { exportFactRows } from './task-export-model.js';
+import { formatModelLabel } from './components/TaskIdentity.js';
 import { harnessLabel } from './task-detail-model.js';
 import { mergeStepRow, type MergeStepEvent } from './merge-progress-model.js';
 import { epicLabel, issueRef, taskKey, taskLabel } from './id-format.js';
@@ -153,7 +154,7 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
         const route = record(value);
         const harness = text(route?.harness);
         const model = text(route?.model);
-        return harness ? (model ? `${harnessLabel(harness)} ${model}` : harnessLabel(harness)) : 'default';
+        return harness ? (model ? `${harnessLabel(harness)} ${formatModelLabel(model)}` : harnessLabel(harness)) : 'default';
       };
       const label = text(payload?.label);
       const session = payload?.sessionKept === true ? 'warm Session kept' : 'fresh Session started';

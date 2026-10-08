@@ -21,7 +21,7 @@ import { ConversationList } from './ConversationList';
 import { ElicitationPrompt } from './ElicitationPrompt';
 import { PathTail } from './PathTail';
 import { PermissionRules } from './PermissionRules';
-import { providerLabel } from './TaskIdentity';
+import { formatModelLabel, providerLabel } from './TaskIdentity';
 import { Icon } from './Icon';
 import { Composer, ContextMeter } from './conversation/Composer';
 import { StreamAnnouncer, Transcript } from './conversation/Transcript';
@@ -169,7 +169,7 @@ export function ConversationContextDrawer({
             </div>
             <div className="grid grid-cols-[5rem_1fr] items-center gap-3 border-b border-hairline py-2">
               <dt className="text-small text-faint">Model</dt>
-              <dd className="font-data text-data text-muted">{conversation.model}</dd>
+              <dd className="font-data text-data text-muted" title={conversation.model}>{formatModelLabel(conversation.model)}</dd>
             </div>
             <div className="grid grid-cols-[5rem_1fr] items-center gap-3 py-2">
               <dt className="text-small text-faint">Directory</dt>

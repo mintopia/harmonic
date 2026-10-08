@@ -16,7 +16,7 @@ import {
 } from './RoutingLabelsEditor';
 import { isIssueVisible, issuesByIndex, newLocalEntry, overlayRows, routingIssueText } from './routing-label-overlay-model';
 import { Switch } from './Switch';
-import { providerLabel } from './TaskIdentity';
+import { formatModelLabel, providerLabel } from './TaskIdentity';
 
 const globalChip = `${chip} bg-raised text-muted`;
 
@@ -97,7 +97,7 @@ export function RoutingLabelOverlayEditor({
                 <>
                   <span className={`${stackedCell} text-ink ${dim}`}>{providerLabel(global.harness)}</span>
                   <span className={`${stackedCell} min-w-0 truncate font-data text-data text-ink ${dim}`} title={global.model}>
-                    {global.model}
+                    {formatModelLabel(global.model)}
                   </span>
                 </>
               ) : (

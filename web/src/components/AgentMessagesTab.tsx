@@ -1,3 +1,4 @@
+import { formatModelLabel } from './TaskIdentity';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   NO_THREAD_FILTER,
@@ -175,7 +176,7 @@ function AgentCardView({ card, workspaceId }: { card: AgentCard; workspaceId: nu
               <>
                 {' · '}
                 <code className="rounded-md border border-hairline bg-surface px-[5px] font-data text-micro text-syntax-title">
-                  {card.model}
+                  {formatModelLabel(card.model)}
                 </code>
               </>
             )}

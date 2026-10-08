@@ -1,3 +1,4 @@
+import { formatModelLabel } from './TaskIdentity';
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { formatCost } from "../cost";
@@ -233,7 +234,7 @@ function Lane({
               )
             ))}
         </div>
-        <div className="mt-1 truncate text-small text-muted">{model}</div>
+        <div className="mt-1 truncate text-small text-muted" title={model}>{formatModelLabel(model)}</div>
       </div>
       <ContextMeter process={process} node={node} config={config} />
       <div className="text-right tabular-nums text-ink">
