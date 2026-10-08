@@ -224,6 +224,7 @@ describe('worktree', () => {
       const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
 
       await waitFor(async () => {
+        if (git(repo, 'branch', '--list', run.branch) === '') return true;
         try {
           git(repo, 'branch', '-D', run.branch);
           return true;
