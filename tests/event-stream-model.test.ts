@@ -111,6 +111,17 @@ describe('coalesceEvents', () => {
     expect(item && item.kind === 'tool' && item.tool.output).toBe('Tests 12 passed');
   });
 
+  it('unwraps tool output that arrives as one markdown code fence', () => {
+    const output = (text: string) => {
+      const [item] = coalesceEvents([evt(1, 'session_update', { sessionUpdate: 'tool_call_update', toolCallId: 't', content: [{ content: { text } }] })]);
+      return item && item.kind === 'tool' ? item.tool.output : undefined;
+    };
+    expect(output('```console\ntests/a.test.ts\ntests/b.test.ts\n```')).toBe('tests/a.test.ts\ntests/b.test.ts');
+    expect(output('````\nhas ``` inside\n````\n')).toBe('has ``` inside');
+    expect(output('```console\none\n```\nprose\n```\ntwo\n```')).toBe('```console\none\n```\nprose\n```\ntwo\n```');
+    expect(output('see:\n```\nx\n```')).toBe('see:\n```\nx\n```');
+  });
+
   it('retains an ACP structured diff block alongside textual output', () => {
     const call = evt(1, 'session_update', {
       sessionUpdate: 'tool_call',
