@@ -82,6 +82,7 @@ export class EventBus {
     this.emitter.setMaxListeners(100);
     this.emitter.on('attempt_changed', (run: AttemptRow) => {
       if (run.endedAt != null) this.scheduleClear(run.id);
+      else this.cancelClear(run.id);
     });
   }
 
@@ -95,7 +96,13 @@ export class EventBus {
     this.clearTimers.set(attemptId, timer);
   }
 
-  /** Drop both the builder and critic replay buffers for an Attempt. */
+  private cancelClear(attemptId: number): void {
+    const timer = this.clearTimers.get(attemptId);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this.clearTimers.delete(attemptId);
+  }
+
   clearAttemptLog(attemptId: number): void {
     this.attemptLogEvents.delete(attemptId);
     this.criticLogEvents.delete(attemptId);

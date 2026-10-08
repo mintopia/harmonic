@@ -42,5 +42,16 @@ describe('run log firehose', () => {
       expect([...bus.replayCriticLog({ attemptId: 42, after: 0 })]).toEqual([]);
       expect(bus.latestAttemptLogSeq({ attemptId: 42 })).toBe(0);
     });
+
+    it('keeps the buffers when an escalated Attempt is resumed within the grace window', () => {
+      vi.useFakeTimers();
+      const bus = new EventBus(1_000);
+      bus.emitAttemptLog(event(1));
+      bus.emit('attempt_changed', { id: 42, endedAt: 1 } as AttemptRow);
+      vi.advanceTimersByTime(500);
+      bus.emit('attempt_changed', { id: 42, endedAt: null } as AttemptRow);
+      vi.advanceTimersByTime(5_000);
+      expect([...bus.replayAttemptLog({ attemptId: 42, after: 0 })]).toHaveLength(1);
+    });
   });
 });
