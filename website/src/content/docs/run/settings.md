@@ -249,8 +249,8 @@ the list. Labels are free text and match case-insensitively. A label can
 appear only once in the list. The Harness picker lists the Harnesses you
 have configured.
 
-When an issue carries more than one routing label, the first one in the list
-wins. The ticket's Harness and Model are chosen in this order:
+When an issue carries more than one Routing Label, the first one in the list
+wins. A ticket's Harness and Model come from the first of these that is set:
 
 1. The Harness or Model you set on the ticket yourself.
 2. The Routing Label.
@@ -281,7 +281,7 @@ already customised their list.
 ### What you see
 
 A ticket on the Board shows a small *routed by* tag with the label next to its
-Harness and model. The ticket page shows the same beside the Agent. If you set
+Harness and Model. The ticket page shows the same beside the Agent. If you set
 the Harness or Model on the ticket yourself, the page says *set on this
 Ticket* and shows the label struck through as not applied.
 
@@ -292,11 +292,10 @@ was removed after the label was saved), the ticket is escalated instead of
 running on a default, and no Attempt starts. The ticket page names the label
 and the Harness and offers two ways out:
 
-- **Set Harness on this Ticket**, which overrides the label for that ticket
-  only, or fix the problem for every ticket by configuring the Harness in
-  Global settings under **Integrations**, **Harnesses**, or by changing the
-  label's route.
-- **Retry**, which starts a new Attempt once the problem is fixed.
+- **Set Harness on this Ticket** overrides the label for that ticket only. To
+  fix it for every ticket, configure the Harness in Global settings under
+  **Integrations**, **Harnesses**, or change the label's route.
+- **Retry** starts a new Attempt once the problem is fixed.
 
 ## Agent Messages
 
