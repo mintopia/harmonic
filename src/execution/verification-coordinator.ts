@@ -17,6 +17,7 @@ import { DomainError } from '../domain/errors.js';
 import { NO_PROMPT_FRAGMENT_OVERRIDES, type PromptFragmentOverrideKey } from '../domain/prompt-fragments.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { SessionStore } from '../domain/sessions.js';
+import type { RoutingService } from '../domain/routing.js';
 import type { TaskService } from '../domain/tasks.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { resolveEpicResolverPrompts, resolvePromptFragments, resolveVerifiers, type ResolvedVerifiers } from '../domain/setting-override.js';
@@ -63,6 +64,7 @@ type VerifierWorkspace = Pick<
 
 export interface VerificationCoordinatorDeps {
   taskService: TaskService;
+  routing: Pick<RoutingService, 'unroutedHarness' | 'epicRoute'>;
   attempts: AttemptStore;
   verificationAttempts: VerificationAttemptStore;
   sessionStore: SessionStore;
@@ -301,7 +303,7 @@ export class VerificationCoordinator {
       if (!oid) {
         verdicts.push(await this.noVerifiedHeadVerdict(task, 'critic', record));
       } else {
-        const criticHarnessId = critic.harness ?? await this.deps.taskService.unroutedHarness(task.id);
+        const criticHarnessId = critic.harness ?? await this.deps.routing.unroutedHarness(task.id);
         const criticHarness = this.resolveCriticHarness(config, criticHarnessId);
         const baseOid =
           run.branch && run.baseBranch
@@ -395,7 +397,7 @@ export class VerificationCoordinator {
     const config = this.deps.getConfig();
     const resolver = resolveEpicResolverPrompts(await this.deps.getWorkspace?.(input.workspaceId), config);
     const branch = integrationBranchName(input.epicRef);
-    const { harness: harnessId, model, label } = await this.deps.taskService.epicRoute(input.workspaceId, input.epicRef);
+    const { harness: harnessId, model, label } = await this.deps.routing.epicRoute(input.workspaceId, input.epicRef);
     const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
     if (!harness) throw new Error(`harness '${harnessId}'${label ? ` (routed by label '${label}')` : ''} is not configured for Epic verification resolution`);
     const worktreePath = input.worktreePath;

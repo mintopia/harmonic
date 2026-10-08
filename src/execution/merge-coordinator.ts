@@ -1,4 +1,5 @@
 import type { TrackerRef } from '../tracker/adapter.js';
+import type { RoutingService } from '../domain/routing.js';
 import { Git } from './git.js';
 import { reportFailure } from '../error-handling.js';
 import type { AppConfig } from '../config.js';
@@ -79,7 +80,7 @@ export interface MergeCoordinatorDeps {
   postMerge: RunnerOptions['postMerge'];
   urlFor: (task: TaskRow) => string | null;
   listWorkingTasks: () => Promise<TaskRow[]>;
-  epicRoute: (workspaceId: number, epicRef: TrackerRef) => Promise<{ harness: string; model: string; label: string | null }>;
+  routing: Pick<RoutingService, 'epicRoute'>;
   latestAttemptFor: (task: Pick<TaskRow, 'id'>) => Promise<AttemptRow>;
   updateStep: (taskId: number, id: number, patch: Parameters<AttemptStore['updateStep']>[1]) => Promise<Awaited<ReturnType<AttemptStore['updateStep']>>>;
   criticUpdateRelay: (attemptId: number) => (update: { sessionUpdate: string; [key: string]: unknown }) => void;
@@ -203,7 +204,7 @@ export class MergeCoordinator {
     const config = this.deps.getConfig();
     const epicAttempt = (await this.deps.attempts.listForEpic({ workspaceId: input.workspaceId, epicRef: input.epicRef })).at(-1);
     const host = (await this.deps.listWorkingTasks()).find((task) => task.baseBranch === input.integrationBranch);
-    const { harness: harnessId, model, label } = await this.deps.epicRoute(input.workspaceId, input.epicRef);
+    const { harness: harnessId, model, label } = await this.deps.routing.epicRoute(input.workspaceId, input.epicRef);
     const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
     const deps: MergePolicyDeps = {
       resolveConflictTurn: async (ctx) => {
