@@ -334,7 +334,7 @@ function SchemaField({
         }}
       />
       {cleartext && (
-        <p role="alert" className="mt-1 text-small text-amber">
+        <p role="alert" className="mt-1 text-small text-running">
           This address is not HTTPS, so your token and requests travel unencrypted. Use it only on a network you trust.
         </p>
       )}

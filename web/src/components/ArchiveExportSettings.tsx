@@ -124,7 +124,7 @@ function WsShell({
     <div>
       <div className="mb-1.5 flex min-h-6 items-center gap-2">
         <label className={`${labelType} whitespace-nowrap text-muted`} htmlFor={htmlFor}>{label}</label>
-        {overridden && <span className="shrink-0 text-small text-amber">Modified</span>}
+        {overridden && <span className="shrink-0 text-small text-running">Modified</span>}
         <span className="ml-auto" title={locked ? 'Set in Global settings' : undefined}>
           <Switch checked={overridden} onChange={(on) => onOverride?.(on)} label={`Override ${label}`} disabled={locked} />
         </span>

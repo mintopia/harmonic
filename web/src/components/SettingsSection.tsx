@@ -125,7 +125,7 @@ export function PromptField({
   value: string;
   onChange: (value: string) => void;
   placeholders: Placeholder[];
-  preview: string | LabeledPreview[];
+  preview?: string | LabeledPreview[];
   error?: string;
   rows?: number;
   textareaClass?: string;
@@ -164,7 +164,7 @@ export function PromptField({
         onChange={(e) => onChange(e.target.value)}
       />
       <FieldError message={error} />
-      <PromptPreview text={preview} />
+      {preview !== undefined && <PromptPreview text={preview} />}
     </div>
   );
 }

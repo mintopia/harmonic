@@ -17,22 +17,9 @@ import type { RunnerOptions } from './runner.js';
 import type { RunnerEvents } from './runner-options.js';
 import type { TaskArchive } from '../archive/task-archive.js';
 import { resolveMergePrompts } from '../domain/setting-override.js';
-import { expandFragments, fillTemplate } from './prompt-template.js';
+import { renderConflictPrompt } from './prompt-assembly.js';
 
 export const RESOLVE_TURN_TIMEOUT_MS = 10 * 60 * 1000;
-
-type ConflictCtx = { turn: number; baseBranch: string; taskBranch: string; unmergedPaths: string[]; baseDir: string };
-
-/** Render a conflict-resolution turn prompt from its configured template, expanding Prompt Fragments and filling the merge placeholders. */
-export function renderConflictPrompt(template: string, fragments: Record<string, string>, ctx: ConflictCtx): string {
-  return fillTemplate(expandFragments(template, fragments), {
-    turn: ctx.turn,
-    taskBranch: ctx.taskBranch,
-    baseBranch: ctx.baseBranch,
-    baseDir: ctx.baseDir,
-    paths: ctx.unmergedPaths.map((path) => `- ${path}`).join('\n'),
-  });
-}
 
 /**
  * Thrown by {@link MergeCoordinator.resolveBaseBranch} when a worktree Attempt's base branch

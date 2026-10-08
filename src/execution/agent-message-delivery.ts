@@ -5,35 +5,12 @@ import { logger } from '../logger.js';
 import type { FailureReport } from '../error-handling.js';
 import type { RunControl } from './run-control.js';
 import type { PromptFragments } from '../domain/prompt-fragments.js';
-import { renderFragment } from './prompt-template.js';
+import { peerFrame } from './prompt-assembly.js';
 
 export interface AgentMessageRunner {
   hasLiveAgent(taskId: number): boolean;
   trackBackground(op: () => Promise<unknown>, report: FailureReport): void;
   runControl: Pick<RunControl, 'steerWithMode'>;
-}
-
-const harnessLabel = (harness: string): string => harness.charAt(0).toUpperCase() + harness.slice(1);
-
-/** Names the sending Task so the Agent never mistakes it for an operator instruction. */
-export function peerFrame(sender: Pick<TaskRow, 'id' | 'harness'>, text: string, fragments: PromptFragments): string {
-  return renderFragment('peerLiveMessage', fragments, { taskId: sender.id, harness: harnessLabel(sender.harness), text });
-}
-
-/** Held messages as a prompt section, in send order. */
-export function peerMessagesSection(
-  rows: readonly AgentMessageRow[],
-  senderHarness: (taskId: number) => string,
-  fragments: PromptFragments,
-): string {
-  const entries = rows.map((row) =>
-    renderFragment('peerMessage', fragments, {
-      taskId: row.senderTaskId,
-      harness: harnessLabel(senderHarness(row.senderTaskId)),
-      text: messageText(row),
-    }),
-  );
-  return renderFragment('peerMessages', fragments, { messages: entries.join('\n\n') });
 }
 
 /** Delivers to each recipient and records its receipt; no steerable run means held. */

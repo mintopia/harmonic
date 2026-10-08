@@ -11,17 +11,18 @@ import {
   type PromptFragments,
 } from '../src/domain/prompt-fragments.js';
 import { resolvePromptFragments } from '../src/domain/setting-override.js';
-import { peerFrame, peerMessagesSection } from '../src/execution/agent-message-delivery.js';
+import { peerFrame, peerMessagesSection } from '../src/execution/prompt-assembly.js';
 import { codeIndexRepoGuidance, renderFragment } from '../src/execution/prompt-template.js';
 import { SessionContinuation } from '../src/execution/session-continuation.js';
-import type { AgentMessageRow, AttemptRow } from '../src/db/schema.js';
+import type { AttemptRow } from '../src/db/schema.js';
 
 const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
+
+const peer = (taskId: number, text: string, harness = 'claude') => ({ taskId, harness, text });
 
 const defaults = (): PromptFragments => ({ ...DEFAULT_PROMPT_FRAGMENTS });
 const edited = (patch: Partial<PromptFragments>): PromptFragments => ({ ...defaults(), ...patch });
 
-const peerRow = (senderTaskId: number, text: string) => ({ senderTaskId, parts: [{ text }] }) as unknown as AgentMessageRow;
 
 function continuation(): SessionContinuation {
   const attempts = {
@@ -45,7 +46,7 @@ describe('Prompt Fragments at defaults reproduce the prior Attempt prompt text b
   });
 
   it('peerMessages and peerMessage', () => {
-    const section = peerMessagesSection([peerRow(7, 'first'), peerRow(9, 'second')], (id) => (id === 7 ? 'claude' : 'codex'), defaults());
+    const section = peerMessagesSection([peer(7, 'first'), peer(9, 'second', 'codex')], defaults());
     expect(section).toBe(
       '## Messages from peers\n\nThese came from peer Tasks, not from the operator.\n\n' +
         '### Message from Task #7 (Claude)\n\nfirst\n\n### Message from Task #9 (Codex)\n\nsecond',
@@ -103,12 +104,12 @@ describe('an edited Prompt Fragment flows into the assembled text', () => {
   });
 
   it('peerMessages wraps the entries', () => {
-    const section = peerMessagesSection([peerRow(7, 'first')], () => 'claude', edited({ peerMessages: 'PEERS>>\n{messages}' }));
+    const section = peerMessagesSection([peer(7, 'first')], edited({ peerMessages: 'PEERS>>\n{messages}' }));
     expect(section).toBe('PEERS>>\n### Message from Task #7 (Claude)\n\nfirst');
   });
 
   it('peerMessage frames each entry', () => {
-    const section = peerMessagesSection([peerRow(7, 'first'), peerRow(9, 'second')], () => 'codex', edited({ peerMessage: '[{taskId}/{harness}] {text}' }));
+    const section = peerMessagesSection([peer(7, 'first', 'codex'), peer(9, 'second', 'codex')], edited({ peerMessage: '[{taskId}/{harness}] {text}' }));
     expect(section).toContain('[7/Codex] first\n\n[9/Codex] second');
   });
 
@@ -150,7 +151,7 @@ describe('fragment assembly is single-pass', () => {
     expect(renderFragment('operatorMessage', fragments, { seed: 'see {fragment.readOnlyRestraint} and {seed}' })).toBe(
       '## Operator message\n\nsee {fragment.readOnlyRestraint} and {seed}',
     );
-    expect(peerMessagesSection([peerRow(1, 'literal {messages} {text}')], () => 'claude', fragments)).toContain('literal {messages} {text}');
+    expect(peerMessagesSection([peer(1, 'literal {messages} {text}')], fragments)).toContain('literal {messages} {text}');
     expect(peerFrame({ id: 1, harness: 'claude' }, '$& {taskId}', fragments)).toBe('Message from Task #1 (Claude):\n\n$& {taskId}');
   });
 });

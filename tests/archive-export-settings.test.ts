@@ -149,6 +149,7 @@ describe('Archive & Export tab', () => {
     expect(host.querySelector<HTMLInputElement>('#export-s3-bucket')?.value).toBe('acme');
     expect(host.textContent).toContain('Overridden here');
     expect(host.textContent).toContain('Modified');
+    expect([...host.querySelectorAll('span')].find((e) => e.textContent === 'Modified')?.className).toContain('text-running');
     await click(button(host, 'Reset to default'));
     expect(ws!.exportS3Bucket).toBeNull();
     expect(host.querySelector('#export-s3-bucket')).toBeNull();
@@ -175,6 +176,7 @@ describe('Archive & Export tab', () => {
     expect(host.textContent).not.toContain('Modified');
     await type(days, '30');
     expect(host.textContent).toContain('Modified');
+    expect([...host.querySelectorAll('span')].find((e) => e.textContent === 'Modified')?.className).toContain('text-running');
     await click(button(host, 'Revert'));
     expect(host.querySelector<HTMLInputElement>('#archive-retain-days')!.value).toBe('');
     expect(host.textContent).not.toContain('Modified');

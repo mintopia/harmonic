@@ -2,7 +2,8 @@ import type { TrackerRef } from '../tracker/adapter.js';
 import { Git } from './git.js';
 import { adapterFor, adapterVersion } from './harness/registry.js';
 import { collectUsage, toolCallName } from './usage.js';
-import { driveFields, expandFragments, fillTemplate, renderFragment } from './prompt-template.js';
+import { driveFields } from './prompt-template.js';
+import { composeEpicResolvePrompt } from './prompt-assembly.js';
 import { logger } from '../logger.js';
 import { indexWorktree } from './code-index.js';
 import { integrationBranchName } from './epic-coordinator.js';
@@ -405,17 +406,14 @@ export class VerificationCoordinator {
 
     const step = await this.deps.attempts.createStep(input.attempt.id, { type: 'implementation' });
     await this.deps.attempts.updateStep(step.id, { state: 'running', startedAt: Date.now() });
-    const prompt = [
-      expandFragments(input.resolvePrompt, resolver.fragments)
-        .replaceAll('{ref}', String(input.epicRef))
-        .replaceAll('{title}', input.title ?? `Epic #${input.epicRef}`)
-        .replaceAll('{description}', input.body ?? '')
-        .replaceAll('{url}', input.url ?? ''),
-      '',
-      renderFragment('epicFailingVerification', resolver.fragments, { reason: input.verificationReason }),
-      '',
-      fillTemplate(expandFragments(resolver.resolveSuffix, resolver.fragments), { branch }),
-    ].join('\n');
+    const prompt = composeEpicResolvePrompt({
+      resolvePrompt: input.resolvePrompt,
+      resolveSuffix: resolver.resolveSuffix,
+      fragments: resolver.fragments,
+      epic: { ref: String(input.epicRef), title: input.title ?? `Epic #${input.epicRef}`, body: input.body ?? '', url: input.url ?? '' },
+      reason: input.verificationReason,
+      branch,
+    });
     const archived = await this.deps.archive?.appendResolutionPrompt({ workspaceId: input.workspaceId, epicRef: input.epicRef }, input.attempt.number, 'epic-resolve', 1, prompt);
     await this.deps.attempts.appendEvent(input.attempt.id, { type: 'lifecycle', payload: { event: 'epic-resolve', kind: 'verification', ...archived } }).then((event) => this.deps.events.onAttemptEvent?.(event)).catch((err: unknown) => {
       logger.warn('epic-resolve event failed', { attemptId: input.attempt.id, error: err instanceof Error ? err.message : String(err) });

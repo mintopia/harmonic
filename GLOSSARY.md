@@ -795,6 +795,14 @@ reused rather than copied. Structural glue — ordering and whitespace — stays
 code and is not a Fragment.
 _Avoid_: prompt piece, prompt section, snippet, segment
 
+**Prompt Anatomy**:
+The ordered Prompt Templates and Prompt Fragments that compose one kind of
+Resolved Prompt (Implementation turn, mid-Attempt nudges, merge conflict
+resolvers, Epic verification fix, critic review), and the condition under which
+each is included. Declared once in `src/domain/prompt-anatomy.ts`; the Prompts
+tab, its counts and search, and the compiled preview are generated from it.
+_Avoid_: message anatomy, prompt pieces
+
 **Continuation rule**:
 The deterministic choice at Attempt N+1: continue the prior Session (feedback
 appended) when its context usage is below the configured token limit and

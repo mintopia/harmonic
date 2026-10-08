@@ -12,7 +12,7 @@ import {
   resolveVerifiers,
 } from '../src/domain/setting-override.js';
 import { AutoDrive } from '../src/execution/auto-drive.js';
-import { renderConflictPrompt } from '../src/execution/merge-coordinator.js';
+import { renderConflictPrompt } from '../src/execution/prompt-assembly.js';
 import { promptForTask } from '../src/execution/prompt-template.js';
 import { buildCriticPrompt } from '../src/verification/critic-prompt.js';
 import type { TaskRow } from '../src/db/schema.js';
