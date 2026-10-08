@@ -298,6 +298,14 @@ describe('mirrorScan upsert', () => {
     expect(after!.state).toBe('working');
   });
 
+  it('a paused Task whose own ticket closes stays paused — never mirror-completed (issue #862)', async () => {
+    const [task] = await mscan([ticket({ ref: trackerRef(862), labels: ['ready-for-agent'] })]);
+    await tasks.setState(task!.id, 'working');
+    await tasks.setState(task!.id, 'paused');
+    const [after] = await mscan([ticket({ ref: trackerRef(862), state: 'closed', closedAt: '2026-08-07T01:00:00Z' })]);
+    expect(after!.state).toBe('paused');
+  });
+
   it('done Task on a close-incapable (inbound-only) tracker stays done — no reopen re-run loop (issue #237)', async () => {
     const [task] = await mscan([ticket({ ref: trackerRef(237), labels: ['ready-for-agent'] })]);
     await tasks.setState(task!.id, 'done');
