@@ -58,14 +58,10 @@ export class AuthService {
     await this.db.write((db) => db.delete(settings).where(eq(settings.key, AUTH_KEY)).run());
   }
 
-  /**
-   * Global back-off: the first FREE_FAILURES attempts run freely; after that a single
-   * attempt at a time waits out a doubling delay, and concurrent callers are rejected
-   * (429) rather than queued, so a parallel flood cannot multiply its guess rate.
-   */
   async verifyLogin(password: string): Promise<boolean> {
     const over = this.loginAttempts - FREE_FAILURES;
     if (over >= 0) {
+      // Rejected, not queued: queued attempts would all still be hashed after their delay.
       if (this.backoffActive) throw new DomainError('rate_limited', 'too many login attempts; try again shortly');
       this.backoffActive = true;
     }
