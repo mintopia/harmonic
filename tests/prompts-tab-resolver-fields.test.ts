@@ -29,8 +29,7 @@ async function click(el: Element | undefined) {
   });
 }
 
-/** Opens a part's editor: selects the prompt that holds it, then expands its card. */
-async function openPart(host: HTMLElement, tabName: RegExp, label: string) {
+async function openPartEditor(host: HTMLElement, tabName: RegExp, label: string) {
   await click([...host.querySelectorAll('[role=tab]')].find((t) => tabName.test(t.textContent ?? '')));
   await click([...host.querySelectorAll('button[aria-expanded]')].find((b) => b.querySelector('span > span')?.textContent === label));
 }
@@ -48,19 +47,19 @@ describe('Prompts tab resolver fields', () => {
       [/Epic verification fix/, 'Epic verification resolver suffix', 'settings-epic-resolve-suffix'],
     ];
     for (const [tab, label, id] of parts) {
-      await openPart(host, tab, label);
+      await openPartEditor(host, tab, label);
       expect(host.querySelector(`textarea#${id}`), id).not.toBeNull();
     }
   });
 
   it('lists the placeholders each merge prompt accepts', async () => {
     const host = await mountComponent(createElement(PromptsTab, { ctx }));
-    await openPart(host, /Merge conflicts/, 'Merge conflict resolver');
+    await openPartEditor(host, /Merge conflicts/, 'Merge conflict resolver');
     const text = host.textContent ?? '';
     for (const token of ['{turn}', '{taskBranch}', '{baseBranch}', '{paths}', '{fragment.conflictResolution}']) {
       expect(text).toContain(token);
     }
-    await openPart(host, /Epic verification fix/, 'Epic verification resolver suffix');
+    await openPartEditor(host, /Epic verification fix/, 'Epic verification resolver suffix');
     expect(host.querySelector('[role=region][aria-label="Epic verification resolver suffix"]')?.textContent).toContain('{branch}');
   });
 });

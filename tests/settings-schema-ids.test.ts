@@ -113,11 +113,10 @@ function makeWorkspace(): Workspace {
   };
 }
 
-// A field's id sits on a `descriptor` prop for most fields but directly on an `id` prop for some, so collect both.
-function collectDescriptorIds(node: unknown, out: string[]): void {
+function collectDescriptorAndDirectIds(node: unknown, out: string[]): void {
   if (node == null || typeof node !== 'object') return;
   if (Array.isArray(node)) {
-    for (const child of node) collectDescriptorIds(child, out);
+    for (const child of node) collectDescriptorAndDirectIds(child, out);
     return;
   }
   const props = (node as { props?: Record<string, unknown> }).props;
@@ -125,7 +124,7 @@ function collectDescriptorIds(node: unknown, out: string[]): void {
   const descriptor = props.descriptor as { id?: string } | undefined;
   if (typeof descriptor?.id === 'string') out.push(descriptor.id);
   if (typeof props.id === 'string') out.push(props.id);
-  if ('children' in props) collectDescriptorIds(props.children, out);
+  if ('children' in props) collectDescriptorAndDirectIds(props.children, out);
 }
 
 function fieldIdsForSurface(surface: Surface): string[] {
@@ -157,7 +156,7 @@ function fieldIdsForSurface(surface: Surface): string[] {
   for (const section of SETTINGS_SCHEMA) {
     if (!section.surfaces.includes(surface)) continue;
     const { body } = renderSection(section, ctx);
-    collectDescriptorIds(body, ids);
+    collectDescriptorAndDirectIds(body, ids);
   }
   return ids;
 }
@@ -219,7 +218,7 @@ describe('Settings schema field ids are unique (issue #472)', () => {
     const config = makeConfig();
     const workspace = makeWorkspace();
     const globalIds: string[] = [];
-    collectDescriptorIds(
+    collectDescriptorAndDirectIds(
       renderSection(section!, {
         surface: 'global', config, baseline: config, setConfig: () => {}, errors: {}, harnessPermissionModes: {},
         channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
@@ -227,7 +226,7 @@ describe('Settings schema field ids are unique (issue #472)', () => {
       globalIds,
     );
     const workspaceIds: string[] = [];
-    collectDescriptorIds(
+    collectDescriptorAndDirectIds(
       renderSection(section!, {
         surface: 'workspace', config, workspace, pristineWorkspace: workspace, setWorkspace: () => {}, errors: {},
         blockedByRunningTask: false, onRequestDelete: () => {},

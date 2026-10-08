@@ -31,7 +31,6 @@ export function peerFrame(sender: { id: number; harness: string }, text: string,
   return renderFragment('peerLiveMessage', fragments, { taskId: sender.id, harness: harnessLabel(sender.harness), text });
 }
 
-/** Held messages as a prompt section, in send order. */
 export function peerMessagesSection(held: readonly PeerEntry[], fragments: PromptFragments): string {
   const entries = held.map((entry) =>
     renderFragment('peerMessage', fragments, { taskId: entry.taskId, harness: harnessLabel(entry.harness), text: entry.text }),
@@ -39,7 +38,6 @@ export function peerMessagesSection(held: readonly PeerEntry[], fragments: Promp
   return renderFragment('peerMessages', fragments, { messages: entries.join('\n\n') });
 }
 
-/** The held-messages section (when any are held) followed by the peer line. */
 export function composePeerContext(held: readonly PeerEntry[], fragments: PromptFragments): string {
   const parts: string[] = [];
   if (held.length > 0) parts.push(peerMessagesSection(held, fragments));

@@ -363,8 +363,7 @@ export function initialState(): PromptsTabState {
   };
 }
 
-/** Expand a part and set the sample conditions so it is visible in the Compiled preview. */
-export function selectPart(state: PromptsTabState, anatomy: AnatomyId, key: PartKey, occurrence = 0): PromptsTabState {
+export function revealPartInPreview(state: PromptsTabState, anatomy: AnatomyId, key: PartKey, occurrence = 0): PromptsTabState {
   const layout = anatomyLayout(anatomyById(anatomy));
   const placement = layout.placements.find((p) => p.key === key && p.occurrence === occurrence) ?? layout.placements.find((p) => p.key === key);
   if (!placement) return state;
@@ -398,11 +397,11 @@ export function reduce(state: PromptsTabState, action: PromptsTabAction): Prompt
       return state.anatomy === action.anatomy ? state : { ...state, anatomy: action.anatomy, expanded: null };
     case 'toggle':
       if (state.expanded?.key === action.key && state.expanded.occurrence === action.occurrence) return { ...state, expanded: null };
-      return selectPart(state, state.anatomy, action.key, action.occurrence);
+      return revealPartInPreview(state, state.anatomy, action.key, action.occurrence);
     case 'collapse':
       return { ...state, expanded: null };
     case 'jump':
-      return { ...selectPart(state, action.anatomy, action.key), query: '' };
+      return { ...revealPartInPreview(state, action.anatomy, action.key), query: '' };
     case 'query':
       return { ...state, query: action.query };
     case 'flag': {

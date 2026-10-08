@@ -5,9 +5,9 @@ export type LayoutMode = 'wide' | 'medium' | 'narrow';
 const WIDE_PX = 1024;
 const MEDIUM_PX = 704;
 
-/** An unmeasured (zero-width) panel counts as wide so the full layout renders before the first measurement. */
 export function layoutModeFor(widthPx: number): LayoutMode {
-  if (widthPx <= 0 || widthPx >= WIDE_PX) return 'wide';
+  const unmeasured = widthPx <= 0;
+  if (unmeasured || widthPx >= WIDE_PX) return 'wide';
   return widthPx >= MEDIUM_PX ? 'medium' : 'narrow';
 }
 

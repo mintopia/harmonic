@@ -744,11 +744,8 @@ export class TurnDriver {
     const operatorSeed = this.deps.activeRuns.takePendingOperatorSeed(task.id);
     let condensed: string | null = null;
     let freshSessionContext: string | null = null;
-    // Continuing an already-open Attempt (a manual resume/steer-continue): continue-full
-    // already holds the full prior conversation, so the operator message goes alone.
-    // An Attempt's own opening turn that bound a warm Session (bindContinuationIfEligible)
-    // still gets the real instructions: that memory belongs to an earlier Attempt.
-    const seedMode = run.sessionRowId !== null && !opensAttempt ? 'replace-all' : 'append';
+    const continuesOpenAttempt = run.sessionRowId !== null && !opensAttempt;
+    const seedMode = continuesOpenAttempt ? 'replace-all' : 'append';
     if (operatorSeed !== undefined && !healCtx) {
       if (run.sessionRowId === null) {
         // Fresh Session: the agent needs some context, not just the bare message.

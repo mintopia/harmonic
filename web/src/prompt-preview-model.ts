@@ -191,7 +191,6 @@ function readString(root: unknown, path: readonly string[]): string | undefined 
   return typeof node === 'string' ? node : undefined;
 }
 
-/** The first critic a Workspace overlay (or, with no overlay, the global list) resolves to. */
 function firstTaskCritic(
   overlay: readonly TaskCriticOverlayEntry[] | null | undefined,
   globals: readonly TaskVerificationCritic[],

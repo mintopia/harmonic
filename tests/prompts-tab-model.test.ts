@@ -12,7 +12,7 @@ import {
   partState,
   reduce,
   searchParts,
-  selectPart,
+  revealPartInPreview,
   totals,
   writePart,
 } from '../web/src/components/prompts/prompts-tab-model.js';
@@ -164,29 +164,29 @@ describe('searchParts', () => {
   });
 });
 
-describe('selectPart', () => {
+describe('revealPartInPreview', () => {
   it('switches the containing oneOf option and turns on the flags that gate the part', () => {
-    const next = selectPart(initialState(), 'implementation', 'template:drivePrompt');
+    const next = revealPartInPreview(initialState(), 'implementation', 'template:drivePrompt');
     expect(next.expanded).toEqual({ key: 'template:drivePrompt', occurrence: 0 });
     expect(next.conditions.implementation?.choices.origin).toBe('mirrored');
-    const heal = selectPart(initialState(), 'implementation', 'fragment:selfHeal');
+    const heal = revealPartInPreview(initialState(), 'implementation', 'fragment:selfHeal');
     expect(heal.conditions.implementation?.flags.selfHeal).toBe(true);
   });
 
   it('enables parent flags for a nested part', () => {
-    const next = selectPart(initialState(), 'implementation', 'fragment:peerMessage');
+    const next = revealPartInPreview(initialState(), 'implementation', 'fragment:peerMessage');
     expect(next.conditions.implementation?.flags.heldPeerMessages).toBe(true);
   });
 
   it('selects a later occurrence of a shared part with its own option', () => {
-    const epic = selectPart(initialState(), 'mergeConflicts', 'fragment:conflictResolution', 1);
+    const epic = revealPartInPreview(initialState(), 'mergeConflicts', 'fragment:conflictResolution', 1);
     expect(epic.conditions.mergeConflicts?.choices.resolver).toBe('epic');
     expect(epic.expanded).toEqual({ key: 'fragment:conflictResolution', occurrence: 1 });
   });
 
   it('leaves state alone for a part not in the anatomy', () => {
     const start = initialState();
-    expect(selectPart(start, 'nudges', 'template:drivePrompt')).toBe(start);
+    expect(revealPartInPreview(start, 'nudges', 'template:drivePrompt')).toBe(start);
   });
 });
 
