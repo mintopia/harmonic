@@ -1,5 +1,65 @@
 # Changelog
 
+## [2.26.0](https://github.com/mintopia/harmonic/compare/v2.25.0...v2.26.0) (2026-10-08)
+
+
+### Features
+
+* add anatomy-driven compiled preview model ([ef9007d](https://github.com/mintopia/harmonic/commit/ef9007d6e3e8e6501d9e14218b6cc1e2f42dfa69))
+* add Claude Haiku 5.5 to the model catalog; correct Sonnet 5.5 cache-read price ([2f863cd](https://github.com/mintopia/harmonic/commit/2f863cd41fd29b3965efca2eb29e49ea63f1b292))
+* add Model picker to Reject dialog, saved as operator setting on the Ticket ([#817](https://github.com/mintopia/harmonic/issues/817)) ([4af067a](https://github.com/mintopia/harmonic/commit/4af067a62f37673cebf4f26b65f877b57239cacb))
+* add prompt anatomy data and pure prompt assembly ([9cd990a](https://github.com/mintopia/harmonic/commit/9cd990a1a1e122cf64d2123f53caf6755954dbd7))
+* add Prompts tab organised by Prompt Anatomy ([c9640b4](https://github.com/mintopia/harmonic/commit/c9640b419686c411425512a86778d5f6162641af))
+* Epic-level turns route by the Epic's own Routing Label ([#824](https://github.com/mintopia/harmonic/issues/824)) ([593e779](https://github.com/mintopia/harmonic/commit/593e77902ccfdb18563f62332821c408a03f2a4c))
+* escalate Tickets whose routed Harness is unconfigured, with Set Harness and Retry ([#822](https://github.com/mintopia/harmonic/issues/822)) ([e04f3c9](https://github.com/mintopia/harmonic/commit/e04f3c9c522591c6768d2675aafdddaae3a1dd71))
+* global Routing Labels route a mirrored Ticket's Harness and Model ([#820](https://github.com/mintopia/harmonic/issues/820)) ([dfa9ae1](https://github.com/mintopia/harmonic/commit/dfa9ae1ba9a1ab9f024b72f81620e70dab9e4dae))
+* record a route-changed Activity event when a relabel moves an Attempt's Harness/Model ([#823](https://github.com/mintopia/harmonic/issues/823)) ([5c7dcf8](https://github.com/mintopia/harmonic/commit/5c7dcf88c73dd6476850ed45d4a2b55b8daf23df))
+* rename Reject to Retry with Harness/Model picker and separate Session re-use ([#817](https://github.com/mintopia/harmonic/issues/817)) ([4dac808](https://github.com/mintopia/harmonic/commit/4dac808d661d8cfa9c841f725a476f36a3c48afa))
+* require a Harness on every Critic and remove the default-Harness fallback ([403aa05](https://github.com/mintopia/harmonic/commit/403aa05dd41028c4fd4e9cd3f8046d8df45fda94))
+* warn when the running server and installed web bundle disagree on version ([6817f1a](https://github.com/mintopia/harmonic/commit/6817f1a5053d4867d9f4ceae04dd4b1a70d88a61))
+* **web:** show friendly model names, raw id otherwise ([#828](https://github.com/mintopia/harmonic/issues/828)) ([4522020](https://github.com/mintopia/harmonic/commit/4522020e1077859fc60ba0007eba9a6cee92bc2f))
+* Workspace overlay for Routing Labels ([#821](https://github.com/mintopia/harmonic/issues/821)) ([c5f68b9](https://github.com/mintopia/harmonic/commit/c5f68b9a2ee585a6ee8a7cd16aa3766272c7fbec))
+
+
+### Bug Fixes
+
+* **api:** require harness and model together on Task retry ([d3f8eaf](https://github.com/mintopia/harmonic/commit/d3f8eafeffee26a86e77c365524cd2372b2967cd))
+* clamp collapsed prompt excerpts, shorten search placeholder, wrap sample pills ([80d770a](https://github.com/mintopia/harmonic/commit/80d770a99946746e86ee6786b61d380cb493509f))
+* **cli:** restart reuses port and host only from a running server ([26a34b2](https://github.com/mintopia/harmonic/commit/26a34b2d06ced326fb705629ae7e6b080ee9410e))
+* color Modified and cleartext-token labels with the Paper running token ([f29f100](https://github.com/mintopia/harmonic/commit/f29f100bf8496ca0918255a8a0d6d4e4ae3026c9))
+* compare route against the last Attempt that recorded one, skipping null-route placeholders ([#823](https://github.com/mintopia/harmonic/issues/823)) ([e55123a](https://github.com/mintopia/harmonic/commit/e55123a0dd7209497a4f5a1989be0f9eb9ad20d8))
+* Critic without a Harness falls back to the Workspace/global default, not the Task's ([#818](https://github.com/mintopia/harmonic/issues/818)) ([be90afd](https://github.com/mintopia/harmonic/commit/be90afd684ee9713ceb5ae6861f4cabaae4a7289))
+* drop lint suppressions and redundant comments, match Retry dialog to mockup ([#817](https://github.com/mintopia/harmonic/issues/817)) ([ba5b132](https://github.com/mintopia/harmonic/commit/ba5b132747b227221428866910d792017be1c3f1))
+* keep an in-flight Attempt's route when its Routing Label stops matching ([eda8623](https://github.com/mintopia/harmonic/commit/eda8623d69c44d5a7d91154c1275615e8a3d95b5))
+* keep file names visible in transcript tool rows ([2675fae](https://github.com/mintopia/harmonic/commit/2675fae68418cd9f99fed5c670d93d043462a8ad))
+* keep the full Auto-runner label until the strip is truly narrow ([f03b878](https://github.com/mintopia/harmonic/commit/f03b87815b06bdf8c78f7c7bc4da411a85f61b9c))
+* keep the header status strip on one row at narrow desktop widths ([4eae1be](https://github.com/mintopia/harmonic/commit/4eae1be7b87209cd8d96552731671bd2f94e7a32))
+* label Critic default Harness as Workspace default in UI and docs ([#818](https://github.com/mintopia/harmonic/issues/818)) ([3983cc8](https://github.com/mintopia/harmonic/commit/3983cc865605f53d15cf9b4860d2fb02a71450e7))
+* make `harmonic restart` work for background processes off Linux ([cde8a40](https://github.com/mintopia/harmonic/commit/cde8a409354fe8c82517ad641a0c2c7944484047))
+* match Routing Label escalation UI to mockup section 4; repair epicRoute after overlay merge ([#822](https://github.com/mintopia/harmonic/issues/822)) ([c82e39f](https://github.com/mintopia/harmonic/commit/c82e39fed90d13467e6aaf6e51ebe5d3d8c98712))
+* point Harness configuration at Global settings and test label-routed escalation ([#822](https://github.com/mintopia/harmonic/issues/822)) ([319a9b6](https://github.com/mintopia/harmonic/commit/319a9b6a07b5280879a160379f690ebb897b4a26))
+* polish Routing Labels editors, Agent fact and escalation gate to the mockup ([39ff17e](https://github.com/mintopia/harmonic/commit/39ff17ea1687cafeb17ea6b4a578a21546e04be2))
+* pre-release review fixes for Routing Labels and key scopes ([063460e](https://github.com/mintopia/harmonic/commit/063460e82c90c55a8d74a30d4d92b6649654b06a))
+* queued Retry re-uses a warm Session only on an unchanged route ([#831](https://github.com/mintopia/harmonic/issues/831)) ([8379a55](https://github.com/mintopia/harmonic/commit/8379a55b663d7d4a574a2eb8ee598c4711299b24))
+* route remaining raw model ids through formatModelLabel and map provider-prefixed ids ([d69827e](https://github.com/mintopia/harmonic/commit/d69827e8483f7ab594904eb03fec8aad300b0a93))
+* route timeline, composer, critic list and chat transcript model ids through formatModelLabel ([2ad45f2](https://github.com/mintopia/harmonic/commit/2ad45f2cddd7de4267acfa07a42662721df2eb49))
+* **routing:** Epic route falls through Task row to container row; override Harness takes its own default Model ([32f802c](https://github.com/mintopia/harmonic/commit/32f802c0cdac520c2bb1c91d9688d314fdf6e5a0))
+* **routing:** Epic route prefers operator override, then Task row label, then container row label ([411af55](https://github.com/mintopia/harmonic/commit/411af55bb37f3e5732ede498e39a0a99b36a6254))
+* shorten transcript paths relative to the Attempt's managed worktree ([2d295db](https://github.com/mintopia/harmonic/commit/2d295db9d5dfebba81df100409ac3b102c10a8b3))
+* show transcript tool paths relative to the working directory ([24e7f8b](https://github.com/mintopia/harmonic/commit/24e7f8b16b3f55a4d24f5d7a63969e31b1a52979))
+* stop index.html revalidating to a previous release's bundle ([b1d70be](https://github.com/mintopia/harmonic/commit/b1d70beb30b25a2295b0eaf1e5b19c0f320730f9))
+* unwrap fenced tool output in transcripts ([bab398a](https://github.com/mintopia/harmonic/commit/bab398aa7419246a9c8e44161f4e3997f0aa9142))
+* use the Paper running token for LayerField's Modified label ([eae07a4](https://github.com/mintopia/harmonic/commit/eae07a42c4fc7a464324f60d4e42890126fd55a9))
+* **web:** detect lost sessions on rejected WebSocket upgrades and routed list fetches ([31e7e0a](https://github.com/mintopia/harmonic/commit/31e7e0ad3c76a8ec7ec417890f8cc7837504a467))
+* **web:** keep self-upgrade banners over the version-skew notice ([ba96921](https://github.com/mintopia/harmonic/commit/ba969210ff4de95214fea8173f892c00c762f543))
+* **web:** keep the Retry route picker's accent border while its list is open ([edbe11b](https://github.com/mintopia/harmonic/commit/edbe11bc4cc6177ca9cc1d05f94e0095083b604f))
+* **web:** make the Retry dialog route picker a keyboard-accessible listbox ([a263df3](https://github.com/mintopia/harmonic/commit/a263df3f5fdbc6935982cf57c13ef3c6e9cff7c5))
+* **web:** move transcript rows from px font sizes onto type tokens ([f70af8d](https://github.com/mintopia/harmonic/commit/f70af8da1ed57dd9974b3191ac6de1bf9160a44f))
+* **web:** Retry dialog title reads "Retry #id" to match the mockup ([9ba9c31](https://github.com/mintopia/harmonic/commit/9ba9c31a4cf70784c8d08969e2051ca42feb8afc))
+* **web:** Retry route picker returns focus on Tab, guards empty catalog, focuses list only on open, owns native cancel ([7fb56fb](https://github.com/mintopia/harmonic/commit/7fb56fb269f102bbea79f4c93786da8495ca1ad3))
+* **web:** show friendly model name in closed Model picker input ([#828](https://github.com/mintopia/harmonic/issues/828)) ([d73c296](https://github.com/mintopia/harmonic/commit/d73c29645948b2457d78a363b9138263e6f780b3))
+* **web:** stabilise RoutePicker effect dependencies ([66de9e7](https://github.com/mintopia/harmonic/commit/66de9e7b97661a2410534e8780ccc25d08250ced))
+
 ## [2.25.0](https://github.com/mintopia/harmonic/compare/v2.24.0...v2.25.0) (2026-10-06)
 
 
