@@ -46,9 +46,9 @@ Model.
   stop borrowing the Harness and Model of whichever member Task happens to be
   working.
 - **Critics are never routed.** A Critic keeps its own Model; when it has no
-  Harness of its own, its existing fallback to the Task's Harness skips the
-  route (operator setting, then Workspace/global default), because a routed
-  Harness would not serve the Critic's Model.
+  Harness of its own, it falls back to the Workspace/global default Harness,
+  never the Task's Harness (amended by #818), because a routed Harness would
+  not serve the Critic's Model.
 - Native Tasks carry no labels and are never routed.
 
 ## Considered Options
