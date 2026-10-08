@@ -15,6 +15,10 @@ it('enforces operator-only routes for encoded and noncanonical task ids', async 
           const response = await server.app.inject({ method: 'POST', url: `/api/tasks/${id}/${action}`, headers, payload: {} });
           expect(response.statusCode, `${scope} ${id}/${action}`).toBe(403);
         }
+        for (const suffix of ['export', 'export/download']) {
+          const exportRead = await server.app.inject({ method: 'GET', url: `/api/tasks/${id}/${suffix}`, headers });
+          expect(exportRead.statusCode, `${scope} ${id} GET ${suffix}`).toBe(403);
+        }
         const response = await server.app.inject({ method: 'GET', url: `/api/tasks/${id}/channels`, headers });
         expect(response.statusCode, `${scope} ${id}/channels`).toBe(403);
       }

@@ -22805,7 +22805,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Stream a freshly built, redacted Export tarball (tar.gz) to the browser. Needs no configured Destination and is not recorded as an Export. Key scopes: full, attempt, read.",
+        "description": "Stream a freshly built, redacted Export tarball (tar.gz) to the browser. Needs no configured Destination and is not recorded as an Export. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
