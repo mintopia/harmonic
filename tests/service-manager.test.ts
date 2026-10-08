@@ -483,6 +483,43 @@ describe('systemd ServiceManager', () => {
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('--data-dir "/var/lib/harmonic data" --otel-headers "token=a b"');
   });
 
+  it('escapes % and $ in ExecStart and reads them back unchanged', async () => {
+    const deps = dependencies();
+    deps.fileExists = (path) => deps.files.has(path);
+    deps.readTextFile = async (path) => deps.files.get(path) ?? null;
+    const manager = createServiceManager(environment({ isRoot: true, systemdRunning: true }), deps);
+    const otelHeaders = 'Authorization=Basic%20abc,x=$HOME "q" 100%';
+
+    await manager.install({
+      startSelfManaged: vi.fn(),
+      serve: { port: '4700', host: '0.0.0.0', dataDir: '/var/lib/harmonic', otelHeaders },
+    });
+
+    const unit = deps.files.get('/etc/systemd/system/harmonic.service') ?? '';
+    expect(unit).toContain('Authorization=Basic%%20abc');
+    expect(unit).toContain('$$HOME');
+    const existing = await manager.readExistingSettings();
+    expect(existing?.serve.otelHeaders).toBe(otelHeaders);
+  });
+
+  it('escapes % and $ in ExecStart so systemd keeps them literal, and reads them back', async () => {
+    const deps = dependencies();
+    const manager = createServiceManager(environment({ isRoot: true, systemdRunning: true }), deps);
+    const otelHeaders = 'Authorization=Basic%20abc,x=$HOME and "q"';
+
+    await manager.install({
+      startSelfManaged: vi.fn(),
+      serve: { port: '4700', host: '0.0.0.0', dataDir: '/var/lib/harmonic', otelHeaders },
+    });
+
+    const unit = deps.files.get('/etc/systemd/system/harmonic.service') ?? '';
+    expect(unit).toContain('Basic%%20abc');
+    expect(unit).toContain('$$HOME');
+    expect(unit).not.toMatch(/[^%]%20/);
+    const settings = await manager.readExistingSettings();
+    expect(settings?.serve.otelHeaders).toBe(otelHeaders);
+  });
+
   it('delegates lifecycle commands and removes only service files on uninstall', async () => {
     const deps = dependencies();
     const manager = createServiceManager(environment({ userSystemdUsable: true }), deps);
