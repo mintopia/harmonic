@@ -8,6 +8,8 @@ import type { AttemptLogEvent } from '../../types';
 import { railSectionCount } from '../../ui';
 import { CopyButton, revealOnHover } from '../CopyButton';
 import { Icon } from '../Icon';
+import { PathTail } from '../PathTail';
+import { displayPath, looksLikePath } from '../../path';
 import { Markdown } from '../Markdown';
 import { DiffViewer } from '../DiffViewer';
 import { toolDiffFile } from '../../tool-diff';
@@ -84,7 +86,12 @@ function ToolCard({ row }: { row: Extract<ChatRow, { kind: 'tool' }> }) {
             subagent
           </span>
         )}
-        {row.target && <span className="min-w-0 flex-1 truncate font-data text-[12px] text-accent">{row.target}</span>}
+        {row.target &&
+          (looksLikePath(row.target) ? (
+            <PathTail path={row.target} display={displayPath(row.target)} className="flex-1 font-data text-[12px] text-accent" />
+          ) : (
+            <span className="min-w-0 flex-1 truncate font-data text-[12px] text-accent" title={row.target}>{row.target}</span>
+          ))}
         {badge && (
           <span className={`ml-auto shrink-0 text-[10px] font-bold uppercase tracking-[0.05em] ${badge.tone}`}>{badge.label}</span>
         )}

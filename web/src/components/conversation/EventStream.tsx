@@ -6,6 +6,8 @@ import { Icon } from '../Icon';
 import { Markdown } from '../Markdown';
 import { DiffViewer } from '../DiffViewer';
 import { toolDiffFile } from '../../tool-diff';
+import { displayPath, looksLikePath } from '../../path';
+import { PathTail } from '../PathTail';
 
 const READ_MEASURE = 'max-w-[68ch]';
 const OUTPUT_WELL = 'mt-1 max-h-56 overflow-auto rounded-md bg-surface px-3 py-2 font-data text-data text-muted';
@@ -27,6 +29,11 @@ const TOOL_KIND_LABEL: Record<string, string> = {
 
 function toolKindLabel(kind: string | undefined): string {
   return (kind && TOOL_KIND_LABEL[kind]) ?? 'tool';
+}
+
+function ToolTarget({ target, className }: { target: string; className: string }) {
+  if (!looksLikePath(target)) return <span className={`${TOOL_TARGET} ${className}`} title={target}>{target}</span>;
+  return <PathTail path={target} display={displayPath(target)} className={`flex-1 font-data text-data ${className}`} />;
 }
 
 function ToolStatus({ status }: { status: string | undefined }) {
@@ -87,7 +94,7 @@ function ReadCard({ tool }: { tool: ToolCallView }) {
   const head = (
     <>
       <span className={`${toolChip} shrink-0`}>read</span>
-      <span className={`${TOOL_TARGET} text-muted`} title={path}>{path}</span>
+      <ToolTarget target={path} className="text-muted" />
       {range && <span className="shrink-0 font-data text-[11px] text-faint">{range}</span>}
       <ToolStatus status={tool.status} />
     </>
@@ -114,9 +121,11 @@ function EditCard({ tool }: { tool: ToolCallView }) {
     <div className="overflow-hidden rounded-md bg-surface shadow-card">
       <div className="flex items-center gap-2 border-b border-hairline bg-sunken px-3 py-1.5">
         <span className={`${toolChip} shrink-0`}>edit</span>
-        <span className="min-w-0 flex-1 truncate font-data text-data text-ink" title={single?.path ?? tool.title}>
-          {single ? single.path : `${files.length} files`}
-        </span>
+        {single ? (
+          <ToolTarget target={single.path} className="text-ink" />
+        ) : (
+          <span className="min-w-0 flex-1 truncate font-data text-data text-ink" title={tool.title}>{`${files.length} files`}</span>
+        )}
         <span className="shrink-0 font-data text-small tabular-nums text-merged">+{additions}</span>
         <span className="shrink-0 font-data text-small tabular-nums text-fail">−{deletions}</span>
         <ToolStatus status={tool.status} />
@@ -130,10 +139,19 @@ function EditCard({ tool }: { tool: ToolCallView }) {
 
 function GenericToolCard({ tool }: { tool: ToolCallView }) {
   const target = tool.title || 'Tool call';
+  const space = target.indexOf(' ');
+  const pathTarget = space > 0 && looksLikePath(target.slice(space + 1)) ? target.slice(space + 1) : null;
   const head = (
     <>
       <span className={`${toolChip} shrink-0`}>{toolKindLabel(tool.toolKind)}</span>
-      <span className={`${TOOL_TARGET} text-muted`} title={target}>{target}</span>
+      {pathTarget ? (
+        <>
+          <span className="shrink-0 font-data text-data text-muted">{target.slice(0, space)}</span>
+          <ToolTarget target={pathTarget} className="text-muted" />
+        </>
+      ) : (
+        <span className={`${TOOL_TARGET} text-muted`} title={target}>{target}</span>
+      )}
       {tool.subagent && <span className={`${chip} shrink-0 bg-raised text-muted`}>subagent</span>}
       <ToolStatus status={tool.status} />
     </>

@@ -99,3 +99,19 @@ describe('EventStream tool cards (#549)', () => {
     expect(html).toContain('aria-label="failed"');
   });
 });
+
+describe('EventStream path targets', () => {
+  const long = '/home/workspace/.npm/_npx/8c3382fc4b2ffbb5/node_modules/@mintopia/cc-acp/mod/.claude-plugin/plugin.json';
+
+  it('keeps the file name as its own whole element with the full path in the tooltip', () => {
+    const html = render([tool(1, { kind: 'read', title: 'Read file', status: 'completed', rawInput: { path: long } })]);
+    expect(html).toContain(`title="${long}"`);
+    expect(html).toContain('<span class="shrink-0">plugin.json</span>');
+    expect(html).toContain('~/.npm/_npx/');
+  });
+
+  it('applies the same treatment to a generic tool title carrying a path', () => {
+    const html = render([tool(1, { kind: 'other', title: `Read ${long}`, status: 'completed' })]);
+    expect(html).toContain('<span class="shrink-0">plugin.json</span>');
+  });
+});
