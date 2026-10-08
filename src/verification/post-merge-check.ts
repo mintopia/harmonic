@@ -35,7 +35,7 @@ type PostMergeInput = {
 export function createPostMergeCheck(deps: {
   getWorkspace: (workspaceId: number | null) => Promise<VerifierWorkspace | undefined>;
   getConfig: () => AppConfig;
-  routing: Pick<RoutingService, 'unroutedHarness'>;
+  routing: Pick<RoutingService, 'defaultHarness'>;
   verificationAttempts: VerificationAttemptStore;
   attempts: AttemptStore;
   criticDrive: CriticHarnessDrive;
@@ -86,7 +86,7 @@ export function createPostMergeCheck(deps: {
         model: configuredCritic.model,
         ...(configuredCritic.harness ? { harness: configuredCritic.harness } : {}),
       };
-      const harnessId = critic.harness ?? await routing.unroutedHarness(task.id);
+      const harnessId = critic.harness ?? await routing.defaultHarness(task.id);
       const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
       if (!harness) throw new DomainError('validation', `critic harness '${harnessId}' is not configured`);
       const stepId = `critic-${index + 1}`;

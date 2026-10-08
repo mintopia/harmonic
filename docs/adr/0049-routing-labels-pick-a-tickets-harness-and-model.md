@@ -67,7 +67,7 @@ Model.
 
 - Epic resolve, refresh and integration-merge turns change behaviour: they no
   longer follow a member Task's settings.
-- Removing the Critic → Task-Harness fallback entirely is tracked separately.
+- A Critic without its own Harness falls back to the Workspace/global default Harness, never the Task's Harness (#818).
 - Changing a Model on escalated Reject/Retry without relabelling is out of scope.
 
 ## Supersedes

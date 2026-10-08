@@ -64,7 +64,7 @@ type VerifierWorkspace = Pick<
 
 export interface VerificationCoordinatorDeps {
   taskService: TaskService;
-  routing: Pick<RoutingService, 'unroutedHarness' | 'epicRoute'>;
+  routing: Pick<RoutingService, 'defaultHarness' | 'epicRoute'>;
   attempts: AttemptStore;
   verificationAttempts: VerificationAttemptStore;
   sessionStore: SessionStore;
@@ -303,7 +303,7 @@ export class VerificationCoordinator {
       if (!oid) {
         verdicts.push(await this.noVerifiedHeadVerdict(task, 'critic', record));
       } else {
-        const criticHarnessId = critic.harness ?? await this.deps.routing.unroutedHarness(task.id);
+        const criticHarnessId = critic.harness ?? await this.deps.routing.defaultHarness(task.id);
         const criticHarness = this.resolveCriticHarness(config, criticHarnessId);
         const baseOid =
           run.branch && run.baseBranch
