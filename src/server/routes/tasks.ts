@@ -441,11 +441,10 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       const { sortBy, order, limit, offset, epics, ...query } = req.query;
-      const taskRows = await tasksToApi(ctx, await ctx.tasks.listWithDeps(query));
       const needle = query.q?.trim().toLowerCase();
       const epicTickets = query.workspaceId == null ? [] : await ctx.trackerManager.listEpicTickets(query.workspaceId);
       const epicRefs = new Set(epicTickets.map((ticket) => ticket.ref));
-      const nonDriverTaskRows = taskRows.filter((task) => task.trackerRef == null || !epicRefs.has(task.trackerRef));
+      const nonDriverTasks = (await ctx.tasks.listWithDeps(query)).filter((task) => task.trackerRef == null || !epicRefs.has(task.trackerRef));
       const wantEpics =
         epics === 'true' && query.workspaceId != null && filterEmpty(query.state) && filterEmpty(query.harness) && filterEmpty(query.priority);
       const epicRows = wantEpics
@@ -453,9 +452,16 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
             .filter((ticket) => !needle || ticket.title.toLowerCase().includes(needle))
             .map((ticket) => epicToListRow(ticket, query.workspaceId!))
         : [];
-      const rows = sortListRows([...nonDriverTaskRows, ...epicRows], sortBy, order);
-      const { items, total } = paginate(rows, { limit, offset });
-      return { tasks: items, total };
+      if (sortBy) {
+        const rows = sortListRows([...(await tasksToApi(ctx, nonDriverTasks)), ...epicRows], sortBy, order);
+        const { items, total } = paginate(rows, { limit, offset });
+        return { tasks: items, total };
+      }
+      const { items: pageTasks, total: taskTotal } = paginate(nonDriverTasks, { limit, offset });
+      const epicOffset = Math.max(0, (offset ?? 0) - taskTotal);
+      const epicLimit = limit === undefined ? undefined : limit - pageTasks.length;
+      const { items: pageEpics } = paginate(epicRows, { limit: epicLimit, offset: epicOffset });
+      return { tasks: [...(await tasksToApi(ctx, pageTasks)), ...pageEpics], total: taskTotal + epicRows.length };
     },
   );
 
