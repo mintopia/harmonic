@@ -44,11 +44,8 @@ jobs:
       # Regenerate website/src/openapi.json from the live zod route schemas
       # (ADR-0005) before the docs build, so the published API reference can
       # never lag the code. --ignore-scripts skips the root package's heavy
-      # `prepare` build (unneeded — the export runs via tsx); better-sqlite3's
-      # native binding is the only thing the in-process app needs, so rebuild
-      # just that one.
+      # `prepare` build (unneeded — the export runs via tsx).
       - run: npm ci --ignore-scripts
-      - run: npm rebuild better-sqlite3
       - run: npm run docs:openapi
 
       - run: npm ci
