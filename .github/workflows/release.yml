@@ -21,6 +21,10 @@ name: Release
 # release. It opens an auto-merging main -> develop PR, falling back to a direct
 # merge push only when the repo can't auto-merge.
 #
+# release-please and back-merge act with the RELEASE_PLEASE_TOKEN secret (a
+# fine-grained PAT) when it is set, because PRs and pushes made with
+# GITHUB_TOKEN never trigger CI; without it they fall back to GITHUB_TOKEN.
+#
 # A maintainer can also run this workflow manually (workflow_dispatch) on
 # `develop` to publish a prerelease under the `develop` dist-tag; it never
 # moves `latest`. The develop-* jobs live here because the trusted publisher is
@@ -52,6 +56,7 @@ jobs:
           # goes stale between releases. Owning main aligns the release PR,
           # the tag, and the publish on the branch we release from.
           target-branch: main
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
 
   test:
     needs: release-please
@@ -153,10 +158,11 @@ jobs:
         with:
           ref: develop
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
 
       - name: Back-merge the release into develop
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
           set -euo pipefail

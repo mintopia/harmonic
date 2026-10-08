@@ -11,7 +11,9 @@ import {
   type EpicVerificationStage,
   type BudgetGuardrail,
   type MergeFate,
+  type RoutingLabel,
 } from '../config.js';
+import { composeCommitNudge, composePauseMessage } from '../execution/prompt-assembly.js';
 import { expandFragments } from '../execution/prompt-template.js';
 import {
   PROMPT_FRAGMENT_NAMES,
@@ -81,14 +83,15 @@ export function resolveVerifiers(
  * already-customised Workspace. `null` inherits every global, in global
  * order, enabled.
  */
-function mergeOverlay<TItem extends { id: string }, TEntry extends { kind: 'global' | 'local'; enabled: boolean }>(
+export function mergeOverlay<TItem, TEntry extends { kind: 'global' | 'local'; enabled: boolean }>(
   overlay: readonly TEntry[] | null,
   globals: readonly TItem[],
+  idOf: (item: TItem) => string,
   ref: (entry: TEntry & { kind: 'global' }) => string,
   local: (entry: TEntry & { kind: 'local' }) => TItem,
 ): TItem[] {
   if (overlay == null) return [...globals];
-  const globalById = new Map(globals.map((item) => [item.id, item] as const));
+  const globalById = new Map(globals.map((item) => [idOf(item), item] as const));
   const named = new Set<string>();
   const result: TItem[] = [];
   for (const entry of overlay) {
@@ -103,7 +106,7 @@ function mergeOverlay<TItem extends { id: string }, TEntry extends { kind: 'glob
     if (!entry.enabled) continue;
     result.push(local(entry as TEntry & { kind: 'local' }));
   }
-  for (const item of globals) if (!named.has(item.id)) result.push(item);
+  for (const item of globals) if (!named.has(idOf(item))) result.push(item);
   return result;
 }
 
@@ -117,7 +120,72 @@ function resolveOverlay<TItem extends { id: string }, TEntry extends { kind: 'gl
 ): TItem[] {
   if (!isOverridable(key)) return [...globals];
   const overlay = stored == null ? null : (JSON.parse(stored) as TEntry[]);
-  return mergeOverlay(overlay, globals, ref, local);
+  return mergeOverlay(overlay, globals, (item) => item.id, ref, local);
+}
+
+/** Defined here, not in config.ts: the web bundle imports this module and config.ts pulls in node builtins. */
+export function routingLabelRef(route: Pick<RoutingLabel, 'label'>): string {
+  return route.label.trim().toLowerCase();
+}
+
+/** A Routing Label list problem at `index`; `duplicate-global` names the enabled Global label it repeats. */
+export type RoutingLabelIssue =
+  | { index: number; kind: 'blank' | 'duplicate' }
+  | { index: number; kind: 'duplicate-global'; globalRef: string };
+
+export type RoutingLabelIssueText = { before: string; globalRef?: string; after: string };
+
+/** The message for an issue on `label`, split around the Global label it repeats so a UI can style that name. */
+export function describeRoutingLabelIssue(issue: RoutingLabelIssue, label: string): RoutingLabelIssueText {
+  const text = label.trim();
+  switch (issue.kind) {
+    case 'blank':
+      return { before: 'Enter a label.', after: '' };
+    case 'duplicate':
+      return { before: `“${text}” is already mapped above (labels match case-insensitively).`, after: '' };
+    case 'duplicate-global':
+      return {
+        before: `“${text}” duplicates the enabled Global label `,
+        globalRef: issue.globalRef,
+        after: ' (labels match case-insensitively). Rename it, or disable the Global row above.',
+      };
+  }
+}
+
+export function routingLabelIssueMessage(issue: RoutingLabelIssue, label: string): string {
+  const { before, globalRef = '', after } = describeRoutingLabelIssue(issue, label);
+  return before + globalRef + after;
+}
+
+/** Blank and case-insensitively repeated labels in a flat (Global) list. */
+export function routingLabelIssues(labels: readonly Pick<RoutingLabel, 'label'>[]): RoutingLabelIssue[] {
+  return routingLabelOverlayIssues(labels.map((routingLabel) => ({ kind: 'local', enabled: true, routingLabel })), []);
+}
+
+/**
+ * Problems that make a Workspace overlay unsavable: an enabled local label may
+ * not be blank, repeat an enabled Global label (a disabled Global frees its
+ * label), or repeat an earlier enabled local one. Disabled locals are not checked.
+ */
+export function routingLabelOverlayIssues(
+  overlay: readonly (
+    | { kind: 'global'; ref: string; enabled: boolean }
+    | { kind: 'local'; enabled: boolean; routingLabel: Pick<RoutingLabel, 'label'> }
+  )[],
+  globals: readonly Pick<RoutingLabel, 'label'>[],
+): RoutingLabelIssue[] {
+  const disabled = new Set(overlay.flatMap((e) => (e.kind === 'global' && !e.enabled ? [e.ref] : [])));
+  const globalRefs = new Set(globals.map(routingLabelRef).filter((ref) => !disabled.has(ref)));
+  const seen = new Set<string>();
+  return overlay.flatMap((entry, index): RoutingLabelIssue[] => {
+    if (entry.kind !== 'local' || !entry.enabled) return [];
+    const ref = routingLabelRef(entry.routingLabel);
+    if (ref === '') return [{ index, kind: 'blank' }];
+    if (globalRefs.has(ref)) return [{ index, kind: 'duplicate-global', globalRef: ref }];
+    if (seen.has(ref)) return [{ index, kind: 'duplicate' }];
+    seen.add(ref);
+    return [];
+  });
 }
 
 function resolveTaskStage(
@@ -229,7 +297,7 @@ export function resolvePauseMessage(
   ws: (Partial<PromptFragmentOverrides> & Pick<WorkspaceRow, 'pauseMessage'>) | null | undefined,
   config: Pick<AppConfig, 'pauseMessage' | 'promptFragments'>,
 ): string {
-  return expandFragments(resolveScoped('pauseMessage', ws?.pauseMessage, config.pauseMessage), resolvePromptFragments(ws, config));
+  return composePauseMessage(resolveScoped('pauseMessage', ws?.pauseMessage, config.pauseMessage), resolvePromptFragments(ws, config));
 }
 
 /** Resolve the nudge sent when an Attempt ends its turn with uncommitted changes. */
@@ -237,7 +305,7 @@ export function resolveCommitNudge(
   ws: (Partial<PromptFragmentOverrides> & Pick<WorkspaceRow, 'driveCommitNudge'>) | null | undefined,
   config: Pick<AppConfig, 'drive' | 'promptFragments'>,
 ): string {
-  return expandFragments(resolveScoped('driveCommitNudge', ws?.driveCommitNudge, config.drive.commitNudge), resolvePromptFragments(ws, config));
+  return composeCommitNudge(resolveScoped('driveCommitNudge', ws?.driveCommitNudge, config.drive.commitNudge), resolvePromptFragments(ws, config));
 }
 
 /** Resolve the Prompt Fragments a Workspace's prompts reference, each `workspace ?? global`. */

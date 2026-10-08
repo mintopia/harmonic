@@ -46,8 +46,18 @@ the box; the settings you're likely to touch are the models:
 | Default model | The one used when a ticket doesn't choose its own. |
 | Permission mode | How an unattended Attempt handles the harness's permission requests. |
 
-Pick a harness and model per ticket, or set them as a workspace default;
-see [Settings & overrides](/harmonic/run/settings/).
+Pick a harness and model per ticket, set them as a workspace default, or
+let a tracker label choose them with
+[Routing Labels](/harmonic/run/settings/#routing-labels). See
+[Settings & overrides](/harmonic/run/settings/).
+
+### Model names in the app
+
+The app shortens Claude model ids to a readable name. For example,
+`claude-opus-5-5` appears as **Opus 5.5**, and `sonnet-5` as **Sonnet 5**, on
+the Board, the ticket page and the Retry dialog. The id itself is unchanged,
+and it is the id Harmonic sends. Other models appear by their id. Harnesses
+appear as Claude, Codex, Copilot and OpenCode.
 
 ### Model choice and cost
 

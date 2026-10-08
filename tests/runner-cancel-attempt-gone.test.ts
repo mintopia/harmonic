@@ -64,7 +64,7 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
       guardrailConfig: baselineConfig().guardrails,
       priceTable: pricesForHarness(baselineConfig().harnesses.claude),
     };
-    await runs.create(task.id, snapshot);
+    await runs.create(task.id, { guardrails: snapshot });
 
     const realGet = runs.get.bind(runs);
     vi.spyOn(runs, 'get').mockImplementation(async (id: number) => {

@@ -1,19 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
   CRITIC_NO_ISSUE_PLACEHOLDERS,
-  EPIC_RESOLVE_PLACEHOLDERS,
   SAMPLE_DRIVE_FIELDS,
-  SAMPLE_TASK_ID,
   compileCriticPreview,
-  compileDrivePreview,
   compileEpicCriticPreview,
-  compileEpicRefreshPreview,
-  compileCriticFragmentPreview,
-  compileEpicResolvePreview,
-  compileTaskIdPreview,
-  compileTaskPreview,
+  TEMPLATE_PLACEHOLDERS,
+  assemblePreview,
+  defaultConditions,
+  fragmentPlaceholders,
+  parseMarked,
+  promptSettingsView,
 } from '../web/src/prompt-preview-model.js';
 import { baselineConfig } from '../src/config.js';
+import { PROMPT_ANATOMIES } from '../src/domain/prompt-anatomy.js';
+import { PROMPT_TEMPLATE_IDS } from '../src/domain/prompt-templates.js';
 
 const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
 
@@ -25,26 +25,6 @@ describe('prompt-preview-model (settings compiled preview)', () => {
       '{title}',
       '{description}',
     ]);
-  });
-
-  it('compileDrivePreview fills the Drive tokens with sample values', () => {
-    const out = compileDrivePreview('task {taskId}: issue {ref} — {title} ({url}) via {skill}: {description}', baselineConfig());
-    expect(out).toBe(
-      `task ${SAMPLE_DRIVE_FIELDS.taskId}: issue ${SAMPLE_DRIVE_FIELDS.ref} — ${SAMPLE_DRIVE_FIELDS.title} (${SAMPLE_DRIVE_FIELDS.url}) via ${SAMPLE_DRIVE_FIELDS.skill}: ${SAMPLE_DRIVE_FIELDS.description}`,
-    );
-    expect(out).not.toMatch(/\{(taskId|skill|ref|url|title|description)\}/);
-  });
-
-  it('compileTaskIdPreview fills {taskId}', () => {
-    expect(compileTaskIdPreview('Task {taskId} running unattended', baselineConfig())).toBe(`Task ${SAMPLE_TASK_ID} running unattended`);
-  });
-
-  it('compileTaskPreview fills the task-prompt tokens', () => {
-    const config = baselineConfig();
-    const out = compileTaskPreview('{prompt} [{id}/{harness}/{model}] in {workingDir}', config);
-    expect(out).toBe(
-      `Example task prompt. [123/${config.defaults.harness}/${config.harnesses[config.defaults.harness].defaultModel}] in /repo`,
-    );
   });
 
   it('compileCriticPreview shows both Task-kind variants, each with the read-only + verdict scaffolding', () => {
@@ -72,6 +52,10 @@ describe('prompt-preview-model (settings compiled preview)', () => {
     }
   });
 
+  it('offers the Epic resolver prompt its supported tokens', () => {
+    expect(TEMPLATE_PLACEHOLDERS.epicResolvePrompt.map((p) => p.token)).toEqual(['{title}', '{description}', '{ref}', '{url}']);
+  });
+
   it('compiles an Epic critic against its ticket context', () => {
     const out = compileEpicCriticPreview('Review Epic {ref}: {title}.', DEFAULT_PROMPT_FRAGMENTS);
 
@@ -80,28 +64,96 @@ describe('prompt-preview-model (settings compiled preview)', () => {
     expect(out).toMatch(/READ-ONLY/i);
   });
 
-  it('matches the Epic resolver prompt and offers its supported tokens', () => {
-    expect(EPIC_RESOLVE_PLACEHOLDERS.map((p) => p.token)).toEqual(['{title}', '{description}', '{ref}', '{url}']);
-    expect(compileEpicResolvePreview('Fix {ref}: {title} — {description}', 'Work in {branch}.', DEFAULT_PROMPT_FRAGMENTS)).toContain(
-      `Fix ${SAMPLE_DRIVE_FIELDS.ref}: ${SAMPLE_DRIVE_FIELDS.title} — ${SAMPLE_DRIVE_FIELDS.description}`,
-    );
-    expect(compileEpicResolvePreview('Fix {ref}.', 'Work in {branch}.', DEFAULT_PROMPT_FRAGMENTS)).toContain('## Failing Epic verification');
-    expect(compileEpicResolvePreview('Fix {ref}.', 'Stay on {branch}.', DEFAULT_PROMPT_FRAGMENTS)).toContain(`Stay on epic/${SAMPLE_DRIVE_FIELDS.ref}.`);
-    expect(compileEpicResolvePreview('Fix.', '{fragment.readOnlyRestraint} on {branch}', { ...DEFAULT_PROMPT_FRAGMENTS, readOnlyRestraint: 'LOOK ONLY', epicFailingVerification: 'FAILED: {reason}' })).toBe(
-      `Fix.\n\nFAILED: Example verifier feedback.\n\nLOOK ONLY on epic/${SAMPLE_DRIVE_FIELDS.ref}`,
-    );
-  });
+  describe('parseMarked', () => {
+    const open = (key: string) => `\uE000${key}\uE001`;
+    const close = '\uE002';
 
-  it('previews the Epic refresh prompt with fragments expanded and the Epic branch as the checkout', () => {
-    const out = compileEpicRefreshPreview('Merging {defaultBranch} into {branch}: {detail}\n{fragment.conflictResolution}', {
-      promptFragments: { ...DEFAULT_PROMPT_FRAGMENTS, conflictResolution: 'in {baseDir}: keep {baseBranch} and {taskBranch}' },
+    it('splits marked parts, nests them, and labels unmarked text as built in', () => {
+      const text = `${open('fragment:peerMessages')}head ${open('fragment:peerMessage')}one${close} tail${close}\n\nglue\n\n${open('template:pauseMessage')}pause${close}`;
+      expect(parseMarked(text)).toEqual([
+        {
+          key: 'fragment:peerMessages',
+          children: ['head ', { key: 'fragment:peerMessage', children: ['one'] }, ' tail'],
+        },
+        { key: null, children: ['glue'] },
+        { key: 'template:pauseMessage', children: ['pause'] },
+      ]);
     });
-    expect(out).toBe('Merging develop into epic/example: Both branches changed src/app.ts.\nin /repo: keep epic/example and develop');
+
+    it('drops whitespace-only gaps and rejects unknown markers', () => {
+      expect(parseMarked(`${open('template:pauseMessage')}a${close}\n\n  \n${open('template:commitNudge')}b${close}`).map((s) => s.key)).toEqual([
+        'template:pauseMessage',
+        'template:commitNudge',
+      ]);
+      expect(() => parseMarked(`${open('template:nope')}a${close}`)).toThrow(/Unknown prompt part/);
+    });
   });
 
-  it('previews a critic fragment inside the whole critic prompt, including the uncommitted-changes variant', () => {
-    const fragments = { ...DEFAULT_PROMPT_FRAGMENTS, criticWorkingTreeNote: 'DIRTY against {base}' };
-    expect(compileCriticFragmentPreview(fragments, 'dirty')).toContain('DIRTY against ba5e');
-    expect(compileCriticFragmentPreview(fragments, 'diff')).not.toContain('DIRTY against');
+  describe('assemblePreview', () => {
+    it('compiles the default Implementation turn with the configured Task prompt filled', () => {
+      const config = baselineConfig();
+      config.taskPrompt = 'DO: {prompt}';
+      const view = promptSettingsView({ config });
+      const [anatomy] = PROMPT_ANATOMIES;
+      if (!anatomy) throw new Error('no anatomy');
+      const segments = assemblePreview(anatomy.id, view, defaultConditions(anatomy));
+      expect(segments[0]).toEqual({ key: 'template:taskPrompt', children: ['DO: Example task prompt.'] });
+      expect(segments.map((s) => s.key)).toContain('fragment:peerLine');
+    });
+
+    it('falls back to a placeholder when no critic is configured', () => {
+      const view = promptSettingsView({ config: baselineConfig() });
+      const critic = PROMPT_ANATOMIES.find((a) => a.id === 'criticReview');
+      if (!critic) throw new Error('no critic anatomy');
+      const segments = assemblePreview('criticReview', view, defaultConditions(critic));
+      expect(segments[0]).toEqual({ key: 'criticPrompt', children: ["(each critic's own prompt)"] });
+    });
+  });
+
+  describe('critic preview', () => {
+    const critic = PROMPT_ANATOMIES.find((a) => a.id === 'criticReview');
+    if (!critic) throw new Error('no critic anatomy');
+    const keys = (segments: ReturnType<typeof assemblePreview>) => JSON.stringify(segments);
+
+    it('reviews a dirty worktree on an identical base as a diff with the working-tree note, as the runtime does', () => {
+      const view = promptSettingsView({ config: baselineConfig() });
+      const dirty = assemblePreview('criticReview', view, { flags: { dirtyWorktree: true }, choices: { revision: 'identical', ticket: 'ticket' } });
+      expect(keys(dirty)).toContain('fragment:criticRevisionDiff');
+      expect(keys(dirty)).toContain('fragment:criticWorkingTreeNote');
+      expect(keys(dirty)).not.toContain('fragment:criticRevisionIdentical');
+      const clean = assemblePreview('criticReview', view, { flags: { dirtyWorktree: false }, choices: { revision: 'identical', ticket: 'ticket' } });
+      expect(keys(clean)).toContain('fragment:criticRevisionIdentical');
+      expect(keys(clean)).not.toContain('fragment:criticWorkingTreeNote');
+    });
+
+    it('labels the critic segment with the name of the critic whose prompt it shows', () => {
+      const config = baselineConfig();
+      config.verify.task.preMerge.critics = [
+        { id: 'c1', name: 'Security reviewer', issuePrompt: 'Look for holes.', noIssuePrompt: 'Look for holes.', model: 'm', harness: 'claude', timeoutSeconds: 300 },
+      ];
+      const [segment] = assemblePreview('criticReview', promptSettingsView({ config }), defaultConditions(critic));
+      expect(segment).toMatchObject({ key: 'criticPrompt', label: 'Critic prompt · Security reviewer' });
+    });
+  });
+
+  describe('previous Attempt feedback', () => {
+    const implementation = PROMPT_ANATOMIES.find((a) => a.id === 'implementation');
+    if (!implementation) throw new Error('no implementation anatomy');
+    const builtIn = (flags: Record<string, boolean>, origin: string) =>
+      assemblePreview('implementation', promptSettingsView({ config: baselineConfig() }), { flags, choices: { origin } })
+        .filter((s) => s.key === null)
+        .map((s) => s.children.join(''))
+        .join('\n');
+
+    it.each(['native', 'mirrored'])('shows the built-in feedback section for a %s Task only when the flag is on', (origin) => {
+      expect(implementation.flags.some((f) => f.id === 'feedback')).toBe(true);
+      expect(builtIn({ feedback: true }, origin)).toContain('## Feedback from the previous attempt');
+      expect(builtIn({ feedback: false }, origin)).not.toContain('## Feedback from the previous attempt');
+    });
+  });
+
+  it('offers placeholders for every template and fragment', () => {
+    for (const id of PROMPT_TEMPLATE_IDS) expect(TEMPLATE_PLACEHOLDERS[id], id).toBeDefined();
+    expect(fragmentPlaceholders('selfHeal').filter((p) => p.core).map((p) => p.token)).toEqual(['{reason}', '{output}']);
   });
 });

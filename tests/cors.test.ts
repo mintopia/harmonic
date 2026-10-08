@@ -24,6 +24,8 @@ describe('parseCorsOrigins', () => {
     expect(() => parseCorsOrigins('viz.example')).toThrow(/"viz\.example"/);
     expect(() => parseCorsOrigins('https://x/path')).toThrow(/"https:\/\/x\/path"/);
     expect(() => parseCorsOrigins('https://x?q=1')).toThrow(/https:\/\/x\?q=1/);
+    expect(() => parseCorsOrigins('https://:pw@x')).toThrow(/https:\/\/:pw@x/);
+    expect(() => parseCorsOrigins('https://u@x')).toThrow(/https:\/\/u@x/);
   });
 });
 
@@ -106,5 +108,15 @@ describe('CORS responses', () => {
     server = await startServer(stubHarness(), { corsOrigins: parseCorsOrigins('https://viz.example') });
     const res = await fetch(`${server.baseUrl}/api/tasks`, { method: 'OPTIONS', headers: { origin: 'https://viz.example' } });
     expect(res.status).toBe(401);
+  });
+
+  it('lets a preflight through without auth even when CORS is off', async () => {
+    server = await startServer(stubHarness());
+    const res = await fetch(`${server.baseUrl}/api/tasks`, {
+      method: 'OPTIONS',
+      headers: { origin: 'https://viz.example', 'access-control-request-method': 'GET' },
+    });
+    expect(res.status).not.toBe(401);
+    expect(res.headers.get('access-control-allow-origin')).toBeNull();
   });
 });

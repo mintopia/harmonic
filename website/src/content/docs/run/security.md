@@ -28,6 +28,8 @@ harmonic start --password 'a long passphrase'     # or the HARMONIC_PASSWORD env
 - Setting a new value **rotates** it. Minimum length is 4 characters.
 - To go back to ungated, clear it explicitly, and only on a local
   binding: `harmonic start --password ''`.
+- Signing in lasts until the server restarts. After a restart, including
+  `harmonic restart` and an upgrade, open tabs return to the Login screen.
 
 ## Host binding
 
@@ -63,6 +65,11 @@ HARMONIC_CORS_ORIGINS='https://viewer.example.com' harmonic start
 key, and Harmonic never allows credentialed cross-origin requests, so the
 page can't use your login session. Give such pages a Read Key, which can
 view work but change nothing.
+
+Create keys on the API page and choose **Read only** for a Read Key. It can
+read Tasks, Attempts, Workspaces and their Epics, maps, activity, Operations,
+Scheduled Jobs and Notifications, and can listen on the WebSocket, which is
+filtered to what the key may read. Everything else needs a full-access key.
 
 ## Secret key backup
 

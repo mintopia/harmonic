@@ -7,7 +7,7 @@ import { computeContextUsage, formatContextUsage, formatTokenBreakdown } from '.
 import { formatCost } from '../../cost';
 import { DiscoveryModelPicker } from '../DiscoveryModelPicker.js';
 import { Icon } from '../Icon';
-import { providerLabel } from '../TaskIdentity';
+import { formatModelLabel, providerLabel } from '../TaskIdentity';
 import { commandPickerState } from './command-picker-model.js';
 
 const fieldLabel = `mb-1 block ${labelType} text-muted`;
@@ -338,7 +338,7 @@ export function Composer({
                   className={`size-1.5 rounded-full ${conversation.state === 'active' ? 'bg-ready-dot' : 'bg-faint'}`}
                 />
                 <span className="text-muted">{providerLabel(conversation.harness)}</span>
-                <span className="font-data text-faint">{conversation.model}</span>
+                <span className="font-data text-faint" title={conversation.model}>{formatModelLabel(conversation.model)}</span>
               </span>
               {formatCost(conversation.cost) && (
                 <span className="font-data tabular-nums text-muted">{formatCost(conversation.cost)}</span>

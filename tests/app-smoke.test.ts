@@ -48,6 +48,7 @@ function makeConfig(): AppConfig {
     drive: { prompt: '', unattendedReminder: '', continuePrompt: '', commitNudge: '', mergeFate: 'auto-merge', continueAttempts: 0 },
     maxAttempts: 3,
     contextReuseTokenLimit: 100_000,
+    routingLabels: [],
     editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
     pauseMessage: 'Pause.',
@@ -93,6 +94,7 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     taskPostMergeCritics: null,
     epicPreMergeCommands: null,
     epicPreMergeCritics: null,
+    routingLabels: null,
     guardrailBudget: null,
     guardrailProgress: null,
     exportEnabled: null,
@@ -310,7 +312,7 @@ describe('App smoke (issue #452)', () => {
       update: { availableVersion: '2.7.0', armedVersion: '2.7.0', upgradingVersion: null, dismissedVersion: null, migrationRequired: false, mode: { kind: 'systemd' as const }, guardMissing: false, failed: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: true } },
     });
 
-    expect(el.textContent).toContain('waiting for agent before updating');
+    expect(el.textContent).toContain('Waiting for an agent to finish its turn before updating');
     expect([...el.querySelectorAll('button')].some((button) => button.textContent === 'Cancel')).toBe(true);
   });
 

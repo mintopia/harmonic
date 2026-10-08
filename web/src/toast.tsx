@@ -31,9 +31,7 @@ export function toastError(e: unknown) {
   push(e instanceof Error ? e.message : String(e), 'error');
 }
 
-/** Acknowledge a completed gate action (accept/reject/cancel):
- * a short, neutral notice naming what happened, so a successful destructive
- * or irreversible action never merges silently. Auto-dismisses after 6s. */
+/** Neutral notice for a completed gate action (accept/retry/cancel). Auto-dismisses after 6s. */
 export function toastSuccess(message: string) {
   push(message, 'success');
 }

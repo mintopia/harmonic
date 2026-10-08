@@ -7,7 +7,7 @@ import type { LiveUsageTailer } from './live-usage-tailer.js';
 import type { UsageSampler } from './usage-sampler.js';
 import { GuardrailSupervisor } from './guardrail-supervisor.js';
 import { ActiveRuns, type ActiveRun } from './active-runs.js';
-import { codeIndexRepoGuidance, promptForTask, renderFragment } from './prompt-template.js';
+import { promptForTask } from './prompt-template.js';
 import { indexWorktree } from './code-index.js';
 import type { VerificationCoordinator } from './verification-coordinator.js';
 import type { AutoDrive } from './auto-drive.js';
@@ -22,7 +22,7 @@ import type { SettleProjection, DispositionKind } from '../domain/attempt-settle
 import type { TaskService } from '../domain/tasks.js';
 import type { PromptFragments } from '../domain/prompt-fragments.js';
 import { resolvePromptFragments, resolveScoped, resolveTaskPrompt } from '../domain/setting-override.js';
-import { resolveAgentMessages } from '../domain/agent-messages.js';
+import { messageText, resolveAgentMessages } from '../domain/agent-messages.js';
 import { SessionContinuation, type PersistSessionContext } from './session-continuation.js';
 import { MergeCoordinator, BaseBranchUnresolved, EpicBaseNotReady } from './merge-coordinator.js';
 import type { RunBoundaryResult } from './run-control.js';
@@ -30,7 +30,7 @@ import type { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { logger } from '../logger.js';
 import type { SpanContext } from '@opentelemetry/api';
 import type { AgentMessageRow } from '../db/schema.js';
-import { peerMessagesSection } from './agent-message-delivery.js';
+import { composeAttemptPrompt, composePeerContext, planAttemptContext, placePriorContext } from './prompt-assembly.js';
 import type { RunnerEvents, RunnerOptions, Workspace } from './runner.js';
 import { TurnListeners, TurnState } from './turn-listeners.js';
 import type { TaskArchive } from '../archive/task-archive.js';
@@ -735,51 +735,43 @@ export class TurnDriver {
     }
     const workspaceRow = await this.deps.getWorkspace?.(task.workspaceId);
     const fragments = resolvePromptFragments(workspaceRow, this.deps.getConfig());
-    const operatorSection = (seed: string) => renderFragment('operatorMessage', fragments, { seed });
-    let promptText = autoDriven
+    const opening = autoDriven
       ? await this.deps.autoDrive!.prompt(task)
       : promptForTask(
           { ...task, workingDir: workspace.cwd },
           resolveTaskPrompt(workspaceRow, this.deps.getConfig()),
         );
     const operatorSeed = this.deps.activeRuns.takePendingOperatorSeed(task.id);
-    let condensed: string | null = null;
-    if (operatorSeed !== undefined && !healCtx) {
-      if (run.sessionRowId !== null && !opensAttempt) {
-        // Continuing an already-open Attempt (a manual resume/steer-continue):
-        // continue-full already holds the full prior conversation.
-        promptText = operatorSection(operatorSeed);
-      } else if (run.sessionRowId !== null) {
-        // This Attempt's own opening turn, even though it opportunistically bound a
-        // warm Session (bindContinuationIfEligible): that memory belongs to an
-        // earlier Attempt, not this one — still send the real instructions, with
-        // the operator's message appended, not swapped in for them.
-        promptText = `${promptText}\n\n${operatorSection(operatorSeed)}`;
-      } else {
-        // Fresh Session: the agent needs some context, not just the bare message.
-        const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
-        const priorContext = src ? await this.deps.sessionContinuation.condensedContext(src.prior, fragments) : null;
-        promptText = priorContext
-          ? `${priorContext}\n\n${operatorSection(operatorSeed)}`
-          : `${promptText}\n\n${operatorSection(operatorSeed)}`;
-      }
-    } else if (healCtx) {
-      promptText = `${promptText}\n\n${renderFragment('selfHeal', fragments, { attempt: healCtx.attempt, reason: healCtx.reason, output: healCtx.output })}`;
-      condensed = healCtx.condensedContext ?? null;
-      // A steer arriving exactly as a self-heal retry starts still reaches this turn.
-      if (operatorSeed !== undefined) {
-        promptText = `${promptText}\n\n${operatorSection(operatorSeed)}`;
-      }
-    } else if (task.continuationChoice === 'condensed') {
-      const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
-      condensed = src ? await this.deps.sessionContinuation.condensedContext(src.prior, fragments) : null;
-    }
+    const plan = planAttemptContext({
+      seeded: operatorSeed !== undefined,
+      healing: healCtx !== undefined,
+      continuesOpenAttempt: run.sessionRowId !== null && !opensAttempt,
+      freshSession: run.sessionRowId === null,
+      condensedContinuation: task.continuationChoice === 'condensed',
+    });
+    const prior = plan.priorSlot === null ? null : healCtx ? (healCtx.condensedContext ?? null) : await this.priorSessionContext(task, fragments);
+    const { freshSessionContext, condensed } = placePriorContext(plan.priorSlot, prior);
     const peer = await this.peerContext(task, fragments);
-    if (peer.text) promptText = `${promptText}\n\n${peer.text}`;
-    if (rebaseConflict) promptText = `${promptText}\n\n${renderFragment('rebaseConflict', fragments)}`;
-    if (condensed) promptText = `${promptText}\n\n${condensed}`;
-    if (codeIndexRepoId) promptText = `${promptText}${codeIndexRepoGuidance(codeIndexRepoId, fragments)}`;
+    const promptText = composeAttemptPrompt(
+      {
+        opening,
+        seed: operatorSeed,
+        seedMode: plan.seedMode,
+        freshSessionContext,
+        heal: healCtx ? { attempt: healCtx.attempt, reason: healCtx.reason, output: healCtx.output } : undefined,
+        condensed,
+        peerText: peer.text,
+        rebaseConflict,
+        codeIndexRepoId,
+      },
+      fragments,
+    );
     return { promptText, operatorSeed, heldMessages: peer.held };
+  }
+
+  private async priorSessionContext(task: TaskRow, fragments: PromptFragments): Promise<string | null> {
+    const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
+    return src ? this.deps.sessionContinuation.condensedContext(src.prior, fragments) : null;
   }
 
   /** Held peer messages from the database (left held until the prompt is sent), plus the peer line, when Agent Messages are on. */
@@ -790,17 +782,13 @@ export class TurnDriver {
     const { enabled } = resolveAgentMessages(workspace, this.deps.getConfig().agentMessages);
     if (!enabled) return { text: '', held: [] };
     const held = await store.listHeld(task.id);
-    const parts: string[] = [];
-    if (held.length > 0) {
-      const harnesses = new Map<number, string>();
-      for (const id of new Set(held.map((m) => m.senderTaskId))) {
-        const sender = await this.deps.taskService.get(id).catch(() => null);
-        if (sender) harnesses.set(id, sender.harness);
-      }
-      parts.push(peerMessagesSection(held, (id) => harnesses.get(id) ?? 'agent', fragments));
+    const harnesses = new Map<number, string>();
+    for (const id of new Set(held.map((m) => m.senderTaskId))) {
+      const sender = await this.deps.taskService.get(id).catch(() => null);
+      if (sender) harnesses.set(id, sender.harness);
     }
-    parts.push(renderFragment('peerLine', fragments));
-    return { text: parts.join('\n\n'), held };
+    const entries = held.map((m) => ({ taskId: m.senderTaskId, harness: harnesses.get(m.senderTaskId) ?? 'agent', text: messageText(m) }));
+    return { text: composePeerContext(entries, fragments), held };
   }
 
 }

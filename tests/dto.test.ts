@@ -53,6 +53,8 @@ const attemptRow = (over: Partial<TaskAttemptRow> = {}): TaskAttemptRow => ({
   liveUsage: null,
   guardrailConfig: null,
   priceTable: null,
+  harness: null,
+  model: null,
   detail: null,
   ...over,
 });
@@ -79,6 +81,7 @@ const taskRow = (over: Partial<TaskRow> = {}): TaskRow => ({
   workflow: null,
   wayfinderType: null,
   escalationReason: null,
+  escalationCause: null,
   mergeStatus: null, ticketClosePending: false,
   mapRef: null,
   baseBranch: null,
@@ -106,6 +109,7 @@ const taskWithDeps = (over: Partial<TaskWithDeps> = {}): TaskWithDeps => ({
   humanOnly: false,
   isEpic: false,
   overrides,
+  routing: null,
   ...over,
 });
 

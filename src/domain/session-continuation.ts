@@ -127,7 +127,7 @@ export interface CondensedContinuationEstimate {
  * The plan for how a continuation is offered.
  * - `silent-continue`: an automated trigger — reuse the same Session with no
  *   operator dialog. `sameSession` is always true; there is no cost gate.
- * - `offer-choice`: a human rejection — surface the two options. `continueFull`
+ * - `offer-choice`: a human Retry — surface the two options. `continueFull`
  *   continues the **same** Session (full conversation) and carries the cost
  *   {@link ContinuationCostEstimate}; `startCondensed` starts a **new** Session
  *   seeded with a condensed summary and carries its own relative
@@ -201,7 +201,7 @@ export function estimateCondensedContinuationCost(warmth: SessionWarmthFacts, no
 /**
  * Decide how a continuation triggered by `trigger` is offered on a Session with
  * the given `warmth`, as of `now`. An automated trigger reuses the same Session
- * silently (`silent-continue`). A human rejection surfaces the choice
+ * silently (`silent-continue`). A human Retry surfaces the choice
  * (`offer-choice`); both options are always present — warmth informs the
  * estimate, it never removes an option.
  */

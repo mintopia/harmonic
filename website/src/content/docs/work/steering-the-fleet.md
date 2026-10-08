@@ -50,6 +50,41 @@ on the board rather than failing silently:
   automatic retries. The ticket is left open and flagged for you to look
   at.
 
+## Retry, Accept and Close
+
+An escalated ticket has three actions on its page.
+
+- **Accept** overrides the step that failed and carries on with the pipeline.
+  Its label names that step: **Accept & implement** after a failed rebase,
+  **Accept & verify** after a failed implementation, **Accept & review** after
+  a failed verification, and **Accept & merge** after a failed review. If no
+  step is known, it reads **Accept**. Accepting at the final review merges the
+  candidate as it is. Accept is disabled, with *No candidate commits to accept*,
+  when there is nothing to accept.
+- **Retry** sends the ticket back to the queue on the same branch, and the
+  attempt budget starts over. The dialog has these fields:
+  - **Guidance (optional)**: what was wrong and what the next Attempt should do
+    differently. It is recorded on the escalated Attempt and given to the next one.
+  - **Harness and Model**: the route the next Attempt uses. Choosing a different
+    one saves it on the ticket, which replaces the ticket's Routing Label. The
+    dialog says when a label will no longer apply.
+  - **When**: **Retry** queues the next Attempt, and it starts when a slot is free.
+    It continues the current Session only if that Session is still warm and the
+    Harness and Model are unchanged. **Retry Now** starts the next Attempt at once,
+    without waiting for a free slot. When there is a prior Session to re-use,
+    **Re-use the same Session** appears; it is unavailable when the Harness
+    changes, because a different Harness needs a new Session. The dialog warns
+    when the Session is cold, or when the Model is switched within it, because
+    the cached context can't be reused then and the run costs more.
+
+  The confirm button is labelled to match: **Retry**, **Retry Now**, or
+  **Retry Now in this Session** when the Session is re-used.
+- **Close** ends the ticket without merging its candidate. It removes the branch
+  and worktree and closes the tracker issue. It asks you to confirm first, and it
+  cannot be undone.
+
+An escalated Epic has its own panel. See [Epics](/harmonic/work/epics/).
+
 ## Taking over
 
 When you pick up a flagged ticket, you're working it by hand, with the same

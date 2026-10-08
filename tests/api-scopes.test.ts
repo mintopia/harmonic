@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scopedKeyAllowed, readScopeAllowed, keyScopesFor, describeKeyScopes } from '../src/server/key-scopes.js';
+import { scopedKeyAllowed, readScopeAllowed, keyScopesFor, describeKeyScopes, readScopeLabels, readScopePathList } from '../src/server/key-scopes.js';
 import { PUBLIC_API_PATHS } from '../src/server/app-auth-hook.js';
 import { startServer } from './helpers.js';
 
@@ -11,7 +11,7 @@ it('enforces operator-only routes for encoded and noncanonical task ids', async 
       const { token } = await server.app.ctx.auth.createKey('scope regression', { scope });
       const headers = { authorization: `Bearer ${token}` };
       for (const id of [String(task.id), `%${task.id.toString().charCodeAt(0).toString(16)}${String(task.id).slice(1)}`, `${task.id}e0`]) {
-        for (const action of ['accept', 'reject', 'close', 'complete', 'steer']) {
+        for (const action of ['accept', 'retry', 'close', 'complete', 'steer']) {
           const response = await server.app.inject({ method: 'POST', url: `/api/tasks/${id}/${action}`, headers, payload: {} });
           expect(response.statusCode, `${scope} ${id}/${action}`).toBe(403);
         }
@@ -52,6 +52,40 @@ it('rejects attempt-scoped and read keys on the secrets, tracker, repository, de
   }
 });
 
+it('a read-scoped key sees only id, name and color from GET /api/workspaces', async () => {
+  const server = await startServer();
+  try {
+    const { token } = await server.app.ctx.auth.createKey('viz', { scope: 'read' });
+    const response = await server.app.inject({ method: 'GET', url: '/api/workspaces', headers: { authorization: `Bearer ${token}` } });
+    expect(response.statusCode).toBe(200);
+    const { workspaces } = response.json() as { workspaces: Record<string, unknown>[] };
+    expect(workspaces.length).toBeGreaterThan(0);
+    for (const workspace of workspaces) expect(Object.keys(workspace).sort()).toEqual(['color', 'id', 'name']);
+  } finally {
+    await server.close();
+  }
+});
+
+describe('scope rule path boundaries', () => {
+  it('does not match sibling prefixes of /mcp and /api/attempts', () => {
+    for (const path of ['/mcpfoo', '/api/attemptsX']) {
+      expect(scopedKeyAllowed(path), path).toBe(false);
+      expect(readScopeAllowed(path, 'GET'), path).toBe(false);
+    }
+  });
+});
+
+describe('read scope prose', () => {
+  it('lists every read-allowed rule', () => {
+    const prose = readScopePathList();
+    for (const path of ['/api/ws', '/api/scheduled-jobs', '/api/notifications']) {
+      expect(readScopeAllowed(path, 'GET')).toBe(true);
+      expect(prose).toContain(path);
+    }
+    for (const label of readScopeLabels()) expect(prose).toContain(label);
+  });
+});
+
 describe('scopedKeyAllowed', () => {
   it('allows /mcp regardless of the rest of the path', () => {
     expect(scopedKeyAllowed('/mcp')).toBe(true);
@@ -63,14 +97,14 @@ describe('scopedKeyAllowed', () => {
     expect(scopedKeyAllowed('/api/tasks/42/steer')).toBe(false);
   });
 
-  it('blocks the human-only accept/reject/close dispositions', () => {
+  it('blocks the human-only accept/retry/close dispositions', () => {
     expect(scopedKeyAllowed('/api/tasks/1/accept')).toBe(false);
-    expect(scopedKeyAllowed('/api/tasks/1/reject')).toBe(false);
+    expect(scopedKeyAllowed('/api/tasks/1/retry')).toBe(false);
     expect(scopedKeyAllowed('/api/tasks/1/close')).toBe(false);
   });
 
-  it('blocks epic-reject on Epics', () => {
-    expect(scopedKeyAllowed('/api/workspaces/1/epics/2/reject')).toBe(false);
+  it('blocks Retry on Epics', () => {
+    expect(scopedKeyAllowed('/api/workspaces/1/epics/2/retry')).toBe(false);
   });
 
   it('blocks the Epic surface generally, listed or by id', () => {

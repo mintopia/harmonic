@@ -1,15 +1,25 @@
 import type { UpdateState } from '../types.js';
+import { versionSkew, type VersionSkew } from '../version-skew-model.js';
 import { btnPrimary, btnQuiet } from '../ui.js';
 import { CopyButton } from './CopyButton.js';
 import { Icon } from './Icon.js';
 
-type UpdateBannerProps = {
-  update: UpdateState | null;
+type BannerActions = {
   pending: boolean;
   onArm: () => void;
   onCancel: () => void;
   onDismiss: () => void;
 };
+
+type UpdateBannerProps = BannerActions & {
+  update: UpdateState | null;
+  /** The version this web bundle was built from; null when unknown. */
+  bundleVersion: string | null;
+};
+
+function isSelfUpgradeActive(update: UpdateState): boolean {
+  return update.upgradingVersion !== null || update.armedVersion !== null || update.failed !== null || update.migrationRequired;
+}
 
 function isIdle(update: UpdateState): boolean {
   return update.idle.runningAttempts === 0 && !update.idle.mergingOrIntegrating && !update.idle.conversationMidTurn;
@@ -23,18 +33,42 @@ function GuardMissingNotice() {
   );
 }
 
-export function UpdateBanner({ update, pending, onArm, onCancel, onDismiss }: UpdateBannerProps) {
+function VersionSkewNotice({ skew }: { skew: VersionSkew }) {
+  if (skew.kind === 'restart-service') {
+    return (
+      <div role="alert" className="flex shrink-0 items-center gap-3 border-b border-await bg-await-tint px-6 py-2.5 text-small text-ink">
+        <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-await-dot" />
+        <p className="min-w-0 flex-1">
+          Harmonic v{skew.bundleVersion} is installed, but v{skew.runningVersion} is still running. Restart the Harmonic
+          service to finish the upgrade; some pages may not work until then.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div role="status" className="flex shrink-0 items-center gap-3 border-b border-ready bg-ready-tint px-6 py-2.5 text-small">
+      <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-ready-dot" />
+      <p className="min-w-0 flex-1 text-ink">Harmonic was updated to v{skew.runningVersion}. Reload this page to use it.</p>
+      <button type="button" className={`${btnPrimary} shrink-0`} onClick={() => window.location.reload()}>
+        Reload
+      </button>
+    </div>
+  );
+}
+
+export function UpdateBanner({ update, bundleVersion, pending, onArm, onCancel, onDismiss }: UpdateBannerProps) {
   if (update === null) return null;
+  const skew = isSelfUpgradeActive(update) ? null : versionSkew(bundleVersion, update.currentVersion);
 
   return (
     <>
       {update.guardMissing && <GuardMissingNotice />}
-      {primaryBanner({ update, pending, onArm, onCancel, onDismiss })}
+      {skew !== null ? <VersionSkewNotice skew={skew} /> : primaryBanner({ update, pending, onArm, onCancel, onDismiss })}
     </>
   );
 }
 
-function primaryBanner({ update, pending, onArm, onCancel, onDismiss }: UpdateBannerProps & { update: UpdateState }) {
+function primaryBanner({ update, pending, onArm, onCancel, onDismiss }: BannerActions & { update: UpdateState }) {
   if (update.migrationRequired) {
     return (
       <div role="alert" className="shrink-0 border-b border-await bg-await-tint px-6 py-2.5 text-small text-ink">
@@ -99,7 +133,7 @@ function primaryBanner({ update, pending, onArm, onCancel, onDismiss }: UpdateBa
         <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-running-dot" />
         <p className="min-w-0 flex-1 text-ink">
           Version {update.armedVersion} will restart when Harmonic is idle.
-          {update.idle.conversationMidTurn && ' waiting for agent before updating.'}
+          {update.idle.conversationMidTurn && ' Waiting for an agent to finish its turn before updating.'}
         </p>
         <button type="button" className={`${btnQuiet} shrink-0`} disabled={pending} onClick={onCancel}>
           Cancel

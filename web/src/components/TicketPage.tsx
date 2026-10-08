@@ -30,6 +30,7 @@ import { taskExportTarget } from '../export-targets';
 import { ChangesPane, NoRunsYet } from './ticket/ChangesPane';
 import { AttemptsNav, PanelNav } from './ticket/AttemptsNav';
 import { AttemptPanel } from './ticket/AttemptPanel';
+import { UnconfiguredHarnessGate, UnconfiguredHarnessMessage } from './ticket/UnconfiguredHarnessGate';
 
 export function TicketPage({
   task,
@@ -130,6 +131,7 @@ export function TicketPage({
       ?
         (task.escalationReason ?? latestAttempt?.escalationReason)?.replace(/^escalated to human:\s*/i, '') ?? null
       : null;
+  const unconfiguredHarness = task.state === 'escalated' && task.escalationCause?.kind === 'harness_unconfigured' ? task.escalationCause : null;
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
   const gateModel = gateForAttempt({ task, runs, selectedAttemptId: selectedRunId });
   const panel = contentPanel(resolved);
@@ -238,7 +240,8 @@ export function TicketPage({
               </div>
             )}
             {task.state === 'escalated' && (
-              <div className="mb-4 rounded-md bg-await-tint px-3 py-2 text-small">
+              <div className="mb-4">
+              <div className="rounded-md bg-await-tint px-3 py-2 text-small">
                 <span className="inline-flex items-center gap-1.5 font-semibold text-await">
                   <Icon name="alert-triangle" className="size-3.5" />
                   {task.mergeStatus === 'resolving-conflicts'
@@ -250,8 +253,12 @@ export function TicketPage({
                         : 'Escalated'}
                 </span>
                 {escalationReason && (
-                  <div className="mt-0.5 whitespace-pre-wrap break-words text-ink">{escalationReason}</div>
+                  <div className="mt-0.5 whitespace-pre-wrap break-words text-ink">
+                    {unconfiguredHarness ? <UnconfiguredHarnessMessage label={unconfiguredHarness.label} harness={unconfiguredHarness.harness} /> : escalationReason}
+                  </div>
                 )}
+              </div>
+              {unconfiguredHarness && <UnconfiguredHarnessGate taskId={task.id} onChanged={onChanged} onClose={onClose} />}
               </div>
             )}
 
@@ -285,6 +292,7 @@ export function TicketPage({
                     baseBranch={task.baseBranch}
                     primaryModel={task.model}
                     agent={harnessLabel(task.harness)}
+                    baseDir={attempts.find((a) => a.number === selectedRun.number)?.workingDir ?? task.workingDir}
                   />
                 ) : (
                   <NoRunsYet task={task} onChanged={onChanged} />

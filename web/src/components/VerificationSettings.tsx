@@ -6,7 +6,6 @@ import type {
   VerificationCommand,
   Workspace,
 } from "../types";
-import { EPIC_RESOLVE_PLACEHOLDERS, compileEpicResolvePreview } from "../prompt-preview-model";
 import { resolvePromptFragments } from "../../../src/domain/setting-override.js";
 import { CommandListEditor, CommandOverlayEditor } from "./CommandListEditor";
 import {
@@ -16,8 +15,8 @@ import {
   TaskCriticListEditor,
   TaskCriticOverlayEditor,
 } from "./CriticListEditor";
-import { PromptField } from "./SettingsSection";
 import { Tabs } from "./Tabs";
+import { harnessChoices, type HarnessChoices } from "./verification-override-model";
 
 type EditorProps = {
   commands: VerificationCommand[];
@@ -26,12 +25,6 @@ type EditorProps = {
   errorPrefix: string;
   fieldErrors: Record<string, string>;
 };
-
-function harnessModelMap(config: AppConfig): Record<string, string[]> {
-  return Object.fromEntries(
-    Object.entries(config.harnesses).map(([id, harness]) => [id, harness.models.map((m) => m.id)]),
-  );
-}
 
 const SCOPE_TABS = [
   { id: "task", label: "Task" },
@@ -95,7 +88,7 @@ function TaskStage({
 }: EditorProps & {
   critics: TaskVerificationCritic[];
   onCritics: (critics: TaskVerificationCritic[]) => void;
-  harnessModels: Record<string, string[]>;
+  harnessModels: HarnessChoices;
 }) {
   return (
     <div className="flex flex-col gap-5">
@@ -132,7 +125,7 @@ function EpicStage({
 }: EditorProps & {
   critics: EpicVerificationCritic[];
   onCritics: (critics: EpicVerificationCritic[]) => void;
-  harnessModels: Record<string, string[]>;
+  harnessModels: HarnessChoices;
 }) {
   return (
     <div className="flex flex-col gap-5">
@@ -167,7 +160,7 @@ export function GlobalVerificationSettings({
   fieldErrors: Record<string, string>;
 }) {
   const [scope, setScope] = useState<"task" | "epic">("task");
-  const harnessModels = harnessModelMap(config);
+  const harnessModels = harnessChoices(config);
   const setTaskStage = (
     stage: "preMerge" | "postMerge",
     next: AppConfig["verify"]["task"]["preMerge"],
@@ -269,28 +262,9 @@ export function GlobalVerificationSettings({
                 harnessModels={harnessModels}
               />
             </StageBlock>
-            <StageBlock
-              title="Resolve prompt"
-              hint="sent to the agent that fixes a failing epic verification"
-            >
-              <PromptField
-                id="settings-epic-resolve-prompt"
-                value={config.verify.epic.resolvePrompt}
-                onChange={(resolvePrompt) =>
-                  setConfig({
-                    ...config,
-                    verify: {
-                      ...config.verify,
-                      epic: { ...config.verify.epic, resolvePrompt },
-                    },
-                  })
-                }
-                placeholders={EPIC_RESOLVE_PLACEHOLDERS}
-                preview={compileEpicResolvePreview(config.verify.epic.resolvePrompt, config.verify.epic.resolveSuffix, config.promptFragments)}
-                error={fieldErrors["verify.epic.resolvePrompt"]}
-                rows={5}
-              />
-            </StageBlock>
+            <p className="text-small text-faint">
+              The prompt for fixing a failing Epic verification is on the Prompts tab (Epic verification fix).
+            </p>
           </>
         )}
       </div>
@@ -302,6 +276,7 @@ export function GlobalVerificationSettings({
 function WorkspaceTaskStage({
   workspace,
   config,
+  harnessModels,
   setWorkspace,
   commandsKey,
   criticsKey,
@@ -310,6 +285,7 @@ function WorkspaceTaskStage({
 }: {
   workspace: Workspace;
   config: AppConfig;
+  harnessModels: HarnessChoices;
   setWorkspace: (workspace: Workspace) => void;
   commandsKey: "taskPreMergeCommands" | "taskPostMergeCommands";
   criticsKey: "taskPreMergeCritics" | "taskPostMergeCritics";
@@ -335,7 +311,7 @@ function WorkspaceTaskStage({
         idPrefix={idPrefix}
         errorPrefix={criticsKey}
         fieldErrors={fieldErrors}
-        harnessModels={harnessModelMap(config)}
+        harnessModels={harnessModels}
         emptyText="No critics run after commands pass."
       />
     </div>
@@ -345,11 +321,13 @@ function WorkspaceTaskStage({
 function WorkspaceEpicStage({
   workspace,
   config,
+  harnessModels,
   setWorkspace,
   fieldErrors,
 }: {
   workspace: Workspace;
   config: AppConfig;
+  harnessModels: HarnessChoices;
   setWorkspace: (workspace: Workspace) => void;
   fieldErrors: Record<string, string>;
 }) {
@@ -371,7 +349,7 @@ function WorkspaceEpicStage({
         idPrefix="workspace-epic-pre-merge"
         errorPrefix="epicPreMergeCritics"
         fieldErrors={fieldErrors}
-        harnessModels={harnessModelMap(config)}
+        harnessModels={harnessModels}
         emptyText="No critics run after commands pass."
       />
     </div>
@@ -390,6 +368,7 @@ export function WorkspaceVerificationSettings({
   fieldErrors: Record<string, string>;
 }) {
   const [scope, setScope] = useState<"task" | "epic">("task");
+  const harnessModels = harnessChoices(config);
   return (
     <PromptFragmentsContext.Provider value={resolvePromptFragments(workspace, config)}>
       <div>
@@ -406,6 +385,7 @@ export function WorkspaceVerificationSettings({
               <WorkspaceTaskStage
                 workspace={workspace}
                 config={config}
+                harnessModels={harnessModels}
                 setWorkspace={setWorkspace}
                 commandsKey="taskPreMergeCommands"
                 criticsKey="taskPreMergeCritics"
@@ -420,6 +400,7 @@ export function WorkspaceVerificationSettings({
               <WorkspaceTaskStage
                 workspace={workspace}
                 config={config}
+                harnessModels={harnessModels}
                 setWorkspace={setWorkspace}
                 commandsKey="taskPostMergeCommands"
                 criticsKey="taskPostMergeCritics"
@@ -436,6 +417,7 @@ export function WorkspaceVerificationSettings({
             <WorkspaceEpicStage
               workspace={workspace}
               config={config}
+              harnessModels={harnessModels}
               setWorkspace={setWorkspace}
               fieldErrors={fieldErrors}
             />

@@ -70,7 +70,7 @@ export type { EpicIntegrateOutcome };
 export interface EpicService {
   startWorkspace(workspace: WorkspaceRow): EpicIntegrationSync;
   stopWorkspace(workspaceId: number): void;
-  rejectEpic(workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null>;
+  retryEpic(workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null>;
   epicBaseNotReady(task: TaskRow): Promise<boolean>;
   refreshAfterDefaultBranchAdvance(workingDir: string, defaultBranch: string): Promise<void>;
   listEpics(workspaceId: number): Promise<Epic[]>;
@@ -272,7 +272,7 @@ export class TrackerEpicService implements EpicService {
     }));
   }
 
-  async rejectEpic(workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null> {
+  async retryEpic(workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null> {
     const entry = this.entries.get(workspaceId);
     const coordinator = entry?.epicIntegrate;
     if (!entry || !coordinator || !this.epicAttempts) return null;

@@ -76,6 +76,11 @@ export function driveFields<T extends DriveTask>(task: T, urlFor: (task: T) => s
   };
 }
 
+export function appendFeedback(text: string, feedback: string | null | undefined): string {
+  const trimmed = feedback?.trim();
+  return trimmed ? `${text}\n\n## Feedback from the previous attempt\n\n${trimmed}` : text;
+}
+
 /** The text a native (non-mirrored) run sends to the harness. */
 export function promptForTask(
   task: { id: number; prompt: string; workingDir: string; harness: string; model: string; feedback?: string | null },
@@ -88,7 +93,5 @@ export function promptForTask(
     harness: task.harness,
     model: task.model,
   });
-  const feedback = task.feedback?.trim();
-  if (!feedback) return base;
-  return `${base}\n\n## Feedback from the previous attempt\n\n${feedback}`;
+  return appendFeedback(base, task.feedback);
 }

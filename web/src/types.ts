@@ -1,5 +1,6 @@
 import type { TrackerResolveFailureCode } from '../../src/tracker/adapter.js';
 import type { PromptFragmentOverrides, PromptFragments } from '../../src/domain/prompt-fragments.js';
+import type { EscalationCause, TaskRouting } from '../../src/domain/task-routing.js';
 import type { Verdict } from '../../src/verification/critic-schema.js';
 
 /** The stored Ticket states; blocked-ness and agent-workability are derived, never stored. */
@@ -62,6 +63,8 @@ export interface Attempt {
   verifiedSha: string | null;
   /** Why this attempt handed the ticket to a human; null unless it escalated. */
   escalationReason: string | null;
+  /** The folder the agent worked in (its managed worktree); null in direct mode, where the Task's workingDir applies. */
+  workingDir: string | null;
   /** Read-time command and critic outcomes for this Attempt. */
   verifierStatuses: VerifierStatus[];
   continuation: {
@@ -190,7 +193,7 @@ export type TicketTimelineKind =
   | 'lifecycle'
   | 'verification'
   | 'guardrail'
-  | 'operator-reject'
+  | 'operator-retry'
   | 'agent-message'
   | 'fact';
 
@@ -425,6 +428,8 @@ export interface Workspace extends PromptFragmentOverrides {
   taskPostMergeCritics: TaskCriticOverlayEntry[] | null;
   epicPreMergeCommands: CommandOverlayEntry[] | null;
   epicPreMergeCritics: EpicCriticOverlayEntry[] | null;
+  /** Routing Label overlay; `null` inherits every global Routing Label in order. */
+  routingLabels: RoutingLabelOverlayEntry[] | null;
   /** Guardrail overrides; `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
    * object shape it was PATCHed as. */
@@ -490,8 +495,7 @@ export interface TaskVerificationCritic {
   issuePrompt: string;
   noIssuePrompt: string;
   model: string;
-  /** Reviewer harness; omitted = reuse the builder task's harness. */
-  harness?: string;
+  harness: string;
   /** Hard timeout in seconds for the critic's review turn (default 300). */
   timeoutSeconds: number;
 }
@@ -503,8 +507,7 @@ export interface EpicVerificationCritic {
   name: string;
   prompt: string;
   model: string;
-  /** Reviewer harness; omitted = reuse the builder task's harness. */
-  harness?: string;
+  harness: string;
   /** Hard timeout in seconds for the critic's review turn (default 300). */
   timeoutSeconds: number;
 }
@@ -537,6 +540,11 @@ export type TaskCriticOverlayEntry =
 export type EpicCriticOverlayEntry =
   | { kind: 'global'; ref: string; enabled: boolean }
   | { kind: 'local'; enabled: boolean; critic: EpicVerificationCritic };
+
+/** A Workspace Routing Label overlay entry; a `global` entry's `ref` is the global label, lowercased. */
+export type RoutingLabelOverlayEntry =
+  | { kind: 'global'; ref: string; enabled: boolean }
+  | { kind: 'local'; enabled: boolean; routingLabel: { label: string; harness: string; model: string } };
 
 /** The budget Guardrail: a mandatory wall-clock bound per afk Attempt
  * plus optional token and cost caps (`null` = that cap is off). */
@@ -590,9 +598,13 @@ export interface Task {
     priority: 'high' | 'normal' | 'low' | null;
     conflictResolveTurns: number | null;
   };
+  /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. */
+  routing: TaskRouting | null;
   state: TaskState;
   /** Why the ticket is `escalated` — the trigger's recorded reason; null in every other state. */
   escalationReason: string | null;
+  /** The machine-readable cause behind `escalationReason`, when it has one; null otherwise. */
+  escalationCause: EscalationCause | null;
   /** Live merge indicator, orthogonal to `state`: 'merging' while the candidate merges onto base, 'resolving-conflicts' once that merge conflicts a human must settle; null at rest. */
   mergeStatus: MergeStatus | null;
   /** Merged, but the tracker ticket close is outstanding. */
@@ -1160,6 +1172,7 @@ export interface AppConfig {
     harness: string;
     model: string;
   };
+  routingLabels: { label: string; harness: string; model: string }[];
   autoRunner: { enabled: boolean; maxConcurrentAttempts: number };
   agentMessages: { enabled: boolean; sendCap: number };
   /** Per-stage command and critic verifier lists. */

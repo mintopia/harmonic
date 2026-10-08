@@ -317,6 +317,45 @@ describe('subscribe', () => {
   });
 });
 
+describe('session loss on a rejected upgrade', () => {
+  const meResponse = (me: { authenticated: boolean; passwordConfigured: boolean }) => vi.fn().mockResolvedValue(new Response(JSON.stringify(me)));
+
+  async function closeBeforeOpen(me: { authenticated: boolean; passwordConfigured: boolean } | 'unreachable', opened = false) {
+    const fetchMock = me === 'unreachable' ? vi.fn().mockRejectedValue(new TypeError('network')) : meResponse(me);
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    vi.resetModules();
+    const { subscribe } = await import('../web/src/ws.js');
+    const { onSessionLost } = await import('../web/src/api.js');
+    const lost = vi.fn();
+    onSessionLost(lost);
+    const unsubscribe = subscribe(() => {});
+    const socket = FakeWebSocket.instances[0]!;
+    if (opened) socket.onopen?.();
+    socket.serverClose();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    unsubscribe();
+    return { lost, fetchMock };
+  }
+
+  it('reports a lost session when the socket never opened and the session is no longer valid', async () => {
+    const { lost } = await closeBeforeOpen({ authenticated: false, passwordConfigured: true });
+    expect(lost).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not log out when the session is still valid, no password is set, or the server is unreachable', async () => {
+    expect((await closeBeforeOpen({ authenticated: true, passwordConfigured: true })).lost).not.toHaveBeenCalled();
+    expect((await closeBeforeOpen({ authenticated: false, passwordConfigured: false })).lost).not.toHaveBeenCalled();
+    expect((await closeBeforeOpen('unreachable')).lost).not.toHaveBeenCalled();
+  });
+
+  it('treats a drop of an established socket as an ordinary disconnect and does not probe the session', async () => {
+    const { lost, fetchMock } = await closeBeforeOpen({ authenticated: false, passwordConfigured: true }, true);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(lost).not.toHaveBeenCalled();
+  });
+});
+
 describe('subscribeAttemptLog', () => {
   it('starts live-only, then replays from its cursor after reconnecting', async () => {
     vi.useFakeTimers();

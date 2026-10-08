@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { taskDependencies, type TaskRow, type TaskState } from '../db/schema.js';
 import { DomainError } from './errors.js';
+import type { TaskRouting } from './task-routing.js';
 
 export interface TaskWithBlockers extends TaskRow {
   dependsOn: number[];
@@ -18,6 +19,7 @@ export interface TaskWithBlockers extends TaskRow {
     priority: string | null;
     conflictResolveTurns: number | null;
   };
+  routing: TaskRouting | null;
 }
 
 export interface TaskBlockerGraphOptions {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { request } from '../api';
 import { btnPrimary, btnQuietDestructive, card, chip, field, labelType, selectField, tableHead } from '../ui';
 import { CopyButton } from './CopyButton';
 import { PageHeader } from './PageHeader';
@@ -15,17 +16,6 @@ interface ApiKey {
 }
 
 type Scope = 'full' | 'read';
-
-async function json<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method,
-    ...(body === undefined
-      ? {}
-      : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
-  });
-  if (!res.ok) throw new Error(`${res.status}`);
-  return res.json() as Promise<T>;
-}
 
 const SCOPE_STYLES: Record<string, string> = {
   full: 'bg-raised text-ink',
@@ -52,13 +42,13 @@ export function ApiPage() {
   const [scope, setScope] = useState<Scope>('full');
   const [freshToken, setFreshToken] = useState<string | null>(null);
 
-  const load = () => json<{ keys: ApiKey[] }>('GET', '/api/keys').then(({ keys }) => setKeys(keys));
+  const load = () => request<{ keys: ApiKey[] }>('GET', '/api/keys').then(({ keys }) => setKeys(keys));
   useEffect(() => {
     load();
   }, []);
 
   const create = async () => {
-    const created = await json<ApiKey & { token: string }>('POST', '/api/keys', { name, scope });
+    const created = await request<ApiKey & { token: string }>('POST', '/api/keys', { name, scope });
     setFreshToken(created.token);
     setName('');
     setScope('full');
@@ -170,7 +160,7 @@ export function ApiPage() {
                     {!key.revokedAt && (
                       <button
                         className={btnQuietDestructive}
-                        onClick={() => json('DELETE', `/api/keys/${key.id}`).then(load)}
+                        onClick={() => request('DELETE', `/api/keys/${key.id}`).then(load)}
                       >
                         Revoke
                       </button>

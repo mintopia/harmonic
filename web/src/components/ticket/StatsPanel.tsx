@@ -7,6 +7,7 @@ import { card } from '../../ui';
 import { BarChart, type Bar } from '../BarChart';
 import { Donut, type DonutSegment } from '../Donut';
 import { EmptyState } from '../EmptyState';
+import { formatModelKey, formatModelLabel } from '../TaskIdentity';
 import { TokenTypeBar, TokenTypeLegend } from '../TokenTypeBar';
 import type { ModelUsage } from '../../stats-model';
 
@@ -23,7 +24,7 @@ const modelUsage = (m: TaskModelStats): ModelUsage => ({
 
 function TokenBreakdownCard({ byModel }: { byModel: TaskModelStats[] }) {
   const maxTotal = Math.max(...byModel.map(modelTotal), 1);
-  return <section className={`${card} p-5`}><div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2"><h3 className={sectionCaps}>Token breakdown by model</h3><TokenTypeLegend /></div><div className="flex flex-col gap-4">{byModel.map((m) => <TokenTypeBar key={m.model} label={m.model} usage={modelUsage(m)} maxTotal={maxTotal} trailing={m.cost == null ? undefined : usd(m.cost)} />)}</div></section>;
+  return <section className={`${card} p-5`}><div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2"><h3 className={sectionCaps}>Token breakdown by model</h3><TokenTypeLegend /></div><div className="flex flex-col gap-4">{byModel.map((m) => <TokenTypeBar key={m.model} label={formatModelKey(m.model)} usage={modelUsage(m)} maxTotal={maxTotal} trailing={m.cost == null ? undefined : usd(m.cost)} />)}</div></section>;
 }
 
 function AgentDonutCard({ stats }: { stats: TaskStats }) {
@@ -36,7 +37,7 @@ function AgentDonutCard({ stats }: { stats: TaskStats }) {
 }
 
 function CostDonutCard({ stats }: { stats: TaskStats }) {
-  const segments: DonutSegment[] = stats.costByModel.map((m, i) => ({ key: m.model, label: m.model, value: m.cost, valueLabel: usd(m.cost), color: COST_DONUT_COLORS[i % COST_DONUT_COLORS.length]! }));
+  const segments: DonutSegment[] = stats.costByModel.map((m, i) => ({ key: m.model, label: formatModelKey(m.model), value: m.cost, valueLabel: usd(m.cost), color: COST_DONUT_COLORS[i % COST_DONUT_COLORS.length]! }));
   return <section className={`${card} p-5`}><h3 className={`${sectionCaps} mb-4`}>Cost by model</h3>{segments.length > 0 ? <Donut segments={segments} total={stats.cost} totalDisplay={usd(stats.cost)} totalLabel="TOTAL" percent={false} ariaLabel="Cost by model" /> : <p className="text-muted">No priced usage yet.</p>}</section>;
 }
 
@@ -85,7 +86,7 @@ export function AttemptSummaryCard({ run, snapshot, model, toolCalls }: AttemptS
   const contextTokens = run.state === 'running' ? snapshot?.contextTokens ?? run.contextTokens ?? null : run.contextTokens ?? null;
   const contextWindow = run.contextWindow ?? null;
   const items: Array<[string, ReactNode]> = [
-    ['Model', <span key="model" className="font-data">{model}</span>],
+    ['Model', <span key="model" className="font-data" title={model}>{formatModelLabel(model)}</span>],
     ['Cost', formatCost(runCost) ?? '—'],
     ['Duration', durMs > 0 ? fmtDur(durMs) : '—'],
     ['Tool calls', toolCalls > 0 ? toolCalls.toLocaleString() : '—'],

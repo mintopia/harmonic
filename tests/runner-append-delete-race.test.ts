@@ -46,7 +46,7 @@ describe('Runner.recordRunEvent — task deleted mid-append (issue #371)', () =>
       guardrailConfig: baselineConfig().guardrails,
       priceTable: pricesForHarness(baselineConfig().harnesses.claude),
     };
-    const run = await runs.create(task.id, snapshot);
+    const run = await runs.create(task.id, { guardrails: snapshot });
 
     await tasks.delete(task.id);
 

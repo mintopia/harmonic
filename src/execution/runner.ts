@@ -20,9 +20,9 @@ import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig } from '../config.js';
 import type { TaskRow, AttemptRow, StepRow } from '../db/schema.js';
 import { SessionStore } from '../domain/sessions.js';
-import { type DeterministicContinuation } from '../domain/session-continuation.js';
 import { DomainError } from '../domain/errors.js';
 import { AttemptStore, type AttemptGuardrailSnapshot } from '../domain/attempts.js';
+import type { EscalationCause } from '../domain/task-routing.js';
 import { AttemptSettleCoordinator, type SettleProjection, type DispositionKind } from '../domain/attempt-settle.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
 import type { TaskService } from '../domain/tasks.js';
@@ -203,6 +203,7 @@ export class Runner {
       postMerge: this.postMerge,
       urlFor: this.urlFor,
       listWorkingTasks: () => this.taskService.list({ state: 'working' }),
+      routing: this.taskService.routing,
       latestAttemptFor: (task) => this.latestAttemptFor(task),
       updateStep: (taskId, id, patch) => this.updateStep(taskId, id, patch),
       criticUpdateRelay: (attemptId) => this.criticUpdateRelay(attemptId),
@@ -214,7 +215,7 @@ export class Runner {
 
   private epicRefreshResolverDeps(): EpicRefreshResolverDeps {
     return {
-      taskService: this.taskService,
+      routing: this.taskService.routing,
       attempts: this.attempts,
       archive: this.archive,
       epicMergeEvents: new EpicMergeEventStore(this.asyncDb),
@@ -244,6 +245,7 @@ export class Runner {
   private verificationCoordinatorDeps(): VerificationCoordinatorDeps {
     return {
       taskService: this.taskService,
+      routing: this.taskService.routing,
       attempts: this.attempts,
       verificationAttempts: this.verificationAttempts,
       sessionStore: this.sessionStore,
@@ -339,6 +341,10 @@ export class Runner {
     this.fireAndForget(op, report);
   }
 
+  worktreePathForTask(task: TaskRow): string {
+    return this.workspaceProvisioner.worktreePathForTask(task);
+  }
+
   hasLiveAgent(taskId: number): boolean {
     return this.activeRuns.hasTask(taskId);
   }
@@ -418,7 +424,8 @@ export class Runner {
   }
 
   /** Resume an escalated ticket, optionally recording guidance for its next Attempt. */
-  async resumeWithGuidance(task: TaskRow, guidance: string, startNow = false): Promise<void> {
+  async resumeWithGuidance(task: TaskRow, guidance: string, options: { startNow: boolean; reuseSession: boolean }): Promise<void> {
+    const { startNow, reuseSession } = options;
     const trimmed = guidance.trim();
     if (!trimmed && !startNow) {
       await this.taskService.requeue(task.id);
@@ -428,18 +435,15 @@ export class Runner {
     const run = attempts.at(-1);
     const escalated = attempts.findLast((attempt) => attempt.state === 'escalated');
     if (escalated && trimmed) await this.attempts.setFeedback(escalated.id, trimmed);
-    let choice: 'full' | 'condensed' | undefined;
-    let continuation: DeterministicContinuation | undefined;
-    if (run) {
-      continuation = await this.sessionContinuation.decideContinuation(task, run, await this.getWorkspace?.(task.workspaceId));
-      choice = continuation.path === 'continued-session' ? 'full' : 'condensed';
-    }
-    // A reject always spawns a fresh Attempt (ADR-0038) — no setPendingManualResume
-    // here, so beginRun takes its create() branch; the warm Session still binds
-    // via bindContinuationIfEligible's Task-scoped lookup.
+    const choice = startNow ? (reuseSession ? 'full' : 'condensed') : undefined;
     await this.taskService.requeue(task.id, trimmed, choice);
     if (startNow) {
-      if (continuation) this.activeRuns.setPendingContinuation(task.id, continuation);
+      if (run && reuseSession) {
+        this.activeRuns.setPendingContinuation(
+          task.id,
+          await this.sessionContinuation.decideContinuation(task, run, await this.getWorkspace?.(task.workspaceId)),
+        );
+      }
       await this.start(task.id);
     }
   }
@@ -511,7 +515,10 @@ export class Runner {
     return this.beginRun(task, parent, resumedAttempt);
   }
 
-  private async beginRun(task: TaskRow, parent?: SpanContext, resumedAttempt?: AttemptRow): Promise<AttemptRow> {
+  private async beginRun(requested: TaskRow, parent?: SpanContext, resumedAttempt?: AttemptRow): Promise<AttemptRow> {
+    const task: TaskRow = resumedAttempt?.harness
+      ? { ...requested, harness: resumedAttempt.harness, model: resumedAttempt.model ?? requested.model }
+      : requested;
     // Covers the pre-spawn/between-turns gaps too, so a steer can't mistake a healthy Task for stranded.
     this.activeRuns.markDriving(task.id);
     let created: AttemptRow | undefined;
@@ -524,8 +531,14 @@ export class Runner {
         );
       }
       const config = this.getConfig();
-      const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
-      if (!harness) throw new DomainError('validation', `harness '${task.harness}' is not configured`);
+      const route = await this.taskService.routing.ticketRoute(task);
+      if (!route.ok) {
+        const unspawned = await this.attempts.create(task.id);
+        await this.settleEscalated(task, unspawned, route.reason, {}, route.cause);
+        this.activeRuns.clearDriving(task.id);
+        return unspawned;
+      }
+      const harness = route.config;
       const ws = (await this.getWorkspace?.(task.workspaceId)) ?? { guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null };
       const snapshot: AttemptGuardrailSnapshot = {
         guardrailConfig: resolveGuardrails(ws, config),
@@ -540,15 +553,18 @@ export class Runner {
             detail: null,
             guardrailConfig: JSON.stringify(snapshot.guardrailConfig),
             priceTable: JSON.stringify(snapshot.priceTable),
+            harness: task.harness,
+            model: task.model,
             ...(task.continuationChoice === 'condensed' ? { sessionRowId: null, sessionId: null } : {}),
           })
-        : await this.attempts.create(task.id, snapshot);
+        : await this.attempts.create(task.id, { guardrails: snapshot, route: { harness: task.harness, model: task.model } });
       const pendingContinuation = this.activeRuns.takePendingContinuation(task.id);
       if (pendingContinuation !== undefined) {
         await this.attempts.setContinuation(created.id, pendingContinuation);
       }
       const run = created;
       const bound = await this.sessionContinuation.bindContinuationIfEligible(task, run);
+      if (!resumedAttempt) await this.recordRouteChange(task, bound);
       if ((await this.checkRunBoundary(task.id)).stop) {
         this.activeRuns.clearDriving(task.id);
         return bound;
@@ -592,6 +608,23 @@ export class Runner {
       }
       throw err;
     }
+  }
+
+  private async recordRouteChange(task: TaskRow, bound: AttemptRow): Promise<void> {
+    await bestEffort(async () => {
+      const prior = (await this.attempts.listForTask(task.id)).findLast((a) => a.id !== bound.id && a.harness);
+      if (!prior?.harness || (prior.harness === task.harness && prior.model === task.model)) return;
+      const route = await this.taskService.routing.routingFor(task.id);
+      const payload = {
+        event: 'route-changed',
+        from: { harness: prior.harness, model: prior.model },
+        to: { harness: task.harness, model: task.model },
+        label: route?.applied ? route.label : null,
+        sessionKept: bound.sessionRowId !== null,
+      };
+      const persisted = await this.attempts.appendEvent(bound.id, { type: 'lifecycle', payload });
+      this.events.onAttemptEvent?.(persisted);
+    }, { op: 'runner.beginRun.recordRouteChange', level: 'warn', context: { taskId: task.id, attemptId: bound.id } });
   }
 
   operationParent(attemptId: number): SpanContext | undefined {
@@ -913,11 +946,12 @@ export class Runner {
     );
   }
 
-  private async settleEscalated(task: TaskRow, run: AttemptRow, reason: string, patch: Partial<AttemptRow>): Promise<void> {
+  private async settleEscalated(task: TaskRow, run: AttemptRow, reason: string, patch: Partial<AttemptRow>, cause?: EscalationCause): Promise<void> {
     await this.coordinateSettle(task, run, 'escalate', {
       runState: 'failed',
       taskAction: 'escalate',
       reason: `escalated to human: ${reason}`,
+      ...(cause ? { cause } : {}),
     }, patch);
   }
 

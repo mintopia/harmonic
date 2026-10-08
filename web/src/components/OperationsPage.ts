@@ -4,6 +4,7 @@ import { operationForest, visibleOperationForest, type Operation, type Operation
 import type { WorktreeInventoryEntry } from '../worktree-inventory-model.js';
 import { btnPrimary, card, labelType } from '../ui.js';
 import { PageHeader } from './PageHeader.js';
+import { api } from '../api.js';
 import { subscribe, type OperationEvent } from '../ws.js';
 import { ScheduledJobsView } from './ScheduledJobsView.js';
 import { CleanupDialog, sizeLabel, useWorktreeInventory, WorktreesTable } from './WorktreeInventoryView.js';
@@ -165,9 +166,9 @@ function OperationsReadout({ tasks, epics, onOpenTask, onOpenEpic }: Pick<Operat
     const load = () => {
       snapshotLoaded = false;
       pending = [];
-      fetch('/api/operations')
-        .then((response) => (response.ok ? response.json() : null))
-        .then((snapshot: OperationForest | null) => installSnapshot(snapshot))
+      api
+        .operations()
+        .then(installSnapshot)
         .catch(() => installSnapshot(null));
     };
     const unsubscribe = subscribe((message) => {

@@ -1,3 +1,4 @@
+import { formatModelLabel } from '../TaskIdentity';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api';
 import { errorText } from '../../error-text';
@@ -43,12 +44,12 @@ function criticModel(run: AttemptSummary): string | null {
 function mechanismName(mechanism: string, run: AttemptSummary): string {
   if (mechanism === 'critic') {
     const model = criticModel(run);
-    return model ? `Critic · ${model}` : 'Critic';
+    return model ? `Critic · ${formatModelLabel(model)}` : 'Critic';
   }
   return mechanism.charAt(0).toUpperCase() + mechanism.slice(1);
 }
 
-function CriticSession({ attemptId, label, model, agent }: { attemptId: number; label: string; model: string; agent: string }) {
+function CriticSession({ attemptId, label, model, agent, baseDir }: { attemptId: number; label: string; model: string; agent: string; baseDir?: string }) {
   const [state, setState] = useState<'loading' | 'ready' | 'empty' | 'unavailable' | 'error'>('loading');
   const [events, setEvents] = useState<AttemptLogEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +83,7 @@ function CriticSession({ attemptId, label, model, agent }: { attemptId: number; 
   if (state === 'empty') return <p className="mt-3 text-[12px] text-muted">No critic session events recorded.</p>;
   if (state === 'unavailable') return <p className="mt-3 text-[12px] text-muted">Critic session log could not be loaded.</p>;
   if (state === 'error') return <p role="alert" className="mt-3 text-[12px] text-fail">Failed to load critic session{error ? `: ${error}` : '.'}</p>;
-  return <ChatTranscript events={events} unavailable={false} model={model} agent={agent} stepLabel={label} fromArchive={fromArchive} />;
+  return <ChatTranscript events={events} unavailable={false} model={model} agent={agent} stepLabel={label} fromArchive={fromArchive} baseDir={baseDir} />;
 }
 
 function ResolvedPrompt({ attemptId, locator }: { attemptId: number; locator: string }) {
@@ -114,7 +115,7 @@ function PromptNotArchived() {
   );
 }
 
-export function CriticSessions({ attempts, run, model }: { attempts: VerificationAttempt[]; run?: AttemptSummary; model?: string }) {
+export function CriticSessions({ attempts, run, model, baseDir }: { attempts: VerificationAttempt[]; run?: AttemptSummary; model?: string; baseDir?: string }) {
   const sessions = attempts.filter((a) => a.mechanism === 'critic');
   if (sessions.length === 0) return null;
   const criticName = model ?? (run ? criticModel(run) : null) ?? 'critic';
@@ -123,7 +124,7 @@ export function CriticSessions({ attempts, run, model }: { attempts: Verificatio
       {sessions.map((c, i) => (
         <div key={c.id}>
           {c.promptLocator ? <ResolvedPrompt attemptId={c.attemptId} locator={c.promptLocator} /> : <PromptNotArchived />}
-          {c.hasTranscript && <CriticSession attemptId={c.id} model={criticName} agent={c.harness ? harnessLabel(c.harness) : 'Critic'} label={sessions.length > 1 ? `Critic ${i + 1} of ${sessions.length} · ${c.verdict}` : 'Critic'} />}
+          {c.hasTranscript && <CriticSession attemptId={c.id} model={criticName} agent={c.harness ? harnessLabel(c.harness) : 'Critic'} label={sessions.length > 1 ? `Critic ${i + 1} of ${sessions.length} · ${c.verdict}` : 'Critic'} baseDir={baseDir} />}
         </div>
       ))}
     </div>
@@ -133,9 +134,9 @@ export function CriticSessions({ attempts, run, model }: { attempts: Verificatio
 /** The critic while it runs: its own live ACP transcript streamed on the critic
  * channel, rendered through the same chat viewer as the builder and the settled
  * critic session — the running and finished views are the same component. */
-function CriticLive({ attemptId, model, agent }: { attemptId: number; model: string; agent: string }) {
+function CriticLive({ attemptId, model, agent, baseDir }: { attemptId: number; model: string; agent: string; baseDir?: string }) {
   const events = useCriticLiveStream(attemptId);
-  return <ChatTranscript events={events} unavailable={false} model={model} agent={agent} stepLabel="Critic" />;
+  return <ChatTranscript events={events} unavailable={false} model={model} agent={agent} stepLabel="Critic" baseDir={baseDir} />;
 }
 
 function RunningVerifier({ step, output }: { step: Step | undefined; output: string | null }) {
@@ -162,9 +163,10 @@ export interface VerificationProps {
   verifier?: string;
   steps?: readonly Step[];
   liveOutput?: string | null;
+  baseDir?: string;
 }
 
-export function Verification({ attempts, statuses, run, only, verifier, steps = [], liveOutput = null }: VerificationProps) {
+export function Verification({ attempts, statuses, run, only, verifier, steps = [], liveOutput = null, baseDir }: VerificationProps) {
   const decision = overallDecision(attempts);
   const rows = verificationRows(statuses, attempts).filter(({ status }) => (!only || status.mechanism === only) && (!verifier || status.verifier === undefined || status.verifier === verifier));
   const criticSessions = attempts.filter((a) => a.mechanism === 'critic' && a.hasTranscript);
@@ -210,7 +212,7 @@ export function Verification({ attempts, statuses, run, only, verifier, steps = 
               {status.commands && status.commands.length > 0 && <ol className="mt-1 flex flex-col gap-0.5">{status.commands.map((cmd, i) => <li key={i} className="text-[12px] text-muted"><span className="mr-1.5 tabular-nums text-edge">{i + 1}.</span><code className="rounded-[5px] bg-raised px-[5px] py-px font-data text-[12px]">{cmd}</code></li>)}</ol>}
               {criticReason && <p className="mt-2 text-[12px] text-muted">{criticReason}</p>}
               {status.state === 'running' && (status.mechanism === 'critic'
-                ? <CriticLive attemptId={run.id} model={criticModel(run) ?? 'critic'} agent={status.harness ? harnessLabel(status.harness) : 'Critic'} />
+                ? <CriticLive attemptId={run.id} model={criticModel(run) ?? 'critic'} agent={status.harness ? harnessLabel(status.harness) : 'Critic'} baseDir={baseDir} />
                 : <RunningVerifier step={steps.find((s) => s.type === 'verification' && s.state === 'running')} output={liveOutput} />)}
             </div>
             <span className={`shrink-0 text-[10px] font-bold uppercase tracking-[0.04em] ${attempt ? VERDICT_TONE[attempt.verdict] ?? 'text-muted' : status.state === 'running' ? 'text-running' : 'text-muted'}`}>{status.state}</span>

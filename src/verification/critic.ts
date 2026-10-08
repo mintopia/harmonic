@@ -6,7 +6,7 @@ import { AcpDriver, type AcpInitializeResult } from '../acp/driver.js';
 import { parsePermissionRequest, type PermissionRequest } from '../acp/permission-request.js';
 import { adapterFor } from '../execution/harness/registry.js';
 import type { DriveFields } from '../execution/prompt-template.js';
-import { buildCriticPrompt } from './critic-prompt.js';
+import { buildCriticPrompt } from '../execution/prompt-assembly.js';
 import { parseCriticOutput, type Verdict } from './critic-schema.js';
 import type { VerificationAttemptInput } from '../domain/verification-attempts.js';
 import { startOperation } from '../telemetry/operations.js';
@@ -196,7 +196,7 @@ export interface RunCriticArgs {
   baseOid?: string;
   /** True when the worktree still carries uncommitted work pending a pre-merge commit. */
   dirty?: boolean;
-  critic: { prompt: string; model: string; harness?: string };
+  critic: { prompt: string; model: string; harness: string };
   fragments: AppConfig['promptFragments'];
   /** The Drive-Prompt interpolation tokens filled into the operator's review prompt. */
   fields: DriveFields;

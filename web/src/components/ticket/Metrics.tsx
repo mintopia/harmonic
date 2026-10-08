@@ -3,8 +3,10 @@ import { formatCost } from '../../cost';
 import type { AttemptSummary, AttemptUsageEvent, Task } from '../../types';
 import { changedFilesFromNumstat } from '../../attempt-rail-model';
 import { sumCosts } from '../../activity-model';
+import { codeChip } from '../../ui';
 import { Icon } from '../Icon';
 import { Fact } from '../Fact';
+import { formatModelLabel } from '../TaskIdentity';
 import { harnessLabel, pullRequestLink } from '../../task-detail-model';
 import { wallClockRemaining } from '../../wall-clock-model';
 
@@ -102,14 +104,37 @@ export function DependsOn({ task, allTasks }: { task: Task; allTasks: Task[] }) 
   );
 }
 
+function RoutedByNote({ routing }: { routing: NonNullable<Task['routing']> }) {
+  return routing.applied ? (
+    <span className="text-small text-muted">
+      {' '}
+      — routed by <code className={`${codeChip} bg-tool-tint text-tool`}>{routing.label}</code>
+    </span>
+  ) : (
+    <span className="text-small text-muted">
+      {' '}
+      — <span className="font-medium text-ink">set on this Ticket</span> · label{' '}
+      <code className={`${codeChip} bg-raised text-muted line-through`}>{routing.label}</code> not applied
+    </span>
+  );
+}
+
 export function Properties({ task, allTasks, workspaceName }: { task: Task; allTasks: Task[]; workspaceName: string | null }) {
   const createdAt = new Date(task.createdAt);
   const created = `${createdAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${createdAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`;
+  const notStarted = task.state === 'escalated' && task.escalationCause?.kind === 'harness_unconfigured';
   return (
     <dl className="grid grid-cols-2 gap-x-6 gap-y-3.5">
       <Fact label="Priority">{task.priority}</Fact>
-      <Fact label="Agent">
-        {harnessLabel(task.harness)} <span className="font-data text-muted">{task.model}</span>
+      <Fact label="Agent" className={task.routing ? 'col-span-2' : ''}>
+        {notStarted ? (
+          <span className="text-muted">Not started</span>
+        ) : (
+          <>
+            {harnessLabel(task.harness)} · <span className="font-data text-muted">{formatModelLabel(task.model)}</span>
+          </>
+        )}
+        {task.routing && <RoutedByNote routing={task.routing} />}
       </Fact>
       <Fact label="Workspace">{workspaceName ?? '—'}</Fact>
       <Fact label="Depends on">

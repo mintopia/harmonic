@@ -15,6 +15,10 @@ commits them. Harmonic then runs each configured verification command in
 order, stopping at the first failure. Once commands pass, it runs the
 configured Critics in parallel. Every check must pass.
 
+Each Critic runs on its own Harness and Model, chosen when you configure it.
+It never falls back to the Task's Harness or the default Harness, so a Critic
+must have a Harness set before it can run.
+
 A failed command, a Critic rejection, or an inconclusive result feeds the
 next Attempt in the same working directory. Once the maximum number of
 Attempts is reached, the Task is escalated for a human to resolve.
@@ -38,7 +42,7 @@ already filled in.
 
 Successful Tasks complete automatically after their configured checks.
 This applies to both manually created and mirrored Tasks. There is no
-separate Accept or Reject gate for a manually created Task.
+separate Accept or Retry gate for a manually created Task.
 
 With **Direct** isolation, the agent works in the Workspace's Working
 Directory and completes in place. With **Worktree** isolation, the Task
@@ -67,7 +71,8 @@ succeeds.
 
 If work needs a human decision or exhausts its Attempts, open the escalated
 Task to resolve it. An escalation keeps the work and its history available
-so you can decide how to proceed.
+so you can decide how to proceed. Accept, Retry and Close are described in
+[Steering the fleet](/harmonic/work/steering-the-fleet/#retry-accept-and-close).
 
 ## When a merge is handed back
 

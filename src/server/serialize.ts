@@ -60,6 +60,13 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
   ]);
   const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
   const configuredVerifiers = resolveVerifiers(workspace, ctx.settingsStore.getGlobal());
+  const sessionPaths = task.isolationMode === 'worktree'
+    ? await ctx.sessions.worktreePaths(rows.flatMap((attempt) => (attempt.sessionRowId === null ? [] : [attempt.sessionRowId])))
+    : new Map<number, string>();
+  const workingDirOf = (attempt: TaskAttemptRow): string | null => {
+    if (task.isolationMode !== 'worktree') return null;
+    return (attempt.sessionRowId === null ? undefined : sessionPaths.get(attempt.sessionRowId)) ?? ctx.runner.worktreePathForTask(task);
+  };
   return {
     budgetBase,
     attempts: await Promise.all(rows.map(async (attempt) => {
@@ -67,7 +74,7 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
         ctx.attempts.listSteps(attempt.id),
         ctx.verificationAttempts.list(attempt.id),
       ]);
-      return attemptToTimelineApi(attempt, stepRows, attemptVerifications, configuredVerifiers);
+      return attemptToTimelineApi(attempt, stepRows, attemptVerifications, configuredVerifiers, workingDirOf(attempt));
     })),
   };
 }
@@ -142,8 +149,8 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
     if (attempt.endedAt !== null) add({ attemptId: attempt.id, ts: attempt.endedAt, kind: 'attempt-finished', data: { attempt: attempt.number, state: attempt.state, feedback: attempt.feedback, reason: attempt.reason } }, 7);
   });
   await forEachYielding(taskAttempts, async (attempt) => {
-    const rejected = attemptsByNumber.get(attempt.number - 1);
-    if (rejected?.state === 'escalated' && rejected.feedback !== null) add({ attemptId: rejected.id, ts: attempt.startedAt, kind: 'operator-reject', data: { attempt: rejected.number, feedback: rejected.feedback } }, 4);
+    const prior = attemptsByNumber.get(attempt.number - 1);
+    if (prior?.state === 'escalated' && prior.feedback !== null) add({ attemptId: prior.id, ts: attempt.startedAt, kind: 'operator-retry', data: { attempt: prior.number, feedback: prior.feedback } }, 4);
   });
   await forEachYielding(lifecycle, async ({ event }) => { add({ attemptId: event.attemptId, ts: event.ts, kind: 'lifecycle', data: { type: event.type, payload: parsePayload(event.payload) } }, 3); });
   await forEachYielding(verification, async ({ attempt }) => { add({ attemptId: attempt.attemptId, ts: attempt.ts, kind: 'verification', data: { mechanism: attempt.mechanism, verdict: attempt.verdict, summary: attempt.summary, inputOid: attempt.inputOid } }, 2); });

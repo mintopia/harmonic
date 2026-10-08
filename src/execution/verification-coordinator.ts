@@ -2,7 +2,8 @@ import type { TrackerRef } from '../tracker/adapter.js';
 import { Git } from './git.js';
 import { adapterFor, adapterVersion } from './harness/registry.js';
 import { collectUsage, toolCallName } from './usage.js';
-import { driveFields, expandFragments, fillTemplate, renderFragment } from './prompt-template.js';
+import { driveFields } from './prompt-template.js';
+import { composeEpicResolvePrompt } from './prompt-assembly.js';
 import { logger } from '../logger.js';
 import { indexWorktree } from './code-index.js';
 import { integrationBranchName } from './epic-coordinator.js';
@@ -11,12 +12,14 @@ import type { RunnerEvents } from './runner.js';
 import type { ActiveRuns } from './active-runs.js';
 import type { TaskArchive } from '../archive/task-archive.js';
 import type { TranscriptCapture } from './transcript-capture.js';
+import { harnessConfig } from '../domain/route.js';
 import type { AppConfig, HarnessConfig, TaskVerificationCritic, VerificationCommand } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow, StepRow, VerificationAttemptRow } from '../db/schema.js';
 import { DomainError } from '../domain/errors.js';
 import { NO_PROMPT_FRAGMENT_OVERRIDES, type PromptFragmentOverrideKey } from '../domain/prompt-fragments.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { SessionStore } from '../domain/sessions.js';
+import type { RoutingService } from '../domain/routing.js';
 import type { TaskService } from '../domain/tasks.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { resolveEpicResolverPrompts, resolvePromptFragments, resolveVerifiers, type ResolvedVerifiers } from '../domain/setting-override.js';
@@ -63,6 +66,7 @@ type VerifierWorkspace = Pick<
 
 export interface VerificationCoordinatorDeps {
   taskService: TaskService;
+  routing: Pick<RoutingService, 'epicRoute'>;
   attempts: AttemptStore;
   verificationAttempts: VerificationAttemptStore;
   sessionStore: SessionStore;
@@ -108,16 +112,16 @@ export class VerificationCoordinator {
     return { config, resolvedTask, fragments: resolvePromptFragments(ws ?? DEFAULT_VERIFIER_WORKSPACE, config) };
   }
 
-  private buildCriticInput(task: TaskRow, configuredCritic: TaskVerificationCritic): { prompt: string; model: string; harness?: string } {
+  private buildCriticInput(task: TaskRow, configuredCritic: TaskVerificationCritic): { prompt: string; model: string; harness: string } {
     return {
       prompt: task.trackerRef == null ? configuredCritic.noIssuePrompt : configuredCritic.issuePrompt,
       model: configuredCritic.model,
-      ...(configuredCritic.harness ? { harness: configuredCritic.harness } : {}),
+      harness: configuredCritic.harness,
     };
   }
 
   private resolveCriticHarness(config: AppConfig, criticHarnessId: string): HarnessConfig {
-    const criticHarness = config.harnesses[criticHarnessId as keyof typeof config.harnesses];
+    const criticHarness = harnessConfig(config, criticHarnessId);
     if (!criticHarness) throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
     return criticHarness;
   }
@@ -301,7 +305,7 @@ export class VerificationCoordinator {
       if (!oid) {
         verdicts.push(await this.noVerifiedHeadVerdict(task, 'critic', record));
       } else {
-        const criticHarnessId = critic.harness ?? task.harness;
+        const criticHarnessId = critic.harness;
         const criticHarness = this.resolveCriticHarness(config, criticHarnessId);
         const baseOid =
           run.branch && run.baseBranch
@@ -395,26 +399,21 @@ export class VerificationCoordinator {
     const config = this.deps.getConfig();
     const resolver = resolveEpicResolverPrompts(await this.deps.getWorkspace?.(input.workspaceId), config);
     const branch = integrationBranchName(input.epicRef);
-    const host = (await this.deps.taskService.list({ state: 'working' })).find((task) => task.baseBranch === branch);
-    const harnessId = host?.harness ?? config.defaults.harness;
-    const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
-    if (!harness) throw new Error(`harness '${harnessId}' is not configured for Epic verification resolution`);
-    const model = host?.model ?? harness.defaultModel;
+    const route = await this.deps.routing.epicRoute(input.workspaceId, input.epicRef);
+    if (!route.ok) throw new Error(`${route.reason} It cannot run Epic verification resolution.`);
+    const { harness: harnessId, model, config: harness } = route;
     const worktreePath = input.worktreePath;
 
     const step = await this.deps.attempts.createStep(input.attempt.id, { type: 'implementation' });
     await this.deps.attempts.updateStep(step.id, { state: 'running', startedAt: Date.now() });
-    const prompt = [
-      expandFragments(input.resolvePrompt, resolver.fragments)
-        .replaceAll('{ref}', String(input.epicRef))
-        .replaceAll('{title}', input.title ?? `Epic #${input.epicRef}`)
-        .replaceAll('{description}', input.body ?? '')
-        .replaceAll('{url}', input.url ?? ''),
-      '',
-      renderFragment('epicFailingVerification', resolver.fragments, { reason: input.verificationReason }),
-      '',
-      fillTemplate(expandFragments(resolver.resolveSuffix, resolver.fragments), { branch }),
-    ].join('\n');
+    const prompt = composeEpicResolvePrompt({
+      resolvePrompt: input.resolvePrompt,
+      resolveSuffix: resolver.resolveSuffix,
+      fragments: resolver.fragments,
+      epic: { ref: String(input.epicRef), title: input.title ?? `Epic #${input.epicRef}`, body: input.body ?? '', url: input.url ?? '' },
+      reason: input.verificationReason,
+      branch,
+    });
     const archived = await this.deps.archive?.appendResolutionPrompt({ workspaceId: input.workspaceId, epicRef: input.epicRef }, input.attempt.number, 'epic-resolve', 1, prompt);
     await this.deps.attempts.appendEvent(input.attempt.id, { type: 'lifecycle', payload: { event: 'epic-resolve', kind: 'verification', ...archived } }).then((event) => this.deps.events.onAttemptEvent?.(event)).catch((err: unknown) => {
       logger.warn('epic-resolve event failed', { attemptId: input.attempt.id, error: err instanceof Error ? err.message : String(err) });

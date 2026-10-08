@@ -1,4 +1,4 @@
-import type { FastifyReply } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { App } from './app-context.js';
 
 export type CorsPolicy =
@@ -25,8 +25,12 @@ function parseOrigin(entry: string): string {
   } catch {
     throw bad();
   }
-  if (url.origin === 'null' || url.pathname !== '/' || url.search !== '' || url.hash !== '' || url.username !== '') throw bad();
+  if (url.origin === 'null' || url.pathname !== '/' || url.search !== '' || url.hash !== '' || url.username !== '' || url.password !== '') throw bad();
   return url.origin;
+}
+
+export function isPreflight(req: FastifyRequest): boolean {
+  return req.method === 'OPTIONS' && Boolean(req.headers['access-control-request-method']);
 }
 
 function appendVary(reply: FastifyReply, value: string): void {
@@ -41,16 +45,16 @@ function appendVary(reply: FastifyReply, value: string): void {
 export function registerCors(app: App, policy: CorsPolicy): void {
   if (policy.kind === 'off') return;
   app.addHook('onRequest', async (req, reply) => {
-    const isPreflight = req.method === 'OPTIONS' && Boolean(req.headers['access-control-request-method']);
+    const preflight = isPreflight(req);
     if (policy.kind === 'list') {
       appendVary(reply, 'Origin');
-      if (isPreflight) appendVary(reply, 'Access-Control-Request-Headers');
+      if (preflight) appendVary(reply, 'Access-Control-Request-Headers');
     }
     const origin = req.headers.origin;
     if (!origin) return;
     if (policy.kind === 'list' && !policy.origins.has(origin)) return;
     reply.header('access-control-allow-origin', policy.kind === 'any' ? '*' : origin);
-    if (!isPreflight) return;
+    if (!preflight) return;
     return reply
       .header('access-control-allow-methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
       .header('access-control-allow-headers', req.headers['access-control-request-headers'] ?? 'authorization, content-type')

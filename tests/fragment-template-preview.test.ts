@@ -1,77 +1,91 @@
 // @vitest-environment jsdom
-import { createElement } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
-import { SETTINGS_SCHEMA, renderSection, type GlobalRenderCtx, type WorkspaceRenderCtx } from '../web/src/components/settings-schema.js';
-import { FRAGMENT_TEMPLATE_FIELDS, promptFragmentOverrideKey } from '../src/domain/prompt-fragments.js';
-import { compileCriticPreview } from '../web/src/prompt-preview-model.js';
-import { buildCriticPrompt } from '../src/verification/critic-prompt.js';
-import { cleanup, makeConfig, makeWorkspace, mountComponent } from './component-smoke-harness.js';
-
-afterEach(cleanup);
+import { describe, expect, it } from 'vitest';
+import { promptFragmentOverrideKey } from '../src/domain/prompt-fragments.js';
+import { PROMPT_TEMPLATES, PROMPT_TEMPLATE_IDS, type PromptTemplateId } from '../src/domain/prompt-templates.js';
+import { templateKey, type AnatomyId } from '../src/domain/prompt-anatomy.js';
+import { assemblePreview, compileCriticPreview, defaultConditions, promptSettingsView, type PreviewSegment } from '../web/src/prompt-preview-model.js';
+import { PROMPT_ANATOMIES } from '../src/domain/prompt-anatomy.js';
+import { buildCriticPrompt } from '../src/execution/prompt-assembly.js';
+import { makeConfig, makeWorkspace } from './component-smoke-harness.js';
 
 const FRAGMENT = 'conflictResolution';
-const marker = (scope: string, name: string) => `${scope}:${name}<{fragment.${FRAGMENT}}>`;
-const expanded = (scope: string, name: string, text: string) => `${scope}:${name}<${text}>`;
+const marker = (scope: string, id: string) => `${scope}:${id}<{fragment.${FRAGMENT}}>`;
+const expanded = (scope: string, id: string, text: string) => `${scope}:${id}<${text}>`;
 
-const globalTemplates: Record<string, string> = {
-  taskPrompt: 'taskPrompt',
-  'drive.prompt': 'drivePrompt',
-  'drive.unattendedReminder': 'driveUnattendedReminder',
-  'drive.continuePrompt': 'driveContinuePrompt',
-  'drive.commitNudge': 'driveCommitNudge',
-  pauseMessage: 'pauseMessage',
-  'merge.conflictPrompt': 'mergeConflictPrompt',
-  'merge.epicConflictPrompt': 'mergeEpicConflictPrompt',
-  'merge.epicRefreshPrompt': 'mergeEpicRefreshPrompt',
-  'verify.epic.resolveSuffix': 'verifyEpicResolveSuffix',
+const WHERE: Record<PromptTemplateId, { anatomy: AnatomyId; choices: Record<string, string> }> = {
+  taskPrompt: { anatomy: 'implementation', choices: { origin: 'native' } },
+  drivePrompt: { anatomy: 'implementation', choices: { origin: 'mirrored' } },
+  unattendedReminder: { anatomy: 'nudges', choices: { event: 'continue' } },
+  continuePrompt: { anatomy: 'nudges', choices: { event: 'continue' } },
+  commitNudge: { anatomy: 'nudges', choices: { event: 'commit' } },
+  pauseMessage: { anatomy: 'nudges', choices: { event: 'pause' } },
+  mergeConflictPrompt: { anatomy: 'mergeConflicts', choices: { resolver: 'task' } },
+  epicConflictPrompt: { anatomy: 'mergeConflicts', choices: { resolver: 'epic' } },
+  epicRefreshPrompt: { anatomy: 'mergeConflicts', choices: { resolver: 'refresh' } },
+  epicResolvePrompt: { anatomy: 'epicFix', choices: {} },
+  epicResolveSuffix: { anatomy: 'epicFix', choices: {} },
 };
 
-const previewText = async (ctx: GlobalRenderCtx | WorkspaceRenderCtx) => {
-  let text = '';
-  for (const section of SETTINGS_SCHEMA.filter((s) => s.tab === 'prompts' && s.surfaces.includes(ctx.surface))) {
-    const host = await mountComponent(createElement('div', null, renderSection(section, ctx).body));
-    text += host.textContent;
-    await cleanup();
+const flatten = (segment: PreviewSegment): string =>
+  segment.children.map((child) => (typeof child === 'string' ? child : flatten(child))).join('');
+
+function textOf(segments: readonly (string | PreviewSegment)[], key: string): string | null {
+  for (const segment of segments) {
+    if (typeof segment === 'string') continue;
+    if (segment.key === key) return flatten(segment);
+    const inner = textOf(segment.children, key);
+    if (inner !== null) return inner;
   }
-  return text;
+  return null;
+}
+
+function setPath(root: object, path: readonly string[], value: string): void {
+  const [head, ...rest] = path;
+  if (head === undefined) return;
+  if (rest.length === 0) {
+    Reflect.set(root, head, value);
+    return;
+  }
+  const next: unknown = Reflect.get(root, head);
+  if (next !== null && typeof next === 'object') setPath(next, rest, value);
+}
+
+const compiled = (view: ReturnType<typeof promptSettingsView>, id: PromptTemplateId) => {
+  const where = WHERE[id];
+  const anatomy = PROMPT_ANATOMIES.find((a) => a.id === where.anatomy);
+  if (!anatomy) throw new Error(`no anatomy ${where.anatomy}`);
+  const conditions = defaultConditions(anatomy);
+  return textOf(assemblePreview(where.anatomy, view, { ...conditions, choices: { ...conditions.choices, ...where.choices } }), templateKey(id));
 };
 
 describe('settings preview expands fragments the way the runtime does', () => {
-  it('shows the expanded fragment for every prompt template on the global surface', async () => {
+  it('shows the expanded fragment for every prompt template on the global surface', () => {
     const config = makeConfig();
     config.promptFragments[FRAGMENT] = 'GLOBAL-FRAG';
-    for (const [path, name] of Object.entries(globalTemplates)) {
-      const keys = path.split('.');
-      const leaf = keys.pop()!;
-      const parent = keys.reduce<Record<string, unknown>>((node, key) => node[key] as Record<string, unknown>, config as unknown as Record<string, unknown>);
-      parent[leaf] = marker('G', name);
-    }
-    const ctx: GlobalRenderCtx = {
-      surface: 'global', config, baseline: config, setConfig: () => {}, errors: {}, harnessPermissionModes: {},
-      channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
-    };
-    const text = await previewText(ctx);
-    for (const name of Object.values(globalTemplates)) expect(text, name).toContain(expanded('G', name, 'GLOBAL-FRAG'));
+    for (const id of PROMPT_TEMPLATE_IDS) setPath(config, PROMPT_TEMPLATES[id].config, marker('G', id));
+    const view = promptSettingsView({ config });
+    for (const id of PROMPT_TEMPLATE_IDS) expect(compiled(view, id), id).toContain(expanded('G', id, 'GLOBAL-FRAG'));
   });
 
-  it('shows the Workspace-resolved fragment for every Workspace prompt override', async () => {
+  it('shows the Workspace-resolved fragment for every Workspace prompt override', () => {
     const config = makeConfig();
     config.promptFragments[FRAGMENT] = 'GLOBAL-FRAG';
+    for (const id of PROMPT_TEMPLATE_IDS) setPath(config, PROMPT_TEMPLATES[id].config, marker('G', id));
     const overrides: Record<string, unknown> = { [promptFragmentOverrideKey(FRAGMENT)]: 'WS-FRAG' };
-    for (const name of Object.values(globalTemplates)) overrides[name] = marker('W', name);
+    for (const id of PROMPT_TEMPLATE_IDS) {
+      const key = PROMPT_TEMPLATES[id].workspace;
+      if (key) overrides[key] = marker('W', id);
+    }
     const workspace = { ...makeWorkspace(), ...overrides } as ReturnType<typeof makeWorkspace>;
-    const ctx: WorkspaceRenderCtx = {
-      surface: 'workspace', config, workspace, pristineWorkspace: workspace, setWorkspace: () => {}, errors: {},
-      blockedByRunningTask: false, onRequestDelete: () => {},
-    };
-    const text = await previewText(ctx);
-    for (const name of Object.values(globalTemplates)) expect(text, name).toContain(expanded('W', name, 'WS-FRAG'));
+    const view = promptSettingsView({ config, workspace });
+    for (const id of PROMPT_TEMPLATE_IDS) {
+      const overridable = PROMPT_TEMPLATES[id].workspace !== null;
+      expect(compiled(view, id), id).toContain(overridable ? expanded('W', id, 'WS-FRAG') : expanded('G', id, 'WS-FRAG'));
+    }
   });
 
-  it('covers every global template in the shared field list', () => {
-    const covered = Object.keys(globalTemplates);
-    const listed = FRAGMENT_TEMPLATE_FIELDS.map((f) => f.config.join('.')).filter((p) => !p.includes('critics') && p !== 'verify.epic.resolvePrompt');
-    expect(covered.sort()).toEqual(listed.sort());
+  it('locates every template in an anatomy', () => {
+    expect(Object.keys(WHERE).sort()).toEqual([...PROMPT_TEMPLATE_IDS].sort());
   });
 
   it('previews critic prompts through the same builder as the runtime', () => {

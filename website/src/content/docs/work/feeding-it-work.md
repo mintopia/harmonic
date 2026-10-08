@@ -71,6 +71,11 @@ Two things take a running ticket off the automatic path:
   tries a fresh run up to a set limit, then escalates rather than retrying
   forever.
 
+A third cause is a [Routing Label](/harmonic/run/settings/#routing-labels)
+that points at a Harness which isn't configured. The ticket is escalated
+without starting an Attempt, and you can set a Harness on the ticket or fix
+the label and retry.
+
 Either way the ticket comes back to you clearly marked, never silently
 dropped. See
 [Watching & steering the fleet](/harmonic/work/steering-the-fleet/) for

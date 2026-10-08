@@ -1,14 +1,20 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { field } from '../ui';
+import { useDismissOnOutsidePointer } from '../useDismissOnOutsidePointer';
 import { Icon } from './Icon';
 import { filterModels } from './modelFilter';
+import { formatModelLabel } from './TaskIdentity';
 
 export function ModelCombobox({
   id,
   value,
   onChange,
   options,
+  compact = false,
+  ariaLabel,
 }: {
+  compact?: boolean;
+  ariaLabel?: string;
   id?: string;
   value: string;
   onChange: (value: string) => void;
@@ -23,14 +29,7 @@ export function ModelCombobox({
   const custom = value.trim() !== '' && shown.length === 0;
   const panelOpen = open && (shown.length > 0 || custom);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', onDown);
-    return () => document.removeEventListener('pointerdown', onDown);
-  }, [open]);
+  useDismissOnOutsidePointer(wrap, open, () => setOpen(false));
 
   useEffect(() => {
     if (highlight >= 0) {
@@ -80,13 +79,14 @@ export function ModelCombobox({
     <div ref={wrap} className="relative">
       <input
         id={id}
+        aria-label={ariaLabel}
         role="combobox"
         aria-expanded={panelOpen}
         aria-controls={panelOpen ? listId : undefined}
         aria-autocomplete="list"
         aria-activedescendant={highlight >= 0 ? `${listId}-opt-${highlight}` : undefined}
-        className={`${field} min-h-11 pr-8`}
-        value={value}
+        className={`${field} ${compact ? 'min-h-9 font-data text-data' : 'min-h-11'} pr-8`}
+        value={open ? value : formatModelLabel(value)}
         onChange={(e) => {
           onChange(e.target.value);
           setOpen(true);
@@ -117,25 +117,31 @@ export function ModelCombobox({
           role="listbox"
           className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md bg-surface py-1 shadow-bar"
         >
-          {shown.map((m, i) => (
-            <li
-              key={m}
-              id={`${listId}-opt-${i}`}
-              role="option"
-              aria-selected={m === value}
-              className={`flex cursor-pointer items-center justify-between px-2.5 py-1.5 text-data ${
-                i === highlight ? 'bg-raised' : ''
-              }`}
-              onPointerDown={(e) => {
-                e.preventDefault();
-                commit(m);
-              }}
-              onMouseEnter={() => setHighlight(i)}
-            >
-              <span>{m}</span>
-              {m === value && <Icon name="check" className="text-accent" />}
-            </li>
-          ))}
+          {shown.map((m, i) => {
+            const label = formatModelLabel(m);
+            return (
+              <li
+                key={m}
+                id={`${listId}-opt-${i}`}
+                role="option"
+                aria-selected={m === value}
+                className={`flex cursor-pointer items-center justify-between px-2.5 py-1.5 text-data ${
+                  i === highlight ? 'bg-raised' : ''
+                }`}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  commit(m);
+                }}
+                onMouseEnter={() => setHighlight(i)}
+              >
+                <span>
+                  {label}
+                  {label !== m && <span className="ml-2 font-data text-muted">{m}</span>}
+                </span>
+                {m === value && <Icon name="check" className="text-accent" />}
+              </li>
+            );
+          })}
           {custom && (
             <li role="presentation" className="px-2.5 py-1.5 text-data text-muted">
               Use custom ID: <span className="font-medium text-ink">{value}</span>

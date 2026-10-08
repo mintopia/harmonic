@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { TaskIdentity, formatModelLabel, providerLabel } from '../web/src/components/TaskIdentity.js';
+import { TaskIdentity, formatModelKey, formatModelLabel, providerLabel } from '../web/src/components/TaskIdentity.js';
 
 const TABLE_VIEW = readFileSync(
   fileURLToPath(new URL('../web/src/components/TableView.tsx', import.meta.url)),
@@ -16,14 +16,32 @@ const BOARD = readFileSync(
 );
 
 describe('formatModelLabel', () => {
-  it('drops the provider prefix from the task model label', () => {
-    expect(formatModelLabel('claude-sonnet-4-6')).toBe('sonnet-4-6');
-    expect(formatModelLabel('gpt-5.3-codex')).toBe('5.3-codex');
-    expect(formatModelLabel('gpt-5-mini')).toBe('5-mini');
+  it('shows a friendly name for known Claude ids', () => {
+    expect(formatModelLabel('claude-sonnet-4-6')).toBe('Sonnet 4.6');
+    expect(formatModelLabel('claude-opus-5-5')).toBe('Opus 5.5');
+    expect(formatModelLabel('claude-haiku-5-5')).toBe('Haiku 5.5');
+    expect(formatModelLabel('claude-opus-4-1-20250805')).toBe('Opus 4.1');
+    expect(formatModelLabel('claude-opus-4-20250514')).toBe('Opus 4');
+    expect(formatModelLabel('opus-4.8')).toBe('Opus 4.8');
+    expect(formatModelLabel('sonnet-5')).toBe('Sonnet 5');
+    expect(formatModelLabel('claude-haiku-4-5-20251001')).toBe('Haiku 4.5');
+    expect(formatModelLabel('openrouter/anthropic/claude-sonnet-5.5')).toBe('Sonnet 5.5');
   });
 
-  it('leaves unknown model shapes alone', () => {
+  it('leaves Codex, Copilot and unknown ids as the full raw id', () => {
+    expect(formatModelLabel('gpt-5-codex')).toBe('gpt-5-codex');
+    expect(formatModelLabel('gpt-5.3-codex')).toBe('gpt-5.3-codex');
+    expect(formatModelLabel('gpt-5-mini')).toBe('gpt-5-mini');
     expect(formatModelLabel('stub-model')).toBe('stub-model');
+    expect(formatModelLabel('gpt-5')).toBe('gpt-5');
+    expect(formatModelLabel('o4-mini')).toBe('o4-mini');
+  });
+});
+
+describe('formatModelKey', () => {
+  it('formats only the id part of a role-qualified key', () => {
+    expect(formatModelKey('claude-sonnet-4-6 · sub')).toBe('Sonnet 4.6 · sub');
+    expect(formatModelKey('critic')).toBe('critic');
   });
 });
 
@@ -33,7 +51,7 @@ describe('TaskIdentity', () => {
 
     expect(html).toContain('title="claude-sonnet-4-6"');
     expect(html).toContain('aria-label="claude-sonnet-4-6"');
-    expect(html).toContain('>sonnet-4-6<');
+    expect(html).toContain('>Sonnet 4.6<');
     expect(html).toContain('>Claude<');
   });
 });

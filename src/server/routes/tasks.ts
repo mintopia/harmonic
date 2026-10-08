@@ -28,6 +28,7 @@ import { adapterFor } from '../../execution/harness/registry.js';
 import { attemptTimelineToApi, attemptToApi, taskToApi, tasksToApi, ticketTimelineToApi, verifierStatusesToApi } from '../serialize.js';
 import { atRestWorkspaceId, costOfAttempts, epicToListRow, verificationAttemptToApi } from '../dto.js';
 import type { ApiTaskListItem } from '../dto.js';
+import { escalationCauseSchema, taskRoutingSchema } from '../../domain/task-routing.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, attemptUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import { diffFilesResponseSchema } from './diff.js';
@@ -40,11 +41,22 @@ const worktreeGone = (err: unknown): boolean =>
 
 /** Optional operator guidance on an escalated ticket: becomes the next Attempt's feedback. */
 const guidanceExample = 'The limiter is per-process; it needs to be shared across workers.';
-const rejectInputSchema = z.object({
-  guidance: z.string().trim().meta({ example: guidanceExample }),
-  /** Force-start the next Attempt now, bypassing Auto-Runner capacity; omitted/false requeues to `ready`. */
-  start: z.boolean().optional().meta({ example: false }),
-});
+const retryInputSchema = z
+  .object({
+    guidance: z.string().trim().meta({ example: guidanceExample }),
+    /** Start the next Attempt now, bypassing Auto-Runner capacity; omitted/false requeues to `ready`. */
+    startNow: z.boolean().optional().meta({ example: false }),
+    /** Re-use the prior Session (needs `startNow` and an unchanged Harness); omitted/false starts a fresh Session. */
+    reuseSession: z.boolean().optional().meta({ example: false }),
+    /** Operator Harness for this Ticket; saved with `model`, replacing the Routing Label. */
+    harness: createTaskInputSchema.shape.harness,
+    /** Operator Model for this Ticket; saved with `harness`, replacing the Routing Label. */
+    model: z.string().optional().meta({ example: 'claude-opus-5-5' }),
+  })
+  .refine((input) => (input.harness === undefined) === (input.model === undefined), {
+    message: '`harness` and `model` must be sent together',
+    path: ['model'],
+  });
 /** Omitted/false verifies the candidate first; `true` skips verification and merges it as-is. */
 const cancelInputSchema = z
   .object({
@@ -142,6 +154,8 @@ const taskWithDepsSchema = z
     state: z.enum(TASK_STATES).meta({ example: 'working' }),
     /** Why the ticket is `escalated` — the trigger's recorded reason; null in every other state. */
     escalationReason: z.string().nullable().meta({ example: null }),
+    /** The machine-readable cause behind `escalationReason`, when it has one; null otherwise. */
+    escalationCause: escalationCauseSchema.nullable().meta({ example: null }),
     /** Live merge indicator, orthogonal to `state`: 'merging' while the candidate merges onto base, 'resolving-conflicts' once that merge conflicts; null at rest. */
     mergeStatus: z.enum(MERGE_STATUSES).nullable().meta({ example: null }),
     /** True while the Task is merged but its tracker ticket close is outstanding. */
@@ -192,6 +206,8 @@ const taskSchema = taskWithDepsSchema
     /** The prompt's first line, bounded: the card title; the full `prompt` is item-GET-only. */
     summary: z.string().meta({ example: 'Add rate limiting to POST /api/tasks' }),
     cost: costSchema.nullable(),
+    /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. Null when none matches or on native Tasks. */
+    routing: taskRoutingSchema.nullable().meta({ example: { label: 'reasoning', applied: true } }),
     /** The mirrored issue's tracker URL (from the last poll); null on native Tasks or before a poll. */
     url: z.string().nullable().meta({ example: 'https://github.com/mintopia/harmonic/issues/35' }),
     /** The parent Map's title (resolved from mapRef, last poll); null when unmapped or before a poll. */
@@ -293,7 +309,7 @@ const eventsListResponseSchema = listResponse('events', attemptEventSchema);
 const ticketTimelineEventSchema = z.object({
   attemptId: z.number().nullable(),
   ts: z.number(),
-  kind: z.enum(['attempt-started', 'attempt-finished', 'lifecycle', 'verification', 'guardrail', 'operator-reject', 'agent-message', 'fact']),
+  kind: z.enum(['attempt-started', 'attempt-finished', 'lifecycle', 'verification', 'guardrail', 'operator-retry', 'agent-message', 'fact']),
   data: z.unknown(),
 });
 const ticketTimelineResponseSchema = listResponse('events', ticketTimelineEventSchema);
@@ -751,25 +767,26 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
   );
 
   app.post(
-    '/tasks/:id/reject',
+    '/tasks/:id/retry',
     {
       schema: {
         tags: ['Tasks'],
         description:
-          'Reject an escalated ticket: optional guidance becomes feedback for the next Attempt and the attempt budget resets. The ticket requeues to `ready` — the Auto-Runner starts the next Attempt when capacity frees; it is not force-started here unless `start: true` (the warm-Session "start now" override, which bypasses the capacity ceiling). The escalated Attempt\'s branch is retained as evidence until its Session retires. Human-only.',
+          'Retry an escalated ticket: optional guidance becomes feedback for the next Attempt and the attempt budget resets. `harness`/`model` save both as operator settings on the Ticket, which outrank its Routing Label. The ticket requeues to `ready` — the Auto-Runner starts the next Attempt when capacity frees; with `startNow` it starts immediately, bypassing the capacity ceiling, on a fresh Session unless `reuseSession` re-uses the prior one (400 when the Harness changed or `startNow` is not set). `harness` and `model` must be sent together (400 otherwise). The escalated Attempt\'s branch is retained as evidence until its Session retires. Human-only.',
         params: idParamsSchema,
-        body: rejectInputSchema,
+        body: retryInputSchema,
         response: {
           200: taskSchema.describe('The task, back in the Attempt loop.'),
+          400: errorResponse('Session re-use was requested without `startNow` or with a changed Harness, or only one of `harness`/`model` was sent.'),
           409: errorResponse('The task is not escalated.'),
         },
       },
     },
     async (req) => {
-      if (req.body.start) await ctx.upgrade.assertManualLaunchAllowed();
-      const rejected = await ctx.escalation.reject(req.params.id, req.body.guidance, req.body.start ?? false);
-      await recordOperatorActionBestEffort(ctx, req.params.id, await requestActor(req, ctx), 'reject', req.body.guidance);
-      return withDeps(rejected);
+      if (req.body.startNow) await ctx.upgrade.assertManualLaunchAllowed();
+      const retried = await ctx.escalation.retry(req.params.id, req.body);
+      await recordOperatorActionBestEffort(ctx, req.params.id, await requestActor(req, ctx), 'retry', req.body.guidance);
+      return withDeps(retried);
     },
   );
 

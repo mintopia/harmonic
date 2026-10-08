@@ -6,6 +6,7 @@ import { changedChannelEvents, channelsDirty, toggleChannelEvent } from '../chan
 import { humanizeSaveError, parseFieldErrors } from './SettingsSection';
 import { firstPatternError, normalizeConfigExport } from '../archive-export-model';
 import { SettingsForm } from './SettingsForm';
+import { firstRoutingLabelError } from './RoutingLabelsEditor';
 import { LoadError } from './LoadError';
 import { ConfirmDialog } from './ConfirmDialog';
 import type { GlobalRenderCtx } from './settings-schema';
@@ -58,6 +59,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
   if (loadError) return <LoadError message={`settings: ${loadError}`} onRetry={() => { setLoadError(null); setLoadAttempt((n) => n + 1); }} />;
   if (!local || !pristine || !baseline) return <p role="status" className="p-4 text-muted">Loading settings…</p>;
 
+  const routingError = firstRoutingLabelError(local.routingLabels);
   const configDirty = JSON.stringify(local) !== JSON.stringify(pristine);
   const dirty = configDirty || channelsDirty(localChannels, pristineChannels);
 
@@ -155,7 +157,8 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
       ctx={ctx}
       dirty={dirty}
       saving={saving}
-      error={error}
+      error={error ?? routingError}
+      saveDisabled={routingError !== null}
       onSave={save}
       onDiscard={discard}
       headerActions={

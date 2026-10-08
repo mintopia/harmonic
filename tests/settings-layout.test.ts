@@ -39,8 +39,8 @@ describe('settings layout (issue #554)', () => {
 });
 
 
-describe('settings prompts layout (issue #808)', () => {
-  it('packs prompt sections as masonry columns with full-width fragments last', async () => {
+describe('settings prompts layout', () => {
+  it('renders the Prompts tab as one bare full-width panel organised by anatomy', async () => {
     const config = makeConfig();
     const host = await mountComponent(
       createElement(SettingsForm, {
@@ -66,12 +66,11 @@ describe('settings prompts layout (issue #808)', () => {
       }),
     );
 
-    expect(host.querySelector('[role="tabpanel"]')?.className).toContain('xl:columns-2');
-    const sections = [...host.querySelectorAll('section')];
-    const titles = sections.map((s) => s.querySelector('h2')?.textContent);
-    expect(titles).toEqual(['Task prompt', 'Drive prompt', 'Pause message', 'Merge and Epic resolver prompts', 'Prompt fragments']);
-    expect(sections.slice(0, -1).every((s) => s.className.includes('xl:break-inside-avoid'))).toBe(true);
-    expect(sections.at(-1)?.className).toContain('xl:[column-span:all]');
+    const panel = host.querySelector('[role="tabpanel"]');
+    expect(panel?.className).toContain('xl:grid-cols-2');
+    expect(panel?.className).not.toContain('xl:columns-2');
+    expect(panel?.querySelector('[role="tablist"][aria-label="Prompts the agent receives"]')).not.toBeNull();
+    expect(panel?.firstElementChild?.className).toContain('xl:col-span-2');
   });
 });
 

@@ -11,17 +11,20 @@ import { triageLabelsOverrideSchema } from '../../tracker/triage-labels.js';
 import { EXPORT_STATES, redactPatternsSchema } from '../../config.js';
 import {
   verificationCommandOverrideSchema,
+  routingLabelOverrideSchema,
   taskVerificationCriticOverrideSchema,
   epicVerificationCriticOverrideSchema,
   budgetGuardrailSchema,
   unpricedModelsForCostCap,
+  criticModelMessage,
   costCapMessage,
 } from '../../config.js';
 import { forEachYielding } from '../../reliability/yield.js';
 import { requestActor } from '../operator-inputs.js';
 import { requestIsOperator } from '../auth.js';
 import type { AppContext } from '../app.js';
-import { resolveScoped } from '../../domain/setting-override.js';
+import { resolveScoped, routingLabelIssueMessage, routingLabelOverlayIssues } from '../../domain/setting-override.js';
+import { parseRoutingLabelOverlay } from '../../domain/routing-labels.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
@@ -79,6 +82,8 @@ const workspaceSchema = z
     taskPostMergeCritics: taskVerificationCriticOverrideSchema.nullable().meta({ example: null }),
     epicPreMergeCommands: verificationCommandOverrideSchema.nullable().meta({ example: null }),
     epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().meta({ example: null }),
+    /** Routing Label overlay; null inherits every global Routing Label in order. */
+    routingLabels: routingLabelOverrideSchema.nullable().meta({ example: null }),
     guardrailBudget: budgetGuardrailSchema.nullable().meta({ example: null }),
     guardrailProgress: z.boolean().nullable().meta({ example: null }),
     /** Tool-timeout bound override; null inherits `config.guardrails.toolTimeoutMinutes`. */
@@ -148,6 +153,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     taskPostMergeCritics: ws.taskPostMergeCritics ? JSON.parse(ws.taskPostMergeCritics) : null,
     epicPreMergeCommands: ws.epicPreMergeCommands ? JSON.parse(ws.epicPreMergeCommands) : null,
     epicPreMergeCritics: ws.epicPreMergeCritics ? JSON.parse(ws.epicPreMergeCritics) : null,
+    routingLabels: parseRoutingLabelOverlay(ws.routingLabels),
     exportRedactPatterns: ws.exportRedactPatterns ? JSON.parse(ws.exportRedactPatterns) : null,
     exportIncludeStates: ws.exportIncludeStates ? JSON.parse(ws.exportIncludeStates) : null,
     configuredTracker: ws.configuredTracker ? JSON.parse(ws.configuredTracker) : null,
@@ -244,6 +250,29 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
       },
     },
     async (req) => {
+      const harnesses = ctx.settingsStore.getGlobal().harnesses;
+      if (req.body.routingLabels) {
+        const first = routingLabelOverlayIssues(req.body.routingLabels, ctx.settingsStore.getGlobal().routingLabels)[0];
+        if (first) {
+          const entry = req.body.routingLabels[first.index];
+          const label = entry?.kind === 'local' ? entry.routingLabel.label : '';
+          throw new DomainError('validation', `routingLabels.${first.index}.routingLabel.label: ${routingLabelIssueMessage(first, label)}`);
+        }
+        req.body.routingLabels.forEach((entry, index) => {
+          if (entry.kind === 'local' && !harnesses[entry.routingLabel.harness]) {
+            throw new DomainError('validation', `routingLabels.${index}.routingLabel.harness: harness '${entry.routingLabel.harness}' is not configured`);
+          }
+        });
+      }
+      for (const [key, list] of [['taskPreMergeCritics', req.body.taskPreMergeCritics], ['taskPostMergeCritics', req.body.taskPostMergeCritics], ['epicPreMergeCritics', req.body.epicPreMergeCritics]] as const) {
+        list?.forEach((entry, index) => {
+          if (entry.kind !== 'local') return;
+          const models = harnesses[entry.critic.harness]?.models ?? [];
+          if (models.length > 0 && !models.some((m) => m.id === entry.critic.model)) {
+            throw new DomainError('validation', `${key}.${index}.critic.model: ${criticModelMessage(entry.critic)}`);
+          }
+        });
+      }
       if (req.body.guardrailBudget) {
         const unpriced = unpricedModelsForCostCap(req.body.guardrailBudget, ctx.settingsStore.getGlobal());
         if (unpriced.length > 0) {

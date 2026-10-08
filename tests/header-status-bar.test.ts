@@ -13,19 +13,22 @@ async function renderHeader(props: {
   globalPausePending?: boolean;
   onGlobalPauseChange?: (paused: boolean) => void;
   view?: 'board' | 'conversations';
+  cost24h?: string | null;
+  trackerEnabled?: boolean;
+  hostLoad?: { load1: number; load5: number; load15: number; cores: number; saturated: boolean } | null;
 }) {
   host = await mountComponent(
     createElement(HeaderStatusBar, {
       config: makeConfig(),
       runningCount: 0,
-      cost24h: null,
-      hostLoad: null,
+      cost24h: props.cost24h ?? null,
+      hostLoad: props.hostLoad ?? null,
       theme: 'system',
       view: props.view ?? 'board',
       passwordSet: false,
       globalPaused: props.globalPaused,
       globalPausePending: props.globalPausePending ?? false,
-      trackerEnabled: false,
+      trackerEnabled: props.trackerEnabled ?? false,
       refreshingTracker: false,
       menuOpen: false,
       onMenuToggle: () => {},
@@ -76,5 +79,36 @@ describe('HeaderStatusBar global pause control', () => {
 
     expect(button.getAttribute('aria-pressed')).toBe('true');
     expect(onGlobalPauseChange).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('HeaderStatusBar compact strip', () => {
+  it('stays a single-row container without flex-wrap', async () => {
+    await renderHeader({ globalPaused: false });
+    const header = host!.querySelector('header')!;
+    expect(header.className).toContain('@container');
+    expect(header.className).not.toContain('flex-wrap');
+  });
+
+  it('compacts refresh, pause, cost and load by header width', async () => {
+    await renderHeader({
+      globalPaused: false,
+      cost24h: '$1.20',
+      trackerEnabled: true,
+      hostLoad: { load1: 1, load5: 2, load15: 3, cores: 4, saturated: false },
+    });
+    const refresh = host!.querySelector<HTMLButtonElement>('button[title^="Rescan"]')!;
+    expect(refresh.querySelector('span.sr-only, span[class*="max-[82rem]:sr-only"]')?.textContent).toBe('Refresh tickets');
+    const pause = host!.querySelector<HTMLButtonElement>('button[aria-label="Pause fleet"]')!;
+    expect(pause.title).toBe('Pause all execution');
+    expect(pause.querySelector('span[class*="max-[82rem]:sr-only"]')?.textContent).toBe('Pause');
+    const cost = host!.querySelector('span[title="Cost over the last 24 hours"]')!;
+    expect(cost.className).toContain('@max-[68rem]:hidden');
+    const load = host!.querySelector('span[title^="Load average"]')!;
+    expect(load.className).toContain('@max-[68rem]:hidden');
+    expect(load.querySelector('span[class*="max-[82rem]:hidden"]')?.textContent).toContain('2.00');
+    const readout = host!.querySelector('button[aria-label$="open Activity"][title]')!;
+    expect(readout.getAttribute('title')).toContain('last 24h $1.20');
+    expect(readout.getAttribute('title')).toContain('load 1.00 / 2.00 / 3.00');
   });
 });

@@ -33,7 +33,7 @@ describe('baseline model catalog', () => {
       },
       {
         id: 'openrouter/anthropic/claude-sonnet-5.5',
-        price: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+        price: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
         contextWindow: 1_000_000,
       },
       {
@@ -87,17 +87,40 @@ describe('PATCH /api/config verification', () => {
     expect(patched.body.verify.task.preMerge.commands[0].timeoutSeconds).toBe(600);
   });
 
-  it('accepts an agent critic', async () => {
+  it('round-trips routingLabels through PATCH and refuses case-insensitive duplicates (ADR-0049)', async () => {
     const patched = await server.api('PATCH', '/api/config', {
-      verify: { task: { preMerge: { commands: [], critics: [{ name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.',model: 'claude-opus-5' }] } } },
+      routingLabels: [{ label: 'reasoning', harness: 'claude', model: 'claude-opus-5-5' }],
     });
     expect(patched.status).toBe(200);
-    expect(patched.body.verify.task.preMerge.critics[0].model).toBe('claude-opus-5');
+    expect(patched.body.routingLabels).toEqual([{ label: 'reasoning', harness: 'claude', model: 'claude-opus-5-5' }]);
+    expect((await server.api('GET', '/api/config')).body.routingLabels).toHaveLength(1);
+
+    const duplicate = await server.api('PATCH', '/api/config', {
+      routingLabels: [
+        { label: 'reasoning', harness: 'claude', model: '' },
+        { label: 'REASONING', harness: 'codex', model: '' },
+      ],
+    });
+    expect(duplicate.status).toBe(400);
+    expect((await server.api('GET', '/api/config')).body.routingLabels).toHaveLength(1);
+
+    const unknownHarness = await server.api('PATCH', '/api/config', {
+      routingLabels: [{ label: 'x', harness: 'nope', model: '' }],
+    });
+    expect(unknownHarness.status).toBe(400);
+  });
+
+  it('accepts an agent critic', async () => {
+    const patched = await server.api('PATCH', '/api/config', {
+      verify: { task: { preMerge: { commands: [], critics: [{ name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.',model: 'stub-model', harness: 'claude' }] } } },
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.body.verify.task.preMerge.critics[0].model).toBe('stub-model');
   });
 
   it('accepts a critic harness (issue #174) and round-trips it', async () => {
     const withHarness = await server.api('PATCH', '/api/config', {
-      verify: { task: { preMerge: { commands: [], critics: [{ name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.',model: 'claude-opus-5', harness: 'codex' }] } } },
+      verify: { task: { preMerge: { commands: [], critics: [{ name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.',model: 'gpt-6-sol', harness: 'codex' }] } } },
     });
     expect(withHarness.status).toBe(200);
     expect(withHarness.body.verify.task.preMerge.critics[0].harness).toBe('codex');
@@ -106,12 +129,21 @@ describe('PATCH /api/config verification', () => {
     expect(after.body.verify.task.preMerge.critics[0].harness).toBe('codex');
   });
 
-  it('accepts a critic with no harness (issue #174) — the field is optional, "Same as task"', async () => {
+  it('rejects a critic with no harness', async () => {
     const patched = await server.api('PATCH', '/api/config', {
-      verify: { task: { preMerge: { commands: [], critics: [{ name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.',model: 'claude-opus-5' }] } } },
+      verify: { task: { preMerge: { commands: [], critics: [{ name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.', model: 'claude-opus-5' }] } } },
     });
-    expect(patched.status).toBe(200);
-    expect(patched.body.verify.task.preMerge.critics[0].harness).toBeUndefined();
+    expect(patched.status).toBe(400);
+    expect(patched.body.error.message).toContain('harness');
+  });
+
+  it('rejects a critic whose model is not in its harness, naming both', async () => {
+    const patched = await server.api('PATCH', '/api/config', {
+      verify: { task: { preMerge: { commands: [], critics: [{ name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.', model: 'gpt-6-sol', harness: 'claude' }] } } },
+    });
+    expect(patched.status).toBe(400);
+    expect(patched.body.error.message).toContain('gpt-6-sol');
+    expect(patched.body.error.message).toContain('claude');
   });
 
   it('rejects an invalid critic harness (issue #174) — not one of the known harness ids', async () => {

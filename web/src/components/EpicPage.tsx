@@ -25,7 +25,7 @@ import {
   railNavSelected,
   railNavIdle,
   btnAccept,
-  btnReject,
+  btnRetry,
   btnGhost,
   PHASE_NODE_STYLES,
   type PhaseNodeVisual,
@@ -37,7 +37,7 @@ import { EmptyState } from './EmptyState';
 import { Icon } from './Icon';
 import { Markdown } from './Markdown';
 import { TokenTypeBar, TokenTypeLegend } from './TokenTypeBar';
-import { ModelLabel, ProviderChip } from './TaskIdentity';
+import { formatModelKey, ModelLabel, ProviderChip } from './TaskIdentity';
 import { ChangedFilesNav, changedFileKind } from './ticket/ChangedFilesNav';
 import { Fact } from './Fact';
 import { CriticSessions } from './ticket/Verification';
@@ -213,7 +213,7 @@ function UsageCard({ stats, epic }: { stats: Stats; epic: Epic }) {
             {summary.modelBars.map((bar) => {
               const usage = stats.models[bar.key];
               return usage ? (
-                <TokenTypeBar key={bar.key} label={bar.key} usage={usage} maxTotal={maxTotal} trailing={modelCostTag(stats.cost, bar.key)} />
+                <TokenTypeBar key={bar.key} label={formatModelKey(bar.key)} usage={usage} maxTotal={maxTotal} trailing={modelCostTag(stats.cost, bar.key)} />
               ) : null;
             })}
           </div>
@@ -610,7 +610,7 @@ export function EpicPage({
   const [diffFiles, setDiffFiles] = useState<DiffFile[] | null>(null);
   const [diffFailed, setDiffFailed] = useState(false);
   const [guidance, setGuidance] = useState('');
-  const [rejecting, setRejecting] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   // Bumped by the WS subscription below to re-run the epic/stats/children fetches
   // when a member Task changes, so the page updates live without a manual refresh.
   const [refreshKey, setRefreshKey] = useState(0);
@@ -687,17 +687,17 @@ export function EpicPage({
   const title = epic?.title || `Epic ${epicRef}`;
   const selectedFile = selection.kind === 'file' ? selection.path : null;
   const showChanges = !epic?.inPlace && (selection.kind === 'file' || selection.kind === 'changes');
-  const rejectEpic = async (continuation: 'continue' | 'fresh') => {
+  const retryEpic = async (continuation: 'continue' | 'fresh') => {
     if (!guidance.trim()) return;
-    setRejecting(true);
+    setRetrying(true);
     try {
-      await api.rejectEpic(workspaceId, epicRef, guidance, continuation);
+      await api.retryEpic(workspaceId, epicRef, guidance, continuation);
       setGuidance('');
       setRefreshKey((key) => key + 1);
     } catch (error) {
       toastError(error);
     } finally {
-      setRejecting(false);
+      setRetrying(false);
     }
   };
   // A rail pick (or a deep link to a panel) lands on the content panel itself;
@@ -751,18 +751,18 @@ export function EpicPage({
                   <button
                     type="button"
                     className={btnAccept}
-                    disabled={rejecting || !guidance.trim()}
-                    onClick={() => rejectEpic('continue')}
+                    disabled={retrying || !guidance.trim()}
+                    onClick={() => retryEpic('continue')}
                   >
                     Continue with guidance
                   </button>
                   <button
                     type="button"
-                    className={btnReject}
-                    disabled={rejecting || !guidance.trim()}
-                    onClick={() => rejectEpic('fresh')}
+                    className={btnRetry}
+                    disabled={retrying || !guidance.trim()}
+                    onClick={() => retryEpic('fresh')}
                   >
-                    {rejecting ? 'Requeuing…' : 'Reject and start fresh'}
+                    {retrying ? 'Requeuing…' : 'Retry and start fresh'}
                   </button>
                 </div>
               </section>

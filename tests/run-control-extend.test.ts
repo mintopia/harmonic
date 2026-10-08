@@ -38,6 +38,8 @@ function runningAttempt(over: Partial<TaskAttemptRow> = {}): TaskAttemptRow {
     liveUsage: null,
     guardrailConfig: guardrailConfig(60),
     priceTable: null,
+    harness: null,
+    model: null,
     detail: null,
     ...over,
   };

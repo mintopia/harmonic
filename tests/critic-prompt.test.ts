@@ -1,7 +1,7 @@
 import { baselineConfig } from '../src/config.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { buildCriticPrompt as buildWithFragments, type BuildCriticPromptArgs } from '../src/verification/critic-prompt.js';
+import { buildCriticPrompt as buildWithFragments, type BuildCriticPromptArgs } from '../src/execution/prompt-assembly.js';
 import type { DriveFields } from '../src/execution/prompt-template.js';
 
 const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;

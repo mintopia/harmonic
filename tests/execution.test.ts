@@ -118,7 +118,7 @@ describe('run execution over ACP (direct mode)', () => {
     expect(attempt1.steps.map((s: any) => s.type)).toEqual(['implementation']);
     expect(attempt1.steps.every((s: any) => s.state === 'passed')).toBe(true);
     expect((await server.api('POST', `/api/tasks/${taskId}/accept`)).status).toBe(409);
-    expect((await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'nope' })).status).toBe(409);
+    expect((await server.api('POST', `/api/tasks/${taskId}/retry`, { guidance: 'nope' })).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${taskId}/close`)).status).toBe(409);
     expect((await server.api('GET', `/api/attempts/${attemptId}`)).body).toMatchObject({ state: 'completed' });
   });
@@ -144,7 +144,7 @@ describe('run execution over ACP (direct mode)', () => {
     expect(beforeReject[0]!.id).toBe(attemptId);
     const lastAttemptBeforeReject = beforeReject.at(-1)!;
 
-    const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'try again', start: true });
+    const rejected = await server.api('POST', `/api/tasks/${taskId}/retry`, { guidance: 'try again', startNow: true });
     expect(rejected.status).toBe(200);
 
     // ADR-0038: Reject spawns a NEW Attempt (the number increments) with the

@@ -1,3 +1,5 @@
+import { PROMPT_TEMPLATE_IDS, PROMPT_TEMPLATES } from './prompt-templates.js';
+
 interface PromptFragmentSpec {
   readonly label: string;
   readonly help: string;
@@ -210,19 +212,14 @@ const criticPromptFields = (stage: 'preMerge' | 'postMerge', key: 'taskPreMergeC
     workspace: { key, path: ['*', 'critic', prompt] },
   }));
 
+const templateFields: FragmentTemplateField[] = PROMPT_TEMPLATE_IDS.map((id) => {
+  const spec = PROMPT_TEMPLATES[id];
+  return { config: spec.config, workspace: spec.workspace ? { key: spec.workspace, path: [] } : null };
+});
+
 /** Every prompt template that expands `{fragment.<name>}` at runtime. */
 export const FRAGMENT_TEMPLATE_FIELDS: readonly FragmentTemplateField[] = [
-  { config: ['taskPrompt'], workspace: { key: 'taskPrompt', path: [] } },
-  { config: ['drive', 'prompt'], workspace: { key: 'drivePrompt', path: [] } },
-  { config: ['drive', 'unattendedReminder'], workspace: { key: 'driveUnattendedReminder', path: [] } },
-  { config: ['drive', 'continuePrompt'], workspace: { key: 'driveContinuePrompt', path: [] } },
-  { config: ['drive', 'commitNudge'], workspace: { key: 'driveCommitNudge', path: [] } },
-  { config: ['pauseMessage'], workspace: { key: 'pauseMessage', path: [] } },
-  { config: ['merge', 'conflictPrompt'], workspace: { key: 'mergeConflictPrompt', path: [] } },
-  { config: ['merge', 'epicConflictPrompt'], workspace: { key: 'mergeEpicConflictPrompt', path: [] } },
-  { config: ['merge', 'epicRefreshPrompt'], workspace: { key: 'mergeEpicRefreshPrompt', path: [] } },
-  { config: ['verify', 'epic', 'resolvePrompt'], workspace: null },
-  { config: ['verify', 'epic', 'resolveSuffix'], workspace: { key: 'verifyEpicResolveSuffix', path: [] } },
+  ...templateFields,
   ...criticPromptFields('preMerge', 'taskPreMergeCritics'),
   ...criticPromptFields('postMerge', 'taskPostMergeCritics'),
   { config: ['verify', 'epic', 'preMerge', 'critics', '*', 'prompt'], workspace: { key: 'epicPreMergeCritics', path: ['*', 'critic', 'prompt'] } },

@@ -3,6 +3,7 @@ import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, check, type
 import type { Verdict } from '../verification/critic-schema.js';
 import type { PromptFragmentOverrides } from '../domain/prompt-fragments.js';
 import type { TicketRef, TicketState, TrackerRef } from '../tracker/adapter.js';
+import type { EscalationCause } from '../domain/task-routing.js';
 
 /** A Task is either authored here or a 1:1 projection of a tracker issue. */
 export const TASK_ORIGINS = ['native', 'mirrored'] as const;
@@ -57,7 +58,7 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   maxAttempts: number | null; contextReuseTokenLimit: number | null;
   taskPreMergeCommands: string | null; taskPreMergeCritics: string | null;
   taskPostMergeCommands: string | null; taskPostMergeCritics: string | null;
-  epicPreMergeCommands: string | null; epicPreMergeCritics: string | null;
+  epicPreMergeCommands: string | null; epicPreMergeCritics: string | null; routingLabels: string | null;
   guardrailBudget: string | null; guardrailProgress: boolean | null; toolTimeoutMinutes: number | null;
   drivePrompt: string | null; driveUnattendedReminder: string | null; driveContinuePrompt: string | null;
   driveMergeFate: string | null; driveContinueAttempts: number | null; taskPrompt: string | null; pauseMessage: string | null;
@@ -119,6 +120,8 @@ export const tasks = sqliteTable('tasks', {
   wayfinderType: text('wayfinder_type').$type<WayfinderType>(),
   /** Why the Ticket is `escalated`; null otherwise. */
   escalationReason: text('escalation_reason'),
+  /** The machine-readable form of `escalationReason` when the cause has one; null otherwise. */
+  escalationCause: text('escalation_cause', { mode: 'json' }).$type<EscalationCause>(),
   /** Live merge indicator, orthogonal to `state`; null at rest. */
   mergeStatus: text('merge_status').$type<MergeStatus>(),
   /** Merged, but the tracker ticket close failed and is outstanding. */
@@ -240,6 +243,9 @@ export const attempts = sqliteTable('attempts', {
   guardrailConfig: text('guardrail_config'),
   /** JSON: `PriceTable` snapshotted at Attempt start. */
   priceTable: text('price_table'),
+  /** The Harness and Model resolved when the Attempt started; an in-flight Attempt is never re-routed. Null for Attempts that predate it. */
+  harness: text('harness'),
+  model: text('model'),
   /** Free-text detail behind {@link reason}; null while running or when the kind needs none. */
   detail: text('detail'),
   /** The PR/MR the open-PR Merge Fate created for this Attempt's branch; null when none was opened (other fates, or a Code Repository that opens none). */

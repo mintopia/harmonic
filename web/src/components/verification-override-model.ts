@@ -1,8 +1,10 @@
 import type {
+  AppConfig,
   EpicVerificationCritic,
   TaskVerificationCritic,
   VerificationCommand,
 } from '../types.js';
+import { formatModelLabel, providerLabel } from './TaskIdentity.js';
 
 /** A freshly added command verifier, own id via `crypto.randomUUID()` — a
  * shared static seed would hand every add the same id (ADR-0037: commands are
@@ -12,13 +14,47 @@ export function newCommand(): VerificationCommand {
 }
 
 /** A freshly added task critic, own id (see {@link newCommand}). */
-export function newCritic(): TaskVerificationCritic {
-  return { id: crypto.randomUUID(), name: '', issuePrompt: '', noIssuePrompt: '', model: '', timeoutSeconds: 300 };
+export function newCritic(start: HarnessStart): TaskVerificationCritic {
+  return { id: crypto.randomUUID(), name: '', issuePrompt: '', noIssuePrompt: '', ...start, timeoutSeconds: 300 };
 }
 
 /** A freshly added epic critic, own id (see {@link newCommand}). */
-export function newEpicCritic(): EpicVerificationCritic {
-  return { id: crypto.randomUUID(), name: '', prompt: '', model: '', timeoutSeconds: 300 };
+export function newEpicCritic(start: HarnessStart): EpicVerificationCritic {
+  return { id: crypto.randomUUID(), name: '', prompt: '', ...start, timeoutSeconds: 300 };
+}
+
+export type HarnessChoice = { models: string[]; defaultModel: string };
+
+export type HarnessChoices = { defaultHarness: string; byId: Record<string, HarnessChoice> };
+
+/** The Harness new routes and Critics start on: the configured default when it exists, else the first configured one. */
+export function defaultHarnessId(config: Pick<AppConfig, 'defaults' | 'harnesses'>): string {
+  return config.defaults.harness in config.harnesses ? config.defaults.harness : (Object.keys(config.harnesses)[0] ?? '');
+}
+
+export function harnessChoices(config: Pick<AppConfig, 'defaults' | 'harnesses'>): HarnessChoices {
+  return {
+    defaultHarness: defaultHarnessId(config),
+    byId: Object.fromEntries(
+      Object.entries(config.harnesses).map(([id, harness]): [string, HarnessChoice] => [
+        id,
+        { models: harness.models.map((m) => m.id), defaultModel: harness.defaultModel },
+      ]),
+    ),
+  };
+}
+
+export type HarnessStart = { harness: string; model: string };
+
+export function startingHarness(choices: HarnessChoices): HarnessStart {
+  return { harness: choices.defaultHarness, model: choices.byId[choices.defaultHarness]?.defaultModel ?? '' };
+}
+
+/** Switch a Critic's Harness; the model resets to that Harness's default unless it is already one of its models. */
+export function withHarness<T extends HarnessStart>(critic: T, harness: string, choices: HarnessChoices): T {
+  const choice = choices.byId[harness];
+  const keepModel = choice?.models.includes(critic.model) ?? false;
+  return { ...critic, harness, model: keepModel ? critic.model : (choice?.defaultModel ?? '') };
 }
 
 type GlobalOverlayEntry = { kind: 'global'; ref: string; enabled: boolean };
@@ -85,21 +121,14 @@ export function summarizeCommands(commands: VerificationCommand[]): string {
   return commands.map(summarizeCommand).join(' · ');
 }
 
-/** An editable dimension of the agent critic. `harness` is a select, not free text. */
-export type CriticField = 'name' | 'issuePrompt' | 'noIssuePrompt' | 'model' | 'harness' | 'timeoutSeconds';
+/** An editable dimension of the agent critic; the Harness is switched through {@link withHarness}. */
+export type CriticField = 'name' | 'issuePrompt' | 'noIssuePrompt' | 'model' | 'timeoutSeconds';
 
 /**
  * Fold a raw text-input value into the critic object. `prompt`/`model` are free
- * text. `harness` comes from a select whose first option, "Same as task", is
- * the empty string — that must merge as an *absent* `harness` key (the schema's
- * `harness` is optional, and `z.enum` rejects `''`), not `harness: ''`, so a
- * blank selection strips the key instead of setting it.
+ * text.
  */
 export function setCriticField(critic: TaskVerificationCritic, field: CriticField, raw: string): TaskVerificationCritic {
-  if (field === 'harness' && raw === '') {
-    const { harness: _harness, ...rest } = critic;
-    return rest;
-  }
   if (field === 'timeoutSeconds') {
     const n = Number(raw.trim());
     return raw.trim() === '' || Number.isNaN(n) || n <= 0 ? critic : { ...critic, timeoutSeconds: n };
@@ -107,19 +136,14 @@ export function setCriticField(critic: TaskVerificationCritic, field: CriticFiel
   return { ...critic, [field]: raw };
 }
 
-export type EpicCriticField = 'name' | 'prompt' | 'model' | 'harness' | 'timeoutSeconds';
+export type EpicCriticField = 'name' | 'prompt' | 'model' | 'timeoutSeconds';
 
-/** The epic-critic counterpart of {@link setCriticField}: same blank-`harness`
- * key-strip rule, over the epic critic's single `prompt`. */
+/** The epic-critic counterpart of {@link setCriticField}, over the epic critic's single `prompt`. */
 export function setEpicCriticField(
   critic: EpicVerificationCritic,
   field: EpicCriticField,
   raw: string,
 ): EpicVerificationCritic {
-  if (field === 'harness' && raw === '') {
-    const { harness: _harness, ...rest } = critic;
-    return rest;
-  }
   if (field === 'timeoutSeconds') {
     const n = Number(raw.trim());
     return raw.trim() === '' || Number.isNaN(n) || n <= 0 ? critic : { ...critic, timeoutSeconds: n };
@@ -129,11 +153,11 @@ export function setEpicCriticField(
 
 /**
  * One-line summary of an agent critic for the inheriting read-only display: the
- * reviewer harness (when overridden) and model. An empty model (the seed for
+ * reviewer Harness and Model by friendly name. An empty model (the seed for
  * an unconfigured global default) reads as "Not configured".
  */
 export function summarizeCritic(critic: Pick<TaskVerificationCritic, 'name' | 'harness' | 'model'>): string {
   if (critic.model.trim() === '') return 'Not configured';
-  const runtime = critic.harness ? `${critic.harness} · ${critic.model}` : critic.model;
+  const runtime = `${providerLabel(critic.harness)} · ${formatModelLabel(critic.model)}`;
   return `${criticLabel(critic.name)} (${runtime})`;
 }

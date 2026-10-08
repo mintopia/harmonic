@@ -61,7 +61,7 @@ export function HeaderStatusBar({
   return (
     <header
       aria-label="Status"
-      className="flex shrink-0 items-center gap-x-3 gap-y-2 border-b border-hairline bg-shell px-6 py-2.5 rail:flex-wrap max-rail:gap-x-2 max-rail:px-4"
+      className="@container flex shrink-0 items-center gap-x-3 border-b border-hairline bg-shell px-6 py-2.5 max-rail:gap-x-2 max-rail:px-4"
     >
       <button
         type="button"

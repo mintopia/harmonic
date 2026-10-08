@@ -24,6 +24,16 @@ describe.skipIf(!built)('embedded SPA static serving', () => {
     expect(res.headers.get('cache-control')).toMatch(/no-cache/);
   });
 
+  it('never revalidates index.html to a 304, so an upgrade always ships the new shell', async () => {
+    const first = await fetch(`${server.baseUrl}/`);
+    expect(first.headers.get('etag')).toBeNull();
+    expect(first.headers.get('last-modified')).toBeNull();
+    const again = await fetch(`${server.baseUrl}/`, {
+      headers: { 'if-none-match': 'W/"279-7438674ba0"', 'if-modified-since': 'Sat, 26 Oct 1985 08:15:00 GMT' },
+    });
+    expect(again.status).toBe(200);
+  });
+
   it('falls back to the SPA shell for extension-less client routes', async () => {
     const res = await fetch(`${server.baseUrl}/workspaces/anything/board`);
     expect(res.status).toBe(200);
