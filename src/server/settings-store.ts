@@ -184,10 +184,6 @@ function harnessCatalog(baseline: AppConfig, global: unknown): HarnessCatalog {
   }));
 }
 
-/**
- * Give a stored Critic without a Harness the Harness whose catalog lists its Model; zero or several
- * matches use the global default Harness and warn. Idempotent: a Critic that has a Harness is untouched.
- */
 function fillCriticHarness(critic: unknown, catalog: HarnessCatalog, defaultHarness: string): unknown {
   if (!isRecord(critic) || typeof critic.harness === 'string') return critic;
   const matches = Object.keys(catalog).filter((id) => catalog[id]?.includes(String(critic.model)));

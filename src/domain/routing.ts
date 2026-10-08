@@ -79,7 +79,7 @@ export class RoutingService {
     return resolveRoute(this.getConfig(), task.harness, task.model, routing?.applied ? routing.label : null);
   }
 
-  /** The Harness + Model an Epic-level turn runs on: the Epic issue's own Routing Label, else the Workspace/global default (ADR-0049). */
+  /** The Harness + Model an Epic-level turn runs on: the Epic issue's own Routing Label, else the Workspace/global default. */
   async epicRoute(workspaceId: number, epicRef: TrackerRef): Promise<ResolvedRoute> {
     const config = this.getConfig();
     const { workspace, labels } = await this.scopeFor(workspaceId);

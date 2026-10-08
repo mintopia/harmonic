@@ -310,7 +310,7 @@ export class TaskService {
     };
   }
 
-  /** A mirrored Attempt in flight (working or paused) keeps the Harness/Model it started with, whether or not a Routing Label still matches; relabelling or a config change applies from the next Attempt (ADR-0049). */
+  /** A mirrored Attempt in flight keeps the Harness/Model it started with; relabelling applies from the next Attempt. */
   private isRoutePinned(raw: RawTaskRow): boolean {
     return IN_FLIGHT_STATES.includes(raw.state) && raw.origin === 'mirrored' && routeApplies(raw);
   }
@@ -753,7 +753,6 @@ export class TaskService {
       if (!claimed) return undefined;
       const scope = await this.routing.scopeFor(claimed.workspaceId);
       const { harness, model, ...defaults } = this.resolveDefaults(claimed, scope);
-      // A mirrored Ticket's Harness/Model are re-resolved at every Attempt start (ADR-0049), so never pinned.
       const pinned = claimed.origin === 'mirrored' ? defaults : { harness, model, ...defaults };
       const row = await this.db.write((db) =>
         db

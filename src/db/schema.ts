@@ -243,7 +243,7 @@ export const attempts = sqliteTable('attempts', {
   guardrailConfig: text('guardrail_config'),
   /** JSON: `PriceTable` snapshotted at Attempt start. */
   priceTable: text('price_table'),
-  /** The Harness and Model resolved when the Attempt started; an in-flight Attempt is never re-routed (ADR-0049). Null for Attempts that predate it. */
+  /** The Harness and Model resolved when the Attempt started; an in-flight Attempt is never re-routed. Null for Attempts that predate it. */
   harness: text('harness'),
   model: text('model'),
   /** Free-text detail behind {@link reason}; null while running or when the kind needs none. */

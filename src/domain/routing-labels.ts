@@ -7,7 +7,7 @@ export function parseRoutingLabelOverlay(stored: string | null | undefined): Rou
   return stored == null ? null : routingLabelOverrideSchema.parse(JSON.parse(stored));
 }
 
-/** Effective Routing Labels: null inherits all globals; a local shadowed by an enabled global is dropped (ADR-0049). */
+/** Effective Routing Labels: null inherits all globals; a local shadowed by an enabled global is dropped. */
 export function resolveRoutingLabels(
   ws: Pick<WorkspaceRow, 'routingLabels'> | null | undefined,
   config: Pick<AppConfig, 'routingLabels'>,

@@ -91,7 +91,6 @@ export async function reportIfSessionLost(): Promise<void> {
     const me = (await res.json()) as { authenticated: boolean; passwordConfigured: boolean };
     if (me.passwordConfigured && !me.authenticated) notifySessionLost();
   } catch {
-    // Server unreachable or not JSON: nothing to conclude about the session.
   }
 }
 
