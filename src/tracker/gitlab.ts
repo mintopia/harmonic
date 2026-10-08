@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { logger } from '../logger.js';
 import { z } from 'zod';
+import { forEachYielding } from '../reliability/yield.js';
 import { parseBlockedBySection, parsePartOfParent } from './relationships.js';
 import type { TrackerKind } from './kind.js';
 import { type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
@@ -84,15 +85,15 @@ function normaliseBase(raw: RawIssue): Omit<Ticket, 'parent' | 'blockedBy' | 'bl
   };
 }
 
-function synthesise(raws: RawIssue[]): Ticket[] {
+function synthesise(raws: RawIssue[], unscanned: ReadonlyMap<number, RawIssue> = new Map()): Ticket[] {
   const parsed = raws.map((raw) => {
     const desc = raw.description ?? '';
     return { raw, parent: parsePartOfParent(desc), blockedBy: parseBlockedBySection(desc) };
   });
   const byId = new Map(parsed.map((p) => [p.raw.iid, p]));
   const mkRef = (iid: number): TicketRef | null => {
-    const p = byId.get(iid);
-    return p ? { ref: trackerRef(iid), title: p.raw.title, state: state(p.raw.state) } : null;
+    const raw = byId.get(iid)?.raw ?? unscanned.get(iid);
+    return raw ? { ref: trackerRef(iid), title: raw.title, state: state(raw.state) } : null;
   };
   const blockedBy = new Map<number, Set<number>>(parsed.map((p) => [p.raw.iid, new Set(p.blockedBy)]));
   const blocking = new Map<number, Set<number>>(parsed.map((p) => [p.raw.iid, new Set<number>()]));
@@ -174,7 +175,15 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
     if (page > SCAN_SAFETY_VALVE_PAGES) {
       logger.warn(`GitLab tracker scan hit the ${SCAN_SAFETY_VALVE_PAGES}-page safety valve — results may be truncated`);
     }
-    return synthesise(raws);
+    const scanned = new Set(raws.map((r) => r.iid));
+    const missing = new Set<number>();
+    for (const raw of raws) for (const iid of parseBlockedBySection(raw.description ?? '')) if (!scanned.has(iid)) missing.add(iid);
+    const unscanned = new Map<number, RawIssue>();
+    await forEachYielding(missing, async (iid) => {
+      const found = await findIssue(trackerRef(iid));
+      if (found) unscanned.set(iid, found);
+    });
+    return synthesise(raws, unscanned);
   };
 
   return {

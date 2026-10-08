@@ -563,7 +563,8 @@ describe('gitlab tracker adapter', () => {
       labels: ['ready-for-agent'],
       url: 'https://gitlab.com/mintopia/harmonic/-/issues/36',
     });
-    expect(t36.blockedBy).toEqual([]);
+    expect(t36.blockedBy).toEqual([{ ref: '22', title: 'The Tracker Adapter interface', state: 'closed' }]);
+    expect(reads).toContain('/issues/22');
   });
 
   it('readTicket reads a closed ticket with single-issue requests, never a scan', async () => {
