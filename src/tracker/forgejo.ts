@@ -137,14 +137,14 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
     const raws = await client.paginate(`${repo}/milestones?state=open`, PAGE_SIZE, containerSchema);
     const out: HeldContainer[] = [];
     await forEachYielding(raws, async (raw) => {
-      const held = await client.paginate(`${repo}/issues?state=all&type=issues&milestones=${raw.id}`, PAGE_SIZE, issueSchema);
+      const held = await client.paginate(`${repo}/issues?state=open&type=issues&milestones=${raw.id}`, PAGE_SIZE, issueSchema);
       out.push({ raw, issues: new Set(held.map((i) => i.number)) });
     });
     return out;
   };
 
   const scanAll = async (): Promise<Ticket[]> => {
-    const raws = (await client.paginate(`${repo}/issues?state=all&type=issues`, PAGE_SIZE, issueSchema)).filter((i) => !i.pull_request);
+    const raws = (await client.paginate(`${repo}/issues?state=open&type=issues`, PAGE_SIZE, issueSchema)).filter((i) => !i.pull_request);
     const held = await containers();
     const parentOf = new Map<number, TrackerRef>();
     await forEachYielding(held, (c) => {
@@ -164,9 +164,20 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
     await forEachYielding(raws, (i) => {
       byNumber.set(trackerRef(i.number), i);
     });
+    const unscanned = new Map<TrackerRef, TicketRef>();
+    for (const refs of native.values()) for (const r of refs) if (!byNumber.has(r.ref)) unscanned.set(r.ref, r);
+    const bodyOnly = new Set<TrackerRef>();
+    await forEachYielding(raws, (i) => {
+      for (const n of parseBlockedByLines(i.body ?? '').map(trackerRef)) if (!byNumber.has(n) && !unscanned.has(n)) bodyOnly.add(n);
+    });
+    await forEachConcurrently([...bodyOnly], DEPENDENCY_CONCURRENCY, async (n) => {
+      const found = await orOnNotFound(() => client.request('GET', `${repo}/issues/${n}`, issueSchema), null);
+      if (found) unscanned.set(n, { ref: n, title: found.title, state: state(found.state) });
+    });
     const refOf = (n: TrackerRef): TicketRef => {
       const found = byNumber.get(n);
-      return { ref: n, title: found?.title ?? '', state: found ? state(found.state) : 'open' };
+      if (found) return { ref: n, title: found.title, state: state(found.state) };
+      return unscanned.get(n) ?? { ref: n, title: '', state: 'open' };
     };
     const blockedByMap = new Map<TrackerRef, TicketRef[]>();
     await forEachYielding(raws, (i) => {
@@ -247,6 +258,7 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
 
   return {
     name: 'forgejo',
+    scansOpenOnly: true,
 
     scan: scanAll,
 

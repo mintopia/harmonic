@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { parseBlockedBySection, parsePartOfParent } from './relationships.js';
 import type { TrackerKind } from './kind.js';
 import { type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
-import { EPIC_LABEL, MAP_LABEL, trackerRef } from './ref.js';
+import { EPIC_LABEL, MAP_LABEL, trackerRef, type TrackerRef } from './ref.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -148,11 +148,20 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
     await api(`${proj}/issues/${iid}${assigneeQuery(ids)}`, 'PUT');
   };
 
+  const readIssue = async (ref: TrackerRef): Promise<RawIssue> => {
+    try {
+      return await api<RawIssue>(`${proj}/issues/${ref}`);
+    } catch (err) {
+      if (err instanceof GlabError && /404/.test(err.stderr + err.message)) throw new Error(`GitLab: no issue #${ref} in ${config.project}`);
+      throw err;
+    }
+  };
+
   const scanAll = async (): Promise<Ticket[]> => {
     const raws: RawIssue[] = [];
     let page = 1;
     for (; page <= SCAN_SAFETY_VALVE_PAGES; page++) {
-      const batch = await api<RawIssue[]>(`${proj}/issues?per_page=100&page=${page}`);
+      const batch = await api<RawIssue[]>(`${proj}/issues?state=opened&per_page=100&page=${page}`);
       raws.push(...batch);
       if (batch.length < 100) break;
     }
@@ -164,6 +173,7 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
 
   return {
     name: 'gitlab',
+    scansOpenOnly: true,
 
     async identify() {
       return (await ensureMe()).username;
@@ -172,9 +182,21 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
     scan: scanAll,
 
     async readTicket(ref: TicketRef) {
-      const found = (await scanAll()).find((t) => t.ref === ref.ref);
-      if (!found) throw new Error(`GitLab: no issue #${ref.ref} in ${config.project}`);
-      return found;
+      const raw = await readIssue(ref.ref);
+      const blockedBy: TicketRef[] = [];
+      await Promise.all(
+        parseBlockedBySection(raw.description ?? '').map(async (iid) => {
+          if (iid === raw.iid) return;
+          const blocker = await readIssue(trackerRef(iid)).catch(() => null);
+          if (blocker) blockedBy.push({ ref: trackerRef(iid), title: blocker.title, state: state(blocker.state) });
+        }),
+      );
+      const parent = parsePartOfParent(raw.description ?? '');
+      return { ...normaliseBase(raw), parent: parent === null ? null : trackerRef(parent), blockedBy, blocking: [] };
+    },
+
+    async readState(ref: TicketRef) {
+      return state((await readIssue(ref.ref)).state);
     },
 
     async claim(ticket: TicketRef) {
