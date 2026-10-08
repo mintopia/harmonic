@@ -20380,7 +20380,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Extend the wall-clock time guardrail of a working task's live Attempt by `minutes`, giving a run that is close to its budget more time without restarting it. The raised cap is persisted onto the Attempt's frozen guardrail config and the live deadline is re-armed immediately. Key scopes: full, attempt.",
+        "description": "Extend the wall-clock time guardrail of a working task's live Attempt by `minutes`, giving a run that is close to its budget more time without restarting it. The raised cap is persisted onto the Attempt's frozen guardrail config and the live deadline is re-armed immediately. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -22695,7 +22695,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Export status for a Task: the latest Export (filename, build time, size, redactions, partial flag) with per-Destination delivery status, last attempt, error and pending retry, plus earlier Exports. `latest` is null until an Export has been attempted. Key scopes: full, attempt, read.",
+        "description": "Export status for a Task: the latest Export (filename, build time, size, redactions, partial flag) with per-Destination delivery status, last attempt, error and pending retry, plus earlier Exports. `latest` is null until an Export has been attempted. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {
@@ -22744,7 +22744,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Export again: rebuild the Export and deliver it to every configured Destination regardless of the includeStates filter, as a new Export that never overwrites an earlier one. A Task that predates the Archive is built from surviving records and flagged `partial`. Only done or cancelled Tasks; 409 when the Task is not finished or no Destination is enabled. Key scopes: full, attempt.",
+        "description": "Export again: rebuild the Export and deliver it to every configured Destination regardless of the includeStates filter, as a new Export that never overwrites an earlier one. A Task that predates the Archive is built from surviving records and flagged `partial`. Only done or cancelled Tasks; 409 when the Task is not finished or no Destination is enabled. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "parameters": [
           {
             "schema": {

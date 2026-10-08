@@ -5,7 +5,7 @@ type ScopeRule = { pattern: RegExp; attempt: boolean } & ({ read: false } | { re
 // First match wins; read-scoped access additionally requires GET.
 const RULES: readonly ScopeRule[] = [
   { pattern: /^\/mcp(\/|$)/, attempt: true, read: false },
-  { pattern: /^\/api\/tasks\/[^/]+\/(complete|steer|accept|retry|close)$/, attempt: false, read: false },
+  { pattern: /^\/api\/tasks\/[^/]+\/(complete|steer|accept|retry|close|extend-guardrail|export)$/, attempt: false, read: false },
   { pattern: /^\/api\/workspaces\/[^/]+\/epics\/[^/]+\/retry$/, attempt: false, read: false },
   { pattern: /^\/api\/workspaces\/[^/]+\/epics(\/[^/]+)?$/, attempt: false, read: true, readLabel: 'Workspaces and their Epics (`/api/workspaces/:id/epics[/:ref]`)' },
   { pattern: /^\/api\/tasks\/[^/]+\/channels(\/|$)/, attempt: false, read: false },

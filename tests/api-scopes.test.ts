@@ -11,7 +11,7 @@ it('enforces operator-only routes for encoded and noncanonical task ids', async 
       const { token } = await server.app.ctx.auth.createKey('scope regression', { scope });
       const headers = { authorization: `Bearer ${token}` };
       for (const id of [String(task.id), `%${task.id.toString().charCodeAt(0).toString(16)}${String(task.id).slice(1)}`, `${task.id}e0`]) {
-        for (const action of ['accept', 'retry', 'close', 'complete', 'steer']) {
+        for (const action of ['accept', 'retry', 'close', 'complete', 'steer', 'extend-guardrail', 'export']) {
           const response = await server.app.inject({ method: 'POST', url: `/api/tasks/${id}/${action}`, headers, payload: {} });
           expect(response.statusCode, `${scope} ${id}/${action}`).toBe(403);
         }
