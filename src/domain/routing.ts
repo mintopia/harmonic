@@ -31,11 +31,11 @@ export class RoutingService {
     return this.routingOf(raw, await this.resolveWorkspace(raw.workspaceId ?? undefined));
   }
 
-  /** The Harness a Critic without its own falls back to: never the Routing Label (ADR-0049). */
-  async unroutedHarness(taskId: number): Promise<string> {
+  /** The Harness a Critic without its own falls back to: the Workspace/global default, never the Task's Harness (ADR-0049). */
+  async defaultHarness(taskId: number): Promise<string> {
     const raw = await this.getRaw(taskId);
     const workspace = await this.resolveWorkspace(raw.workspaceId ?? undefined);
-    return raw.harness ?? resolveScoped('harness', workspace.harness, this.getConfig().defaults.harness);
+    return resolveScoped('harness', workspace.harness, this.getConfig().defaults.harness);
   }
 
   /** The Harness + Model an Epic-level turn runs on: the Epic issue's own Routing Label, else the Workspace/global default (ADR-0049). */

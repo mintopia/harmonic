@@ -129,7 +129,7 @@ describe('PATCH /api/config verification', () => {
     expect(after.body.verify.task.preMerge.critics[0].harness).toBe('codex');
   });
 
-  it('accepts a critic with no harness (issue #174) — the field is optional, "Same as task"', async () => {
+  it('accepts a critic with no harness (issue #174) — the field is optional, "Workspace default"', async () => {
     const patched = await server.api('PATCH', '/api/config', {
       verify: { task: { preMerge: { commands: [], critics: [{ name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.',model: 'claude-opus-5' }] } } },
     });

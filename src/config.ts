@@ -133,7 +133,7 @@ const verificationCriticIdentitySchema = z.object({
   /** Operator-facing label; the critic's row title in settings. */
   name: z.string().default('').meta({ example: 'Correctness' }),
   model: z.string().min(1).meta({ example: 'claude-opus-5' }),
-  /** Reviewer harness; omitted = reuse the builder task's harness. */
+  /** Reviewer harness; omitted = the Workspace/global default Harness. */
   harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),
   /** Hard timeout in seconds for the critic's single review turn; a run that
    * overruns is killed and reads inconclusive. Defaults to 300. */

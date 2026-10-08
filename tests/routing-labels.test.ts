@@ -185,16 +185,16 @@ describe('Routing Labels (ADR-0049)', () => {
   });
 
   describe('Critic fallback harness', () => {
-    it('unroutedHarness skips the route: operator setting, then Workspace default, then global default', async () => {
+    it('defaultHarness ignores the Task Harness: Workspace default, then global default', async () => {
       const routed = await mirror(1, ['ready-for-agent', 'cheap']);
       expect(routed.harness).toBe('codex');
-      expect(await tasks.routing.unroutedHarness(routed.id)).toBe('claude');
+      expect(await tasks.routing.defaultHarness(routed.id)).toBe('claude');
 
       await new WorkspaceService(asyncDb, settingsStore).update(wsId, { harness: 'copilot' });
-      expect(await tasks.routing.unroutedHarness(routed.id)).toBe('copilot');
+      expect(await tasks.routing.defaultHarness(routed.id)).toBe('copilot');
 
       await setOperator(routed.id, { harness: 'opencode' });
-      expect(await tasks.routing.unroutedHarness(routed.id)).toBe('opencode');
+      expect(await tasks.routing.defaultHarness(routed.id)).toBe('copilot');
     });
   });
 

@@ -72,7 +72,7 @@ function CriticRuntimeFields({
           value={critic.harness ?? ""}
           onChange={(e) => onChange("harness", e.target.value)}
         >
-          <option value="">Same as Task</option>
+          <option value="">Workspace default</option>
           {Object.keys(harnessModels).map((harness) => (
             <option key={harness} value={harness}>
               {harness}
@@ -167,7 +167,7 @@ function CriticRunChip({ critic }: { critic: Pick<TaskVerificationCritic, "model
           )}
         </>
       ) : (
-        "Same as Task"
+        "Workspace default"
       )}
     </span>
   );
