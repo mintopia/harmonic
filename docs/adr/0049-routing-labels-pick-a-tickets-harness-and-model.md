@@ -45,7 +45,10 @@ Model.
   Model ids are not validated; the catalog is open (ADR-0022).
 - **Epic-level turns route by the Epic's own labels**, else the defaults. They
   stop borrowing the Harness and Model of whichever member Task happens to be
-  working.
+  working. The more specific source wins (amended by #834): the Epic's operator
+  Harness/Model override, then the label snapshot on the Epic's Task row, then
+  the one on its tracker container row, then the defaults. An override replaces
+  the label, as it does for Tickets.
 - **Critics are never routed, and every Critic has its own Harness and Model
   (amended by #830).** There is no fallback to the Workspace or global default
   Harness, and never the Task's Harness. A Critic's Model must be in its

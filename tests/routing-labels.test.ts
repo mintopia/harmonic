@@ -331,6 +331,23 @@ describe('Routing Labels (ADR-0049)', () => {
       expect(await tasks.routing.epicRoute(wsId, trackerRef(20))).toMatchObject({ harness: 'claude', model: 'claude-opus-5-5', label: 'reasoning' });
     });
 
+    it('the Task row label beats a diverging container row label', async () => {
+      const epicRef = trackerRef(30);
+      await mirror(30, ['reasoning']);
+      await tasks.syncTrackerContainers(wsId, [{
+        trackerRef: epicRef,
+        facts: { state: 'open', parent: null, blockedBy: [], labels: ['cheap'], title: 'Epic', body: '', url: 'u', createdAt: '2026-08-07T00:00:00Z' },
+      }]);
+      expect(await tasks.routing.epicRoute(wsId, epicRef)).toMatchObject({ harness: 'claude', label: 'reasoning' });
+    });
+
+    it('an Epic operator Harness override applies to Epic-level turns and replaces the label', async () => {
+      const epicTask = await mirror(32, ['reasoning']);
+      const epicRef = trackerRef(32);
+      await setOperator(epicTask.id, { harness: 'codex' });
+      expect(await tasks.routing.epicRoute(wsId, epicRef)).toMatchObject({ harness: 'codex', label: null });
+    });
+
     it('an Epic with no stored row falls back to the defaults', async () => {
       expect(await tasks.routing.epicRoute(wsId, trackerRef(99))).toMatchObject({ harness: 'claude', label: null });
     });

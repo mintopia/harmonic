@@ -79,7 +79,7 @@ export class RoutingService {
     return resolveRoute(this.getConfig(), task.harness, task.model, routing?.applied ? routing.label : null);
   }
 
-  /** The Harness + Model an Epic-level turn runs on: the Epic issue's own Routing Label, else the Workspace/global default. */
+  /** The Harness + Model an Epic-level turn runs on: the Epic's operator Harness/Model override, else its Task row's Routing Label, else the container row's, else the Workspace/global default. */
   async epicRoute(workspaceId: number, epicRef: TrackerRef): Promise<ResolvedRoute> {
     const config = this.getConfig();
     const { workspace, labels } = await this.scopeFor(workspaceId);
@@ -87,9 +87,10 @@ export class RoutingService {
       await db.select({ trackerLabels: trackerContainers.trackerLabels }).from(trackerContainers).where(and(eq(trackerContainers.workspaceId, workspaceId), eq(trackerContainers.trackerRef, epicRef))).get(),
       await db.select().from(tasks).where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.trackerRef, epicRef))).get(),
     ] as const);
-    const route = container ? this.matchRoute({ origin: 'mirrored', trackerLabels: container.trackerLabels }, labels) : task ? this.matchRoute(task, labels) : null;
-    const target = defaultRoute(config, workspace, route);
-    return resolveRoute(config, target.harness, target.model, route?.label ?? null);
+    const overridden = !!task && !routeApplies(task);
+    const route = overridden ? null : task ? this.matchRoute(task, labels) : container ? this.matchRoute({ origin: 'mirrored', trackerLabels: container.trackerLabels }, labels) : null;
+    const target = defaultRoute(config, workspace, route, task?.harness ?? null);
+    return resolveRoute(config, target.harness, task?.model ?? target.model, route?.label ?? null);
   }
 
   private async getRaw(id: number): Promise<RawTaskRow> {
