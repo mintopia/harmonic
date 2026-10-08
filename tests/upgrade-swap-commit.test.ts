@@ -27,6 +27,8 @@ const shared = createTempDirTracker();
 let v1BaseDir: string;
 let v2Spec: string;
 let v2BrokenSpec: string;
+let v2BaseDir: string;
+let v2BrokenBaseDir: string;
 beforeAll(async () => {
   v1BaseDir = shared.tempDir('upgrade-swap-v1-base-');
   const v1Spec = packFixtureTarball(shared.tempDir, { version: '1.0.0' });
@@ -34,11 +36,19 @@ beforeAll(async () => {
   flipCurrent({ appDir: join(v1BaseDir, 'app'), version: '1.0.0' });
   v2Spec = packFixtureTarball(shared.tempDir, { version: '2.0.0' });
   v2BrokenSpec = packFixtureTarball(shared.tempDir, { version: '2.0.0', cliServeJs: "throw new Error('v2 is broken');\n" });
-}, 60_000);
+  v2BaseDir = shared.tempDir('upgrade-swap-v2-base-');
+  await installManagedUpgrade({ dataDir: v2BaseDir, target: '2.0.0', run, packageSpec: v2Spec });
+  v2BrokenBaseDir = shared.tempDir('upgrade-swap-v2-broken-base-');
+  await installManagedUpgrade({ dataDir: v2BrokenBaseDir, target: '2.0.0', run, packageSpec: v2BrokenSpec });
+}, 120_000);
 afterAll(shared.cleanupAll);
 
 async function setupRunningV1(dataDir: string): Promise<void> {
   cpSync(join(v1BaseDir, 'app'), join(dataDir, 'app'), { recursive: true, verbatimSymlinks: true });
+}
+
+function stageV2(dataDir: string, baseDir: string): void {
+  cpSync(join(baseDir, 'app', 'versions', '2.0.0'), join(dataDir, 'app', 'versions', '2.0.0'), { recursive: true, verbatimSymlinks: true });
 }
 
 function seedDatabase(dataDir: string): Promise<void> {
@@ -97,6 +107,7 @@ describe('UpgradeSwap commit order (real fixtures, real SQLite)', () => {
   it('aborts on a broken release: current, pending.json, and the database are all untouched', async () => {
     const dataDir = tempDir('upgrade-swap-broken-');
     await setupRunningV1(dataDir);
+    stageV2(dataDir, v2BrokenBaseDir);
     await seedDatabase(dataDir);
     const dbBefore = readFileSync(join(dataDir, 'harmonic.db'));
 
@@ -115,6 +126,7 @@ describe('UpgradeSwap commit order (real fixtures, real SQLite)', () => {
   it('commits a good release: current flips, pending.json records the snapshot, and the snapshot is a valid SQLite copy of the pre-upgrade DB', async () => {
     const dataDir = tempDir('upgrade-swap-good-');
     await setupRunningV1(dataDir);
+    stageV2(dataDir, v2BaseDir);
     await seedDatabase(dataDir);
 
     const { swap, calls } = buildSwap(dataDir, v2Spec);
@@ -138,8 +150,7 @@ describe('UpgradeSwap commit order (real fixtures, real SQLite)', () => {
   it('aborts without flipping current when the DB snapshot fails, e.g. an unwritable app directory', async () => {
     const dataDir = tempDir('upgrade-swap-snapshot-fail-');
     await setupRunningV1(dataDir);
-    // Pre-install while writable so the install step is a no-op retry under the read-only app/ below.
-    await installManagedUpgrade({ dataDir, target: '2.0.0', run, packageSpec: v2Spec });
+    stageV2(dataDir, v2BaseDir);
     const { swap, calls } = buildSwap(dataDir, v2Spec);
 
     chmodSync(join(dataDir, 'app'), 0o555);
@@ -159,6 +170,7 @@ describe('UpgradeSwap commit order (real fixtures, real SQLite)', () => {
   it('reports cancelled, not idle-timeout, and never touches disk when a cancellation lands while waitForIdle is still draining', async () => {
     const dataDir = tempDir('upgrade-swap-cancel-idle-');
     await setupRunningV1(dataDir);
+    stageV2(dataDir, v2BaseDir);
     await seedDatabase(dataDir);
     const dbBefore = readFileSync(join(dataDir, 'harmonic.db'));
 
