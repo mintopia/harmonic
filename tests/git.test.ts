@@ -134,6 +134,44 @@ describe('git-branch', () => {
     });
   });
 
+  describe('Git.mergeNoFf waits out an index.lock held briefly by another git process', () => {
+    const setup = () => {
+      const dir = makeRepo();
+      raw(dir, 'checkout', '-b', 'feature');
+      writeFileSync(join(dir, 'f.txt'), 'x\n');
+      raw(dir, 'add', '-A');
+      raw(dir, 'commit', '-m', 'feature');
+      raw(dir, 'checkout', 'main');
+      return dir;
+    };
+
+    it('merges once the lock is released', async () => {
+      const dir = setup();
+      try {
+        const lock = join(dir, '.git', 'index.lock');
+        writeFileSync(lock, '');
+        setTimeout(() => rmSync(lock, { force: true }), 400);
+        const result = await Git.mergeNoFf(dir, 'feature');
+        expect(result).toMatchObject({ ok: true });
+        expect(raw(dir, 'rev-list', '--parents', '-n1', 'HEAD').split(' ')).toHaveLength(3);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('reports a failure, leaving the tree untouched, when the lock is never released', async () => {
+      const dir = setup();
+      try {
+        writeFileSync(join(dir, '.git', 'index.lock'), '');
+        const result = await Git.mergeNoFf(dir, 'feature');
+        expect(result).toMatchObject({ ok: false, conflict: false });
+        expect(existsSync(join(dir, 'f.txt'))).toBe(false);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }, 15_000);
+  });
+
   describe('Git.commitAll / Git.commitPaths return the new HEAD oid, or null when nothing was committed', () => {
     it('commitAll returns the new HEAD oid for a dirty tree, and rev-parses to it', async () => {
       const dir = makeRepo();
