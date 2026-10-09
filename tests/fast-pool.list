@@ -106,7 +106,6 @@ tests/runner-cancel-attempt-gone.test.ts
 tests/runner-start.test.ts
 tests/scheduled-jobs-model.test.ts
 tests/session-continuation.test.ts
-tests/session-fallback.test.ts
 tests/session-resume.test.ts
 tests/session-retirement-coordinator.test.ts
 tests/session-retirement.test.ts

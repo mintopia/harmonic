@@ -1,6 +1,6 @@
 import type { TrackerRef } from '../tracker/adapter.js';
 import { and, eq, gte, lte, sql } from 'drizzle-orm';
-import type { AsyncDb, AsyncDbHandle } from '../db/async.js';
+import type { AsyncDb } from '../db/async.js';
 import { attemptToolCalls, attempts, tasks } from '../db/schema.js';
 
 export interface ToolCallTotals {
@@ -14,40 +14,6 @@ export interface ToolCallRange {
   workspaceId?: number;
   /** Scope to one Epic's child Tasks by their rollup key (`tasks.mapRef`). */
   epicRef?: TrackerRef;
-}
-
-/**
- * Read-only rollups over the per-Attempt tool-call snapshot. Epic is derived
- * from the mirrored Task's parent tracker ref (`mapRef`); native and
- * unparented Tasks contribute only to their Task total.
- */
-export class ToolCallAggregateStore {
-  constructor(private readonly db: AsyncDbHandle) {}
-
-  async totalsForWorkspace(workspaceId: number): Promise<ToolCallTotals> {
-    const rows = await this.db.read((db) =>
-      db
-        .select({
-          taskId: tasks.id,
-          epicRef: tasks.mapRef,
-          toolName: attemptToolCalls.toolName,
-          count: sql<number>`sum(${attemptToolCalls.count})`,
-        })
-        .from(attemptToolCalls)
-        .innerJoin(attempts, eq(attemptToolCalls.attemptId, attempts.id))
-        .innerJoin(tasks, eq(attempts.taskId, tasks.id))
-        .where(eq(tasks.workspaceId, workspaceId))
-        .groupBy(tasks.id, tasks.mapRef, attemptToolCalls.toolName)
-        .all(),
-    );
-
-    const totals: ToolCallTotals = { byTask: {}, byEpic: {} };
-    for (const row of rows) {
-      addTotal(totals.byTask, row.taskId, row.toolName, row.count);
-      if (row.epicRef !== null) addTotal(totals.byEpic, row.epicRef, row.toolName, row.count);
-    }
-    return totals;
-  }
 }
 
 /** Read a Stats range from the tool-call aggregate; accepts an already-open database so the Stats route can batch its reads. */

@@ -12,10 +12,7 @@ import { forEachYielding } from '../reliability/yield.js';
 import { InFlight } from '../reliability/in-flight.js';
 import { DomainError } from '../domain/errors.js';
 import { startOperation, type Operation } from '../telemetry/operations.js';
-
-function failureReason(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+import { errorMessage } from '../error-handling.js';
 
 function taskOperationAttributes(task: Pick<TaskRow, 'id' | 'origin' | 'priority' | 'workspaceId' | 'prompt' | 'trackerTitle'>): Record<string, string | number> {
   const title = task.trackerTitle ?? task.prompt.split('\n').find((line) => line.trim().length > 0)?.trim() ?? `Task ${task.id}`;
@@ -186,7 +183,7 @@ export class AutoRunner {
       } while (this.refill && !this.closed);
       tick?.end();
     } catch (error) {
-      tick?.fail(failureReason(error));
+      tick?.fail(errorMessage(error));
     } finally {
       this.filling = false;
     }
@@ -220,7 +217,7 @@ export class AutoRunner {
           await this.runner.launchClaimed(task.id, pick.spanContext);
           return true;
         } catch (error) {
-          pick.fail(failureReason(error));
+          pick.fail(errorMessage(error));
           await this.taskService.setState(task.id, 'ready');
           skip.add(task.id);
           return false;
@@ -229,7 +226,7 @@ export class AutoRunner {
       pick.end();
       return started;
     } catch (error) {
-      pick.fail(failureReason(error));
+      pick.fail(errorMessage(error));
       throw error;
     }
   }
