@@ -677,9 +677,22 @@ export class TaskService {
     return rows;
   }
 
+  /** The subset of `ids` whose Task is `done`, without loading full rows. */
+  async doneIds(ids: readonly number[]): Promise<Set<number>> {
+    if (ids.length === 0) return new Set();
+    const rows = await this.db.read((db) =>
+      db
+        .select({ id: tasks.id })
+        .from(tasks)
+        .where(and(inArray(tasks.id, [...ids]), eq(tasks.state, 'done')))
+        .all(),
+    );
+    return new Set(rows.map((row) => row.id));
+  }
+
   /** Read the active backlog and derive open blockers at pick time. */
   async orderedEligibleWork(workspaceId?: number): Promise<OrderedEligibleTask[]> {
-    const rows = await this.list(workspaceId === undefined ? {} : { workspaceId });
+    const rows = await this.list(workspaceId === undefined ? { state: 'ready' } : { workspaceId, state: 'ready' });
     const candidates: TaskRow[] = [];
     await forEachYielding(rows, (task) => {
       if (task.state === 'ready') candidates.push(task);
@@ -707,20 +720,7 @@ export class TaskService {
         blockerIds.push(dependency.dependsOnId);
       }
     });
-    const completedRows =
-      blockerIds.length === 0
-        ? []
-        : await this.db.read((db) =>
-            db
-              .select({ id: tasks.id })
-              .from(tasks)
-              .where(and(inArray(tasks.id, blockerIds), eq(tasks.state, 'done')))
-              .all(),
-          );
-    const completedIds = new Set<number>();
-    await forEachYielding(completedRows, (task) => {
-      completedIds.add(task.id);
-    });
+    const completedIds = await this.doneIds(blockerIds);
     const containerRefs = await this.containerRefs(workspaceId);
     const triage = await this.triageLabels(workspaceId);
     const nodes: OrderedEligibleTask[] = [];

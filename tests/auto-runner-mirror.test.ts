@@ -357,6 +357,21 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
     expect(started).toEqual([]);
   });
 
+  it('does not run the Epic gate while the Auto-Runner is at capacity', async () => {
+    const task = await tasks.upsertMirrored(mirroredAfk(210));
+    const gate = vi.fn(() => false);
+    const runner = { launchClaimed: async () => {}, escalateUnspawned: async () => {} };
+    const runStore = { countRunning: async () => 1, countRunningByWorkspace: async () => new Map<number, number>() };
+    const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
+    const autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), {
+      epicBaseNotReady: gate,
+    });
+
+    autoRunner.poke();
+    await vi.waitFor(() => expect(autoRunner.skipReasonFor(task.id)).toBe('at capacity'));
+    expect(gate).not.toHaveBeenCalled();
+  });
+
   it('clears a missing integration-branch reason when the branch reappears inside the grace window', async () => {
     const task = await tasks.upsertMirrored(mirroredAfk(209));
     await tasks.setBaseBranch(task.id, 'epic/209');

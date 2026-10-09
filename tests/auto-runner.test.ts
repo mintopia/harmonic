@@ -49,6 +49,17 @@ describe('auto-runner', () => {
     expect(await server.app.ctx.attempts.countRunning()).toBe(0);
   });
 
+  it('queries only ready and working tasks each tick, never the whole table', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harmonic-ar-scope-'));
+    const done = await server.api('POST', '/api/tasks', { prompt: 'old', workingDir: dir });
+    await server.app.ctx.tasks.setState(done.body.id, 'done');
+    const listSpy = vi.spyOn(server.app.ctx.tasks, 'list');
+    await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
+    await waitFor(async () => listSpy.mock.calls.length > 0);
+    const queries = listSpy.mock.calls.map(([q]) => q);
+    expect(queries.every((q) => [q?.state].flat().every((s) => s === 'ready' || s === 'working'))).toBe(true);
+  });
+
   it('starts ready tasks in priority-then-FIFO order, one at a time by default', async () => {
     const dir = () => mkdtempSync(join(tmpdir(), 'harmonic-ar-ord-'));
     const low = await server.api('POST', '/api/tasks', { prompt: slowScenario(80), priority: 'low', workingDir: dir() });
