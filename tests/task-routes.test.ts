@@ -427,6 +427,49 @@ describe('task-list-epics', () => {
   });
 });
 
+describe('task-epic-hold', () => {
+  let server: TestServer;
+
+  beforeEach(async () => {
+    server = await startServer(stubHarness());
+  });
+  afterEach(async () => {
+    await server.close();
+  });
+
+  it('serves the Epic Hold blockers and counts them in openBlockerCount', async () => {
+    const seed = await server.api('POST', '/api/tasks', { prompt: 'seed' });
+    const workspaceId: number = seed.body.workspaceId;
+    const facts = (parent: string | null, blockedBy: string[], labels: string[]) => ({
+      state: 'open' as const,
+      parent: parent === null ? null : trackerRef(Number(parent)),
+      blockedBy: blockedBy.map((ref) => ({ ref: trackerRef(Number(ref)), title: ref, state: 'open' as const })),
+      labels,
+      title: 'ticket',
+      body: '',
+      url: 'https://tracker/x',
+      createdAt: '2026-08-01T00:00:00Z',
+    });
+    const tasks = server.app.ctx.tasks;
+    await tasks.syncTrackerContainers(workspaceId, [
+      { trackerRef: trackerRef(73), facts: facts(null, ['71'], ['epic']) },
+      { trackerRef: trackerRef(71), facts: facts(null, [], ['epic']) },
+    ]);
+    await tasks.syncEpics(workspaceId, [{ ref: trackerRef(73), kind: 'epic' }, { ref: trackerRef(71), kind: 'epic' }]);
+    const member = await tasks.upsertMirrored(
+      { trackerRef: trackerRef(101), prompt: 'member', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false, facts: facts('73', [], ['ready-for-agent']) },
+      workspaceId,
+    );
+
+    const list = await server.api('GET', `/api/tasks?workspaceId=${workspaceId}`);
+    const listed = (list.body.tasks as any[]).find((t) => t.id === member.id);
+    expect(listed).toMatchObject({ openBlockerCount: 1, agentWorkable: false, epicBlockers: [{ ref: '71', kind: 'epic', heldEpic: '73' }] });
+    const one = await server.api('GET', `/api/tasks/${member.id}`);
+    expect(one.body).toMatchObject({ openBlockerCount: 1, epicBlockers: [{ ref: '71', kind: 'epic', heldEpic: '73' }] });
+    expect(listed.dependsOn).toEqual([]);
+  });
+});
+
 describe('task-list-branch', () => {
   const git = (dir: string, ...args: string[]) =>
     execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();

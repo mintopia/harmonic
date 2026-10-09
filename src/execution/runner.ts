@@ -523,7 +523,15 @@ export class Runner {
     this.activeRuns.markDriving(task.id);
     let created: AttemptRow | undefined;
     try {
-      if (await this.epicBaseNotReady?.(task)) {
+      const baseGate = await this.epicBaseNotReady?.(task);
+      if (baseGate === 'stale') {
+        throw new DomainError(
+          'invalid_state',
+          `task ${task.id} is an Epic member whose integration branch (${task.baseBranch}) is behind its base; ` +
+            'it is refreshed when the blocking Epic is integrated — retry shortly',
+        );
+      }
+      if (baseGate) {
         throw new DomainError(
           'invalid_state',
           `task ${task.id} is an Epic member whose integration branch (${task.baseBranch ?? 'unassigned'}) is not ready yet; ` +

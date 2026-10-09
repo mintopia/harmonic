@@ -18,6 +18,7 @@ import {
   integrationBranchName,
   parseIntegrationBranch,
   reduceMemberState,
+  type EpicBaseGate,
   type EpicIntegrateOutcome,
   type EpicRefreshResolveDispatchOutcome,
   type EpicRefreshResolveTarget,
@@ -71,7 +72,7 @@ export interface EpicService {
   startWorkspace(workspace: WorkspaceRow): EpicIntegrationSync;
   stopWorkspace(workspaceId: number): void;
   retryEpic(workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null>;
-  epicBaseNotReady(task: TaskRow): Promise<boolean>;
+  epicBaseNotReady(task: TaskRow): Promise<EpicBaseGate>;
   refreshAfterDefaultBranchAdvance(workingDir: string, defaultBranch: string): Promise<void>;
   listEpics(workspaceId: number): Promise<Epic[]>;
   listEpicTickets(workspaceId: number): Promise<Ticket[]>;
@@ -301,7 +302,7 @@ export class TrackerEpicService implements EpicService {
     return coordinator.submit({ ref: epicRef, members, memberRefs });
   }
 
-  async epicBaseNotReady(task: TaskRow): Promise<boolean> {
+  async epicBaseNotReady(task: TaskRow): Promise<EpicBaseGate> {
     return (await (task.workspaceId === null ? undefined : this.entries.get(task.workspaceId))?.epics.memberBaseNotReady(task)) ?? false;
   }
 

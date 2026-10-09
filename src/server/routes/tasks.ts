@@ -179,8 +179,19 @@ const taskWithDepsSchema = z
     dependents: z.array(z.number()).meta({ example: [4830] }),
     /** Ready, and at least one blocker is escalated or cancelled — it will not unblock on its own. */
     blockedOnFailed: z.boolean().meta({ example: false }),
-    /** Number of blocker edges whose blocker has not completed. */
+    /** Number of blockers not yet cleared: Task edges whose blocker has not completed, plus the Epic Hold blockers in `epicBlockers`. */
     openBlockerCount: z.number().int().nonnegative().meta({ example: 1 }),
+    /** The Epic Hold: unsatisfied blockers of the Epic(s) above this Member (an Epic blocker clears once integrated, a Task blocker once done). Already counted in `openBlockerCount`; empty on native Tasks. */
+    epicBlockers: z
+      .array(
+        z.object({
+          ref: z.string().meta({ example: '71' }),
+          kind: z.enum(['epic', 'task']).meta({ example: 'epic' }),
+          heldEpic: z.string().meta({ example: '73' }),
+          cycle: z.boolean().optional().meta({ example: true }),
+        }),
+      )
+      .meta({ example: [{ ref: '71', kind: 'epic', heldEpic: '73' }] }),
     /** Derived: opted in (mirrored: the `ready-for-agent` label, not an Epic container) and no open Blockers. */
     agentWorkable: z.boolean().meta({ example: false }),
     /** A mirrored ticket Harmonic never works (no `ready-for-agent`, an Epic container, or a human wayfinder kind); false on native Tasks. Independent of blockers, so a blocked human-only ticket still reads human-only. */

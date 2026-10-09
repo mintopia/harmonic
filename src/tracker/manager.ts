@@ -8,6 +8,7 @@ import type { Scheduler } from '../scheduler/scheduler.js';
 import type { ResolvedTracker, TrackerAdapter, WorkspaceTrackerSettings } from './adapter.js';
 import { resolveTracker, resolveTrackerAdapter, workspaceTrackerSettings } from './adapter.js';
 import { type EpicIntegrateOutcome, type EpicService } from './epic-service.js';
+import type { EpicBaseGate } from '../execution/epic-coordinator.js';
 import type { Epic } from '../domain/epic-view.js';
 import type { Ticket, TrackerRef } from './adapter.js';
 import type { FeatureIndex } from './local-markdown.js';
@@ -101,7 +102,7 @@ export class TrackerPollerManager {
   adapterFor(workspace: WorkspaceRow): Promise<TrackerAdapter> { return this.resolveAdapter(workspace.workingDir, undefined, workspaceTrackerSettings(workspace)); }
   resolvedTracker(workspaceId: number): ResolvedTracker | null { return this.resolved.get(workspaceId) ?? null; }
   async retryEpic(workspaceId: number, epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null> { return this.epicService.retryEpic(workspaceId, epicRef, guidance, continuation); }
-  async epicBaseNotReady(task: TaskRow): Promise<boolean> { return this.epicService.epicBaseNotReady(task); }
+  async epicBaseNotReady(task: TaskRow): Promise<EpicBaseGate> { return this.epicService.epicBaseNotReady(task); }
   async refreshAfterDefaultBranchAdvance(workingDir: string, defaultBranch: string): Promise<void> { await this.epicService.refreshAfterDefaultBranchAdvance(workingDir, defaultBranch); }
   async listEpics(workspaceId: number): Promise<Epic[]> { return this.epicService.listEpics(workspaceId); }
   async listEpicTickets(workspaceId: number): Promise<Ticket[]> { return this.epicService.listEpicTickets(workspaceId); }

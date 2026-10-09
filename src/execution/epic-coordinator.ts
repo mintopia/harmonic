@@ -37,6 +37,9 @@ function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T>
 }
 
 /** The slice of {@link Git} used by Epic branch lifecycle, refresh, and integration. */
+/** Why a worktree Member cannot fork yet: its integration branch is `missing`, or `stale` (behind base, awaiting refresh). */
+export type EpicBaseGate = false | 'missing' | 'stale';
+
 export interface EpicGit {
   branchExists(dir: string, name: string): Promise<boolean>;
   revParse(dir: string, rev: string): Promise<string>;
@@ -701,7 +704,7 @@ export class EpicLifecycle {
       if (this.isInPlace(epic.ref, rows)) continue;
       const branch = integrationBranchName(epic.ref);
       if (!(await this.git.branchExists(this.workingDir, branch))) continue;
-      if (await this.git.isAncestor(this.workingDir, defaultBranch, branch)) continue;
+      if (await this.git.isAncestor(this.workingDir, branch, defaultBranch)) continue;
       try {
         const outcome = await this.epicRefresh.refresh({ ref: epic.ref, workspaceId: this.workspaceId ?? undefined, repoDir: this.workingDir, defaultBranch });
         if (outcome.status !== 'refreshed') {
@@ -833,22 +836,29 @@ export class EpicLifecycle {
     return task.origin === 'mirrored' && task.baseBranch == null && task.trackerRef != null && this.readyMemberRefs.has(task.trackerRef);
   }
 
-  async memberBaseNotReady(task: TaskRow): Promise<boolean> {
+  async memberBaseNotReady(task: TaskRow): Promise<EpicBaseGate> {
     if (task.isolationMode === 'direct') return false;
     if (task.origin !== 'mirrored') return false;
-    if (this.awaitsBase(task)) return true;
+    if (this.awaitsBase(task)) return 'missing';
     const epicRef = task.mapRef ?? parseIntegrationBranch(task.baseBranch);
     if (epicRef === null) return false;
     const branch = integrationBranchName(epicRef);
     try {
       const exists = await this.git.branchExists(this.workingDir, branch);
-      if (task.baseBranch === branch) return !exists;
-      if (exists) return true;
-      return await this.isLeafEpic(epicRef, task.workspaceId);
+      if (task.baseBranch === branch) return exists ? await this.integrationBranchStale(task, epicRef, branch) : 'missing';
+      if (exists) return 'missing';
+      return (await this.isLeafEpic(epicRef, task.workspaceId)) ? 'missing' : false;
     } catch (err) {
       this.onError(`epic ${epicRef} integration branch existence check failed: ${String(err)}`);
-      return true;
+      return 'missing';
     }
+  }
+
+  private async integrationBranchStale(task: TaskRow, epicRef: TrackerRef, branch: string): Promise<EpicBaseGate> {
+    if (task.workspaceId === null || !(await this.tasks.epicHasEpicBlockers(task.workspaceId, epicRef))) return false;
+    const base = await this.git.symbolicBranch(this.workingDir);
+    if (base === null) return false;
+    return (await this.git.isAncestor(this.workingDir, branch, base)) ? false : 'stale';
   }
 
   private async isLeafEpic(epicRef: TrackerRef, workspaceId: number | null): Promise<boolean> {

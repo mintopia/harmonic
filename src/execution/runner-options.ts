@@ -1,4 +1,5 @@
 import type { TrackerRef } from '../tracker/adapter.js';
+import type { EpicBaseGate } from './epic-coordinator.js';
 import type { TaskArchive } from '../archive/task-archive.js';
 import type { PromptFragmentOverrideKey } from '../domain/prompt-fragments.js';
 import type { AgentMessageStore } from '../domain/agent-messages.js';
@@ -115,7 +116,7 @@ export interface RunnerOptions {
   /** Start-funnel gate for parallel-Epic members: true while a Task's
    * integration base isn't ready to fork from. {@link Runner.beginRun} refuses
    * to spawn such an Attempt (a `DomainError`). Absent → not gated. */
-  epicBaseNotReady?: (task: TaskRow) => boolean | Promise<boolean>;
+  epicBaseNotReady?: (task: TaskRow) => EpicBaseGate | Promise<EpicBaseGate>;
   postMerge?: PostMergeHook;
   /** Task-level lifecycle log for a git side effect with no owning Attempt
    * (an operator-Close cleanup on a Task that never spawned one). Absent →

@@ -42,6 +42,7 @@ import { DEFAULT_TRIAGE_LABELS, loadTriageLabels, storedTriageLabels, type Triag
 import { withTaskLock } from './task-lock.js';
 import type { StoredEpicRecord } from './epic-derivation.js';
 import { TaskBlockerGraph } from './task-blocker-graph.js';
+import { epicHoldKey, hasEpicKindBlockers, namesEpicBlocker, unsatisfiedEpicBlockers, type EpicBlocker, type EpicHoldIndex } from './epic-hold.js';
 import { TaskMirror, type MirrorInput } from './task-mirror.js';
 export type { MirrorInput } from './task-mirror.js';
 
@@ -175,8 +176,10 @@ export interface TaskWithDeps extends TaskRow {
   dependents: number[];
   /** A blocker is escalated or cancelled — the ticket will not unblock on its own. */
   blockedOnFailed: boolean;
-  /** Number of blocker edges whose blocker has not completed. */
+  /** Number of blockers that have not cleared: Task edges whose blocker has not completed, plus {@link epicBlockers}. */
   openBlockerCount: number;
+  /** Unsatisfied blockers of the Epic(s) above this Member (the Epic Hold); already counted in `openBlockerCount`. */
+  epicBlockers: EpicBlocker[];
   /** A ticket the Auto-Runner may work: opt-in label (when mirrored) and no open Blockers. */
   agentWorkable: boolean;
   /** A mirrored ticket Harmonic never works (no opt-in label, an Epic container, a
@@ -409,6 +412,79 @@ export class TaskService {
     return new Set(rows.map((row) => `${row.workspaceId}:${row.parent}`));
   }
 
+  private async epicHoldIndex(workspaceId?: number): Promise<EpicHoldIndex> {
+    const containerRows = await this.db.read((db) =>
+      db
+        .select()
+        .from(trackerContainers)
+        .where(workspaceId === undefined ? undefined : eq(trackerContainers.workspaceId, workspaceId))
+        .all(),
+    );
+    const epicRows = await this.db.read((db) =>
+      db
+        .select({ workspaceId: epics.workspaceId, trackerRef: epics.trackerRef, state: epics.state })
+        .from(epics)
+        .where(workspaceId === undefined ? undefined : eq(epics.workspaceId, workspaceId))
+        .all(),
+    );
+    const containers = new Map<string, { parent: TrackerRef | null; blockedBy: TrackerRef[] }>();
+    const blockerRefs = new Set<TrackerRef>();
+    await forEachYielding(containerRows, (row) => {
+      const blockedBy = row.trackerBlockedBy.map((blocker) => blocker.ref);
+      for (const ref of blockedBy) blockerRefs.add(ref);
+      containers.set(epicHoldKey(row.workspaceId, row.trackerRef), { parent: row.trackerParent, blockedBy });
+    });
+    const epicStates = new Map<string, EpicLifecycleState>();
+    await forEachYielding(epicRows, (row) => {
+      epicStates.set(epicHoldKey(row.workspaceId, row.trackerRef), row.state);
+    });
+    const taskStates = new Map<string, TaskState>();
+    if (blockerRefs.size > 0) {
+      const blockerTasks = await this.db.read((db) =>
+        db
+          .select({ workspaceId: tasks.workspaceId, trackerRef: tasks.trackerRef, state: tasks.state })
+          .from(tasks)
+          .where(and(eq(tasks.origin, 'mirrored'), inArray(tasks.trackerRef, [...blockerRefs])))
+          .all(),
+      );
+      await forEachYielding(blockerTasks, (row) => {
+        if (row.workspaceId !== null && row.trackerRef !== null) {
+          taskStates.set(epicHoldKey(row.workspaceId, row.trackerRef), row.state);
+        }
+      });
+    }
+    return { containers, epicStates, taskStates };
+  }
+
+  async epicHasEpicBlockers(workspaceId: number, epicRef: TrackerRef): Promise<boolean> {
+    return hasEpicKindBlockers(workspaceId, epicRef, await this.epicHoldIndex(workspaceId));
+  }
+
+  private epicBlockersOf(task: TaskRow, index: EpicHoldIndex): EpicBlocker[] {
+    if (task.origin !== 'mirrored' || task.workspaceId == null || task.trackerParent == null) return [];
+    return unsatisfiedEpicBlockers(task.workspaceId, task.trackerParent, index);
+  }
+
+  /** Wake the board for ready Members held by a blocker that just cleared. */
+  private async emitEpicHeldMembers(workspaceId: number, blockerRef: TrackerRef): Promise<void> {
+    try {
+      const index = await this.epicHoldIndex(workspaceId);
+      const members = await this.db.read((db) =>
+        db
+          .select()
+          .from(tasks)
+          .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.origin, 'mirrored'), isNotNull(tasks.trackerParent), notInArray(tasks.state, TERMINAL_STATES)))
+          .all(),
+      );
+      await forEachYielding(members, async (raw) => {
+        if (!namesEpicBlocker(workspaceId, raw.trackerParent, blockerRef, index)) return;
+        this.onChanged(await this.resolve(raw));
+      });
+    } catch (error) {
+      logger.warn('could not notify Members held by a cleared blocker', { workspaceId, blockerRef, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
   private async getRaw(id: number): Promise<RawTaskRow> {
     const row = await this.db.read((db) => db.select().from(tasks).where(eq(tasks.id, id)).get());
     if (!row) throw new DomainError('not_found', `task ${id} not found`);
@@ -617,6 +693,7 @@ export class TaskService {
         .where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, trackerRef), inArray(epics.state, ['open', 'integrating'] satisfies EpicLifecycleState[])))
         .run();
     });
+    await this.emitEpicHeldMembers(workspaceId, trackerRef);
   }
 
   /** Mark the durable Epic as passing through its whole-Epic verification and merge gate. */
@@ -723,10 +800,12 @@ export class TaskService {
     const completedIds = await this.doneIds(blockerIds);
     const containerRefs = await this.containerRefs(workspaceId);
     const triage = await this.triageLabels(workspaceId);
+    const holdIndex = await this.epicHoldIndex(workspaceId);
     const nodes: OrderedEligibleTask[] = [];
     await forEachYielding(candidates, (task) => {
       const blockedBy = (blockersByTaskId.get(task.id) ?? []).filter((id) => !completedIds.has(id));
-      if (!this.agentWorkable(task, blockedBy.length, containerRefs, triage)) return;
+      const held = this.epicBlockersOf(task, holdIndex);
+      if (!this.agentWorkable(task, blockedBy.length + held.length, containerRefs, triage)) return;
       nodes.push({
         ...task,
         blockedBy,
@@ -966,6 +1045,9 @@ export class TaskService {
       if (state === 'done' || state === 'cancelled') {
         this.onDisposition(state, task);
         await this.blockerGraph.emitDependents(id);
+        if (state === 'done' && task.workspaceId !== null && task.trackerRef !== null) {
+          await this.emitEpicHeldMembers(task.workspaceId, task.trackerRef);
+        }
       }
       return task;
     });
@@ -1134,7 +1216,8 @@ export class TaskService {
   async withDeps(task: TaskRow): Promise<TaskWithDeps> {
     const dependsOn = await this.dependsOn(task.id);
     const depStates = await Promise.all(dependsOn.map(async (depId) => (await this.get(depId)).state));
-    const openBlockerCount = depStates.filter((state) => state !== 'done').length;
+    const epicBlockers = this.epicBlockersOf(task, await this.epicHoldIndex(task.workspaceId ?? undefined));
+    const openBlockerCount = depStates.filter((state) => state !== 'done').length + epicBlockers.length;
     const containerRefs = await this.containerRefs(task.workspaceId ?? undefined);
     const triage = await this.triageLabels(task.workspaceId ?? undefined);
     const raw = await this.getRaw(task.id);
@@ -1144,6 +1227,7 @@ export class TaskService {
       dependents: await this.dependents(task.id),
       blockedOnFailed: task.state === 'ready' && depStates.some((s) => s === 'escalated' || s === 'cancelled'),
       openBlockerCount,
+      epicBlockers,
       agentWorkable: this.agentWorkable(task, openBlockerCount, containerRefs, triage),
       humanOnly: this.humanOnly(task, containerRefs, triage),
       isEpic: this.isEpic(task, containerRefs),
@@ -1221,17 +1305,21 @@ export class TaskService {
     for (const edge of dependentRows) dependents.get(edge.dependsOnId)?.push(edge.taskId);
     const containerRefs = await this.containerRefs(query.workspaceId);
     const triage = await this.triageLabels(query.workspaceId);
+    const holdIndex = await this.epicHoldIndex(query.workspaceId);
     const result: TaskWithDeps[] = [];
     await forEachYielding(listed, (task) => {
       const raw = rawById.get(task.id);
       if (!raw) return;
+      const epicBlockers = this.epicBlockersOf(task, holdIndex);
+      const openBlockerCount = (openBlockerCounts.get(task.id) ?? 0) + epicBlockers.length;
       result.push({
         ...task,
         dependsOn: dependsOn.get(task.id) ?? [],
         dependents: dependents.get(task.id) ?? [],
         blockedOnFailed: task.state === 'ready' && failedDependencies.has(task.id),
-        openBlockerCount: openBlockerCounts.get(task.id) ?? 0,
-        agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0, containerRefs, triage),
+        openBlockerCount,
+        epicBlockers,
+        agentWorkable: this.agentWorkable(task, openBlockerCount, containerRefs, triage),
         humanOnly: this.humanOnly(task, containerRefs, triage),
         isEpic: this.isEpic(task, containerRefs),
         overrides: this.overridesOf(raw),
