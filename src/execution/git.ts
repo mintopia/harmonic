@@ -919,8 +919,8 @@ export const Git = {
   },
 
   /** Update the index AND working tree for `paths` to their content at `rev`
-   * (`git checkout <rev> -- <paths>`), batched to keep argv bounded. Unlike
-   * this never touches paths outside the given list. */
+   * (`git checkout <rev> -- <paths>`), batched to keep argv bounded. Never
+   * touches paths outside the given list. */
   async checkoutPathsFromRev(dir: string, rev: string, paths: string[]): Promise<void> {
     const CHUNK = 200;
     for (let i = 0; i < paths.length; i += CHUNK) {
