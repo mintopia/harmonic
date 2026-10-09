@@ -98,7 +98,7 @@ export interface ServiceManagerDependencies {
   userName: string;
   run(command: string, args: readonly string[]): Promise<CommandResult>;
   mkdir(path: string): Promise<void>;
-  writeFile(path: string, contents: string): Promise<void>;
+  writeFile(path: string, contents: string, mode?: number): Promise<void>;
   chmod(path: string, mode: number): Promise<void>;
   removeFile(path: string): Promise<void>;
   rename(from: string, to: string): Promise<void>;
@@ -112,7 +112,7 @@ export interface ServiceManagerDependencies {
   warn?(message: string): void;
 }
 
-const defaultDependencies = (): ServiceManagerDependencies => ({
+export const defaultDependencies = (): ServiceManagerDependencies => ({
   nodePath: process.execPath,
   currentVersion: packageVersion(),
   path: process.env.PATH ?? '',
@@ -123,7 +123,7 @@ const defaultDependencies = (): ServiceManagerDependencies => ({
     return { stdout };
   },
   mkdir: async (path) => { await mkdir(path, { recursive: true }); },
-  writeFile: async (path, contents) => { await writeFile(path, contents, 'utf8'); },
+  writeFile: async (path, contents, mode) => { await writeFile(path, contents, { encoding: 'utf8', mode }); },
   chmod,
   removeFile: async (path) => { await rm(path, { recursive: true, force: true }); },
   rename: async (from, to) => { await rename(from, to); },
@@ -462,7 +462,7 @@ class SystemdServiceManager implements ServiceManager {
     if (options.serve.password === undefined) {
       await this.dependencies.removeFile(this.environmentPath);
     } else {
-      await this.dependencies.writeFile(this.environmentPath, `HARMONIC_PASSWORD=${environmentFileValue(options.serve.password)}\n`);
+      await this.dependencies.writeFile(this.environmentPath, `HARMONIC_PASSWORD=${environmentFileValue(options.serve.password)}\n`, 0o600);
       await this.dependencies.chmod(this.environmentPath, 0o600);
     }
     await this.dependencies.writeFile(this.unitPath, this.unit(options.serve, user));
@@ -611,7 +611,7 @@ class InitdServiceManager implements ServiceManager {
     if (options.serve.password === undefined) {
       await this.dependencies.removeFile(initdEnvironmentPath);
     } else {
-      await this.dependencies.writeFile(initdEnvironmentPath, `HARMONIC_PASSWORD=${shellWord(options.serve.password)}\n`);
+      await this.dependencies.writeFile(initdEnvironmentPath, `HARMONIC_PASSWORD=${shellWord(options.serve.password)}\n`, 0o600);
       await this.dependencies.chmod(initdEnvironmentPath, 0o600);
     }
     await this.dependencies.writeFile(initdScriptPath, initdScript({ serve: options.serve, user, nodePath: this.dependencies.nodePath }));

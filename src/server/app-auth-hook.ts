@@ -12,10 +12,17 @@ export const PUBLIC_API_PATHS: ReadonlySet<string> = new Set([
 ]);
 
 // SameSite=Strict still sends the cookie from sibling subdomains, so compare Origin to Host.
-function originMismatch(origin: string | undefined, host: string | undefined): boolean {
+// A proxy may rewrite Host; a cross-site browser request cannot set X-Forwarded-Host without a preflight.
+function originMismatch(
+  origin: string | undefined,
+  host: string | undefined,
+  forwardedHost: string | string[] | undefined,
+): boolean {
   if (!origin) return false;
+  const forwarded = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost)?.split(',')[0]?.trim();
   try {
-    return new URL(origin).host !== host;
+    const originHost = new URL(origin).host;
+    return originHost !== host && originHost !== forwarded;
   } catch {
     return true;
   }
@@ -50,7 +57,7 @@ export function registerAuthHook(app: App, auth: AuthService): void {
       }
     }
     if (auth.validateSession(req.cookies[SESSION_COOKIE])) {
-      if (originMismatch(req.headers.origin, req.headers.host)) {
+      if (originMismatch(req.headers.origin, req.headers.host, req.headers['x-forwarded-host'])) {
         return reply.status(403).send({ error: { code: 'forbidden', message: 'cross-origin request rejected' } });
       }
       return;

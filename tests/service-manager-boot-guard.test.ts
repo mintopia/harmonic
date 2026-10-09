@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readlinkSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CURRENT_UNIT_REVISION, createServiceManager, unitRevision, type ServiceEnvironment, type ServiceManagerDependencies } from '../src/service-manager.js';
+import { CURRENT_UNIT_REVISION, createServiceManager, defaultDependencies, unitRevision, type ServiceEnvironment, type ServiceManagerDependencies } from '../src/service-manager.js';
 import { createTempDirTracker } from './helpers/upgrade-fixture.js';
 
 const environment = (overrides: Partial<ServiceEnvironment> = {}): ServiceEnvironment => ({
@@ -232,6 +232,24 @@ describe('systemd unit (real filesystem)', () => {
     if (!systemdAnalyzeAvailable) return;
     const unitPath = join(unitDir, '.config', 'systemd', 'user', 'harmonic.service');
     expect(() => execFileSync('systemd-analyze', ['verify', unitPath], { stdio: 'pipe' })).not.toThrow();
+  });
+
+  it('creates the password environment file 0600 even when a wider-mode file already exists', async () => {
+    const homeDir = tempDir('service-manager-envmode-home-');
+    const dataDir = tempDir('service-manager-envmode-data-');
+    mkdirSync(join(dataDir, 'app', 'versions', '2.16.0'), { recursive: true });
+    const envPath = join(homeDir, '.config', 'systemd', 'user', 'harmonic.env');
+    mkdirSync(join(envPath, '..'), { recursive: true });
+    writeFileSync(envPath, 'old', { mode: 0o644 });
+    const manager = createServiceManager(environment({ userSystemdUsable: true }), {
+      ...defaultDependencies(),
+      currentVersion: '2.16.0',
+      homeDir,
+      run: async () => ({ stdout: '' }),
+    });
+    await manager.install({ startSelfManaged: async () => {}, serve: { port: '9000', host: '127.0.0.1', dataDir, password: 'hunter2' } });
+    expect(readFileSync(envPath, 'utf8')).toContain('HARMONIC_PASSWORD=');
+    expect(statSync(envPath).mode & 0o777).toBe(0o600);
   });
 
   it.each([

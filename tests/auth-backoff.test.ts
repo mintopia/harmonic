@@ -12,11 +12,11 @@ describe('login back-off', () => {
     await server.close();
   });
 
-  const makeAuth = (delays: number[]) => {
+  const makeAuth = (delays: number[], now?: () => number) => {
     const real = server.app.ctx.auth as unknown as { db: ConstructorParameters<typeof AuthService>[0] };
     return new AuthService(real.db, async (ms) => {
       delays.push(ms);
-    });
+    }, now);
   };
 
   it('allows 5 free failures, then delays 1s doubling up to 60s', async () => {
@@ -36,6 +36,20 @@ describe('login back-off', () => {
     expect(await auth.verifyLogin(TEST_PASSWORD)).toBe(true);
     expect(delays).toEqual([1000, 2000]);
     await auth.verifyLogin('wrong-password');
+    expect(delays).toEqual([1000, 2000]);
+  });
+
+  it('forgets old failures after the decay window', async () => {
+    const delays: number[] = [];
+    let t = 1_000_000;
+    const auth = makeAuth(delays, () => t);
+    for (let i = 0; i < 6; i++) await auth.verifyLogin('wrong-password');
+    expect(delays).toEqual([1000]);
+    t += 14 * 60_000;
+    await auth.verifyLogin('wrong-password');
+    expect(delays).toEqual([1000, 2000]);
+    t += 16 * 60_000;
+    for (let i = 0; i < 5; i++) await auth.verifyLogin('wrong-password');
     expect(delays).toEqual([1000, 2000]);
   });
 

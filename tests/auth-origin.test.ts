@@ -55,6 +55,26 @@ describe('cookie-authenticated requests with a foreign Origin', () => {
     expect(response.statusCode).toBe(200);
   });
 
+  it('allows an Origin matching X-Forwarded-Host when the proxy rewrote Host', async () => {
+    const response = await server.app.inject({
+      method: 'GET',
+      url: '/api/tasks',
+      cookies,
+      headers: { host: 'internal.local:3000', 'x-forwarded-host': `${host}, hop.example.test`, origin: `https://${host}` },
+    });
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('rejects an Origin matching neither Host nor X-Forwarded-Host', async () => {
+    const response = await server.app.inject({
+      method: 'POST',
+      url: '/api/tasks',
+      cookies,
+      headers: { host: 'internal.local:3000', 'x-forwarded-host': host, origin: 'https://evil.example.test' },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+
   it('allows a request with no Origin header', async () => {
     const response = await server.app.inject({ method: 'GET', url: '/api/tasks', cookies, headers: { host } });
     expect(response.statusCode).toBe(200);
