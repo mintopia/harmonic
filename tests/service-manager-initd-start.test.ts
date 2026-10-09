@@ -56,7 +56,7 @@ function setupInitdFixture(): { dataDir: string; appDir: string; scriptPath: str
   chmodSync(join(binDir, 'id'), 0o755);
   chmodSync(join(binDir, 'runuser'), 0o755);
 
-  const script = initdScript({ dataDir, user: 'workspace', nodePath: process.execPath });
+  const script = initdScript({ serve: { port: '4700', host: '0.0.0.0', dataDir }, user: 'workspace', nodePath: process.execPath });
   const scriptPath = join(tempDir('initd-start-script-'), 'harmonic');
   writeFileSync(scriptPath, script);
   chmodSync(scriptPath, 0o755);
