@@ -1,6 +1,6 @@
 # Harmonic architecture decisions
 
-The current set contains **47 ADRs**, reconciled on **2026-10-03**. They record
+The current set contains **51 ADRs**, reconciled on **2026-10-03**. They record
 accepted decisions, their rationale, and explicit amendments. A Context section
 may describe a historical defect; it does not by itself identify an open issue.
 Current-status notes and the operative Decision sections describe the current
