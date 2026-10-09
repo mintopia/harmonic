@@ -720,20 +720,7 @@ export class TaskService {
         blockerIds.push(dependency.dependsOnId);
       }
     });
-    const completedRows =
-      blockerIds.length === 0
-        ? []
-        : await this.db.read((db) =>
-            db
-              .select({ id: tasks.id })
-              .from(tasks)
-              .where(and(inArray(tasks.id, blockerIds), eq(tasks.state, 'done')))
-              .all(),
-          );
-    const completedIds = new Set<number>();
-    await forEachYielding(completedRows, (task) => {
-      completedIds.add(task.id);
-    });
+    const completedIds = await this.doneIds(blockerIds);
     const containerRefs = await this.containerRefs(workspaceId);
     const triage = await this.triageLabels(workspaceId);
     const nodes: OrderedEligibleTask[] = [];
