@@ -53,10 +53,16 @@ describe('auto-runner', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harmonic-ar-scope-'));
     const done = await server.api('POST', '/api/tasks', { prompt: 'old', workingDir: dir });
     await server.app.ctx.tasks.setState(done.body.id, 'done');
-    const listSpy = vi.spyOn(server.app.ctx.tasks, 'list');
+    const tasks = server.app.ctx.tasks;
+    const list = tasks.list.bind(tasks);
+    const queries: Parameters<typeof list>[0][] = [];
+    // Other background loops list Tasks too; only the Auto-Runner's own queries are under test.
+    vi.spyOn(tasks, 'list').mockImplementation((query) => {
+      if (new Error().stack?.includes('auto-runner')) queries.push(query);
+      return list(query);
+    });
     await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
-    await waitFor(async () => listSpy.mock.calls.length > 0);
-    const queries = listSpy.mock.calls.map(([q]) => q);
+    await waitFor(async () => queries.length > 0);
     expect(queries.every((q) => [q?.state].flat().every((s) => s === 'ready' || s === 'working'))).toBe(true);
   });
 
