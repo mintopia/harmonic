@@ -3,7 +3,7 @@ import { PassThrough } from 'node:stream';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { join } from 'node:path';
 import { AcpConnection, AcpConnectionClosedError } from '../src/acp/connection.js';
-import { AcpDriver, AcpPromptTimeoutError } from '../src/acp/driver.js';
+import { AcpDriver, AcpHandshakeTimeoutError, AcpPromptTimeoutError } from '../src/acp/driver.js';
 
 const STUB_HARNESS = join(import.meta.dirname, 'stub-harness.mjs');
 const scenario = (s: object) => JSON.stringify(s);
@@ -33,6 +33,32 @@ describe('AcpConnection — stdout EOF rejects pending requests (issue #426)', (
     conn.fail(new Error('run finished'));
     await expect(pending).rejects.toThrow('run finished');
   });
+});
+
+describe('AcpDriver — handshake timeout (issue #864)', () => {
+  let child: ChildProcess | undefined;
+  afterEach(() => {
+    child?.kill();
+    child = undefined;
+  });
+
+  function hungDriver(handshakeTimeoutMs: number): AcpDriver {
+    child = spawn(process.execPath, [STUB_HARNESS], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, STUB_HANG_INITIALIZE: '1' },
+    });
+    return new AcpDriver(child, { onSessionUpdate: () => {}, onRequest: async () => null }, undefined, handshakeTimeoutMs);
+  }
+
+  it('fails handshake() with AcpHandshakeTimeoutError when the harness never answers', async () => {
+    const driver = hungDriver(200);
+    await expect(driver.handshake({ cwd: '/tmp/hang' })).rejects.toBeInstanceOf(AcpHandshakeTimeoutError);
+  }, 15_000);
+
+  it('fails load() with AcpHandshakeTimeoutError when the harness never answers', async () => {
+    const driver = hungDriver(200);
+    await expect(driver.load({ sessionId: 's', cwd: '/tmp/hang' })).rejects.toBeInstanceOf(AcpHandshakeTimeoutError);
+  }, 15_000);
 });
 
 describe('AcpDriver — per-turn inactivity timeout (issue #426)', () => {
