@@ -13,11 +13,7 @@ tar -xzf "$work"/*.tgz --strip-components=1 -C "$work"
 npm pkg delete devDependencies scripts.prepare --prefix "$work"
 npm i --prefix "$work" --omit=dev --no-audit --no-fund
 
-browser_only=$(node -e '
-const dev = Object.keys(require("./package.json").devDependencies);
-const web = ["@codemirror/language-data","@dnd-kit/core","@dnd-kit/sortable","@dnd-kit/utilities","codemirror","dompurify","elkjs","highlight.js","marked","marked-highlight"];
-console.log(web.filter((n) => dev.includes(n)).join(" "));
-')
+browser_only="@codemirror/language-data @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities codemirror dompurify elkjs highlight.js marked marked-highlight"
 for pkg in $browser_only; do
   if [ -e "$work/node_modules/$pkg" ]; then echo "browser-only package installed: $pkg" >&2; exit 1; fi
 done
