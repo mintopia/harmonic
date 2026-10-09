@@ -1,8 +1,6 @@
 import { execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { existsSync, realpathSync, rmSync } from 'node:fs';
 import { access } from 'node:fs/promises';
-import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { Attributes } from '@opentelemetry/api';
 import { withRepoLock } from './repo-lock.js';
@@ -10,12 +8,11 @@ import { startActiveChildOperation } from '../telemetry/operations.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { logger } from '../logger.js';
 import { GitError } from '../domain/errors.js';
+import { errorMessage } from '../error-handling.js';
 
 const execFileAsync = promisify(execFile);
 
 const GIT_TIMEOUT_MS = 120_000;
-
-const CLONE_TIMEOUT_MS = 600_000;
 
 const DU_TIMEOUT_MS = 30_000;
 
@@ -68,10 +65,6 @@ async function gitUntrimmed(cwd: string, args: string[]): Promise<string> {
   }
 }
 
-function failureReason(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function isGitFailure(result: unknown): result is { ok: false; detail?: unknown } {
   return typeof result === 'object' && result !== null && 'ok' in result && result.ok === false;
 }
@@ -95,7 +88,7 @@ async function withGitOperation<T>(
     }
     return result;
   } catch (error) {
-    const reason = failureReason(error);
+    const reason = errorMessage(error);
     operation.update({ 'git.result': 'error' });
     operation.fail(reason);
     throw error;
@@ -205,19 +198,6 @@ export const Git = {
     }
   },
 
-  /**
-   * A stable fingerprint of the working tree's dirty state — the sha256 of the
-   * porcelain status. A clean tree yields a fixed constant; any tracked, staged,
-   * or untracked change moves it.
-   */
-  async statusFingerprint(dir: string): Promise<string> {
-    const status = await git(dir, 'status', '--porcelain');
-    return createHash('sha256').update(status).digest('hex');
-  },
-
-  /** The absolute repo root (`--show-toplevel`). Throws when `dir` is not a git repo. */
-  toplevel: (dir: string) => git(dir, 'rev-parse', '--show-toplevel'),
-
   /** The `origin` remote URL, or null when no origin is configured. */
   async originUrl(dir: string): Promise<string | null> {
     try {
@@ -227,97 +207,10 @@ export const Git = {
     }
   },
 
-  /**
-   * Whether the repo at `dir` declares git submodules — either a tracked gitlink
-   * (mode `160000` in the index) or a `.gitmodules` file.
-   */
-  async hasSubmodules(dir: string): Promise<boolean> {
-    const staged = await git(dir, 'ls-files', '--stage');
-    if (staged.split('\n').some((line) => line.startsWith('160000'))) return true;
-    return existsSync(join(dir, '.gitmodules'));
-  },
-
-  /**
-   * Whether the working tree at `dir` contains a nested git repository — an
-   * independent repo checked out inside the tree (not a submodule). git does not
-   * recurse into it, so it appears to the outer repo as a single untracked
-   * directory whose own `.git` is the tell. Bounded to fully-untracked top-level
-   * directory entries (`--directory` collapses them).
-   */
-  async hasNestedRepos(dir: string): Promise<boolean> {
-    const untracked = await git(dir, 'ls-files', '--others', '--exclude-standard', '--directory');
-    for (const entry of untracked.split('\n')) {
-      if (!entry.endsWith('/')) continue;
-      if (existsSync(join(dir, entry, '.git'))) return true;
-    }
-    return false;
-  },
-
-  /** Create a commit object from a tree + single parent under the fixed
-   * Harmonic identity, returning its OID. Writes only an object — moves no
-   * ref, touches no branch or checkout. */
-  commitTree: (dir: string, treeOid: string, parentOid: string, message: string) =>
-    git(dir, ...IDENTITY, 'commit-tree', treeOid, '-p', parentOid, '-m', message),
-
-  /**
-   * Create `ref` pointing at `oid`, failing if it already exists — the CAS
-   * from empty (`''` old-value = "must not exist").
-   */
-  createRef: (dir: string, ref: string, oid: string) => gitRefWrite(dir, 'update-ref', ref, oid, ''),
-
-  /** Set `ref` to `oid` unconditionally (no old-value CAS). */
-  setRef: (dir: string, ref: string, oid: string) => gitRefWrite(dir, 'update-ref', ref, oid),
-
   /** Add a disposable worktree with a DETACHED HEAD at `oid` — no branch is
    * created or moved, so a verifier sees a stable tree it cannot merge. */
   addDetachedWorktree: (dir: string, worktreePath: string, oid: string) =>
     withRepoLock(dir, () => git(dir, 'worktree', 'add', '--detach', worktreePath, oid)),
-
-  /**
-   * Detach HEAD at `oid` in `dir`'s own working tree, force-discarding any
-   * working-tree changes (`-f`). While detached, an agent `git commit` /
-   * `reset` / `checkout -B` moves only HEAD, so the branch HEAD was on cannot
-   * advance. Takes no base-repo lock.
-   */
-  checkoutDetach: (dir: string, oid: string) => git(dir, 'checkout', '-f', '--detach', oid),
-
-  /**
-   * Re-attach HEAD to `branch` and reset the tracked working tree/index to it,
-   * force-discarding tracked changes (`-f`). Untracked files are removed
-   * separately via {@link cleanUntracked}.
-   */
-  checkoutForce: (dir: string, branch: string) => git(dir, 'checkout', '-f', branch),
-
-  /**
-   * Check `branch` out at `dir` WITHOUT `-f`: git refuses (throws) rather than
-   * overwrite uncommitted local changes.
-   */
-  checkout: (dir: string, branch: string) =>
-    withGitOperation('git.checkout', { 'git.branch': branch }, async () => git(dir, 'checkout', branch)),
-
-  /**
-   * Re-point HEAD at `branch` with a metadata-only `symbolic-ref` — no checkout,
-   * no index or working-tree write. Coherent ONLY when the working tree already
-   * matches `branch`'s tip (the caller's responsibility). Because it never
-   * touches the index it succeeds where a contended `checkout -f` fails.
-   */
-  reattachHead: (dir: string, branch: string) => git(dir, 'symbolic-ref', 'HEAD', `refs/heads/${branch}`),
-
-  /**
-   * Remove untracked files and directories (`clean -fd`), leaving ignored files
-   * (no `-x`) untouched.
-   */
-  cleanUntracked: (dir: string) => git(dir, 'clean', '-fd'),
-
-  clone: async (repo: string, dest: string): Promise<void> => {
-    await execFileAsync('git', ['clone', repo, dest], {
-      maxBuffer: 10 * 1024 * 1024,
-      timeout: CLONE_TIMEOUT_MS,
-      killSignal: 'SIGKILL',
-    });
-  },
-
-  pull: (dir: string) => git(dir, 'pull', '--ff-only'),
 
   /**
    * Whether local branch `name` exists. Never throws: `show-ref --verify
@@ -766,7 +659,7 @@ export const Git = {
             logger.debug('git: merge --abort failed after a non-conflict merge failure', {
               'git.dir': worktreeDir,
               'git.branch': branch,
-              error: failureReason(abortErr),
+              error: errorMessage(abortErr),
             });
           }
           return { ok: false, detail };
@@ -826,7 +719,7 @@ export const Git = {
           logger.debug('git: pre-rebase abort of a stray in-progress rebase failed', {
             'git.dir': worktreeDir,
             'git.ref': ontoOid,
-            error: failureReason(abortErr),
+            error: errorMessage(abortErr),
           });
         });
         if (await hasUnmergedPaths().catch(() => false)) {
@@ -898,7 +791,7 @@ export const Git = {
               logger.debug('git: merge --abort failed after a non-conflict merge failure', {
                 'git.dir': worktreeDir,
                 'git.branch': branch,
-                error: failureReason(abortErr),
+                error: errorMessage(abortErr),
               });
             }
           }
@@ -949,7 +842,7 @@ export const Git = {
       } catch (err) {
         logger.debug('git: merge --abort found nothing to abort (or failed)', {
           'git.dir': worktreeDir,
-          error: failureReason(err),
+          error: errorMessage(err),
         });
       }
     });
@@ -1026,8 +919,8 @@ export const Git = {
   },
 
   /** Update the index AND working tree for `paths` to their content at `rev`
-   * (`git checkout <rev> -- <paths>`), batched to keep argv bounded. Unlike
-   * {@link checkoutForce} this never touches paths outside the given list. */
+   * (`git checkout <rev> -- <paths>`), batched to keep argv bounded. Never
+   * touches paths outside the given list. */
   async checkoutPathsFromRev(dir: string, rev: string, paths: string[]): Promise<void> {
     const CHUNK = 200;
     for (let i = 0; i < paths.length; i += CHUNK) {

@@ -54,3 +54,8 @@ jobs:
       - run: npm run docs:openapi
       - name: Fail if the OpenAPI snapshot is stale (run `npm run docs:openapi`)
         run: git diff --exit-code website/src/openapi.json
+
+      # The self-upgrade install runs `npm i --omit=dev` on the packed tarball
+      # (src/upgrade/version-install.ts); browser-only packages must stay in
+      # devDependencies and the result must still boot.
+      - run: scripts/verify-pack-install.sh

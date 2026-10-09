@@ -31,7 +31,7 @@ export interface TaskMirrorOptions {
 
 /** Whether the existing Task's `state` should resolve to `closed`→`done`, a stale-open snapshot ignored, a genuine reopen, or left alone. */
 function resolveMirroredState(existing: RawTaskRow, input: MirrorInput, reopenFromDone: boolean, observedAfterClose: boolean): TaskState {
-  if (existing.state === 'working' || existing.state === 'escalated') return existing.state;
+  if (existing.state === 'working' || existing.state === 'paused' || existing.state === 'escalated') return existing.state;
   if (input.closed) return 'done';
   if (reopenFromDone && observedAfterClose) return 'ready';
   return existing.state;
@@ -131,7 +131,7 @@ export class TaskMirror {
 
   async demoteMirroredToContainer(workspaceId: number, trackerRef: TrackerRef): Promise<void> {
     await this.options.clearDismissal(workspaceId, trackerRef);
-    const row = await this.db.read((db) => db.select({ id: tasks.id, state: tasks.state, origin: tasks.origin, trackerRef: tasks.trackerRef, workspaceId: tasks.workspaceId }).from(tasks).where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.trackerRef, trackerRef))).get());
+    const row = await this.db.read((db) => db.select({ id: tasks.id, state: tasks.state, origin: tasks.origin, trackerRef: tasks.trackerRef, workspaceId: tasks.workspaceId, mergeStatus: tasks.mergeStatus }).from(tasks).where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.trackerRef, trackerRef))).get());
     if (!row || !decideTaskDeletion(row).ok) return;
     await this.options.removeTaskCascade(row.id, null);
   }

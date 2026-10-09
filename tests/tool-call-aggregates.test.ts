@@ -7,15 +7,14 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { attemptToolCalls, attempts, tasks, workspaces } from '../src/db/schema.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
-import { ToolCallAggregateStore, totalsForRange } from '../src/domain/tool-call-aggregates.js';
+import { totalsForRange } from '../src/domain/tool-call-aggregates.js';
 import { baselineConfig } from '../src/config.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import { trackerRef } from '../src/tracker/adapter.js';
 
-describe('ToolCallAggregateStore (issue #241)', () => {
+describe('totalsForRange (issue #241)', () => {
   let dir: string;
   let db: AsyncDbHandle;
-  let toolCalls: ToolCallAggregateStore;
   let workspaceId: number;
   let otherWorkspaceId: number;
   let epicTaskId: number;
@@ -31,7 +30,6 @@ describe('ToolCallAggregateStore (issue #241)', () => {
     const settingsStore = await makeSettingsStore(dir);
     const taskService = new TaskService(db, () => baselineConfig(), allWorkspaces(db, settingsStore));
     const attemptStore = new AttemptStore(db);
-    toolCalls = new ToolCallAggregateStore(db);
 
     const [workspace] = await allWorkspaces(db, settingsStore)();
     workspaceId = workspace!.id;
@@ -99,24 +97,6 @@ describe('ToolCallAggregateStore (issue #241)', () => {
   afterEach(async () => {
     await db.close();
     rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('rolls per-Run counts into Task and Epic totals, excluding standalone Tasks from Epics', async () => {
-    await expect(toolCalls.totalsForWorkspace(workspaceId)).resolves.toEqual({
-      byTask: {
-        [epicTaskId]: { Bash: 5, Read: 1 },
-        [siblingTaskId]: { Read: 4 },
-        [standaloneTaskId]: { Bash: 8 },
-      },
-      byEpic: { 701: { Bash: 5, Read: 5 } },
-    });
-  });
-
-  it('scopes totals to the requested Workspace', async () => {
-    await expect(toolCalls.totalsForWorkspace(otherWorkspaceId)).resolves.toEqual({
-      byTask: { [otherWorkspaceTaskId]: { Bash: 99 } },
-      byEpic: {},
-    });
   });
 
   it('rolls an inclusive Stats range into Task and Epic totals without crossing Workspaces', async () => {

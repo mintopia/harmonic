@@ -18,6 +18,9 @@ import type { EpicBranchStep } from '../domain/epic-merge-events.js';
 
 export { reduceMemberState };
 
+/** Must outlast two sequential 10-minute conflict-resolution turns plus verify/integrate overhead. */
+export const DEFAULT_EPIC_OPERATION_TIMEOUT_MS = 45 * 60_000;
+
 /** Reject if `work` outruns `ms`, so a hung verify/integrate can never pin the
  * per-Epic in-flight guard forever. Best-effort: the timeout frees the guard and
  * escalates; it cannot abort the orphaned work, only stop waiting on it. */
@@ -231,7 +234,7 @@ export class EpicCoordinator {
     this.escalateFn = deps.escalate;
     this.now = deps.now ?? (() => Date.now());
     this.verifyBackoffMs = deps.verifyBackoffMs ?? 60_000;
-    this.operationTimeoutMs = deps.operationTimeoutMs ?? 20 * 60_000;
+    this.operationTimeoutMs = deps.operationTimeoutMs ?? DEFAULT_EPIC_OPERATION_TIMEOUT_MS;
     this.onError = deps.onError ?? logger.error;
     this.operations = deps.operations ?? new EpicOperations();
     this.recordIntegrationFn = deps.recordIntegration;

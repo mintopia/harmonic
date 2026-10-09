@@ -91,6 +91,20 @@ describe('ServiceManager backend detection', () => {
     expect(resolveServiceUser({})).toBe('workspace');
   });
 
+  it('passes host, port and password to the init.d start line via a 0600 env file', async () => {
+    const initd = initdDependencies();
+    const manager = createServiceManager(environment({ isRoot: true, initdAvailable: true }), initd.dependencies);
+
+    await manager.install({ startSelfManaged: vi.fn(), serve: { port: '4800', host: '127.0.0.1', dataDir: '/srv/harmonic', password: "s3'cret $x" } });
+
+    const script = initd.files.get('/etc/init.d/harmonic') ?? '';
+    expect(script).toContain('start --port 4800 --host 127.0.0.1 --data-dir /srv/harmonic');
+    expect(script).toContain('. /etc/default/harmonic');
+    expect(script).not.toContain('cret');
+    expect(initd.files.get('/etc/default/harmonic')).toBe(`HARMONIC_PASSWORD='s3'"'"'cret $x'\n`);
+    expect(initd.modes.get('/etc/default/harmonic')).toBe(0o600);
+  });
+
   it('installs an executable LSB init.d script and registers then starts it', async () => {
     const initd = initdDependencies();
     const manager = createServiceManager(environment({ isRoot: true, initdAvailable: true }), initd.dependencies);
@@ -103,7 +117,7 @@ describe('ServiceManager backend detection', () => {
     expect(script).toContain('### BEGIN INIT INFO');
     expect(script).toContain('if [ "$(id -u)" -ne 0 ]');
     expect(script).toContain('runuser -u agent -- /usr/bin/node /srv/harmonic/app/boot-guard.cjs /srv/harmonic || true');
-    expect(script).toContain(`${runCli} start --data-dir /srv/harmonic`);
+    expect(script).toContain(`${runCli} start --port 4700 --host 0.0.0.0 --data-dir /srv/harmonic`);
     expect(script).toContain(`${runCli} stop --data-dir /srv/harmonic`);
     expect(script).toContain(`${runCli} status --data-dir /srv/harmonic`);
     expect(script).toContain('restart|force-reload)');
@@ -469,6 +483,26 @@ describe('systemd ServiceManager', () => {
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('--data-dir "/var/lib/harmonic data" --otel-headers "token=a b"');
   });
 
+  it('escapes % and $ in ExecStart and reads them back unchanged', async () => {
+    const deps = dependencies();
+    deps.fileExists = (path) => deps.files.has(path);
+    deps.readTextFile = async (path) => deps.files.get(path) ?? null;
+    const manager = createServiceManager(environment({ isRoot: true, systemdRunning: true }), deps);
+    const otelHeaders = 'Authorization=Basic%20abc,x=$HOME "q" 100%';
+
+    await manager.install({
+      startSelfManaged: vi.fn(),
+      serve: { port: '4700', host: '0.0.0.0', dataDir: '/var/lib/harmonic', otelHeaders },
+    });
+
+    const unit = deps.files.get('/etc/systemd/system/harmonic.service') ?? '';
+    expect(unit).toContain('Authorization=Basic%%20abc');
+    expect(unit).toContain('$$HOME');
+    expect(unit).not.toMatch(/[^%]%20/);
+    const existing = await manager.readExistingSettings();
+    expect(existing?.serve.otelHeaders).toBe(otelHeaders);
+  });
+
   it('delegates lifecycle commands and removes only service files on uninstall', async () => {
     const deps = dependencies();
     const manager = createServiceManager(environment({ userSystemdUsable: true }), deps);
@@ -522,7 +556,7 @@ describe('init.d script (real filesystem)', () => {
       `require('node:fs').writeFileSync(${JSON.stringify(guardMarkerPath)}, process.argv.slice(2).join(' '));\n`,
     );
 
-    const script = initdScript({ dataDir, user: 'agent', nodePath: process.execPath });
+    const script = initdScript({ serve: { port: '4700', host: '0.0.0.0', dataDir }, user: 'agent', nodePath: process.execPath });
     const scriptDir = tempDir('harmonic-initd-real-script-');
     const scriptPath = join(scriptDir, 'harmonic');
     writeFileSync(scriptPath, script);
@@ -541,6 +575,6 @@ describe('init.d script (real filesystem)', () => {
     execFileSync('sh', [scriptPath, 'start'], { env: { ...process.env, PATH: `${stubDir}:${process.env.PATH}` } });
 
     expect(readFileSync(guardMarkerPath, 'utf8')).toBe(dataDir);
-    expect(readFileSync(markerPath, 'utf8')).toBe(`start --data-dir ${dataDir}`);
+    expect(readFileSync(markerPath, 'utf8')).toBe(`start --port 4700 --host 0.0.0.0 --data-dir ${dataDir}`);
   });
 });

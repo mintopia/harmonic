@@ -5,6 +5,7 @@ import { homedir, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { z } from 'zod';
+import { compareStableVersions } from './domain/stable-version.js';
 import { installVersion } from './upgrade/version-install.js';
 
 const execFileAsync = promisify(execFile);
@@ -159,17 +160,22 @@ const systemdServiceUser = (user: string): string => {
   return user;
 };
 
-const escapeUnitArgument = (value: string): string =>
-  /^[A-Za-z0-9_./:=+@%,-]+$/.test(value) ? value : JSON.stringify(value);
+const quoteUnitValue = (value: string): string =>
+  /^[A-Za-z0-9_./:=+@%,$-]+$/.test(value) ? value : JSON.stringify(value);
+
+// systemd expands %x specifiers in every directive, so a literal % is written %%.
+const escapeUnitArgument = (value: string): string => quoteUnitValue(value.replaceAll('%', '%%'));
+
+// ExecStart/ExecStartPre additionally expand $VAR, so a literal $ is written $$.
+const escapeExecArgument = (value: string): string => quoteUnitValue(value.replaceAll('%', '%%').replaceAll('$', '$$$$'));
+
+const unescapeExecArgument = (value: string): string => value.replaceAll('%%', '%').replaceAll('$$', '$');
 
 const environmentFileValue = (value: string): string => JSON.stringify(value);
 
-const unitEnvironment = (key: string, value: string): string => {
-  const assignment = `${key}=${value}`;
-  return /^[A-Za-z0-9_./:=+@%,-]+$/.test(assignment) ? assignment : JSON.stringify(assignment);
-};
+const unitEnvironment = (key: string, value: string): string => escapeUnitArgument(`${key}=${value}`);
 
-/** Splits an ExecStart value back into arguments, reversing escapeUnitArgument's quoting. */
+/** Splits an ExecStart value back into arguments, reversing the quoting and %/$ escaping of escapeExecArgument. */
 const tokenizeUnitArgs = (execStart: string): string[] | null => {
   const tokens: string[] = [];
   let i = 0;
@@ -186,7 +192,7 @@ const tokenizeUnitArgs = (execStart: string): string[] | null => {
       try {
         const value: unknown = JSON.parse(execStart.slice(i, j + 1));
         if (typeof value !== 'string') return null;
-        tokens.push(value);
+        tokens.push(unescapeExecArgument(value));
       } catch {
         return null;
       }
@@ -194,7 +200,7 @@ const tokenizeUnitArgs = (execStart: string): string[] | null => {
     } else {
       let j = i;
       while (j < n && execStart[j] !== ' ') j++;
-      tokens.push(execStart.slice(i, j));
+      tokens.push(unescapeExecArgument(execStart.slice(i, j)));
       i = j;
     }
   }
@@ -282,6 +288,7 @@ const parseEnvPassword = (envContents: string): { ok: true; password: string | u
 };
 
 const initdScriptPath = '/etc/init.d/harmonic';
+const initdEnvironmentPath = '/etc/default/harmonic';
 
 const ensureDataDir = async (dependencies: ServiceManagerDependencies, dataDir: string, user?: string): Promise<void> => {
   await dependencies.mkdir(dataDir);
@@ -296,11 +303,39 @@ const copyBootGuard = async (dependencies: ServiceManagerDependencies, appDir: s
   }
 };
 
+/** Refuses to repoint `current` at an older CLI than the one the service already runs, which would put old code on a newer database with no snapshot for the boot guard to roll back to. */
+const refuseDowngrade = (dependencies: ServiceManagerDependencies, appDir: string, version: string): void => {
+  const target = dependencies.readlink(join(appDir, 'current'));
+  const installed = target === null ? undefined : /^(?:.*\/)?versions\/([^/]+)\/?$/.exec(target)?.[1];
+  if (installed === undefined) return;
+  const comparison = compareStableVersions(installed, version);
+  if (comparison !== null && comparison > 0) {
+    throw new Error(`The installed service is version ${installed}, newer than this CLI (${version}); run \`npm i -g @mintopia/harmonic@latest\` first.`);
+  }
+};
+
 export const shellWord = (value: string): string => /^[A-Za-z0-9_./:-]+$/.test(value)
   ? value
   : `'${value.replaceAll("'", "'\"'\"'")}'`;
 
-export const initdScript = ({ dataDir, user, nodePath }: { dataDir: string; user: string; nodePath: string }): string => {
+const serveFlags = (serve: ServiceServeOptions): string[] => [
+  '--port', serve.port,
+  '--host', serve.host,
+  '--data-dir', serve.dataDir,
+  ...(serve.otelEndpoint === undefined ? [] : ['--otel-endpoint', serve.otelEndpoint]),
+  ...(serve.otelHeaders === undefined ? [] : ['--otel-headers', serve.otelHeaders]),
+  ...(serve.otelExport === undefined ? [] : ['--otel-export', serve.otelExport]),
+  ...(serve.otelMetricExportInterval === undefined ? [] : ['--otel-metric-export-interval', serve.otelMetricExportInterval]),
+  ...(serve.otelStdoutLogLevel === undefined ? [] : ['--otel-stdout-log-level', serve.otelStdoutLogLevel]),
+];
+
+export const initdScript = ({ serve, user, nodePath }: { serve: ServiceServeOptions; user: string; nodePath: string }): string => {
+  const { dataDir } = serve;
+  const startFlags = serveFlags(serve).map(shellWord).join(' ');
+  const loadPassword = serve.password === undefined ? '' : `    set -a
+    . ${shellWord(initdEnvironmentPath)}
+    set +a
+`;
   const cli = shellWord(join(dataDir, 'app', 'current', 'dist', 'cli.js'));
   const runCli = `HARMONIC_INITD_SERVICE=1 HARMONIC_MANAGED_BY=initd runuser -u ${shellWord(user)} -- ${shellWord(nodePath)} ${cli}`;
   // The guard's own code always exits 0 (ADR-0042); `|| true` guards against it failing to run at
@@ -328,7 +363,7 @@ case "$1" in
       exit 0
     fi
     ${runGuard}
-    ${runCli} start --data-dir ${shellWord(dataDir)}
+${loadPassword}    ${runCli} start ${startFlags}
     ;;
   stop)
     ${runCli} stop --data-dir ${shellWord(dataDir)}
@@ -376,15 +411,8 @@ class SystemdServiceManager implements ServiceManager {
       this.dependencies.nodePath,
       join(serve.dataDir, 'app', 'current', 'dist', 'cli.js'),
       'serve',
-      '--port', serve.port,
-      '--host', serve.host,
-      '--data-dir', serve.dataDir,
-      ...(serve.otelEndpoint === undefined ? [] : ['--otel-endpoint', serve.otelEndpoint]),
-      ...(serve.otelHeaders === undefined ? [] : ['--otel-headers', serve.otelHeaders]),
-      ...(serve.otelExport === undefined ? [] : ['--otel-export', serve.otelExport]),
-      ...(serve.otelMetricExportInterval === undefined ? [] : ['--otel-metric-export-interval', serve.otelMetricExportInterval]),
-      ...(serve.otelStdoutLogLevel === undefined ? [] : ['--otel-stdout-log-level', serve.otelStdoutLogLevel]),
-    ].map(escapeUnitArgument).join(' ');
+      ...serveFlags(serve),
+    ].map(escapeExecArgument).join(' ');
     const environmentFile = serve.password === undefined ? '' : `EnvironmentFile=${escapeUnitArgument(this.environmentPath)}\n`;
     const serviceUser = user === undefined ? '' : `User=${user}\nGroup=${user}\n`;
     const wantedBy = this.userUnit ? 'default.target' : 'multi-user.target';
@@ -397,7 +425,7 @@ class SystemdServiceManager implements ServiceManager {
     // `-` tells systemd to ignore this step's exit code, guarding against the guard failing to run
     // at all; the guard's own code always exits 0 (ADR-0042).
     const execStartPre = [this.dependencies.nodePath, join(serve.dataDir, 'app', 'boot-guard.cjs'), serve.dataDir]
-      .map(escapeUnitArgument)
+      .map(escapeExecArgument)
       .join(' ');
     return `[Unit]\nDescription=Harmonic\nAfter=network.target\nStartLimitIntervalSec=120\nStartLimitBurst=10\n\n[Service]\nType=simple\nExecStartPre=-${execStartPre}\n${serviceUser}${workingDirectory}ExecStart=${args}\n${environmentFile}${pathEnvironment}Environment=HARMONIC_MANAGED_BY=systemd\nEnvironment=HARMONIC_UNIT_REVISION=${CURRENT_UNIT_REVISION}\nRestart=always\nRestartSec=2\nTimeoutStopSec=60\n\n[Install]\nWantedBy=${wantedBy}\n`;
   }
@@ -407,12 +435,13 @@ class SystemdServiceManager implements ServiceManager {
     const user = this.userUnit ? undefined : systemdServiceUser(resolveServiceUser({ user: options.user, sudoUser: this.dependencies.sudoUser }));
     if (user === 'root') warn(this.dependencies, 'Harmonic will run as root. Pass --user to run it as a non-root user.');
     if (this.userUnit && options.user !== undefined) warn(this.dependencies, '--user is ignored for user-level systemd.');
+    const version = packageVersionSchema.parse(this.dependencies.currentVersion);
+    refuseDowngrade(this.dependencies, join(options.serve.dataDir, 'app'), version);
     // Captured before any change: a fresh install (never run before) must still `start`, not `restart`.
     const wasRunning = (await this.status()).running;
     if (this.userUnit) await this.dependencies.run('loginctl', ['enable-linger', this.dependencies.userName]);
     await ensureDataDir(this.dependencies, options.serve.dataDir, user);
     const appDir = join(options.serve.dataDir, 'app');
-    const version = packageVersionSchema.parse(this.dependencies.currentVersion);
     await installVersion({
       appDir,
       version,
@@ -557,11 +586,12 @@ class InitdServiceManager implements ServiceManager {
       warn(this.dependencies, 'Harmonic will run as root. Pass --user to run it as a non-root user.');
     }
     const dataDir = options.serve.dataDir;
+    const version = packageVersionSchema.parse(this.dependencies.currentVersion);
+    refuseDowngrade(this.dependencies, join(dataDir, 'app'), version);
     // Captured before any change: a fresh install (never run before) must still `start`, not `restart`.
     const wasRunning = (await this.status()).running;
     await ensureDataDir(this.dependencies, dataDir, user);
     const appDir = join(dataDir, 'app');
-    const version = packageVersionSchema.parse(this.dependencies.currentVersion);
     await installVersion({
       appDir,
       version,
@@ -578,7 +608,13 @@ class InitdServiceManager implements ServiceManager {
     await copyBootGuard(this.dependencies, appDir, version);
     await this.dependencies.run('chown', ['-R', user, appDir]);
     await this.dependencies.run('ln', ['-sfn', `versions/${version}`, join(appDir, 'current')]);
-    await this.dependencies.writeFile(initdScriptPath, initdScript({ dataDir, user, nodePath: this.dependencies.nodePath }));
+    if (options.serve.password === undefined) {
+      await this.dependencies.removeFile(initdEnvironmentPath);
+    } else {
+      await this.dependencies.writeFile(initdEnvironmentPath, `HARMONIC_PASSWORD=${shellWord(options.serve.password)}\n`);
+      await this.dependencies.chmod(initdEnvironmentPath, 0o600);
+    }
+    await this.dependencies.writeFile(initdScriptPath, initdScript({ serve: options.serve, user, nodePath: this.dependencies.nodePath }));
     await this.dependencies.chmod(initdScriptPath, 0o755);
     await this.dependencies.run('update-rc.d', ['harmonic', 'defaults']);
     // Restart (not start): the init.d script's own `start` case no-ops when already running, which would silently skip the upgrade.
@@ -590,6 +626,7 @@ class InitdServiceManager implements ServiceManager {
     await this.stop();
     await this.dependencies.run('update-rc.d', ['-f', 'harmonic', 'remove']);
     await this.dependencies.removeFile(initdScriptPath);
+    await this.dependencies.removeFile(initdEnvironmentPath);
   }
 
   async start(): Promise<void> { await this.dependencies.run('service', ['harmonic', 'start']); }

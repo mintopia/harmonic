@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { startServer, stubHarness, waitFor, connectFirehose, type TestServer } from './helpers.js';
 
 const connectWs = (server: TestServer) => connectFirehose(server);
@@ -224,6 +224,19 @@ describe('conversation walking skeleton (issue 10)', () => {
     expect((await server.api('GET', '/api/conversations')).body.conversations).not.toContainEqual(
       expect.objectContaining({ workingDir: '/no/such/harmonic/dir' }),
     );
+  });
+
+  it('serializes only the requested page of the Conversation list', async () => {
+    await server.api('POST', '/api/conversations', {});
+    await server.api('POST', '/api/conversations', {});
+    const serialize = await import('../src/server/serialize.js');
+    const spy = vi.spyOn(serialize, 'conversationToApi');
+    const page = await server.api('GET', '/api/conversations?limit=1');
+    const calls = spy.mock.calls.length;
+    spy.mockRestore();
+    expect(page.body.conversations).toHaveLength(1);
+    expect(page.body.total).toBeGreaterThan(1);
+    expect(calls).toBe(1);
   });
 
   it('never lets an attempt-scoped key reach the operator-only Conversation API', async () => {

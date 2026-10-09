@@ -8,7 +8,15 @@ describe('decideTaskDeletion (issue #162)', () => {
     origin: 'native',
     trackerRef: null,
     workspaceId: 1,
+    mergeStatus: null,
   };
+
+  it.each(['merging', 'resolving-conflicts'] as const)('rejects a task whose mergeStatus is %s', (mergeStatus) => {
+    const decision = decideTaskDeletion({ ...base, state: 'escalated', mergeStatus });
+    expect(decision.ok).toBe(false);
+    expect(decision.reason).toMatch(/merging/);
+    expect(decision.tombstone).toBeNull();
+  });
 
   it('rejects a working native task', () => {
     const decision = decideTaskDeletion({ ...base, state: 'working' });

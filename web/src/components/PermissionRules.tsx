@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { PermissionRule } from '../types';
 import { btnQuietDestructive, toolChip } from '../ui';
+import { toastError } from '../toast';
+import { ConfirmDialog } from './ConfirmDialog';
 import { EmptyState } from './EmptyState';
 import { PathTail } from './PathTail';
 
 export function PermissionRules() {
   const [rules, setRules] = useState<PermissionRule[]>([]);
+  const [revoking, setRevoking] = useState<PermissionRule | null>(null);
 
   const load = () => api.permissionRules().then(({ rules }) => setRules(rules));
   useEffect(() => {
@@ -22,19 +25,37 @@ export function PermissionRules() {
   }
 
   return (
-    <ul className="flex flex-col gap-2.5">
-      {rules.map((rule) => (
-        <li key={rule.id} className="flex items-center gap-2">
-          <span className={toolChip}>{rule.kind}</span>
-          <PathTail path={rule.workingDir} className="flex-1 font-data text-data text-muted" />
-          <button
-            className={`${btnQuietDestructive} px-2 py-1.5`}
-            onClick={() => api.deletePermissionRule(rule.id).then(load)}
-          >
-            Revoke
-          </button>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="flex flex-col gap-2.5">
+        {rules.map((rule) => (
+          <li key={rule.id} className="flex items-center gap-2">
+            <span className={toolChip}>{rule.kind}</span>
+            <PathTail path={rule.workingDir} className="flex-1 font-data text-data text-muted" />
+            <button
+              className={`${btnQuietDestructive} px-2 py-1.5`}
+              onClick={() => setRevoking(rule)}
+            >
+              Revoke
+            </button>
+          </li>
+        ))}
+      </ul>
+      {revoking && (
+        <ConfirmDialog
+          label={`Revoke ${revoking.kind} rule`}
+          title={`Revoke this ${revoking.kind} rule?`}
+          confirmLabel="Revoke"
+          tone="danger"
+          onCancel={() => setRevoking(null)}
+          onConfirm={() => {
+            const { id } = revoking;
+            setRevoking(null);
+            api.deletePermissionRule(id).then(load).catch(toastError);
+          }}
+        >
+          Agents will be asked again before using it in {revoking.workingDir}.
+        </ConfirmDialog>
+      )}
+    </>
   );
 }

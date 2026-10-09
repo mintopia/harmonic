@@ -21,7 +21,7 @@ import { PROMPT_FRAGMENT_OVERRIDE_KEYS, unknownWorkspaceFragmentIssues, type Pro
 import { EXPORT_STATES, exportDirectoryPathSchema, exportS3EndpointSchema, promptFragmentOverrideShape, redactPatternsSchema } from '../config.js';
 import { DomainError } from './errors.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
-import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
+import { deleteAttemptsAndChildrenAsync, deleteEpicAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import {
   verificationCommandOverrideSchema,
   routingLabelOverrideSchema,
@@ -385,7 +385,7 @@ export class WorkspaceService {
   /**
    * Delete a Workspace and everything on its board. Refuses any Workspace with
    * a running Task. Deleting the last Workspace is allowed. Cascades in a
-   * transaction: its Tasks (+ Attempts, Attempt events, Dependency edges,
+   * transaction: its Epic Attempts, its Tasks (+ Attempts, Attempt events, Dependency edges,
    * Channel links), Conversations (+ events), Sessions, and scheduled jobs go
    * first — all hold non-cascading FKs to the Workspace row.
    */
@@ -408,6 +408,7 @@ export class WorkspaceService {
       )
     ).map((r) => r.id);
     await this.db.transaction(async (tx) => {
+      await deleteEpicAttemptsAndChildrenAsync(tx, id);
       if (taskIds.length > 0) {
         await deleteAttemptsAndChildrenAsync(tx, taskIds);
         await tx.delete(taskChannels).where(inArray(taskChannels.taskId, taskIds)).run();

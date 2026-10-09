@@ -364,6 +364,7 @@ rl.on('line', (line) => {
       // test simulate a harness that DOESN'T advertise one of the two load
       // capabilities: STUB_NO_LOAD_SESSION flips loadSession to false;
       // STUB_NO_ADDITIONAL_DIRS flips additionalDirectories to false.
+      if (process.env.STUB_HANG_INITIALIZE) break;
       send({
         jsonrpc: '2.0',
         id: msg.id,

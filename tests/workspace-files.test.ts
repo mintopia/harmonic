@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeAll, afterAll, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { request } from 'node:http';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -98,6 +99,24 @@ describe('workspace Files API (issue #584)', () => {
 
     const traversal = await server.app.inject({ method: 'GET', url: '/api/fs/raw?workspaceId=1&path=../secret.txt', cookies: { harmonic_session: server.sessionToken } });
     expect(traversal.statusCode).toBe(400);
+  });
+
+  it('closes the file descriptor when the client aborts a raw download mid-stream', async () => {
+    const big = join(root, 'big.bin');
+    writeFileSync(big, Buffer.alloc(64 * 1024 * 1024));
+    const openFds = () => readdirSync('/proc/self/fd').filter((fd) => {
+      try { return readlinkSync(`/proc/self/fd/${fd}`) === big; } catch { return false; }
+    }).length;
+    await new Promise<void>((resolve, reject) => {
+      const req = request(`${server.baseUrl}/api/fs/raw?workspaceId=1&path=big.bin`, { headers: { cookie: `harmonic_session=${server.sessionToken}` } }, (res) => {
+        res.once('data', () => { req.destroy(); resolve(); });
+      });
+      req.on('error', () => undefined);
+      req.on('close', () => resolve());
+      req.end();
+      setTimeout(() => reject(new Error('no response')), 5000).unref();
+    });
+    await vi.waitFor(() => expect(openFds()).toBe(0), { timeout: 3000 });
   });
 
   it('returns metadata without loading files over the configured editor cap', async () => {

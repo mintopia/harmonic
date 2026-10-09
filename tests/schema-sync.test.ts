@@ -48,6 +48,21 @@ describe('schema convergence onto the baseline (ADR-0007)', () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 
+  it('creates the attempt_events (attempt_id, seq) unique index on an existing data dir', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-sync-events-idx-'));
+    const first = await openAsyncDb(dataDir);
+    await first.close();
+    const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+    await sqlite.execute('DROP INDEX attempt_events_attempt_seq_unique');
+
+    const second = await openAsyncDb(dataDir);
+    await second.close();
+    const index = (await sqlite.execute("select sql from sqlite_master where type = 'index' and name = 'attempt_events_attempt_seq_unique'")).rows[0];
+    expect(String(index?.sql)).toMatch(/UNIQUE INDEX .*attempt_events.*\(`attempt_id`,\s*`seq`\)/);
+    sqlite.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
   it('rebuilds a constraint-drifted attempts table without losing its task attempts', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-sync-attempts-'));
     const first = await openAsyncDb(dataDir);
