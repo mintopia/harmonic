@@ -22,6 +22,21 @@ const NO_OPTIONAL_LOCKS = { GIT_OPTIONAL_LOCKS: '0' };
 // Agents commit (and auto-gc pack refs) in sibling worktrees outside our locks; git's 100ms default fails a ref write on any overlap.
 const WAIT_FOR_REF_LOCK = ['-c', 'core.filesRefLockTimeout=3000'];
 
+const INDEX_LOCK_FAILURE = /index\.lock|Unable to write index/;
+
+// git has no wait option for index.lock; another git process (an agent, an IDE) may hold it briefly.
+async function retryOnIndexLock<T>(op: () => Promise<T>): Promise<T> {
+  const deadline = Date.now() + 3000;
+  for (;;) {
+    try {
+      return await op();
+    } catch (err) {
+      if (!INDEX_LOCK_FAILURE.test(errorMessage(err)) || Date.now() >= deadline) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+}
+
 async function git(cwd: string, ...args: string[]): Promise<string> {
   return gitEnv(cwd, {}, ...args);
 }
@@ -776,7 +791,7 @@ export const Git = {
       { 'git.branch': branch, 'git.ref': 'HEAD' },
       async () => {
         try {
-          await gitRefWrite(worktreeDir, ...IDENTITY, 'merge', '--no-ff', '--no-edit', branch);
+          await retryOnIndexLock(() => gitRefWrite(worktreeDir, ...IDENTITY, 'merge', '--no-ff', '--no-edit', branch));
           return { ok: true, mergeOid: await Git.revParse(worktreeDir, 'HEAD') };
         } catch (err) {
           const detail = err instanceof GitError ? err.message : String(err);
