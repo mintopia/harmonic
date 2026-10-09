@@ -18,8 +18,9 @@ import type { EpicBranchStep } from '../domain/epic-merge-events.js';
 
 export { reduceMemberState };
 
-/** Must outlast two sequential 10-minute conflict-resolution turns plus verify/integrate overhead. */
-export const DEFAULT_EPIC_OPERATION_TIMEOUT_MS = 45 * 60_000;
+const CONFLICT_TURN_MS = 10 * 60_000;
+const VERIFY_OVERHEAD_MS = 25 * 60_000;
+export const DEFAULT_EPIC_OPERATION_TIMEOUT_MS = 2 * CONFLICT_TURN_MS + VERIFY_OVERHEAD_MS;
 
 /** Reject if `work` outruns `ms`, so a hung verify/integrate can never pin the
  * per-Epic in-flight guard forever. Best-effort: the timeout frees the guard and
@@ -210,7 +211,7 @@ export class EpicCoordinator {
     verifyBackoffMs?: number;
     /** Upper bound on a single whole-Epic verify or integrate before it is abandoned
      * and the Epic escalated, so a hung operation can never wedge the poll loop;
-     * default 20min. */
+     * default {@link DEFAULT_EPIC_OPERATION_TIMEOUT_MS}. */
     operationTimeoutMs?: number;
     onError?: (msg: string) => void;
     operations?: EpicOperations;

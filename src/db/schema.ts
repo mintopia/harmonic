@@ -310,9 +310,7 @@ export const attemptEvents = sqliteTable(
       .references(() => attempts.id),
     seq: integer('seq').notNull(),
     ts: integer('ts').notNull(),
-    /** 'permission_request' | 'lifecycle' */
     type: text('type').notNull(),
-    /** JSON payload. */
     payload: text('payload').notNull(),
   },
   (t) => [uniqueIndex('attempt_events_attempt_seq_unique').on(t.attemptId, t.seq)],

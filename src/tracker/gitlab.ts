@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { logger } from '../logger.js';
 import { z } from 'zod';
-import { forEachYielding } from '../reliability/yield.js';
+import { DEPENDENCY_CONCURRENCY, forEachConcurrently } from './concurrently.js';
 import { parseBlockedBySection, parsePartOfParent } from './relationships.js';
 import type { TrackerKind } from './kind.js';
 import { type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
@@ -85,7 +85,9 @@ function normaliseBase(raw: RawIssue): Omit<Ticket, 'parent' | 'blockedBy' | 'bl
   };
 }
 
-function synthesise(raws: RawIssue[], unscanned: ReadonlyMap<number, RawIssue> = new Map()): Ticket[] {
+const toRef = (raw: RawIssue): TicketRef => ({ ref: trackerRef(raw.iid), title: raw.title, state: state(raw.state) });
+
+function synthesise(raws: RawIssue[], unscanned: ReadonlyMap<number, RawIssue>): Ticket[] {
   const parsed = raws.map((raw) => {
     const desc = raw.description ?? '';
     return { raw, parent: parsePartOfParent(desc), blockedBy: parseBlockedBySection(desc) };
@@ -93,7 +95,7 @@ function synthesise(raws: RawIssue[], unscanned: ReadonlyMap<number, RawIssue> =
   const byId = new Map(parsed.map((p) => [p.raw.iid, p]));
   const mkRef = (iid: number): TicketRef | null => {
     const raw = byId.get(iid)?.raw ?? unscanned.get(iid);
-    return raw ? { ref: trackerRef(iid), title: raw.title, state: state(raw.state) } : null;
+    return raw ? toRef(raw) : null;
   };
   const blockedBy = new Map<number, Set<number>>(parsed.map((p) => [p.raw.iid, new Set(p.blockedBy)]));
   const blocking = new Map<number, Set<number>>(parsed.map((p) => [p.raw.iid, new Set<number>()]));
@@ -153,7 +155,7 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
     try {
       return await api<RawIssue>(`${proj}/issues/${ref}`);
     } catch (err) {
-      if (err instanceof GlabError && /404/.test(err.stderr + err.message)) return null;
+      if (err instanceof GlabError && /\b(?:HTTP 404|404 Not Found)\b/i.test(err.stderr)) return null;
       throw err;
     }
   };
@@ -179,7 +181,7 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
     const missing = new Set<number>();
     for (const raw of raws) for (const iid of parseBlockedBySection(raw.description ?? '')) if (!scanned.has(iid)) missing.add(iid);
     const unscanned = new Map<number, RawIssue>();
-    await forEachYielding(missing, async (iid) => {
+    await forEachConcurrently([...missing], DEPENDENCY_CONCURRENCY, async (iid) => {
       const found = await findIssue(trackerRef(iid));
       if (found) unscanned.set(iid, found);
     });
@@ -203,7 +205,7 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
           .filter((iid) => iid !== raw.iid)
           .map(async (iid): Promise<TicketRef | null> => {
             const blocker = await findIssue(trackerRef(iid));
-            return blocker ? { ref: trackerRef(iid), title: blocker.title, state: state(blocker.state) } : null;
+            return blocker ? toRef(blocker) : null;
           }),
       );
       const blockedBy = blockers.filter((b): b is TicketRef => b !== null);

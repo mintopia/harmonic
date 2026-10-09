@@ -28,6 +28,11 @@ import { writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 
+function writeFileAtomic(path, data) {
+  writeFileSync(`${path}.tmp`, data);
+  renameSync(`${path}.tmp`, path);
+}
+
 // Startup-crash mode: emulate a harness (codex-acp, issue 22) that dies
 // mid-handshake with a non-zero exit, writing its real reason only to
 // stderr. Harmonic must surface that reason, not a bare exit code.
@@ -276,9 +281,7 @@ async function handlePrompt(msg) {
     // needs the injected value reads it from this file instead of run_events.
     if (scenario.echoEnvFile) {
       mkdirSync(dirname(scenario.echoEnvFile), { recursive: true });
-      // The reader polls for the file, so publish it whole via rename.
-      writeFileSync(`${scenario.echoEnvFile}.tmp`, JSON.stringify(values));
-      renameSync(`${scenario.echoEnvFile}.tmp`, scenario.echoEnvFile);
+      writeFileAtomic(scenario.echoEnvFile, JSON.stringify(values));
     }
   }
 

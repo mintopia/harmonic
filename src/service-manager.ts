@@ -98,7 +98,7 @@ export interface ServiceManagerDependencies {
   userName: string;
   run(command: string, args: readonly string[]): Promise<CommandResult>;
   mkdir(path: string): Promise<void>;
-  writeFile(path: string, contents: string): Promise<void>;
+  writeFile(path: string, contents: string, mode?: number): Promise<void>;
   chmod(path: string, mode: number): Promise<void>;
   removeFile(path: string): Promise<void>;
   rename(from: string, to: string): Promise<void>;
@@ -112,7 +112,7 @@ export interface ServiceManagerDependencies {
   warn?(message: string): void;
 }
 
-const defaultDependencies = (): ServiceManagerDependencies => ({
+export const defaultDependencies = (): ServiceManagerDependencies => ({
   nodePath: process.execPath,
   currentVersion: packageVersion(),
   path: process.env.PATH ?? '',
@@ -123,7 +123,7 @@ const defaultDependencies = (): ServiceManagerDependencies => ({
     return { stdout };
   },
   mkdir: async (path) => { await mkdir(path, { recursive: true }); },
-  writeFile: async (path, contents) => { await writeFile(path, contents, 'utf8'); },
+  writeFile: async (path, contents, mode) => { await writeFile(path, contents, { encoding: 'utf8', mode }); },
   chmod,
   removeFile: async (path) => { await rm(path, { recursive: true, force: true }); },
   rename: async (from, to) => { await rename(from, to); },
@@ -303,8 +303,7 @@ const copyBootGuard = async (dependencies: ServiceManagerDependencies, appDir: s
   }
 };
 
-/** Refuses to repoint `current` at an older CLI than the one the service already runs, which would put old code on a newer database with no snapshot for the boot guard to roll back to. */
-const refuseDowngrade = (dependencies: ServiceManagerDependencies, appDir: string, version: string): void => {
+const refuseDowngradeWithoutSnapshot = (dependencies: ServiceManagerDependencies, appDir: string, version: string): void => {
   const target = dependencies.readlink(join(appDir, 'current'));
   const installed = target === null ? undefined : /^(?:.*\/)?versions\/([^/]+)\/?$/.exec(target)?.[1];
   if (installed === undefined) return;
@@ -436,7 +435,7 @@ class SystemdServiceManager implements ServiceManager {
     if (user === 'root') warn(this.dependencies, 'Harmonic will run as root. Pass --user to run it as a non-root user.');
     if (this.userUnit && options.user !== undefined) warn(this.dependencies, '--user is ignored for user-level systemd.');
     const version = packageVersionSchema.parse(this.dependencies.currentVersion);
-    refuseDowngrade(this.dependencies, join(options.serve.dataDir, 'app'), version);
+    refuseDowngradeWithoutSnapshot(this.dependencies, join(options.serve.dataDir, 'app'), version);
     // Captured before any change: a fresh install (never run before) must still `start`, not `restart`.
     const wasRunning = (await this.status()).running;
     if (this.userUnit) await this.dependencies.run('loginctl', ['enable-linger', this.dependencies.userName]);
@@ -462,7 +461,7 @@ class SystemdServiceManager implements ServiceManager {
     if (options.serve.password === undefined) {
       await this.dependencies.removeFile(this.environmentPath);
     } else {
-      await this.dependencies.writeFile(this.environmentPath, `HARMONIC_PASSWORD=${environmentFileValue(options.serve.password)}\n`);
+      await this.dependencies.writeFile(this.environmentPath, `HARMONIC_PASSWORD=${environmentFileValue(options.serve.password)}\n`, 0o600);
       await this.dependencies.chmod(this.environmentPath, 0o600);
     }
     await this.dependencies.writeFile(this.unitPath, this.unit(options.serve, user));
@@ -587,7 +586,7 @@ class InitdServiceManager implements ServiceManager {
     }
     const dataDir = options.serve.dataDir;
     const version = packageVersionSchema.parse(this.dependencies.currentVersion);
-    refuseDowngrade(this.dependencies, join(dataDir, 'app'), version);
+    refuseDowngradeWithoutSnapshot(this.dependencies, join(dataDir, 'app'), version);
     // Captured before any change: a fresh install (never run before) must still `start`, not `restart`.
     const wasRunning = (await this.status()).running;
     await ensureDataDir(this.dependencies, dataDir, user);
@@ -611,7 +610,7 @@ class InitdServiceManager implements ServiceManager {
     if (options.serve.password === undefined) {
       await this.dependencies.removeFile(initdEnvironmentPath);
     } else {
-      await this.dependencies.writeFile(initdEnvironmentPath, `HARMONIC_PASSWORD=${shellWord(options.serve.password)}\n`);
+      await this.dependencies.writeFile(initdEnvironmentPath, `HARMONIC_PASSWORD=${shellWord(options.serve.password)}\n`, 0o600);
       await this.dependencies.chmod(initdEnvironmentPath, 0o600);
     }
     await this.dependencies.writeFile(initdScriptPath, initdScript({ serve: options.serve, user, nodePath: this.dependencies.nodePath }));

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { forEachYielding } from '../reliability/yield.js';
+import { DEPENDENCY_CONCURRENCY, forEachConcurrently } from './concurrently.js';
 import { FORGEJO_TOKEN_SECRET, forgejoClient, parseForgejoRemote, repoPath } from './forgejo-client.js';
 import { parseBlockedByLines, parsePartOfParent } from './relationships.js';
 import { RestError, type RestClient } from './rest-client.js';
@@ -8,7 +9,6 @@ import type { Ticket, TicketRef, TicketState, WritableTrackerAdapter } from './a
 import { EPIC_LABEL, MAP_LABEL, trackerRef, type TrackerRef } from './ref.js';
 
 const PAGE_SIZE = 50;
-const DEPENDENCY_CONCURRENCY = 4;
 
 /** Runs `run`, answering `fallback` when the tracker says 404. */
 async function orOnNotFound<T>(run: () => Promise<T>, fallback: T): Promise<T> {
@@ -18,13 +18,6 @@ async function orOnNotFound<T>(run: () => Promise<T>, fallback: T): Promise<T> {
     if (err instanceof RestError && err.status === 404) return fallback;
     throw err;
   }
-}
-
-/** {@link forEachYielding} across `concurrency` workers draining one shared queue. */
-async function forEachConcurrently<T>(items: readonly T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
-  const queue = items[Symbol.iterator]();
-  const shared: Iterable<T> = { [Symbol.iterator]: () => queue };
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => forEachYielding(shared, fn)));
 }
 
 export const forgejoSettingsSchema = z

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Installs the packed tarball the way installVersion does (--omit=dev) and boots it.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

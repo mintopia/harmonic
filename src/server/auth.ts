@@ -18,6 +18,7 @@ interface StoredAuth {
 const FREE_FAILURES = 5;
 const BACKOFF_BASE_MS = 1000;
 const BACKOFF_MAX_MS = 60_000;
+const FAILURE_DECAY_MS = 15 * 60_000;
 
 const hashPassword = (password: string, salt: string) =>
   new Promise<string>((resolve, reject) => {
@@ -30,11 +31,13 @@ export class AuthService {
   private sessions = new Set<string>();
 
   private loginAttempts = 0;
+  private lastFailureAt = 0;
   private backoffActive = false;
 
   constructor(
     private readonly db: AsyncDbHandle,
     private readonly sleep: (ms: number) => Promise<unknown> = sleepMs,
+    private readonly now: () => number = Date.now,
   ) {}
 
   async hasPassword(): Promise<boolean> {
@@ -59,13 +62,14 @@ export class AuthService {
   }
 
   async verifyLogin(password: string): Promise<boolean> {
+    if (this.loginAttempts > 0 && this.now() - this.lastFailureAt > FAILURE_DECAY_MS) this.loginAttempts = 0;
     const over = this.loginAttempts - FREE_FAILURES;
     if (over >= 0) {
-      // Rejected, not queued: queued attempts would all still be hashed after their delay.
       if (this.backoffActive) throw new DomainError('rate_limited', 'too many login attempts; try again shortly');
       this.backoffActive = true;
     }
     this.loginAttempts++;
+    this.lastFailureAt = this.now();
     try {
       if (over >= 0) await this.sleep(Math.min(BACKOFF_BASE_MS * 2 ** over, BACKOFF_MAX_MS));
       const stored = await this.readAuth();

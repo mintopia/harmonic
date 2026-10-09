@@ -107,7 +107,9 @@ sudo harmonic install
 ```
 
 `harmonic install` keeps the existing service's port, host, data directory and
-password.
+password. It refuses to run if the installed service is newer than the
+`harmonic` command you are running, so update the global package first, as
+above.
 
 Rather not install? Every command also works through `npx`:
 

@@ -587,6 +587,21 @@ describe('gitlab tracker adapter', () => {
     await expect(gitlabAdapter(cfg, failing).readTicket({ ref: trackerRef(36), title: '', state: 'open' })).rejects.toThrow('500');
   });
 
+  it('a 500 on an iid containing "404" propagates; a real glab 404 reads as not found', async () => {
+    const { run } = fakeGlab();
+    const blocked = { ...issues[36], iid: 36, description: '## Blocked by\n- #1404\n' };
+    const withBlocker = (failure: GlabError): GlabRunner => async (args, cwd) => {
+      const last = args[args.length - 1]!;
+      if (/\/issues\/1404$/.test(last)) throw failure;
+      if (/\/issues\/36$/.test(last)) return JSON.stringify(blocked);
+      return run(args, cwd);
+    };
+    const ref = { ref: trackerRef(36), title: '', state: 'open' } as const;
+    await expect(gitlabAdapter(cfg, withBlocker(new GlabError('glab api projects/p/issues/1404 failed: 500 Server Error', '500 Server Error'))).readTicket(ref)).rejects.toThrow('500');
+    const gone = await gitlabAdapter(cfg, withBlocker(new GlabError('glab api projects/p/issues/1404 failed: 404 Not Found', 'glab: 404 Not Found (HTTP 404)'))).readTicket(ref);
+    expect(gone.blockedBy).toEqual([]);
+  });
+
   it('readState issues one single-issue request', async () => {
     const { run, reads } = fakeGlab();
     expect(await gitlabAdapter(cfg, run).readState!({ ref: trackerRef(22), title: '', state: 'open' })).toBe('closed');
