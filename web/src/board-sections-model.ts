@@ -33,7 +33,8 @@ function byBandOrder(a: Task, b: Task): number {
 export type AttentionEntry = { kind: 'task'; task: Task } | { kind: 'epic'; epic: Epic };
 
 export interface Blocker {
-  taskId: number;
+  /** Null for an Epic Hold blocker, which is a tracker ref with no local Task edge. */
+  taskId: number | null;
   label: string;
   /** The blocker is done — the edge no longer counts (server `openBlockerCount`). */
   satisfied: boolean;
@@ -113,12 +114,18 @@ function itemLabel(task: Task | undefined, taskId: number): string {
  * a done row lingering from a socket update) also counts.
  */
 export function resolveBlockers(task: Task, tasksById: ReadonlyMap<number, Task>): Blocker[] {
-  const allCleared = task.openBlockerCount === 0;
-  return task.dependsOn.map((taskId) => ({
+  const allCleared = task.openBlockerCount - task.epicBlockers.length === 0;
+  const edges: Blocker[] = task.dependsOn.map((taskId) => ({
     taskId,
     label: itemLabel(tasksById.get(taskId), taskId),
     satisfied: allCleared || tasksById.get(taskId)?.state === 'done',
   }));
+  const held: Blocker[] = task.epicBlockers.map((blocker) => ({
+    taskId: null,
+    label: blocker.kind === 'epic' ? `Epic ${issueRef(blocker.ref)}` : issueRef(blocker.ref),
+    satisfied: false,
+  }));
+  return [...edges, ...held];
 }
 
 function taskItem(task: Task, tasksById: ReadonlyMap<number, Task>): PendingItem {

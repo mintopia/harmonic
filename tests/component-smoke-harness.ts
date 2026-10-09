@@ -162,6 +162,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     dependents: [],
     blockedOnFailed: false,
     openBlockerCount: 0,
+    epicBlockers: [],
     agentWorkable: true,
     humanOnly: false,
     isEpic: false,

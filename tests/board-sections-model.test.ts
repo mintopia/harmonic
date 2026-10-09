@@ -44,6 +44,7 @@ const task = (id: number, state: TaskState, extra: Partial<Task> = {}): Task => 
   escalationCause: null,
   mergeStatus: null, ticketClosePending: false,
   openBlockerCount: 0,
+  epicBlockers: [],
   agentWorkable: true,
   humanOnly: false,
   isEpic: false,
@@ -349,6 +350,22 @@ describe('blocker columns', () => {
       { taskId: 1, label: 'T-1', satisfied: true },
       { taskId: 2, label: 'T-2', satisfied: false },
       { taskId: 4, label: 'Task 4', satisfied: false },
+    ]);
+  });
+
+  it('lists Epic Hold blockers as unsatisfied chips and keeps done Task edges satisfied beside them', () => {
+    const held = task(9, 'ready', {
+      dependsOn: [1],
+      openBlockerCount: 2,
+      epicBlockers: [
+        { ref: '71', kind: 'epic', heldEpic: '73' },
+        { ref: '50', kind: 'task', heldEpic: '73' },
+      ],
+    });
+    expect(resolveBlockers(held, new Map())).toEqual([
+      { taskId: 1, label: 'Task 1', satisfied: true },
+      { taskId: null, label: 'Epic #71', satisfied: false },
+      { taskId: null, label: '#50', satisfied: false },
     ]);
   });
 

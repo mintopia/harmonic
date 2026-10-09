@@ -619,6 +619,8 @@ export interface Task {
   blockedOnFailed: boolean;
   /** Blocker edges whose blocker is not done; blocked-ness is this count, never a state. */
   openBlockerCount: number;
+  /** The Epic Hold: unsatisfied blockers of the Epic(s) above this Member; already counted in `openBlockerCount`. */
+  epicBlockers: Array<{ ref: string; kind: 'epic' | 'task'; heldEpic: string; cycle?: boolean }>;
   /** Derived flag: opted in (mirrored: `ready-for-agent`, not an Epic container) and no open blockers. */
   agentWorkable: boolean;
   /** A mirrored ticket Harmonic never works (no `ready-for-agent`, an Epic container, a human wayfinder kind); independent of blockers. */
