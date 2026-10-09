@@ -303,11 +303,13 @@ export class TurnCompletion {
       active.idle = true;
     }
     const dirty = !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false));
-    const [head, base] = await Promise.all([
-      Git.revParse(workspace.cwd, 'HEAD').catch(() => null),
-      workspace.baseRev ? Git.revParse(workspace.cwd, workspace.baseRev).catch(() => null) : Promise.resolve(null),
-    ]);
-    if (head && (head !== base || dirty)) {
+    const head = await Git.revParse(workspace.cwd, 'HEAD').catch(() => null);
+    const hasOwnCommits = head
+      ? workspace.baseRev
+        ? (await Git.commitsAhead(workspace.cwd, workspace.baseRev, head)) > 0
+        : true
+      : false;
+    if (head && (hasOwnCommits || dirty)) {
       implementationHead = head;
       await this.deps.attempts.update(run.id, { verifiedHeadOid: head });
     } else if (run.verifiedHeadOid) {

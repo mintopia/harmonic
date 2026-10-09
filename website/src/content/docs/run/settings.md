@@ -172,6 +172,7 @@ file or runs a command. If you'd rather not be asked every time, a
 **permission rule** lets an agent skip the prompt for a kind of action
 (reading, editing, running, fetching) in a given workspace. Rules are
 listed on the settings page and you can remove one whenever you want.
+Revoking a rule asks you to confirm first.
 
 ## Prices
 

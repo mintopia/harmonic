@@ -244,6 +244,16 @@ export async function waitFor<T>(
   }
 }
 
+export async function waitForTaskDone(server: TestServer, taskId: number): Promise<void> {
+  await waitFor(async () => {
+    const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+    if (body.state === 'escalated') {
+      throw new Error(`Task ${taskId} escalated before reaching done: ${body.escalationReason}`);
+    }
+    return body.state === 'done';
+  });
+}
+
 export interface FirehoseClient {
   messages: any[];
   send: (message: unknown) => void;

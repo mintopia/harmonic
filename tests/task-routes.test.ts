@@ -391,6 +391,24 @@ describe('task-list-epics', () => {
       expect(page.body.total).toBe(5);
     });
 
+    it('serializes only the requested page when unsorted, across the task/epic boundary', async () => {
+      const serialized = vi.spyOn(await import('../src/server/serialize.js'), 'tasksToApi');
+      const first = await server.api('GET', `/api/tasks?workspaceId=${workspaceId}&epics=true&limit=1`);
+      expect(first.body.total).toBe(5);
+      expect(rows(first.body)).toHaveLength(1);
+      expect(serialized.mock.calls.at(-1)![1]).toHaveLength(1);
+
+      const edge = await server.api('GET', `/api/tasks?workspaceId=${workspaceId}&epics=true&offset=2&limit=2`);
+      expect(rows(edge.body)).toHaveLength(2);
+      expect(rows(edge.body).filter((t) => t.isEpic)).toHaveLength(1);
+      expect(serialized.mock.calls.at(-1)![1]).toHaveLength(1);
+
+      const tail = await server.api('GET', `/api/tasks?workspaceId=${workspaceId}&epics=true&offset=4&limit=5`);
+      expect(summaries(tail.body)).toEqual(['Beta epic']);
+      expect(serialized.mock.calls.at(-1)![1]).toHaveLength(0);
+      serialized.mockRestore();
+    });
+
     it('drops epic rows when a task-attribute filter is active (containers have no state/harness/priority)', async () => {
       const byState = await server.api('GET', `/api/tasks?workspaceId=${workspaceId}&epics=true&state=draft`);
       expect(summaries(byState.body)).toEqual(['task a']);

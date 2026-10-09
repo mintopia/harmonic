@@ -223,8 +223,15 @@ describe('worktree', () => {
       const { taskId } = await runWorktreeTask(repo, { 'feature.txt': 'diff me\n' });
       const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
 
-      await waitFor(async () => (git(repo, 'worktree', 'list').split('\n').length === 1 ? true : undefined));
-      git(repo, 'branch', '-D', run.branch);
+      await waitFor(async () => {
+        if (git(repo, 'branch', '--list', run.branch) === '') return true;
+        try {
+          git(repo, 'branch', '-D', run.branch);
+          return true;
+        } catch {
+          return undefined;
+        }
+      });
 
       const diff = await server.api('GET', `/api/attempts/${run.id}/diff/files`);
       expect(diff.status).toBe(200);

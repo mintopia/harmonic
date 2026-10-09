@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { forEachYielding } from '../reliability/yield.js';
+import { DEPENDENCY_CONCURRENCY, forEachConcurrently } from './concurrently.js';
 import { FORGEJO_TOKEN_SECRET, forgejoClient, parseForgejoRemote, repoPath } from './forgejo-client.js';
 import { parseBlockedByLines, parsePartOfParent } from './relationships.js';
 import { RestError, type RestClient } from './rest-client.js';
@@ -8,7 +9,6 @@ import type { Ticket, TicketRef, TicketState, WritableTrackerAdapter } from './a
 import { EPIC_LABEL, MAP_LABEL, trackerRef, type TrackerRef } from './ref.js';
 
 const PAGE_SIZE = 50;
-const DEPENDENCY_CONCURRENCY = 4;
 
 /** Runs `run`, answering `fallback` when the tracker says 404. */
 async function orOnNotFound<T>(run: () => Promise<T>, fallback: T): Promise<T> {
@@ -18,13 +18,6 @@ async function orOnNotFound<T>(run: () => Promise<T>, fallback: T): Promise<T> {
     if (err instanceof RestError && err.status === 404) return fallback;
     throw err;
   }
-}
-
-/** {@link forEachYielding} across `concurrency` workers draining one shared queue. */
-async function forEachConcurrently<T>(items: readonly T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
-  const queue = items[Symbol.iterator]();
-  const shared: Iterable<T> = { [Symbol.iterator]: () => queue };
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => forEachYielding(shared, fn)));
 }
 
 export const forgejoSettingsSchema = z
@@ -137,14 +130,14 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
     const raws = await client.paginate(`${repo}/milestones?state=open`, PAGE_SIZE, containerSchema);
     const out: HeldContainer[] = [];
     await forEachYielding(raws, async (raw) => {
-      const held = await client.paginate(`${repo}/issues?state=all&type=issues&milestones=${raw.id}`, PAGE_SIZE, issueSchema);
+      const held = await client.paginate(`${repo}/issues?state=open&type=issues&milestones=${raw.id}`, PAGE_SIZE, issueSchema);
       out.push({ raw, issues: new Set(held.map((i) => i.number)) });
     });
     return out;
   };
 
   const scanAll = async (): Promise<Ticket[]> => {
-    const raws = (await client.paginate(`${repo}/issues?state=all&type=issues`, PAGE_SIZE, issueSchema)).filter((i) => !i.pull_request);
+    const raws = (await client.paginate(`${repo}/issues?state=open&type=issues`, PAGE_SIZE, issueSchema)).filter((i) => !i.pull_request);
     const held = await containers();
     const parentOf = new Map<number, TrackerRef>();
     await forEachYielding(held, (c) => {
@@ -164,9 +157,20 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
     await forEachYielding(raws, (i) => {
       byNumber.set(trackerRef(i.number), i);
     });
+    const unscanned = new Map<TrackerRef, TicketRef>();
+    for (const refs of native.values()) for (const r of refs) if (!byNumber.has(r.ref)) unscanned.set(r.ref, r);
+    const bodyOnly = new Set<TrackerRef>();
+    await forEachYielding(raws, (i) => {
+      for (const n of parseBlockedByLines(i.body ?? '').map(trackerRef)) if (!byNumber.has(n) && !unscanned.has(n)) bodyOnly.add(n);
+    });
+    await forEachConcurrently([...bodyOnly], DEPENDENCY_CONCURRENCY, async (n) => {
+      const found = await orOnNotFound(() => client.request('GET', `${repo}/issues/${n}`, issueSchema), null);
+      if (found) unscanned.set(n, { ref: n, title: found.title, state: state(found.state) });
+    });
     const refOf = (n: TrackerRef): TicketRef => {
       const found = byNumber.get(n);
-      return { ref: n, title: found?.title ?? '', state: found ? state(found.state) : 'open' };
+      if (found) return { ref: n, title: found.title, state: state(found.state) };
+      return unscanned.get(n) ?? { ref: n, title: '', state: 'open' };
     };
     const blockedByMap = new Map<TrackerRef, TicketRef[]>();
     await forEachYielding(raws, (i) => {
@@ -247,6 +251,7 @@ export function forgejoAdapter(settings: ForgejoSettings, client: RestClient): W
 
   return {
     name: 'forgejo',
+    scansOpenOnly: true,
 
     scan: scanAll,
 

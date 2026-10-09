@@ -35,6 +35,11 @@ shell profile:
 | `HARMONIC_SECRET_KEY` | — | Encryption key for Secrets (tokens, etc.). Hex or base64, 32 bytes. Auto-created on first run and stored as `secret.key` (mode 0600) in the data directory if not set. |
 | `HARMONIC_CORS_ORIGINS` | — | Comma-separated origins allowed to call the REST API from a browser page on another site, such as `https://viewer.example.com`. `*` allows any origin. Unset, cross-origin calls are blocked. |
 
+With `harmonic install` on init.d, the password is written to
+`/etc/default/harmonic` (mode 0600), which the init script reads at start,
+rather than into the init script itself. Installing without a password
+removes that file.
+
 ## Precedence
 
 A command-line option always beats its environment variable, which beats

@@ -1,15 +1,19 @@
 import type { AttemptLogEvent } from './types.js';
 
-/**
- * Append firehose events once. The server's transient ids survive a WebSocket
- * reconnect, so keeping them as the identity prevents duplicate rows while
- * preserving the arrival order of new output.
- */
+export const MAX_ATTEMPT_LOG_EVENTS = 4000;
+
+/** Dedupes by id, not `seq`: REST and live number `seq` separately, but ids only grow across both. */
 export function appendAttemptLogEvents({ current, additions }: { current: AttemptLogEvent[]; additions: readonly AttemptLogEvent[] }): AttemptLogEvent[] {
-  if (additions.length === 0) return current;
-  const ids = new Set(current.map((event) => event.id));
-  const newEvents = additions.filter((event) => !ids.has(event.id));
-  return newEvents.length === 0 ? current : [...current, ...newEvents];
+  let lastId = current.at(-1)?.id ?? -Infinity;
+  const newEvents: AttemptLogEvent[] = [];
+  for (const event of additions) {
+    if (event.id <= lastId) continue;
+    newEvents.push(event);
+    lastId = event.id;
+  }
+  if (newEvents.length === 0) return current;
+  const combined = [...current, ...newEvents];
+  return combined.length > MAX_ATTEMPT_LOG_EVENTS ? combined.slice(combined.length - MAX_ATTEMPT_LOG_EVENTS) : combined;
 }
 
 /** The last live-firehose sequence the page has already applied. */

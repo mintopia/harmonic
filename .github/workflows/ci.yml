@@ -54,3 +54,6 @@ jobs:
       - run: npm run docs:openapi
       - name: Fail if the OpenAPI snapshot is stale (run `npm run docs:openapi`)
         run: git diff --exit-code website/src/openapi.json
+
+      - name: Verify packed tarball boots with --omit=dev
+        run: scripts/verify-pack-install.sh

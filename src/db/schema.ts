@@ -301,18 +301,20 @@ export const attemptToolCalls = sqliteTable(
 export type AttemptToolCallRow = typeof attemptToolCalls.$inferSelect;
 
 /** Lifecycle events and permission requests only; the `session_update` firehose is never persisted. */
-export const attemptEvents = sqliteTable('attempt_events', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  attemptId: integer('attempt_id')
-    .notNull()
-    .references(() => attempts.id),
-  seq: integer('seq').notNull(),
-  ts: integer('ts').notNull(),
-  /** 'permission_request' | 'lifecycle' */
-  type: text('type').notNull(),
-  /** JSON payload. */
-  payload: text('payload').notNull(),
-});
+export const attemptEvents = sqliteTable(
+  'attempt_events',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    attemptId: integer('attempt_id')
+      .notNull()
+      .references(() => attempts.id),
+    seq: integer('seq').notNull(),
+    ts: integer('ts').notNull(),
+    type: text('type').notNull(),
+    payload: text('payload').notNull(),
+  },
+  (t) => [uniqueIndex('attempt_events_attempt_seq_unique').on(t.attemptId, t.seq)],
+);
 
 /** Append-only lifecycle log for a Task action with no owning Attempt; the
  * ticket timeline renders it alongside `attempt_events`, same mapping. */

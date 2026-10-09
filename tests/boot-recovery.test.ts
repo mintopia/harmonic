@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { startServer, stubHarness, waitFor, waitForTaskDone, type TestServer } from './helpers.js';
 import { verificationCommandSchema } from '../src/config.js';
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -111,7 +111,7 @@ describe('boot crash-recovery', () => {
       const taskId: number = created.body.id;
       const started = await server.api('POST', `/api/tasks/${taskId}/run`);
       const attemptId: number = started.body.id;
-      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
+      await waitForTaskDone(server, taskId);
       const dataDir = server.dataDir;
       const runBefore = await server.api('GET', `/api/attempts/${attemptId}`);
       expect(runBefore.body.state).toBe('completed');
@@ -151,7 +151,7 @@ describe('boot crash-recovery', () => {
       const taskId: number = created.body.id;
       const started = await server.api('POST', `/api/tasks/${taskId}/run`);
       const attemptId: number = started.body.id;
-      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
+      await waitForTaskDone(server, taskId);
       const dataDir = server.dataDir;
       const mainTipAfterMerge = git(repo, 'rev-parse', 'main');
 
@@ -187,7 +187,7 @@ describe('boot crash-recovery', () => {
       const taskId: number = created.body.id;
       const started = await server.api('POST', `/api/tasks/${taskId}/run`);
       const attemptId: number = started.body.id;
-      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
+      await waitForTaskDone(server, taskId);
       const dataDir = server.dataDir;
       const mainTipAfterMerge = git(repo, 'rev-parse', 'main');
 
@@ -218,7 +218,7 @@ describe('boot crash-recovery', () => {
       const taskId: number = created.body.id;
       const started = await server.api('POST', `/api/tasks/${taskId}/run`);
       const attemptId: number = started.body.id;
-      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
+      await waitForTaskDone(server, taskId);
       const dataDir = server.dataDir;
       const mainTipAfterMerge = git(repo, 'rev-parse', 'main');
 

@@ -73,10 +73,47 @@ export class EventBus {
   private emitter = new EventEmitter();
   private readonly attemptLogEvents = new Map<number, LiveAttemptEvent[]>();
   private readonly criticLogEvents = new Map<number, LiveAttemptEvent[]>();
+  private readonly clearTimers = new Map<number, NodeJS.Timeout>();
   private static readonly maxRunLogEvents = 2_048;
 
-  constructor() {
+  /** `logRetentionMs` is how long a finished Attempt's replay buffers outlive it,
+   * so a browser mid-reconnect still catches the tail. The window restarts on each
+   * log event, so a critic still streaming (an operator Accept's post-merge check
+   * runs against an already-ended Attempt) keeps its buffer. */
+  constructor(private readonly logRetentionMs = 60_000) {
     this.emitter.setMaxListeners(100);
+    this.emitter.on('attempt_changed', (run: AttemptRow) => {
+      if (run.endedAt != null) this.scheduleClear(run.id);
+      else this.cancelClear(run.id);
+    });
+  }
+
+  private scheduleClear(attemptId: number): void {
+    if (this.clearTimers.has(attemptId)) return;
+    const timer = setTimeout(() => {
+      this.clearTimers.delete(attemptId);
+      this.clearAttemptLog(attemptId);
+    }, this.logRetentionMs);
+    timer.unref();
+    this.clearTimers.set(attemptId, timer);
+  }
+
+  private cancelClear(attemptId: number): void {
+    const timer = this.clearTimers.get(attemptId);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this.clearTimers.delete(attemptId);
+  }
+
+  private extendClear(attemptId: number): void {
+    if (!this.clearTimers.has(attemptId)) return;
+    this.cancelClear(attemptId);
+    this.scheduleClear(attemptId);
+  }
+
+  private clearAttemptLog(attemptId: number): void {
+    this.attemptLogEvents.delete(attemptId);
+    this.criticLogEvents.delete(attemptId);
   }
 
   emit<K extends keyof BusEvents>(event: K, ...args: Parameters<BusEvents[K]>): void {
@@ -99,6 +136,7 @@ export class EventBus {
   /** Add a transient ACP update to the active Attempt's reconnect buffer. */
   emitAttemptLog(event: LiveAttemptEvent): void {
     EventBus.buffer(this.attemptLogEvents, event);
+    this.extendClear(event.attemptId);
     this.emitter.emit('attempt_log_event', event);
   }
 
@@ -117,6 +155,7 @@ export class EventBus {
    * builder's Implementation stream. */
   emitCriticLog(event: LiveAttemptEvent): void {
     EventBus.buffer(this.criticLogEvents, event);
+    this.extendClear(event.attemptId);
     this.emitter.emit('critic_log_event', event);
   }
 

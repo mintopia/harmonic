@@ -15,6 +15,16 @@ export class AcpPromptTimeoutError extends Error {
   }
 }
 
+/** The ACP handshake did not complete within its bound — the harness is alive but never answered. */
+export class AcpHandshakeTimeoutError extends Error {
+  constructor(public readonly timeoutMs: number) {
+    super(`ACP handshake did not complete within ${timeoutMs}ms`);
+    this.name = 'AcpHandshakeTimeoutError';
+  }
+}
+
+const DEFAULT_HANDSHAKE_TIMEOUT_MS = 120_000;
+
 export interface AcpDriverHandlers {
   /**
    * ACP session/update notifications — the harness's streamed output. The
@@ -146,10 +156,12 @@ export class AcpDriver {
   private completionGraceMs: number | null = null;
 
   constructor(
-    child: ChildProcess,
+    private readonly child: ChildProcess,
     handlers: AcpDriverHandlers,
     /** Inactivity bound for a single prompt turn, ms; undefined/0 disables it. */
     private readonly promptInactivityTimeoutMs?: number,
+    /** Bound for the whole handshake/load sequence, ms; 0 disables it. */
+    private readonly handshakeTimeoutMs: number = DEFAULT_HANDSHAKE_TIMEOUT_MS,
   ) {
     this.connection = new AcpConnection(child.stdin!, child.stdout!, {
       onSessionUpdate: (params) => {
@@ -182,6 +194,29 @@ export class AcpDriver {
     return result;
   }
 
+  private withHandshakeTimeout<T>(work: () => Promise<T>): Promise<T> {
+    const ms = this.handshakeTimeoutMs;
+    if (!ms) return work();
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const timeout = new AcpHandshakeTimeoutError(ms);
+        this.connection.fail(timeout);
+        this.child.kill('SIGKILL');
+        reject(timeout);
+      }, ms);
+      work().then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
+      );
+    });
+  }
+
   private static modeIdsOf(modes?: { availableModes?: { id: string }[] }): string[] {
     return (modes?.availableModes ?? []).map((mode) => mode.id);
   }
@@ -190,7 +225,7 @@ export class AcpDriver {
   async handshake(opts: AcpHandshake): Promise<string> {
     const operation = startOperation({ type: 'session.create', attributes: {} });
     try {
-      const sessionId = await operation.run(async () => {
+      const sessionId = await operation.run(() => this.withHandshakeTimeout(async () => {
         await this.initialize(opts.onInitialize, opts.clientCapabilities);
         const session = (await this.race(
           this.connection.request('session/new', { cwd: opts.cwd, mcpServers: opts.mcpServers ?? [] }),
@@ -205,7 +240,7 @@ export class AcpDriver {
           );
         }
         return this.sessionId;
-      });
+      }));
       operation.update({ 'session.id': sessionId });
       operation.end();
       return sessionId;
@@ -228,7 +263,7 @@ export class AcpDriver {
   async load(opts: AcpLoadHandshake): Promise<AcpLoadOutcome> {
     const operation = startOperation({ type: 'session.load', attributes: { 'session.id': opts.sessionId } });
     try {
-      const outcome = await operation.run(() => this.loadSession(opts));
+      const outcome = await operation.run(() => this.withHandshakeTimeout(() => this.loadSession(opts)));
       operation.update({ 'session.loaded': outcome.loaded, ...(outcome.loaded ? {} : { 'session.load.reason': outcome.reason }) });
       operation.end();
       return outcome;

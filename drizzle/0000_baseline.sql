@@ -47,6 +47,7 @@ CREATE TABLE `attempt_events` (
 	FOREIGN KEY (`attempt_id`) REFERENCES `attempts`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX `attempt_events_attempt_seq_unique` ON `attempt_events` (`attempt_id`,`seq`);--> statement-breakpoint
 CREATE TABLE `attempt_tool_calls` (
 	`attempt_id` integer NOT NULL,
 	`tool_name` text NOT NULL,

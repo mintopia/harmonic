@@ -24,9 +24,14 @@
 // Set STUB_NO_STEERING to simulate a harness without the method (a JSON-RPC
 // "method not found" error), exercising Harmonic's boundary-queue fallback.
 import { createInterface } from 'node:readline';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
+
+function writeFileAtomic(path, data) {
+  writeFileSync(`${path}.tmp`, data);
+  renameSync(`${path}.tmp`, path);
+}
 
 // Startup-crash mode: emulate a harness (codex-acp, issue 22) that dies
 // mid-handshake with a non-zero exit, writing its real reason only to
@@ -276,7 +281,7 @@ async function handlePrompt(msg) {
     // needs the injected value reads it from this file instead of run_events.
     if (scenario.echoEnvFile) {
       mkdirSync(dirname(scenario.echoEnvFile), { recursive: true });
-      writeFileSync(scenario.echoEnvFile, JSON.stringify(values));
+      writeFileAtomic(scenario.echoEnvFile, JSON.stringify(values));
     }
   }
 
@@ -362,6 +367,7 @@ rl.on('line', (line) => {
       // test simulate a harness that DOESN'T advertise one of the two load
       // capabilities: STUB_NO_LOAD_SESSION flips loadSession to false;
       // STUB_NO_ADDITIONAL_DIRS flips additionalDirectories to false.
+      if (process.env.STUB_HANG_INITIALIZE) break;
       send({
         jsonrpc: '2.0',
         id: msg.id,

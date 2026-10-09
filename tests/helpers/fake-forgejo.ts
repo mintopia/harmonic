@@ -100,7 +100,8 @@ export function fakeForgejo(options: FakeForgejoOptions): FakeForgejo {
     if (path === '/user') return auth === 'token good' ? json({ login: me }) : json({ message: 'unauthorized' }, 401);
     if (method === 'GET' && path === '/repos/owner/name/issues') {
       const milestone = u.searchParams.get('milestones');
-      const wanted = fake.issues.filter((i) => milestone === null || i.milestone === Number(milestone));
+      const state = u.searchParams.get('state');
+      const wanted = fake.issues.filter((i) => (milestone === null || i.milestone === Number(milestone)) && (state === null || state === 'all' || i.state === state));
       return json(page(wanted.map(rawIssue), u.searchParams));
     }
     if ((m = /^\/repos\/owner\/name\/issues\/(\d+)$/.exec(path))) {

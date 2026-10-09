@@ -6,6 +6,8 @@ import type { UpgradeCoordinator } from '../upgrade/upgrade-coordinator.js';
 import type { Notifier } from '../notifications/notifier.js';
 import type { EventBus } from './bus.js';
 
+const WORKTREE_PUBLISH_INTERVAL_MS = 30_000;
+
 export function registerBusListeners(bus: EventBus, deps: {
   autoRunner: AutoRunner;
   upgrade: UpgradeCoordinator;
@@ -18,7 +20,15 @@ export function registerBusListeners(bus: EventBus, deps: {
 }): void {
   bus.on('attempt_changed', () => deps.autoRunner.poke());
   const reconcileUpgrade = (): void => deps.fireAndForget(() => deps.upgrade.reconcile(), { op: 'upgrade.reconcile', level: 'error' });
-  const publishWorktrees = (): void => deps.fireAndForget(() => deps.publishWorktrees(), { op: 'worktrees.publish', level: 'debug' });
+  let worktreePublishTimer: NodeJS.Timeout | undefined;
+  const publishWorktrees = (): void => {
+    if (worktreePublishTimer) return;
+    worktreePublishTimer = setTimeout(() => {
+      worktreePublishTimer = undefined;
+      deps.fireAndForget(() => deps.publishWorktrees(), { op: 'worktrees.publish', level: 'debug' });
+    }, WORKTREE_PUBLISH_INTERVAL_MS);
+    worktreePublishTimer.unref();
+  };
   bus.on('attempt_changed', reconcileUpgrade);
   bus.on('operations', reconcileUpgrade);
   bus.on('task_changed', publishWorktrees);

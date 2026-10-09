@@ -309,7 +309,16 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "attempt_events_attempt_seq_unique": {
+          "name": "attempt_events_attempt_seq_unique",
+          "columns": [
+            "attempt_id",
+            "seq"
+          ],
+          "isUnique": true
+        }
+      },
       "foreignKeys": {
         "attempt_events_attempt_id_attempts_id_fk": {
           "name": "attempt_events_attempt_id_attempts_id_fk",

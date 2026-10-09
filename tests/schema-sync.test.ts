@@ -48,6 +48,48 @@ describe('schema convergence onto the baseline (ADR-0007)', () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 
+  it('creates the attempt_events (attempt_id, seq) unique index on an existing data dir', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-sync-events-idx-'));
+    const first = await openAsyncDb(dataDir);
+    await first.close();
+    const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+    await sqlite.execute('DROP INDEX attempt_events_attempt_seq_unique');
+
+    const second = await openAsyncDb(dataDir);
+    await second.close();
+    const index = (await sqlite.execute("select sql from sqlite_master where type = 'index' and name = 'attempt_events_attempt_seq_unique'")).rows[0];
+    expect(String(index?.sql)).toMatch(/UNIQUE INDEX .*attempt_events.*\(`attempt_id`,\s*`seq`\)/);
+    sqlite.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it('boots an existing data dir whose attempt_events hold duplicate (attempt_id, seq) rows, keeping the first of each', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-sync-events-dupes-'));
+    const first = await openAsyncDb(dataDir);
+    await first.close();
+    const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+    await sqlite.execute('DROP INDEX attempt_events_attempt_seq_unique');
+    await sqlite.execute("INSERT INTO workspaces (name, working_dir, tracker_enabled, tracker_poll_interval_seconds, created_at, updated_at) VALUES ('keep', '/tmp/keep', 0, 60, 1, 1)");
+    const columns = (await sqlite.execute('pragma table_info(attempt_events)')).rows.map((r) => String(r.name));
+    expect(columns).toEqual(expect.arrayContaining(['attempt_id', 'seq', 'ts', 'type', 'payload']));
+    const workspaceId = Number((await sqlite.execute('select id from workspaces limit 1')).rows[0]?.id);
+    await sqlite.execute(`INSERT INTO epics (workspace_id, tracker_ref, kind, state) VALUES (${workspaceId}, 538, 'epic', 'ready')`);
+    await sqlite.execute(`INSERT INTO attempts (workspace_id, epic_ref, number, state, started_at) VALUES (${workspaceId}, 538, 1, 'running', 1)`);
+    await sqlite.execute(`INSERT INTO attempts (workspace_id, epic_ref, number, state, started_at) VALUES (${workspaceId}, 538, 2, 'running', 1)`);
+    for (const [attemptId, seq, payload] of [[1, 1, 'a'], [1, 1, 'b'], [1, 2, 'c'], [2, 1, 'd']] as const) {
+      await sqlite.execute({ sql: 'INSERT INTO attempt_events (attempt_id, seq, ts, type, payload) VALUES (?, ?, 0, ?, ?)', args: [attemptId, seq, 'lifecycle', payload] });
+    }
+
+    const second = await openAsyncDb(dataDir);
+    await second.close();
+    const rows = (await sqlite.execute('select attempt_id, seq, payload from attempt_events order by attempt_id, seq')).rows.map((r) => [r.attempt_id, r.seq, r.payload]);
+    expect(rows).toEqual([[1, 1, 'a'], [1, 2, 'c'], [2, 1, 'd']]);
+    expect((await sqlite.execute("select name from sqlite_master where type = 'index' and name = 'attempt_events_attempt_seq_unique'")).rows).toHaveLength(1);
+    expect((await sqlite.execute("select count(*) as n from workspaces")).rows[0]?.n).toBe(1);
+    sqlite.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
   it('rebuilds a constraint-drifted attempts table without losing its task attempts', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-sync-attempts-'));
     const first = await openAsyncDb(dataDir);
