@@ -175,7 +175,7 @@ const environmentFileValue = (value: string): string => JSON.stringify(value);
 
 const unitEnvironment = (key: string, value: string): string => escapeUnitArgument(`${key}=${value}`);
 
-/** Splits an ExecStart value back into arguments, reversing escapeUnitArgument's quoting. */
+/** Splits an ExecStart value back into arguments, reversing the quoting and %/$ escaping of escapeExecArgument. */
 const tokenizeUnitArgs = (execStart: string): string[] | null => {
   const tokens: string[] = [];
   let i = 0;
