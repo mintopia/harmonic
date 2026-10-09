@@ -17,7 +17,12 @@ export function PermissionRules() {
       label: `Revoke ${rule.kind} rule`,
       title: `Revoke this ${rule.kind} rule?`,
       confirmLabel: 'Revoke',
-      body: `Agents will be asked again before using it in ${rule.workingDir}.`,
+      body: (
+        <>
+          Agents will be asked again before using it in{' '}
+          <span className="font-data text-data break-all text-ink">{rule.workingDir}</span>.
+        </>
+      ),
     }),
   );
   useEffect(() => {
