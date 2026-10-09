@@ -216,8 +216,14 @@ describe('websocket heartbeat', () => {
     });
     await new Promise<void>((resolve) => client.once('message', () => resolve()));
     for (let i = 0; i < 3; i += 1) {
+      const pinged = new Promise((resolve) => client.once('ping', resolve));
       vi.advanceTimersByTime(WS_HEARTBEAT_INTERVAL_MS);
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await pinged;
+      // Frames are ordered: the server's reply to our ping proves it already read the auto-pong sent before it.
+      await new Promise((resolve) => {
+        client.once('pong', resolve);
+        client.ping();
+      });
     }
     expect(closed).toBe(false);
     client.close();
