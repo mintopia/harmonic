@@ -160,17 +160,22 @@ const systemdServiceUser = (user: string): string => {
   return user;
 };
 
-const escapeUnitArgument = (value: string): string =>
-  /^[A-Za-z0-9_./:=+@%,-]+$/.test(value) ? value : JSON.stringify(value);
+const quoteUnitValue = (value: string): string =>
+  /^[A-Za-z0-9_./:=+@%,$-]+$/.test(value) ? value : JSON.stringify(value);
+
+// systemd expands %x specifiers in every directive, so a literal % is written %%.
+const escapeUnitArgument = (value: string): string => quoteUnitValue(value.replaceAll('%', '%%'));
+
+// ExecStart/ExecStartPre additionally expand $VAR, so a literal $ is written $$.
+const escapeExecArgument = (value: string): string => quoteUnitValue(value.replaceAll('%', '%%').replaceAll('$', '$$$$'));
+
+const unescapeExecArgument = (value: string): string => value.replaceAll('%%', '%').replaceAll('$$', '$');
 
 const environmentFileValue = (value: string): string => JSON.stringify(value);
 
-const unitEnvironment = (key: string, value: string): string => {
-  const assignment = `${key}=${value}`;
-  return /^[A-Za-z0-9_./:=+@%,-]+$/.test(assignment) ? assignment : JSON.stringify(assignment);
-};
+const unitEnvironment = (key: string, value: string): string => escapeUnitArgument(`${key}=${value}`);
 
-/** Splits an ExecStart value back into arguments, reversing escapeUnitArgument's quoting. */
+/** Splits an ExecStart value back into arguments, reversing the quoting and %/$ escaping of escapeExecArgument. */
 const tokenizeUnitArgs = (execStart: string): string[] | null => {
   const tokens: string[] = [];
   let i = 0;
@@ -187,7 +192,7 @@ const tokenizeUnitArgs = (execStart: string): string[] | null => {
       try {
         const value: unknown = JSON.parse(execStart.slice(i, j + 1));
         if (typeof value !== 'string') return null;
-        tokens.push(value);
+        tokens.push(unescapeExecArgument(value));
       } catch {
         return null;
       }
@@ -195,7 +200,7 @@ const tokenizeUnitArgs = (execStart: string): string[] | null => {
     } else {
       let j = i;
       while (j < n && execStart[j] !== ' ') j++;
-      tokens.push(execStart.slice(i, j));
+      tokens.push(unescapeExecArgument(execStart.slice(i, j)));
       i = j;
     }
   }
@@ -407,7 +412,7 @@ class SystemdServiceManager implements ServiceManager {
       join(serve.dataDir, 'app', 'current', 'dist', 'cli.js'),
       'serve',
       ...serveFlags(serve),
-    ].map(escapeUnitArgument).join(' ');
+    ].map(escapeExecArgument).join(' ');
     const environmentFile = serve.password === undefined ? '' : `EnvironmentFile=${escapeUnitArgument(this.environmentPath)}\n`;
     const serviceUser = user === undefined ? '' : `User=${user}\nGroup=${user}\n`;
     const wantedBy = this.userUnit ? 'default.target' : 'multi-user.target';
@@ -420,7 +425,7 @@ class SystemdServiceManager implements ServiceManager {
     // `-` tells systemd to ignore this step's exit code, guarding against the guard failing to run
     // at all; the guard's own code always exits 0 (ADR-0042).
     const execStartPre = [this.dependencies.nodePath, join(serve.dataDir, 'app', 'boot-guard.cjs'), serve.dataDir]
-      .map(escapeUnitArgument)
+      .map(escapeExecArgument)
       .join(' ');
     return `[Unit]\nDescription=Harmonic\nAfter=network.target\nStartLimitIntervalSec=120\nStartLimitBurst=10\n\n[Service]\nType=simple\nExecStartPre=-${execStartPre}\n${serviceUser}${workingDirectory}ExecStart=${args}\n${environmentFile}${pathEnvironment}Environment=HARMONIC_MANAGED_BY=systemd\nEnvironment=HARMONIC_UNIT_REVISION=${CURRENT_UNIT_REVISION}\nRestart=always\nRestartSec=2\nTimeoutStopSec=60\n\n[Install]\nWantedBy=${wantedBy}\n`;
   }
