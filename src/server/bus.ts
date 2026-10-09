@@ -77,7 +77,9 @@ export class EventBus {
   private static readonly maxRunLogEvents = 2_048;
 
   /** `logRetentionMs` is how long a finished Attempt's replay buffers outlive it,
-   * so a browser mid-reconnect still catches the tail. */
+   * so a browser mid-reconnect still catches the tail. The window restarts on each
+   * log event, so a critic still streaming (an operator Accept's post-merge check
+   * runs against an already-ended Attempt) keeps its buffer. */
   constructor(private readonly logRetentionMs = 60_000) {
     this.emitter.setMaxListeners(100);
     this.emitter.on('attempt_changed', (run: AttemptRow) => {
@@ -103,7 +105,13 @@ export class EventBus {
     this.clearTimers.delete(attemptId);
   }
 
-  clearAttemptLog(attemptId: number): void {
+  private extendClear(attemptId: number): void {
+    if (!this.clearTimers.has(attemptId)) return;
+    this.cancelClear(attemptId);
+    this.scheduleClear(attemptId);
+  }
+
+  private clearAttemptLog(attemptId: number): void {
     this.attemptLogEvents.delete(attemptId);
     this.criticLogEvents.delete(attemptId);
   }
@@ -128,6 +136,7 @@ export class EventBus {
   /** Add a transient ACP update to the active Attempt's reconnect buffer. */
   emitAttemptLog(event: LiveAttemptEvent): void {
     EventBus.buffer(this.attemptLogEvents, event);
+    this.extendClear(event.attemptId);
     this.emitter.emit('attempt_log_event', event);
   }
 
@@ -146,6 +155,7 @@ export class EventBus {
    * builder's Implementation stream. */
   emitCriticLog(event: LiveAttemptEvent): void {
     EventBus.buffer(this.criticLogEvents, event);
+    this.extendClear(event.attemptId);
     this.emitter.emit('critic_log_event', event);
   }
 

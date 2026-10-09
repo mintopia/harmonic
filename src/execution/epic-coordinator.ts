@@ -210,7 +210,7 @@ export class EpicCoordinator {
     verifyBackoffMs?: number;
     /** Upper bound on a single whole-Epic verify or integrate before it is abandoned
      * and the Epic escalated, so a hung operation can never wedge the poll loop;
-     * default 20min. */
+     * default {@link DEFAULT_EPIC_OPERATION_TIMEOUT_MS}. */
     operationTimeoutMs?: number;
     onError?: (msg: string) => void;
     operations?: EpicOperations;

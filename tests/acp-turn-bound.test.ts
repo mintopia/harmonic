@@ -55,6 +55,14 @@ describe('AcpDriver — handshake timeout (issue #864)', () => {
     await expect(driver.handshake({ cwd: '/tmp/hang' })).rejects.toBeInstanceOf(AcpHandshakeTimeoutError);
   }, 15_000);
 
+  it('kills the hung harness child when the handshake times out', async () => {
+    const driver = hungDriver(200);
+    const exited = new Promise<void>((resolve) => child!.once('exit', () => resolve()));
+    await expect(driver.handshake({ cwd: '/tmp/hang' })).rejects.toBeInstanceOf(AcpHandshakeTimeoutError);
+    await exited;
+    expect(child!.exitCode !== null || child!.signalCode !== null).toBe(true);
+  }, 15_000);
+
   it('fails load() with AcpHandshakeTimeoutError when the harness never answers', async () => {
     const driver = hungDriver(200);
     await expect(driver.load({ sessionId: 's', cwd: '/tmp/hang' })).rejects.toBeInstanceOf(AcpHandshakeTimeoutError);

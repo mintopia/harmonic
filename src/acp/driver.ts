@@ -23,7 +23,7 @@ export class AcpHandshakeTimeoutError extends Error {
   }
 }
 
-export const DEFAULT_HANDSHAKE_TIMEOUT_MS = 120_000;
+const DEFAULT_HANDSHAKE_TIMEOUT_MS = 120_000;
 
 export interface AcpDriverHandlers {
   /**
@@ -156,7 +156,7 @@ export class AcpDriver {
   private completionGraceMs: number | null = null;
 
   constructor(
-    child: ChildProcess,
+    private readonly child: ChildProcess,
     handlers: AcpDriverHandlers,
     /** Inactivity bound for a single prompt turn, ms; undefined/0 disables it. */
     private readonly promptInactivityTimeoutMs?: number,
@@ -198,7 +198,12 @@ export class AcpDriver {
     const ms = this.handshakeTimeoutMs;
     if (!ms) return work();
     return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new AcpHandshakeTimeoutError(ms)), ms);
+      const timer = setTimeout(() => {
+        const timeout = new AcpHandshakeTimeoutError(ms);
+        this.connection.fail(timeout);
+        this.child.kill('SIGKILL');
+        reject(timeout);
+      }, ms);
       work().then(
         (value) => {
           clearTimeout(timer);
