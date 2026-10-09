@@ -179,9 +179,9 @@ const taskWithDepsSchema = z
     dependents: z.array(z.number()).meta({ example: [4830] }),
     /** Ready, and at least one blocker is escalated or cancelled — it will not unblock on its own. */
     blockedOnFailed: z.boolean().meta({ example: false }),
-    /** Number of blockers not yet cleared: Task edges whose blocker has not completed, plus the Epic Hold blockers in `epicBlockers`. */
+    /** Number of blocker edges whose blocker has not completed, plus the Epic Hold blockers. */
     openBlockerCount: z.number().int().nonnegative().meta({ example: 1 }),
-    /** The Epic Hold: unsatisfied blockers of the Epic(s) above this Member (an Epic blocker clears once integrated, a Task blocker once done). Already counted in `openBlockerCount`; empty on native Tasks. */
+    /** Unsatisfied blockers of the Epics above this Member. */
     epicBlockers: z
       .array(
         z.object({

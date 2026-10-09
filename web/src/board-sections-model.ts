@@ -33,7 +33,7 @@ function byBandOrder(a: Task, b: Task): number {
 export type AttentionEntry = { kind: 'task'; task: Task } | { kind: 'epic'; epic: Epic };
 
 export interface Blocker {
-  /** Null for an Epic Hold blocker, which is a tracker ref with no local Task edge. */
+  key: string;
   taskId: number | null;
   label: string;
   /** The blocker is done — the edge no longer counts (server `openBlockerCount`). */
@@ -116,11 +116,13 @@ function itemLabel(task: Task | undefined, taskId: number): string {
 export function resolveBlockers(task: Task, tasksById: ReadonlyMap<number, Task>): Blocker[] {
   const allCleared = task.openBlockerCount - task.epicBlockers.length === 0;
   const edges: Blocker[] = task.dependsOn.map((taskId) => ({
+    key: `task:${taskId}`,
     taskId,
     label: itemLabel(tasksById.get(taskId), taskId),
     satisfied: allCleared || tasksById.get(taskId)?.state === 'done',
   }));
   const held: Blocker[] = task.epicBlockers.map((blocker) => ({
+    key: `epic:${blocker.heldEpic}:${blocker.ref}`,
     taskId: null,
     label: blocker.kind === 'epic' ? `Epic ${issueRef(blocker.ref)}` : issueRef(blocker.ref),
     satisfied: false,

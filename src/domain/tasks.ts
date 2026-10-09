@@ -170,15 +170,20 @@ export function compareListRows(
       : a.createdAt - b.createdAt || (a.id ?? 0) - (b.id ?? 0);
 }
 
+interface EpicHoldStructure {
+  containers: ReadonlyMap<string, { parent: TrackerRef | null; blockedBy: TrackerRef[] }>;
+  epicStates: ReadonlyMap<string, EpicLifecycleState>;
+  blockerRefs: TrackerRef[];
+}
+
 /** A task plus its dependency context, as the API serves it. */
 export interface TaskWithDeps extends TaskRow {
   dependsOn: number[];
   dependents: number[];
   /** A blocker is escalated or cancelled — the ticket will not unblock on its own. */
   blockedOnFailed: boolean;
-  /** Number of blockers that have not cleared: Task edges whose blocker has not completed, plus {@link epicBlockers}. */
+  /** Number of blocker edges whose blocker has not completed. */
   openBlockerCount: number;
-  /** Unsatisfied blockers of the Epic(s) above this Member (the Epic Hold); already counted in `openBlockerCount`. */
   epicBlockers: EpicBlocker[];
   /** A ticket the Auto-Runner may work: opt-in label (when mirrored) and no open Blockers. */
   agentWorkable: boolean;
@@ -258,6 +263,8 @@ type TriageLabelsByWorkspace = ReadonlyMap<number, TriageLabels>;
 export class TaskService {
   private readonly blockerGraph: TaskBlockerGraph;
   private readonly mirror: TaskMirror;
+  private epicHoldVersion = 0;
+  private readonly epicHoldStructures = new Map<number | 'all', EpicHoldStructure>();
   readonly routing: RoutingService;
   private beforeDelete: (task: TaskRow) => Promise<void> = async () => {};
 
@@ -283,7 +290,13 @@ export class TaskService {
     });
     this.mirror = new TaskMirror(this.db, {
       resolveWorkspace: (workspaceId) => this.resolveWorkspace(workspaceId),
-      changed: (task) => this.changed(task),
+      changed: async (raw) => {
+        const task = await this.changed(raw);
+        if (task.state === 'done' && task.workspaceId !== null && task.trackerRef !== null) {
+          await this.emitEpicHeldMembers(task.workspaceId, task.trackerRef);
+        }
+        return task;
+      },
       get: (id) => this.get(id),
       clearDismissal: (workspaceId, trackerRef) => this.clearDismissal(workspaceId, trackerRef),
       removeTaskCascade: (id, tombstone) => this.removeTaskCascade(id, tombstone),
@@ -413,6 +426,36 @@ export class TaskService {
   }
 
   private async epicHoldIndex(workspaceId?: number): Promise<EpicHoldIndex> {
+    const structure = await this.epicHoldStructure(workspaceId);
+    const taskStates = new Map<string, TaskState>();
+    if (structure.blockerRefs.length > 0) {
+      const blockerTasks = await this.db.read((db) =>
+        db
+          .select({ workspaceId: tasks.workspaceId, trackerRef: tasks.trackerRef, state: tasks.state })
+          .from(tasks)
+          .where(
+            and(
+              eq(tasks.origin, 'mirrored'),
+              inArray(tasks.trackerRef, structure.blockerRefs),
+              workspaceId === undefined ? undefined : eq(tasks.workspaceId, workspaceId),
+            ),
+          )
+          .all(),
+      );
+      await forEachYielding(blockerTasks, (row) => {
+        if (row.workspaceId !== null && row.trackerRef !== null) {
+          taskStates.set(epicHoldKey(row.workspaceId, row.trackerRef), row.state);
+        }
+      });
+    }
+    return { containers: structure.containers, epicStates: structure.epicStates, taskStates };
+  }
+
+  private async epicHoldStructure(workspaceId?: number): Promise<EpicHoldStructure> {
+    const cacheKey = workspaceId ?? 'all';
+    const cached = this.epicHoldStructures.get(cacheKey);
+    if (cached) return cached;
+    const version = this.epicHoldVersion;
     const containerRows = await this.db.read((db) =>
       db
         .select()
@@ -438,22 +481,14 @@ export class TaskService {
     await forEachYielding(epicRows, (row) => {
       epicStates.set(epicHoldKey(row.workspaceId, row.trackerRef), row.state);
     });
-    const taskStates = new Map<string, TaskState>();
-    if (blockerRefs.size > 0) {
-      const blockerTasks = await this.db.read((db) =>
-        db
-          .select({ workspaceId: tasks.workspaceId, trackerRef: tasks.trackerRef, state: tasks.state })
-          .from(tasks)
-          .where(and(eq(tasks.origin, 'mirrored'), inArray(tasks.trackerRef, [...blockerRefs])))
-          .all(),
-      );
-      await forEachYielding(blockerTasks, (row) => {
-        if (row.workspaceId !== null && row.trackerRef !== null) {
-          taskStates.set(epicHoldKey(row.workspaceId, row.trackerRef), row.state);
-        }
-      });
-    }
-    return { containers, epicStates, taskStates };
+    const structure: EpicHoldStructure = { containers, epicStates, blockerRefs: [...blockerRefs] };
+    if (version === this.epicHoldVersion) this.epicHoldStructures.set(cacheKey, structure);
+    return structure;
+  }
+
+  private invalidateEpicHold(): void {
+    this.epicHoldVersion += 1;
+    this.epicHoldStructures.clear();
   }
 
   async epicHasEpicBlockers(workspaceId: number, epicRef: TrackerRef): Promise<boolean> {
@@ -462,10 +497,9 @@ export class TaskService {
 
   private epicBlockersOf(task: TaskRow, index: EpicHoldIndex): EpicBlocker[] {
     if (task.origin !== 'mirrored' || task.workspaceId == null || task.trackerParent == null) return [];
-    return unsatisfiedEpicBlockers(task.workspaceId, task.trackerParent, index);
+    return [...unsatisfiedEpicBlockers(task.workspaceId, task.trackerParent, index)];
   }
 
-  /** Wake the board for ready Members held by a blocker that just cleared. */
   private async emitEpicHeldMembers(workspaceId: number, blockerRef: TrackerRef): Promise<void> {
     try {
       const index = await this.epicHoldIndex(workspaceId);
@@ -631,6 +665,7 @@ export class TaskService {
         }).run();
       });
     });
+    this.invalidateEpicHold();
   }
 
   /**
@@ -649,6 +684,7 @@ export class TaskService {
           .run();
       });
     });
+    this.invalidateEpicHold();
   }
 
   /** The stored Epic `kind` for a ref in a Workspace, or null when no spine row exists. */
@@ -693,6 +729,7 @@ export class TaskService {
         .where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, trackerRef), inArray(epics.state, ['open', 'integrating'] satisfies EpicLifecycleState[])))
         .run();
     });
+    this.invalidateEpicHold();
     await this.emitEpicHeldMembers(workspaceId, trackerRef);
   }
 
@@ -705,6 +742,7 @@ export class TaskService {
         .where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, trackerRef), eq(epics.state, 'open')))
         .run();
     });
+    this.invalidateEpicHold();
   }
 
   /** Every durable Epic spine row for a Workspace; the anchor that outlives the tracker container wipe. */
@@ -1209,6 +1247,7 @@ export class TaskService {
         }
       }
     });
+    this.invalidateEpicHold();
     await this.blockerGraph.rederiveAndEmitBlockers(formerDependents);
     this.onRemoved(id);
   }

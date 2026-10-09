@@ -66,7 +66,7 @@ export type MergeEpicIntegration = (input: {
   integrationBranch: string;
   runPostMergeCheck: (mergeOid: string, baseDir: string) => Promise<PostMergeCheckResult>;
 }) => Promise<MergePolicyOutcome>;
-export type { EpicIntegrateOutcome };
+export type { EpicBaseGate, EpicIntegrateOutcome };
 
 export interface EpicService {
   startWorkspace(workspace: WorkspaceRow): EpicIntegrationSync;

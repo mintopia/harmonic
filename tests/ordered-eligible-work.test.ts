@@ -157,6 +157,41 @@ describe('TaskService.orderedEligibleWork', () => {
       expect(await eligibleIds()).toEqual([held.id]);
     });
 
+    it('broadcasts held Members when a literal, spine, or Task blocker clears, and not unrelated Members', async () => {
+      const changed: number[] = [];
+      const tracked = new TaskService(db, () => baselineConfig(), allWorkspaces(db, settingsStore), (task) => void changed.push(task.id));
+      await tracked.syncTrackerContainers(workspaceId, [
+        { trackerRef: trackerRef(73), facts: facts(null, [71, 60, 50], ['epic']) },
+        { trackerRef: trackerRef(71), facts: facts(null, [], ['epic']) },
+        { trackerRef: trackerRef(60), facts: facts(null, [], ['epic']) },
+        { trackerRef: trackerRef(61), facts: facts(trackerRef(60), [], ['epic']) },
+        { trackerRef: trackerRef(80), facts: facts(null, [], ['epic']) },
+      ]);
+      await tracked.syncEpics(workspaceId, [71, 61, 80, 73].map((n) => ({ ref: trackerRef(n), kind: 'epic' as const })));
+      const mk = (n: number, parent: number, labels = ['ready-for-agent']) =>
+        tracked.upsertMirrored(
+          { trackerRef: trackerRef(n), prompt: `m${n}`, workflow: 'implement', wayfinderType: null, mapRef: null, closed: false, facts: facts(trackerRef(parent), [], labels) },
+          workspaceId,
+        );
+      const held = await mk(101, 73);
+      const unrelated = await mk(102, 80);
+      const blockerTask = await mk(50, 90);
+
+      changed.length = 0;
+      await tracked.markEpicIntegrated(workspaceId, trackerRef(71), { mergeCommit: null, memberRefs: [] });
+      expect(changed).toContain(held.id);
+      expect(changed).not.toContain(unrelated.id);
+
+      changed.length = 0;
+      await tracked.markEpicIntegrated(workspaceId, trackerRef(61), { mergeCommit: null, memberRefs: [] });
+      expect(changed).toContain(held.id);
+
+      changed.length = 0;
+      await tracked.setState(blockerTask.id, 'done');
+      expect(changed).toContain(held.id);
+      expect(changed).not.toContain(unrelated.id);
+    });
+
     it('reports whether an Epic chain has Epic-kind blockers', async () => {
       await seedEpics([{ epic: 73, blockedBy: [71] }], [71, 72]);
 

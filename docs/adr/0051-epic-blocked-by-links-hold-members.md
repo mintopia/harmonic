@@ -64,6 +64,11 @@ while any blocker is unsatisfied.** This is the **Epic Hold**.
 - A blocker Epic that is closed but never integrated holds its dependents until
   an operator integrates or removes the link. This is deliberate: closing a
   ticket does not put code in base.
+- A cancelled or escalated Task blocker, a closed-but-unintegrated Epic blocker,
+  and a stale branch whose refresh never completes all hold indefinitely. This
+  is deliberate; the Auto-Runner skip reason names the unmet blocker
+  (`not integrated`, `not done`) so the operator can see why. Dismissing an
+  unintegrated blocker Epic removes its stored row and releases the hold.
 - Every read that reports `openBlockerCount` or `agentWorkable` loads the
   container, Epic, and blocker-Task state once per call, not per Task.
 - An operator can still force a Member through with a manual start; that is an

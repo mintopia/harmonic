@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type AppConfig, type DeepPartial } from '../src/config.js';
+import type { Task } from '../web/src/types.js';
 import { Git } from '../src/execution/git.js';
 import { type Ticket, trackerRef } from '../src/tracker/adapter.js';
 import { startServer, stubHarness, type TestServer, waitFor, withArchivedPrompt } from './helpers.js';
@@ -462,7 +463,7 @@ describe('task-epic-hold', () => {
     );
 
     const list = await server.api('GET', `/api/tasks?workspaceId=${workspaceId}`);
-    const listed = (list.body.tasks as any[]).find((t) => t.id === member.id);
+    const listed = (list.body as { tasks: Task[] }).tasks.find((t) => t.id === member.id)!;
     expect(listed).toMatchObject({ openBlockerCount: 1, agentWorkable: false, epicBlockers: [{ ref: '71', kind: 'epic', heldEpic: '73' }] });
     const one = await server.api('GET', `/api/tasks/${member.id}`);
     expect(one.body).toMatchObject({ openBlockerCount: 1, epicBlockers: [{ ref: '71', kind: 'epic', heldEpic: '73' }] });

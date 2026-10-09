@@ -36,10 +36,9 @@ function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T>
   });
 }
 
-/** The slice of {@link Git} used by Epic branch lifecycle, refresh, and integration. */
-/** Why a worktree Member cannot fork yet: its integration branch is `missing`, or `stale` (behind base, awaiting refresh). */
 export type EpicBaseGate = false | 'missing' | 'stale';
 
+/** The slice of {@link Git} used by Epic branch lifecycle, refresh, and integration. */
 export interface EpicGit {
   branchExists(dir: string, name: string): Promise<boolean>;
   revParse(dir: string, rev: string): Promise<string>;
@@ -640,6 +639,7 @@ export class EpicLifecycle {
   private onIntegrationBranchRetired: ((event: { epicRef: TrackerRef; branch: string; baseBranch: string }) => Promise<void>) | undefined;
   private onIntegrationBranchEvent: ((event: EpicBranchStep) => Promise<void> | void) | undefined;
   private workspaceId: number | undefined;
+  private staleByEpic = new Map<TrackerRef, Promise<boolean>>();
 
   constructor(
     private readonly tasks: TaskService,
@@ -676,6 +676,7 @@ export class EpicLifecycle {
   }
 
   async refreshAfterDefaultBranchAdvance(defaultBranch: string): Promise<void> {
+    this.staleByEpic.clear();
     if (!this.epicRefresh) return;
     const tickets = this.latestTickets.length > 0
       ? this.latestTickets
@@ -713,11 +714,14 @@ export class EpicLifecycle {
         }
       } catch (err) {
         this.onError(`epic ${epic.ref} integration refresh failed: ${String(err)}`);
+      } finally {
+        this.staleByEpic.delete(epic.ref);
       }
     }
   }
 
   async reconcile(tickets: Ticket[], mirrored: TaskRow[]): Promise<void> {
+    this.staleByEpic.clear();
     this.latestTickets = tickets;
     const mirroredWithDeps = mirrored.length > 0 ? await this.tasks.listWithDeps({ workspaceId: mirrored[0]!.workspaceId ?? undefined }) : [];
     const readinessByRef = new Map<TrackerRef, { agentWorkable: boolean }>();
@@ -855,10 +859,22 @@ export class EpicLifecycle {
   }
 
   private async integrationBranchStale(task: TaskRow, epicRef: TrackerRef, branch: string): Promise<EpicBaseGate> {
-    if (task.workspaceId === null || !(await this.tasks.epicHasEpicBlockers(task.workspaceId, epicRef))) return false;
+    if (task.workspaceId === null) return false;
+    const workspaceId = task.workspaceId;
+    let stale = this.staleByEpic.get(epicRef);
+    if (stale === undefined) {
+      stale = this.computeStale(workspaceId, epicRef, branch);
+      this.staleByEpic.set(epicRef, stale);
+      stale.catch(() => this.staleByEpic.delete(epicRef));
+    }
+    return (await stale) ? 'stale' : false;
+  }
+
+  private async computeStale(workspaceId: number, epicRef: TrackerRef, branch: string): Promise<boolean> {
+    if (!(await this.tasks.epicHasEpicBlockers(workspaceId, epicRef))) return false;
     const base = await this.git.symbolicBranch(this.workingDir);
     if (base === null) return false;
-    return (await this.git.isAncestor(this.workingDir, branch, base)) ? false : 'stale';
+    return !(await this.git.isAncestor(this.workingDir, branch, base));
   }
 
   private async isLeafEpic(epicRef: TrackerRef, workspaceId: number | null): Promise<boolean> {

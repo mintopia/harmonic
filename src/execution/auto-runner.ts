@@ -74,6 +74,11 @@ export interface AutoRunnerOptions {
 
 const DEFAULT_MISSING_EPIC_BASE_GRACE_MS = 300_000;
 
+function epicHoldReason(blocker: EpicBlocker): string {
+  const unmet = blocker.kind === 'epic' ? 'not integrated' : 'not done';
+  return `Epic #${blocker.heldEpic} waits on #${blocker.ref} (${unmet}${blocker.cycle ? ', cycle' : ''})`;
+}
+
 /**
  * The scheduler. When enabled, fills free run slots with ready tasks —
  * highest priority first, FIFO by creation time within a priority. `poke()`
@@ -85,11 +90,6 @@ const DEFAULT_MISSING_EPIC_BASE_GRACE_MS = 300_000;
  * ceiling. A Task runs only if `master ∧ workspace enabled`, where the
  * per-Workspace enable inherits `master` when unset.
  */
-function epicHoldReason(blocker: EpicBlocker): string {
-  const unmet = blocker.kind === 'epic' ? 'not integrated' : 'not done';
-  return `Epic #${blocker.heldEpic} waits on #${blocker.ref} (${unmet}${blocker.cycle ? ', cycle' : ''})`;
-}
-
 export class AutoRunner {
   private timer: NodeJS.Timeout | undefined;
   private scheduled = false;
