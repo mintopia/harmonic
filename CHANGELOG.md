@@ -1,5 +1,50 @@
 # Changelog
 
+## [2.26.1](https://github.com/mintopia/harmonic/compare/v2.26.0...v2.26.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **acp:** bound the ACP handshake so a hung agent start fails the Run ([22019a5](https://github.com/mintopia/harmonic/commit/22019a58676bf7a6a27e9ada2f82476afaf438ec))
+* **auth:** accept X-Forwarded-Host in the Origin check, decay login back-off, create env files 0600 ([3d614bf](https://github.com/mintopia/harmonic/commit/3d614bf9b18bbfeebb6e96c0616c1e03ac5119de))
+* **auth:** also block export/download for Attempt and read keys ([5e74587](https://github.com/mintopia/harmonic/commit/5e745878ffec6628b2919250195c7655b5eba6e4))
+* **auth:** async scrypt and global login back-off ([#860](https://github.com/mintopia/harmonic/issues/860)) ([f4d492d](https://github.com/mintopia/harmonic/commit/f4d492dc99a9d6cdc4d3ab133c556064e20b4fc6))
+* **auth:** block extend-guardrail and export for Attempt and read keys ([9255678](https://github.com/mintopia/harmonic/commit/9255678f66109777cdf234b8e467cd94739302f6))
+* **auth:** reject concurrent logins during back-off with 429 ([#860](https://github.com/mintopia/harmonic/issues/860)) ([623d996](https://github.com/mintopia/harmonic/commit/623d996e02d9945fe02fea8a4abbf8c93b27204f))
+* **auth:** reject cookie-authenticated requests whose Origin host differs from Host ([950001a](https://github.com/mintopia/harmonic/commit/950001a44735cad4fba73ef211d06c784bca4e4c))
+* **bus:** cancel pending replay-buffer clear when an escalated Attempt resumes ([10ca423](https://github.com/mintopia/harmonic/commit/10ca4232ab62d1916eb22efa5278b6ddfa887ed6))
+* **bus:** free live-log replay buffers shortly after an Attempt ends ([7bc48b4](https://github.com/mintopia/harmonic/commit/7bc48b48ecbd46eadf0e0928223c678e0fa27884)), closes [#858](https://github.com/mintopia/harmonic/issues/858)
+* **epic:** raise the Epic operation timeout above two resolution turns ([b596336](https://github.com/mintopia/harmonic/commit/b5963367cb9c807ec40e4400d8fc8daf668f09c1))
+* **execution:** detect no-op runs by commits ahead of base, not HEAD != base tip ([e66a5c3](https://github.com/mintopia/harmonic/commit/e66a5c328198c19fd2ae5a943a64ccbcc40a9e64))
+* **fs:** destroy the file stream when a /api/fs/raw client aborts ([f7b8f93](https://github.com/mintopia/harmonic/commit/f7b8f93d8ab8663fe860482d5c4f27966b890f51))
+* **git:** repair checkoutPathsFromRev doc comment after dead-code removal ([996f598](https://github.com/mintopia/harmonic/commit/996f5983864bf03f0888e85bc3567fd6452b6b5e))
+* **mirror:** a tracker poll no longer flips a paused Task to done ([d924d26](https://github.com/mintopia/harmonic/commit/d924d267adb05e435b66921d9132706403c96385))
+* **runner:** log and escalate an Attempt when the background agent loop crashes ([a995eb3](https://github.com/mintopia/harmonic/commit/a995eb345977e4781d99f8fefa3014718b486344))
+* **runtime:** kill the agent on handshake timeout, dedupe events before the unique index, keep a streaming critic's log ([50b567f](https://github.com/mintopia/harmonic/commit/50b567f780d19582eb223bb892bb09ffa48fd572))
+* **service:** escape % and $ in systemd ExecStart so telemetry headers keep the unit loadable ([0341bd2](https://github.com/mintopia/harmonic/commit/0341bd2724211114e8e46dc20801f54e7f165e38))
+* **service:** pass --host/--port/--password to the init.d start line ([efacaba](https://github.com/mintopia/harmonic/commit/efacaba4c35d5a29766752c65cccecf70cfd4901))
+* **service:** refuse install from a CLI older than the installed service version ([8b13371](https://github.com/mintopia/harmonic/commit/8b13371892ea6ea6b6785ff2bc748f5be4524db7))
+* **tasks:** serialize Task delete on the Task lock and refuse while merging ([84da9f1](https://github.com/mintopia/harmonic/commit/84da9f198753cee45845f7e3eed091b20afd10d2))
+* **tracker:** GitLab readTicket swallows only 404 on blocker lookups ([3d124b5](https://github.com/mintopia/harmonic/commit/3d124b5947fb94601d82848798e8f65d3bcf974e))
+* **tracker:** GitLab scan resolves closed blockers missing from the open-only scan ([40c1941](https://github.com/mintopia/harmonic/commit/40c19417517b7f9c785ae6b4e08f95d2a9653a12))
+* **tracker:** GitLab treats only an HTTP 404 in stderr as not-found; bound blocker lookups ([b0c7a50](https://github.com/mintopia/harmonic/commit/b0c7a50a3da72dd85d1978545e3ba72e07dc3cd4))
+* **tracker:** scan only open issues on Forgejo and GitLab; read closed refs on demand ([a38cbd1](https://github.com/mintopia/harmonic/commit/a38cbd10d02176aba38f67a7602a4baba12609e4))
+* wait out a transient index.lock when merging so Accept does not 500 ([88bc67b](https://github.com/mintopia/harmonic/commit/88bc67b68c3b7489d1448a7188804694106cb0db))
+* **web:** cap the live-log buffer and dedupe by seq ([7414b41](https://github.com/mintopia/harmonic/commit/7414b4127316b3c491b31f079192bce724dd3f5f))
+* **web:** confirm before deleting a channel or revoking a permission rule, toast on failure ([5e9f8d2](https://github.com/mintopia/harmonic/commit/5e9f8d2eecdfdfe00b0d1048349b455c69b31eb6))
+* **web:** dedupe the live log by id, not seq ([625be40](https://github.com/mintopia/harmonic/commit/625be40943504997c95577087f8e1276f8614284))
+* **web:** keep Retry and Accept together in the escalated footer ([690f565](https://github.com/mintopia/harmonic/commit/690f565e0118d378836a70edf852b8ec4ddccd93))
+* **web:** show the rule's working directory in mono and wrap long paths in the revoke dialog ([e451876](https://github.com/mintopia/harmonic/commit/e451876d2ff0f5f2c88ab461a0f1d15b78f617cb))
+* **workspaces:** delete Epic-owned Attempts and their child rows with the Workspace ([9c88e84](https://github.com/mintopia/harmonic/commit/9c88e84516fa69d1b2ff38e75af2798d5f37cb48))
+
+
+### Performance Improvements
+
+* **auto-runner:** query only ready/working Tasks per tick and gate Epics only when a slot is free ([3ac659c](https://github.com/mintopia/harmonic/commit/3ac659cf53cce30ea8f4f74637e7582110d18d4a))
+* **db:** index attempt_events on (attempt_id, seq) ([53f24e7](https://github.com/mintopia/harmonic/commit/53f24e73604705439284c23b69449b05f933107a))
+* **server:** slice list rows before serializing in /api/tasks and /api/conversations ([8197c84](https://github.com/mintopia/harmonic/commit/8197c841ea9d00c8e6b2eb34808aba8a7e049168))
+* **server:** throttle worktree re-measure to one per 30s trailing window ([46bfe79](https://github.com/mintopia/harmonic/commit/46bfe79ed531151f644e51b2df529b7efd743c7f))
+
 ## [2.26.0](https://github.com/mintopia/harmonic/compare/v2.25.0...v2.26.0) (2026-10-08)
 
 
