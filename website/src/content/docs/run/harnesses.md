@@ -31,7 +31,9 @@ harness's `env` works instead of a login where you'd rather use one.
 For Copilot on a shared or headless box the login may live in the system
 keychain, so run `copilot login` once as the user Harmonic runs as, or set
 a token. If a harness isn't signed in, its work stops with an
-authentication error rather than running.
+authentication error rather than running. If a harness starts but never
+finishes its handshake, the attempt fails with a handshake timeout after
+2 minutes. Harmonic has no setting for this limit.
 
 ## Configuring a harness in Harmonic
 

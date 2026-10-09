@@ -30,6 +30,12 @@ harmonic start --password 'a long passphrase'     # or the HARMONIC_PASSWORD env
   binding: `harmonic start --password ''`.
 - Signing in lasts until the server restarts. After a restart, including
   `harmonic restart` and an upgrade, open tabs return to the Login screen.
+- Wrong passwords are rate limited. The first five wrong attempts get no
+  delay. After that each wrong attempt waits longer, starting at 1 second and
+  doubling up to 60 seconds. The limit is shared by everyone who can reach the
+  server, not kept per IP address. A login sent while another is still waiting
+  gets HTTP 429. The count resets after 15 minutes with no login attempts, or
+  on a successful sign-in.
 
 ## Host binding
 
@@ -45,6 +51,26 @@ harmonic start --password 'a long passphrase'     # or the HARMONIC_PASSWORD env
 | Just you, on your own machine | `127.0.0.1` | Optional |
 | Reachable from other devices | `0.0.0.0` | **Required** |
 | Behind a reverse proxy or tunnel | `127.0.0.1` | **Required** |
+
+### Reverse proxies
+
+Harmonic rejects a signed-in browser request with `403` when the page's
+`Origin` host matches neither the `Host` header nor the first
+`X-Forwarded-Host` value. This covers the web UI and the live WebSocket
+(`/api/ws`). Requests without an `Origin` header are not checked, and API
+keys are not affected.
+
+If your proxy rewrites `Host`, keep the original value. For nginx:
+
+```nginx
+proxy_set_header Host $host;
+```
+
+Or send the original host in `X-Forwarded-Host`:
+
+```nginx
+proxy_set_header X-Forwarded-Host $host;
+```
 
 See [CLI](/harmonic/run/cli/) and
 [Configuration](/harmonic/run/configuration/) for the `--password` and
