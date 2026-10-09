@@ -192,16 +192,14 @@ export function TaskActions({
       {task.state === 'escalated' && variant === 'footer' && (
         <p className="text-small text-muted">{accept.description}</p>
       )}
-      {escalatedFooter ? (
-        <div className={container}>
-          {ordered.filter((a) => a !== 'retry' && a !== 'accept').map(button)}
+      <div className={container}>
+        {ordered.filter((a) => !escalatedFooter || (a !== 'retry' && a !== 'accept')).map(button)}
+        {escalatedFooter && (
           <div className="ml-auto flex flex-wrap justify-end gap-2.5">
             {ordered.filter((a) => a === 'retry' || a === 'accept').map(button)}
           </div>
-        </div>
-      ) : (
-        <div className={container}>{ordered.map(button)}</div>
-      )}
+        )}
+      </div>
       {retrying && (
         <RetryDialog
           task={task}
