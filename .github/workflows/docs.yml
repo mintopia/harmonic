@@ -41,12 +41,10 @@ jobs:
             package-lock.json
             website/package-lock.json
 
-      # Regenerate website/src/openapi.json from the live zod route schemas
-      # (ADR-0005) before the docs build, so the published API reference can
-      # never lag the code. --ignore-scripts skips the root package's heavy
-      # `prepare` build (unneeded — the export runs via tsx).
-      - run: npm ci --ignore-scripts
-      - run: npm run docs:openapi
+      - name: Install root deps without the prepare build
+        run: npm ci --ignore-scripts
+      - name: Regenerate website/src/openapi.json from the zod route schemas
+        run: npm run docs:openapi
 
       - run: npm ci
         working-directory: website

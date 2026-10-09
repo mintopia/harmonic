@@ -303,8 +303,7 @@ const copyBootGuard = async (dependencies: ServiceManagerDependencies, appDir: s
   }
 };
 
-/** Refuses to repoint `current` at an older CLI than the one the service already runs, which would put old code on a newer database with no snapshot for the boot guard to roll back to. */
-const refuseDowngrade = (dependencies: ServiceManagerDependencies, appDir: string, version: string): void => {
+const refuseDowngradeWithoutSnapshot = (dependencies: ServiceManagerDependencies, appDir: string, version: string): void => {
   const target = dependencies.readlink(join(appDir, 'current'));
   const installed = target === null ? undefined : /^(?:.*\/)?versions\/([^/]+)\/?$/.exec(target)?.[1];
   if (installed === undefined) return;
@@ -436,7 +435,7 @@ class SystemdServiceManager implements ServiceManager {
     if (user === 'root') warn(this.dependencies, 'Harmonic will run as root. Pass --user to run it as a non-root user.');
     if (this.userUnit && options.user !== undefined) warn(this.dependencies, '--user is ignored for user-level systemd.');
     const version = packageVersionSchema.parse(this.dependencies.currentVersion);
-    refuseDowngrade(this.dependencies, join(options.serve.dataDir, 'app'), version);
+    refuseDowngradeWithoutSnapshot(this.dependencies, join(options.serve.dataDir, 'app'), version);
     // Captured before any change: a fresh install (never run before) must still `start`, not `restart`.
     const wasRunning = (await this.status()).running;
     if (this.userUnit) await this.dependencies.run('loginctl', ['enable-linger', this.dependencies.userName]);
@@ -587,7 +586,7 @@ class InitdServiceManager implements ServiceManager {
     }
     const dataDir = options.serve.dataDir;
     const version = packageVersionSchema.parse(this.dependencies.currentVersion);
-    refuseDowngrade(this.dependencies, join(dataDir, 'app'), version);
+    refuseDowngradeWithoutSnapshot(this.dependencies, join(dataDir, 'app'), version);
     // Captured before any change: a fresh install (never run before) must still `start`, not `restart`.
     const wasRunning = (await this.status()).running;
     await ensureDataDir(this.dependencies, dataDir, user);

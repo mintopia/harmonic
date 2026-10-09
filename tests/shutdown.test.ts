@@ -34,6 +34,11 @@ async function closedCause(query: Promise<unknown>): Promise<string> {
   }
 }
 
+async function waitForSessionLinked(server: TestServer, attemptId: number): Promise<void> {
+  await waitFor(async () =>
+    (await server.app.ctx.asyncDb.read((d) => d.select().from(attempts).where(eq(attempts.id, attemptId)).get()))?.sessionRowId ?? undefined);
+}
+
 function captureLogs(): string[] {
   const lines: string[] = [];
   for (const level of ['error', 'warn'] as const) {
@@ -64,9 +69,7 @@ describe('app.close() — ordered shutdown', () => {
     const { body: attempt } = await server.api('POST', `/api/tasks/${task.body.id}/run`);
     const attemptPid = await waitFor(async () =>
       (await server!.app.ctx.asyncDb.read((d) => d.select().from(processGroups).all())).find((row) => row.owner === `attempt harness for task ${task.body.id}`)?.pgid);
-    // finalize only touches a Session the Attempt has already linked, which happens after session/new returns.
-    await waitFor(async () =>
-      (await server!.app.ctx.asyncDb.read((d) => d.select().from(attempts).where(eq(attempts.id, attempt.id)).get()))?.sessionRowId ?? undefined);
+    await waitForSessionLinked(server, attempt.id);
 
     const { body: convo } = await server.api('POST', '/api/conversations', {});
     await server.api('POST', `/api/conversations/${convo.id}/turns`, { text: JSON.stringify({ waitForSteer: true }) });

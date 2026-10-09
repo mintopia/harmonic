@@ -65,7 +65,6 @@ export class AuthService {
     if (this.loginAttempts > 0 && this.now() - this.lastFailureAt > FAILURE_DECAY_MS) this.loginAttempts = 0;
     const over = this.loginAttempts - FREE_FAILURES;
     if (over >= 0) {
-      // Rejected, not queued: queued attempts would all still be hashed after their delay.
       if (this.backoffActive) throw new DomainError('rate_limited', 'too many login attempts; try again shortly');
       this.backoffActive = true;
     }

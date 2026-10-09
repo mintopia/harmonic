@@ -1055,7 +1055,6 @@ export class TaskService {
       } catch (err) {
         logger.warn('beforeDelete hook failed', { taskId: id, error: err instanceof Error ? err.message : String(err) });
       }
-      // The hook awaits I/O, so the Task may have started working meanwhile.
       const decision = decideTaskDeletion(await this.get(id));
       if (!decision.ok) throw new DomainError('invalid_state', decision.reason!);
       await this.removeTaskCascade(id, decision.tombstone);

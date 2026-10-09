@@ -78,13 +78,8 @@ async function rebuildTable(client: Client, table: BaselineTable, liveColumns: s
 
 const ATTEMPT_EVENTS_UNIQUE_INDEX = 'attempt_events_attempt_seq_unique';
 
-/**
- * Creating a unique index over duplicate rows is a constraint violation, which
- * `syncSchema` answers with the destructive clean-break recreate. An Attempt event
- * log written before the (attempt_id, seq) index existed may carry duplicate seqs,
- * so drop the later duplicates (keeping the lowest rowid) before the index is first built.
- */
-async function dedupeBeforeUniqueIndex(client: Client, baseline: Baseline): Promise<void> {
+// Duplicate seqs would fail the unique index and trigger syncSchema's destructive recreate.
+async function dedupeAttemptEventSeqsBeforeUniqueIndex(client: Client, baseline: Baseline): Promise<void> {
   if (!baseline.indexes.some((index) => index.name === ATTEMPT_EVENTS_UNIQUE_INDEX)) return;
   if ((await liveNames(client, 'index')).includes(ATTEMPT_EVENTS_UNIQUE_INDEX)) return;
   const result = await client.execute(
@@ -131,7 +126,7 @@ async function convergeIncremental(client: Client, baseline: Baseline, onStep: (
       await rebuildTable(client, table, columns, onStep);
     }
   }
-  await dedupeBeforeUniqueIndex(client, baseline);
+  await dedupeAttemptEventSeqsBeforeUniqueIndex(client, baseline);
   for (const index of baseline.indexes) {
     await client.execute(index.sql.replace(/^CREATE (UNIQUE )?INDEX /, 'CREATE $1INDEX IF NOT EXISTS '));
     onStep();
