@@ -105,6 +105,7 @@ const taskWithDeps = (over: Partial<TaskWithDeps> = {}): TaskWithDeps => ({
   dependents: [],
   blockedOnFailed: false,
   openBlockerCount: 0,
+  epicBlockers: [],
   agentWorkable: false,
   humanOnly: false,
   isEpic: false,

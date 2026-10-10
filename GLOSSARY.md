@@ -129,8 +129,19 @@ A directed edge between Tickets, stored one-to-many: the dependent is
 ineligible for pickup while it has any open Blocker. Native dependencies and
 mirrored tracker blocked-by relations are both written as the same edges.
 Blocked-ness is always **derived** from the open-Blocker count — never a
-stored state — so it cannot go stale.
+stored state — so it cannot go stale. An **Epic Hold** counts toward the
+open-Blocker count but is not an edge.
 _Avoid_: dependency, prerequisite, parent
+
+**Epic Hold**:
+The derived rule that an Epic's own blocked-by links gate its Members: no Member
+of the Epic (or of a child Epic) is agent-workable while any blocker is
+unsatisfied. An Epic blocker is satisfied once it is integrated (merged into
+base or completed in place; closing alone is not enough); a Task blocker once
+that Task is done. Running Members are not interrupted, and a manual start
+bypasses the hold as it bypasses Task-level Blockers. Never stored and never
+written to Task dependency edges (ADR-0051).
+_Avoid_: epic dependency, epic lock
 
 **Priority**:
 A per-Ticket rank (high / normal / low) used only by the Auto-Runner's pick
@@ -274,9 +285,10 @@ integrated (no merge commit) and its tracker issue closed, with no Epic
 Pre-Merge Verification, Epic Attempt, or Whole-Epic integrate. A leftover
 `epic/<ref>` from before this rule is left untouched: never refreshed, merged,
 or retired. An Epic is a
-**container**: it neither **blocks** its children (a `Blocked by: #<epic>` edge
-is never projected — an Epic contains, it does not gate) nor **runs** (it is
-never agent-workable, so the Auto-Runner never executes the container itself).
+**container**: it never **runs** (it is never agent-workable, so the Auto-Runner
+never executes the container itself). It does not block its own children, and a
+`Blocked by: #<epic>` relation is never projected as a Task-level **Blocker**
+edge. An Epic's own blocked-by links are respected as an **Epic Hold** (ADR-0051).
 _Avoid_: effort, project, batch, tranche, convoy
 
 **Map**:
@@ -319,7 +331,7 @@ Workflow, never a Wayfinder Type.
 **Agent-workable**:
 The derived flag that makes a Ticket eligible for pickup: `ready-for-agent`
 present (the positive opt-in gate, re-synced from labels on every re-poll,
-issue #230) AND no open Blockers. Never stored. **HITL is not in Harmonic**:
+issue #230) AND no open Blockers AND no Epic Hold. Never stored. **HITL is not in Harmonic**:
 a mirrored issue without the label is a human-only Ticket — it stays visible
 on the board (it may block others; rendered muted with a distinct HITL icon)
 but takes no actions and is updated only by mirroring until the tracker

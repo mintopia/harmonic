@@ -36,6 +36,8 @@ function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T>
   });
 }
 
+export type EpicBaseGate = false | 'missing' | 'stale';
+
 /** The slice of {@link Git} used by Epic branch lifecycle, refresh, and integration. */
 export interface EpicGit {
   branchExists(dir: string, name: string): Promise<boolean>;
@@ -560,27 +562,65 @@ export type EpicRefreshOutcome =
   | { status: 'refreshed'; oid: string }
   | { status: 'resolving'; detail: string }
   | { status: 'deferred'; reason: string }
+  | { status: 'backing-off'; reason: string }
   | { status: 'escalated'; reason: string };
 
 export type EpicRefreshResolveDispatchOutcome =
   | { status: 'dispatched' }
   | { status: 'escalated'; reason: string };
 
+export const REFRESH_ESCALATION_BACKOFF_MS = 5 * 60_000;
+
 /** Refreshes a live integration branch after the default branch advances. */
 export class EpicRefresh {
-  private readonly resolving = new Set<TrackerRef>();
+  private readonly inFlight = new Set<TrackerRef>();
+  private readonly turnCompleted = new Set<TrackerRef>();
+  private readonly lastBaseOid = new Map<TrackerRef, string>();
+  private readonly backoff = new Map<TrackerRef, { oid: string; until: number }>();
 
   constructor(private readonly deps: {
     git?: Pick<EpicGit, 'revParse'>;
     merge?: (args: MergeIntoBaseArgs) => Promise<MergeIntoBaseOutcome>;
     dispatchResolve: (target: EpicRefreshTarget, detail: string) => Promise<EpicRefreshResolveDispatchOutcome>;
     escalate: (epicRef: TrackerRef, reason: string) => void;
+    now?: () => number;
+    backoffMs?: number;
   }) {}
 
   refresh(target: EpicRefreshTarget): Promise<EpicRefreshOutcome> {
+    return this.attempt(target);
+  }
+
+  /** The corrective turn for `target` has finished: re-run the refresh, which may now decide it still conflicts. */
+  completeTurn(target: EpicRefreshTarget): Promise<EpicRefreshOutcome> {
+    this.inFlight.delete(target.ref);
+    this.turnCompleted.add(target.ref);
+    return this.attempt(target);
+  }
+
+  /** Escalate on behalf of a corrective turn that could not complete, releasing its in-flight claim. */
+  escalateTurn(epicRef: TrackerRef, reason: string): void {
+    this.inFlight.delete(epicRef);
+    this.turnCompleted.delete(epicRef);
+    this.escalateWithBackoff(epicRef, reason);
+  }
+
+  private escalateWithBackoff(epicRef: TrackerRef, reason: string): void {
+    const oid = this.lastBaseOid.get(epicRef);
+    if (oid !== undefined) this.backoff.set(epicRef, { oid, until: (this.deps.now ?? Date.now)() + (this.deps.backoffMs ?? REFRESH_ESCALATION_BACKOFF_MS) });
+    this.deps.escalate(epicRef, reason);
+  }
+
+  private attempt(target: EpicRefreshTarget): Promise<EpicRefreshOutcome> {
     const branch = integrationBranchName(target.ref);
     return withBaseCheckoutLock(target.repoDir, async () => {
+      if (this.inFlight.has(target.ref)) return { status: 'resolving', detail: 'corrective turn in flight' };
       const expectedOid = await (this.deps.git ?? Git).revParse(target.repoDir, target.defaultBranch);
+      this.lastBaseOid.set(target.ref, expectedOid);
+      const held = this.backoff.get(target.ref);
+      if (held && held.oid === expectedOid && (this.deps.now ?? Date.now)() < held.until) {
+        return { status: 'backing-off', reason: 'after an escalated refresh against this base' };
+      }
       const outcome = await withRepoLock(target.repoDir, () =>
         (this.deps.merge ?? mergeIntoBase)({
           repoDir: target.repoDir,
@@ -592,7 +632,8 @@ export class EpicRefresh {
         }),
       );
       if (outcome.ok) {
-        this.resolving.delete(target.ref);
+        this.turnCompleted.delete(target.ref);
+        this.backoff.delete(target.ref);
         return { status: 'refreshed', oid: outcome.oid };
       }
       if (outcome.reason === 'fallback-pr-manual' || outcome.reason === 'target-advanced') {
@@ -600,19 +641,29 @@ export class EpicRefresh {
       }
       if (outcome.reason !== 'conflict') {
         const reason = `integration refresh failed: ${outcome.detail}`;
-        this.resolving.delete(target.ref);
-        this.deps.escalate(target.ref, reason);
+        this.turnCompleted.delete(target.ref);
+        this.escalateWithBackoff(target.ref, reason);
         return { status: 'escalated', reason };
       }
-      if (this.resolving.has(target.ref)) {
+      if (this.turnCompleted.has(target.ref)) {
         const reason = `integration refresh still conflicts after corrective turn: ${outcome.detail}`;
-        this.resolving.delete(target.ref);
-        this.deps.escalate(target.ref, reason);
+        this.turnCompleted.delete(target.ref);
+        this.escalateWithBackoff(target.ref, reason);
         return { status: 'escalated', reason };
       }
-      const dispatch = await this.deps.dispatchResolve(target, outcome.detail);
-      if (dispatch.status === 'escalated') return dispatch;
-      this.resolving.add(target.ref);
+      this.inFlight.add(target.ref);
+      let dispatch: EpicRefreshResolveDispatchOutcome;
+      try {
+        dispatch = await this.deps.dispatchResolve(target, outcome.detail);
+      } catch (err) {
+        this.inFlight.delete(target.ref);
+        throw err;
+      }
+      if (dispatch.status === 'escalated') {
+        this.inFlight.delete(target.ref);
+        this.backoff.set(target.ref, { oid: expectedOid, until: (this.deps.now ?? Date.now)() + (this.deps.backoffMs ?? REFRESH_ESCALATION_BACKOFF_MS) });
+        return dispatch;
+      }
       return { status: 'resolving', detail: outcome.detail };
     });
   }
@@ -637,6 +688,7 @@ export class EpicLifecycle {
   private onIntegrationBranchRetired: ((event: { epicRef: TrackerRef; branch: string; baseBranch: string }) => Promise<void>) | undefined;
   private onIntegrationBranchEvent: ((event: EpicBranchStep) => Promise<void> | void) | undefined;
   private workspaceId: number | undefined;
+  private staleByEpic = new Map<TrackerRef, Promise<boolean>>();
 
   constructor(
     private readonly tasks: TaskService,
@@ -673,6 +725,7 @@ export class EpicLifecycle {
   }
 
   async refreshAfterDefaultBranchAdvance(defaultBranch: string): Promise<void> {
+    this.staleByEpic.clear();
     if (!this.epicRefresh) return;
     const tickets = this.latestTickets.length > 0
       ? this.latestTickets
@@ -701,20 +754,24 @@ export class EpicLifecycle {
       if (this.isInPlace(epic.ref, rows)) continue;
       const branch = integrationBranchName(epic.ref);
       if (!(await this.git.branchExists(this.workingDir, branch))) continue;
-      if (await this.git.isAncestor(this.workingDir, defaultBranch, branch)) continue;
+      if (await this.git.isAncestor(this.workingDir, branch, defaultBranch)) continue;
       try {
         const outcome = await this.epicRefresh.refresh({ ref: epic.ref, workspaceId: this.workspaceId ?? undefined, repoDir: this.workingDir, defaultBranch });
         if (outcome.status !== 'refreshed') {
           const why = 'reason' in outcome ? outcome.reason : outcome.detail;
-          logger.warn(`epic ${epic.ref} still behind ${defaultBranch} after refresh: ${outcome.status} (${why})`);
+          const log = outcome.status === 'resolving' || outcome.status === 'backing-off' ? logger.debug : logger.warn;
+          log(`epic ${epic.ref} still behind ${defaultBranch} after refresh: ${outcome.status} (${why})`);
         }
       } catch (err) {
         this.onError(`epic ${epic.ref} integration refresh failed: ${String(err)}`);
+      } finally {
+        this.staleByEpic.delete(epic.ref);
       }
     }
   }
 
   async reconcile(tickets: Ticket[], mirrored: TaskRow[]): Promise<void> {
+    this.staleByEpic.clear();
     this.latestTickets = tickets;
     const mirroredWithDeps = mirrored.length > 0 ? await this.tasks.listWithDeps({ workspaceId: mirrored[0]!.workspaceId ?? undefined }) : [];
     const readinessByRef = new Map<TrackerRef, { agentWorkable: boolean }>();
@@ -833,22 +890,41 @@ export class EpicLifecycle {
     return task.origin === 'mirrored' && task.baseBranch == null && task.trackerRef != null && this.readyMemberRefs.has(task.trackerRef);
   }
 
-  async memberBaseNotReady(task: TaskRow): Promise<boolean> {
+  async memberBaseNotReady(task: TaskRow): Promise<EpicBaseGate> {
     if (task.isolationMode === 'direct') return false;
     if (task.origin !== 'mirrored') return false;
-    if (this.awaitsBase(task)) return true;
+    if (this.awaitsBase(task)) return 'missing';
     const epicRef = task.mapRef ?? parseIntegrationBranch(task.baseBranch);
     if (epicRef === null) return false;
     const branch = integrationBranchName(epicRef);
     try {
       const exists = await this.git.branchExists(this.workingDir, branch);
-      if (task.baseBranch === branch) return !exists;
-      if (exists) return true;
-      return await this.isLeafEpic(epicRef, task.workspaceId);
+      if (task.baseBranch === branch) return exists ? await this.integrationBranchStale(task, epicRef, branch) : 'missing';
+      if (exists) return 'missing';
+      return (await this.isLeafEpic(epicRef, task.workspaceId)) ? 'missing' : false;
     } catch (err) {
       this.onError(`epic ${epicRef} integration branch existence check failed: ${String(err)}`);
-      return true;
+      return 'missing';
     }
+  }
+
+  private async integrationBranchStale(task: TaskRow, epicRef: TrackerRef, branch: string): Promise<EpicBaseGate> {
+    if (task.workspaceId === null) return false;
+    const workspaceId = task.workspaceId;
+    let stale = this.staleByEpic.get(epicRef);
+    if (stale === undefined) {
+      stale = this.computeStale(workspaceId, epicRef, branch);
+      this.staleByEpic.set(epicRef, stale);
+      stale.catch(() => this.staleByEpic.delete(epicRef));
+    }
+    return (await stale) ? 'stale' : false;
+  }
+
+  private async computeStale(workspaceId: number, epicRef: TrackerRef, branch: string): Promise<boolean> {
+    if (!(await this.tasks.epicHasEpicBlockers(workspaceId, epicRef))) return false;
+    const base = await this.git.symbolicBranch(this.workingDir);
+    if (base === null) return false;
+    return !(await this.git.isAncestor(this.workingDir, branch, base));
   }
 
   private async isLeafEpic(epicRef: TrackerRef, workspaceId: number | null): Promise<boolean> {

@@ -562,6 +562,13 @@ export type TaskListItem = Task | EpicListRow;
 
 export const isEpicListRow = (row: TaskListItem): row is EpicListRow => !('id' in row);
 
+export interface EpicBlocker {
+  ref: string;
+  kind: 'epic' | 'task';
+  heldEpic: string;
+  cycle?: boolean;
+}
+
 export interface Task {
   id: number;
   /** The full prompt is served only on the item GET (`GET /api/tasks/:id`) and
@@ -619,6 +626,7 @@ export interface Task {
   blockedOnFailed: boolean;
   /** Blocker edges whose blocker is not done; blocked-ness is this count, never a state. */
   openBlockerCount: number;
+  epicBlockers: EpicBlocker[];
   /** Derived flag: opted in (mirrored: `ready-for-agent`, not an Epic container) and no open blockers. */
   agentWorkable: boolean;
   /** A mirrored ticket Harmonic never works (no `ready-for-agent`, an Epic container, a human wayfinder kind); independent of blockers. */

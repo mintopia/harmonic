@@ -2,7 +2,7 @@
 
 Status: accepted
 Date: 2026-08-31
-Reconciled: 2026-10-02. Amended by ADR-0018 (storage), ADR-0023 (structural roots), and ADR-0028 (Epic Attempts).
+Reconciled: 2026-10-02. Amended by ADR-0018 (storage), ADR-0023 (structural roots), ADR-0028 (Epic Attempts), and ADR-0051 (Epic blocked-by hold).
 
 ## Context
 

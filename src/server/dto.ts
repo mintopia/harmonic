@@ -504,6 +504,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListR
     dependents: [],
     blockedOnFailed: false,
     openBlockerCount: 0,
+    epicBlockers: [],
     agentWorkable: false,
     humanOnly: true,
     isEpic: true,

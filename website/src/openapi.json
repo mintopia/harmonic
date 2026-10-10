@@ -2010,6 +2010,46 @@
             "maximum": 9007199254740991,
             "example": 1
           },
+          "epicBlockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "example": "71"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "epic",
+                    "task"
+                  ],
+                  "example": "epic"
+                },
+                "heldEpic": {
+                  "type": "string",
+                  "example": "73"
+                },
+                "cycle": {
+                  "example": true,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "ref",
+                "kind",
+                "heldEpic"
+              ]
+            },
+            "example": [
+              {
+                "ref": "71",
+                "kind": "epic",
+                "heldEpic": "73"
+              }
+            ]
+          },
           "agentWorkable": {
             "type": "boolean",
             "example": false
@@ -2128,6 +2168,7 @@
           "dependents",
           "blockedOnFailed",
           "openBlockerCount",
+          "epicBlockers",
           "agentWorkable",
           "humanOnly",
           "isEpic",
@@ -2388,6 +2429,46 @@
             "minimum": 0,
             "maximum": 9007199254740991,
             "example": 1
+          },
+          "epicBlockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "example": "71"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "epic",
+                    "task"
+                  ],
+                  "example": "epic"
+                },
+                "heldEpic": {
+                  "type": "string",
+                  "example": "73"
+                },
+                "cycle": {
+                  "example": true,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "ref",
+                "kind",
+                "heldEpic"
+              ]
+            },
+            "example": [
+              {
+                "ref": "71",
+                "kind": "epic",
+                "heldEpic": "73"
+              }
+            ]
           },
           "agentWorkable": {
             "type": "boolean",
@@ -2711,6 +2792,7 @@
           "dependents",
           "blockedOnFailed",
           "openBlockerCount",
+          "epicBlockers",
           "agentWorkable",
           "humanOnly",
           "isEpic",
@@ -2986,6 +3068,46 @@
             "maximum": 9007199254740991,
             "example": 1
           },
+          "epicBlockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "example": "71"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "epic",
+                    "task"
+                  ],
+                  "example": "epic"
+                },
+                "heldEpic": {
+                  "type": "string",
+                  "example": "73"
+                },
+                "cycle": {
+                  "example": true,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "ref",
+                "kind",
+                "heldEpic"
+              ]
+            },
+            "example": [
+              {
+                "ref": "71",
+                "kind": "epic",
+                "heldEpic": "73"
+              }
+            ]
+          },
           "agentWorkable": {
             "type": "boolean",
             "example": false
@@ -3307,6 +3429,7 @@
           "dependents",
           "blockedOnFailed",
           "openBlockerCount",
+          "epicBlockers",
           "agentWorkable",
           "humanOnly",
           "isEpic",
@@ -3566,6 +3689,46 @@
             "minimum": 0,
             "maximum": 9007199254740991,
             "example": 1
+          },
+          "epicBlockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "example": "71"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "epic",
+                    "task"
+                  ],
+                  "example": "epic"
+                },
+                "heldEpic": {
+                  "type": "string",
+                  "example": "73"
+                },
+                "cycle": {
+                  "example": true,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "ref",
+                "kind",
+                "heldEpic"
+              ]
+            },
+            "example": [
+              {
+                "ref": "71",
+                "kind": "epic",
+                "heldEpic": "73"
+              }
+            ]
           },
           "agentWorkable": {
             "type": "boolean",
@@ -3890,6 +4053,7 @@
           "dependents",
           "blockedOnFailed",
           "openBlockerCount",
+          "epicBlockers",
           "agentWorkable",
           "humanOnly",
           "isEpic",
@@ -11661,6 +11825,47 @@
             "maximum": 9007199254740991,
             "example": 1
           },
+          "epicBlockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "example": "71"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "epic",
+                    "task"
+                  ],
+                  "example": "epic"
+                },
+                "heldEpic": {
+                  "type": "string",
+                  "example": "73"
+                },
+                "cycle": {
+                  "example": true,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "ref",
+                "kind",
+                "heldEpic"
+              ],
+              "additionalProperties": false
+            },
+            "example": [
+              {
+                "ref": "71",
+                "kind": "epic",
+                "heldEpic": "73"
+              }
+            ]
+          },
           "agentWorkable": {
             "type": "boolean",
             "example": false
@@ -11780,6 +11985,7 @@
           "dependents",
           "blockedOnFailed",
           "openBlockerCount",
+          "epicBlockers",
           "agentWorkable",
           "humanOnly",
           "isEpic",
@@ -12042,6 +12248,47 @@
             "minimum": 0,
             "maximum": 9007199254740991,
             "example": 1
+          },
+          "epicBlockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "example": "71"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "epic",
+                    "task"
+                  ],
+                  "example": "epic"
+                },
+                "heldEpic": {
+                  "type": "string",
+                  "example": "73"
+                },
+                "cycle": {
+                  "example": true,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "ref",
+                "kind",
+                "heldEpic"
+              ],
+              "additionalProperties": false
+            },
+            "example": [
+              {
+                "ref": "71",
+                "kind": "epic",
+                "heldEpic": "73"
+              }
+            ]
           },
           "agentWorkable": {
             "type": "boolean",
@@ -12367,6 +12614,7 @@
           "dependents",
           "blockedOnFailed",
           "openBlockerCount",
+          "epicBlockers",
           "agentWorkable",
           "humanOnly",
           "isEpic",
@@ -12644,6 +12892,47 @@
             "maximum": 9007199254740991,
             "example": 1
           },
+          "epicBlockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "example": "71"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "epic",
+                    "task"
+                  ],
+                  "example": "epic"
+                },
+                "heldEpic": {
+                  "type": "string",
+                  "example": "73"
+                },
+                "cycle": {
+                  "example": true,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "ref",
+                "kind",
+                "heldEpic"
+              ],
+              "additionalProperties": false
+            },
+            "example": [
+              {
+                "ref": "71",
+                "kind": "epic",
+                "heldEpic": "73"
+              }
+            ]
+          },
           "agentWorkable": {
             "type": "boolean",
             "example": false
@@ -12967,6 +13256,7 @@
           "dependents",
           "blockedOnFailed",
           "openBlockerCount",
+          "epicBlockers",
           "agentWorkable",
           "humanOnly",
           "isEpic",
@@ -13228,6 +13518,47 @@
             "minimum": 0,
             "maximum": 9007199254740991,
             "example": 1
+          },
+          "epicBlockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "example": "71"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "epic",
+                    "task"
+                  ],
+                  "example": "epic"
+                },
+                "heldEpic": {
+                  "type": "string",
+                  "example": "73"
+                },
+                "cycle": {
+                  "example": true,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "ref",
+                "kind",
+                "heldEpic"
+              ],
+              "additionalProperties": false
+            },
+            "example": [
+              {
+                "ref": "71",
+                "kind": "epic",
+                "heldEpic": "73"
+              }
+            ]
           },
           "agentWorkable": {
             "type": "boolean",
@@ -13554,6 +13885,7 @@
           "dependents",
           "blockedOnFailed",
           "openBlockerCount",
+          "epicBlockers",
           "agentWorkable",
           "humanOnly",
           "isEpic",
