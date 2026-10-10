@@ -189,6 +189,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     loopMonitor: runtime.loopMonitor,
     hostLoad: runtime.hostLoad,
     upgrade: runtime.upgrade,
+    worktreesDir,
   });
   await registerRoutes(app, ctx, contexts);
   return app;
