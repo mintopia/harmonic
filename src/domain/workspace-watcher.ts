@@ -3,6 +3,7 @@ import { readdir } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { WorkspaceRow } from '../db/schema.js';
 import { logger } from '../logger.js';
+import { InFlight } from '../reliability/in-flight.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { readGitStatus, type GitStatusEntry } from './git-status.js';
 
@@ -53,6 +54,7 @@ export class WorkspaceWatcher {
   private readonly subscribers = new Map<number, number>();
   private readonly graceTimers = new Map<number, ReturnType<typeof setTimeout>>();
   private readonly chains = new Map<number, Promise<void>>();
+  private readonly walks = new InFlight();
 
   constructor(
     private readonly debounceMs: () => number,
@@ -107,6 +109,7 @@ export class WorkspaceWatcher {
     for (const id of [...this.graceTimers.keys()]) this.cancelGrace(id);
     this.subscribers.clear();
     await this.settled();
+    await this.walks.drain();
     await Promise.all([...this.watched.keys()].map((id) => this.stop(id)));
   }
 
@@ -120,13 +123,15 @@ export class WorkspaceWatcher {
   }
 
   private enqueue(workspaceId: number, task: () => Promise<void>): Promise<void> {
-    const next = (this.chains.get(workspaceId) ?? Promise.resolve()).then(task).catch((err) => {
-      logger.warn('workspace watcher task failed', { workspaceId, error: err instanceof Error ? err.message : String(err) });
-    });
+    const next: Promise<void> = (this.chains.get(workspaceId) ?? Promise.resolve())
+      .then(task)
+      .catch((err) => {
+        logger.warn('workspace watcher task failed', { workspaceId, error: err instanceof Error ? err.message : String(err) });
+      })
+      .finally(() => {
+        if (this.chains.get(workspaceId) === next) this.chains.delete(workspaceId);
+      });
     this.chains.set(workspaceId, next);
-    void next.then(() => {
-      if (this.chains.get(workspaceId) === next) this.chains.delete(workspaceId);
-    });
     return next;
   }
 
@@ -250,7 +255,7 @@ export class WorkspaceWatcher {
         return;
       }
       if (isDirectory && !state.watchers.has(path)) {
-        void walk(path).catch((err) => logger.warn('workspace watcher walk failed', { workspaceId: workspace.id, path, error: err instanceof Error ? err.message : String(err) }));
+        this.walks.add(walk(path), 'workspace watcher walk');
       }
     };
 
