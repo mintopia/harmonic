@@ -405,7 +405,7 @@ export const boardTasks = [
   boardTask(442, 'ready', {
     summary: 'Held by sibling Epics and an unfinished dependency',
     dependsOn: [441, 432],
-    openBlockerCount: 4,
+    openBlockerCount: 3,
     epicBlockers: [
       { ref: '71', kind: 'epic', heldEpic: '73', cycle: true },
       { ref: '50', kind: 'task', heldEpic: '73', cycle: false },
