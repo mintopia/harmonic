@@ -15,6 +15,7 @@ import { TrackerEpicService } from '../src/tracker/epic-service.js';
 import { EPIC_LABEL, type Ticket, trackerRef, type TrackerRef } from '../src/tracker/adapter.js';
 import {
   EpicLifecycle,
+  EpicRefresh,
   integrationBranchName,
   parseIntegrationBranch,
   reduceMemberState,
@@ -23,6 +24,7 @@ import {
   type EpicRefreshTrigger,
 } from '../src/execution/epic-coordinator.js';
 import { Git } from '../src/execution/git.js';
+import { logger } from '../src/logger.js';
 import { withRepoLock } from '../src/execution/repo-lock.js';
 import type { MemberMergeState } from '../src/domain/epic-integrate-decision.js';
 import type { EpicRefreshOutcome } from '../src/execution/epic-coordinator.js';
@@ -53,13 +55,17 @@ class FakeGit implements Pick<EpicGit, 'symbolicBranch' | 'branchExists' | 'revP
   readonly deleteDirs: string[] = [];
   readonly checkedOut = new Set<string>();
   readonly contained = new Set<string>();
+  readonly current = new Set<string>();
   symbolicBranchCalls = 0;
   constructor(
     existing: string[] = [],
     private readonly defaultBranch: string | null = 'develop',
   ) {
     this.branches = new Set(existing);
-    for (const branch of existing) this.contained.add(branch);
+    for (const branch of existing) {
+      this.contained.add(branch);
+      this.current.add(branch);
+    }
   }
   async symbolicBranch(): Promise<string | null> {
     this.symbolicBranchCalls++;
@@ -86,8 +92,8 @@ class FakeGit implements Pick<EpicGit, 'symbolicBranch' | 'branchExists' | 'revP
   async branchCheckedOutAt(_dir: string, branch: string): Promise<string | null> {
     return this.checkedOut.has(branch) ? '/worktree/active' : null;
   }
-  async isAncestor(_dir: string, _baseBranch: string, branch: string): Promise<boolean> {
-    return this.contained.has(branch);
+  async isAncestor(_dir: string, baseBranch: string, branch: string): Promise<boolean> {
+    return branch.startsWith('epic/') ? this.contained.has(branch) : this.current.has(baseBranch);
   }
 }
 
@@ -336,17 +342,69 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
     const nonMember = (await tasks.list()).find((t) => t.trackerRef === trackerRef(99))!;
     const native = await tasks.create({ prompt: 'native task' });
     expect((await m11()).baseBranch).toBe('epic/10');
-    expect(await coord.memberBaseNotReady(await m11())).toBe(false);
-    expect(await coord.memberBaseNotReady(nonMember)).toBe(false);
-    expect(await coord.memberBaseNotReady(native)).toBe(false);
+    expect(await coord.memberBaseNotReady(await m11())).toBe('ready');
+    expect(await coord.memberBaseNotReady(nonMember)).toBe('ready');
+    expect(await coord.memberBaseNotReady(native)).toBe('ready');
 
     const detached = new FakeGit(['epic/10'], null);
     const coordDetached = new EpicLifecycle(tasks, dir, fireAndForget, detached);
     await coordDetached.reconcile(tickets, await mscan(tickets));
-    expect(await coordDetached.memberBaseNotReady(await m11())).toBe(false);
+    expect(await coordDetached.memberBaseNotReady(await m11())).toBe('ready');
 
     const gone = new EpicLifecycle(tasks, dir, fireAndForget, new FakeGit([], 'develop'));
-    expect(await gone.memberBaseNotReady(await m11())).toBe(true);
+    expect(await gone.memberBaseNotReady(await m11())).toBe('missing');
+  });
+
+  it('memberBaseNotReady reports stale only for a worktree Member whose Epic is Epic-blocked and whose integration branch is behind base', async () => {
+    const tickets = [
+      ticket({ ref: trackerRef(10), title: 'Epic', blockedBy: [{ ref: trackerRef(20), title: 'Blocker Epic', state: 'open' }] }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(12), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(20), title: 'Blocker Epic' }),
+      ticket({ ref: trackerRef(21), parent: trackerRef(20), labels: ['ready-for-agent'] }),
+    ];
+    const git = new FakeGit(['epic/10', 'epic/20'], 'develop');
+    const coord = new EpicLifecycle(tasks, dir, fireAndForget, git);
+    await mscan(tickets);
+    const member = async (ref: number) => (await tasks.list()).find((t) => t.trackerRef === trackerRef(ref))!;
+    await tasks.setBaseBranch((await member(11)).id, 'epic/10');
+    await tasks.setBaseBranch((await member(21)).id, 'epic/20');
+    git.current.delete('epic/10');
+    git.current.delete('epic/20');
+
+    expect(await coord.memberBaseNotReady(await member(11))).toBe('stale');
+    expect(await coord.memberBaseNotReady(await member(21))).toBe('ready');
+    expect(await coord.memberBaseNotReady(await member(11))).toBe('stale');
+    expect(git.symbolicBranchCalls).toBe(1);
+
+    git.current.add('epic/10');
+    const refreshed = new EpicLifecycle(tasks, dir, fireAndForget, git);
+    expect(await refreshed.memberBaseNotReady(await member(11))).toBe('ready');
+
+    git.current.delete('epic/10');
+    const direct = { ...(await member(11)), isolationMode: 'direct' as const };
+    expect(await new EpicLifecycle(tasks, dir, fireAndForget, git).memberBaseNotReady(direct)).toBe('ready');
+
+    await tasks.setBaseBranch((await member(12)).id, 'epic/10');
+    const detached = new EpicLifecycle(tasks, dir, fireAndForget, new FakeGit(['epic/10'], null));
+    expect(await detached.memberBaseNotReady(await member(12))).toBe('ready');
+  });
+
+  it('never consults git for the currency of a Member whose Epic has no Epic blocker', async () => {
+    const tickets = [
+      ticket({ ref: trackerRef(10), title: 'Epic' }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(12), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+    ];
+    const git = new FakeGit(['epic/10'], 'develop');
+    git.current.delete('epic/10');
+    await mscan(tickets);
+    const coord = new EpicLifecycle(tasks, dir, fireAndForget, git);
+    const member = async (ref: number) => (await tasks.list()).find((t) => t.trackerRef === trackerRef(ref))!;
+    await tasks.setBaseBranch((await member(11)).id, 'epic/10');
+
+    expect(await coord.memberBaseNotReady(await member(11))).toBe('ready');
+    expect(git.symbolicBranchCalls).toBe(0);
   });
 
   it('gates a recognised Epic member under an existing integration branch, even before any reconcile publishes the ready frontier (#334/#332)', async () => {
@@ -358,7 +416,7 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
 
     const coord = new EpicLifecycle(tasks, dir, fireAndForget, new FakeGit(['epic/10'], 'develop'));
     expect(coord.awaitsBase(m11)).toBe(false);
-    expect(await coord.memberBaseNotReady(m11)).toBe(true);
+    expect(await coord.memberBaseNotReady(m11)).toBe('missing');
   });
 
   it('gates a leaf-Epic member before its integration branch is even cut, but never a spine parent’s child (pre-cut race, #334)', async () => {
@@ -376,8 +434,8 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
 
     const coord = new EpicLifecycle(tasks, dir, fireAndForget, new FakeGit([], 'develop'));
     expect(coord.awaitsBase(m11)).toBe(false);
-    expect(await coord.memberBaseNotReady(m11)).toBe(true);
-    expect(await coord.memberBaseNotReady(m5)).toBe(false);
+    expect(await coord.memberBaseNotReady(m11)).toBe('missing');
+    expect(await coord.memberBaseNotReady(m5)).toBe('ready');
   });
 
   it('a continuation/retry never regresses an Epic member to develop: a base flipped to develop/null re-gates on membership (#334/#330-331)', async () => {
@@ -388,14 +446,14 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
 
     const m11Id = mirrored.find((t) => t.trackerRef === trackerRef(11))!.id;
     expect((await tasks.get(m11Id)).baseBranch).toBe('epic/10');
-    expect(await coord.memberBaseNotReady(await tasks.get(m11Id))).toBe(false);
+    expect(await coord.memberBaseNotReady(await tasks.get(m11Id))).toBe('ready');
 
     const retryCoord = new EpicLifecycle(tasks, dir, fireAndForget, new FakeGit(['epic/10'], 'develop'));
     for (const regressed of ['develop', null] as const) {
       await tasks.setBaseBranch(m11Id, regressed);
       const task = await tasks.get(m11Id);
       expect(retryCoord.awaitsBase(task)).toBe(false);
-      expect(await retryCoord.memberBaseNotReady(task)).toBe(true);
+      expect(await retryCoord.memberBaseNotReady(task)).toBe('missing');
     }
   });
 
@@ -405,17 +463,17 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
     const m11Id = mirrored.find((t) => t.trackerRef === trackerRef(11))!.id;
     await tasks.setBaseBranch(m11Id, 'epic/10');
     const present = new EpicLifecycle(tasks, dir, fireAndForget, new FakeGit(['epic/10'], 'develop'));
-    expect(await present.memberBaseNotReady(await tasks.get(m11Id))).toBe(false);
+    expect(await present.memberBaseNotReady(await tasks.get(m11Id))).toBe('ready');
 
     const missing = new EpicLifecycle(tasks, dir, fireAndForget, new FakeGit([], 'develop'));
-    expect(await missing.memberBaseNotReady(await tasks.get(m11Id))).toBe(true);
+    expect(await missing.memberBaseNotReady(await tasks.get(m11Id))).toBe('missing');
   });
 
   it('level-triggered currency: a poll refreshes a behind epic/<ref> (develop advanced by a non-merge path) and skips a current one', async () => {
     const tickets = epicTickets();
     const mirrored = await mscan(tickets);
     const git = new FakeGit(['epic/10'], 'develop');
-    git.contained.delete('epic/10');
+    git.current.delete('epic/10');
     const refresh = new FakeRefresh();
     const coord = new EpicLifecycle(tasks, dir, fireAndForget, git);
     coord.attachRefreshTrigger(refresh);
@@ -423,10 +481,42 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
     await coord.reconcile(tickets, mirrored);
     expect(refresh.calls).toEqual(['10']);
 
-    git.contained.add('epic/10');
+    git.current.add('epic/10');
     refresh.calls.length = 0;
     await coord.reconcile(tickets, await mscan(tickets));
     expect(refresh.calls).toEqual([]);
+  });
+
+  it('logs an in-flight or backing-off refresh at debug and every other behind outcome at warn', async () => {
+    const tickets = epicTickets();
+    const git = new FakeGit(['epic/10'], 'develop');
+    git.current.delete('epic/10');
+    const outcomes: EpicRefreshOutcome[] = [
+      { status: 'resolving', detail: 'turn in flight' },
+      { status: 'backing-off', reason: 'after an escalated refresh against this base' },
+      { status: 'escalated', reason: 'boom' },
+      { status: 'deferred', reason: 'target advanced' },
+    ];
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const debug = vi.spyOn(logger, 'debug').mockImplementation(() => {});
+    try {
+      const coord = new EpicLifecycle(tasks, dir, fireAndForget, git);
+      coord.attachRefreshTrigger({ refresh: async () => outcomes.shift()! });
+
+      for (let i = 0; i < 4; i++) await coord.reconcile(tickets, await mscan(tickets));
+
+      expect(debug.mock.calls.map(([m]) => m)).toEqual([
+        expect.stringContaining('resolving'),
+        expect.stringContaining('backing-off'),
+      ]);
+      expect(warn.mock.calls.map(([m]) => m)).toEqual([
+        expect.stringContaining('escalated'),
+        expect.stringContaining('deferred'),
+      ]);
+    } finally {
+      warn.mockRestore();
+      debug.mockRestore();
+    }
   });
 
   it('refreshes a behind epic even with an empty ready frontier (currency is not gated by the ready-frontier early return)', async () => {
@@ -435,7 +525,7 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
       ticket({ ref: trackerRef(11), parent: trackerRef(10), state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
     ];
     const git = new FakeGit(['epic/10'], 'develop');
-    git.contained.delete('epic/10');
+    git.current.delete('epic/10');
     const refresh = new FakeRefresh();
     const coord = new EpicLifecycle(tasks, dir, fireAndForget, git);
     coord.attachRefreshTrigger(refresh);
@@ -454,7 +544,7 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
     expect(r1.calls).toEqual([]);
 
     const detached = new FakeGit(['epic/10'], null);
-    detached.contained.delete('epic/10');
+    detached.current.delete('epic/10');
     const r2 = new FakeRefresh();
     const c2 = new EpicLifecycle(tasks, dir, fireAndForget, detached);
     c2.attachRefreshTrigger(r2);
@@ -504,6 +594,128 @@ describe('EpicLifecycle integration-branch cut visibility (git-visibility)', () 
     await asyncDb.close();
     rmSync(dir, { recursive: true, force: true });
     rmSync(repo, { recursive: true, force: true });
+  });
+
+  it('holds an Epic-blocked Member as stale while epic/<ref> lacks the default branch tip, even with no commits of its own, and frees it after a refresh', async () => {
+    const tickets = [
+      ticket({ ref: trackerRef(10), title: 'Epic', blockedBy: [{ ref: trackerRef(20), title: 'Blocker Epic', state: 'open' }] }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(12), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+      ticket({ ref: trackerRef(20), title: 'Blocker Epic' }),
+      ticket({ ref: trackerRef(21), parent: trackerRef(20), labels: ['ready-for-agent'] }),
+    ];
+    const mirrored = await mscan(tickets);
+    const member = mirrored.find((t) => t.trackerRef === trackerRef(11))!;
+    rawGit(repo, 'branch', 'epic/10');
+    await tasks.setBaseBranch(member.id, 'epic/10');
+    const refresh = new FakeRefresh();
+    const coord = new EpicLifecycle(tasks, repo, fireAndForget);
+    coord.attachRefreshTrigger(refresh);
+
+    expect(await coord.memberBaseNotReady(await tasks.get(member.id))).toBe('ready');
+    await coord.reconcile(tickets, mirrored);
+    expect(refresh.calls).toEqual([]);
+
+    writeFileSync(join(repo, 'blocker.txt'), 'blocker epic code\n');
+    rawGit(repo, 'add', '-A');
+    rawGit(repo, 'commit', '-m', 'blocker epic merged into develop');
+    await coord.reconcile(tickets, mirrored);
+    expect(refresh.calls).toContain('10');
+    expect(await coord.memberBaseNotReady(await tasks.get(member.id))).toBe('stale');
+
+    rawGit(repo, 'branch', '-f', 'epic/10', 'develop');
+    await coord.reconcile(tickets, mirrored);
+    expect(await coord.memberBaseNotReady(await tasks.get(member.id))).toBe('ready');
+  });
+
+  const blockedEpicTickets = (blockerState: 'open' | 'closed' = 'open'): Ticket[] => [
+    ticket({ ref: trackerRef(10), title: 'Epic', blockedBy: [{ ref: trackerRef(20), title: 'Blocker Epic', state: blockerState }] }),
+    ticket({ ref: trackerRef(11), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+    ticket({ ref: trackerRef(12), parent: trackerRef(10), labels: ['ready-for-agent'] }),
+    ticket({ ref: trackerRef(20), title: 'Blocker Epic' }),
+    ticket({ ref: trackerRef(21), parent: trackerRef(20), labels: ['ready-for-agent'] }),
+  ];
+
+  it('makes an Epic-blocked Member agent-workable once the blocker Epic is integrated into base and the real refresh brings the integration branch up to date', async () => {
+    const tickets = blockedEpicTickets();
+    const mirrored = await mscan(tickets);
+    const member = mirrored.find((t) => t.trackerRef === trackerRef(11))!;
+    rawGit(repo, 'branch', 'epic/10');
+    await tasks.setBaseBranch(member.id, 'epic/10');
+    const coord = new EpicLifecycle(tasks, repo, fireAndForget);
+    coord.attachRefreshTrigger(new EpicRefresh({ dispatchResolve: async () => ({ status: 'dispatched' }), escalate: () => {} }));
+    const view = async () => tasks.withDeps(await tasks.get(member.id));
+
+    const held = await view();
+    expect(held.epicBlockers).toEqual([{ ref: '20', kind: 'epic', heldEpic: '10', cycle: false }]);
+    expect(held.agentWorkable).toBe(false);
+    expect((await tasks.orderedEligibleWork(wsId)).map((t) => t.id)).not.toContain(member.id);
+
+    rawGit(repo, 'checkout', '-b', 'epic/20');
+    writeFileSync(join(repo, 'blocker.txt'), 'blocker epic code\n');
+    rawGit(repo, 'add', '-A');
+    rawGit(repo, 'commit', '-m', 'blocker epic work');
+    rawGit(repo, 'checkout', 'develop');
+    rawGit(repo, 'merge', '--no-ff', '-m', 'integrate epic 20', 'epic/20');
+    await tasks.markEpicIntegrated(wsId, trackerRef(20), { mergeCommit: rawGit(repo, 'rev-parse', 'HEAD'), memberRefs: [trackerRef(21)] });
+
+    expect((await view()).epicBlockers).toEqual([]);
+    expect(await coord.memberBaseNotReady(await tasks.get(member.id))).toBe('stale');
+
+    await coord.reconcile(blockedEpicTickets('closed'), mirrored);
+
+    expect(rawGit(repo, 'branch', '--contains', 'develop', '--list', 'epic/10')).toContain('epic/10');
+    expect(await coord.memberBaseNotReady(await tasks.get(member.id))).toBe('ready');
+    const freed = await view();
+    expect(freed.epicBlockers).toEqual([]);
+    expect(freed.agentWorkable).toBe(true);
+    expect((await tasks.orderedEligibleWork(wsId)).map((t) => t.id)).toContain(member.id);
+  });
+
+  it('refreshes a fresh integration branch with no commits of its own once base advances, and skips one that already contains base', async () => {
+    const tickets = epicTickets();
+    const mirrored = await mscan(tickets);
+    rawGit(repo, 'branch', 'epic/10');
+    const refresh = new FakeRefresh();
+    const coord = new EpicLifecycle(tasks, repo, fireAndForget);
+    coord.attachRefreshTrigger(refresh);
+
+    await coord.reconcile(tickets, mirrored);
+    expect(refresh.calls).toEqual([]);
+
+    writeFileSync(join(repo, 'advance.txt'), 'base moved\n');
+    rawGit(repo, 'add', '-A');
+    rawGit(repo, 'commit', '-m', 'base advances');
+    await coord.reconcile(tickets, mirrored);
+    expect(refresh.calls).toEqual(['10']);
+
+    rawGit(repo, 'checkout', 'epic/10');
+    rawGit(repo, 'merge', '--no-edit', 'develop');
+    writeFileSync(join(repo, 'own.txt'), 'epic work\n');
+    rawGit(repo, 'add', '-A');
+    rawGit(repo, 'commit', '-m', 'epic own work');
+    rawGit(repo, 'checkout', 'develop');
+    await coord.reconcile(tickets, mirrored);
+    expect(refresh.calls).toEqual(['10']);
+  });
+
+  it('leaves a running Member untouched when its Epic gains an unsatisfied blocker', async () => {
+    const before = epicTickets();
+    const mirrored = await mscan(before);
+    const member = mirrored.find((t) => t.trackerRef === trackerRef(11))!;
+    const claimed = await tasks.claimReady(member.id);
+    expect(claimed?.state).toBe('working');
+    const snapshot = await tasks.get(member.id);
+
+    const blocked = blockedEpicTickets();
+    await mscan(blocked);
+    const coord = new EpicLifecycle(tasks, repo, fireAndForget);
+    await coord.reconcile(blocked, await tasks.list());
+
+    const after = await tasks.get(member.id);
+    expect(after.state).toBe('working');
+    expect(after.updatedAt).toBe(snapshot.updatedAt);
+    expect((await tasks.withDeps(after)).epicBlockers).toEqual([{ ref: '20', kind: 'epic', heldEpic: '10', cycle: false }]);
   });
 
   it('fires branch-created once on the Epic timeline; a later idempotent reconcile does not repeat it', async () => {
@@ -896,7 +1108,7 @@ describe('EpicLifecycle direct-mode Epics (isolationMode "direct", ADR-0001 dire
     expect(m11.isolationMode).toBe('direct');
     expect(m11.baseBranch).toBeNull();
     expect(coord.awaitsBase(m11)).toBe(false);
-    expect(await coord.memberBaseNotReady(m11)).toBe(false);
+    expect(await coord.memberBaseNotReady(m11)).toBe('ready');
   });
 
   it('a mixed Epic cuts the branch and sets it only on the worktree member', async () => {
@@ -939,7 +1151,7 @@ describe('EpicLifecycle direct-mode Epics (isolationMode "direct", ADR-0001 dire
     expect(await baseOf(trackerRef(11))).toBe('epic/10');
     const m11 = (await tasks.list()).find((t) => t.trackerRef === trackerRef(11))!;
     expect(coord.awaitsBase(m11)).toBe(false);
-    expect(await coord.memberBaseNotReady(m11)).toBe(false);
+    expect(await coord.memberBaseNotReady(m11)).toBe('ready');
     expect(coord.isInPlace(trackerRef(10), await tasks.list())).toBe(true);
   });
 
@@ -977,7 +1189,7 @@ describe('EpicLifecycle direct-mode Epics (isolationMode "direct", ADR-0001 dire
     const otherTask = await mirrorScan(tasks, [ticket({ ref: trackerRef(11), title: 'Same ref, other repo' })], otherWsId);
     await tasks.update(otherTask[0]!.id, { isolationMode: 'worktree' });
     const git = new FakeGit(['epic/10'], 'develop');
-    git.contained.delete('epic/10');
+    git.current.delete('epic/10');
     const refresh = new FakeRefresh();
     const coord = new EpicLifecycle(tasks, dir, fireAndForget, git);
     coord.attachWorkspace(wsId);

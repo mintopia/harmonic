@@ -13,3 +13,7 @@ export function subscribeCriticLog(opts: { onEvent: (event: any) => void }) {
   queueMicrotask(() => criticLog.forEach((event: any) => opts.onEvent(event)));
   return () => {};
 }
+
+export function subscribeFiles(_workspaceId: number): () => void {
+  return () => {};
+}

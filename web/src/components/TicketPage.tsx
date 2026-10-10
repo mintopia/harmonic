@@ -9,6 +9,7 @@ import { gateForAttempt } from '../ticket-gate-model';
 import { cardTitle } from '../board-sections-model';
 import { AttemptRail } from './ticket/AttemptRail';
 import { Gate } from './ticket/Gate';
+import { TaskActions } from './TaskActions';
 import { LifecycleTimeline } from './ticket/LifecycleTimeline';
 import { runFailureBannerLabel, runForAttempt } from '../attempt-timeline-model';
 import { contentPanel, defaultSelection, harnessLabel, taskStats, type ContentSelection } from '../task-detail-model';
@@ -134,6 +135,7 @@ export function TicketPage({
   const unconfiguredHarness = task.state === 'escalated' && task.escalationCause?.kind === 'harness_unconfigured' ? task.escalationCause : null;
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
   const gateModel = gateForAttempt({ task, runs, selectedAttemptId: selectedRunId });
+  const failedStep = latestAttempt?.steps.slice().reverse().find((step) => step.state === 'failed')?.type ?? null;
   const panel = contentPanel(resolved);
   const selectAttempt = (attempt: Attempt) => onSelect({ kind: 'attempt', attemptNumber: attempt.number });
   const selectRunById = (runId: number) => {
@@ -259,6 +261,18 @@ export function TicketPage({
                 )}
               </div>
               {unconfiguredHarness && <UnconfiguredHarnessGate taskId={task.id} onChanged={onChanged} onClose={onClose} />}
+              {gateModel.kind !== 'result' && (
+                <TaskActions
+                  task={task}
+                  failedStep={failedStep}
+                  variant="bar"
+                  onEdit={(t) => {
+                    onClose();
+                    onEdit(t);
+                  }}
+                  onChanged={onChanged}
+                />
+              )}
               </div>
             )}
 
@@ -335,7 +349,7 @@ export function TicketPage({
           <Gate
             model={gateModel}
             task={task}
-            failedStep={latestAttempt?.steps.slice().reverse().find((step) => step.state === 'failed')?.type ?? null}
+            failedStep={failedStep}
             onEdit={(t) => {
               onClose();
               onEdit(t);

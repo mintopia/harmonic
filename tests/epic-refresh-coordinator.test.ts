@@ -82,11 +82,61 @@ describe('EpicRefresh', () => {
     await expect(coordinator.refresh({ ref: trackerRef(7), repoDir: '/repo', defaultBranch: 'develop' })).resolves.toEqual({
       status: 'resolving', detail: 'first conflict',
     });
-    await expect(coordinator.refresh({ ref: trackerRef(7), repoDir: '/repo', defaultBranch: 'develop' })).resolves.toMatchObject({
+    await expect(coordinator.completeTurn({ ref: trackerRef(7), repoDir: '/repo', defaultBranch: 'develop' })).resolves.toMatchObject({
       status: 'escalated',
     });
     expect(resolutions).toEqual(['first conflict']);
     expect(escalations).toEqual([{ ref: '7', reason: expect.stringContaining('second conflict') }]);
+  });
+
+  it('does not attempt a merge or escalate while a corrective turn is in flight', async () => {
+    let merges = 0;
+    const escalations: string[] = [];
+    const coordinator = new EpicRefresh({
+      git: fakeGit,
+      merge: async () => { merges += 1; return conflict(); },
+      dispatchResolve: async () => ({ status: 'dispatched' }),
+      escalate: (_ref, reason) => { escalations.push(reason); },
+    });
+    const target = { ref: trackerRef(21), repoDir: '/repo', defaultBranch: 'develop' };
+
+    await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'resolving' });
+    expect(merges).toBe(1);
+    await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'resolving' });
+    await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'resolving' });
+    expect(merges).toBe(1);
+    expect(escalations).toEqual([]);
+
+    await expect(coordinator.completeTurn(target)).resolves.toMatchObject({ status: 'escalated' });
+    expect(merges).toBe(2);
+    expect(escalations).toEqual([expect.stringContaining('still conflicts after corrective turn')]);
+  });
+
+  it('skips a repeat refresh against the same base OID within the backoff, and retries once the base moves or the backoff passes', async () => {
+    let merges = 0;
+    let tip = 'base-1';
+    let clock = 0;
+    const coordinator = new EpicRefresh({
+      git: { revParse: async () => tip },
+      merge: async () => { merges += 1; return { ok: false, reason: 'stale-base', detail: 'boom' }; },
+      dispatchResolve: async () => ({ status: 'dispatched' }),
+      escalate: () => {},
+      now: () => clock,
+      backoffMs: 1000,
+    });
+    const target = { ref: trackerRef(22), repoDir: '/repo', defaultBranch: 'develop' };
+
+    await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'escalated' });
+    expect(merges).toBe(1);
+    await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'backing-off' });
+    expect(merges).toBe(1);
+    tip = 'base-2';
+    await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'escalated' });
+    expect(merges).toBe(2);
+    await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'backing-off' });
+    clock = 1000;
+    await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'escalated' });
+    expect(merges).toBe(3);
   });
 
   it('serializes refreshes on the same base repo', async () => {
@@ -151,7 +201,7 @@ describe('EpicRefresh', () => {
     expect(escalations).toEqual([]);
   });
 
-  it('returns an escalation when no running member can host a refresh resolution, without stranding the resolving flag', async () => {
+  it('returns an escalation when no running member can host a refresh resolution, and backs off rather than re-dispatching on the same base', async () => {
     const coordinator = new EpicRefresh({
       git: fakeGit,
       merge: async () => conflict('refresh conflict'),
@@ -167,10 +217,7 @@ describe('EpicRefresh', () => {
       status: 'escalated',
       reason: 'no active Epic member is available to resolve refresh conflict for epic/14',
     });
-    await expect(coordinator.refresh(target)).resolves.toEqual({
-      status: 'escalated',
-      reason: 'no active Epic member is available to resolve refresh conflict for epic/14',
-    });
+    await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'backing-off' });
   });
 });
 
@@ -385,7 +432,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     const coordinator: EpicRefresh = new EpicRefresh({
       dispatchResolve: (t, detail) =>
         runner.enqueueEpicRefreshResolution({ ...t, workspaceId: 1 }, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
-          const outcome = await coordinator.refresh(t);
+          const outcome = await coordinator.completeTurn(t);
           retryOutcomes.push(outcome);
           return outcome;
         }),
@@ -404,6 +451,45 @@ describe('epic refresh corrective turn (issue #315)', () => {
     await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'refreshed' });
   });
 
+  it('removes a stale epic-refresh worktree left by a restart and dispatches a fresh turn', async () => {
+    const driveCalls: CriticDriveRequest[] = [];
+    const retryOutcomes: EpicRefreshOutcome[] = [];
+    const escalations: string[] = [];
+    const runner = makeRunner(async (req) => {
+      driveCalls.push(req);
+      writeFileSync(join(req.cwd, 'shared.txt'), 'resolved\n');
+      git(req.cwd, 'add', '-A');
+      git(req.cwd, 'commit', '--no-edit');
+    });
+    await runningMember('epic/5');
+    git(repo, 'checkout', '--detach');
+
+    const stale = join(dir, 'worktrees', 'epic-refresh-5');
+    mkdirSync(join(dir, 'worktrees'), { recursive: true });
+    git(repo, 'worktree', 'add', stale, 'epic/5');
+    expect(() => git(stale, 'merge', 'develop')).toThrow();
+    expect(git(stale, 'status', '--porcelain')).toContain('UU shared.txt');
+
+    const target = { ref: trackerRef(5), repoDir: repo, defaultBranch: 'develop' };
+    const coordinator: EpicRefresh = new EpicRefresh({
+      dispatchResolve: (t, detail) =>
+        runner.enqueueEpicRefreshResolution({ ...t, workspaceId: 1 }, detail, (ref, reason) => coordinator.escalateTurn(ref, reason), async () => {
+          const outcome = await coordinator.completeTurn(t);
+          retryOutcomes.push(outcome);
+          return outcome;
+        }),
+      escalate: (_ref, reason) => { escalations.push(reason); },
+    });
+
+    await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'resolving' });
+    await waitFor(async () => retryOutcomes.length === 1);
+    expect(retryOutcomes[0]).toMatchObject({ status: 'refreshed' });
+    expect(driveCalls).toHaveLength(1);
+    expect(escalations).toEqual([]);
+    expect(existsSync(stale)).toBe(false);
+    expect(git(repo, 'worktree', 'list').split('\n').filter(Boolean)).toHaveLength(1);
+  });
+
   it('an unresolved corrective turn re-conflicts and escalates, leaving no worktree and no stranded flag', async () => {
     const escalations: string[] = [];
     const retryOutcomes: EpicRefreshOutcome[] = [];
@@ -416,7 +502,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     const coordinator: EpicRefresh = new EpicRefresh({
       dispatchResolve: (t, detail) =>
         runner.enqueueEpicRefreshResolution({ ...t, workspaceId: 1 }, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
-          const outcome = await coordinator.refresh(t);
+          const outcome = await coordinator.completeTurn(t);
           retryOutcomes.push(outcome);
           return outcome;
         }),
@@ -469,7 +555,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     const coordinator: EpicRefresh = new EpicRefresh({
       dispatchResolve: (t, detail) =>
         runner.enqueueEpicRefreshResolution({ ...t, workspaceId: 1 }, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
-          const outcome = await coordinator.refresh(t);
+          const outcome = await coordinator.completeTurn(t);
           retryOutcomes.push(outcome);
           return outcome;
         }),

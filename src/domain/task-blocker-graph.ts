@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { taskDependencies, type TaskRow, type TaskState } from '../db/schema.js';
 import { DomainError } from './errors.js';
+import type { EpicBlocker } from './epic-hold.js';
 import type { TaskRouting } from './task-routing.js';
 
 export interface TaskWithBlockers extends TaskRow {
@@ -9,6 +10,7 @@ export interface TaskWithBlockers extends TaskRow {
   dependents: number[];
   blockedOnFailed: boolean;
   openBlockerCount: number;
+  epicBlockers: EpicBlocker[];
   agentWorkable: boolean;
   humanOnly: boolean;
   isEpic: boolean;

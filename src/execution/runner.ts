@@ -523,12 +523,24 @@ export class Runner {
     this.activeRuns.markDriving(task.id);
     let created: AttemptRow | undefined;
     try {
-      if (await this.epicBaseNotReady?.(task)) {
-        throw new DomainError(
-          'invalid_state',
-          `task ${task.id} is an Epic member whose integration branch (${task.baseBranch ?? 'unassigned'}) is not ready yet; ` +
-            'it is cut/re-cut on the next tracker poll — retry shortly',
-        );
+      const baseGate = (await this.epicBaseNotReady?.(task)) ?? 'ready';
+      switch (baseGate) {
+        case 'stale':
+          throw new DomainError(
+            'invalid_state',
+            `task ${task.id} is an Epic member whose integration branch (${task.baseBranch}) is behind its base; ` +
+              'it is refreshed when the blocking Epic is integrated — retry shortly',
+          );
+        case 'missing':
+          throw new DomainError(
+            'invalid_state',
+            `task ${task.id} is an Epic member whose integration branch (${task.baseBranch ?? 'unassigned'}) is not ready yet; ` +
+              'it is cut/re-cut on the next tracker poll — retry shortly',
+          );
+        case 'ready':
+          break;
+        default:
+          baseGate satisfies never;
       }
       const config = this.getConfig();
       const route = await this.taskService.routing.ticketRoute(task);

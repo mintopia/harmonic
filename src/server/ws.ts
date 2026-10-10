@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import type { AppContext } from './app.js';
 import { requestIsOperator } from './auth.js';
 import { attemptTimelineToApi, conversationToApi, attemptToApi, attemptUsageToApi, taskToApi } from './serialize.js';
@@ -27,6 +28,11 @@ function latestChangeSender<TRow, TApi>(toApi: (row: TRow) => Promise<TApi>): {
   };
 }
 
+const filesSubscriptionSchema = z.object({
+  type: z.enum(['subscribe_files', 'unsubscribe_files']),
+  workspaceId: z.number().int().positive(),
+});
+
 export const WS_HEARTBEAT_INTERVAL_MS = 30_000;
 
 /** One firehose socket at /api/ws: every event is broadcast to every client; clients filter. */
@@ -49,6 +55,7 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
     const hasWriteScope = await requestIsOperator(req, ctx.auth, socket.protocol || undefined);
     let unsubscribeAttemptLog: (() => void) | undefined;
     let unsubscribeCriticLog: (() => void) | undefined;
+    const fileSubscriptions = new Map<number, () => void>();
     const taskChanged = latestChangeSender<TaskRow, ApiTask>((task) => ctx.tasks.withDeps(task).then((withDeps) => taskToApi(ctx, withDeps)));
     const attemptChanged = latestChangeSender<AttemptRow, ApiAttemptSummary>((run) => attemptToApi(ctx, run));
     const conversationChanged = latestChangeSender<ConversationRow, ApiConversation>((conversation) => conversationToApi(ctx, conversation));
@@ -116,6 +123,17 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       } catch {
         return;
       }
+      const filesMessage = filesSubscriptionSchema.safeParse(message);
+      if (filesMessage.success) {
+        const { type, workspaceId } = filesMessage.data;
+        if (type === 'subscribe_files') {
+          if (!fileSubscriptions.has(workspaceId)) fileSubscriptions.set(workspaceId, ctx.workspaceWatcher.subscribe(workspaceId));
+        } else {
+          fileSubscriptions.get(workspaceId)?.();
+          fileSubscriptions.delete(workspaceId);
+        }
+        return;
+      }
       const sub = logSubscription(message);
       if (!sub) return;
       const channel = sub.type === 'critic_log_subscribe' ? 'critic_log_event' : 'attempt_log_event';
@@ -155,6 +173,8 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       clearInterval(heartbeat);
       unsubscribeAttemptLog?.();
       unsubscribeCriticLog?.();
+      for (const release of fileSubscriptions.values()) release();
+      fileSubscriptions.clear();
       unsubscribes.forEach((u) => u());
     });
   });

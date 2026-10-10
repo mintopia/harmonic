@@ -1,6 +1,6 @@
 # Harmonic architecture decisions
 
-The current set contains **46 ADRs**, reconciled on **2026-10-03**. They record
+The current set contains **51 ADRs**, reconciled on **2026-10-03**. They record
 accepted decisions, their rationale, and explicit amendments. A Context section
 may describe a historical defect; it does not by itself identify an open issue.
 Current-status notes and the operative Decision sections describe the current
@@ -27,7 +27,7 @@ Attempts without timing measurements retain the documented wall-clock fallback.
 |---|---|---|
 | Execution and escalation | 0001, 0002, 0005 | 0020 transition rules; 0027 pause/resume; 0038 step-aware Accept and fresh-Attempt Reject |
 | Merge placement and publication | 0001 | 0039 administrative worktrees and base synchronization; 0040 reconciliation and atomic publication |
-| Epics | 0004, 0015, 0016 | 0017 summary page; 0018 stored identity; 0023 structural roots; 0028 Epic Attempts; 0039 all-direct completion |
+| Epics | 0004, 0015, 0016 | 0017 summary page; 0018 stored identity; 0023 structural roots; 0028 Epic Attempts; 0039 all-direct completion; 0051 blocked-by hold |
 | Verification | 0003 | 0028 stage lists; 0031 ordering; 0037 additive overlays; 0038 Step overrides; 0039 post-merge checkout |
 | Configuration and harnesses | 0009 | 0022 baseline/global/workspace layering; 0025 OpenCode; 0036 unattended permission modes; 0037 verifier overlays; 0046 tracker selection, Code Repository, Secrets (amended 2026-10-03: private-host probes; generic git Code Repository) |
 | Conversations and navigation | 0006, 0011 | 0026 read-only Activity; 0029 transcript view; 0033 scoped routes; 0035 eager command discovery |
@@ -97,6 +97,7 @@ is historical and retains the terminology used at the reset.
 | 0048 | [Closing the ticket after a Merge is best-effort and retried](0048-ticket-close-after-merge-is-best-effort-and-retried.md) |
 | 0049 | [Routing Labels pick a Ticket's Harness and Model](0049-routing-labels-pick-a-tickets-harness-and-model.md) |
 | 0050 | [The Prompts tab is organised by Prompt Anatomy](0050-prompts-tab-is-organised-by-prompt-anatomy.md) |
+| 0051 | [An Epic's blocked-by links hold its Members](0051-epic-blocked-by-links-hold-members.md) |
 
 ## Where every pre-reset ADR went
 

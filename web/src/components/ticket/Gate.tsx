@@ -29,6 +29,8 @@ export function Gate({
   onChanged: () => void;
   onGoToCurrent: (attemptId: number) => void;
 }) {
+  if (model.kind !== 'result' && task.state === 'escalated') return null;
+
   if (model.kind === 'none') {
     if (taskActions(task.state, task.wallClockDeadline).length === 0) return null;
     return (

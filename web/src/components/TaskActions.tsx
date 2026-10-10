@@ -22,7 +22,7 @@ export function TaskActions({
 }: {
   task: Task;
   failedStep?: StepType | null;
-  variant: 'card' | 'footer';
+  variant: 'card' | 'footer' | 'bar';
   onEdit: (task: Task) => void;
   onChanged: () => void;
 }) {
@@ -39,8 +39,8 @@ export function TaskActions({
   const accept = acceptPresentation(failedStep);
   // Persisted on the Task so actions stay disabled across a reload; `resolving-conflicts` is excluded so the operator can still Close.
   const acceptInFlight = task.mergeStatus === 'merging';
-  if (variant === 'footer' && actions.length === 0) return null;
-  const escalatedFooter = variant === 'footer' && task.state === 'escalated';
+  if (variant !== 'card' && actions.length === 0) return null;
+  const bar = variant === 'bar';
 
   const secondary = variant === 'card' ? btnQuiet : btnGhost;
   const act = (fn: () => Promise<unknown>) => () => fn().then(onChanged, toastError);
@@ -75,7 +75,7 @@ export function TaskActions({
   const button = (action: TaskAction) => {
     switch (action) {
       case 'accept': {
-        const label = variant === 'footer' ? accept.label : 'Accept';
+        const label = variant === 'card' ? 'Accept' : accept.label;
         if (escalation && !escalation.accept) {
           return (
             <button key={action} className={btnAccept} disabled title="No candidate commits to accept">
@@ -84,7 +84,7 @@ export function TaskActions({
           );
         }
         return (
-          <button key={action} className={btnAccept} onClick={onAccept} disabled={accepting || acceptInFlight}>
+          <button key={action} className={btnAccept} onClick={onAccept} disabled={accepting || acceptInFlight} title={accept.description}>
             {accepting || acceptInFlight ? 'Accepting…' : label}
           </button>
         );
@@ -97,18 +97,18 @@ export function TaskActions({
             disabled={acceptInFlight}
             onClick={() => setRetrying(true)}
           >
-            {variant === 'footer' ? 'Retry…' : 'Retry'}
+            {variant === 'card' ? 'Retry' : 'Retry…'}
           </button>
         );
       case 'close':
         return (
           <button
             key={action}
-            className={escalatedFooter ? `${btnGhost} border-fail text-fail` : btnQuietDestructive}
+            className={bar ? `${btnGhost} border-fail text-fail` : btnQuietDestructive}
             disabled={acceptInFlight}
             onClick={() => setConfirming('close')}
           >
-            {variant === 'footer' ? 'Close task' : 'Close'}
+            {variant === 'card' ? 'Close' : 'Close task'}
           </button>
         );
       case 'run':
@@ -174,14 +174,12 @@ export function TaskActions({
     }
   };
 
-  const container = escalatedFooter
-    ? 'flex flex-wrap items-center gap-2.5'
+  const container = bar
+    ? 'mt-4 flex flex-wrap items-center gap-2.5 border-t border-hairline pt-3'
     : variant === 'footer'
       ? 'flex flex-col gap-2 [&>button]:w-full [&>button]:justify-center'
       : 'flex flex-wrap items-center justify-end gap-2.5';
-  const ordered = (variant === 'footer' && !escalatedFooter ? [...actions].reverse() : actions).filter(
-    (action) => !(variant === 'footer' && task.state === 'escalated' && action === 'delete'),
-  );
+  const ordered = variant === 'footer' ? [...actions].reverse() : actions.filter((action) => !(bar && action === 'delete'));
   const done = (close: () => void) => () => {
     close();
     onChanged();
@@ -189,15 +187,16 @@ export function TaskActions({
 
   return (
     <>
-      {task.state === 'escalated' && variant === 'footer' && (
-        <p className="text-small text-muted">{accept.description}</p>
-      )}
       <div className={container}>
-        {ordered.filter((a) => !escalatedFooter || (a !== 'retry' && a !== 'accept')).map(button)}
-        {escalatedFooter && (
-          <div className="ml-auto flex flex-wrap justify-end gap-2.5">
-            {ordered.filter((a) => a === 'retry' || a === 'accept').map(button)}
-          </div>
+        {bar ? (
+          <>
+            {ordered.filter((a) => a !== 'retry' && a !== 'accept').map(button)}
+            <div className="ml-auto flex flex-wrap justify-end gap-2.5">
+              {ordered.filter((a) => a === 'retry' || a === 'accept').map(button)}
+            </div>
+          </>
+        ) : (
+          ordered.map(button)
         )}
       </div>
       {retrying && (

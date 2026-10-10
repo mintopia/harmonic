@@ -240,7 +240,7 @@ describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
     } as unknown as AttemptStore;
     const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 10 } };
     const ar = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), {
-      epicBaseNotReady: (t) => awaitsEpicBase(t),
+      epicBaseNotReady: (t) => awaitsEpicBase(t) ? 'missing' : 'ready',
     });
     return { ar, started };
   };
@@ -333,7 +333,7 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
     const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
     let now = 0;
     const autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), {
-      epicBaseNotReady: (candidate) => candidate.baseBranch === 'epic/208',
+      epicBaseNotReady: (candidate) => candidate.baseBranch === 'epic/208' ? 'missing' : 'ready',
       missingEpicBaseGraceMs: 100,
       clock: () => now,
     });
@@ -359,7 +359,7 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
 
   it('does not run the Epic gate while the Auto-Runner is at capacity', async () => {
     const task = await tasks.upsertMirrored(mirroredAfk(210));
-    const gate = vi.fn(() => false);
+    const gate = vi.fn((): 'ready' => 'ready');
     const runner = { launchClaimed: async () => {}, escalateUnspawned: async () => {} };
     const runStore = { countRunning: async () => 1, countRunningByWorkspace: async () => new Map<number, number>() };
     const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
@@ -385,7 +385,7 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
     };
     const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
     const autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), {
-      epicBaseNotReady: (candidate) => missing && candidate.baseBranch === 'epic/209',
+      epicBaseNotReady: (candidate) => missing && candidate.baseBranch === 'epic/209' ? 'missing' : 'ready',
       missingEpicBaseGraceMs: 100,
       clock: () => now,
     });
@@ -399,6 +399,58 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
     await vi.waitFor(() => expect(started).toEqual([task.id]));
     expect(autoRunner.skipReasonFor(task.id)).toBeUndefined();
     expect((await tasks.get(task.id)).state).not.toBe('escalated');
+  });
+
+  it('records a stale integration branch as a pending refresh and never escalates it past the grace window', async () => {
+    const task = await tasks.upsertMirrored(mirroredAfk(210));
+    await tasks.setBaseBranch(task.id, 'epic/210');
+    const started: number[] = [];
+    const escalated: number[] = [];
+    const runner = { launchClaimed: async (id: number) => started.push(id), escalateUnspawned: async (id: number) => void escalated.push(id) };
+    const runStore = {
+      countRunning: async () => started.length,
+      countRunningByWorkspace: async () => new Map<number, number>(),
+    };
+    const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
+    let now = 0;
+    const autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), {
+      epicBaseNotReady: () => 'stale',
+      missingEpicBaseGraceMs: 100,
+      clock: () => now,
+    });
+
+    autoRunner.poke();
+    await vi.waitFor(() => expect(autoRunner.skipReasonFor(task.id)).toBe('integration branch epic/210 behind its base (refresh pending)'));
+    now = 1000;
+    autoRunner.poke();
+    await vi.waitFor(() => expect(autoRunner.skipReasonFor(task.id)).toContain('refresh pending'));
+
+    expect(escalated).toEqual([]);
+    expect(started).toEqual([]);
+    expect((await tasks.get(task.id)).state).toBe('ready');
+  });
+
+  it('names the Epic Hold blockers in the skip reason', async () => {
+    const facts = (parent: string | null, blockedBy: string[], labels: string[]): TrackerFacts => ({
+      ...agentFacts(0),
+      parent: parent === null ? null : trackerRef(Number(parent)),
+      blockedBy: blockedBy.map((ref) => ({ ref: trackerRef(Number(ref)), title: ref, state: 'open' as const })),
+      labels,
+    });
+    await tasks.syncTrackerContainers(1, [
+      { trackerRef: trackerRef(73), facts: facts(null, ['71'], ['epic']) },
+      { trackerRef: trackerRef(71), facts: facts(null, [], ['epic']) },
+    ]);
+    await tasks.syncEpics(1, [{ ref: trackerRef(73), kind: 'epic' }, { ref: trackerRef(71), kind: 'epic' }]);
+    const member = await tasks.upsertMirrored(mirroredAfk(101, { facts: facts('73', [], ['ready-for-agent']) }));
+    const runner = { launchClaimed: async () => {}, escalateUnspawned: async () => {} };
+    const runStore = { countRunning: async () => 0, countRunningByWorkspace: async () => new Map<number, number>() };
+    const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
+    const autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore));
+
+    autoRunner.poke();
+
+    await vi.waitFor(() => expect(autoRunner.skipReasonFor(member.id)).toBe('Epic #73 waits on #71 (not integrated)'));
   });
 });
 

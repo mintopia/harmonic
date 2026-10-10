@@ -42,6 +42,8 @@ import { DEFAULT_TRIAGE_LABELS, loadTriageLabels, storedTriageLabels, type Triag
 import { withTaskLock } from './task-lock.js';
 import type { StoredEpicRecord } from './epic-derivation.js';
 import { TaskBlockerGraph } from './task-blocker-graph.js';
+import { EpicHoldIndexCache } from './epic-hold-cache.js';
+import { hasEpicKindBlockers, namesEpicBlocker, unsatisfiedEpicBlockers, type EpicBlocker, type EpicHoldIndex } from './epic-hold.js';
 import { TaskMirror, type MirrorInput } from './task-mirror.js';
 export type { MirrorInput } from './task-mirror.js';
 
@@ -177,6 +179,7 @@ export interface TaskWithDeps extends TaskRow {
   blockedOnFailed: boolean;
   /** Number of blocker edges whose blocker has not completed. */
   openBlockerCount: number;
+  epicBlockers: EpicBlocker[];
   /** A ticket the Auto-Runner may work: opt-in label (when mirrored) and no open Blockers. */
   agentWorkable: boolean;
   /** A mirrored ticket Harmonic never works (no opt-in label, an Epic container, a
@@ -255,6 +258,7 @@ type TriageLabelsByWorkspace = ReadonlyMap<number, TriageLabels>;
 export class TaskService {
   private readonly blockerGraph: TaskBlockerGraph;
   private readonly mirror: TaskMirror;
+  private readonly epicHold: EpicHoldIndexCache;
   readonly routing: RoutingService;
   private beforeDelete: (task: TaskRow) => Promise<void> = async () => {};
 
@@ -268,6 +272,7 @@ export class TaskService {
     private readonly onRemoved: (id: number) => void = () => {},
     private readonly onDisposition: (disposition: 'done' | 'cancelled', task: TaskRow) => void = () => {},
   ) {
+    this.epicHold = new EpicHoldIndexCache(this.db);
     this.routing = new RoutingService(this.db, this.getConfig, this.getWorkspaces);
     this.blockerGraph = new TaskBlockerGraph(this.db, {
       get: (id) => this.get(id),
@@ -280,7 +285,13 @@ export class TaskService {
     });
     this.mirror = new TaskMirror(this.db, {
       resolveWorkspace: (workspaceId) => this.resolveWorkspace(workspaceId),
-      changed: (task) => this.changed(task),
+      changed: async (raw) => {
+        const task = await this.changed(raw);
+        if (task.state === 'done' && task.workspaceId !== null && task.trackerRef !== null) {
+          await this.emitEpicHeldMembers(task.workspaceId, task.trackerRef);
+        }
+        return task;
+      },
       get: (id) => this.get(id),
       clearDismissal: (workspaceId, trackerRef) => this.clearDismissal(workspaceId, trackerRef),
       removeTaskCascade: (id, tombstone) => this.removeTaskCascade(id, tombstone),
@@ -407,6 +418,34 @@ export class TaskService {
         .all(),
     );
     return new Set(rows.map((row) => `${row.workspaceId}:${row.parent}`));
+  }
+
+  async epicHasEpicBlockers(workspaceId: number, epicRef: TrackerRef): Promise<boolean> {
+    return hasEpicKindBlockers(workspaceId, epicRef, await this.epicHold.index(workspaceId));
+  }
+
+  private epicBlockersOf(task: TaskRow, index: EpicHoldIndex): EpicBlocker[] {
+    if (task.origin !== 'mirrored' || task.workspaceId == null || task.trackerParent == null) return [];
+    return unsatisfiedEpicBlockers(task.workspaceId, task.trackerParent, index);
+  }
+
+  private async emitEpicHeldMembers(workspaceId: number, blockerRef: TrackerRef): Promise<void> {
+    try {
+      const index = await this.epicHold.index(workspaceId);
+      const members = await this.db.read((db) =>
+        db
+          .select()
+          .from(tasks)
+          .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.origin, 'mirrored'), isNotNull(tasks.trackerParent), notInArray(tasks.state, TERMINAL_STATES)))
+          .all(),
+      );
+      await forEachYielding(members, async (raw) => {
+        if (!namesEpicBlocker(workspaceId, raw.trackerParent, blockerRef, index)) return;
+        this.onChanged(await this.resolve(raw));
+      });
+    } catch (error) {
+      logger.warn('could not notify Members held by a cleared blocker', { workspaceId, blockerRef, error: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   private async getRaw(id: number): Promise<RawTaskRow> {
@@ -555,6 +594,7 @@ export class TaskService {
         }).run();
       });
     });
+    this.epicHold.invalidate();
   }
 
   /**
@@ -573,6 +613,7 @@ export class TaskService {
           .run();
       });
     });
+    this.epicHold.invalidate();
   }
 
   /** The stored Epic `kind` for a ref in a Workspace, or null when no spine row exists. */
@@ -617,6 +658,8 @@ export class TaskService {
         .where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, trackerRef), inArray(epics.state, ['open', 'integrating'] satisfies EpicLifecycleState[])))
         .run();
     });
+    this.epicHold.invalidate();
+    await this.emitEpicHeldMembers(workspaceId, trackerRef);
   }
 
   /** Mark the durable Epic as passing through its whole-Epic verification and merge gate. */
@@ -628,6 +671,7 @@ export class TaskService {
         .where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, trackerRef), eq(epics.state, 'open')))
         .run();
     });
+    this.epicHold.invalidate();
   }
 
   /** Every durable Epic spine row for a Workspace; the anchor that outlives the tracker container wipe. */
@@ -723,10 +767,12 @@ export class TaskService {
     const completedIds = await this.doneIds(blockerIds);
     const containerRefs = await this.containerRefs(workspaceId);
     const triage = await this.triageLabels(workspaceId);
+    const holdIndex = await this.epicHold.index(workspaceId);
     const nodes: OrderedEligibleTask[] = [];
     await forEachYielding(candidates, (task) => {
       const blockedBy = (blockersByTaskId.get(task.id) ?? []).filter((id) => !completedIds.has(id));
-      if (!this.agentWorkable(task, blockedBy.length, containerRefs, triage)) return;
+      const held = this.epicBlockersOf(task, holdIndex);
+      if (!this.agentWorkable(task, blockedBy.length + held.length, containerRefs, triage)) return;
       nodes.push({
         ...task,
         blockedBy,
@@ -966,6 +1012,9 @@ export class TaskService {
       if (state === 'done' || state === 'cancelled') {
         this.onDisposition(state, task);
         await this.blockerGraph.emitDependents(id);
+        if (state === 'done' && task.workspaceId !== null && task.trackerRef !== null) {
+          await this.emitEpicHeldMembers(task.workspaceId, task.trackerRef);
+        }
       }
       return task;
     });
@@ -1127,6 +1176,7 @@ export class TaskService {
         }
       }
     });
+    this.epicHold.invalidate();
     await this.blockerGraph.rederiveAndEmitBlockers(formerDependents);
     this.onRemoved(id);
   }
@@ -1134,7 +1184,8 @@ export class TaskService {
   async withDeps(task: TaskRow): Promise<TaskWithDeps> {
     const dependsOn = await this.dependsOn(task.id);
     const depStates = await Promise.all(dependsOn.map(async (depId) => (await this.get(depId)).state));
-    const openBlockerCount = depStates.filter((state) => state !== 'done').length;
+    const epicBlockers = this.epicBlockersOf(task, await this.epicHold.index(task.workspaceId ?? undefined));
+    const openBlockerCount = depStates.filter((state) => state !== 'done').length + epicBlockers.length;
     const containerRefs = await this.containerRefs(task.workspaceId ?? undefined);
     const triage = await this.triageLabels(task.workspaceId ?? undefined);
     const raw = await this.getRaw(task.id);
@@ -1144,6 +1195,7 @@ export class TaskService {
       dependents: await this.dependents(task.id),
       blockedOnFailed: task.state === 'ready' && depStates.some((s) => s === 'escalated' || s === 'cancelled'),
       openBlockerCount,
+      epicBlockers,
       agentWorkable: this.agentWorkable(task, openBlockerCount, containerRefs, triage),
       humanOnly: this.humanOnly(task, containerRefs, triage),
       isEpic: this.isEpic(task, containerRefs),
@@ -1213,25 +1265,31 @@ export class TaskService {
     const dependents = new Map(ids.map((id) => [id, [] as number[]]));
     const failedDependencies = new Set<number>();
     const openBlockerCounts = new Map(ids.map((id) => [id, 0]));
-    for (const edge of dependencyRows) {
+    await forEachYielding(dependencyRows, (edge) => {
       dependsOn.get(edge.taskId)?.push(edge.dependsOnId);
       if (edge.state !== 'done') openBlockerCounts.set(edge.taskId, (openBlockerCounts.get(edge.taskId) ?? 0) + 1);
       if (edge.state === 'escalated' || edge.state === 'cancelled') failedDependencies.add(edge.taskId);
-    }
-    for (const edge of dependentRows) dependents.get(edge.dependsOnId)?.push(edge.taskId);
+    });
+    await forEachYielding(dependentRows, (edge) => {
+      dependents.get(edge.dependsOnId)?.push(edge.taskId);
+    });
     const containerRefs = await this.containerRefs(query.workspaceId);
     const triage = await this.triageLabels(query.workspaceId);
+    const holdIndex = await this.epicHold.index(query.workspaceId);
     const result: TaskWithDeps[] = [];
     await forEachYielding(listed, (task) => {
       const raw = rawById.get(task.id);
       if (!raw) return;
+      const epicBlockers = this.epicBlockersOf(task, holdIndex);
+      const openBlockerCount = (openBlockerCounts.get(task.id) ?? 0) + epicBlockers.length;
       result.push({
         ...task,
         dependsOn: dependsOn.get(task.id) ?? [],
         dependents: dependents.get(task.id) ?? [],
         blockedOnFailed: task.state === 'ready' && failedDependencies.has(task.id),
-        openBlockerCount: openBlockerCounts.get(task.id) ?? 0,
-        agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0, containerRefs, triage),
+        openBlockerCount,
+        epicBlockers,
+        agentWorkable: this.agentWorkable(task, openBlockerCount, containerRefs, triage),
         humanOnly: this.humanOnly(task, containerRefs, triage),
         isEpic: this.isEpic(task, containerRefs),
         overrides: this.overridesOf(raw),

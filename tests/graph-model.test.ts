@@ -50,6 +50,7 @@ const task = (
   escalationCause: null,
   mergeStatus: null, ticketClosePending: false,
   openBlockerCount: 0,
+  epicBlockers: [],
   agentWorkable: true,
   humanOnly: false,
   isEpic: false,

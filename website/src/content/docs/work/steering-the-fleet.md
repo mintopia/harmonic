@@ -52,7 +52,9 @@ on the board rather than failing silently:
 
 ## Retry, Accept and Close
 
-An escalated ticket has three actions on its page.
+An escalated ticket has three actions on its page. They sit in a bar across
+the main column, directly under the Escalated banner. Hover over Accept to
+see a short explanation of what it will do at the current step.
 
 - **Accept** overrides the step that failed and carries on with the pipeline.
   Its label names that step: **Accept & implement** after a failed rebase,

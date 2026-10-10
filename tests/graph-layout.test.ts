@@ -31,6 +31,7 @@ const task = (id: number, state: TaskState = 'ready', extra: Partial<Task> = {})
   escalationCause: null,
   mergeStatus: null, ticketClosePending: false,
   openBlockerCount: 0,
+  epicBlockers: [],
   agentWorkable: true,
   humanOnly: false,
   isEpic: false,

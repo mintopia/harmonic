@@ -2002,13 +2002,60 @@
           },
           "blockedOnFailed": {
             "type": "boolean",
+            "description": "Ready, and at least one blocker is escalated or cancelled, so it will not unblock on its own.",
             "example": false
           },
           "openBlockerCount": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991,
+            "description": "Blocker edges whose blocker has not completed, plus Epic Hold blockers.",
             "example": 1
+          },
+          "epicBlockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "example": "71"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "epic",
+                    "task"
+                  ],
+                  "example": "epic"
+                },
+                "heldEpic": {
+                  "type": "string",
+                  "description": "The Epic in the Member's ancestor chain whose blocked-by link names this blocker.",
+                  "example": "73"
+                },
+                "cycle": {
+                  "type": "boolean",
+                  "description": "True when the blocker Epic is itself blocked, directly or through its ancestors, by the held Epic, so the hold can never clear on its own.",
+                  "example": false
+                }
+              },
+              "required": [
+                "ref",
+                "kind",
+                "heldEpic",
+                "cycle"
+              ]
+            },
+            "description": "Unsatisfied blockers of the Epics above this Member (the Epic Hold).",
+            "example": [
+              {
+                "ref": "71",
+                "kind": "epic",
+                "heldEpic": "73",
+                "cycle": false
+              }
+            ]
           },
           "agentWorkable": {
             "type": "boolean",
@@ -2128,6 +2175,7 @@
           "dependents",
           "blockedOnFailed",
           "openBlockerCount",
+          "epicBlockers",
           "agentWorkable",
           "humanOnly",
           "isEpic",
@@ -2381,13 +2429,60 @@
           },
           "blockedOnFailed": {
             "type": "boolean",
+            "description": "Ready, and at least one blocker is escalated or cancelled, so it will not unblock on its own.",
             "example": false
           },
           "openBlockerCount": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991,
+            "description": "Blocker edges whose blocker has not completed, plus Epic Hold blockers.",
             "example": 1
+          },
+          "epicBlockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "example": "71"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "epic",
+                    "task"
+                  ],
+                  "example": "epic"
+                },
+                "heldEpic": {
+                  "type": "string",
+                  "description": "The Epic in the Member's ancestor chain whose blocked-by link names this blocker.",
+                  "example": "73"
+                },
+                "cycle": {
+                  "type": "boolean",
+                  "description": "True when the blocker Epic is itself blocked, directly or through its ancestors, by the held Epic, so the hold can never clear on its own.",
+                  "example": false
+                }
+              },
+              "required": [
+                "ref",
+                "kind",
+                "heldEpic",
+                "cycle"
+              ]
+            },
+            "description": "Unsatisfied blockers of the Epics above this Member (the Epic Hold).",
+            "example": [
+              {
+                "ref": "71",
+                "kind": "epic",
+                "heldEpic": "73",
+                "cycle": false
+              }
+            ]
           },
           "agentWorkable": {
             "type": "boolean",
@@ -2711,6 +2806,7 @@
           "dependents",
           "blockedOnFailed",
           "openBlockerCount",
+          "epicBlockers",
           "agentWorkable",
           "humanOnly",
           "isEpic",
@@ -2978,13 +3074,60 @@
           },
           "blockedOnFailed": {
             "type": "boolean",
+            "description": "Ready, and at least one blocker is escalated or cancelled, so it will not unblock on its own.",
             "example": false
           },
           "openBlockerCount": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991,
+            "description": "Blocker edges whose blocker has not completed, plus Epic Hold blockers.",
             "example": 1
+          },
+          "epicBlockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "example": "71"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "epic",
+                    "task"
+                  ],
+                  "example": "epic"
+                },
+                "heldEpic": {
+                  "type": "string",
+                  "description": "The Epic in the Member's ancestor chain whose blocked-by link names this blocker.",
+                  "example": "73"
+                },
+                "cycle": {
+                  "type": "boolean",
+                  "description": "True when the blocker Epic is itself blocked, directly or through its ancestors, by the held Epic, so the hold can never clear on its own.",
+                  "example": false
+                }
+              },
+              "required": [
+                "ref",
+                "kind",
+                "heldEpic",
+                "cycle"
+              ]
+            },
+            "description": "Unsatisfied blockers of the Epics above this Member (the Epic Hold).",
+            "example": [
+              {
+                "ref": "71",
+                "kind": "epic",
+                "heldEpic": "73",
+                "cycle": false
+              }
+            ]
           },
           "agentWorkable": {
             "type": "boolean",
@@ -3307,6 +3450,7 @@
           "dependents",
           "blockedOnFailed",
           "openBlockerCount",
+          "epicBlockers",
           "agentWorkable",
           "humanOnly",
           "isEpic",
@@ -3559,13 +3703,60 @@
           },
           "blockedOnFailed": {
             "type": "boolean",
+            "description": "Ready, and at least one blocker is escalated or cancelled, so it will not unblock on its own.",
             "example": false
           },
           "openBlockerCount": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991,
+            "description": "Blocker edges whose blocker has not completed, plus Epic Hold blockers.",
             "example": 1
+          },
+          "epicBlockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "example": "71"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "epic",
+                    "task"
+                  ],
+                  "example": "epic"
+                },
+                "heldEpic": {
+                  "type": "string",
+                  "description": "The Epic in the Member's ancestor chain whose blocked-by link names this blocker.",
+                  "example": "73"
+                },
+                "cycle": {
+                  "type": "boolean",
+                  "description": "True when the blocker Epic is itself blocked, directly or through its ancestors, by the held Epic, so the hold can never clear on its own.",
+                  "example": false
+                }
+              },
+              "required": [
+                "ref",
+                "kind",
+                "heldEpic",
+                "cycle"
+              ]
+            },
+            "description": "Unsatisfied blockers of the Epics above this Member (the Epic Hold).",
+            "example": [
+              {
+                "ref": "71",
+                "kind": "epic",
+                "heldEpic": "73",
+                "cycle": false
+              }
+            ]
           },
           "agentWorkable": {
             "type": "boolean",
@@ -3890,6 +4081,7 @@
           "dependents",
           "blockedOnFailed",
           "openBlockerCount",
+          "epicBlockers",
           "agentWorkable",
           "humanOnly",
           "isEpic",
@@ -11653,13 +11845,61 @@
           },
           "blockedOnFailed": {
             "type": "boolean",
+            "description": "Ready, and at least one blocker is escalated or cancelled, so it will not unblock on its own.",
             "example": false
           },
           "openBlockerCount": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991,
+            "description": "Blocker edges whose blocker has not completed, plus Epic Hold blockers.",
             "example": 1
+          },
+          "epicBlockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "example": "71"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "epic",
+                    "task"
+                  ],
+                  "example": "epic"
+                },
+                "heldEpic": {
+                  "type": "string",
+                  "description": "The Epic in the Member's ancestor chain whose blocked-by link names this blocker.",
+                  "example": "73"
+                },
+                "cycle": {
+                  "type": "boolean",
+                  "description": "True when the blocker Epic is itself blocked, directly or through its ancestors, by the held Epic, so the hold can never clear on its own.",
+                  "example": false
+                }
+              },
+              "required": [
+                "ref",
+                "kind",
+                "heldEpic",
+                "cycle"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Unsatisfied blockers of the Epics above this Member (the Epic Hold).",
+            "example": [
+              {
+                "ref": "71",
+                "kind": "epic",
+                "heldEpic": "73",
+                "cycle": false
+              }
+            ]
           },
           "agentWorkable": {
             "type": "boolean",
@@ -11780,6 +12020,7 @@
           "dependents",
           "blockedOnFailed",
           "openBlockerCount",
+          "epicBlockers",
           "agentWorkable",
           "humanOnly",
           "isEpic",
@@ -12035,13 +12276,61 @@
           },
           "blockedOnFailed": {
             "type": "boolean",
+            "description": "Ready, and at least one blocker is escalated or cancelled, so it will not unblock on its own.",
             "example": false
           },
           "openBlockerCount": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991,
+            "description": "Blocker edges whose blocker has not completed, plus Epic Hold blockers.",
             "example": 1
+          },
+          "epicBlockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "example": "71"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "epic",
+                    "task"
+                  ],
+                  "example": "epic"
+                },
+                "heldEpic": {
+                  "type": "string",
+                  "description": "The Epic in the Member's ancestor chain whose blocked-by link names this blocker.",
+                  "example": "73"
+                },
+                "cycle": {
+                  "type": "boolean",
+                  "description": "True when the blocker Epic is itself blocked, directly or through its ancestors, by the held Epic, so the hold can never clear on its own.",
+                  "example": false
+                }
+              },
+              "required": [
+                "ref",
+                "kind",
+                "heldEpic",
+                "cycle"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Unsatisfied blockers of the Epics above this Member (the Epic Hold).",
+            "example": [
+              {
+                "ref": "71",
+                "kind": "epic",
+                "heldEpic": "73",
+                "cycle": false
+              }
+            ]
           },
           "agentWorkable": {
             "type": "boolean",
@@ -12367,6 +12656,7 @@
           "dependents",
           "blockedOnFailed",
           "openBlockerCount",
+          "epicBlockers",
           "agentWorkable",
           "humanOnly",
           "isEpic",
@@ -12636,13 +12926,61 @@
           },
           "blockedOnFailed": {
             "type": "boolean",
+            "description": "Ready, and at least one blocker is escalated or cancelled, so it will not unblock on its own.",
             "example": false
           },
           "openBlockerCount": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991,
+            "description": "Blocker edges whose blocker has not completed, plus Epic Hold blockers.",
             "example": 1
+          },
+          "epicBlockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "example": "71"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "epic",
+                    "task"
+                  ],
+                  "example": "epic"
+                },
+                "heldEpic": {
+                  "type": "string",
+                  "description": "The Epic in the Member's ancestor chain whose blocked-by link names this blocker.",
+                  "example": "73"
+                },
+                "cycle": {
+                  "type": "boolean",
+                  "description": "True when the blocker Epic is itself blocked, directly or through its ancestors, by the held Epic, so the hold can never clear on its own.",
+                  "example": false
+                }
+              },
+              "required": [
+                "ref",
+                "kind",
+                "heldEpic",
+                "cycle"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Unsatisfied blockers of the Epics above this Member (the Epic Hold).",
+            "example": [
+              {
+                "ref": "71",
+                "kind": "epic",
+                "heldEpic": "73",
+                "cycle": false
+              }
+            ]
           },
           "agentWorkable": {
             "type": "boolean",
@@ -12967,6 +13305,7 @@
           "dependents",
           "blockedOnFailed",
           "openBlockerCount",
+          "epicBlockers",
           "agentWorkable",
           "humanOnly",
           "isEpic",
@@ -13221,13 +13560,61 @@
           },
           "blockedOnFailed": {
             "type": "boolean",
+            "description": "Ready, and at least one blocker is escalated or cancelled, so it will not unblock on its own.",
             "example": false
           },
           "openBlockerCount": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991,
+            "description": "Blocker edges whose blocker has not completed, plus Epic Hold blockers.",
             "example": 1
+          },
+          "epicBlockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "example": "71"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "epic",
+                    "task"
+                  ],
+                  "example": "epic"
+                },
+                "heldEpic": {
+                  "type": "string",
+                  "description": "The Epic in the Member's ancestor chain whose blocked-by link names this blocker.",
+                  "example": "73"
+                },
+                "cycle": {
+                  "type": "boolean",
+                  "description": "True when the blocker Epic is itself blocked, directly or through its ancestors, by the held Epic, so the hold can never clear on its own.",
+                  "example": false
+                }
+              },
+              "required": [
+                "ref",
+                "kind",
+                "heldEpic",
+                "cycle"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Unsatisfied blockers of the Epics above this Member (the Epic Hold).",
+            "example": [
+              {
+                "ref": "71",
+                "kind": "epic",
+                "heldEpic": "73",
+                "cycle": false
+              }
+            ]
           },
           "agentWorkable": {
             "type": "boolean",
@@ -13554,6 +13941,7 @@
           "dependents",
           "blockedOnFailed",
           "openBlockerCount",
+          "epicBlockers",
           "agentWorkable",
           "humanOnly",
           "isEpic",

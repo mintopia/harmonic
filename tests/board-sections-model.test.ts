@@ -44,6 +44,7 @@ const task = (id: number, state: TaskState, extra: Partial<Task> = {}): Task => 
   escalationCause: null,
   mergeStatus: null, ticketClosePending: false,
   openBlockerCount: 0,
+  epicBlockers: [],
   agentWorkable: true,
   humanOnly: false,
   isEpic: false,
@@ -209,9 +210,9 @@ describe('boardSections — Attention / Running / Paused / Pending', () => {
     const three = sections.pending[0]!.columns[3]!.items[0]!;
     expect(three.blockedOnFailed).toBe(true);
     expect(three.blockers).toEqual([
-      { taskId: 3, label: 'T-3', satisfied: false },
-      { taskId: 1, label: 'T-1', satisfied: false },
-      { taskId: 2, label: 'Task 2', satisfied: false },
+      { key: 'task:3', taskId: 3, label: 'T-3', satisfied: false },
+      { key: 'task:1', taskId: 1, label: 'T-1', satisfied: false },
+      { key: 'task:2', taskId: 2, label: 'Task 2', satisfied: false },
     ]);
   });
 
@@ -286,8 +287,8 @@ describe('epicPendingColumns', () => {
     const columns = epicPendingColumns(epic(90, [member(1, 1, { mergeStatus: 'completed' }), member(2, 2)]), [merged, dependant]);
     expect(layout(columns)).toEqual([['1 blocker', ['#2 · T-2']]]);
     expect(columns[0]!.items[0]!.blockers).toEqual([
-      { taskId: 1, label: '#1 · T-1', satisfied: true },
-      { taskId: 99, label: 'Task 99', satisfied: false },
+      { key: 'task:1', taskId: 1, label: '#1 · T-1', satisfied: true },
+      { key: 'task:99', taskId: 99, label: 'Task 99', satisfied: false },
     ]);
   });
 
@@ -346,17 +347,43 @@ describe('blocker columns', () => {
     const tasks = new Map([task(1, 'done'), task(2, 'cancelled')].map((t) => [t.id, t]));
     const dependant = task(3, 'ready', { dependsOn: [1, 2, 4], openBlockerCount: 2, blockedOnFailed: true });
     expect(resolveBlockers(dependant, tasks)).toEqual([
-      { taskId: 1, label: 'T-1', satisfied: true },
-      { taskId: 2, label: 'T-2', satisfied: false },
-      { taskId: 4, label: 'Task 4', satisfied: false },
+      { key: 'task:1', taskId: 1, label: 'T-1', satisfied: true },
+      { key: 'task:2', taskId: 2, label: 'T-2', satisfied: false },
+      { key: 'task:4', taskId: 4, label: 'Task 4', satisfied: false },
+    ]);
+  });
+
+  it('lists Epic Hold blockers as unsatisfied chips and keeps done Task edges satisfied beside them', () => {
+    const held = task(9, 'ready', {
+      dependsOn: [1],
+      openBlockerCount: 2,
+      epicBlockers: [
+        { ref: '71', kind: 'epic', heldEpic: '73', cycle: false },
+        { ref: '50', kind: 'task', heldEpic: '73', cycle: false },
+      ],
+    });
+    expect(resolveBlockers(held, new Map())).toEqual([
+      { key: 'task:1', taskId: 1, label: 'Task 1', satisfied: true },
+      { key: 'epic:73:71', taskId: null, label: 'Epic #71', satisfied: false },
+      { key: 'epic:73:50', taskId: null, label: '#50', satisfied: false },
+    ]);
+  });
+
+  it('titles a cyclic Epic Hold blocker chip', () => {
+    const held = task(9, 'ready', {
+      openBlockerCount: 1,
+      epicBlockers: [{ ref: '71', kind: 'epic', heldEpic: '73', cycle: true }],
+    });
+    expect(resolveBlockers(held, new Map())).toEqual([
+      { key: 'epic:73:71', taskId: null, label: 'Epic #71', satisfied: false, title: 'cycle: these Epics block each other' },
     ]);
   });
 
   it('reads satisfied from openBlockerCount when the done blocker is off the lean page', () => {
     const cleared = task(9, 'ready', { dependsOn: [1, 2], openBlockerCount: 0 });
     expect(resolveBlockers(cleared, new Map())).toEqual([
-      { taskId: 1, label: 'Task 1', satisfied: true },
-      { taskId: 2, label: 'Task 2', satisfied: true },
+      { key: 'task:1', taskId: 1, label: 'Task 1', satisfied: true },
+      { key: 'task:2', taskId: 2, label: 'Task 2', satisfied: true },
     ]);
     const partly = task(10, 'ready', { dependsOn: [1, 2], openBlockerCount: 1 });
     expect(resolveBlockers(partly, new Map()).map((b) => b.satisfied)).toEqual([false, false]);

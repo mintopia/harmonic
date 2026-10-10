@@ -12,6 +12,7 @@ import type { StatsWorkerClient } from '../db/stats-reader.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import type { TranscriptCapture } from '../execution/transcript-capture.js';
 import type { App } from './app-context.js';
+import { sweepOrphanedEpicRefreshWorktrees } from '../execution/epic-refresh-sweep.js';
 import { sweepStaleMergeWorktrees } from '../execution/ephemeral-merge-worktree.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { logger } from '../logger.js';
@@ -79,6 +80,7 @@ export function registerStartup(app: App, deps: {
   loopMonitor: EventLoopMonitor | undefined;
   hostLoad: HostLoadSampler;
   upgrade: UpgradeCoordinator;
+  worktreesDir: string;
 }): void {
   app.addHook('onListen', async () => {
     const address = app.server.address();
@@ -109,11 +111,27 @@ export function registerStartup(app: App, deps: {
         });
       }
     });
+    await forEachYielding(workspaceList, async (workspace) => {
+      const operation = startOperation({ type: 'worktree.epic-refresh-sweep', attributes: { 'workspace.id': workspace.id } });
+      try {
+        const removed = await operation.run(() => sweepOrphanedEpicRefreshWorktrees(workspace.workingDir, deps.worktreesDir));
+        operation.update({ 'worktree.epic_refresh_sweep.removed': removed.length });
+        operation.end();
+        for (const path of removed) {
+          logger.info('startup: removed an Epic refresh worktree left by a prior run', { 'workspace.id': workspace.id, path });
+        }
+      } catch (error) {
+        operation.fail(error);
+        logger.warn('startup: sweeping orphaned Epic refresh worktrees failed', {
+          'workspace.id': workspace.id,
+          error: errorMessage(error),
+        });
+      }
+    });
     deps.autoRunner.start();
     deps.autoRunner.poke();
     deps.scheduler.start();
     await deps.trackerManager.sync();
-    await deps.workspaceWatcher.sync(await deps.workspaces.list());
     deps.loopMonitor?.start();
     deps.hostLoad.start();
     await deps.upgrade.reconcile();

@@ -1,7 +1,7 @@
 import type { TrackerRef } from '../tracker/adapter.js';
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync } from 'node:fs';
 import { Git } from './git.js';
+import { epicRefreshWorktreePath } from './epic-refresh-sweep.js';
 import { bestEffort, reportFailure, type FireAndForget } from '../error-handling.js';
 import { integrationBranchName, type EpicRefreshResolveDispatchOutcome, type EpicRefreshResolveTarget } from './epic-coordinator.js';
 import { RESOLVE_TURN_TIMEOUT_MS } from './merge-coordinator.js';
@@ -30,6 +30,8 @@ export interface EpicRefreshResolverDeps {
 }
 
 export class EpicRefreshResolver {
+  private readonly liveWorktrees = new Set<string>();
+
   constructor(private readonly deps: EpicRefreshResolverDeps) {}
 
   /**
@@ -62,8 +64,18 @@ export class EpicRefreshResolver {
     const { harness: harnessId, model, config: harness } = route;
 
     mkdirSync(this.deps.worktreesDir, { recursive: true });
-    const worktreePath = join(this.deps.worktreesDir, `epic-refresh-${target.ref}`);
+    const worktreePath = epicRefreshWorktreePath(this.deps.worktreesDir, target.ref);
     try {
+      if (!this.liveWorktrees.has(worktreePath)) {
+        if (existsSync(worktreePath)) {
+          await bestEffort(() => Git.removeWorktree(target.repoDir, worktreePath), {
+            op: 'runner.enqueueEpicRefreshResolution.removeStaleWorktree',
+            level: 'warn',
+            context: { epicRef: target.ref, repoDir: target.repoDir, worktreePath },
+          });
+        }
+        await Git.pruneWorktrees(target.repoDir);
+      }
       await Git.addWorktreeCheckout(target.repoDir, worktreePath, branch);
     } catch (err) {
       return escalated(`could not check out ${branch} for the refresh corrective turn (${String(err)}); refresh conflict: ${detail}`);
@@ -72,6 +84,7 @@ export class EpicRefreshResolver {
     try {
       reproduced = await Git.mergeLeavingConflict(worktreePath, target.defaultBranch);
     } catch (err) {
+      this.liveWorktrees.delete(worktreePath);
       await bestEffort(() => Git.removeWorktree(target.repoDir, worktreePath), {
         op: 'runner.enqueueEpicRefreshResolution.removeWorktree',
         level: 'debug',
@@ -80,6 +93,7 @@ export class EpicRefreshResolver {
       return escalated(`could not reproduce the refresh conflict on ${branch} (${String(err)}); refresh conflict: ${detail}`);
     }
 
+    this.liveWorktrees.add(worktreePath);
     const turn = () =>
       this.runEpicRefreshResolveTurn({
         target,
@@ -162,6 +176,7 @@ export class EpicRefreshResolver {
         },
       });
     } finally {
+      this.liveWorktrees.delete(args.worktreePath);
       await bestEffort(() => Git.removeWorktree(args.target.repoDir, args.worktreePath), {
         op: 'runner.runEpicRefreshResolveTurn.removeWorktree',
         level: 'debug',

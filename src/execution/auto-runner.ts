@@ -11,6 +11,8 @@ import type { Runner } from './runner.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { InFlight } from '../reliability/in-flight.js';
 import { DomainError } from '../domain/errors.js';
+import type { EpicBlocker } from '../domain/epic-hold.js';
+import type { EpicBaseGate } from './epic-coordinator.js';
 import { startOperation, type Operation } from '../telemetry/operations.js';
 import { errorMessage } from '../error-handling.js';
 
@@ -57,7 +59,7 @@ type RunLauncher = (taskId: Parameters<Runner['launchClaimed']>[0], parent?: Spa
 
 export interface AutoRunnerOptions {
   mirror?: MirrorClaim;
-  epicBaseNotReady?: (task: TaskRow) => boolean | Promise<boolean>;
+  epicBaseNotReady?: (task: TaskRow) => EpicBaseGate | Promise<EpicBaseGate>;
   gitBreaker?: GitCircuitBreaker;
   /** A Task's `skipReason` is scheduler memory, not a row write, so a live board only sees it change through this. */
   onSkipReasonChanged?: (task: TaskRow) => void;
@@ -71,6 +73,11 @@ export interface AutoRunnerOptions {
 }
 
 const DEFAULT_MISSING_EPIC_BASE_GRACE_MS = 300_000;
+
+function epicHoldReason(blocker: EpicBlocker): string {
+  const unmet = blocker.kind === 'epic' ? 'not integrated' : 'not done';
+  return `Epic #${blocker.heldEpic} waits on #${blocker.ref} (${unmet}${blocker.cycle ? ', cycle' : ''})`;
+}
 
 /**
  * The scheduler. When enabled, fills free run slots with ready tasks —
@@ -91,7 +98,7 @@ export class AutoRunner {
   private closed = false;
   private readonly inFlight = new InFlight();
   private readonly mirror: MirrorClaim | undefined;
-  private readonly epicBaseNotReady: ((task: TaskRow) => boolean | Promise<boolean>) | undefined;
+  private readonly epicBaseNotReady: ((task: TaskRow) => EpicBaseGate | Promise<EpicBaseGate>) | undefined;
   private readonly gitBreaker: GitCircuitBreaker | undefined;
   private readonly onSkipReasonChanged: (task: TaskRow) => void;
   private readonly intervalMs: number;
@@ -265,10 +272,11 @@ export class AutoRunner {
       if (task.openBlockerCount === 0) return;
       dependencyBlocked.add(task.id);
       const blockers = task.dependsOn.filter((id) => !doneBlockers.has(id));
-      record(
-        task.id,
-        blockers.length === 0 ? 'blocked by a dependency' : `blocked-by #${blockers.join(', #')}`,
-      );
+      const parts = [
+        ...(blockers.length === 0 ? [] : [`blocked-by #${blockers.join(', #')}`]),
+        ...task.epicBlockers.map(epicHoldReason),
+      ];
+      record(task.id, parts.length === 0 ? 'blocked by a dependency' : parts.join('; '));
     });
 
     await forEachYielding(all, async (task) => {
@@ -298,19 +306,28 @@ export class AutoRunner {
         this.recordWaiting(task.id);
         return;
       }
-      if (await this.epicBaseNotReady?.(task)) {
-        if (hasAssignedEpicBase(task)) {
-          const since = this.missingEpicBaseSince.get(task.id) ?? this.clock();
-          if (this.clock() - since >= this.missingEpicBaseGraceMs) {
-            const reason = `integration branch ${task.baseBranch} missing for ${Math.round(this.missingEpicBaseGraceMs / 1000)}s`;
-            await this.runner.escalateUnspawned(task.id, reason);
-            record(task.id, `${reason}, escalated to human`);
-            return;
+      const baseGate = (await this.epicBaseNotReady?.(task)) ?? 'ready';
+      switch (baseGate) {
+        case 'stale':
+          record(task.id, `integration branch ${task.baseBranch} behind its base (refresh pending)`);
+          return;
+        case 'missing':
+          if (hasAssignedEpicBase(task)) {
+            const since = this.missingEpicBaseSince.get(task.id) ?? this.clock();
+            if (this.clock() - since >= this.missingEpicBaseGraceMs) {
+              const reason = `integration branch ${task.baseBranch} missing for ${Math.round(this.missingEpicBaseGraceMs / 1000)}s`;
+              await this.runner.escalateUnspawned(task.id, reason);
+              record(task.id, `${reason}, escalated to human`);
+              return;
+            }
+            missingThisPass.set(task.id, since);
           }
-          missingThisPass.set(task.id, since);
-        }
-        record(task.id, 'integration branch missing');
-        return;
+          record(task.id, 'integration branch missing');
+          return;
+        case 'ready':
+          break;
+        default:
+          baseGate satisfies never;
       }
       const key = directContextKey(task);
       const holder = key ? occupied.get(key) : undefined;
@@ -354,7 +371,7 @@ export class AutoRunner {
     let running = running0;
     const runningByWorkspace = new Map(runningByWorkspace0);
     const occupied = await occupiedDirectContexts(all);
-    const epicGate = new Map<number, boolean>();
+    const epicGate = new Map<number, EpicBaseGate>();
     if (this.epicBaseNotReady && running0 < ceiling) {
       const gate = this.epicBaseNotReady;
       await forEachYielding(all, async (t) => {
@@ -402,11 +419,11 @@ export class AutoRunner {
       runningByWorkspace: Map<number, number>;
       ceiling: number;
       occupied: Map<string, TaskRow>;
-      epicGate: Map<number, boolean>;
+      epicGate: Map<number, EpicBaseGate>;
     },
   ): boolean {
     if (t.state !== 'ready' || skip.has(t.id)) return false;
-    if (epicGate.get(t.id)) return false;
+    if ((epicGate.get(t.id) ?? 'ready') !== 'ready') return false;
     const workspace = t.workspaceId != null ? workspacesById.get(t.workspaceId) : undefined;
     if (!resolveScoped('autoRunnerEnabled', workspace?.autoRunnerEnabled, true)) return false;
     const cap = resolveCap(workspace?.maxConcurrentAttempts, ceiling);

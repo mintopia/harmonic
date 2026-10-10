@@ -209,7 +209,6 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     async (req, reply) => {
       const workspace = await ctx.workspaces.create(req.body);
       await ctx.trackerManager.sync();
-      await ctx.workspaceWatcher.sync(await ctx.workspaces.list());
       return reply.status(201).send(serialize(workspace));
     },
   );

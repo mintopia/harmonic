@@ -479,7 +479,8 @@ function PendingCard({
         <div className="mt-2 flex flex-wrap gap-1">
           {item.blockers.map((blocker) => (
             <span
-              key={blocker.taskId}
+              key={blocker.key}
+              title={blocker.title}
               className={`rounded bg-raised px-1.5 py-0.5 text-label text-muted ${blocker.satisfied ? 'line-through' : ''}`}
             >
               {blocker.label}
