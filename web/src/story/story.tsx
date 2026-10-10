@@ -464,7 +464,10 @@ function EpicStory() {
 
 function TicketStory() {
   const routed = params.get('routing');
-  const shown = routed ? { ...task, routing: { applied: routed === 'applied', label: 'reasoning' } as never } : task;
+  const routedTask = routed ? { ...task, routing: { applied: routed === 'applied', label: 'reasoning' } as never } : task;
+  const shown = params.get('state') === 'escalated'
+    ? { ...routedTask, state: 'escalated' as const, hasCandidate: true, escalationReason: 'escalated to human: repeated verification failures' }
+    : routedTask;
   return (
     <StoryFrame style={{ height: '100vh' }}>
       <TicketPage

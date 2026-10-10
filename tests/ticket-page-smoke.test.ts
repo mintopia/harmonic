@@ -71,6 +71,15 @@ describe('TicketPage smoke (issue #469)', () => {
     expect(host!.textContent).toContain('Accept');
     expect(host!.textContent).toContain('Retry');
   });
+
+  it('renders the escalated actions once, in the main column rather than the sidebar Gate', async () => {
+    await renderTicket(makeTask({ id: 44, state: 'escalated' }));
+
+    const close = [...host!.querySelectorAll('button')].filter((b) => b.textContent === 'Close task');
+    expect(close).toHaveLength(1);
+    expect(close[0]!.closest('aside')).toBeNull();
+    expect(host!.querySelector('aside')!.textContent).not.toContain('Accept');
+  });
 });
 
 describe('Ticket close pending pill (ADR-0048)', () => {

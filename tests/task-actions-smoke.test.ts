@@ -10,7 +10,7 @@ let host: HTMLDivElement | null = null;
 
 afterEach(cleanup);
 
-async function renderActions(props: { task: Task; variant: 'card' | 'footer'; onChanged?: () => void }): Promise<HTMLDivElement> {
+async function renderActions(props: { task: Task; variant: 'card' | 'footer' | 'bar'; onChanged?: () => void }): Promise<HTMLDivElement> {
   host = await mountComponent(
     createElement(TaskActions, {
       task: props.task,
@@ -35,10 +35,10 @@ describe('TaskActions smoke (issue #469)', () => {
     expect(buttons).toContain('Delete');
   });
 
-  it('renders the footer escalation actions without Delete for an escalated task', async () => {
+  it('renders the escalated action bar without Delete for an escalated task', async () => {
     const task = makeTask({ id: 7, prompt: 'Add retry backoff', summary: 'Add retry backoff', state: 'escalated', hasCandidate: false });
 
-    await renderActions({ task, variant: 'footer' });
+    await renderActions({ task, variant: 'bar' });
 
     const buttons = [...host!.querySelectorAll('button')].map((b) => b.textContent);
     expect(buttons).toContain('Retry…');
@@ -47,12 +47,16 @@ describe('TaskActions smoke (issue #469)', () => {
     expect(buttons.some((b) => b?.includes('Accept'))).toBe(true);
     expect(buttons).not.toContain('Delete');
     expect(buttons.map((b) => b?.replace(/ .*/, '').replace('…', ''))).toEqual(['Close', 'Retry', 'Accept']);
+    const bar = host!.firstElementChild!;
+    expect(bar.className).toContain('border-t');
+    expect(bar.lastElementChild!.className).toContain('ml-auto');
+    expect([...bar.lastElementChild!.querySelectorAll('button')].map((b) => b.textContent?.replace(/ .*/, ''))).toEqual(['Retry…', 'Accept']);
   });
 
   it('disables Accept when the escalated task has no candidate to merge', async () => {
     const task = makeTask({ id: 7, prompt: 'Add retry backoff', summary: 'Add retry backoff', state: 'escalated', hasCandidate: false });
 
-    await renderActions({ task, variant: 'footer' });
+    await renderActions({ task, variant: 'bar' });
 
     const accept = [...host!.querySelectorAll('button')].find((b) => b.textContent?.includes('Accept'));
     expect(accept?.disabled).toBe(true);
@@ -62,7 +66,7 @@ describe('TaskActions smoke (issue #469)', () => {
   it('disables the escalation actions while an Accept is merging', async () => {
     const task = makeTask({ id: 7, prompt: 'Add retry backoff', summary: 'Add retry backoff', state: 'escalated', hasCandidate: true, mergeStatus: 'merging' });
 
-    await renderActions({ task, variant: 'footer' });
+    await renderActions({ task, variant: 'bar' });
 
     const buttons = [...host!.querySelectorAll('button')];
     expect(buttons.length).toBeGreaterThan(0);
@@ -142,10 +146,11 @@ describe('Accept feedback', () => {
     vi.stubGlobal('fetch', fetch);
     const onChanged = vi.fn();
     const host = await mountComponent(createElement(Fragment, null,
-      createElement(TaskActions, { task, failedStep: 'verification', variant: 'footer', onEdit: () => {}, onChanged }),
+      createElement(TaskActions, { task, failedStep: 'verification', variant: 'bar', onEdit: () => {}, onChanged }),
       createElement(Toaster),
     ));
-    expect(host.textContent).toContain('Override the failed verification step and continue with review.');
+    expect(host.textContent).not.toContain('Override the failed verification step');
+    expect([...host.querySelectorAll('button')].find((button) => button.textContent === 'Accept & review')?.title).toBe('Override the failed verification step and continue with review.');
     await act(async () => {
       [...host.querySelectorAll('button')].find((button) => button.textContent === 'Accept & review')!.click();
       await flush();
