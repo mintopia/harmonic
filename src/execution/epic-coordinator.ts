@@ -568,21 +568,58 @@ export type EpicRefreshResolveDispatchOutcome =
   | { status: 'dispatched' }
   | { status: 'escalated'; reason: string };
 
+export const REFRESH_ESCALATION_BACKOFF_MS = 5 * 60_000;
+
 /** Refreshes a live integration branch after the default branch advances. */
 export class EpicRefresh {
-  private readonly resolving = new Set<TrackerRef>();
+  private readonly inFlight = new Set<TrackerRef>();
+  private readonly turnCompleted = new Set<TrackerRef>();
+  private readonly lastBaseOid = new Map<TrackerRef, string>();
+  private readonly backoff = new Map<TrackerRef, { oid: string; until: number }>();
 
   constructor(private readonly deps: {
     git?: Pick<EpicGit, 'revParse'>;
     merge?: (args: MergeIntoBaseArgs) => Promise<MergeIntoBaseOutcome>;
     dispatchResolve: (target: EpicRefreshTarget, detail: string) => Promise<EpicRefreshResolveDispatchOutcome>;
     escalate: (epicRef: TrackerRef, reason: string) => void;
+    now?: () => number;
+    backoffMs?: number;
   }) {}
 
   refresh(target: EpicRefreshTarget): Promise<EpicRefreshOutcome> {
+    return this.attempt(target);
+  }
+
+  /** The corrective turn for `target` has finished: re-run the refresh, which may now decide it still conflicts. */
+  completeTurn(target: EpicRefreshTarget): Promise<EpicRefreshOutcome> {
+    this.inFlight.delete(target.ref);
+    this.turnCompleted.add(target.ref);
+    return this.attempt(target);
+  }
+
+  /** Escalate on behalf of a corrective turn that could not complete, releasing its in-flight claim. */
+  escalateTurn(epicRef: TrackerRef, reason: string): void {
+    this.inFlight.delete(epicRef);
+    this.turnCompleted.delete(epicRef);
+    this.escalateWithBackoff(epicRef, reason);
+  }
+
+  private escalateWithBackoff(epicRef: TrackerRef, reason: string): void {
+    const oid = this.lastBaseOid.get(epicRef);
+    if (oid !== undefined) this.backoff.set(epicRef, { oid, until: (this.deps.now ?? Date.now)() + (this.deps.backoffMs ?? REFRESH_ESCALATION_BACKOFF_MS) });
+    this.deps.escalate(epicRef, reason);
+  }
+
+  private attempt(target: EpicRefreshTarget): Promise<EpicRefreshOutcome> {
     const branch = integrationBranchName(target.ref);
     return withBaseCheckoutLock(target.repoDir, async () => {
+      if (this.inFlight.has(target.ref)) return { status: 'resolving', detail: 'corrective turn in flight' };
       const expectedOid = await (this.deps.git ?? Git).revParse(target.repoDir, target.defaultBranch);
+      this.lastBaseOid.set(target.ref, expectedOid);
+      const held = this.backoff.get(target.ref);
+      if (held && held.oid === expectedOid && (this.deps.now ?? Date.now)() < held.until) {
+        return { status: 'deferred', reason: 'backing off after an escalated refresh against this base' };
+      }
       const outcome = await withRepoLock(target.repoDir, () =>
         (this.deps.merge ?? mergeIntoBase)({
           repoDir: target.repoDir,
@@ -594,7 +631,8 @@ export class EpicRefresh {
         }),
       );
       if (outcome.ok) {
-        this.resolving.delete(target.ref);
+        this.turnCompleted.delete(target.ref);
+        this.backoff.delete(target.ref);
         return { status: 'refreshed', oid: outcome.oid };
       }
       if (outcome.reason === 'fallback-pr-manual' || outcome.reason === 'target-advanced') {
@@ -602,19 +640,29 @@ export class EpicRefresh {
       }
       if (outcome.reason !== 'conflict') {
         const reason = `integration refresh failed: ${outcome.detail}`;
-        this.resolving.delete(target.ref);
-        this.deps.escalate(target.ref, reason);
+        this.turnCompleted.delete(target.ref);
+        this.escalateWithBackoff(target.ref, reason);
         return { status: 'escalated', reason };
       }
-      if (this.resolving.has(target.ref)) {
+      if (this.turnCompleted.has(target.ref)) {
         const reason = `integration refresh still conflicts after corrective turn: ${outcome.detail}`;
-        this.resolving.delete(target.ref);
-        this.deps.escalate(target.ref, reason);
+        this.turnCompleted.delete(target.ref);
+        this.escalateWithBackoff(target.ref, reason);
         return { status: 'escalated', reason };
       }
-      const dispatch = await this.deps.dispatchResolve(target, outcome.detail);
-      if (dispatch.status === 'escalated') return dispatch;
-      this.resolving.add(target.ref);
+      this.inFlight.add(target.ref);
+      let dispatch: EpicRefreshResolveDispatchOutcome;
+      try {
+        dispatch = await this.deps.dispatchResolve(target, outcome.detail);
+      } catch (err) {
+        this.inFlight.delete(target.ref);
+        throw err;
+      }
+      if (dispatch.status === 'escalated') {
+        this.inFlight.delete(target.ref);
+        this.backoff.set(target.ref, { oid: expectedOid, until: (this.deps.now ?? Date.now)() + (this.deps.backoffMs ?? REFRESH_ESCALATION_BACKOFF_MS) });
+        return dispatch;
+      }
       return { status: 'resolving', detail: outcome.detail };
     });
   }

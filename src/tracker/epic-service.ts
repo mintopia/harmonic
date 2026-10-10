@@ -241,7 +241,7 @@ export class TrackerEpicService implements EpicService {
       else logger.debug(`epic ${ref} integration refresh behind develop (retrying): ${reason}`);
     };
     const refresh = new EpicRefresh({
-      dispatchResolve: (target, detail) => this.dispatchRefreshResolution({ ...target, workspaceId: workspace.id }, detail, noteRefreshBehind, () => refresh.refresh(target)),
+      dispatchResolve: (target, detail) => this.dispatchRefreshResolution({ ...target, workspaceId: workspace.id }, detail, (ref, reason) => refresh.escalateTurn(ref, reason), () => refresh.completeTurn(target)),
       escalate: noteRefreshBehind,
     });
     epics.attachRefreshTrigger(refresh);
