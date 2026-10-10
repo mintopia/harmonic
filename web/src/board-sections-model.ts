@@ -38,6 +38,8 @@ export interface Blocker {
   label: string;
   /** The blocker is done — the edge no longer counts (server `openBlockerCount`). */
   satisfied: boolean;
+  /** Tooltip for a blocker that needs explaining — an Epic Hold cycle. */
+  title?: string;
 }
 
 /** One Pending card: a mirrored/native Task, or an Epic member no Task mirrors yet. */
@@ -126,6 +128,7 @@ export function resolveBlockers(task: Task, tasksById: ReadonlyMap<number, Task>
     taskId: null,
     label: blocker.kind === 'epic' ? `Epic ${issueRef(blocker.ref)}` : issueRef(blocker.ref),
     satisfied: false,
+    ...(blocker.cycle ? { title: 'cycle: these Epics block each other' } : {}),
   }));
   return [...edges, ...held];
 }

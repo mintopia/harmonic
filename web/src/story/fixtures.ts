@@ -401,6 +401,17 @@ export const boardTasks = [
     contextTokens: 28_000,
     attemptId: 9435,
   }),
+  boardTask(441, 'done', { summary: 'Land the schema sync that unblocks the hold' }),
+  boardTask(442, 'ready', {
+    summary: 'Held by sibling Epics and an unfinished dependency',
+    dependsOn: [441, 432],
+    openBlockerCount: 3,
+    epicBlockers: [
+      { ref: '71', kind: 'epic', heldEpic: '73', cycle: true },
+      { ref: '50', kind: 'task', heldEpic: '73', cycle: false },
+    ],
+    agentWorkable: false,
+  }),
 ];
 
 export const doneEpic = {

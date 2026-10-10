@@ -369,6 +369,16 @@ describe('blocker columns', () => {
     ]);
   });
 
+  it('titles a cyclic Epic Hold blocker chip', () => {
+    const held = task(9, 'ready', {
+      openBlockerCount: 1,
+      epicBlockers: [{ ref: '71', kind: 'epic', heldEpic: '73', cycle: true }],
+    });
+    expect(resolveBlockers(held, new Map())).toEqual([
+      { key: 'epic:73:71', taskId: null, label: 'Epic #71', satisfied: false, title: 'cycle: these Epics block each other' },
+    ]);
+  });
+
   it('reads satisfied from openBlockerCount when the done blocker is off the lean page', () => {
     const cleared = task(9, 'ready', { dependsOn: [1, 2], openBlockerCount: 0 });
     expect(resolveBlockers(cleared, new Map())).toEqual([
