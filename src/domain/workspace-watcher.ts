@@ -26,6 +26,10 @@ function isWatchExhausted(err: unknown): boolean {
   return code === 'ENOSPC' || code === 'EMFILE';
 }
 
+function signatureOf(workspace: WorkspaceRow): string {
+  return JSON.stringify([resolve(workspace.workingDir), [...workspace.excludedDirectories].sort()]);
+}
+
 function newState(signature: string): WatchedWorkspace {
   return { watchers: new Map(), signature, timer: null, fsChanged: false, gitChanged: false, degraded: false, stopped: false };
 }
@@ -41,27 +45,68 @@ function gitMetadataPaths(root: string): string[] {
   return [resolve(dotGit, 'index'), resolve(dotGit, 'HEAD')];
 }
 
-/** Watches the user-visible portion of every Workspace and sends one update per change burst. */
+export const WATCHER_GRACE_MS = 30_000;
+
+/** Watches the user-visible portion of a Workspace only while it has subscribers, and sends one update per change burst. */
 export class WorkspaceWatcher {
   private readonly watched = new Map<number, WatchedWorkspace>();
+  private readonly subscribers = new Map<number, number>();
+  private readonly graceTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  private readonly chains = new Map<number, Promise<void>>();
 
   constructor(
     private readonly debounceMs: () => number,
     private readonly events: WorkspaceWatcherEvents,
+    private readonly lookup: (workspaceId: number) => Promise<WorkspaceRow | undefined> = async () => undefined,
+    private readonly graceMs: number = WATCHER_GRACE_MS,
   ) {}
 
+  /** Register interest in a Workspace; the first subscriber starts its watcher. Returns an idempotent release. */
+  subscribe(workspaceId: number): () => void {
+    this.subscribers.set(workspaceId, (this.subscribers.get(workspaceId) ?? 0) + 1);
+    this.cancelGrace(workspaceId);
+    this.enqueue(workspaceId, () => this.ensureStarted(workspaceId));
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const remaining = (this.subscribers.get(workspaceId) ?? 1) - 1;
+      if (remaining > 0) {
+        this.subscribers.set(workspaceId, remaining);
+        return;
+      }
+      this.subscribers.delete(workspaceId);
+      this.scheduleGrace(workspaceId);
+    };
+  }
+
+  /** Resolves once queued start/stop work has finished. */
+  async settled(): Promise<void> {
+    await Promise.all([...this.chains.values()]);
+  }
+
+  /** Applies Workspace changes to watchers that are running; never starts one. */
   async sync(workspaces: readonly WorkspaceRow[]): Promise<void> {
     const wanted = new Map(workspaces.map((workspace) => [workspace.id, workspace]));
-    await Promise.all([...this.watched].filter(([id]) => !wanted.has(id)).map(([id]) => this.stop(id)));
-    await Promise.all(workspaces.map(async (workspace) => {
-      const signature = JSON.stringify([resolve(workspace.workingDir), [...workspace.excludedDirectories].sort()]);
-      if (this.watched.get(workspace.id)?.signature === signature) return;
-      await this.stop(workspace.id);
-      await this.start(workspace, signature);
-    }));
+    await Promise.all([...this.watched.keys()].map((id) => this.enqueue(id, async () => {
+      const workspace = wanted.get(id);
+      if (!workspace) {
+        this.subscribers.delete(id);
+        this.cancelGrace(id);
+        await this.stop(id);
+        return;
+      }
+      const state = this.watched.get(id);
+      if (!state || state.signature === signatureOf(workspace)) return;
+      await this.stop(id);
+      if (this.subscribers.has(id) || this.graceTimers.has(id)) await this.start(workspace, signatureOf(workspace));
+    })));
   }
 
   async stopAll(): Promise<void> {
+    for (const id of [...this.graceTimers.keys()]) this.cancelGrace(id);
+    this.subscribers.clear();
+    await this.settled();
     await Promise.all([...this.watched.keys()].map((id) => this.stop(id)));
   }
 
@@ -72,6 +117,43 @@ export class WorkspaceWatcher {
 
   isDegraded(workspaceId: number): boolean {
     return this.watched.get(workspaceId)?.degraded ?? false;
+  }
+
+  private enqueue(workspaceId: number, task: () => Promise<void>): Promise<void> {
+    const next = (this.chains.get(workspaceId) ?? Promise.resolve()).then(task).catch((err) => {
+      logger.warn('workspace watcher task failed', { workspaceId, error: err instanceof Error ? err.message : String(err) });
+    });
+    this.chains.set(workspaceId, next);
+    void next.then(() => {
+      if (this.chains.get(workspaceId) === next) this.chains.delete(workspaceId);
+    });
+    return next;
+  }
+
+  private async ensureStarted(workspaceId: number): Promise<void> {
+    if (this.watched.has(workspaceId) || !this.subscribers.has(workspaceId)) return;
+    const workspace = await this.lookup(workspaceId);
+    if (!workspace || !this.subscribers.has(workspaceId) || this.watched.has(workspaceId)) return;
+    await this.start(workspace, signatureOf(workspace));
+  }
+
+  private scheduleGrace(workspaceId: number): void {
+    this.cancelGrace(workspaceId);
+    const timer = setTimeout(() => {
+      this.graceTimers.delete(workspaceId);
+      this.enqueue(workspaceId, async () => {
+        if (!this.subscribers.has(workspaceId)) await this.stop(workspaceId);
+      });
+    }, this.graceMs);
+    timer.unref();
+    this.graceTimers.set(workspaceId, timer);
+  }
+
+  private cancelGrace(workspaceId: number): void {
+    const timer = this.graceTimers.get(workspaceId);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this.graceTimers.delete(workspaceId);
   }
 
   private async start(workspace: WorkspaceRow, signature: string): Promise<void> {

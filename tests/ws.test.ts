@@ -374,6 +374,26 @@ describe('subscribeAttemptLog', () => {
   });
 });
 
+describe('subscribeFiles', () => {
+  it('subscribes on open, re-sends after reconnecting, and unsubscribes on release', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    vi.resetModules();
+    const { subscribeFiles } = await import('../web/src/ws.js');
+
+    const unsubscribe = subscribeFiles(3);
+    expect(FakeWebSocket.instances[0]?.sent).toEqual([{ type: 'subscribe_files', workspaceId: 3 }]);
+
+    FakeWebSocket.instances[0]?.serverClose();
+    vi.advanceTimersByTime(1_500);
+    FakeWebSocket.instances[1]?.onopen?.();
+    expect(FakeWebSocket.instances[1]?.sent).toEqual([{ type: 'subscribe_files', workspaceId: 3 }]);
+
+    unsubscribe();
+    expect(FakeWebSocket.instances[1]?.sent.at(-1)).toEqual({ type: 'unsubscribe_files', workspaceId: 3 });
+  });
+});
+
 describe('subscribeCriticLog', () => {
   it('replays from its own channel on the first open and forwards only critic_log events', async () => {
     vi.stubGlobal('WebSocket', FakeWebSocket);

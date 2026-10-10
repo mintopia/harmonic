@@ -11,6 +11,11 @@ describe('workspace filesystem watcher (issue #590)', () => {
   let server: TestServer;
   let root: string;
 
+  const subscribeFiles = async (client: Awaited<ReturnType<typeof connectFirehose>>) => {
+    client.send({ type: 'subscribe_files', workspaceId: 1 });
+    await waitFor(async () => server.app.ctx.workspaceWatcher.watchCount(1) > 0);
+  };
+
   beforeAll(async () => {
     server = await startServer({ fileWatcherDebounceMs: 250 });
     root = mkdtempSync(join(tmpdir(), 'harmonic-watcher-'));
@@ -30,8 +35,13 @@ describe('workspace filesystem watcher (issue #590)', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it('starts no watcher until a client subscribes', () => {
+    expect(server.app.ctx.workspaceWatcher.watchCount(1)).toBe(0);
+  });
+
   it('coalesces visible changes, skips excluded directories, and pushes fresh git status', async () => {
     const client = await connectFirehose(server);
+    await subscribeFiles(client);
     writeFileSync(join(root, 'tracked.txt'), 'changed\n');
     writeFileSync(join(root, 'new.txt'), 'new\n');
     writeFileSync(join(root, 'ignored', 'hidden.txt'), 'hidden\n');
@@ -55,6 +65,7 @@ describe('workspace filesystem watcher (issue #590)', () => {
 
   it('recomputes status when the Git index changes even though .git is excluded', async () => {
     const client = await connectFirehose(server);
+    await subscribeFiles(client);
     execFileSync('git', ['-C', root, 'add', 'tracked.txt']);
     const status = await waitFor(async () => {
       const s = client.messages.findLast((message) => message.type === 'git_status' && message.workspaceId === 1);
@@ -62,5 +73,13 @@ describe('workspace filesystem watcher (issue #590)', () => {
     });
     expect(status.entries).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'tracked.txt', indexStatus: 'M' })]));
     client.close();
+  });
+
+  it('releases a closed socket subscription', async () => {
+    const watcher = server.app.ctx.workspaceWatcher;
+    const client = await connectFirehose(server);
+    await subscribeFiles(client);
+    client.close();
+    await waitFor(async () => (watcher as unknown as { subscribers: Map<number, number> }).subscribers.size === 0);
   });
 });
