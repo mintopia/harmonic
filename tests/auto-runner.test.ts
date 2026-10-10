@@ -11,6 +11,19 @@ const slowScenario = (ms: number) =>
     delayMs: ms,
   });
 
+function recordAutoRunnerTaskQueries(tasks: TestServer['app']['ctx']['tasks']) {
+  const list = tasks.list.bind(tasks);
+  const queries: { query: Parameters<typeof list>[0]; from: string[] }[] = [];
+  vi.spyOn(tasks, 'list').mockImplementation((query) => {
+    const stack = new Error().stack ?? '';
+    if (/src[\\/]execution[\\/]auto-runner\./.test(stack)) {
+      queries.push({ query, from: stack.split('\n').filter((line) => /[\\/]src[\\/]/.test(line)).slice(0, 5) });
+    }
+    return list(query);
+  });
+  return queries;
+}
+
 describe('auto-runner', () => {
   let server: TestServer;
 
@@ -53,17 +66,7 @@ describe('auto-runner', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harmonic-ar-scope-'));
     const done = await server.api('POST', '/api/tasks', { prompt: 'old', workingDir: dir });
     await server.app.ctx.tasks.setState(done.body.id, 'done');
-    const tasks = server.app.ctx.tasks;
-    const list = tasks.list.bind(tasks);
-    const queries: { query: Parameters<typeof list>[0]; from: string[] }[] = [];
-    // Other background loops list Tasks too; only the Auto-Runner's own queries are under test.
-    vi.spyOn(tasks, 'list').mockImplementation((query) => {
-      const stack = new Error().stack ?? '';
-      if (/src[\\/]execution[\\/]auto-runner\./.test(stack)) {
-        queries.push({ query, from: stack.split('\n').filter((line) => /[\\/]src[\\/]/.test(line)).slice(0, 5) });
-      }
-      return list(query);
-    });
+    const queries = recordAutoRunnerTaskQueries(server.app.ctx.tasks);
     await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
     await waitFor(async () => queries.length > 0);
     expect(queries.filter(({ query }) => ![query?.state].flat().every((s) => s === 'ready' || s === 'working'))).toEqual([]);
