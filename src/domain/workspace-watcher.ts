@@ -1,8 +1,9 @@
-import chokidar, { type FSWatcher } from 'chokidar';
-import { readFileSync, statSync } from 'node:fs';
-import { dirname, relative, resolve, sep } from 'node:path';
+import { lstatSync, readFileSync, statSync, watch, type FSWatcher } from 'node:fs';
+import { readdir } from 'node:fs/promises';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { WorkspaceRow } from '../db/schema.js';
 import { logger } from '../logger.js';
+import { forEachYielding } from '../reliability/yield.js';
 import { readGitStatus, type GitStatusEntry } from './git-status.js';
 
 export interface WorkspaceWatcherEvents {
@@ -10,7 +11,24 @@ export interface WorkspaceWatcherEvents {
   gitStatus(workspaceId: number, entries: GitStatusEntry[]): void;
 }
 
-type WatchedWorkspace = { watcher: FSWatcher | null; signature: string; timer: ReturnType<typeof setTimeout> | null; fsChanged: boolean; gitChanged: boolean };
+type WatchedWorkspace = {
+  watchers: Map<string, FSWatcher>;
+  signature: string;
+  timer: ReturnType<typeof setTimeout> | null;
+  fsChanged: boolean;
+  gitChanged: boolean;
+  degraded: boolean;
+  stopped: boolean;
+};
+
+function isWatchExhausted(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  return code === 'ENOSPC' || code === 'EMFILE';
+}
+
+function newState(signature: string): WatchedWorkspace {
+  return { watchers: new Map(), signature, timer: null, fsChanged: false, gitChanged: false, degraded: false, stopped: false };
+}
 
 function gitMetadataPaths(root: string): string[] {
   const dotGit = resolve(root, '.git');
@@ -47,11 +65,21 @@ export class WorkspaceWatcher {
     await Promise.all([...this.watched.keys()].map((id) => this.stop(id)));
   }
 
+  /** Number of active directory watches for a Workspace (0 when unwatched). */
+  watchCount(workspaceId: number): number {
+    return this.watched.get(workspaceId)?.watchers.size ?? 0;
+  }
+
+  isDegraded(workspaceId: number): boolean {
+    return this.watched.get(workspaceId)?.degraded ?? false;
+  }
+
   private async start(workspace: WorkspaceRow, signature: string): Promise<void> {
     const root = resolve(workspace.workingDir);
+    const state = newState(signature);
+    this.watched.set(workspace.id, state);
     if (dirname(root) === root) {
       logger.warn('workspace watcher skipped: refusing to watch a filesystem root', { workspaceId: workspace.id, root });
-      this.watched.set(workspace.id, { watcher: null, signature, timer: null, fsChanged: false, gitChanged: false });
       return;
     }
     const excluded = new Set(workspace.excludedDirectories.map((path) => resolve(root, path)));
@@ -60,27 +88,92 @@ export class WorkspaceWatcher {
       return [...excluded].some((directory) => resolved === directory || resolved.startsWith(`${directory}${sep}`));
     };
     const gitPaths = gitMetadataPaths(root);
-    const watcher = chokidar.watch([root, ...gitPaths], {
-      ignoreInitial: true,
-      followSymlinks: false,
-      ignored: (path) => isIgnored(path) && !path.endsWith(`${sep}.git${sep}index`) && !path.endsWith(`${sep}.git${sep}HEAD`),
-    });
-    const state: WatchedWorkspace = { watcher, signature, timer: null, fsChanged: false, gitChanged: false };
-    this.watched.set(workspace.id, state);
-    watcher.on('error', (err) => {
-      logger.warn('workspace watcher error', { workspaceId: workspace.id, root, error: err instanceof Error ? err.message : String(err) });
-    });
-    watcher.on('all', (_event, path) => {
-      const relativePath = relative(root, path).split(sep).join('/');
-      if (gitPaths.some((gitPath) => resolve(path) === gitPath) || relativePath === '.git/index' || relativePath === '.git/HEAD') state.gitChanged = true;
+    const isGitPath = (path: string): boolean => {
+      const resolved = resolve(path);
+      return gitPaths.includes(resolved) || ['.git/index', '.git/HEAD'].includes(relative(root, resolved).split(sep).join('/'));
+    };
+
+    const unwatch = (dir: string): void => {
+      for (const [watched, watcher] of [...state.watchers]) {
+        if (watched !== dir && !watched.startsWith(`${dir}${sep}`)) continue;
+        watcher.close();
+        state.watchers.delete(watched);
+      }
+    };
+
+    const addWatch = (dir: string): boolean => {
+      if (state.stopped || state.degraded) return false;
+      if (state.watchers.has(dir)) return true;
+      try {
+        const watcher = watch(dir, { persistent: true, recursive: false }, (_event, filename) => onEvent(dir, filename === null ? null : String(filename)));
+        watcher.on('error', (err) => {
+          if (state.watchers.get(dir) === watcher) state.watchers.delete(dir);
+          watcher.close();
+          if (isWatchExhausted(err)) markDegraded(err);
+          else logger.warn('workspace watcher error', { workspaceId: workspace.id, root, dir, error: err instanceof Error ? err.message : String(err) });
+        });
+        state.watchers.set(dir, watcher);
+        return true;
+      } catch (err) {
+        if (isWatchExhausted(err)) markDegraded(err);
+        else if ((err as NodeJS.ErrnoException).code !== 'ENOENT' && (err as NodeJS.ErrnoException).code !== 'ENOTDIR') {
+          logger.warn('workspace watcher error', { workspaceId: workspace.id, root, dir, error: err instanceof Error ? err.message : String(err) });
+        }
+        return false;
+      }
+    };
+
+    const markDegraded = (err: unknown): void => {
+      if (state.degraded) return;
+      state.degraded = true;
+      logger.warn('workspace watcher degraded: out of file watches, new directories will not be watched', {
+        workspaceId: workspace.id,
+        root,
+        watches: state.watchers.size,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    };
+
+    const walk = async (start: string): Promise<void> => {
+      const pending = [start];
+      await forEachYielding(pending, async (dir) => {
+        if (state.stopped || state.degraded || isIgnored(dir) || !addWatch(dir)) return;
+        let entries;
+        try {
+          entries = await readdir(dir, { withFileTypes: true });
+        } catch {
+          unwatch(dir);
+          return;
+        }
+        for (const entry of entries) {
+          if (entry.isDirectory() && !entry.isSymbolicLink()) pending.push(join(dir, entry.name));
+        }
+      });
+    };
+
+    const onEvent = (dir: string, filename: string | null): void => {
+      if (state.stopped) return;
+      const path = filename === null ? dir : join(dir, filename);
+      if (!isGitPath(path) && relative(root, path).startsWith('..')) return;
+      if (isGitPath(path)) state.gitChanged = true;
       else if (!isIgnored(path)) state.fsChanged = true;
       else return;
       this.schedule(workspace.id, workspace.workingDir, state);
-    });
-    await new Promise<void>((ready) => {
-      watcher.once('ready', () => ready());
-      watcher.once('error', () => ready());
-    });
+      if (filename === null || isGitPath(path) || isIgnored(path)) return;
+      let isDirectory = false;
+      try {
+        isDirectory = lstatSync(path).isDirectory();
+      } catch {
+        unwatch(path);
+        return;
+      }
+      if (isDirectory && !state.watchers.has(path)) {
+        void walk(path).catch((err) => logger.warn('workspace watcher walk failed', { workspaceId: workspace.id, path, error: err instanceof Error ? err.message : String(err) }));
+      }
+    };
+
+    for (const gitDir of new Set(gitPaths.map((path) => dirname(path)))) addWatch(gitDir);
+    await walk(root);
   }
 
   private schedule(workspaceId: number, root: string, state: WatchedWorkspace): void {
@@ -101,6 +194,8 @@ export class WorkspaceWatcher {
     if (!state) return;
     this.watched.delete(id);
     if (state.timer !== null) clearTimeout(state.timer);
-    if (state.watcher) await state.watcher.close();
+    state.stopped = true;
+    for (const watcher of state.watchers.values()) watcher.close();
+    state.watchers.clear();
   }
 }
