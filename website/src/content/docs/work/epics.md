@@ -19,7 +19,9 @@ your tracker, and Harmonic reads it on the next poll:
   fine; only the bottom level schedules and merges work.
 - Order the children with `Blocked by` links between them, same as any
   other ticket. A child with an open blocker sits out until it clears.
-  The Epic issue groups its children, it never blocks them.
+- The Epic issue groups its children. If the whole Epic needs another
+  Epic's code, or another ticket's work, add a `Blocked by` link on the
+  Epic issue itself. See [Holding an Epic](#holding-an-epic) below.
 
 Harmonic marks one kind of Epic on the board, a **Map** (wayfinding
 children). Any other parent/child grouping shows and behaves the same
@@ -27,6 +29,28 @@ way, badged plainly as an Epic.
 
 Each child still needs `ready-for-agent` to run unattended, same as any
 ticket, see [Feeding it work](/harmonic/work/feeding-it-work/).
+
+## Holding an Epic
+
+If an Epic has `Blocked by` links to another Epic or issue, Harmonic
+won't start any of that Epic's Members until every blocker is satisfied.
+Set these links in your tracker whenever one Epic needs another's code.
+
+- An Epic blocker counts once it has been integrated into your base
+  branch, either merged in or completed in place. Closing the blocker's
+  issue is not enough, because the code still has to reach base.
+- An issue blocker counts once that Task is done.
+- Members that are already running carry on. The hold only stops new
+  starts.
+- A held Member shows a blocker chip such as **Epic #71** on the board.
+  Its waiting-to-run reason reads like `Epic #73 waits on #71 (not
+  integrated)`.
+- After a blocker Epic integrates, its dependents also wait until their
+  own `epic/<ref>` branch has been refreshed from base. The reason then
+  mentions `refresh pending`.
+- A manual **Run** still starts a held Member, the same as for an ordinary
+  blocker. A Member whose integration branch hasn't been refreshed yet
+  can't be started.
 
 ## Watch it run
 
