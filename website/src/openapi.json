@@ -2029,17 +2029,20 @@
                 },
                 "heldEpic": {
                   "type": "string",
+                  "description": "The Epic in the Member's ancestor chain whose blocked-by link names this blocker.",
                   "example": "73"
                 },
                 "cycle": {
-                  "example": true,
-                  "type": "boolean"
+                  "type": "boolean",
+                  "description": "True when the blocker Epic is itself blocked, directly or through its ancestors, by the held Epic, so the hold can never clear on its own.",
+                  "example": false
                 }
               },
               "required": [
                 "ref",
                 "kind",
-                "heldEpic"
+                "heldEpic",
+                "cycle"
               ]
             },
             "example": [
@@ -2449,17 +2452,20 @@
                 },
                 "heldEpic": {
                   "type": "string",
+                  "description": "The Epic in the Member's ancestor chain whose blocked-by link names this blocker.",
                   "example": "73"
                 },
                 "cycle": {
-                  "example": true,
-                  "type": "boolean"
+                  "type": "boolean",
+                  "description": "True when the blocker Epic is itself blocked, directly or through its ancestors, by the held Epic, so the hold can never clear on its own.",
+                  "example": false
                 }
               },
               "required": [
                 "ref",
                 "kind",
-                "heldEpic"
+                "heldEpic",
+                "cycle"
               ]
             },
             "example": [
@@ -3087,17 +3093,20 @@
                 },
                 "heldEpic": {
                   "type": "string",
+                  "description": "The Epic in the Member's ancestor chain whose blocked-by link names this blocker.",
                   "example": "73"
                 },
                 "cycle": {
-                  "example": true,
-                  "type": "boolean"
+                  "type": "boolean",
+                  "description": "True when the blocker Epic is itself blocked, directly or through its ancestors, by the held Epic, so the hold can never clear on its own.",
+                  "example": false
                 }
               },
               "required": [
                 "ref",
                 "kind",
-                "heldEpic"
+                "heldEpic",
+                "cycle"
               ]
             },
             "example": [
@@ -3709,17 +3718,20 @@
                 },
                 "heldEpic": {
                   "type": "string",
+                  "description": "The Epic in the Member's ancestor chain whose blocked-by link names this blocker.",
                   "example": "73"
                 },
                 "cycle": {
-                  "example": true,
-                  "type": "boolean"
+                  "type": "boolean",
+                  "description": "True when the blocker Epic is itself blocked, directly or through its ancestors, by the held Epic, so the hold can never clear on its own.",
+                  "example": false
                 }
               },
               "required": [
                 "ref",
                 "kind",
-                "heldEpic"
+                "heldEpic",
+                "cycle"
               ]
             },
             "example": [
@@ -11844,17 +11856,20 @@
                 },
                 "heldEpic": {
                   "type": "string",
+                  "description": "The Epic in the Member's ancestor chain whose blocked-by link names this blocker.",
                   "example": "73"
                 },
                 "cycle": {
-                  "example": true,
-                  "type": "boolean"
+                  "type": "boolean",
+                  "description": "True when the blocker Epic is itself blocked, directly or through its ancestors, by the held Epic, so the hold can never clear on its own.",
+                  "example": false
                 }
               },
               "required": [
                 "ref",
                 "kind",
-                "heldEpic"
+                "heldEpic",
+                "cycle"
               ],
               "additionalProperties": false
             },
@@ -12268,17 +12283,20 @@
                 },
                 "heldEpic": {
                   "type": "string",
+                  "description": "The Epic in the Member's ancestor chain whose blocked-by link names this blocker.",
                   "example": "73"
                 },
                 "cycle": {
-                  "example": true,
-                  "type": "boolean"
+                  "type": "boolean",
+                  "description": "True when the blocker Epic is itself blocked, directly or through its ancestors, by the held Epic, so the hold can never clear on its own.",
+                  "example": false
                 }
               },
               "required": [
                 "ref",
                 "kind",
-                "heldEpic"
+                "heldEpic",
+                "cycle"
               ],
               "additionalProperties": false
             },
@@ -12911,17 +12929,20 @@
                 },
                 "heldEpic": {
                   "type": "string",
+                  "description": "The Epic in the Member's ancestor chain whose blocked-by link names this blocker.",
                   "example": "73"
                 },
                 "cycle": {
-                  "example": true,
-                  "type": "boolean"
+                  "type": "boolean",
+                  "description": "True when the blocker Epic is itself blocked, directly or through its ancestors, by the held Epic, so the hold can never clear on its own.",
+                  "example": false
                 }
               },
               "required": [
                 "ref",
                 "kind",
-                "heldEpic"
+                "heldEpic",
+                "cycle"
               ],
               "additionalProperties": false
             },
@@ -13538,17 +13559,20 @@
                 },
                 "heldEpic": {
                   "type": "string",
+                  "description": "The Epic in the Member's ancestor chain whose blocked-by link names this blocker.",
                   "example": "73"
                 },
                 "cycle": {
-                  "example": true,
-                  "type": "boolean"
+                  "type": "boolean",
+                  "description": "True when the blocker Epic is itself blocked, directly or through its ancestors, by the held Epic, so the hold can never clear on its own.",
+                  "example": false
                 }
               },
               "required": [
                 "ref",
                 "kind",
-                "heldEpic"
+                "heldEpic",
+                "cycle"
               ],
               "additionalProperties": false
             },

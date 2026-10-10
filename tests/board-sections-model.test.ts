@@ -358,8 +358,8 @@ describe('blocker columns', () => {
       dependsOn: [1],
       openBlockerCount: 2,
       epicBlockers: [
-        { ref: '71', kind: 'epic', heldEpic: '73' },
-        { ref: '50', kind: 'task', heldEpic: '73' },
+        { ref: '71', kind: 'epic', heldEpic: '73', cycle: false },
+        { ref: '50', kind: 'task', heldEpic: '73', cycle: false },
       ],
     });
     expect(resolveBlockers(held, new Map())).toEqual([

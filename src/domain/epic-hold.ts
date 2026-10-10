@@ -1,4 +1,5 @@
 import type { EpicLifecycleState, TaskState } from '../db/schema.js';
+import { forEachYielding } from '../reliability/yield.js';
 import type { TrackerRef } from '../tracker/adapter.js';
 
 export interface EpicHoldContainer {
@@ -6,17 +7,34 @@ export interface EpicHoldContainer {
   blockedBy: readonly TrackerRef[];
 }
 
-export interface EpicHoldIndex {
-  containers: ReadonlyMap<string, EpicHoldContainer>;
-  epicStates: ReadonlyMap<string, EpicLifecycleState>;
-  taskStates: ReadonlyMap<string, TaskState>;
+export type ScopedMap<V> = ReadonlyMap<number, ReadonlyMap<TrackerRef, V>>;
+export type MutableScopedMap<V> = Map<number, Map<TrackerRef, V>>;
+
+export function scopedGet<V>(map: ScopedMap<V>, workspaceId: number, ref: TrackerRef): V | undefined {
+  return map.get(workspaceId)?.get(ref);
+}
+
+export function scopedSet<V>(map: MutableScopedMap<V>, workspaceId: number, ref: TrackerRef, value: V): void {
+  const inWorkspace = map.get(workspaceId);
+  if (inWorkspace) inWorkspace.set(ref, value);
+  else map.set(workspaceId, new Map([[ref, value]]));
+}
+
+export interface EpicHoldStructureIndex {
+  containers: ScopedMap<EpicHoldContainer>;
+  epicStates: ScopedMap<EpicLifecycleState>;
+  descendants: ScopedMap<readonly EpicLifecycleState[]>;
+}
+
+export interface EpicHoldIndex extends EpicHoldStructureIndex {
+  taskStates: ScopedMap<TaskState>;
 }
 
 export interface EpicBlocker {
   ref: TrackerRef;
   kind: 'epic' | 'task';
   heldEpic: TrackerRef;
-  cycle?: boolean;
+  cycle: boolean;
 }
 
 type BlockerKind = EpicBlocker['kind'];
@@ -26,29 +44,15 @@ type BlockerResolution =
   | { status: 'holding'; kind: BlockerKind }
   | { status: 'unknown' };
 
-interface StructureMemo {
-  chains: Map<string, TrackerRef[]>;
-  descendants: Map<string, EpicLifecycleState[]> | null;
-}
-
 interface IndexMemo {
-  resolutions: Map<string, BlockerResolution>;
-  blockers: Map<string, EpicBlocker[]>;
-  epicKind: Map<string, boolean>;
-  reach: Map<string, boolean>;
+  resolutions: MutableScopedMap<BlockerResolution>;
+  blockers: MutableScopedMap<EpicBlocker[]>;
+  epicKind: MutableScopedMap<boolean>;
+  reach: MutableScopedMap<Map<TrackerRef, boolean>>;
 }
 
-const structureMemos = new WeakMap<object, StructureMemo>();
+const chainMemos = new WeakMap<ScopedMap<EpicHoldContainer>, MutableScopedMap<readonly TrackerRef[]>>();
 const indexMemos = new WeakMap<EpicHoldIndex, IndexMemo>();
-
-function structureMemo(index: EpicHoldIndex): StructureMemo {
-  let memo = structureMemos.get(index.containers);
-  if (!memo) {
-    memo = { chains: new Map(), descendants: null };
-    structureMemos.set(index.containers, memo);
-  }
-  return memo;
-}
 
 function indexMemo(index: EpicHoldIndex): IndexMemo {
   let memo = indexMemos.get(index);
@@ -59,15 +63,18 @@ function indexMemo(index: EpicHoldIndex): IndexMemo {
   return memo;
 }
 
-export function epicHoldKey(workspaceId: number, ref: TrackerRef): string {
-  return `${workspaceId}:${ref}`;
-}
-
-function ancestorChain(workspaceId: number, start: TrackerRef | null, index: EpicHoldIndex): readonly TrackerRef[] {
+function ancestorChainIn(
+  containers: ScopedMap<EpicHoldContainer>,
+  workspaceId: number,
+  start: TrackerRef | null,
+): readonly TrackerRef[] {
   if (start === null) return [];
-  const { chains } = structureMemo(index);
-  const startKey = epicHoldKey(workspaceId, start);
-  const cached = chains.get(startKey);
+  let chains = chainMemos.get(containers);
+  if (!chains) {
+    chains = new Map();
+    chainMemos.set(containers, chains);
+  }
+  const cached = chains.get(workspaceId)?.get(start);
   if (cached) return cached;
   const chain: TrackerRef[] = [];
   const visited = new Set<TrackerRef>();
@@ -75,58 +82,64 @@ function ancestorChain(workspaceId: number, start: TrackerRef | null, index: Epi
   while (current !== null && !visited.has(current)) {
     visited.add(current);
     chain.push(current);
-    current = index.containers.get(epicHoldKey(workspaceId, current))?.parent ?? null;
+    current = scopedGet(containers, workspaceId, current)?.parent ?? null;
   }
-  chains.set(startKey, chain);
+  scopedSet(chains, workspaceId, start, chain);
   return chain;
 }
 
-function descendantEpicStates(workspaceId: number, root: TrackerRef, index: EpicHoldIndex): readonly EpicLifecycleState[] {
-  const memo = structureMemo(index);
-  if (memo.descendants === null) {
-    const byAncestor = new Map<string, EpicLifecycleState[]>();
-    for (const [key, state] of index.epicStates) {
-      const separator = key.indexOf(':');
-      const workspace = Number(key.slice(0, separator));
-      const ref = key.slice(separator + 1) as TrackerRef;
-      for (const ancestor of ancestorChain(workspace, ref, index)) {
+export async function buildDescendantStates(
+  containers: ScopedMap<EpicHoldContainer>,
+  epicStates: ScopedMap<EpicLifecycleState>,
+): Promise<MutableScopedMap<EpicLifecycleState[]>> {
+  const byAncestor: MutableScopedMap<EpicLifecycleState[]> = new Map();
+  for (const [workspaceId, states] of epicStates) {
+    await forEachYielding(states, ([ref, state]) => {
+      for (const ancestor of ancestorChainIn(containers, workspaceId, ref)) {
         if (ancestor === ref) continue;
-        const ancestorKey = epicHoldKey(workspace, ancestor);
-        const states = byAncestor.get(ancestorKey);
-        if (states) states.push(state);
-        else byAncestor.set(ancestorKey, [state]);
+        const existing = scopedGet(byAncestor, workspaceId, ancestor);
+        if (existing) existing.push(state);
+        else scopedSet(byAncestor, workspaceId, ancestor, [state]);
       }
-    }
-    memo.descendants = byAncestor;
+    });
   }
-  return memo.descendants.get(epicHoldKey(workspaceId, root)) ?? [];
+  return byAncestor;
+}
+
+function ancestorChain(workspaceId: number, start: TrackerRef | null, index: EpicHoldIndex): readonly TrackerRef[] {
+  return ancestorChainIn(index.containers, workspaceId, start);
+}
+
+function memoScoped<V>(map: MutableScopedMap<V>, workspaceId: number, ref: TrackerRef, compute: () => V): V {
+  const cached = scopedGet(map, workspaceId, ref);
+  if (cached !== undefined) return cached;
+  const value = compute();
+  scopedSet(map, workspaceId, ref, value);
+  return value;
+}
+
+function blockedByOf(workspaceId: number, epic: TrackerRef, index: EpicHoldIndex): readonly TrackerRef[] {
+  return scopedGet(index.containers, workspaceId, epic)?.blockedBy ?? [];
 }
 
 function resolveBlocker(workspaceId: number, ref: TrackerRef, index: EpicHoldIndex): BlockerResolution {
-  const { resolutions } = indexMemo(index);
-  const key = epicHoldKey(workspaceId, ref);
-  const cached = resolutions.get(key);
-  if (cached) return cached;
-  const resolution = computeResolution(workspaceId, ref, key, index);
-  resolutions.set(key, resolution);
-  return resolution;
+  return memoScoped(indexMemo(index).resolutions, workspaceId, ref, () => computeResolution(workspaceId, ref, index));
 }
 
-function computeResolution(workspaceId: number, ref: TrackerRef, key: string, index: EpicHoldIndex): BlockerResolution {
-  const epicState = index.epicStates.get(key);
+function computeResolution(workspaceId: number, ref: TrackerRef, index: EpicHoldIndex): BlockerResolution {
+  const epicState = scopedGet(index.epicStates, workspaceId, ref);
   if (epicState !== undefined) return { status: epicState === 'integrated' ? 'satisfied' : 'holding', kind: 'epic' };
-  const taskState = index.taskStates.get(key);
+  const taskState = scopedGet(index.taskStates, workspaceId, ref);
   if (taskState !== undefined) return { status: taskState === 'done' ? 'satisfied' : 'holding', kind: 'task' };
-  if (!index.containers.has(key)) return { status: 'unknown' };
-  const beneath = descendantEpicStates(workspaceId, ref, index);
+  if (scopedGet(index.containers, workspaceId, ref) === undefined) return { status: 'unknown' };
+  const beneath = scopedGet(index.descendants, workspaceId, ref) ?? [];
   if (beneath.length === 0) return { status: 'unknown' };
   return { status: beneath.every((state) => state === 'integrated') ? 'satisfied' : 'holding', kind: 'epic' };
 }
 
 function reachesByBlockers(workspaceId: number, from: TrackerRef, target: TrackerRef, index: EpicHoldIndex): boolean {
-  const { reach } = indexMemo(index);
-  const memoKey = `${workspaceId}:${from}>${target}`;
-  const cached = reach.get(memoKey);
+  const targets = memoScoped(indexMemo(index).reach, workspaceId, from, () => new Map<TrackerRef, boolean>());
+  const cached = targets.get(target);
   if (cached !== undefined) return cached;
   const seen = new Set<TrackerRef>();
   const stack: TrackerRef[] = [from];
@@ -140,10 +153,10 @@ function reachesByBlockers(workspaceId: number, from: TrackerRef, target: Tracke
     if (seen.has(ref)) continue;
     seen.add(ref);
     for (const link of ancestorChain(workspaceId, ref, index)) {
-      for (const next of index.containers.get(epicHoldKey(workspaceId, link))?.blockedBy ?? []) stack.push(next);
+      for (const next of blockedByOf(workspaceId, link, index)) stack.push(next);
     }
   }
-  reach.set(memoKey, found);
+  targets.set(target, found);
   return found;
 }
 
@@ -153,29 +166,28 @@ export function unsatisfiedEpicBlockers(
   index: EpicHoldIndex,
 ): EpicBlocker[] {
   if (memberParent === null) return [];
-  const { blockers } = indexMemo(index);
-  const memoKey = epicHoldKey(workspaceId, memberParent);
-  const cached = blockers.get(memoKey);
-  if (cached) return cached;
-  const chain = ancestorChain(workspaceId, memberParent, index);
-  const own = new Set(chain);
-  const held: EpicBlocker[] = [];
-  const seen = new Set<string>();
-  for (const epic of chain) {
-    for (const blocker of index.containers.get(epicHoldKey(workspaceId, epic))?.blockedBy ?? []) {
-      if (own.has(blocker)) continue;
-      const dedupe = `${epic}\u0000${blocker}`;
-      if (seen.has(dedupe)) continue;
-      seen.add(dedupe);
-      const resolved = resolveBlocker(workspaceId, blocker, index);
-      if (resolved.status !== 'holding') continue;
-      const entry: EpicBlocker = { ref: blocker, kind: resolved.kind, heldEpic: epic };
-      if (resolved.kind === 'epic' && reachesByBlockers(workspaceId, blocker, epic, index)) entry.cycle = true;
-      held.push(entry);
+  const held = memoScoped(indexMemo(index).blockers, workspaceId, memberParent, () => {
+    const chain = ancestorChain(workspaceId, memberParent, index);
+    const own = new Set(chain);
+    const entries: EpicBlocker[] = [];
+    for (const epic of chain) {
+      const seen = new Set<TrackerRef>();
+      for (const blocker of blockedByOf(workspaceId, epic, index)) {
+        if (own.has(blocker) || seen.has(blocker)) continue;
+        seen.add(blocker);
+        const resolved = resolveBlocker(workspaceId, blocker, index);
+        if (resolved.status !== 'holding') continue;
+        entries.push({
+          ref: blocker,
+          kind: resolved.kind,
+          heldEpic: epic,
+          cycle: resolved.kind === 'epic' && reachesByBlockers(workspaceId, blocker, epic, index),
+        });
+      }
     }
-  }
-  blockers.set(memoKey, held);
-  return held;
+    return entries;
+  });
+  return held.map((entry) => ({ ...entry }));
 }
 
 export function namesEpicBlocker(
@@ -186,21 +198,17 @@ export function namesEpicBlocker(
 ): boolean {
   const below = ancestorChain(workspaceId, blockerRef, index);
   return ancestorChain(workspaceId, memberParent, index).some((epic) =>
-    index.containers.get(epicHoldKey(workspaceId, epic))?.blockedBy.some((blocker) => below.includes(blocker)),
+    blockedByOf(workspaceId, epic, index).some((blocker) => below.includes(blocker)),
   );
 }
 
 export function hasEpicKindBlockers(workspaceId: number, epicRef: TrackerRef, index: EpicHoldIndex): boolean {
-  const { epicKind } = indexMemo(index);
-  const memoKey = epicHoldKey(workspaceId, epicRef);
-  const cached = epicKind.get(memoKey);
-  if (cached !== undefined) return cached;
-  const result = ancestorChain(workspaceId, epicRef, index).some((epic) =>
-    (index.containers.get(epicHoldKey(workspaceId, epic))?.blockedBy ?? []).some((blocker) => {
-      const resolved = resolveBlocker(workspaceId, blocker, index);
-      return resolved.status !== 'unknown' && resolved.kind === 'epic';
-    }),
+  return memoScoped(indexMemo(index).epicKind, workspaceId, epicRef, () =>
+    ancestorChain(workspaceId, epicRef, index).some((epic) =>
+      blockedByOf(workspaceId, epic, index).some((blocker) => {
+        const resolved = resolveBlocker(workspaceId, blocker, index);
+        return resolved.status !== 'unknown' && resolved.kind === 'epic';
+      }),
+    ),
   );
-  epicKind.set(memoKey, result);
-  return result;
 }
