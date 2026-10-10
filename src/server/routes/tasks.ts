@@ -187,8 +187,8 @@ const taskWithDepsSchema = z
         z.object({
           ref: z.string().meta({ example: '71' }),
           kind: z.enum(['epic', 'task']).meta({ example: 'epic' }),
-          heldEpic: z.string().meta({ example: '73' }),
-          cycle: z.boolean().optional().meta({ example: true }),
+          heldEpic: z.string().meta({ description: 'The Epic in the Member\'s ancestor chain whose blocked-by link names this blocker.', example: '73' }),
+          cycle: z.boolean().meta({ description: 'True when the blocker Epic is itself blocked, directly or through its ancestors, by the held Epic, so the hold can never clear on its own.', example: false }),
         }),
       )
       .meta({ example: [{ ref: '71', kind: 'epic', heldEpic: '73' }] }),

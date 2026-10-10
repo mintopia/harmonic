@@ -1,7 +1,7 @@
 import type { TrackerRef } from '../tracker/adapter.js';
 import { existsSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { Git } from './git.js';
+import { epicRefreshWorktreePath } from './epic-refresh-sweep.js';
 import { bestEffort, reportFailure, type FireAndForget } from '../error-handling.js';
 import { integrationBranchName, type EpicRefreshResolveDispatchOutcome, type EpicRefreshResolveTarget } from './epic-coordinator.js';
 import { RESOLVE_TURN_TIMEOUT_MS } from './merge-coordinator.js';
@@ -64,7 +64,7 @@ export class EpicRefreshResolver {
     const { harness: harnessId, model, config: harness } = route;
 
     mkdirSync(this.deps.worktreesDir, { recursive: true });
-    const worktreePath = join(this.deps.worktreesDir, `epic-refresh-${target.ref}`);
+    const worktreePath = epicRefreshWorktreePath(this.deps.worktreesDir, target.ref);
     try {
       if (!this.liveWorktrees.has(worktreePath)) {
         if (existsSync(worktreePath)) {

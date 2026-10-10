@@ -396,7 +396,7 @@ export async function createRuntime(deps: {
       onTaskEvent: (taskId) => bus.emit('step_changed', { taskId }),
     },
     gitBreaker,
-    epicBaseNotReady: (task) => epicServiceRef?.epicBaseNotReady(task) ?? false,
+    epicBaseNotReady: (task) => epicServiceRef?.epicBaseNotReady(task) ?? 'ready',
     postMerge,
     worktreesDir,
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
@@ -450,7 +450,7 @@ export async function createRuntime(deps: {
     () => workspaces.list(),
     {
       mirror,
-      epicBaseNotReady: (task) => epicServiceRef?.epicBaseNotReady(task) ?? false,
+      epicBaseNotReady: (task) => epicServiceRef?.epicBaseNotReady(task) ?? 'ready',
       gitBreaker,
       onSkipReasonChanged: (task) => bus.emit('task_changed', task),
     },

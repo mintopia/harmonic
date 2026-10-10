@@ -42,7 +42,8 @@ import { DEFAULT_TRIAGE_LABELS, loadTriageLabels, storedTriageLabels, type Triag
 import { withTaskLock } from './task-lock.js';
 import type { StoredEpicRecord } from './epic-derivation.js';
 import { TaskBlockerGraph } from './task-blocker-graph.js';
-import { epicHoldKey, hasEpicKindBlockers, namesEpicBlocker, unsatisfiedEpicBlockers, type EpicBlocker, type EpicHoldIndex } from './epic-hold.js';
+import { EpicHoldIndexCache } from './epic-hold-cache.js';
+import { hasEpicKindBlockers, namesEpicBlocker, unsatisfiedEpicBlockers, type EpicBlocker, type EpicHoldIndex } from './epic-hold.js';
 import { TaskMirror, type MirrorInput } from './task-mirror.js';
 export type { MirrorInput } from './task-mirror.js';
 
@@ -170,12 +171,6 @@ export function compareListRows(
       : a.createdAt - b.createdAt || (a.id ?? 0) - (b.id ?? 0);
 }
 
-interface EpicHoldStructure {
-  containers: ReadonlyMap<string, { parent: TrackerRef | null; blockedBy: TrackerRef[] }>;
-  epicStates: ReadonlyMap<string, EpicLifecycleState>;
-  blockerRefs: TrackerRef[];
-}
-
 /** A task plus its dependency context, as the API serves it. */
 export interface TaskWithDeps extends TaskRow {
   dependsOn: number[];
@@ -263,8 +258,7 @@ type TriageLabelsByWorkspace = ReadonlyMap<number, TriageLabels>;
 export class TaskService {
   private readonly blockerGraph: TaskBlockerGraph;
   private readonly mirror: TaskMirror;
-  private epicHoldVersion = 0;
-  private readonly epicHoldStructures = new Map<number | 'all', EpicHoldStructure>();
+  private readonly epicHold: EpicHoldIndexCache;
   readonly routing: RoutingService;
   private beforeDelete: (task: TaskRow) => Promise<void> = async () => {};
 
@@ -278,6 +272,7 @@ export class TaskService {
     private readonly onRemoved: (id: number) => void = () => {},
     private readonly onDisposition: (disposition: 'done' | 'cancelled', task: TaskRow) => void = () => {},
   ) {
+    this.epicHold = new EpicHoldIndexCache(this.db);
     this.routing = new RoutingService(this.db, this.getConfig, this.getWorkspaces);
     this.blockerGraph = new TaskBlockerGraph(this.db, {
       get: (id) => this.get(id),
@@ -425,84 +420,18 @@ export class TaskService {
     return new Set(rows.map((row) => `${row.workspaceId}:${row.parent}`));
   }
 
-  private async epicHoldIndex(workspaceId?: number): Promise<EpicHoldIndex> {
-    const structure = await this.epicHoldStructure(workspaceId);
-    const taskStates = new Map<string, TaskState>();
-    if (structure.blockerRefs.length > 0) {
-      const blockerTasks = await this.db.read((db) =>
-        db
-          .select({ workspaceId: tasks.workspaceId, trackerRef: tasks.trackerRef, state: tasks.state })
-          .from(tasks)
-          .where(
-            and(
-              eq(tasks.origin, 'mirrored'),
-              inArray(tasks.trackerRef, structure.blockerRefs),
-              workspaceId === undefined ? undefined : eq(tasks.workspaceId, workspaceId),
-            ),
-          )
-          .all(),
-      );
-      await forEachYielding(blockerTasks, (row) => {
-        if (row.workspaceId !== null && row.trackerRef !== null) {
-          taskStates.set(epicHoldKey(row.workspaceId, row.trackerRef), row.state);
-        }
-      });
-    }
-    return { containers: structure.containers, epicStates: structure.epicStates, taskStates };
-  }
-
-  private async epicHoldStructure(workspaceId?: number): Promise<EpicHoldStructure> {
-    const cacheKey = workspaceId ?? 'all';
-    const cached = this.epicHoldStructures.get(cacheKey);
-    if (cached) return cached;
-    const version = this.epicHoldVersion;
-    const containerRows = await this.db.read((db) =>
-      db
-        .select()
-        .from(trackerContainers)
-        .where(workspaceId === undefined ? undefined : eq(trackerContainers.workspaceId, workspaceId))
-        .all(),
-    );
-    const epicRows = await this.db.read((db) =>
-      db
-        .select({ workspaceId: epics.workspaceId, trackerRef: epics.trackerRef, state: epics.state })
-        .from(epics)
-        .where(workspaceId === undefined ? undefined : eq(epics.workspaceId, workspaceId))
-        .all(),
-    );
-    const containers = new Map<string, { parent: TrackerRef | null; blockedBy: TrackerRef[] }>();
-    const blockerRefs = new Set<TrackerRef>();
-    await forEachYielding(containerRows, (row) => {
-      const blockedBy = row.trackerBlockedBy.map((blocker) => blocker.ref);
-      for (const ref of blockedBy) blockerRefs.add(ref);
-      containers.set(epicHoldKey(row.workspaceId, row.trackerRef), { parent: row.trackerParent, blockedBy });
-    });
-    const epicStates = new Map<string, EpicLifecycleState>();
-    await forEachYielding(epicRows, (row) => {
-      epicStates.set(epicHoldKey(row.workspaceId, row.trackerRef), row.state);
-    });
-    const structure: EpicHoldStructure = { containers, epicStates, blockerRefs: [...blockerRefs] };
-    if (version === this.epicHoldVersion) this.epicHoldStructures.set(cacheKey, structure);
-    return structure;
-  }
-
-  private invalidateEpicHold(): void {
-    this.epicHoldVersion += 1;
-    this.epicHoldStructures.clear();
-  }
-
   async epicHasEpicBlockers(workspaceId: number, epicRef: TrackerRef): Promise<boolean> {
-    return hasEpicKindBlockers(workspaceId, epicRef, await this.epicHoldIndex(workspaceId));
+    return hasEpicKindBlockers(workspaceId, epicRef, await this.epicHold.index(workspaceId));
   }
 
   private epicBlockersOf(task: TaskRow, index: EpicHoldIndex): EpicBlocker[] {
     if (task.origin !== 'mirrored' || task.workspaceId == null || task.trackerParent == null) return [];
-    return [...unsatisfiedEpicBlockers(task.workspaceId, task.trackerParent, index)];
+    return unsatisfiedEpicBlockers(task.workspaceId, task.trackerParent, index);
   }
 
   private async emitEpicHeldMembers(workspaceId: number, blockerRef: TrackerRef): Promise<void> {
     try {
-      const index = await this.epicHoldIndex(workspaceId);
+      const index = await this.epicHold.index(workspaceId);
       const members = await this.db.read((db) =>
         db
           .select()
@@ -665,7 +594,7 @@ export class TaskService {
         }).run();
       });
     });
-    this.invalidateEpicHold();
+    this.epicHold.invalidate();
   }
 
   /**
@@ -684,7 +613,7 @@ export class TaskService {
           .run();
       });
     });
-    this.invalidateEpicHold();
+    this.epicHold.invalidate();
   }
 
   /** The stored Epic `kind` for a ref in a Workspace, or null when no spine row exists. */
@@ -729,7 +658,7 @@ export class TaskService {
         .where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, trackerRef), inArray(epics.state, ['open', 'integrating'] satisfies EpicLifecycleState[])))
         .run();
     });
-    this.invalidateEpicHold();
+    this.epicHold.invalidate();
     await this.emitEpicHeldMembers(workspaceId, trackerRef);
   }
 
@@ -742,7 +671,7 @@ export class TaskService {
         .where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, trackerRef), eq(epics.state, 'open')))
         .run();
     });
-    this.invalidateEpicHold();
+    this.epicHold.invalidate();
   }
 
   /** Every durable Epic spine row for a Workspace; the anchor that outlives the tracker container wipe. */
@@ -838,7 +767,7 @@ export class TaskService {
     const completedIds = await this.doneIds(blockerIds);
     const containerRefs = await this.containerRefs(workspaceId);
     const triage = await this.triageLabels(workspaceId);
-    const holdIndex = await this.epicHoldIndex(workspaceId);
+    const holdIndex = await this.epicHold.index(workspaceId);
     const nodes: OrderedEligibleTask[] = [];
     await forEachYielding(candidates, (task) => {
       const blockedBy = (blockersByTaskId.get(task.id) ?? []).filter((id) => !completedIds.has(id));
@@ -1247,7 +1176,7 @@ export class TaskService {
         }
       }
     });
-    this.invalidateEpicHold();
+    this.epicHold.invalidate();
     await this.blockerGraph.rederiveAndEmitBlockers(formerDependents);
     this.onRemoved(id);
   }
@@ -1255,7 +1184,7 @@ export class TaskService {
   async withDeps(task: TaskRow): Promise<TaskWithDeps> {
     const dependsOn = await this.dependsOn(task.id);
     const depStates = await Promise.all(dependsOn.map(async (depId) => (await this.get(depId)).state));
-    const epicBlockers = this.epicBlockersOf(task, await this.epicHoldIndex(task.workspaceId ?? undefined));
+    const epicBlockers = this.epicBlockersOf(task, await this.epicHold.index(task.workspaceId ?? undefined));
     const openBlockerCount = depStates.filter((state) => state !== 'done').length + epicBlockers.length;
     const containerRefs = await this.containerRefs(task.workspaceId ?? undefined);
     const triage = await this.triageLabels(task.workspaceId ?? undefined);
@@ -1336,15 +1265,17 @@ export class TaskService {
     const dependents = new Map(ids.map((id) => [id, [] as number[]]));
     const failedDependencies = new Set<number>();
     const openBlockerCounts = new Map(ids.map((id) => [id, 0]));
-    for (const edge of dependencyRows) {
+    await forEachYielding(dependencyRows, (edge) => {
       dependsOn.get(edge.taskId)?.push(edge.dependsOnId);
       if (edge.state !== 'done') openBlockerCounts.set(edge.taskId, (openBlockerCounts.get(edge.taskId) ?? 0) + 1);
       if (edge.state === 'escalated' || edge.state === 'cancelled') failedDependencies.add(edge.taskId);
-    }
-    for (const edge of dependentRows) dependents.get(edge.dependsOnId)?.push(edge.taskId);
+    });
+    await forEachYielding(dependentRows, (edge) => {
+      dependents.get(edge.dependsOnId)?.push(edge.taskId);
+    });
     const containerRefs = await this.containerRefs(query.workspaceId);
     const triage = await this.triageLabels(query.workspaceId);
-    const holdIndex = await this.epicHoldIndex(query.workspaceId);
+    const holdIndex = await this.epicHold.index(query.workspaceId);
     const result: TaskWithDeps[] = [];
     await forEachYielding(listed, (task) => {
       const raw = rawById.get(task.id);

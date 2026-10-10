@@ -566,7 +566,7 @@ export interface EpicBlocker {
   ref: string;
   kind: 'epic' | 'task';
   heldEpic: string;
-  cycle?: boolean;
+  cycle: boolean;
 }
 
 export interface Task {
