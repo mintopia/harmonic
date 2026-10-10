@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.27.0](https://github.com/mintopia/harmonic/compare/v2.26.1...v2.27.0) (2026-10-10)
+
+
+### Features
+
+* **epics:** hold an Epic's Members while its blocked-by links are unsatisfied ([76de8dd](https://github.com/mintopia/harmonic/commit/76de8dd926cbefa7f4dcc6bb2cea1faa02785223))
+* **web:** show Epic Hold blockers as chips on the Board ([8b0132c](https://github.com/mintopia/harmonic/commit/8b0132c99ee636eeac3bed56a7957970f06f8b30))
+
+
+### Bug Fixes
+
+* **board:** explain a cyclic Epic Hold blocker chip with a tooltip ([6c60df3](https://github.com/mintopia/harmonic/commit/6c60df334b08ad2e00ef1a3bf4eac75d81c4f581))
+* **epics:** cache the Epic Hold index and stale checks, notify spine-held Members, tidy comments ([fbf7a6a](https://github.com/mintopia/harmonic/commit/fbf7a6a0a01bf40df0860392c50ae6d8bdec55a6))
+* **epics:** log in-flight and backing-off refreshes at debug and report removal failures ([2660f64](https://github.com/mintopia/harmonic/commit/2660f64abc5b4884cd15b77af64bfcf49e9b70a7))
+* **epics:** reclaim orphaned epic-refresh worktrees, back off failed refreshes, and stop polls failing in-flight turns ([c7fdd99](https://github.com/mintopia/harmonic/commit/c7fdd99cc57cd07666c367fc2c50c23af037c6ac))
+* **execution:** sweep orphaned epic-refresh worktrees at boot ([c11ba1e](https://github.com/mintopia/harmonic/commit/c11ba1e94e4170f956364b680d654fc6be78f5d5))
+* **watcher:** track new-directory walks in an InFlight and fold queue cleanup into the chain ([ad18a84](https://github.com/mintopia/harmonic/commit/ad18a84c1a899962c575546c773b5d539ec14732))
+* **watcher:** watch a Workspace only while its Files page is open ([9bdcebe](https://github.com/mintopia/harmonic/commit/9bdcebe0b0e18e633becbb68a6cdcaab45d29457))
+* **watcher:** watch directories only instead of every file ([#880](https://github.com/mintopia/harmonic/issues/880)) ([1183f81](https://github.com/mintopia/harmonic/commit/1183f81f3ed1bd2cbdc922f3c44961cd35776d55))
+* **web:** move the escalated action bar into the Ticket main column to match the mockup ([41fe2e2](https://github.com/mintopia/harmonic/commit/41fe2e20891a175da1a23ea1eb0d62419c361637))
+
 ## [2.26.1](https://github.com/mintopia/harmonic/compare/v2.26.0...v2.26.1) (2026-10-09)
 
 
