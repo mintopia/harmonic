@@ -240,7 +240,7 @@ describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
     } as unknown as AttemptStore;
     const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 10 } };
     const ar = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), {
-      epicBaseNotReady: (t) => awaitsEpicBase(t) ? 'missing' : false,
+      epicBaseNotReady: (t) => awaitsEpicBase(t) ? 'missing' : 'ready',
     });
     return { ar, started };
   };
@@ -333,7 +333,7 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
     const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
     let now = 0;
     const autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), {
-      epicBaseNotReady: (candidate) => candidate.baseBranch === 'epic/208' ? 'missing' : false,
+      epicBaseNotReady: (candidate) => candidate.baseBranch === 'epic/208' ? 'missing' : 'ready',
       missingEpicBaseGraceMs: 100,
       clock: () => now,
     });
@@ -359,7 +359,7 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
 
   it('does not run the Epic gate while the Auto-Runner is at capacity', async () => {
     const task = await tasks.upsertMirrored(mirroredAfk(210));
-    const gate = vi.fn((): false => false);
+    const gate = vi.fn((): 'ready' => 'ready');
     const runner = { launchClaimed: async () => {}, escalateUnspawned: async () => {} };
     const runStore = { countRunning: async () => 1, countRunningByWorkspace: async () => new Map<number, number>() };
     const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
@@ -385,7 +385,7 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
     };
     const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
     const autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), {
-      epicBaseNotReady: (candidate) => missing && candidate.baseBranch === 'epic/209' ? 'missing' : false,
+      epicBaseNotReady: (candidate) => missing && candidate.baseBranch === 'epic/209' ? 'missing' : 'ready',
       missingEpicBaseGraceMs: 100,
       clock: () => now,
     });

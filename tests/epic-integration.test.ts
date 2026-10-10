@@ -341,14 +341,14 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
     const nonMember = (await tasks.list()).find((t) => t.trackerRef === trackerRef(99))!;
     const native = await tasks.create({ prompt: 'native task' });
     expect((await m11()).baseBranch).toBe('epic/10');
-    expect(await coord.memberBaseNotReady(await m11())).toBe(false);
-    expect(await coord.memberBaseNotReady(nonMember)).toBe(false);
-    expect(await coord.memberBaseNotReady(native)).toBe(false);
+    expect(await coord.memberBaseNotReady(await m11())).toBe('ready');
+    expect(await coord.memberBaseNotReady(nonMember)).toBe('ready');
+    expect(await coord.memberBaseNotReady(native)).toBe('ready');
 
     const detached = new FakeGit(['epic/10'], null);
     const coordDetached = new EpicLifecycle(tasks, dir, fireAndForget, detached);
     await coordDetached.reconcile(tickets, await mscan(tickets));
-    expect(await coordDetached.memberBaseNotReady(await m11())).toBe(false);
+    expect(await coordDetached.memberBaseNotReady(await m11())).toBe('ready');
 
     const gone = new EpicLifecycle(tasks, dir, fireAndForget, new FakeGit([], 'develop'));
     expect(await gone.memberBaseNotReady(await m11())).toBe('missing');
@@ -372,21 +372,21 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
     git.current.delete('epic/20');
 
     expect(await coord.memberBaseNotReady(await member(11))).toBe('stale');
-    expect(await coord.memberBaseNotReady(await member(21))).toBe(false);
+    expect(await coord.memberBaseNotReady(await member(21))).toBe('ready');
     expect(await coord.memberBaseNotReady(await member(11))).toBe('stale');
     expect(git.symbolicBranchCalls).toBe(1);
 
     git.current.add('epic/10');
     const refreshed = new EpicLifecycle(tasks, dir, fireAndForget, git);
-    expect(await refreshed.memberBaseNotReady(await member(11))).toBe(false);
+    expect(await refreshed.memberBaseNotReady(await member(11))).toBe('ready');
 
     git.current.delete('epic/10');
     const direct = { ...(await member(11)), isolationMode: 'direct' as const };
-    expect(await new EpicLifecycle(tasks, dir, fireAndForget, git).memberBaseNotReady(direct)).toBe(false);
+    expect(await new EpicLifecycle(tasks, dir, fireAndForget, git).memberBaseNotReady(direct)).toBe('ready');
 
     await tasks.setBaseBranch((await member(12)).id, 'epic/10');
     const detached = new EpicLifecycle(tasks, dir, fireAndForget, new FakeGit(['epic/10'], null));
-    expect(await detached.memberBaseNotReady(await member(12))).toBe(false);
+    expect(await detached.memberBaseNotReady(await member(12))).toBe('ready');
   });
 
   it('never consults git for the currency of a Member whose Epic has no Epic blocker', async () => {
@@ -402,7 +402,7 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
     const member = async (ref: number) => (await tasks.list()).find((t) => t.trackerRef === trackerRef(ref))!;
     await tasks.setBaseBranch((await member(11)).id, 'epic/10');
 
-    expect(await coord.memberBaseNotReady(await member(11))).toBe(false);
+    expect(await coord.memberBaseNotReady(await member(11))).toBe('ready');
     expect(git.symbolicBranchCalls).toBe(0);
   });
 
@@ -434,7 +434,7 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
     const coord = new EpicLifecycle(tasks, dir, fireAndForget, new FakeGit([], 'develop'));
     expect(coord.awaitsBase(m11)).toBe(false);
     expect(await coord.memberBaseNotReady(m11)).toBe('missing');
-    expect(await coord.memberBaseNotReady(m5)).toBe(false);
+    expect(await coord.memberBaseNotReady(m5)).toBe('ready');
   });
 
   it('a continuation/retry never regresses an Epic member to develop: a base flipped to develop/null re-gates on membership (#334/#330-331)', async () => {
@@ -445,7 +445,7 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
 
     const m11Id = mirrored.find((t) => t.trackerRef === trackerRef(11))!.id;
     expect((await tasks.get(m11Id)).baseBranch).toBe('epic/10');
-    expect(await coord.memberBaseNotReady(await tasks.get(m11Id))).toBe(false);
+    expect(await coord.memberBaseNotReady(await tasks.get(m11Id))).toBe('ready');
 
     const retryCoord = new EpicLifecycle(tasks, dir, fireAndForget, new FakeGit(['epic/10'], 'develop'));
     for (const regressed of ['develop', null] as const) {
@@ -462,7 +462,7 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
     const m11Id = mirrored.find((t) => t.trackerRef === trackerRef(11))!.id;
     await tasks.setBaseBranch(m11Id, 'epic/10');
     const present = new EpicLifecycle(tasks, dir, fireAndForget, new FakeGit(['epic/10'], 'develop'));
-    expect(await present.memberBaseNotReady(await tasks.get(m11Id))).toBe(false);
+    expect(await present.memberBaseNotReady(await tasks.get(m11Id))).toBe('ready');
 
     const missing = new EpicLifecycle(tasks, dir, fireAndForget, new FakeGit([], 'develop'));
     expect(await missing.memberBaseNotReady(await tasks.get(m11Id))).toBe('missing');
@@ -611,7 +611,7 @@ describe('EpicLifecycle integration-branch cut visibility (git-visibility)', () 
     const coord = new EpicLifecycle(tasks, repo, fireAndForget);
     coord.attachRefreshTrigger(refresh);
 
-    expect(await coord.memberBaseNotReady(await tasks.get(member.id))).toBe(false);
+    expect(await coord.memberBaseNotReady(await tasks.get(member.id))).toBe('ready');
     await coord.reconcile(tickets, mirrored);
     expect(refresh.calls).toEqual([]);
 
@@ -624,7 +624,7 @@ describe('EpicLifecycle integration-branch cut visibility (git-visibility)', () 
 
     rawGit(repo, 'branch', '-f', 'epic/10', 'develop');
     await coord.reconcile(tickets, mirrored);
-    expect(await coord.memberBaseNotReady(await tasks.get(member.id))).toBe(false);
+    expect(await coord.memberBaseNotReady(await tasks.get(member.id))).toBe('ready');
   });
 
   it('fires branch-created once on the Epic timeline; a later idempotent reconcile does not repeat it', async () => {
@@ -1017,7 +1017,7 @@ describe('EpicLifecycle direct-mode Epics (isolationMode "direct", ADR-0001 dire
     expect(m11.isolationMode).toBe('direct');
     expect(m11.baseBranch).toBeNull();
     expect(coord.awaitsBase(m11)).toBe(false);
-    expect(await coord.memberBaseNotReady(m11)).toBe(false);
+    expect(await coord.memberBaseNotReady(m11)).toBe('ready');
   });
 
   it('a mixed Epic cuts the branch and sets it only on the worktree member', async () => {
@@ -1060,7 +1060,7 @@ describe('EpicLifecycle direct-mode Epics (isolationMode "direct", ADR-0001 dire
     expect(await baseOf(trackerRef(11))).toBe('epic/10');
     const m11 = (await tasks.list()).find((t) => t.trackerRef === trackerRef(11))!;
     expect(coord.awaitsBase(m11)).toBe(false);
-    expect(await coord.memberBaseNotReady(m11)).toBe(false);
+    expect(await coord.memberBaseNotReady(m11)).toBe('ready');
     expect(coord.isInPlace(trackerRef(10), await tasks.list())).toBe(true);
   });
 

@@ -306,24 +306,28 @@ export class AutoRunner {
         this.recordWaiting(task.id);
         return;
       }
-      const baseGate = (await this.epicBaseNotReady?.(task)) ?? false;
-      if (baseGate === 'stale') {
-        record(task.id, `integration branch ${task.baseBranch} behind its base (refresh pending)`);
-        return;
-      }
-      if (baseGate) {
-        if (hasAssignedEpicBase(task)) {
-          const since = this.missingEpicBaseSince.get(task.id) ?? this.clock();
-          if (this.clock() - since >= this.missingEpicBaseGraceMs) {
-            const reason = `integration branch ${task.baseBranch} missing for ${Math.round(this.missingEpicBaseGraceMs / 1000)}s`;
-            await this.runner.escalateUnspawned(task.id, reason);
-            record(task.id, `${reason}, escalated to human`);
-            return;
+      const baseGate = (await this.epicBaseNotReady?.(task)) ?? 'ready';
+      switch (baseGate) {
+        case 'stale':
+          record(task.id, `integration branch ${task.baseBranch} behind its base (refresh pending)`);
+          return;
+        case 'missing':
+          if (hasAssignedEpicBase(task)) {
+            const since = this.missingEpicBaseSince.get(task.id) ?? this.clock();
+            if (this.clock() - since >= this.missingEpicBaseGraceMs) {
+              const reason = `integration branch ${task.baseBranch} missing for ${Math.round(this.missingEpicBaseGraceMs / 1000)}s`;
+              await this.runner.escalateUnspawned(task.id, reason);
+              record(task.id, `${reason}, escalated to human`);
+              return;
+            }
+            missingThisPass.set(task.id, since);
           }
-          missingThisPass.set(task.id, since);
-        }
-        record(task.id, 'integration branch missing');
-        return;
+          record(task.id, 'integration branch missing');
+          return;
+        case 'ready':
+          break;
+        default:
+          baseGate satisfies never;
       }
       const key = directContextKey(task);
       const holder = key ? occupied.get(key) : undefined;
@@ -419,7 +423,7 @@ export class AutoRunner {
     },
   ): boolean {
     if (t.state !== 'ready' || skip.has(t.id)) return false;
-    if (epicGate.get(t.id)) return false;
+    if ((epicGate.get(t.id) ?? 'ready') !== 'ready') return false;
     const workspace = t.workspaceId != null ? workspacesById.get(t.workspaceId) : undefined;
     if (!resolveScoped('autoRunnerEnabled', workspace?.autoRunnerEnabled, true)) return false;
     const cap = resolveCap(workspace?.maxConcurrentAttempts, ceiling);

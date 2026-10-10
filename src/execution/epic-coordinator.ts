@@ -36,7 +36,7 @@ function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T>
   });
 }
 
-export type EpicBaseGate = false | 'missing' | 'stale';
+export type EpicBaseGate = 'ready' | 'missing' | 'stale';
 
 /** The slice of {@link Git} used by Epic branch lifecycle, refresh, and integration. */
 export interface EpicGit {
@@ -895,17 +895,17 @@ export class EpicLifecycle {
   }
 
   async memberBaseNotReady(task: TaskRow): Promise<EpicBaseGate> {
-    if (task.isolationMode === 'direct') return false;
-    if (task.origin !== 'mirrored') return false;
+    if (task.isolationMode === 'direct') return 'ready';
+    if (task.origin !== 'mirrored') return 'ready';
     if (this.awaitsBase(task)) return 'missing';
     const epicRef = task.mapRef ?? parseIntegrationBranch(task.baseBranch);
-    if (epicRef === null) return false;
+    if (epicRef === null) return 'ready';
     const branch = integrationBranchName(epicRef);
     try {
       const exists = await this.git.branchExists(this.workingDir, branch);
       if (task.baseBranch === branch) return exists ? await this.integrationBranchStale(task, epicRef, branch) : 'missing';
       if (exists) return 'missing';
-      return (await this.isLeafEpic(epicRef, task.workspaceId)) ? 'missing' : false;
+      return (await this.isLeafEpic(epicRef, task.workspaceId)) ? 'missing' : 'ready';
     } catch (err) {
       this.onError(`epic ${epicRef} integration branch existence check failed: ${String(err)}`);
       return 'missing';
@@ -913,7 +913,7 @@ export class EpicLifecycle {
   }
 
   private async integrationBranchStale(task: TaskRow, epicRef: TrackerRef, branch: string): Promise<EpicBaseGate> {
-    if (task.workspaceId === null) return false;
+    if (task.workspaceId === null) return 'ready';
     const workspaceId = task.workspaceId;
     let stale = this.staleByEpic.get(epicRef);
     if (stale === undefined) {
@@ -921,7 +921,7 @@ export class EpicLifecycle {
       this.staleByEpic.set(epicRef, stale);
       stale.catch(() => this.staleByEpic.delete(epicRef));
     }
-    return (await stale) ? 'stale' : false;
+    return (await stale) ? 'stale' : 'ready';
   }
 
   private async computeStale(workspaceId: number, epicRef: TrackerRef, branch: string): Promise<boolean> {

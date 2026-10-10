@@ -303,7 +303,7 @@ export class TrackerEpicService implements EpicService {
   }
 
   async epicBaseNotReady(task: TaskRow): Promise<EpicBaseGate> {
-    return (await (task.workspaceId === null ? undefined : this.entries.get(task.workspaceId))?.epics.memberBaseNotReady(task)) ?? false;
+    return (await (task.workspaceId === null ? undefined : this.entries.get(task.workspaceId))?.epics.memberBaseNotReady(task)) ?? 'ready';
   }
 
   async refreshAfterDefaultBranchAdvance(workingDir: string, defaultBranch: string): Promise<void> {

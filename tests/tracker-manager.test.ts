@@ -542,7 +542,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
       startWorkspace: () => ({ reconcile: async () => { reconciled.push(1); } }),
       stopWorkspace: () => {},
       retryEpic: async () => null,
-      epicBaseNotReady: async () => false,
+      epicBaseNotReady: async () => 'ready',
       refreshAfterDefaultBranchAdvance: async () => {},
       listEpics: async () => [],
       listEpicTickets: async () => [],
