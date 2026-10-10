@@ -67,7 +67,13 @@ export class EpicRefreshResolver {
     const worktreePath = join(this.deps.worktreesDir, `epic-refresh-${target.ref}`);
     try {
       if (!this.liveWorktrees.has(worktreePath)) {
-        if (existsSync(worktreePath)) await Git.removeWorktree(target.repoDir, worktreePath).catch(() => undefined);
+        if (existsSync(worktreePath)) {
+          await bestEffort(() => Git.removeWorktree(target.repoDir, worktreePath), {
+            op: 'runner.enqueueEpicRefreshResolution.removeStaleWorktree',
+            level: 'warn',
+            context: { epicRef: target.ref, repoDir: target.repoDir, worktreePath },
+          });
+        }
         await Git.pruneWorktrees(target.repoDir);
       }
       await Git.addWorktreeCheckout(target.repoDir, worktreePath, branch);

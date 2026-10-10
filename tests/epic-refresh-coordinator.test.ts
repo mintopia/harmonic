@@ -128,12 +128,12 @@ describe('EpicRefresh', () => {
 
     await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'escalated' });
     expect(merges).toBe(1);
-    await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'deferred' });
+    await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'backing-off' });
     expect(merges).toBe(1);
     tip = 'base-2';
     await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'escalated' });
     expect(merges).toBe(2);
-    await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'deferred' });
+    await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'backing-off' });
     clock = 1000;
     await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'escalated' });
     expect(merges).toBe(3);
@@ -217,7 +217,7 @@ describe('EpicRefresh', () => {
       status: 'escalated',
       reason: 'no active Epic member is available to resolve refresh conflict for epic/14',
     });
-    await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'deferred' });
+    await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'backing-off' });
   });
 });
 

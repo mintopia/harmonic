@@ -562,6 +562,7 @@ export type EpicRefreshOutcome =
   | { status: 'refreshed'; oid: string }
   | { status: 'resolving'; detail: string }
   | { status: 'deferred'; reason: string }
+  | { status: 'backing-off'; reason: string }
   | { status: 'escalated'; reason: string };
 
 export type EpicRefreshResolveDispatchOutcome =
@@ -618,7 +619,7 @@ export class EpicRefresh {
       this.lastBaseOid.set(target.ref, expectedOid);
       const held = this.backoff.get(target.ref);
       if (held && held.oid === expectedOid && (this.deps.now ?? Date.now)() < held.until) {
-        return { status: 'deferred', reason: 'backing off after an escalated refresh against this base' };
+        return { status: 'backing-off', reason: 'after an escalated refresh against this base' };
       }
       const outcome = await withRepoLock(target.repoDir, () =>
         (this.deps.merge ?? mergeIntoBase)({
@@ -758,7 +759,8 @@ export class EpicLifecycle {
         const outcome = await this.epicRefresh.refresh({ ref: epic.ref, workspaceId: this.workspaceId ?? undefined, repoDir: this.workingDir, defaultBranch });
         if (outcome.status !== 'refreshed') {
           const why = 'reason' in outcome ? outcome.reason : outcome.detail;
-          logger.warn(`epic ${epic.ref} still behind ${defaultBranch} after refresh: ${outcome.status} (${why})`);
+          const log = outcome.status === 'resolving' || outcome.status === 'backing-off' ? logger.debug : logger.warn;
+          log(`epic ${epic.ref} still behind ${defaultBranch} after refresh: ${outcome.status} (${why})`);
         }
       } catch (err) {
         this.onError(`epic ${epic.ref} integration refresh failed: ${String(err)}`);

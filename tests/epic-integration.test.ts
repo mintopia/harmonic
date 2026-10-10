@@ -23,6 +23,7 @@ import {
   type EpicRefreshTrigger,
 } from '../src/execution/epic-coordinator.js';
 import { Git } from '../src/execution/git.js';
+import { logger } from '../src/logger.js';
 import { withRepoLock } from '../src/execution/repo-lock.js';
 import type { MemberMergeState } from '../src/domain/epic-integrate-decision.js';
 import type { EpicRefreshOutcome } from '../src/execution/epic-coordinator.js';
@@ -483,6 +484,38 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
     refresh.calls.length = 0;
     await coord.reconcile(tickets, await mscan(tickets));
     expect(refresh.calls).toEqual([]);
+  });
+
+  it('logs an in-flight or backing-off refresh at debug and every other behind outcome at warn', async () => {
+    const tickets = epicTickets();
+    const git = new FakeGit(['epic/10'], 'develop');
+    git.current.delete('epic/10');
+    const outcomes: EpicRefreshOutcome[] = [
+      { status: 'resolving', detail: 'turn in flight' },
+      { status: 'backing-off', reason: 'after an escalated refresh against this base' },
+      { status: 'escalated', reason: 'boom' },
+      { status: 'deferred', reason: 'target advanced' },
+    ];
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const debug = vi.spyOn(logger, 'debug').mockImplementation(() => {});
+    try {
+      const coord = new EpicLifecycle(tasks, dir, fireAndForget, git);
+      coord.attachRefreshTrigger({ refresh: async () => outcomes.shift()! });
+
+      for (let i = 0; i < 4; i++) await coord.reconcile(tickets, await mscan(tickets));
+
+      expect(debug.mock.calls.map(([m]) => m)).toEqual([
+        expect.stringContaining('resolving'),
+        expect.stringContaining('backing-off'),
+      ]);
+      expect(warn.mock.calls.map(([m]) => m)).toEqual([
+        expect.stringContaining('escalated'),
+        expect.stringContaining('deferred'),
+      ]);
+    } finally {
+      warn.mockRestore();
+      debug.mockRestore();
+    }
   });
 
   it('refreshes a behind epic even with an empty ready frontier (currency is not gated by the ready-frontier early return)', async () => {
