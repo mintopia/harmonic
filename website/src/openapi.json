@@ -2002,12 +2002,14 @@
           },
           "blockedOnFailed": {
             "type": "boolean",
+            "description": "Ready, and at least one blocker is escalated or cancelled, so it will not unblock on its own.",
             "example": false
           },
           "openBlockerCount": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991,
+            "description": "Blocker edges whose blocker has not completed, plus Epic Hold blockers.",
             "example": 1
           },
           "epicBlockers": {
@@ -2045,11 +2047,13 @@
                 "cycle"
               ]
             },
+            "description": "Unsatisfied blockers of the Epics above this Member (the Epic Hold).",
             "example": [
               {
                 "ref": "71",
                 "kind": "epic",
-                "heldEpic": "73"
+                "heldEpic": "73",
+                "cycle": false
               }
             ]
           },
@@ -2425,12 +2429,14 @@
           },
           "blockedOnFailed": {
             "type": "boolean",
+            "description": "Ready, and at least one blocker is escalated or cancelled, so it will not unblock on its own.",
             "example": false
           },
           "openBlockerCount": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991,
+            "description": "Blocker edges whose blocker has not completed, plus Epic Hold blockers.",
             "example": 1
           },
           "epicBlockers": {
@@ -2468,11 +2474,13 @@
                 "cycle"
               ]
             },
+            "description": "Unsatisfied blockers of the Epics above this Member (the Epic Hold).",
             "example": [
               {
                 "ref": "71",
                 "kind": "epic",
-                "heldEpic": "73"
+                "heldEpic": "73",
+                "cycle": false
               }
             ]
           },
@@ -3066,12 +3074,14 @@
           },
           "blockedOnFailed": {
             "type": "boolean",
+            "description": "Ready, and at least one blocker is escalated or cancelled, so it will not unblock on its own.",
             "example": false
           },
           "openBlockerCount": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991,
+            "description": "Blocker edges whose blocker has not completed, plus Epic Hold blockers.",
             "example": 1
           },
           "epicBlockers": {
@@ -3109,11 +3119,13 @@
                 "cycle"
               ]
             },
+            "description": "Unsatisfied blockers of the Epics above this Member (the Epic Hold).",
             "example": [
               {
                 "ref": "71",
                 "kind": "epic",
-                "heldEpic": "73"
+                "heldEpic": "73",
+                "cycle": false
               }
             ]
           },
@@ -3691,12 +3703,14 @@
           },
           "blockedOnFailed": {
             "type": "boolean",
+            "description": "Ready, and at least one blocker is escalated or cancelled, so it will not unblock on its own.",
             "example": false
           },
           "openBlockerCount": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991,
+            "description": "Blocker edges whose blocker has not completed, plus Epic Hold blockers.",
             "example": 1
           },
           "epicBlockers": {
@@ -3734,11 +3748,13 @@
                 "cycle"
               ]
             },
+            "description": "Unsatisfied blockers of the Epics above this Member (the Epic Hold).",
             "example": [
               {
                 "ref": "71",
                 "kind": "epic",
-                "heldEpic": "73"
+                "heldEpic": "73",
+                "cycle": false
               }
             ]
           },
@@ -11829,12 +11845,14 @@
           },
           "blockedOnFailed": {
             "type": "boolean",
+            "description": "Ready, and at least one blocker is escalated or cancelled, so it will not unblock on its own.",
             "example": false
           },
           "openBlockerCount": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991,
+            "description": "Blocker edges whose blocker has not completed, plus Epic Hold blockers.",
             "example": 1
           },
           "epicBlockers": {
@@ -11873,11 +11891,13 @@
               ],
               "additionalProperties": false
             },
+            "description": "Unsatisfied blockers of the Epics above this Member (the Epic Hold).",
             "example": [
               {
                 "ref": "71",
                 "kind": "epic",
-                "heldEpic": "73"
+                "heldEpic": "73",
+                "cycle": false
               }
             ]
           },
@@ -12256,12 +12276,14 @@
           },
           "blockedOnFailed": {
             "type": "boolean",
+            "description": "Ready, and at least one blocker is escalated or cancelled, so it will not unblock on its own.",
             "example": false
           },
           "openBlockerCount": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991,
+            "description": "Blocker edges whose blocker has not completed, plus Epic Hold blockers.",
             "example": 1
           },
           "epicBlockers": {
@@ -12300,11 +12322,13 @@
               ],
               "additionalProperties": false
             },
+            "description": "Unsatisfied blockers of the Epics above this Member (the Epic Hold).",
             "example": [
               {
                 "ref": "71",
                 "kind": "epic",
-                "heldEpic": "73"
+                "heldEpic": "73",
+                "cycle": false
               }
             ]
           },
@@ -12902,12 +12926,14 @@
           },
           "blockedOnFailed": {
             "type": "boolean",
+            "description": "Ready, and at least one blocker is escalated or cancelled, so it will not unblock on its own.",
             "example": false
           },
           "openBlockerCount": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991,
+            "description": "Blocker edges whose blocker has not completed, plus Epic Hold blockers.",
             "example": 1
           },
           "epicBlockers": {
@@ -12946,11 +12972,13 @@
               ],
               "additionalProperties": false
             },
+            "description": "Unsatisfied blockers of the Epics above this Member (the Epic Hold).",
             "example": [
               {
                 "ref": "71",
                 "kind": "epic",
-                "heldEpic": "73"
+                "heldEpic": "73",
+                "cycle": false
               }
             ]
           },
@@ -13532,12 +13560,14 @@
           },
           "blockedOnFailed": {
             "type": "boolean",
+            "description": "Ready, and at least one blocker is escalated or cancelled, so it will not unblock on its own.",
             "example": false
           },
           "openBlockerCount": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991,
+            "description": "Blocker edges whose blocker has not completed, plus Epic Hold blockers.",
             "example": 1
           },
           "epicBlockers": {
@@ -13576,11 +13606,13 @@
               ],
               "additionalProperties": false
             },
+            "description": "Unsatisfied blockers of the Epics above this Member (the Epic Hold).",
             "example": [
               {
                 "ref": "71",
                 "kind": "epic",
-                "heldEpic": "73"
+                "heldEpic": "73",
+                "cycle": false
               }
             ]
           },

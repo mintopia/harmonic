@@ -177,11 +177,8 @@ const taskWithDepsSchema = z
     updatedAt: z.number().meta({ example: 1784032260000 }),
     dependsOn: z.array(z.number()).meta({ example: [4818] }),
     dependents: z.array(z.number()).meta({ example: [4830] }),
-    /** Ready, and at least one blocker is escalated or cancelled — it will not unblock on its own. */
-    blockedOnFailed: z.boolean().meta({ example: false }),
-    /** Number of blocker edges whose blocker has not completed, plus the Epic Hold blockers. */
-    openBlockerCount: z.number().int().nonnegative().meta({ example: 1 }),
-    /** Unsatisfied blockers of the Epics above this Member. */
+    blockedOnFailed: z.boolean().meta({ description: 'Ready, and at least one blocker is escalated or cancelled, so it will not unblock on its own.', example: false }),
+    openBlockerCount: z.number().int().nonnegative().meta({ description: 'Blocker edges whose blocker has not completed, plus Epic Hold blockers.', example: 1 }),
     epicBlockers: z
       .array(
         z.object({
@@ -191,7 +188,7 @@ const taskWithDepsSchema = z
           cycle: z.boolean().meta({ description: 'True when the blocker Epic is itself blocked, directly or through its ancestors, by the held Epic, so the hold can never clear on its own.', example: false }),
         }),
       )
-      .meta({ example: [{ ref: '71', kind: 'epic', heldEpic: '73' }] }),
+      .meta({ description: 'Unsatisfied blockers of the Epics above this Member (the Epic Hold).', example: [{ ref: '71', kind: 'epic', heldEpic: '73', cycle: false }] }),
     /** Derived: opted in (mirrored: the `ready-for-agent` label, not an Epic container) and no open Blockers. */
     agentWorkable: z.boolean().meta({ example: false }),
     /** A mirrored ticket Harmonic never works (no `ready-for-agent`, an Epic container, or a human wayfinder kind); false on native Tasks. Independent of blockers, so a blocked human-only ticket still reads human-only. */
