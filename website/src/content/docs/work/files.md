@@ -37,8 +37,10 @@ history.
 
 ## Live as it changes
 
-A filesystem watcher keeps the tree and git status current as files change
-on disk, whether you're editing them or an agent is.
+While the Files page is open, the tree and git status stay current as files
+change on disk, whether you're editing them or an agent is. Harmonic only
+watches a Workspace while someone has its Files page open, and stops shortly
+after the last one closes.
 
 ## What it can reach
 

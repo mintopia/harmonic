@@ -124,6 +124,7 @@ function createObservability(
   opts: AppOptions,
   bus: EventBus,
   settingsStore: Stores['settingsStore'],
+  workspaces: Stores['workspaces'],
 ): { loopMonitor: EventLoopMonitor | undefined; hostLoad: HostLoadSampler; workspaceWatcher: WorkspaceWatcher } {
   const eventLoopTuning = opts.reliabilityTuning?.eventLoop;
   const loopMonitor =
@@ -137,6 +138,7 @@ function createObservability(
       fsChanged: (workspaceId) => bus.emit('fs_changed', { workspaceId }),
       gitStatus: (workspaceId, entries) => bus.emit('git_status', { workspaceId, entries }),
     },
+    async (workspaceId) => (await workspaces.list()).find((workspace) => workspace.id === workspaceId),
   );
   return { loopMonitor, hostLoad, workspaceWatcher };
 }
@@ -436,7 +438,7 @@ export async function createRuntime(deps: {
   touchStartupProgress(opts.dataDir);
   await drainRetirement();
   touchStartupProgress(opts.dataDir);
-  const { loopMonitor, hostLoad, workspaceWatcher } = createObservability(opts, bus, settingsStore);
+  const { loopMonitor, hostLoad, workspaceWatcher } = createObservability(opts, bus, settingsStore, workspaces);
   const mirror: MirrorClaim = {
     advertiseClaim: async (task) => {
       await trackerManagerRef?.coordinatorFor(task.workspaceId)?.advertiseClaim(task);

@@ -255,6 +255,17 @@ export function subscribe(onMessage: (msg: ServerMessage) => void, onReopen?: ()
   return unsubscribe;
 }
 
+/** Asks the server to watch a Workspace's files while subscribed; re-sent on every (re)connect. */
+export function subscribeFiles(workspaceId: number): () => void {
+  const unsubscribe = subscribeWithOpen(() => {}, (socket) => {
+    socket.send(JSON.stringify({ type: 'subscribe_files', workspaceId }));
+  });
+  return () => {
+    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'unsubscribe_files', workspaceId }));
+    unsubscribe();
+  };
+}
+
 function subscribeLog(
   channel: 'attempt_log_event' | 'critic_log_event',
   subscribe: 'attempt_log_subscribe' | 'critic_log_subscribe',

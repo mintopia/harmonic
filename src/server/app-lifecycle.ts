@@ -132,7 +132,6 @@ export function registerStartup(app: App, deps: {
     deps.autoRunner.poke();
     deps.scheduler.start();
     await deps.trackerManager.sync();
-    await deps.workspaceWatcher.sync(await deps.workspaces.list());
     deps.loopMonitor?.start();
     deps.hostLoad.start();
     await deps.upgrade.reconcile();

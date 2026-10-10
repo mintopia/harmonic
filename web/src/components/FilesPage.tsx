@@ -3,7 +3,7 @@ import { api } from '../api';
 import type { DiffFile, GitStatusEntry, Workspace, WorkspaceFile, WorkspaceFileListing } from '../types';
 import { useLiveEffect } from '../useLiveEffect';
 import { useAsyncResource } from '../useAsyncResource';
-import { subscribe } from '../ws';
+import { subscribe, subscribeFiles } from '../ws';
 import { btnGhost, btnPrimary, gitFileStatusClass, panelTitle, type GitFileStatus } from '../ui';
 import { Icon, type IconName } from './Icon';
 import { CodeViewer, type CursorInfo } from './CodeViewer';
@@ -111,6 +111,8 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
     loadRef.current = load;
     refreshStatusRef.current = status.reload;
   });
+
+  useEffect(() => subscribeFiles(workspaceId), [workspaceId]);
 
   useLiveEffect((live) => subscribe((message) => {
     if (!live() || (message.type !== 'fs_changed' && message.type !== 'git_status') || message.workspaceId !== workspaceId) return;
