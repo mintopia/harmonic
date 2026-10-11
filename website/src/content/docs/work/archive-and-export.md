@@ -84,7 +84,7 @@ minutes and 2 hours. After the third failure the row reads **Retries
 exhausted**. Fix the problem, then use **Export again**.
 
 A failure also raises a toast and sends an `export.failed` event to your
-[notification channels](/harmonic/work/notifications/).
+[notification channels](/work/notifications/).
 
 The ticket's Timeline records each step as its own event tagged **EXPORT**:
 the Export being built, each delivery, and each failure. If building the
@@ -113,7 +113,7 @@ Unpacked, it contains:
 | `ticket.json` | The task as Harmonic showed it at export time |
 | `timeline.json` | The task's Timeline: Attempts, verification, merge and other events |
 | `operator-inputs.json` | Everything you did to the task |
-| `agent-messages.json` | [Agent Messages](/harmonic/work/agent-messages/) the task's agent sent to or received from other tasks |
+| `agent-messages.json` | [Agent Messages](/work/agent-messages/) the task's agent sent to or received from other tasks |
 | `manifest.json` | Export details: Harmonic version, disposition, file counts, redaction counts, whether it is partial, and git details |
 | `archive.json` | The Archive's identity and its Export history |
 | `attempts/` | One folder per Attempt: prompts, agent transcripts, harness logs, verify output and Critic runs |
@@ -139,7 +139,7 @@ When an Epic merges, Harmonic writes an Epic Export too, named
 `epic-<ref>-done-<timestamp>.tar.gz`. It holds the Epic's own verification
 and Critic runs and its Timeline, and lists its Members rather than copying
 their Exports. It also holds an `agent-messages.json` with the
-[Agent Messages](/harmonic/work/agent-messages/) its Members sent or received.
+[Agent Messages](/work/agent-messages/) its Members sent or received.
 
 Epic Exports go to the same Destinations as task Exports, with the same
 retries and failure notifications. Once an Epic has merged, its page shows the
@@ -149,7 +149,7 @@ build, delivery and failure appears on the Epic's Timeline, tagged **EXPORT**.
 ## Turn Export on
 
 Everything lives on the **Archive & Export** tab in
-[Settings](/harmonic/run/settings/#archive--export).
+[Settings](/run/settings/#archive--export).
 
 1. Turn on **Export on terminal disposition**.
 2. Leave **Dispositions to export** at *done*, *cancelled* and *deleted*, or

@@ -28,7 +28,7 @@ children). Any other parent/child grouping shows and behaves the same
 way, badged plainly as an Epic.
 
 Each child still needs `ready-for-agent` to run unattended, same as any
-ticket, see [Feeding it work](/harmonic/work/feeding-it-work/).
+ticket, see [Feeding it work](/work/feeding-it-work/).
 
 ## Holding an Epic
 
@@ -92,7 +92,7 @@ group:
   is just marked complete, with no separate merge and no Epic
   verification step.
 
-See [Branches & worktrees](/harmonic/work/branches-and-worktrees/#epics)
+See [Branches & worktrees](/work/branches-and-worktrees/#epics)
 for the git-level diagram of both paths.
 
 ## Configure Epic verification
@@ -108,7 +108,7 @@ as task-level verification.
 
 A Member that escalates behaves like any other ticket: it stops, gets
 flagged, and waits for you, see
-[Watching & steering the fleet](/harmonic/work/steering-the-fleet/#when-a-ticket-needs-you)
+[Watching & steering the fleet](/work/steering-the-fleet/#when-a-ticket-needs-you)
 for picking it up. Until it's cleared, it holds the Epic's merge back.
 You'll see it called out in the board's attention count and sitting in
 the blocked column when you expand the band.

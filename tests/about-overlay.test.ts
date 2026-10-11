@@ -60,7 +60,7 @@ describe('AboutOverlay', () => {
     expect(host!.textContent).toContain('Harmonic');
 
     const hrefs = links().map((a) => a.getAttribute('href'));
-    expect(hrefs).toContain('https://mintopia.github.io/harmonic');
+    expect(hrefs).toContain('https://harmonic.run');
     expect(hrefs).toContain('https://github.com/mintopia/harmonic');
     expect(hrefs).toContain('https://github.com/mintopia');
     expect(hrefs).toContain('https://mintopia.net');

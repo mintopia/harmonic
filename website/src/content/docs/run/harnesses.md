@@ -50,8 +50,8 @@ the box; the settings you're likely to touch are the models:
 
 Pick a harness and model per ticket, set them as a workspace default, or
 let a tracker label choose them with
-[Routing Labels](/harmonic/run/settings/#routing-labels). See
-[Settings & overrides](/harmonic/run/settings/).
+[Routing Labels](/run/settings/#routing-labels). See
+[Settings & overrides](/run/settings/).
 
 ### Model names in the app
 
@@ -67,7 +67,7 @@ Harmonic shows a live dollar cost on every agent's work, based on the
 model it used. It knows the prices of the models these harnesses ship
 with; if you add one it doesn't know, add its price too, or that work
 shows as cost-incomplete rather than a misleading zero. See
-[Settings & overrides](/harmonic/run/settings/#prices).
+[Settings & overrides](/run/settings/#prices).
 
 A note on Copilot: on an auto-only plan it may accept a model you pick and
 then quietly serve a different one. Harmonic flags that on the ticket so
@@ -77,7 +77,7 @@ you can see the swap rather than being misled about which model ran.
 
 The **Permission mode** control applies to unattended Attempts only: work
 Harmonic starts from a ticket while no one is there to approve a prompt. It
-does not change a [Conversation](/harmonic/work/conversations/), where a
+does not change a [Conversation](/work/conversations/), where a
 person can choose whether to approve actions as they happen.
 
 The modes differ by Harness.
@@ -100,6 +100,6 @@ when Harmonic drives it over ACP. Choose **Bypass Permissions** in the
 Harness settings instead.
 
 Harmonic records the effective permission mode on each Attempt's
-[timeline](/harmonic/work/steering-the-fleet/#the-timeline). If a configured
+[timeline](/work/steering-the-fleet/#the-timeline). If a configured
 mode is unavailable from the installed harness, it selects a suitable
 unattended mode and marks the requested-to-effective fallback there.

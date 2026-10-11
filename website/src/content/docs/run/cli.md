@@ -117,9 +117,9 @@ restarts, and you sign in again with the same password.
 
 ## See also
 
-- [Configuration reference](/harmonic/run/configuration/): the
+- [Configuration reference](/run/configuration/): the
   environment variables (`HARMONIC_DATA_DIR`, `HARMONIC_PASSWORD`) that
   back these options, and what lives in the data directory.
-- [Security](/harmonic/run/security/): the password, host
+- [Security](/run/security/): the password, host
   binding, and what "ungated" means before you expose Harmonic.
-- [Quickstart](/harmonic/start/quickstart/): install and run from scratch.
+- [Quickstart](/start/quickstart/): install and run from scratch.

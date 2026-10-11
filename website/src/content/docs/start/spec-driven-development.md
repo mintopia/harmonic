@@ -109,14 +109,14 @@ Some tickets are decisions, not builds, research, a prototype, a design
 call. Those are marked for a human and stay on the board for you to work
 through with the Skills directly; Harmonic surfaces them but won't run
 them. Only the build tickets you've marked ready for an agent run
-automatically. See [Feeding it work](/harmonic/work/feeding-it-work/) for
+automatically. See [Feeding it work](/work/feeding-it-work/) for
 exactly what gets picked up.
 
 ## Where to go next
 
-- **[Feeding it work](/harmonic/work/feeding-it-work/)** — the labels
+- **[Feeding it work](/work/feeding-it-work/)** — the labels
   that decide what runs and what waits for you.
-- **[Watching & steering the fleet](/harmonic/work/steering-the-fleet/)** —
+- **[Watching & steering the fleet](/work/steering-the-fleet/)** —
   the board, live activity, and taking over a stuck ticket.
-- **[Reviewing & merging](/harmonic/work/reviewing-and-merging/)** — the
+- **[Reviewing & merging](/work/reviewing-and-merging/)** — the
   checks between an agent's work and your main branch.
