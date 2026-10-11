@@ -5,7 +5,7 @@ description: Configure verification commands and Critics, and choose how success
 
 Harmonic runs the verification you configure for a Task, whether you create
 it by hand or mirror it from a tracker. Commands and Critics are empty by
-default. Configure them in [Settings & overrides](/harmonic/run/settings/)
+default. Configure them in [Settings & overrides](/run/settings/)
 to check work before it completes.
 
 ## Verification
@@ -24,7 +24,7 @@ next Attempt in the same working directory. Once the maximum number of
 Attempts is reached, the Task is escalated for a human to resolve.
 
 Configure Task pre-merge and post-merge checks separately. Epic verification
-has its own configuration. See [Epics](/harmonic/work/epics/) for how a group
+has its own configuration. See [Epics](/work/epics/) for how a group
 of Tasks is verified and integrated.
 
 To reuse a result elsewhere, such as in a tracker comment or a steer, hover
@@ -57,7 +57,7 @@ what happens after verification:
 
 Merge is the shipped default. Merge fate applies to worktree-isolated
 Tasks, where there is a separate branch to integrate. See
-[Branches & worktrees](/harmonic/work/branches-and-worktrees/) for how
+[Branches & worktrees](/work/branches-and-worktrees/) for how
 Harmonic reconciles base-branch movement and handles conflicts.
 
 When an Attempt opens a pull or merge request, a **PR / MR** link appears on
@@ -72,7 +72,7 @@ succeeds.
 If work needs a human decision or exhausts its Attempts, open the escalated
 Task to resolve it. An escalation keeps the work and its history available
 so you can decide how to proceed. Accept, Retry and Close are described in
-[Steering the fleet](/harmonic/work/steering-the-fleet/#retry-accept-and-close).
+[Steering the fleet](/work/steering-the-fleet/#retry-accept-and-close).
 
 ## When a merge is handed back
 

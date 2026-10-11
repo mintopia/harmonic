@@ -16,9 +16,9 @@ card follows. You don't maintain anything twice.
 
 You can also add a one-off task by hand for work that isn't worth a
 ticket; those get a review gate you control before anything merges (see
-[Reviewing & merging](/harmonic/work/reviewing-and-merging/)). To work
+[Reviewing & merging](/work/reviewing-and-merging/)). To work
 with an agent interactively instead of queuing it, use a
-[Conversation](/harmonic/work/conversations/).
+[Conversation](/work/conversations/).
 
 ## The label decides who does it
 
@@ -35,7 +35,7 @@ When the labels are ambiguous, Harmonic leans toward running it rather
 than letting it sit, then hands it back if it turns out to need you.
 
 The labels aren't Harmonic's invention, they're the ones the
-[Matt Pocock's Skills](/harmonic/start/spec-driven-development/) already
+[Matt Pocock's Skills](/start/spec-driven-development/) already
 apply as they turn a spec into tickets. A ticket those Skills marked
 ready for an agent runs with no extra step from you.
 
@@ -71,16 +71,16 @@ Two things take a running ticket off the automatic path:
   tries a fresh run up to a set limit, then escalates rather than retrying
   forever.
 
-A third cause is a [Routing Label](/harmonic/run/settings/#routing-labels)
+A third cause is a [Routing Label](/run/settings/#routing-labels)
 that points at a Harness which isn't configured. The ticket is escalated
 without starting an Attempt, and you can set a Harness on the ticket or fix
 the label and retry.
 
 Either way the ticket comes back to you clearly marked, never silently
 dropped. See
-[Watching & steering the fleet](/harmonic/work/steering-the-fleet/) for
+[Watching & steering the fleet](/work/steering-the-fleet/) for
 picking those up, and
-[Reviewing & merging](/harmonic/work/reviewing-and-merging/) for what
+[Reviewing & merging](/work/reviewing-and-merging/) for what
 happens to the code when a ticket does pass.
 
 ## How tasks and tickets are identified

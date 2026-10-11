@@ -1,11 +1,10 @@
-// Deploys as a GitHub Pages *project* page at https://mintopia.github.io/harmonic/,
-// so `site` + `base` must match that path exactly (see .github/workflows/docs.yml).
+// Deploys to GitHub Pages under the custom domain https://harmonic.run (root path,
+// no base); see .github/workflows/docs.yml.
 import starlight from '@astrojs/starlight';
 import { defineConfig } from 'astro/config';
 
 export default defineConfig({
-  site: 'https://mintopia.github.io',
-  base: '/harmonic',
+  site: 'https://harmonic.run',
   // `astro preview` blocks unknown Host headers (DNS-rebind protection); its
   // static preview server reads THIS key (server.allowedHosts), not
   // vite.preview.allowedHosts.
