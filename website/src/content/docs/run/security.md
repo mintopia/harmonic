@@ -72,9 +72,9 @@ Or send the original host in `X-Forwarded-Host`:
 proxy_set_header X-Forwarded-Host $host;
 ```
 
-See [CLI](/harmonic/run/cli/) and
-[Configuration](/harmonic/run/configuration/) for the `--password` and
-`--host` options, and [Settings & overrides](/harmonic/run/settings/) for
+See [CLI](/run/cli/) and
+[Configuration](/run/configuration/) for the `--password` and
+`--host` options, and [Settings & overrides](/run/settings/) for
 in-app Permission Rules.
 
 ## Browser access from another site

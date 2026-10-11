@@ -7,13 +7,13 @@ Harmonic's startup configuration comes from three places: command-line
 options, environment variables, and built-in defaults. Everything else,
 harnesses, prices, notifications, permission rules, and the rest, is
 configured **inside the app**; see
-[Settings & overrides](/harmonic/run/settings/).
+[Settings & overrides](/run/settings/).
 
 ## Options
 
 Passed to the server commands (`serve`, `start`); `--data-dir` also
 applies to `status` and `stop`. Full command coverage is in the
-[CLI reference](/harmonic/run/cli/).
+[CLI reference](/run/cli/).
 
 | Option | Default | Description |
 | --- | --- | --- |
@@ -69,6 +69,6 @@ and `stop` so they act on the right one.
 
 ## See also
 
-- [CLI reference](/harmonic/run/cli/): every command and option.
-- [Security](/harmonic/run/security/): the password, host
+- [CLI reference](/run/cli/): every command and option.
+- [Security](/run/security/): the password, host
   binding, and the ungated warning.

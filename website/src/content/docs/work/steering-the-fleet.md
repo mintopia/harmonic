@@ -85,12 +85,12 @@ see a short explanation of what it will do at the current step.
   and worktree and closes the tracker issue. It asks you to confirm first, and it
   cannot be undone.
 
-An escalated Epic has its own panel. See [Epics](/harmonic/work/epics/).
+An escalated Epic has its own panel. See [Epics](/work/epics/).
 
 ## Taking over
 
 When you pick up a flagged ticket, you're working it by hand, with the same
-agents, through [Matt Pocock's Skills](/harmonic/start/spec-driven-development/)
+agents, through [Matt Pocock's Skills](/start/spec-driven-development/)
 directly, or however you'd normally resolve it. Answer what the agent
 couldn't, and either finish it yourself or hand it back for another
 automatic run once it's unblocked.
@@ -124,4 +124,4 @@ Press **Resume** and paused tickets carry on. The **Auto-runner** switch
 next to it is separate: turning it off stops Harmonic picking up new work,
 but leaves running tickets alone. Per-Workspace
 throughput dials (priority and concurrency) live in
-[Settings & overrides](/harmonic/run/settings/).
+[Settings & overrides](/run/settings/).

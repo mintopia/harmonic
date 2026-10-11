@@ -19,7 +19,7 @@ hand something off:
 - pairing through a fiddly change where you want to react to each step.
 
 For work you'd rather set going and walk away from, use a ticket instead,
-see [Feeding it work](/harmonic/work/feeding-it-work/).
+see [Feeding it work](/work/feeding-it-work/).
 
 ## Starting one
 

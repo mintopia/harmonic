@@ -21,9 +21,9 @@ with no vendor lock-in. You can also queue a one-off task by hand. Tasks
 finish automatically after configured verification; work that needs a human
 is escalated for you to resolve. Agents working in the same Workspace can
 also message each other, which you can read but not join; see
-[Agent Messages](https://mintopia.github.io/harmonic/work/agent-messages/).
+[Agent Messages](https://harmonic.run/work/agent-messages/).
 
-**Full documentation:** https://mintopia.github.io/harmonic
+**Full documentation:** https://harmonic.run
 
 ## Run
 

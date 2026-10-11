@@ -4,7 +4,7 @@ import { Icon, type IconName } from './Icon';
 import { btnPrimary } from '../ui';
 import type { UpdateState } from '../types';
 
-const DOCS_URL = 'https://mintopia.github.io/harmonic';
+const DOCS_URL = 'https://harmonic.run';
 const REPO_URL = 'https://github.com/mintopia/harmonic';
 const AUTHOR_URL = 'https://github.com/mintopia';
 const SITE_URL = 'https://mintopia.net';

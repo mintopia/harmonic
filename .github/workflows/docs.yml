@@ -1,7 +1,7 @@
 name: Docs
 
 # Builds the Astro Starlight site in website/ and publishes it to GitHub
-# Pages as a project page (https://mintopia.github.io/harmonic/). Runs on
+# Pages at the custom domain https://harmonic.run. Runs on
 # pushes to main that touch the site or this workflow, plus manual dispatch.
 # Also triggers on changes to the API route schemas / export script so the
 # regenerated OpenAPI reference (issue #74) can never drift from the code.

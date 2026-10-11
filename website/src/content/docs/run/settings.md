@@ -14,7 +14,7 @@ with the same handful of controls.
 **Global** (the settings page, header icon) — things that belong to the
 whole instance:
 
-- the harnesses and their models (see [Harnesses](/harmonic/run/harnesses/)),
+- the harnesses and their models (see [Harnesses](/run/harnesses/)),
 - model prices (so cost is accurate),
 - prompts and prompt fragments, on the Prompts tab (how Harmonic talks to
   agents and how agents talk to each other),
@@ -36,7 +36,7 @@ whole instance:
 - its [Routing Labels](#routing-labels): reorder or turn off the global ones
   and add its own,
 - and its defaults for new tickets (harness, model,
-  [isolation](/harmonic/work/branches-and-worktrees/), priority) and how
+  [isolation](/work/branches-and-worktrees/), priority) and how
   many agents it may run at once.
 
 **Per ticket** — override any of those defaults for a single ticket when
@@ -154,7 +154,7 @@ which set the reply a Critic must give.
 
 A prompt already sent is not rewritten. Edits apply the next time Harmonic
 sends that prompt. To see the prompt an Attempt was sent, read its archive on
-the Task page (see [Reviewing and merging](/harmonic/work/reviewing-and-merging/)).
+the Task page (see [Reviewing and merging](/work/reviewing-and-merging/)).
 
 ## How much runs at once
 
@@ -167,7 +167,7 @@ one-click way to grab the wheel.
 ## Permission rules
 
 While you're chatting with an agent in a
-[Conversation](/harmonic/work/conversations/), it asks before it edits a
+[Conversation](/work/conversations/), it asks before it edits a
 file or runs a command. If you'd rather not be asked every time, a
 **permission rule** lets an agent skip the prompt for a kind of action
 (reading, editing, running, fetching) in a given workspace. Rules are
@@ -304,7 +304,7 @@ already customised their list.
   running is never moved. A new Harness or Model starts a fresh Session. The
   previous Session is continued only when the Harness and Model are unchanged
   and it is still warm, or when you choose to re-use it with **Retry Now** (see
-  [Steering the fleet](/harmonic/work/steering-the-fleet/#retry-accept-and-close)).
+  [Steering the fleet](/work/steering-the-fleet/#retry-accept-and-close)).
   When an Attempt runs on a different Harness or Model from the one before, the
   ticket's timeline records a *Route changed* event.
 - An Epic's own turns (resolving it, Refresh, and merge conflicts) route by
@@ -339,7 +339,7 @@ and the Harness and offers two ways out:
   under **Integrations** › **Harnesses**, or change the label's route under
   **Execution** › **Routing Labels**.
 - **Retry** requeues the ticket and starts a new Attempt once the problem is
-  fixed. See [Steering the fleet](/harmonic/work/steering-the-fleet/#retry-accept-and-close).
+  fixed. See [Steering the fleet](/work/steering-the-fleet/#retry-accept-and-close).
 
 ## Unattended drive
 
@@ -366,13 +366,13 @@ and set caps on the **Execution** tab under **Agent Messages**.
 - **Send cap**: how many messages one Attempt may send. Default 10, minimum 1.
 
 Set both globally, then override either per Workspace; a Workspace shows the global value until you override it. For what operators
-see when messaging is on, see [Agent Messages](/harmonic/work/agent-messages/).
+see when messaging is on, see [Agent Messages](/work/agent-messages/).
 
 ## Archive & Export
 
 The **Archive & Export** tab controls how long Harmonic keeps each task's
 Archive and where finished tasks are exported. For what the Archive holds
-and what an Export contains, see [Archive & export](/harmonic/work/archive-and-export/).
+and what an Export contains, see [Archive & export](/work/archive-and-export/).
 
 Every field on this tab can be overridden per Workspace. In a Workspace's
 settings, each field shows the global value marked *Inherited from global
@@ -439,7 +439,7 @@ Redaction only applies to Exports. The Archive on disk stays raw.
 
 ## See also
 
-- [Feeding it work](/harmonic/work/feeding-it-work/)
-- [Notifications](/harmonic/work/notifications/)
-- [Agent Messages](/harmonic/work/agent-messages/)
-- [Archive & export](/harmonic/work/archive-and-export/)
+- [Feeding it work](/work/feeding-it-work/)
+- [Notifications](/work/notifications/)
+- [Agent Messages](/work/agent-messages/)
+- [Archive & export](/work/archive-and-export/)

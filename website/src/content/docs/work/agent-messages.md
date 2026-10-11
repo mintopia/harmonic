@@ -11,7 +11,7 @@ Member of its own Epic.
 
 You read these messages but can't write them, since Agent Messages have no
 composer and no steer control. To change what an agent does, steer its Task
-as usual (see [Steering the fleet](/harmonic/work/steering-the-fleet/)).
+as usual (see [Steering the fleet](/work/steering-the-fleet/)).
 
 Messages are one-way. The sender doesn't wait for an answer. A reply is
 just another Agent Message, and a message plus its replies make a **Thread**.
@@ -19,7 +19,7 @@ just another Agent Message, and a message plus its replies make a **Thread**.
 ## Turn it on
 
 Agent Messages are off until you turn them on. Open
-[Settings](/harmonic/run/settings/#agent-messages), go to the **Execution**
+[Settings](/run/settings/#agent-messages), go to the **Execution**
 tab and find the **Agent Messages** section.
 
 1. Turn on **Let Attempts message each other**.
@@ -94,13 +94,13 @@ was, for example *send 3 of 10 this Attempt*.
 
 ## Exports include them
 
-A Task's [Export](/harmonic/work/archive-and-export/) contains
+A Task's [Export](/work/archive-and-export/) contains
 `agent-messages.json`, listing the Agent Messages that Task sent or received,
 with their recipients and delivery states. An Epic's Export has the same file
 for its Members. Redaction applies to it like every other file.
 
 ## See also
 
-- [Settings & overrides](/harmonic/run/settings/#agent-messages)
-- [Epics](/harmonic/work/epics/)
-- [Steering the fleet](/harmonic/work/steering-the-fleet/)
+- [Settings & overrides](/run/settings/#agent-messages)
+- [Epics](/work/epics/)
+- [Steering the fleet](/work/steering-the-fleet/)
