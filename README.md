@@ -209,6 +209,10 @@ shared-lock behavior, so it is slower than a focused test.
 Architecture decisions are recorded in [docs/adr/](docs/adr/), product
 and design ground rules in [PRODUCT.md](PRODUCT.md) and [DESIGN.md](DESIGN.md).
 
+## Sponsoring
+
+If you find Harmonic useful and want to show your thanks, [I'd appreciate it](https://github.com/sponsors/mintopia)!
+
 ## License
 
 MIT

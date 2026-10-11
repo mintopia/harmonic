@@ -1,0 +1,25 @@
+---
+import Default from '@astrojs/starlight/components/Footer.astro';
+---
+
+<Default {...Astro.props} />
+<p class="site-footer">
+  MIT licensed.
+  <a href="https://github.com/sponsors/mintopia">Sponsor on GitHub</a>
+  <br />© 2026 Jessica Smith
+</p>
+
+<style>
+  .site-footer {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--sl-color-hairline);
+    text-align: center;
+    font-size: var(--sl-text-xs);
+    color: var(--sl-color-gray-3);
+  }
+  .site-footer a {
+    color: var(--sl-color-text-accent);
+    text-underline-offset: 3px;
+  }
+</style>
