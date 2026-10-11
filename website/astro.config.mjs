@@ -24,6 +24,10 @@ export default defineConfig({
         { icon: 'github', label: 'GitHub', href: 'https://github.com/mintopia/harmonic' },
       ],
       customCss: ['./src/styles/paper.css'],
+      components: {
+        SocialIcons: './src/components/overrides/SocialIcons.astro',
+        Footer: './src/components/overrides/Footer.astro',
+      },
       head: [
         {
           tag: 'script',
@@ -65,6 +69,7 @@ export default defineConfig({
             { label: 'Configuration', link: '/run/configuration/' },
           ],
         },
+        { label: 'Support Harmonic', link: '/support/' },
       ],
     }),
   ],
