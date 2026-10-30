@@ -8,7 +8,7 @@ import { PROMPT_FRAGMENT_OVERRIDE_KEYS, type PromptFragmentOverrideKey } from '.
 import { createWorkspaceInputSchema, updateWorkspaceInputSchema, codeRepositorySchema } from '../../domain/workspaces.js';
 import { configuredTrackerSchema } from '../../tracker/configured.js';
 import { triageLabelsOverrideSchema } from '../../tracker/triage-labels.js';
-import { EXPORT_STATES, redactPatternsSchema } from '../../config.js';
+import { CLASSIFIER_BACKENDS, EXPORT_STATES, modelOptionIssues, modelOptionsSchema, redactPatternsSchema } from '../../config.js';
 import {
   verificationCommandOverrideSchema,
   routingLabelOverrideSchema,
@@ -25,6 +25,7 @@ import { requestIsOperator } from '../auth.js';
 import type { AppContext } from '../app.js';
 import { resolveScoped, routingLabelIssueMessage, routingLabelOverlayIssues } from '../../domain/setting-override.js';
 import { parseRoutingLabelOverlay } from '../../domain/routing-labels.js';
+import { parseModelOptions } from '../../domain/model-options.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
@@ -84,6 +85,10 @@ const workspaceSchema = z
     epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().meta({ example: null }),
     /** Routing Label overlay; null inherits every global Routing Label in order. */
     routingLabels: routingLabelOverrideSchema.nullable().meta({ example: null }),
+    modelOptions: modelOptionsSchema.nullable().meta({ example: null }),
+    classifierEnabled: z.boolean().nullable().meta({ example: null }),
+    classifierBackend: z.enum(CLASSIFIER_BACKENDS).nullable().meta({ example: null }),
+    classifierTimeoutSeconds: z.number().nullable().meta({ example: null }),
     guardrailBudget: budgetGuardrailSchema.nullable().meta({ example: null }),
     guardrailProgress: z.boolean().nullable().meta({ example: null }),
     /** Tool-timeout bound override; null inherits `config.guardrails.toolTimeoutMinutes`. */
@@ -154,6 +159,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     epicPreMergeCommands: ws.epicPreMergeCommands ? JSON.parse(ws.epicPreMergeCommands) : null,
     epicPreMergeCritics: ws.epicPreMergeCritics ? JSON.parse(ws.epicPreMergeCritics) : null,
     routingLabels: parseRoutingLabelOverlay(ws.routingLabels),
+    modelOptions: parseModelOptions(ws.modelOptions),
     exportRedactPatterns: ws.exportRedactPatterns ? JSON.parse(ws.exportRedactPatterns) : null,
     exportIncludeStates: ws.exportIncludeStates ? JSON.parse(ws.exportIncludeStates) : null,
     configuredTracker: ws.configuredTracker ? JSON.parse(ws.configuredTracker) : null,
@@ -262,6 +268,15 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
             throw new DomainError('validation', `routingLabels.${index}.routingLabel.harness: harness '${entry.routingLabel.harness}' is not configured`);
           }
         });
+      }
+      if (req.body.modelOptions) {
+        const taken = new Set(ctx.settingsStore.getGlobal().modelOptions.map((o) => o.id));
+        req.body.modelOptions.forEach((option, index) => {
+          if (taken.has(option.id)) throw new DomainError('validation', `modelOptions.${index}.id: model option id '${option.id}' is already used`);
+          taken.add(option.id);
+        });
+        const [first] = modelOptionIssues(req.body.modelOptions, harnesses);
+        if (first) throw new DomainError('validation', `modelOptions.${first.index}.${first.field}: ${first.message}`);
       }
       for (const [key, list] of [['taskPreMergeCritics', req.body.taskPreMergeCritics], ['taskPostMergeCritics', req.body.taskPostMergeCritics], ['epicPreMergeCritics', req.body.epicPreMergeCritics]] as const) {
         list?.forEach((entry, index) => {

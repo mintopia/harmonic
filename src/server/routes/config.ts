@@ -16,6 +16,7 @@ import {
   type DeepPartial,
   promptFragmentsShape,
   routingLabelSchema,
+  modelOptionsSchema,
 } from '../../config.js';
 import { maskConfigSecrets } from '../../archive/export-secrets.js';
 
@@ -81,6 +82,8 @@ const configPatchBodySchema = z
       .optional(),
     /** Replaces the whole ordered list; labels are unique case-insensitively and each Harness must be configured. */
     routingLabels: z.array(routingLabelSchema).meta({ example: [{ label: 'reasoning', harness: 'claude', model: 'claude-opus-5-5' }] }).optional(),
+    /** Replaces the whole ordered list; ids are unique, each Harness must be configured and each Model in that Harness's catalog. */
+    modelOptions: modelOptionsSchema.optional(),
     chat: z
       .object({
         /** Default Harness a new Conversation starts with. */

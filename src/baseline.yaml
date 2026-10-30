@@ -77,6 +77,7 @@ defaults:
   priority: normal
   conflictResolveTurns: 2
 routingLabels: []
+modelOptions: []
 chat:
   harness: claude
   model: claude-sonnet-5-5

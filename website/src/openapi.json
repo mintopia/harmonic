@@ -6971,6 +6971,87 @@
             ],
             "example": null
           },
+          "modelOptions": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[a-z0-9][a-z0-9-]*$",
+                      "example": "cheap-fix"
+                    },
+                    "harness": {
+                      "type": "string",
+                      "minLength": 1,
+                      "example": "claude"
+                    },
+                    "model": {
+                      "type": "string",
+                      "minLength": 1,
+                      "example": "claude-haiku-5-5"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "example": "cheap, small fixes"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "harness",
+                    "model",
+                    "description"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierBackend": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "typesafe",
+                  "openai-compatible",
+                  "harness"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierTimeoutSeconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "guardrailBudget": {
             "anyOf": [
               {
@@ -7710,6 +7791,10 @@
           "epicPreMergeCommands",
           "epicPreMergeCritics",
           "routingLabels",
+          "modelOptions",
+          "classifierEnabled",
+          "classifierBackend",
+          "classifierTimeoutSeconds",
           "guardrailBudget",
           "guardrailProgress",
           "toolTimeoutMinutes",
@@ -8280,6 +8365,41 @@
                 "model": "claude-opus-5-5"
               }
             ]
+          },
+          "modelOptions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[a-z0-9][a-z0-9-]*$",
+                  "example": "cheap-fix"
+                },
+                "harness": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "claude"
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "claude-haiku-5-5"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "cheap, small fixes"
+                }
+              },
+              "required": [
+                "id",
+                "harness",
+                "model",
+                "description"
+              ]
+            }
           },
           "chat": {
             "type": "object",
@@ -16927,6 +17047,88 @@
             ],
             "example": null
           },
+          "modelOptions": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[a-z0-9][a-z0-9-]*$",
+                      "example": "cheap-fix"
+                    },
+                    "harness": {
+                      "type": "string",
+                      "minLength": 1,
+                      "example": "claude"
+                    },
+                    "model": {
+                      "type": "string",
+                      "minLength": 1,
+                      "example": "claude-haiku-5-5"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "example": "cheap, small fixes"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "harness",
+                    "model",
+                    "description"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierBackend": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "typesafe",
+                  "openai-compatible",
+                  "harness"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierTimeoutSeconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "guardrailBudget": {
             "anyOf": [
               {
@@ -17673,6 +17875,10 @@
           "epicPreMergeCommands",
           "epicPreMergeCritics",
           "routingLabels",
+          "modelOptions",
+          "classifierEnabled",
+          "classifierBackend",
+          "classifierTimeoutSeconds",
           "guardrailBudget",
           "guardrailProgress",
           "toolTimeoutMinutes",
@@ -18255,6 +18461,42 @@
                 "model": "claude-opus-5-5"
               }
             ]
+          },
+          "modelOptions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[a-z0-9][a-z0-9-]*$",
+                  "example": "cheap-fix"
+                },
+                "harness": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "claude"
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "claude-haiku-5-5"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "cheap, small fixes"
+                }
+              },
+              "required": [
+                "id",
+                "harness",
+                "model",
+                "description"
+              ],
+              "additionalProperties": false
+            }
           },
           "chat": {
             "type": "object",
@@ -24765,6 +25007,87 @@
                       }
                     ]
                   },
+                  "modelOptions": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "^[a-z0-9][a-z0-9-]*$",
+                              "example": "cheap-fix"
+                            },
+                            "harness": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "claude"
+                            },
+                            "model": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "claude-haiku-5-5"
+                            },
+                            "description": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "cheap, small fixes"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "harness",
+                            "model",
+                            "description"
+                          ]
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "classifierEnabled": {
+                    "example": true,
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "classifierBackend": {
+                    "example": "harness",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "typesafe",
+                          "openai-compatible",
+                          "harness"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "classifierTimeoutSeconds": {
+                    "example": 30,
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "guardrailBudget": {
                     "anyOf": [
                       {
@@ -27070,6 +27393,50 @@
                         }
                       ]
                     },
+                    "modelOptions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^[a-z0-9][a-z0-9-]*$",
+                            "example": "cheap-fix"
+                          },
+                          "harness": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "claude"
+                          },
+                          "model": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "claude-haiku-5-5"
+                          },
+                          "description": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "cheap, small fixes"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "harness",
+                          "model",
+                          "description"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "id": "cheap-fix",
+                          "harness": "claude",
+                          "model": "claude-haiku-5-5",
+                          "description": "cheap, small fixes"
+                        }
+                      ]
+                    },
                     "chat": {
                       "type": "object",
                       "properties": {
@@ -28123,6 +28490,7 @@
                     "harnesses",
                     "defaults",
                     "routingLabels",
+                    "modelOptions",
                     "chat",
                     "autoRunner",
                     "agentMessages",
@@ -28426,6 +28794,50 @@
                         }
                       ]
                     },
+                    "modelOptions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^[a-z0-9][a-z0-9-]*$",
+                            "example": "cheap-fix"
+                          },
+                          "harness": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "claude"
+                          },
+                          "model": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "claude-haiku-5-5"
+                          },
+                          "description": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "cheap, small fixes"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "harness",
+                          "model",
+                          "description"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "id": "cheap-fix",
+                          "harness": "claude",
+                          "model": "claude-haiku-5-5",
+                          "description": "cheap, small fixes"
+                        }
+                      ]
+                    },
                     "chat": {
                       "type": "object",
                       "properties": {
@@ -29479,6 +29891,7 @@
                     "harnesses",
                     "defaults",
                     "routingLabels",
+                    "modelOptions",
                     "chat",
                     "autoRunner",
                     "agentMessages",
@@ -29755,6 +30168,49 @@
                         "label": "reasoning",
                         "harness": "claude",
                         "model": "claude-opus-5-5"
+                      }
+                    ]
+                  },
+                  "modelOptions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "^[a-z0-9][a-z0-9-]*$",
+                          "example": "cheap-fix"
+                        },
+                        "harness": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "claude"
+                        },
+                        "model": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "claude-haiku-5-5"
+                        },
+                        "description": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "cheap, small fixes"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "harness",
+                        "model",
+                        "description"
+                      ]
+                    },
+                    "example": [
+                      {
+                        "id": "cheap-fix",
+                        "harness": "claude",
+                        "model": "claude-haiku-5-5",
+                        "description": "cheap, small fixes"
                       }
                     ]
                   },
@@ -30757,6 +31213,7 @@
                   "harnesses",
                   "defaults",
                   "routingLabels",
+                  "modelOptions",
                   "chat",
                   "autoRunner",
                   "agentMessages",
@@ -31038,6 +31495,50 @@
                           "label": "reasoning",
                           "harness": "claude",
                           "model": "claude-opus-5-5"
+                        }
+                      ]
+                    },
+                    "modelOptions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^[a-z0-9][a-z0-9-]*$",
+                            "example": "cheap-fix"
+                          },
+                          "harness": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "claude"
+                          },
+                          "model": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "claude-haiku-5-5"
+                          },
+                          "description": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "cheap, small fixes"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "harness",
+                          "model",
+                          "description"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "id": "cheap-fix",
+                          "harness": "claude",
+                          "model": "claude-haiku-5-5",
+                          "description": "cheap, small fixes"
                         }
                       ]
                     },
@@ -32094,6 +32595,7 @@
                     "harnesses",
                     "defaults",
                     "routingLabels",
+                    "modelOptions",
                     "chat",
                     "autoRunner",
                     "agentMessages",
@@ -32392,1325 +32894,47 @@
                             }
                           ]
                         },
-                        "chat": {
-                          "type": "object",
-                          "properties": {
-                            "harness": {
-                              "type": "string",
-                              "enum": [
-                                "claude",
-                                "codex",
-                                "copilot",
-                                "opencode"
-                              ],
-                              "example": "claude"
-                            },
-                            "model": {
-                              "type": "string",
-                              "example": "claude-sonnet-5"
-                            }
-                          },
-                          "required": [
-                            "harness",
-                            "model"
-                          ],
-                          "additionalProperties": false
-                        },
-                        "autoRunner": {
-                          "type": "object",
-                          "properties": {
-                            "enabled": {
-                              "type": "boolean",
-                              "example": true
-                            },
-                            "maxConcurrentAttempts": {
-                              "type": "integer",
-                              "minimum": 1,
-                              "maximum": 9007199254740991,
-                              "example": 3
-                            }
-                          },
-                          "required": [
-                            "enabled",
-                            "maxConcurrentAttempts"
-                          ],
-                          "additionalProperties": false
-                        },
-                        "agentMessages": {
-                          "type": "object",
-                          "properties": {
-                            "enabled": {
-                              "type": "boolean",
-                              "example": false
-                            },
-                            "sendCap": {
-                              "type": "integer",
-                              "minimum": 1,
-                              "maximum": 9007199254740991,
-                              "example": 10
-                            }
-                          },
-                          "required": [
-                            "enabled",
-                            "sendCap"
-                          ],
-                          "additionalProperties": false
-                        },
-                        "maxAttempts": {
-                          "type": "integer",
-                          "minimum": 1,
-                          "maximum": 9007199254740991,
-                          "example": 2
-                        },
-                        "contextReuseTokenLimit": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 9007199254740991,
-                          "example": 200000
-                        },
-                        "editor": {
-                          "type": "object",
-                          "properties": {
-                            "maxFileSizeBytes": {
-                              "type": "integer",
-                              "exclusiveMinimum": 0,
-                              "maximum": 9007199254740991,
-                              "example": 2097152
-                            }
-                          },
-                          "required": [
-                            "maxFileSizeBytes"
-                          ],
-                          "additionalProperties": false
-                        },
-                        "drive": {
-                          "type": "object",
-                          "properties": {
-                            "prompt": {
-                              "type": "string",
-                              "example": "Resolve tracker issue #{ref} ({url})."
-                            },
-                            "unattendedReminder": {
-                              "type": "string",
-                              "example": "Task {taskId} is running unattended."
-                            },
-                            "continuePrompt": {
-                              "type": "string",
-                              "example": "Continue Task {taskId}."
-                            },
-                            "mergeFate": {
-                              "type": "string",
-                              "enum": [
-                                "auto-merge",
-                                "open-PR",
-                                "artifact"
-                              ],
-                              "example": "auto-merge"
-                            },
-                            "continueAttempts": {
-                              "type": "integer",
-                              "minimum": 0,
-                              "maximum": 9007199254740991,
-                              "example": 10
-                            },
-                            "commitNudge": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Commit the completed work now, then finish."
-                            }
-                          },
-                          "required": [
-                            "prompt",
-                            "unattendedReminder",
-                            "continuePrompt",
-                            "mergeFate",
-                            "continueAttempts",
-                            "commitNudge"
-                          ],
-                          "additionalProperties": false
-                        },
-                        "taskPrompt": {
-                          "type": "string",
-                          "example": "Work on {prompt}."
-                        },
-                        "pauseMessage": {
-                          "type": "string",
-                          "minLength": 1,
-                          "example": "Please finish the current turn, then pause and wait for further instructions."
-                        },
-                        "promptFragments": {
-                          "type": "object",
-                          "properties": {
-                            "readOnlyRestraint": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Read-only restraint"
-                            },
-                            "conflictResolution": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Conflict resolution"
-                            },
-                            "operatorMessage": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Operator message"
-                            },
-                            "selfHeal": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Self-heal"
-                            },
-                            "peerMessages": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Peer messages section"
-                            },
-                            "peerMessage": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Peer message entry"
-                            },
-                            "peerLine": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Peer line"
-                            },
-                            "peerLiveMessage": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Live peer message"
-                            },
-                            "rebaseConflict": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Rebase conflict"
-                            },
-                            "priorSession": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Prior session"
-                            },
-                            "codeIndexGuidance": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Code index guidance"
-                            },
-                            "criticRevisionIdentical": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Critic revision block (no change)"
-                            },
-                            "criticRevisionDiff": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Critic revision block"
-                            },
-                            "criticRevisionAlone": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Critic revision block (no base)"
-                            },
-                            "criticTicketFirst": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Critic ticket pointer"
-                            },
-                            "criticInstructionsFirst": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Critic instructions pointer"
-                            },
-                            "criticSpecTicket": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Critic specification (ticket)"
-                            },
-                            "criticSpecInstructions": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Critic specification (instructions)"
-                            },
-                            "criticWorkingTreeNote": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Critic uncommitted changes note"
-                            },
-                            "criticRole": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Critic role"
-                            },
-                            "criticSecurity": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Critic security notice"
-                            },
-                            "criticVerdictContract": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Critic verdict contract"
-                            },
-                            "epicFailingVerification": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Failing Epic verification"
-                            }
-                          },
-                          "required": [
-                            "readOnlyRestraint",
-                            "conflictResolution",
-                            "operatorMessage",
-                            "selfHeal",
-                            "peerMessages",
-                            "peerMessage",
-                            "peerLine",
-                            "peerLiveMessage",
-                            "rebaseConflict",
-                            "priorSession",
-                            "codeIndexGuidance",
-                            "criticRevisionIdentical",
-                            "criticRevisionDiff",
-                            "criticRevisionAlone",
-                            "criticTicketFirst",
-                            "criticInstructionsFirst",
-                            "criticSpecTicket",
-                            "criticSpecInstructions",
-                            "criticWorkingTreeNote",
-                            "criticRole",
-                            "criticSecurity",
-                            "criticVerdictContract",
-                            "epicFailingVerification"
-                          ],
-                          "additionalProperties": false
-                        },
-                        "conversationIdleTimeoutMinutes": {
-                          "type": "number",
-                          "minimum": 0,
-                          "example": 30
-                        },
-                        "fileWatcherDebounceMs": {
-                          "type": "integer",
-                          "exclusiveMinimum": 0,
-                          "maximum": 9007199254740991,
-                          "example": 250
-                        },
-                        "verify": {
-                          "type": "object",
-                          "properties": {
-                            "task": {
-                              "type": "object",
-                              "properties": {
-                                "preMerge": {
-                                  "type": "object",
-                                  "properties": {
-                                    "commands": {
-                                      "type": "array",
-                                      "items": {
-                                        "type": "object",
-                                        "properties": {
-                                          "id": {
-                                            "default": "00000000-0000-0000-0000-000000000000",
-                                            "example": "cmd-lint",
-                                            "type": "string",
-                                            "minLength": 1
-                                          },
-                                          "command": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "example": "npm"
-                                          },
-                                          "args": {
-                                            "default": [],
-                                            "example": [
-                                              "test"
-                                            ],
-                                            "type": "array",
-                                            "items": {
-                                              "type": "string"
-                                            }
-                                          },
-                                          "cwd": {
-                                            "example": "packages/api",
-                                            "type": "string"
-                                          },
-                                          "env": {
-                                            "default": {},
-                                            "example": {
-                                              "CI": "1"
-                                            },
-                                            "type": "object",
-                                            "propertyNames": {
-                                              "type": "string"
-                                            },
-                                            "additionalProperties": {
-                                              "type": "string"
-                                            }
-                                          },
-                                          "timeoutSeconds": {
-                                            "default": 600,
-                                            "example": 600,
-                                            "type": "integer",
-                                            "exclusiveMinimum": 0,
-                                            "maximum": 9007199254740991
-                                          }
-                                        },
-                                        "required": [
-                                          "id",
-                                          "command",
-                                          "args",
-                                          "env",
-                                          "timeoutSeconds"
-                                        ],
-                                        "additionalProperties": false
-                                      }
-                                    },
-                                    "critics": {
-                                      "type": "array",
-                                      "items": {
-                                        "type": "object",
-                                        "properties": {
-                                          "id": {
-                                            "default": "00000000-0000-0000-0000-000000000000",
-                                            "example": "critic-correctness",
-                                            "type": "string",
-                                            "minLength": 1
-                                          },
-                                          "name": {
-                                            "default": "",
-                                            "example": "Correctness",
-                                            "type": "string"
-                                          },
-                                          "model": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "example": "claude-opus-5"
-                                          },
-                                          "harness": {
-                                            "type": "string",
-                                            "enum": [
-                                              "claude",
-                                              "codex",
-                                              "copilot",
-                                              "opencode"
-                                            ],
-                                            "example": "claude"
-                                          },
-                                          "timeoutSeconds": {
-                                            "default": 300,
-                                            "example": 300,
-                                            "type": "integer",
-                                            "exclusiveMinimum": 0,
-                                            "maximum": 9007199254740991
-                                          },
-                                          "issuePrompt": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "example": "Review task {taskId} against issue {ref}: {title}. {description}"
-                                          },
-                                          "noIssuePrompt": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
-                                          }
-                                        },
-                                        "required": [
-                                          "id",
-                                          "name",
-                                          "model",
-                                          "harness",
-                                          "timeoutSeconds",
-                                          "issuePrompt",
-                                          "noIssuePrompt"
-                                        ],
-                                        "additionalProperties": false
-                                      }
-                                    }
-                                  },
-                                  "required": [
-                                    "commands",
-                                    "critics"
-                                  ],
-                                  "additionalProperties": false
-                                },
-                                "postMerge": {
-                                  "type": "object",
-                                  "properties": {
-                                    "commands": {
-                                      "type": "array",
-                                      "items": {
-                                        "type": "object",
-                                        "properties": {
-                                          "id": {
-                                            "default": "00000000-0000-0000-0000-000000000000",
-                                            "example": "cmd-lint",
-                                            "type": "string",
-                                            "minLength": 1
-                                          },
-                                          "command": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "example": "npm"
-                                          },
-                                          "args": {
-                                            "default": [],
-                                            "example": [
-                                              "test"
-                                            ],
-                                            "type": "array",
-                                            "items": {
-                                              "type": "string"
-                                            }
-                                          },
-                                          "cwd": {
-                                            "example": "packages/api",
-                                            "type": "string"
-                                          },
-                                          "env": {
-                                            "default": {},
-                                            "example": {
-                                              "CI": "1"
-                                            },
-                                            "type": "object",
-                                            "propertyNames": {
-                                              "type": "string"
-                                            },
-                                            "additionalProperties": {
-                                              "type": "string"
-                                            }
-                                          },
-                                          "timeoutSeconds": {
-                                            "default": 600,
-                                            "example": 600,
-                                            "type": "integer",
-                                            "exclusiveMinimum": 0,
-                                            "maximum": 9007199254740991
-                                          }
-                                        },
-                                        "required": [
-                                          "id",
-                                          "command",
-                                          "args",
-                                          "env",
-                                          "timeoutSeconds"
-                                        ],
-                                        "additionalProperties": false
-                                      }
-                                    },
-                                    "critics": {
-                                      "type": "array",
-                                      "items": {
-                                        "type": "object",
-                                        "properties": {
-                                          "id": {
-                                            "default": "00000000-0000-0000-0000-000000000000",
-                                            "example": "critic-correctness",
-                                            "type": "string",
-                                            "minLength": 1
-                                          },
-                                          "name": {
-                                            "default": "",
-                                            "example": "Correctness",
-                                            "type": "string"
-                                          },
-                                          "model": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "example": "claude-opus-5"
-                                          },
-                                          "harness": {
-                                            "type": "string",
-                                            "enum": [
-                                              "claude",
-                                              "codex",
-                                              "copilot",
-                                              "opencode"
-                                            ],
-                                            "example": "claude"
-                                          },
-                                          "timeoutSeconds": {
-                                            "default": 300,
-                                            "example": 300,
-                                            "type": "integer",
-                                            "exclusiveMinimum": 0,
-                                            "maximum": 9007199254740991
-                                          },
-                                          "issuePrompt": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "example": "Review task {taskId} against issue {ref}: {title}. {description}"
-                                          },
-                                          "noIssuePrompt": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
-                                          }
-                                        },
-                                        "required": [
-                                          "id",
-                                          "name",
-                                          "model",
-                                          "harness",
-                                          "timeoutSeconds",
-                                          "issuePrompt",
-                                          "noIssuePrompt"
-                                        ],
-                                        "additionalProperties": false
-                                      }
-                                    }
-                                  },
-                                  "required": [
-                                    "commands",
-                                    "critics"
-                                  ],
-                                  "additionalProperties": false
-                                }
-                              },
-                              "required": [
-                                "preMerge",
-                                "postMerge"
-                              ],
-                              "additionalProperties": false
-                            },
-                            "epic": {
-                              "type": "object",
-                              "properties": {
-                                "preMerge": {
-                                  "type": "object",
-                                  "properties": {
-                                    "commands": {
-                                      "type": "array",
-                                      "items": {
-                                        "type": "object",
-                                        "properties": {
-                                          "id": {
-                                            "default": "00000000-0000-0000-0000-000000000000",
-                                            "example": "cmd-lint",
-                                            "type": "string",
-                                            "minLength": 1
-                                          },
-                                          "command": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "example": "npm"
-                                          },
-                                          "args": {
-                                            "default": [],
-                                            "example": [
-                                              "test"
-                                            ],
-                                            "type": "array",
-                                            "items": {
-                                              "type": "string"
-                                            }
-                                          },
-                                          "cwd": {
-                                            "example": "packages/api",
-                                            "type": "string"
-                                          },
-                                          "env": {
-                                            "default": {},
-                                            "example": {
-                                              "CI": "1"
-                                            },
-                                            "type": "object",
-                                            "propertyNames": {
-                                              "type": "string"
-                                            },
-                                            "additionalProperties": {
-                                              "type": "string"
-                                            }
-                                          },
-                                          "timeoutSeconds": {
-                                            "default": 600,
-                                            "example": 600,
-                                            "type": "integer",
-                                            "exclusiveMinimum": 0,
-                                            "maximum": 9007199254740991
-                                          }
-                                        },
-                                        "required": [
-                                          "id",
-                                          "command",
-                                          "args",
-                                          "env",
-                                          "timeoutSeconds"
-                                        ],
-                                        "additionalProperties": false
-                                      }
-                                    },
-                                    "critics": {
-                                      "type": "array",
-                                      "items": {
-                                        "type": "object",
-                                        "properties": {
-                                          "id": {
-                                            "default": "00000000-0000-0000-0000-000000000000",
-                                            "example": "critic-correctness",
-                                            "type": "string",
-                                            "minLength": 1
-                                          },
-                                          "name": {
-                                            "default": "",
-                                            "example": "Correctness",
-                                            "type": "string"
-                                          },
-                                          "model": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "example": "claude-opus-5"
-                                          },
-                                          "harness": {
-                                            "type": "string",
-                                            "enum": [
-                                              "claude",
-                                              "codex",
-                                              "copilot",
-                                              "opencode"
-                                            ],
-                                            "example": "claude"
-                                          },
-                                          "timeoutSeconds": {
-                                            "default": 300,
-                                            "example": 300,
-                                            "type": "integer",
-                                            "exclusiveMinimum": 0,
-                                            "maximum": 9007199254740991
-                                          },
-                                          "prompt": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
-                                          }
-                                        },
-                                        "required": [
-                                          "id",
-                                          "name",
-                                          "model",
-                                          "harness",
-                                          "timeoutSeconds",
-                                          "prompt"
-                                        ],
-                                        "additionalProperties": false
-                                      }
-                                    }
-                                  },
-                                  "required": [
-                                    "commands",
-                                    "critics"
-                                  ],
-                                  "additionalProperties": false
-                                },
-                                "resolvePrompt": {
-                                  "type": "string",
-                                  "minLength": 1
-                                },
-                                "resolveSuffix": {
-                                  "type": "string",
-                                  "minLength": 1,
-                                  "example": "Work in the checked-out integration branch `{branch}`."
-                                }
-                              },
-                              "required": [
-                                "preMerge",
-                                "resolvePrompt",
-                                "resolveSuffix"
-                              ],
-                              "additionalProperties": false
-                            }
-                          },
-                          "required": [
-                            "task",
-                            "epic"
-                          ],
-                          "additionalProperties": false
-                        },
-                        "merge": {
-                          "type": "object",
-                          "properties": {
-                            "postMergeCheck": {
-                              "type": "boolean"
-                            },
-                            "conflictPrompt": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "## Merge conflict resolution (turn {turn})\n{paths}"
-                            },
-                            "epicRefreshPrompt": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "## Epic integration refresh\nMerging {defaultBranch} into {branch} conflicted:\n{detail}"
-                            },
-                            "epicConflictPrompt": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "## Epic integration merge conflict resolution (turn {turn})\n{paths}"
-                            }
-                          },
-                          "required": [
-                            "postMergeCheck",
-                            "conflictPrompt",
-                            "epicRefreshPrompt",
-                            "epicConflictPrompt"
-                          ],
-                          "additionalProperties": false
-                        },
-                        "guardrails": {
-                          "type": "object",
-                          "properties": {
-                            "budget": {
-                              "type": "object",
-                              "properties": {
-                                "wallClockMinutes": {
-                                  "default": 60,
-                                  "example": 60,
-                                  "type": "number",
-                                  "exclusiveMinimum": 0
-                                },
-                                "tokens": {
-                                  "default": null,
-                                  "example": 2000000,
-                                  "anyOf": [
-                                    {
-                                      "type": "integer",
-                                      "exclusiveMinimum": 0,
-                                      "maximum": 9007199254740991
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                },
-                                "costUsd": {
-                                  "default": null,
-                                  "example": 10,
-                                  "anyOf": [
-                                    {
-                                      "type": "number",
-                                      "exclusiveMinimum": 0
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                }
-                              },
-                              "required": [
-                                "wallClockMinutes",
-                                "tokens",
-                                "costUsd"
-                              ],
-                              "additionalProperties": false
-                            },
-                            "progress": {
-                              "type": "boolean"
-                            },
-                            "toolTimeoutMinutes": {
-                              "type": "number",
-                              "exclusiveMinimum": 0
-                            },
-                            "promptInactivityTimeoutMinutes": {
-                              "type": "number",
-                              "exclusiveMinimum": 0
-                            }
-                          },
-                          "required": [
-                            "budget",
-                            "progress",
-                            "toolTimeoutMinutes",
-                            "promptInactivityTimeoutMinutes"
-                          ],
-                          "additionalProperties": false
-                        },
-                        "archive": {
-                          "type": "object",
-                          "properties": {
-                            "retain": {
-                              "type": "object",
-                              "properties": {
-                                "days": {
-                                  "anyOf": [
-                                    {
-                                      "type": "integer",
-                                      "exclusiveMinimum": 0,
-                                      "maximum": 9007199254740991
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ],
-                                  "example": 30
-                                },
-                                "maxTotalMB": {
-                                  "anyOf": [
-                                    {
-                                      "type": "number",
-                                      "exclusiveMinimum": 0
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ],
-                                  "example": 10240
-                                }
-                              },
-                              "required": [
-                                "days",
-                                "maxTotalMB"
-                              ],
-                              "additionalProperties": false
-                            }
-                          },
-                          "required": [
-                            "retain"
-                          ],
-                          "additionalProperties": false
-                        },
-                        "export": {
-                          "type": "object",
-                          "properties": {
-                            "enabled": {
-                              "type": "boolean",
-                              "example": false
-                            },
-                            "includeStates": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "enum": [
-                                  "done",
-                                  "cancelled",
-                                  "deleted"
-                                ]
-                              },
-                              "example": [
-                                "done",
-                                "cancelled",
-                                "deleted"
-                              ]
-                            },
-                            "directory": {
-                              "type": "object",
-                              "properties": {
-                                "path": {
-                                  "anyOf": [
-                                    {
-                                      "type": "string",
-                                      "minLength": 1
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ],
-                                  "example": "/srv/harmonic-exports"
-                                }
-                              },
-                              "required": [
-                                "path"
-                              ],
-                              "additionalProperties": false
-                            },
-                            "s3": {
-                              "type": "object",
-                              "properties": {
-                                "endpoint": {
-                                  "anyOf": [
-                                    {
-                                      "type": "string",
-                                      "format": "uri"
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ],
-                                  "example": "https://s3.eu-west-2.amazonaws.com"
-                                },
-                                "region": {
-                                  "anyOf": [
-                                    {
-                                      "type": "string",
-                                      "minLength": 1
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ],
-                                  "example": "eu-west-2"
-                                },
-                                "bucket": {
-                                  "anyOf": [
-                                    {
-                                      "type": "string",
-                                      "minLength": 1
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ],
-                                  "example": "harmonic-exports"
-                                },
-                                "prefix": {
-                                  "type": "string",
-                                  "example": "harmonic/"
-                                },
-                                "forcePathStyle": {
-                                  "type": "boolean",
-                                  "example": false
-                                },
-                                "accessKeyId": {
-                                  "anyOf": [
-                                    {
-                                      "type": "string",
-                                      "minLength": 1
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ],
-                                  "example": null
-                                },
-                                "secretAccessKey": {
-                                  "anyOf": [
-                                    {
-                                      "type": "string",
-                                      "minLength": 1
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ],
-                                  "example": null
-                                }
-                              },
-                              "required": [
-                                "endpoint",
-                                "region",
-                                "bucket",
-                                "prefix",
-                                "forcePathStyle",
-                                "accessKeyId",
-                                "secretAccessKey"
-                              ],
-                              "additionalProperties": false
-                            },
-                            "redact": {
-                              "type": "object",
-                              "properties": {
-                                "patterns": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "object",
-                                    "properties": {
-                                      "id": {
-                                        "type": "string",
-                                        "pattern": "^[a-z0-9][a-z0-9-]*$"
-                                      },
-                                      "regex": {
-                                        "type": "string",
-                                        "minLength": 1
-                                      }
-                                    },
-                                    "required": [
-                                      "id",
-                                      "regex"
-                                    ],
-                                    "additionalProperties": false
-                                  },
-                                  "example": [
-                                    {
-                                      "id": "internal-host",
-                                      "regex": "corp\\.example\\.internal"
-                                    }
-                                  ]
-                                }
-                              },
-                              "required": [
-                                "patterns"
-                              ],
-                              "additionalProperties": false
-                            }
-                          },
-                          "required": [
-                            "enabled",
-                            "includeStates",
-                            "directory",
-                            "s3",
-                            "redact"
-                          ],
-                          "additionalProperties": false
-                        }
-                      },
-                      "required": [
-                        "name",
-                        "harnesses",
-                        "defaults",
-                        "routingLabels",
-                        "chat",
-                        "autoRunner",
-                        "agentMessages",
-                        "maxAttempts",
-                        "contextReuseTokenLimit",
-                        "editor",
-                        "drive",
-                        "taskPrompt",
-                        "pauseMessage",
-                        "promptFragments",
-                        "conversationIdleTimeoutMinutes",
-                        "fileWatcherDebounceMs",
-                        "verify",
-                        "merge",
-                        "guardrails",
-                        "archive",
-                        "export"
-                      ],
-                      "additionalProperties": false
-                    },
-                    "global": {
-                      "type": "object",
-                      "properties": {
-                        "name": {
-                          "type": "string",
-                          "example": "Production"
-                        },
-                        "harnesses": {
-                          "type": "object",
-                          "propertyNames": {
-                            "type": "string",
-                            "enum": [
-                              "claude",
-                              "codex",
-                              "copilot",
-                              "opencode"
-                            ]
-                          },
-                          "additionalProperties": {
-                            "type": "object",
-                            "properties": {
-                              "command": {
-                                "type": "string",
-                                "example": "npx"
-                              },
-                              "args": {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                },
-                                "example": [
-                                  "@zed-industries/claude-code-acp"
-                                ]
-                              },
-                              "env": {
-                                "type": "object",
-                                "propertyNames": {
-                                  "type": "string"
-                                },
-                                "additionalProperties": {
-                                  "type": "string"
-                                },
-                                "example": {
-                                  "ANTHROPIC_API_KEY": "<your-api-key>"
-                                }
-                              },
-                              "models": {
-                                "type": "array",
-                                "items": {
-                                  "type": "object",
-                                  "properties": {
-                                    "id": {
-                                      "type": "string",
-                                      "minLength": 1,
-                                      "example": "sonnet-5"
-                                    },
-                                    "price": {
-                                      "type": "object",
-                                      "properties": {
-                                        "input": {
-                                          "type": "number",
-                                          "minimum": 0,
-                                          "example": 3
-                                        },
-                                        "output": {
-                                          "type": "number",
-                                          "minimum": 0,
-                                          "example": 15
-                                        },
-                                        "cacheRead": {
-                                          "type": "number",
-                                          "minimum": 0,
-                                          "example": 0.3
-                                        },
-                                        "cacheWrite": {
-                                          "type": "number",
-                                          "minimum": 0,
-                                          "example": 3.75
-                                        }
-                                      },
-                                      "required": [
-                                        "input",
-                                        "output",
-                                        "cacheRead",
-                                        "cacheWrite"
-                                      ],
-                                      "additionalProperties": false
-                                    },
-                                    "contextWindow": {
-                                      "example": 200000,
-                                      "type": "integer",
-                                      "exclusiveMinimum": 0,
-                                      "maximum": 9007199254740991
-                                    }
-                                  },
-                                  "required": [
-                                    "id"
-                                  ],
-                                  "additionalProperties": false
-                                },
-                                "example": [
-                                  {
-                                    "id": "sonnet-5"
-                                  },
-                                  {
-                                    "id": "opus-4.8"
-                                  }
-                                ]
-                              },
-                              "defaultModel": {
-                                "type": "string",
-                                "example": "sonnet-5"
-                              },
-                              "cacheWarmSeconds": {
-                                "type": "integer",
-                                "exclusiveMinimum": 0,
-                                "maximum": 9007199254740991,
-                                "example": 300
-                              },
-                              "permissionMode": {
-                                "example": "bypassPermissions",
-                                "type": "string"
-                              },
-                              "sessionLogDir": {
-                                "example": "~/.claude/projects",
-                                "type": "string"
-                              }
-                            },
-                            "required": [
-                              "command",
-                              "args",
-                              "env",
-                              "models",
-                              "defaultModel",
-                              "cacheWarmSeconds"
-                            ],
-                            "additionalProperties": false
-                          },
-                          "required": [
-                            "claude",
-                            "codex",
-                            "copilot",
-                            "opencode"
-                          ],
-                          "example": {
-                            "claude": {
-                              "command": "npx",
-                              "args": [
-                                "@zed-industries/claude-code-acp"
-                              ],
-                              "env": {},
-                              "models": [
-                                {
-                                  "id": "sonnet-5"
-                                },
-                                {
-                                  "id": "opus-4.8"
-                                }
-                              ],
-                              "defaultModel": "sonnet-5",
-                              "cacheWarmSeconds": 300
-                            }
-                          }
-                        },
-                        "defaults": {
-                          "type": "object",
-                          "properties": {
-                            "harness": {
-                              "type": "string",
-                              "enum": [
-                                "claude",
-                                "codex",
-                                "copilot",
-                                "opencode"
-                              ],
-                              "example": "claude"
-                            },
-                            "isolationMode": {
-                              "type": "string",
-                              "enum": [
-                                "direct",
-                                "worktree"
-                              ],
-                              "example": "worktree"
-                            },
-                            "priority": {
-                              "type": "string",
-                              "enum": [
-                                "high",
-                                "normal",
-                                "low"
-                              ],
-                              "example": "normal"
-                            },
-                            "conflictResolveTurns": {
-                              "type": "integer",
-                              "minimum": 0,
-                              "maximum": 9007199254740991,
-                              "example": 2
-                            }
-                          },
-                          "required": [
-                            "harness",
-                            "isolationMode",
-                            "priority",
-                            "conflictResolveTurns"
-                          ],
-                          "additionalProperties": false
-                        },
-                        "routingLabels": {
+                        "modelOptions": {
                           "type": "array",
                           "items": {
                             "type": "object",
                             "properties": {
-                              "label": {
+                              "id": {
                                 "type": "string",
                                 "minLength": 1,
-                                "example": "reasoning"
+                                "pattern": "^[a-z0-9][a-z0-9-]*$",
+                                "example": "cheap-fix"
                               },
                               "harness": {
                                 "type": "string",
-                                "enum": [
-                                  "claude",
-                                  "codex",
-                                  "copilot",
-                                  "opencode"
-                                ],
+                                "minLength": 1,
                                 "example": "claude"
                               },
                               "model": {
                                 "type": "string",
-                                "example": "claude-opus-5-5"
+                                "minLength": 1,
+                                "example": "claude-haiku-5-5"
+                              },
+                              "description": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "cheap, small fixes"
                               }
                             },
                             "required": [
-                              "label",
+                              "id",
                               "harness",
-                              "model"
+                              "model",
+                              "description"
                             ],
                             "additionalProperties": false
                           },
                           "example": [
                             {
-                              "label": "reasoning",
+                              "id": "cheap-fix",
                               "harness": "claude",
-                              "model": "claude-opus-5-5"
+                              "model": "claude-haiku-5-5",
+                              "description": "cheap, small fixes"
                             }
                           ]
                         },
@@ -34767,6 +33991,1374 @@
                         "harnesses",
                         "defaults",
                         "routingLabels",
+                        "modelOptions",
+                        "chat",
+                        "autoRunner",
+                        "agentMessages",
+                        "maxAttempts",
+                        "contextReuseTokenLimit",
+                        "editor",
+                        "drive",
+                        "taskPrompt",
+                        "pauseMessage",
+                        "promptFragments",
+                        "conversationIdleTimeoutMinutes",
+                        "fileWatcherDebounceMs",
+                        "verify",
+                        "merge",
+                        "guardrails",
+                        "archive",
+                        "export"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "global": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "example": "Production"
+                        },
+                        "harnesses": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string",
+                            "enum": [
+                              "claude",
+                              "codex",
+                              "copilot",
+                              "opencode"
+                            ]
+                          },
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "command": {
+                                "type": "string",
+                                "example": "npx"
+                              },
+                              "args": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "example": [
+                                  "@zed-industries/claude-code-acp"
+                                ]
+                              },
+                              "env": {
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {
+                                  "type": "string"
+                                },
+                                "example": {
+                                  "ANTHROPIC_API_KEY": "<your-api-key>"
+                                }
+                              },
+                              "models": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "sonnet-5"
+                                    },
+                                    "price": {
+                                      "type": "object",
+                                      "properties": {
+                                        "input": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "example": 3
+                                        },
+                                        "output": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "example": 15
+                                        },
+                                        "cacheRead": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "example": 0.3
+                                        },
+                                        "cacheWrite": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "example": 3.75
+                                        }
+                                      },
+                                      "required": [
+                                        "input",
+                                        "output",
+                                        "cacheRead",
+                                        "cacheWrite"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "contextWindow": {
+                                      "example": 200000,
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "id"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "example": [
+                                  {
+                                    "id": "sonnet-5"
+                                  },
+                                  {
+                                    "id": "opus-4.8"
+                                  }
+                                ]
+                              },
+                              "defaultModel": {
+                                "type": "string",
+                                "example": "sonnet-5"
+                              },
+                              "cacheWarmSeconds": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "example": 300
+                              },
+                              "permissionMode": {
+                                "example": "bypassPermissions",
+                                "type": "string"
+                              },
+                              "sessionLogDir": {
+                                "example": "~/.claude/projects",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "command",
+                              "args",
+                              "env",
+                              "models",
+                              "defaultModel",
+                              "cacheWarmSeconds"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "required": [
+                            "claude",
+                            "codex",
+                            "copilot",
+                            "opencode"
+                          ],
+                          "example": {
+                            "claude": {
+                              "command": "npx",
+                              "args": [
+                                "@zed-industries/claude-code-acp"
+                              ],
+                              "env": {},
+                              "models": [
+                                {
+                                  "id": "sonnet-5"
+                                },
+                                {
+                                  "id": "opus-4.8"
+                                }
+                              ],
+                              "defaultModel": "sonnet-5",
+                              "cacheWarmSeconds": 300
+                            }
+                          }
+                        },
+                        "defaults": {
+                          "type": "object",
+                          "properties": {
+                            "harness": {
+                              "type": "string",
+                              "enum": [
+                                "claude",
+                                "codex",
+                                "copilot",
+                                "opencode"
+                              ],
+                              "example": "claude"
+                            },
+                            "isolationMode": {
+                              "type": "string",
+                              "enum": [
+                                "direct",
+                                "worktree"
+                              ],
+                              "example": "worktree"
+                            },
+                            "priority": {
+                              "type": "string",
+                              "enum": [
+                                "high",
+                                "normal",
+                                "low"
+                              ],
+                              "example": "normal"
+                            },
+                            "conflictResolveTurns": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "example": 2
+                            }
+                          },
+                          "required": [
+                            "harness",
+                            "isolationMode",
+                            "priority",
+                            "conflictResolveTurns"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "routingLabels": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "reasoning"
+                              },
+                              "harness": {
+                                "type": "string",
+                                "enum": [
+                                  "claude",
+                                  "codex",
+                                  "copilot",
+                                  "opencode"
+                                ],
+                                "example": "claude"
+                              },
+                              "model": {
+                                "type": "string",
+                                "example": "claude-opus-5-5"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "harness",
+                              "model"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "example": [
+                            {
+                              "label": "reasoning",
+                              "harness": "claude",
+                              "model": "claude-opus-5-5"
+                            }
+                          ]
+                        },
+                        "modelOptions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "pattern": "^[a-z0-9][a-z0-9-]*$",
+                                "example": "cheap-fix"
+                              },
+                              "harness": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "claude"
+                              },
+                              "model": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "claude-haiku-5-5"
+                              },
+                              "description": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "cheap, small fixes"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "harness",
+                              "model",
+                              "description"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "example": [
+                            {
+                              "id": "cheap-fix",
+                              "harness": "claude",
+                              "model": "claude-haiku-5-5",
+                              "description": "cheap, small fixes"
+                            }
+                          ]
+                        },
+                        "chat": {
+                          "type": "object",
+                          "properties": {
+                            "harness": {
+                              "type": "string",
+                              "enum": [
+                                "claude",
+                                "codex",
+                                "copilot",
+                                "opencode"
+                              ],
+                              "example": "claude"
+                            },
+                            "model": {
+                              "type": "string",
+                              "example": "claude-sonnet-5"
+                            }
+                          },
+                          "required": [
+                            "harness",
+                            "model"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "autoRunner": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean",
+                              "example": true
+                            },
+                            "maxConcurrentAttempts": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991,
+                              "example": 3
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "maxConcurrentAttempts"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "agentMessages": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "sendCap": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991,
+                              "example": 10
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "sendCap"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maxAttempts": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 2
+                        },
+                        "contextReuseTokenLimit": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 200000
+                        },
+                        "editor": {
+                          "type": "object",
+                          "properties": {
+                            "maxFileSizeBytes": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "example": 2097152
+                            }
+                          },
+                          "required": [
+                            "maxFileSizeBytes"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "drive": {
+                          "type": "object",
+                          "properties": {
+                            "prompt": {
+                              "type": "string",
+                              "example": "Resolve tracker issue #{ref} ({url})."
+                            },
+                            "unattendedReminder": {
+                              "type": "string",
+                              "example": "Task {taskId} is running unattended."
+                            },
+                            "continuePrompt": {
+                              "type": "string",
+                              "example": "Continue Task {taskId}."
+                            },
+                            "mergeFate": {
+                              "type": "string",
+                              "enum": [
+                                "auto-merge",
+                                "open-PR",
+                                "artifact"
+                              ],
+                              "example": "auto-merge"
+                            },
+                            "continueAttempts": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "example": 10
+                            },
+                            "commitNudge": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Commit the completed work now, then finish."
+                            }
+                          },
+                          "required": [
+                            "prompt",
+                            "unattendedReminder",
+                            "continuePrompt",
+                            "mergeFate",
+                            "continueAttempts",
+                            "commitNudge"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "taskPrompt": {
+                          "type": "string",
+                          "example": "Work on {prompt}."
+                        },
+                        "pauseMessage": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Please finish the current turn, then pause and wait for further instructions."
+                        },
+                        "promptFragments": {
+                          "type": "object",
+                          "properties": {
+                            "readOnlyRestraint": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Read-only restraint"
+                            },
+                            "conflictResolution": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Conflict resolution"
+                            },
+                            "operatorMessage": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Operator message"
+                            },
+                            "selfHeal": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Self-heal"
+                            },
+                            "peerMessages": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Peer messages section"
+                            },
+                            "peerMessage": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Peer message entry"
+                            },
+                            "peerLine": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Peer line"
+                            },
+                            "peerLiveMessage": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Live peer message"
+                            },
+                            "rebaseConflict": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Rebase conflict"
+                            },
+                            "priorSession": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Prior session"
+                            },
+                            "codeIndexGuidance": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Code index guidance"
+                            },
+                            "criticRevisionIdentical": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic revision block (no change)"
+                            },
+                            "criticRevisionDiff": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic revision block"
+                            },
+                            "criticRevisionAlone": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic revision block (no base)"
+                            },
+                            "criticTicketFirst": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic ticket pointer"
+                            },
+                            "criticInstructionsFirst": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic instructions pointer"
+                            },
+                            "criticSpecTicket": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic specification (ticket)"
+                            },
+                            "criticSpecInstructions": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic specification (instructions)"
+                            },
+                            "criticWorkingTreeNote": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic uncommitted changes note"
+                            },
+                            "criticRole": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic role"
+                            },
+                            "criticSecurity": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic security notice"
+                            },
+                            "criticVerdictContract": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Critic verdict contract"
+                            },
+                            "epicFailingVerification": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Failing Epic verification"
+                            }
+                          },
+                          "required": [
+                            "readOnlyRestraint",
+                            "conflictResolution",
+                            "operatorMessage",
+                            "selfHeal",
+                            "peerMessages",
+                            "peerMessage",
+                            "peerLine",
+                            "peerLiveMessage",
+                            "rebaseConflict",
+                            "priorSession",
+                            "codeIndexGuidance",
+                            "criticRevisionIdentical",
+                            "criticRevisionDiff",
+                            "criticRevisionAlone",
+                            "criticTicketFirst",
+                            "criticInstructionsFirst",
+                            "criticSpecTicket",
+                            "criticSpecInstructions",
+                            "criticWorkingTreeNote",
+                            "criticRole",
+                            "criticSecurity",
+                            "criticVerdictContract",
+                            "epicFailingVerification"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "conversationIdleTimeoutMinutes": {
+                          "type": "number",
+                          "minimum": 0,
+                          "example": 30
+                        },
+                        "fileWatcherDebounceMs": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 250
+                        },
+                        "verify": {
+                          "type": "object",
+                          "properties": {
+                            "task": {
+                              "type": "object",
+                              "properties": {
+                                "preMerge": {
+                                  "type": "object",
+                                  "properties": {
+                                    "commands": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "default": "00000000-0000-0000-0000-000000000000",
+                                            "example": "cmd-lint",
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "command": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "npm"
+                                          },
+                                          "args": {
+                                            "default": [],
+                                            "example": [
+                                              "test"
+                                            ],
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "cwd": {
+                                            "example": "packages/api",
+                                            "type": "string"
+                                          },
+                                          "env": {
+                                            "default": {},
+                                            "example": {
+                                              "CI": "1"
+                                            },
+                                            "type": "object",
+                                            "propertyNames": {
+                                              "type": "string"
+                                            },
+                                            "additionalProperties": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "timeoutSeconds": {
+                                            "default": 600,
+                                            "example": 600,
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0,
+                                            "maximum": 9007199254740991
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "command",
+                                          "args",
+                                          "env",
+                                          "timeoutSeconds"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "critics": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "default": "00000000-0000-0000-0000-000000000000",
+                                            "example": "critic-correctness",
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "name": {
+                                            "default": "",
+                                            "example": "Correctness",
+                                            "type": "string"
+                                          },
+                                          "model": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "claude-opus-5"
+                                          },
+                                          "harness": {
+                                            "type": "string",
+                                            "enum": [
+                                              "claude",
+                                              "codex",
+                                              "copilot",
+                                              "opencode"
+                                            ],
+                                            "example": "claude"
+                                          },
+                                          "timeoutSeconds": {
+                                            "default": 300,
+                                            "example": 300,
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "issuePrompt": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "Review task {taskId} against issue {ref}: {title}. {description}"
+                                          },
+                                          "noIssuePrompt": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "name",
+                                          "model",
+                                          "harness",
+                                          "timeoutSeconds",
+                                          "issuePrompt",
+                                          "noIssuePrompt"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "commands",
+                                    "critics"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "postMerge": {
+                                  "type": "object",
+                                  "properties": {
+                                    "commands": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "default": "00000000-0000-0000-0000-000000000000",
+                                            "example": "cmd-lint",
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "command": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "npm"
+                                          },
+                                          "args": {
+                                            "default": [],
+                                            "example": [
+                                              "test"
+                                            ],
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "cwd": {
+                                            "example": "packages/api",
+                                            "type": "string"
+                                          },
+                                          "env": {
+                                            "default": {},
+                                            "example": {
+                                              "CI": "1"
+                                            },
+                                            "type": "object",
+                                            "propertyNames": {
+                                              "type": "string"
+                                            },
+                                            "additionalProperties": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "timeoutSeconds": {
+                                            "default": 600,
+                                            "example": 600,
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0,
+                                            "maximum": 9007199254740991
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "command",
+                                          "args",
+                                          "env",
+                                          "timeoutSeconds"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "critics": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "default": "00000000-0000-0000-0000-000000000000",
+                                            "example": "critic-correctness",
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "name": {
+                                            "default": "",
+                                            "example": "Correctness",
+                                            "type": "string"
+                                          },
+                                          "model": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "claude-opus-5"
+                                          },
+                                          "harness": {
+                                            "type": "string",
+                                            "enum": [
+                                              "claude",
+                                              "codex",
+                                              "copilot",
+                                              "opencode"
+                                            ],
+                                            "example": "claude"
+                                          },
+                                          "timeoutSeconds": {
+                                            "default": 300,
+                                            "example": 300,
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "issuePrompt": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "Review task {taskId} against issue {ref}: {title}. {description}"
+                                          },
+                                          "noIssuePrompt": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "name",
+                                          "model",
+                                          "harness",
+                                          "timeoutSeconds",
+                                          "issuePrompt",
+                                          "noIssuePrompt"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "commands",
+                                    "critics"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "required": [
+                                "preMerge",
+                                "postMerge"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "epic": {
+                              "type": "object",
+                              "properties": {
+                                "preMerge": {
+                                  "type": "object",
+                                  "properties": {
+                                    "commands": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "default": "00000000-0000-0000-0000-000000000000",
+                                            "example": "cmd-lint",
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "command": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "npm"
+                                          },
+                                          "args": {
+                                            "default": [],
+                                            "example": [
+                                              "test"
+                                            ],
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "cwd": {
+                                            "example": "packages/api",
+                                            "type": "string"
+                                          },
+                                          "env": {
+                                            "default": {},
+                                            "example": {
+                                              "CI": "1"
+                                            },
+                                            "type": "object",
+                                            "propertyNames": {
+                                              "type": "string"
+                                            },
+                                            "additionalProperties": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "timeoutSeconds": {
+                                            "default": 600,
+                                            "example": 600,
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0,
+                                            "maximum": 9007199254740991
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "command",
+                                          "args",
+                                          "env",
+                                          "timeoutSeconds"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "critics": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "default": "00000000-0000-0000-0000-000000000000",
+                                            "example": "critic-correctness",
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "name": {
+                                            "default": "",
+                                            "example": "Correctness",
+                                            "type": "string"
+                                          },
+                                          "model": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "claude-opus-5"
+                                          },
+                                          "harness": {
+                                            "type": "string",
+                                            "enum": [
+                                              "claude",
+                                              "codex",
+                                              "copilot",
+                                              "opencode"
+                                            ],
+                                            "example": "claude"
+                                          },
+                                          "timeoutSeconds": {
+                                            "default": 300,
+                                            "example": 300,
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "prompt": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "name",
+                                          "model",
+                                          "harness",
+                                          "timeoutSeconds",
+                                          "prompt"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "commands",
+                                    "critics"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "resolvePrompt": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "resolveSuffix": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "example": "Work in the checked-out integration branch `{branch}`."
+                                }
+                              },
+                              "required": [
+                                "preMerge",
+                                "resolvePrompt",
+                                "resolveSuffix"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "task",
+                            "epic"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "merge": {
+                          "type": "object",
+                          "properties": {
+                            "postMergeCheck": {
+                              "type": "boolean"
+                            },
+                            "conflictPrompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "## Merge conflict resolution (turn {turn})\n{paths}"
+                            },
+                            "epicRefreshPrompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "## Epic integration refresh\nMerging {defaultBranch} into {branch} conflicted:\n{detail}"
+                            },
+                            "epicConflictPrompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "## Epic integration merge conflict resolution (turn {turn})\n{paths}"
+                            }
+                          },
+                          "required": [
+                            "postMergeCheck",
+                            "conflictPrompt",
+                            "epicRefreshPrompt",
+                            "epicConflictPrompt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "guardrails": {
+                          "type": "object",
+                          "properties": {
+                            "budget": {
+                              "type": "object",
+                              "properties": {
+                                "wallClockMinutes": {
+                                  "default": 60,
+                                  "example": 60,
+                                  "type": "number",
+                                  "exclusiveMinimum": 0
+                                },
+                                "tokens": {
+                                  "default": null,
+                                  "example": 2000000,
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "costUsd": {
+                                  "default": null,
+                                  "example": 10,
+                                  "anyOf": [
+                                    {
+                                      "type": "number",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "wallClockMinutes",
+                                "tokens",
+                                "costUsd"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "progress": {
+                              "type": "boolean"
+                            },
+                            "toolTimeoutMinutes": {
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            },
+                            "promptInactivityTimeoutMinutes": {
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            }
+                          },
+                          "required": [
+                            "budget",
+                            "progress",
+                            "toolTimeoutMinutes",
+                            "promptInactivityTimeoutMinutes"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "archive": {
+                          "type": "object",
+                          "properties": {
+                            "retain": {
+                              "type": "object",
+                              "properties": {
+                                "days": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": 30
+                                },
+                                "maxTotalMB": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": 10240
+                                }
+                              },
+                              "required": [
+                                "days",
+                                "maxTotalMB"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "retain"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "export": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "includeStates": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "done",
+                                  "cancelled",
+                                  "deleted"
+                                ]
+                              },
+                              "example": [
+                                "done",
+                                "cancelled",
+                                "deleted"
+                              ]
+                            },
+                            "directory": {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": "/srv/harmonic-exports"
+                                }
+                              },
+                              "required": [
+                                "path"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "s3": {
+                              "type": "object",
+                              "properties": {
+                                "endpoint": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "format": "uri"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": "https://s3.eu-west-2.amazonaws.com"
+                                },
+                                "region": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": "eu-west-2"
+                                },
+                                "bucket": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": "harmonic-exports"
+                                },
+                                "prefix": {
+                                  "type": "string",
+                                  "example": "harmonic/"
+                                },
+                                "forcePathStyle": {
+                                  "type": "boolean",
+                                  "example": false
+                                },
+                                "accessKeyId": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": null
+                                },
+                                "secretAccessKey": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "example": null
+                                }
+                              },
+                              "required": [
+                                "endpoint",
+                                "region",
+                                "bucket",
+                                "prefix",
+                                "forcePathStyle",
+                                "accessKeyId",
+                                "secretAccessKey"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "redact": {
+                              "type": "object",
+                              "properties": {
+                                "patterns": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z0-9][a-z0-9-]*$"
+                                      },
+                                      "regex": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "regex"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "example": [
+                                    {
+                                      "id": "internal-host",
+                                      "regex": "corp\\.example\\.internal"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "patterns"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "includeStates",
+                            "directory",
+                            "s3",
+                            "redact"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "harnesses",
+                        "defaults",
+                        "routingLabels",
+                        "modelOptions",
                         "chat",
                         "autoRunner",
                         "agentMessages",
@@ -35098,6 +35690,50 @@
                         }
                       ]
                     },
+                    "modelOptions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^[a-z0-9][a-z0-9-]*$",
+                            "example": "cheap-fix"
+                          },
+                          "harness": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "claude"
+                          },
+                          "model": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "claude-haiku-5-5"
+                          },
+                          "description": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "cheap, small fixes"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "harness",
+                          "model",
+                          "description"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "id": "cheap-fix",
+                          "harness": "claude",
+                          "model": "claude-haiku-5-5",
+                          "description": "cheap, small fixes"
+                        }
+                      ]
+                    },
                     "chat": {
                       "type": "object",
                       "properties": {
@@ -36151,6 +36787,7 @@
                     "harnesses",
                     "defaults",
                     "routingLabels",
+                    "modelOptions",
                     "chat",
                     "autoRunner",
                     "agentMessages",
