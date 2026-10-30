@@ -10,7 +10,7 @@ import {
   TASK_STATES,
   MERGE_STATUSES,
   TASK_ORIGINS,
-  WORKFLOWS,
+  ISSUE_WORKFLOWS,
   WAYFINDER_TYPES,
   GUARDRAIL_DIMENSIONS,
   GUARDRAIL_CONFIG_SOURCES,
@@ -168,9 +168,7 @@ const taskWithDepsSchema = z
     /** The mirrored issue's number; null on native Tasks. */
     trackerRef: z.string().nullable().meta({ example: null }),
     /** 'wayfinder' | 'implement'; null on native Tasks. */
-    workflow: z.enum(WORKFLOWS).nullable().meta({ example: null }),
-    /** ADR-0053 name for `workflow`; same value. */
-    issueWorkflow: z.enum(WORKFLOWS).nullable().meta({ example: null }),
+    issueWorkflow: z.enum(ISSUE_WORKFLOWS).nullable().meta({ example: null }),
     /** 'research'|'prototype'|'grilling'|'task'; null for implement and native. */
     wayfinderType: z.enum(WAYFINDER_TYPES).nullable().meta({ example: null }),
     /** The parent Map issue's number (query-time Map rollup); null off-Map or native. */

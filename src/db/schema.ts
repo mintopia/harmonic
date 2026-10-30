@@ -8,10 +8,8 @@ import type { EscalationCause } from '../domain/task-routing.js';
 /** A Task is either authored here or a 1:1 projection of a tracker issue. */
 export const TASK_ORIGINS = ['native', 'mirrored'] as const;
 export type TaskOrigin = (typeof TASK_ORIGINS)[number];
-export const WORKFLOWS = ['wayfinder', 'implement'] as const;
-export type Workflow = (typeof WORKFLOWS)[number];
-export const ISSUE_WORKFLOWS = WORKFLOWS;
-export type IssueWorkflow = Workflow;
+export const ISSUE_WORKFLOWS = ['wayfinder', 'implement'] as const;
+export type IssueWorkflow = (typeof ISSUE_WORKFLOWS)[number];
 export const WAYFINDER_TYPES = ['research', 'prototype', 'grilling', 'task'] as const;
 export type WayfinderType = (typeof WAYFINDER_TYPES)[number];
 
@@ -117,8 +115,6 @@ export const tasks = sqliteTable('tasks', {
   /** The mirrored issue's portable number; the upsert key. Null on native Tasks. */
   trackerRef: text('tracker_ref').$type<TrackerRef>(),
   /** wayfinder (charting) | implement (build tickets). Derived from labels. */
-  workflow: text('workflow').$type<Workflow>(),
-  /** ADR-0053 name for `workflow`; dual-written until the old column is contracted. */
   issueWorkflow: text('issue_workflow').$type<IssueWorkflow>(),
   /** research/prototype/grilling/task; null for implement and native Tasks. */
   wayfinderType: text('wayfinder_type').$type<WayfinderType>(),

@@ -10,36 +10,41 @@ import { trackerRef } from '../src/tracker/adapter.js';
 import { taskToApiDto } from '../src/server/dto.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
-describe('Issue Workflow expand (ADR-0053)', () => {
-  it('backfills issue_workflow from workflow on a pre-change database', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'harmonic-iw-mig-'));
+describe('Issue Workflow contract (ADR-0053)', () => {
+  const seed = async (dir: string, shape: 'both' | 'old-only') => {
     const first = await openAsyncDb(dir);
     await first.close();
     const sqlite = createClient({ url: `file:${join(dir, 'harmonic.db')}` });
     await sqlite.execute("INSERT INTO workspaces (name, working_dir, tracker_enabled, tracker_poll_interval_seconds, created_at, updated_at) VALUES ('w', '/tmp/w', 0, 60, 1, 1)");
-    const insert = (flow: string | null, i: number) =>
-      sqlite.execute({
-        sql: "INSERT INTO tasks (prompt, working_dir, state, workspace_id, workflow, created_at, updated_at) VALUES (?, '/tmp/w', 'ready', 1, ?, 1, 1)",
-        args: [`t${i}`, flow],
+    await sqlite.execute('ALTER TABLE tasks ADD COLUMN workflow text');
+    if (shape === 'old-only') await sqlite.execute('ALTER TABLE tasks DROP COLUMN issue_workflow');
+    const column = shape === 'both' ? 'workflow, issue_workflow' : 'workflow';
+    const marks = shape === 'both' ? '?, ?' : '?';
+    const flows: Array<string | null> = ['wayfinder', 'implement', null];
+    for (const [i, flow] of flows.entries()) {
+      await sqlite.execute({
+        sql: `INSERT INTO tasks (prompt, working_dir, state, workspace_id, ${column}, created_at, updated_at) VALUES (?, '/tmp/w', 'ready', 1, ${marks}, 1, 1)`,
+        args: shape === 'both' ? [`t${i}`, flow, flow] : [`t${i}`, flow],
       });
-    await insert('wayfinder', 1);
-    await insert('implement', 2);
-    await insert(null, 3);
-    await sqlite.execute('ALTER TABLE tasks DROP COLUMN issue_workflow');
+    }
+    return sqlite;
+  };
 
+  it.each(['both', 'old-only'] as const)('drops the old workflow column and keeps the data (%s)', async (shape) => {
+    const dir = mkdtempSync(join(tmpdir(), 'harmonic-iw-mig-'));
+    const sqlite = await seed(dir, shape);
     const second = await openAsyncDb(dir);
     await second.close();
-    const rows = (await sqlite.execute('select workflow, issue_workflow from tasks order by id')).rows;
-    expect(rows.map((r) => [r.workflow, r.issue_workflow])).toEqual([
-      ['wayfinder', 'wayfinder'],
-      ['implement', 'implement'],
-      [null, null],
-    ]);
+    const columns = (await sqlite.execute('pragma table_info(`tasks`)')).rows.map((r) => String(r.name));
+    expect(columns).not.toContain('workflow');
+    expect(columns).toContain('issue_workflow');
+    const rows = (await sqlite.execute('select issue_workflow from tasks order by id')).rows;
+    expect(rows.map((r) => r.issue_workflow)).toEqual(['wayfinder', 'implement', null]);
     sqlite.close();
     rmSync(dir, { recursive: true, force: true });
   });
 
-  describe('dual-write', () => {
+  describe('mirror write', () => {
     let dir: string;
     let db: AsyncDbHandle;
     let tasks: TaskService;
@@ -58,17 +63,18 @@ describe('Issue Workflow expand (ADR-0053)', () => {
       trackerRef: trackerRef(5), prompt: 'p', issueWorkflow: 'implement', wayfinderType: null, mapRef: null, closed: false, ...over,
     });
 
-    it('writing issueWorkflow updates both columns and the API returns both', async () => {
+    it('writing issueWorkflow updates the column and the API returns it', async () => {
       const created = await tasks.upsertMirrored(input({ issueWorkflow: 'wayfinder' }));
-      expect([created.workflow, created.issueWorkflow]).toEqual(['wayfinder', 'wayfinder']);
+      expect(created.issueWorkflow).toBe('wayfinder');
       const updated = await tasks.upsertMirrored(input({ issueWorkflow: 'implement' }));
-      expect([updated.workflow, updated.issueWorkflow]).toEqual(['implement', 'implement']);
+      expect(updated.issueWorkflow).toBe('implement');
       const dto = taskToApiDto(
         { ...updated, overrides: { isolationMode: null, priority: null }, dependsOn: [], dependents: [], blockedOnFailed: false } as never,
         [],
         { toolCount: null, currentStep: null, hasCandidate: false, url: null, mapTitle: null, trackerLabel: null, skipReason: null, contextWindow: null },
       );
-      expect([dto.workflow, dto.issueWorkflow]).toEqual(['implement', 'implement']);
+      expect(dto.issueWorkflow).toBe('implement');
+      expect(dto).not.toHaveProperty('workflow');
     });
   });
 });
