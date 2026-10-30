@@ -169,6 +169,8 @@ const taskWithDepsSchema = z
     trackerRef: z.string().nullable().meta({ example: null }),
     /** 'wayfinder' | 'implement'; null on native Tasks. */
     workflow: z.enum(WORKFLOWS).nullable().meta({ example: null }),
+    /** ADR-0053 name for `workflow`; same value. */
+    issueWorkflow: z.enum(WORKFLOWS).nullable().meta({ example: null }),
     /** 'research'|'prototype'|'grilling'|'task'; null for implement and native. */
     wayfinderType: z.enum(WAYFINDER_TYPES).nullable().meta({ example: null }),
     /** The parent Map issue's number (query-time Map rollup); null off-Map or native. */

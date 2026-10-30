@@ -26,6 +26,7 @@ const task = (id: number, state: TaskState = 'ready', extra: Partial<Task> = {})
   origin: 'native',
   trackerRef: null,
   workflow: null,
+  issueWorkflow: null,
   wayfinderType: null,
   escalationReason: null,
   escalationCause: null,

@@ -170,6 +170,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     origin: 'native',
     trackerRef: null,
     workflow: null,
+    issueWorkflow: null,
     wayfinderType: null,
     mapRef: null,
     url: null,

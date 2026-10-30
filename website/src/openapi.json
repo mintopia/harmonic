@@ -1946,6 +1946,21 @@
             ],
             "example": null
           },
+          "issueWorkflow": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "wayfinder",
+                  "implement"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "wayfinderType": {
             "anyOf": [
               {
@@ -2167,6 +2182,7 @@
           "origin",
           "trackerRef",
           "workflow",
+          "issueWorkflow",
           "wayfinderType",
           "mapRef",
           "createdAt",
@@ -2359,6 +2375,21 @@
             "example": null
           },
           "workflow": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "wayfinder",
+                  "implement"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "issueWorkflow": {
             "anyOf": [
               {
                 "type": "string",
@@ -2798,6 +2829,7 @@
           "origin",
           "trackerRef",
           "workflow",
+          "issueWorkflow",
           "wayfinderType",
           "mapRef",
           "createdAt",
@@ -3018,6 +3050,21 @@
             ],
             "example": null
           },
+          "issueWorkflow": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "wayfinder",
+                  "implement"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "wayfinderType": {
             "anyOf": [
               {
@@ -3442,6 +3489,7 @@
           "origin",
           "trackerRef",
           "workflow",
+          "issueWorkflow",
           "wayfinderType",
           "mapRef",
           "createdAt",
@@ -3633,6 +3681,21 @@
             "example": "native"
           },
           "workflow": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "wayfinder",
+                  "implement"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "issueWorkflow": {
             "anyOf": [
               {
                 "type": "string",
@@ -4073,6 +4136,7 @@
           "continuationChoice",
           "origin",
           "workflow",
+          "issueWorkflow",
           "wayfinderType",
           "mapRef",
           "createdAt",
@@ -11789,6 +11853,21 @@
             ],
             "example": null
           },
+          "issueWorkflow": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "wayfinder",
+                  "implement"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "wayfinderType": {
             "anyOf": [
               {
@@ -12012,6 +12091,7 @@
           "origin",
           "trackerRef",
           "workflow",
+          "issueWorkflow",
           "wayfinderType",
           "mapRef",
           "createdAt",
@@ -12206,6 +12286,21 @@
             "example": null
           },
           "workflow": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "wayfinder",
+                  "implement"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "issueWorkflow": {
             "anyOf": [
               {
                 "type": "string",
@@ -12648,6 +12743,7 @@
           "origin",
           "trackerRef",
           "workflow",
+          "issueWorkflow",
           "wayfinderType",
           "mapRef",
           "createdAt",
@@ -12870,6 +12966,21 @@
             ],
             "example": null
           },
+          "issueWorkflow": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "wayfinder",
+                  "implement"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "wayfinderType": {
             "anyOf": [
               {
@@ -13297,6 +13408,7 @@
           "origin",
           "trackerRef",
           "workflow",
+          "issueWorkflow",
           "wayfinderType",
           "mapRef",
           "createdAt",
@@ -13490,6 +13602,21 @@
             "example": "native"
           },
           "workflow": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "wayfinder",
+                  "implement"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "issueWorkflow": {
             "anyOf": [
               {
                 "type": "string",
@@ -13933,6 +14060,7 @@
           "continuationChoice",
           "origin",
           "workflow",
+          "issueWorkflow",
           "wayfinderType",
           "mapRef",
           "createdAt",
