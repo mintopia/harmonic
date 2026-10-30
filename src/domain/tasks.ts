@@ -29,6 +29,7 @@ import { resolveWorkspace } from './workspaces.js';
 import { defaultRoute, routeApplies, RoutingService, type RoutingScope } from './routing.js';
 import { resolveScoped } from './setting-override.js';
 import { harnessConfig } from './route.js';
+import { resolveClassifierSettings } from './model-options.js';
 import type { EscalationCause, TaskRouting } from './task-routing.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
@@ -323,7 +324,7 @@ export class TaskService {
 
   /** A mirrored Attempt in flight keeps the Harness/Model it started with; relabelling applies from the next Attempt. */
   private isRoutePinned(raw: RawTaskRow): boolean {
-    return IN_FLIGHT_STATES.includes(raw.state) && raw.origin === 'mirrored' && routeApplies(raw);
+    return IN_FLIGHT_STATES.includes(raw.state) && routeApplies(raw);
   }
 
   private async runningRoutes(taskIds: readonly number[]): Promise<Map<number, { harness: string; model: string }>> {
@@ -799,7 +800,8 @@ export class TaskService {
       if (!claimed) return undefined;
       const scope = await this.routing.scopeFor(claimed.workspaceId);
       const { harness, model, ...defaults } = this.resolveDefaults(claimed, scope);
-      const pinned = claimed.origin === 'mirrored' ? defaults : { harness, model, ...defaults };
+      const classified = routeApplies(claimed) && resolveClassifierSettings(scope.workspace).enabled;
+      const pinned = claimed.origin === 'mirrored' || classified ? defaults : { harness, model, ...defaults };
       const row = await this.db.write((db) =>
         db
           .update(tasks)

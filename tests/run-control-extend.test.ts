@@ -35,6 +35,8 @@ function runningAttempt(over: Partial<TaskAttemptRow> = {}): TaskAttemptRow {
     startOid: null,
     usage: null,
     cost: null,
+    routingUsage: null,
+    routingCost: null,
     liveUsage: null,
     guardrailConfig: guardrailConfig(60),
     priceTable: null,

@@ -21,6 +21,7 @@ import { WorkspaceWatcher } from '../domain/workspace-watcher.js';
 import { logger } from '../logger.js';
 import { ProcessGroupJournal } from '../execution/process-groups.js';
 import { attempted, errorMessage, type FireAndForget } from '../error-handling.js';
+import { RouteClassifier, createHarnessClassifierBackend } from '../domain/route-classifier.js';
 import { createAcpCriticDrive } from '../verification/critic.js';
 import { createChildProcessSpawn } from '../verification/command-verifier.js';
 import { singleFlight } from '../reliability/single-flight.js';
@@ -384,6 +385,9 @@ export async function createRuntime(deps: {
   };
   const epicOperations = new EpicOperations();
   const gitBreaker = new GitCircuitBreaker();
+  const routeClassifier = new RouteClassifier(() => settingsStore.getGlobal(), {
+    harness: createHarnessClassifierBackend({ drive: criticDrive, getConfig: () => settingsStore.getGlobal() }),
+  });
   const runner = new Runner(tasks, asyncDb, () => settingsStore.getGlobal(), {
     isGloballyPaused: () => globalPauseRef?.isLatched ?? false,
     onGloballyPaused: async (taskId) => { await globalPauseRef?.track(taskId); },
@@ -403,6 +407,7 @@ export async function createRuntime(deps: {
     worktreesDir,
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
     criticDrive,
+    routeClassifier,
     commandSpawn,
     spawnProcessGroup,
     fireAndForget,
