@@ -9,6 +9,8 @@ Part of the 2026-08-28 ADR reset (see README.md). Implemented by
 Current refinements: ADR-0018/0023 for stored Epics, ADR-0027 for pause,
 ADR-0028/0037 for staged Verification, ADR-0038 for escalation, and
 ADR-0039/0040 for merge placement and publication.
+Amended by ADR-0056 (Kubernetes Execution Targets): the "one Node process
+against local repositories" ceiling now admits execution in Kubernetes pods.
 
 ## Context
 

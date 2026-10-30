@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-10-08
 
+Superseded by ADR-0054 (Prompt Library).
+
 The Settings Prompts tab is generated from one declaration of each Resolved
 Prompt kind, its **Prompt Anatomy**, instead of a hand-ordered list of
 textareas. Amends ADR-0047 (where Prompt Fragments are edited and previewed)
