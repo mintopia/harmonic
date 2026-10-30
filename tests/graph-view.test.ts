@@ -38,6 +38,7 @@ const task = ({
   origin,
   trackerRef,
   workflow: null,
+  issueWorkflow: null,
   wayfinderType: null,
   escalationReason: null,
   escalationCause: null,

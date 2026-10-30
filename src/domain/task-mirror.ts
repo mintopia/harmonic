@@ -10,7 +10,8 @@ import { logger } from '../logger.js';
 export interface MirrorInput {
   trackerRef: TrackerRef;
   prompt: string;
-  workflow: Workflow;
+  workflow?: Workflow;
+  issueWorkflow?: Workflow;
   wayfinderType: WayfinderType | null;
   mapRef: TrackerRef | null;
   closed: boolean;
@@ -58,6 +59,8 @@ export class TaskMirror {
 
   async upsertMirrored(input: MirrorInput, workspaceId?: number): Promise<TaskRow> {
     const workspace = await this.options.resolveWorkspace(workspaceId);
+    const workflow = input.issueWorkflow ?? input.workflow;
+    if (!workflow) throw new Error('upsertMirrored requires workflow or issueWorkflow');
     const { row, dirty } = await this.db.write(async (db) => {
       const existing = await db.select().from(tasks).where(and(eq(tasks.workspaceId, workspace.id), eq(tasks.trackerRef, input.trackerRef))).get();
       const now = Date.now();
@@ -84,14 +87,14 @@ export class TaskMirror {
           const current = existing[column as keyof typeof existing];
           return typeof value === 'object' && value !== null ? JSON.stringify(current) === JSON.stringify(value) : current === value;
         };
-        const unchanged = existing.state === state && existing.prompt === input.prompt && existing.workflow === input.workflow && existing.wayfinderType === input.wayfinderType && existing.mapRef === input.mapRef && Object.entries(factCols).every(factUnchanged);
+        const unchanged = existing.state === state && existing.prompt === input.prompt && existing.workflow === workflow && existing.issueWorkflow === workflow && existing.wayfinderType === input.wayfinderType && existing.mapRef === input.mapRef && Object.entries(factCols).every(factUnchanged);
         if (unchanged) return { row: existing, dirty: false };
-        const updated = await db.update(tasks).set({ prompt: input.prompt, state, workflow: input.workflow, wayfinderType: input.wayfinderType, mapRef: input.mapRef, ...factCols, updatedAt: now }).where(eq(tasks.id, existing.id)).returning().get();
+        const updated = await db.update(tasks).set({ prompt: input.prompt, state, workflow, issueWorkflow: workflow, wayfinderType: input.wayfinderType, mapRef: input.mapRef, ...factCols, updatedAt: now }).where(eq(tasks.id, existing.id)).returning().get();
         return { row: updated, dirty: true };
       }
       const inserted = await db.insert(tasks).values({
         prompt: input.prompt, workspaceId: workspace.id, harness: null, model: null, isolationMode: null, priority: null, conflictResolveTurns: null, workingDir: workspace.workingDir,
-        state: input.closed ? 'done' : 'ready', origin: 'mirrored', trackerRef: input.trackerRef, workflow: input.workflow, wayfinderType: input.wayfinderType, mapRef: input.mapRef,
+        state: input.closed ? 'done' : 'ready', origin: 'mirrored', trackerRef: input.trackerRef, workflow, issueWorkflow: workflow, wayfinderType: input.wayfinderType, mapRef: input.mapRef,
         ...(input.facts ? trackerFactColumns(input.facts) : {}), archiveId: randomUUID(), createdAt: now, updatedAt: now,
       }).returning().get();
       return { row: inserted, dirty: true };

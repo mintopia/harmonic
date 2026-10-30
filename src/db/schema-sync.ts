@@ -90,6 +90,12 @@ async function dedupeAttemptEventSeqsBeforeUniqueIndex(client: Client, baseline:
   }
 }
 
+async function backfillIssueWorkflow(client: Client): Promise<void> {
+  const columns = (await client.execute('pragma table_info(`tasks`)')).rows.map((row) => String(row.name));
+  if (!columns.includes('workflow') || !columns.includes('issue_workflow')) return;
+  await client.execute('UPDATE `tasks` SET `issue_workflow` = `workflow` WHERE `issue_workflow` IS NULL AND `workflow` IS NOT NULL');
+}
+
 async function convergeIncremental(client: Client, baseline: Baseline, onStep: () => void): Promise<void> {
   const declaredTables = new Set(baseline.tables.map((t) => t.name));
   const declaredIndexes = new Set(baseline.indexes.map((i) => i.name));
@@ -126,6 +132,7 @@ async function convergeIncremental(client: Client, baseline: Baseline, onStep: (
       await rebuildTable(client, table, columns, onStep);
     }
   }
+  await backfillIssueWorkflow(client);
   await dedupeAttemptEventSeqsBeforeUniqueIndex(client, baseline);
   for (const index of baseline.indexes) {
     await client.execute(index.sql.replace(/^CREATE (UNIQUE )?INDEX /, 'CREATE $1INDEX IF NOT EXISTS '));
