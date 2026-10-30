@@ -16,6 +16,7 @@ import {
 } from '../src/verification/critic.js';
 import { baselineConfig, type HarnessConfig } from '../src/config.js';
 import type { DriveFields } from '../src/execution/prompt-template.js';
+import { RouteClassifier } from '../src/domain/route-classifier.js';
 import { combineVerdicts } from '../src/verification/combine.js';
 import type { VerifierVerdict } from '../src/verification/combine.js';
 import { openAsyncDb } from '../src/db/async.js';
@@ -118,6 +119,34 @@ describe('runCritic (issue #136)', () => {
       harness: 'claude',
       sessionId: null,
     });
+  });
+
+  it('runs on the critic\'s own Harness and Model and never consults the Route Classifier, even when it is on', async () => {
+    const { repo, oid } = await makeCandidate('refs/harmonic/direct/attempt-critic-unclassified');
+    const backend = { classify: vi.fn(async () => ({ output: { optionId: 'other', reason: 'x' } })) };
+    const classifier = new RouteClassifier(() => ({ ...baselineConfig(), modelOptions: [{ id: 'other', harness: 'codex', model: 'm', description: 'd' }] }), { harness: backend });
+    let driven: { harnessId: string; model: string } | undefined;
+    const drive: CriticHarnessDrive = {
+      run: async (request) => {
+        driven = { harnessId: request.harnessId, model: request.model };
+        return { output: '{"verdict":"pass","summary":"ok"}', permissionRequests: [] };
+      },
+    };
+
+    await runCritic({
+      fragments: DEFAULT_PROMPT_FRAGMENTS,
+      cwd: repo,
+      verifiedHeadOid: oid,
+      fields: FIELDS,
+      critic: { prompt: 'Review the diff.', harness: 'claude', model: 'stub-model' },
+      harness: FAKE_HARNESS,
+      harnessId: 'claude',
+      drive,
+    });
+
+    expect(driven).toEqual({ harnessId: 'claude', model: 'stub-model' });
+    expect(classifier).toBeInstanceOf(RouteClassifier);
+    expect(backend.classify).not.toHaveBeenCalled();
   });
 
   it('an edited Prompt Fragment reaches the prompt sent to the critic and persisted on the attempt', async () => {

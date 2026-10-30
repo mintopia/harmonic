@@ -8,6 +8,7 @@ import { resolveRoutingLabels } from './routing-labels.js';
 import { harnessConfig, resolveRoute, type ResolvedRoute } from './route.js';
 import type { TaskRouting } from './task-routing.js';
 import { resolveWorkspace } from './workspaces.js';
+import { resolveClassifierSettings } from './model-options.js';
 import { DomainError } from './errors.js';
 
 export interface RoutingScope {
@@ -79,6 +80,15 @@ export class RoutingService {
   async ticketRoute(task: TaskRow): Promise<ResolvedRoute> {
     const routing = await this.routingFor(task.id);
     return resolveRoute(this.getConfig(), task.harness, task.model, routing?.applied ? routing.label : null);
+  }
+
+  /** The Workspace whose Route Classifier decides this Ticket's route: neither an operator Harness/Model nor a matching Routing Label has, and the classifier is on. */
+  async classifierWorkspace(task: Pick<TaskRow, 'id'>): Promise<WorkspaceRow | null> {
+    const raw = await this.getRaw(task.id);
+    if (!routeApplies(raw)) return null;
+    const scope = await this.scopeFor(raw.workspaceId);
+    if (this.matchRoute(raw, scope.labels)) return null;
+    return resolveClassifierSettings(scope.workspace).enabled ? scope.workspace : null;
   }
 
   /** The Harness + Model an Epic-level turn runs on: the Epic's operator Harness/Model override, else its Task row's Routing Label, else the container row's, else the Workspace/global default. */

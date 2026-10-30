@@ -238,6 +238,9 @@ export const attempts = sqliteTable('attempts', {
   usage: text('usage'),
   /** JSON: Cost frozen when the final Usage is recorded. */
   cost: text('cost'),
+  /** JSON: Usage and Cost of the Route Classifier call that routed this Attempt; a separate line, never a Step's or the implementation Cost. */
+  routingUsage: text('routing_usage'),
+  routingCost: text('routing_cost'),
   /** JSON: latest live-usage snapshot, overwritten on a coarse cadence and on finish. */
   liveUsage: text('live_usage'),
   /** JSON: `ResolvedGuardrails` snapshotted at Attempt start; a later config change never alters it. */

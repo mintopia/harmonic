@@ -83,6 +83,8 @@ CREATE TABLE `attempts` (
 	`verified_ref` text,
 	`usage` text,
 	`cost` text,
+	`routing_usage` text,
+	`routing_cost` text,
 	`live_usage` text,
 	`guardrail_config` text,
 	`price_table` text,

@@ -50,6 +50,8 @@ const attemptRow = (over: Partial<TaskAttemptRow> = {}): TaskAttemptRow => ({
   startOid: null,
   usage: null,
   cost: null,
+  routingUsage: null,
+  routingCost: null,
   liveUsage: null,
   guardrailConfig: null,
   priceTable: null,

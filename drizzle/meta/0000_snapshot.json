@@ -556,6 +556,20 @@
           "notNull": false,
           "autoincrement": false
         },
+        "routing_usage": {
+          "name": "routing_usage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "routing_cost": {
+          "name": "routing_cost",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "live_usage": {
           "name": "live_usage",
           "type": "text",
