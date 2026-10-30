@@ -191,6 +191,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     upgrade: runtime.upgrade,
     worktreesDir,
   });
-  await registerRoutes(app, ctx, contexts);
+  await registerRoutes(app, ctx, contexts, opts.dataDir);
   return app;
 }
