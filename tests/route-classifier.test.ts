@@ -18,6 +18,7 @@ import {
   type ClassifierInput,
 } from '../src/domain/route-classifier.js';
 import { createAcpCriticDrive, type CriticDriveRequest, type CriticHarnessDrive } from '../src/verification/critic.js';
+import { withRoutingContribution } from '../src/domain/pricing.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { executionPlumbing, allWorkspaces, makeSettingsStore, seedWorkspace, testSpawnProcessGroup, STUB_HARNESS } from './helpers.js';
 
@@ -205,6 +206,40 @@ describe('Route Classifier', () => {
       expect(await events(second.id)).toContainEqual(expect.objectContaining({ event: 'route-changed', sessionKept: false }));
     });
 
+    it("routes Attempt 2 through a real ACP Harness with Attempt 1's history, then starts a cold Session on the new Harness", async () => {
+      await setClassifier();
+      const stub: HarnessConfig = { command: process.execPath, args: [STUB_HARNESS], env: {}, models: [{ id: 'stub-model' }], defaultModel: 'stub-model', cacheWarmSeconds: 300 };
+      config = { ...config, harnesses: { ...config.harnesses, claude: stub }, defaults: { ...config.defaults, harness: 'claude' } } as AppConfig;
+      const real = createAcpCriticDrive(testSpawnProcessGroup);
+      const prompts: string[] = [];
+      const drive: CriticHarnessDrive = {
+        run: (req) => {
+          prompts.push(req.prompt);
+          const optionId = req.prompt.includes('"attemptNumber": 2') ? 'other-harness' : 'cheap-fix';
+          const text = JSON.stringify({ optionId, reason: 'scripted' });
+          return real.run({ ...req, prompt: JSON.stringify({ updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } }] }) });
+        },
+      };
+      await runner.shutdown();
+      runner = new Runner(tasks, asyncDb, () => config, {
+        ...executionPlumbing(),
+        routeClassifier: new RouteClassifier(() => config, { harness: createHarnessClassifierBackend({ drive, getConfig: () => config }) }),
+      });
+      (runner as unknown as { turnDriver: { drive: () => Promise<void> } }).turnDriver.drive = async () => {};
+
+      const first = await beginRun(await claimMirrored());
+      expect(first).toMatchObject({ harness: 'claude', model: 'claude-haiku-4-5-20251001' });
+      await attempts.update(first.id, { state: 'escalated', reason: 'escalate', detail: 'tests keep failing', endedAt: Date.now() });
+      const mirrored = (await mirrorScan(tasks, [ticket(['ready-for-agent'])], wsId))[0]!;
+      await tasks.setState(mirrored.id, 'ready');
+      const second = await beginRun(await tasks.claimReady(mirrored.id));
+
+      expect(prompts[1]).toContain('"previousVerdict": "escalate"');
+      expect(prompts[1]).toContain('"previousFailureReason": "tests keep failing"');
+      expect(second).toMatchObject({ harness: 'codex', sessionRowId: null });
+      expect(await events(second.id)).toContainEqual(expect.objectContaining({ event: 'route-changed', sessionKept: false }));
+    }, 30_000);
+
     it('records the classifier usage as a routing cost line on the routed Attempt, not on the implementation cost', async () => {
       await setClassifier();
       backend.classify.mockResolvedValue({
@@ -225,6 +260,25 @@ describe('Route Classifier', () => {
       expect(JSON.parse(row.routingUsage!).totals.totalTokens).toBe(1100);
       expect(JSON.parse(row.routingCost!)).toMatchObject({ byModel: { 'claude-haiku-4-5-20251001': expect.any(Number) } });
     });
+  });
+});
+
+describe('withRoutingContribution', () => {
+  const routing = { cost: { totalUsd: 0.002, byModel: { m: 0.002 }, incomplete: false } };
+  const implementation = { totalUsd: 1, byModel: { opus: 1 }, incomplete: false };
+
+  it('adds a separate routing line to the Attempt cost without touching the implementation line', () => {
+    expect(withRoutingContribution(implementation, routing)).toEqual({ totalUsd: 1.002, byModel: { opus: 1, routing: 0.002 }, incomplete: false });
+    expect(implementation.byModel).toEqual({ opus: 1 });
+  });
+
+  it('shows a routing line while the Attempt has no cost yet, and flags an unpriced routing call incomplete', () => {
+    expect(withRoutingContribution(null, routing)).toMatchObject({ totalUsd: 0.002, byModel: { routing: 0.002 } });
+    expect(withRoutingContribution(implementation, { cost: null })).toMatchObject({ totalUsd: 1, byModel: { opus: 1, routing: null }, incomplete: true });
+  });
+
+  it('leaves the cost alone when no classifier ran', () => {
+    expect(withRoutingContribution(implementation, null)).toBe(implementation);
   });
 });
 

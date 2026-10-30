@@ -8,7 +8,7 @@ import type { TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { resolveAgentMessages } from '../domain/agent-messages.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
-import { costOfUsages, pricesForHarness, resolveContextWindowForHarness, withCriticContribution, type Cost } from '../domain/pricing.js';
+import { costOfUsages, pricesForHarness, resolveContextWindowForHarness, parseCost, withCriticContribution, withRoutingContribution, type Cost } from '../domain/pricing.js';
 import { DomainError } from '../domain/errors.js';
 import type { AttemptUsageSnapshot } from '../execution/usage.js';
 import { Git } from '../execution/git.js';
@@ -212,7 +212,8 @@ export async function attemptToApi(ctx: AppContext, run: AttemptRow): Promise<Ap
     return usage ? [{ usage, prices: pricesOf(ctx, row.harness ?? task.harness) }] : [];
   });
   const { usage, cost } = withCriticContribution(summary.usage, summary.cost, critics);
-  return { ...summary, usage, cost };
+  const routing = run.routingUsage ? { cost: parseCost(run.routingCost) } : null;
+  return { ...summary, usage, cost: withRoutingContribution(cost, routing) };
 }
 
 /** The durable Attempt timeline for one Epic. Task-only branch and verifier
