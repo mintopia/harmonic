@@ -215,6 +215,13 @@ export function TaskForm({
             </InheritField>
           </div>
 
+          {task?.issueWorkflow && (
+            <div className="mb-3">
+              <span className={label}>Issue Workflow</span>
+              <p className="font-data">{task.issueWorkflow}</p>
+            </div>
+          )}
+
           {showWorkingDir && (
             <div className="mb-4">
               <label className={label} htmlFor="task-workdir">Working Directory</label>
