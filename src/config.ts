@@ -308,6 +308,7 @@ export const routingLabelOverrideSchema = z.array(routingLabelOverlayEntrySchema
 
 export const CLASSIFIER_BACKENDS = ['typesafe', 'openai-compatible', 'harness'] as const;
 export const DEFAULT_CLASSIFIER_TIMEOUT_SECONDS = 30;
+export const DEFAULT_TYPESAFE_MODEL = 'typesafe/jev-1.13';
 
 export const modelOptionSchema = z.object({
   id: z.string().trim().min(1).regex(/^[a-z0-9][a-z0-9-]*$/, { message: 'model option id must be lowercase letters, digits and dashes' }).meta({ example: 'cheap-fix' }),

@@ -340,6 +340,8 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       classifierEnabled: null,
       classifierBackend: null,
       classifierTimeoutSeconds: null,
+      classifierTypesafeModel: null,
+      classifierTypesafeSecret: null,
       guardrailBudget: null,
       guardrailProgress: null,
       toolTimeoutMinutes: null,

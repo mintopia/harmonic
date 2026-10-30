@@ -199,6 +199,20 @@ export const settingsRegistry = {
     label: 'Route Classifier timeout',
     help: 'Seconds the Route Classifier may take before it abstains. Defaults to 30.',
   },
+  classifierTypesafeModel: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'execution',
+    label: 'TypeSafe classifier model',
+    help: 'OpenRouter model id the TypeSafe backend uses. Defaults to typesafe/jev-1.13.',
+  },
+  classifierTypesafeSecret: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'execution',
+    label: 'TypeSafe classifier Secret',
+    help: 'Name of the Secret holding the OpenRouter key for the TypeSafe backend.',
+  },
   guardrailBudget: {
     scope: 'overridable',
     control: 'json',

@@ -7052,6 +7052,28 @@
             ],
             "example": null
           },
+          "classifierTypesafeModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierTypesafeSecret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "guardrailBudget": {
             "anyOf": [
               {
@@ -7795,6 +7817,8 @@
           "classifierEnabled",
           "classifierBackend",
           "classifierTimeoutSeconds",
+          "classifierTypesafeModel",
+          "classifierTypesafeSecret",
           "guardrailBudget",
           "guardrailProgress",
           "toolTimeoutMinutes",
@@ -17129,6 +17153,28 @@
             ],
             "example": null
           },
+          "classifierTypesafeModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierTypesafeSecret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "guardrailBudget": {
             "anyOf": [
               {
@@ -17879,6 +17925,8 @@
           "classifierEnabled",
           "classifierBackend",
           "classifierTimeoutSeconds",
+          "classifierTypesafeModel",
+          "classifierTypesafeSecret",
           "guardrailBudget",
           "guardrailProgress",
           "toolTimeoutMinutes",
@@ -25082,6 +25130,30 @@
                       {
                         "type": "number",
                         "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "classifierTypesafeModel": {
+                    "example": "typesafe/jev-1.13",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "classifierTypesafeSecret": {
+                    "example": "OPENROUTER_API_KEY",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_.-]{1,64}$"
                       },
                       {
                         "type": "null"

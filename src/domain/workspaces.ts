@@ -20,6 +20,7 @@ import {
 import { PROMPT_FRAGMENT_OVERRIDE_KEYS, unknownWorkspaceFragmentIssues, type PromptFragmentOverrides } from './prompt-fragments.js';
 import { CLASSIFIER_BACKENDS, EXPORT_STATES, modelOptionsSchema, exportDirectoryPathSchema, exportS3EndpointSchema, promptFragmentOverrideShape, redactPatternsSchema } from '../config.js';
 import { DomainError } from './errors.js';
+import { secretNameSchema } from '../secrets/secret-service.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
 import { deleteAttemptsAndChildrenAsync, deleteEpicAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import {
@@ -98,6 +99,10 @@ export const workspaceOverridesSchema = z.object({
   classifierBackend: z.enum(CLASSIFIER_BACKENDS).nullable().optional().meta({ example: 'harness' }),
   /** Seconds the Route Classifier may take before it abstains; null inherits 30. */
   classifierTimeoutSeconds: z.number().positive().nullable().optional().meta({ example: 30 }),
+  /** OpenRouter model id for the TypeSafe backend; null inherits the default. */
+  classifierTypesafeModel: z.string().trim().min(1).nullable().optional().meta({ example: 'typesafe/jev-1.13' }),
+  /** Name of the ADR-0046 Secret holding the OpenRouter key; null means none. */
+  classifierTypesafeSecret: secretNameSchema.nullable().optional().meta({ example: 'OPENROUTER_API_KEY' }),
   /** Budget-Guardrail override; null inherits `config.guardrails.budget`. */
   guardrailBudget: budgetGuardrailSchema.nullable().optional(),
   /** Progress-detector toggle override; null inherits `config.guardrails.progress`. */
@@ -184,6 +189,8 @@ export const OVERRIDE_KEYS = [
   'classifierEnabled',
   'classifierBackend',
   'classifierTimeoutSeconds',
+  'classifierTypesafeModel',
+  'classifierTypesafeSecret',
   'guardrailBudget',
   'guardrailProgress',
   'toolTimeoutMinutes',
@@ -288,6 +295,8 @@ export class WorkspaceService {
       classifierEnabled: o.classifierEnabled,
       classifierBackend: o.classifierBackend,
       classifierTimeoutSeconds: o.classifierTimeoutSeconds,
+      classifierTypesafeModel: o.classifierTypesafeModel,
+      classifierTypesafeSecret: o.classifierTypesafeSecret,
       guardrailBudget: o.guardrailBudget != null ? JSON.stringify(o.guardrailBudget) : null,
       guardrailProgress: o.guardrailProgress,
       toolTimeoutMinutes: o.toolTimeoutMinutes,

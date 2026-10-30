@@ -89,6 +89,8 @@ const workspaceSchema = z
     classifierEnabled: z.boolean().nullable().meta({ example: null }),
     classifierBackend: z.enum(CLASSIFIER_BACKENDS).nullable().meta({ example: null }),
     classifierTimeoutSeconds: z.number().nullable().meta({ example: null }),
+    classifierTypesafeModel: z.string().nullable().meta({ example: null }),
+    classifierTypesafeSecret: z.string().nullable().meta({ example: null }),
     guardrailBudget: budgetGuardrailSchema.nullable().meta({ example: null }),
     guardrailProgress: z.boolean().nullable().meta({ example: null }),
     /** Tool-timeout bound override; null inherits `config.guardrails.toolTimeoutMinutes`. */

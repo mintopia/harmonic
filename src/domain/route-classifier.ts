@@ -34,6 +34,8 @@ export interface ClassifierBackendResult {
   harness?: string;
   model?: string;
   usage?: AttemptUsage | null;
+  /** Spend the backend reported itself, used instead of pricing the usage from a Harness catalog. */
+  costUsd?: number;
 }
 
 export interface ClassifierBackend {
@@ -111,6 +113,10 @@ async function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
 
 function usageToPriced(result: ClassifierBackendResult, config: Pick<AppConfig, 'harnesses'>): RoutingUsage | null {
   if (!result.usage) return null;
+  if (result.costUsd !== undefined) {
+    const byModel = result.model ? { [result.model]: result.costUsd } : {};
+    return { usage: result.usage, cost: { totalUsd: result.costUsd, byModel, incomplete: false } };
+  }
   const harness = result.harness ? harnessConfig(config, result.harness) : undefined;
   return { usage: result.usage, cost: harness ? costOfUsages([result.usage], pricesForHarness(harness)) : null };
 }

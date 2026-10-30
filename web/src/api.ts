@@ -289,6 +289,8 @@ export const api = {
       classifierEnabled?: boolean | null;
       classifierBackend?: 'typesafe' | 'openai-compatible' | 'harness' | null;
       classifierTimeoutSeconds?: number | null;
+      classifierTypesafeModel?: string | null;
+      classifierTypesafeSecret?: string | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
       exportEnabled?: boolean | null;

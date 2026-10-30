@@ -442,6 +442,8 @@ export interface Workspace extends PromptFragmentOverrides {
   classifierEnabled: boolean | null;
   classifierBackend: 'typesafe' | 'openai-compatible' | 'harness' | null;
   classifierTimeoutSeconds: number | null;
+  classifierTypesafeModel: string | null;
+  classifierTypesafeSecret: string | null;
   /** Guardrail overrides; `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
    * object shape it was PATCHed as. */
