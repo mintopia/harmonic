@@ -36,6 +36,7 @@ import type {
   TaskCriticOverlayEntry,
   EpicCriticOverlayEntry,
   RoutingLabelOverlayEntry,
+  ModelOption,
   VerifierStatus,
   Workspace,
   TrackerKindInfo,
@@ -284,6 +285,10 @@ export const api = {
       epicPreMergeCommands?: CommandOverlayEntry[] | null;
       epicPreMergeCritics?: EpicCriticOverlayEntry[] | null;
       routingLabels?: RoutingLabelOverlayEntry[] | null;
+      modelOptions?: ModelOption[] | null;
+      classifierEnabled?: boolean | null;
+      classifierBackend?: 'typesafe' | 'openai-compatible' | 'harness' | null;
+      classifierTimeoutSeconds?: number | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
       exportEnabled?: boolean | null;

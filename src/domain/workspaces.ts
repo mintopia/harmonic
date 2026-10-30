@@ -18,7 +18,7 @@ import {
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
 import { PROMPT_FRAGMENT_OVERRIDE_KEYS, unknownWorkspaceFragmentIssues, type PromptFragmentOverrides } from './prompt-fragments.js';
-import { EXPORT_STATES, exportDirectoryPathSchema, exportS3EndpointSchema, promptFragmentOverrideShape, redactPatternsSchema } from '../config.js';
+import { CLASSIFIER_BACKENDS, EXPORT_STATES, modelOptionsSchema, exportDirectoryPathSchema, exportS3EndpointSchema, promptFragmentOverrideShape, redactPatternsSchema } from '../config.js';
 import { DomainError } from './errors.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
 import { deleteAttemptsAndChildrenAsync, deleteEpicAttemptsAndChildrenAsync } from './attempt-cascade.js';
@@ -91,6 +91,13 @@ export const workspaceOverridesSchema = z.object({
   epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().optional(),
   /** Routing Label overlay; null inherits every global Routing Label in order. */
   routingLabels: routingLabelOverrideSchema.nullable().optional(),
+  /** Workspace-only Model Options, added after the global list; null adds none. */
+  modelOptions: modelOptionsSchema.nullable().optional(),
+  /** Route Classifier on/off override; null inherits off. */
+  classifierEnabled: z.boolean().nullable().optional().meta({ example: true }),
+  classifierBackend: z.enum(CLASSIFIER_BACKENDS).nullable().optional().meta({ example: 'harness' }),
+  /** Seconds the Route Classifier may take before it abstains; null inherits 30. */
+  classifierTimeoutSeconds: z.number().positive().nullable().optional().meta({ example: 30 }),
   /** Budget-Guardrail override; null inherits `config.guardrails.budget`. */
   guardrailBudget: budgetGuardrailSchema.nullable().optional(),
   /** Progress-detector toggle override; null inherits `config.guardrails.progress`. */
@@ -173,6 +180,10 @@ export const OVERRIDE_KEYS = [
   'epicPreMergeCommands',
   'epicPreMergeCritics',
   'routingLabels',
+  'modelOptions',
+  'classifierEnabled',
+  'classifierBackend',
+  'classifierTimeoutSeconds',
   'guardrailBudget',
   'guardrailProgress',
   'toolTimeoutMinutes',
@@ -273,6 +284,10 @@ export class WorkspaceService {
       epicPreMergeCommands: o.epicPreMergeCommands != null ? JSON.stringify(o.epicPreMergeCommands) : null,
       epicPreMergeCritics: o.epicPreMergeCritics != null ? JSON.stringify(o.epicPreMergeCritics) : null,
       routingLabels: o.routingLabels != null ? JSON.stringify(o.routingLabels) : null,
+      modelOptions: o.modelOptions != null ? JSON.stringify(o.modelOptions) : null,
+      classifierEnabled: o.classifierEnabled,
+      classifierBackend: o.classifierBackend,
+      classifierTimeoutSeconds: o.classifierTimeoutSeconds,
       guardrailBudget: o.guardrailBudget != null ? JSON.stringify(o.guardrailBudget) : null,
       guardrailProgress: o.guardrailProgress,
       toolTimeoutMinutes: o.toolTimeoutMinutes,

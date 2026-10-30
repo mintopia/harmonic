@@ -300,6 +300,13 @@ export interface FsListing {
   entries: FsEntry[];
 }
 
+export interface ModelOption {
+  id: string;
+  harness: string;
+  model: string;
+  description: string;
+}
+
 export interface WorkspaceFileEntry {
   name: string;
   path: string;
@@ -430,6 +437,11 @@ export interface Workspace extends PromptFragmentOverrides {
   epicPreMergeCritics: EpicCriticOverlayEntry[] | null;
   /** Routing Label overlay; `null` inherits every global Routing Label in order. */
   routingLabels: RoutingLabelOverlayEntry[] | null;
+  /** Workspace-only Model Options added after the global list; `null` adds none. */
+  modelOptions: ModelOption[] | null;
+  classifierEnabled: boolean | null;
+  classifierBackend: 'typesafe' | 'openai-compatible' | 'harness' | null;
+  classifierTimeoutSeconds: number | null;
   /** Guardrail overrides; `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
    * object shape it was PATCHed as. */
@@ -1181,6 +1193,7 @@ export interface AppConfig {
     model: string;
   };
   routingLabels: { label: string; harness: string; model: string }[];
+  modelOptions: ModelOption[];
   autoRunner: { enabled: boolean; maxConcurrentAttempts: number };
   agentMessages: { enabled: boolean; sendCap: number };
   /** Per-stage command and critic verifier lists. */
