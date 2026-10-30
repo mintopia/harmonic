@@ -100,6 +100,8 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     classifierEnabled: null,
     classifierBackend: null,
     classifierTimeoutSeconds: null,
+    classifierTypesafeModel: null,
+    classifierTypesafeSecret: null,
     guardrailBudget: null,
     guardrailProgress: null,
     exportEnabled: null,

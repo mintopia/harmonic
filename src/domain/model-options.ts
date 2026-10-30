@@ -1,5 +1,5 @@
 import type { WorkspaceRow } from '../db/schema.js';
-import { CLASSIFIER_BACKENDS, DEFAULT_CLASSIFIER_TIMEOUT_SECONDS, modelOptionsSchema, type AppConfig, type ModelOption } from '../config.js';
+import { CLASSIFIER_BACKENDS, DEFAULT_CLASSIFIER_TIMEOUT_SECONDS, DEFAULT_TYPESAFE_MODEL, modelOptionsSchema, type AppConfig, type ModelOption } from '../config.js';
 
 export type ClassifierBackend = (typeof CLASSIFIER_BACKENDS)[number];
 
@@ -7,10 +7,12 @@ export interface ClassifierSettings {
   enabled: boolean;
   backend: ClassifierBackend;
   timeoutSeconds: number;
+  typesafeModel: string;
+  typesafeSecret: string | null;
 }
 
 type ModelOptionWorkspace = Pick<WorkspaceRow, 'modelOptions'>;
-type ClassifierWorkspace = Pick<WorkspaceRow, 'classifierEnabled' | 'classifierBackend' | 'classifierTimeoutSeconds'>;
+type ClassifierWorkspace = Pick<WorkspaceRow, 'classifierEnabled' | 'classifierBackend' | 'classifierTimeoutSeconds' | 'classifierTypesafeModel' | 'classifierTypesafeSecret'>;
 
 export function parseModelOptions(stored: string | null | undefined): ModelOption[] | null {
   return stored == null ? null : modelOptionsSchema.parse(JSON.parse(stored));
@@ -29,5 +31,7 @@ export function resolveClassifierSettings(ws: ClassifierWorkspace | null | undef
     enabled: ws?.classifierEnabled ?? false,
     backend: ws?.classifierBackend ?? 'harness',
     timeoutSeconds: ws?.classifierTimeoutSeconds ?? DEFAULT_CLASSIFIER_TIMEOUT_SECONDS,
+    typesafeModel: ws?.classifierTypesafeModel ?? DEFAULT_TYPESAFE_MODEL,
+    typesafeSecret: ws?.classifierTypesafeSecret ?? null,
   };
 }

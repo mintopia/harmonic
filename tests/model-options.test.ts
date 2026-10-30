@@ -88,7 +88,7 @@ describe('Workspace resolution', () => {
   });
 
   it('defaults to off, harness backend and a 30 s timeout, and rejects non-positive timeouts', () => {
-    expect(resolveClassifierSettings({ classifierEnabled: null, classifierBackend: null, classifierTimeoutSeconds: null })).toEqual({ enabled: false, backend: 'harness', timeoutSeconds: 30 });
+    expect(resolveClassifierSettings({ classifierEnabled: null, classifierBackend: null, classifierTimeoutSeconds: null, classifierTypesafeModel: null, classifierTypesafeSecret: null })).toEqual({ enabled: false, backend: 'harness', timeoutSeconds: 30, typesafeModel: 'typesafe/jev-1.13', typesafeSecret: null });
     expect(workspaceOverridesSchema.safeParse({ classifierTimeoutSeconds: 0 }).success).toBe(false);
     expect(workspaceOverridesSchema.safeParse({ classifierTimeoutSeconds: -5 }).success).toBe(false);
     expect(workspaceOverridesSchema.safeParse({ classifierTimeoutSeconds: 5 }).success).toBe(true);
