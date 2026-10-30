@@ -73,6 +73,30 @@ export async function convertEditedPrompts(library: PromptLibrary, config: AppCo
   return converted;
 }
 
+/** Carries a Settings-side edit of a covered prompt into its Library entry so the two never disagree; `only` limits it to the codes a request actually named. */
+export async function syncEditedPrompts(library: PromptLibrary, config: AppConfig, only?: ReadonlySet<string>): Promise<void> {
+  const baseline = loadBaselineConfig();
+  for (const source of SOURCES) {
+    if (only && !only.has(source.code)) continue;
+    const text = source.read(config);
+    const code = convertedCode(source.code);
+    if (text === (library.operatorText(code) ?? source.read(baseline))) continue;
+    if (library.hasOperatorEntry(code)) await library.update(code, source.description, text);
+    else await library.create(code, source.description, text);
+  }
+}
+
+export function changedPromptCodes(before: AppConfig, after: AppConfig): Set<string> {
+  return new Set(SOURCES.filter((s) => s.read(before) !== s.read(after)).map((s) => s.code));
+}
+
+export function namedPromptCodes(patch: { promptFragments?: object | undefined; merge?: object | undefined }): Set<string> {
+  const fragments = Object.keys(patch.promptFragments ?? {});
+  const mergeKeys = new Set(Object.keys(patch.merge ?? {}));
+  const templates = (Object.keys(LIBRARY_TEMPLATES) as LibraryTemplateId[]).filter((id) => mergeKeys.has(LIBRARY_TEMPLATES[id][1]));
+  return new Set([...fragments, ...templates]);
+}
+
 /** The global config with the critic-review and merge-conflict prompts read from the Library: the converted entry when one exists, else the config's own text. */
 export function withLibraryPrompts(config: AppConfig, library: PromptLibrary): AppConfig {
   const promptFragments = { ...config.promptFragments };

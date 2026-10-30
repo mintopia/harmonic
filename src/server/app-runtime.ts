@@ -296,7 +296,8 @@ export async function createRuntime(deps: {
       }
     },
   });
-  const transcripts = new TranscriptCapture(sessionStore, verificationAttempts, () => settingsStore.getGlobal());
+  const promptConfig = () => withLibraryPrompts(settingsStore.getGlobal(), deps.promptLibrary);
+  const transcripts = new TranscriptCapture(sessionStore, verificationAttempts, promptConfig);
   const postMergeCheck = createPostMergeCheck({
     getWorkspace: async (workspaceId) => {
       if (workspaceId === null) return undefined;
@@ -305,7 +306,7 @@ export async function createRuntime(deps: {
       });
       return result.ok ? result.value : undefined;
     },
-    getConfig: () => settingsStore.getGlobal(),
+    getConfig: promptConfig,
     verificationAttempts,
     attempts,
     criticDrive,
@@ -387,7 +388,7 @@ export async function createRuntime(deps: {
   };
   const epicOperations = new EpicOperations();
   const gitBreaker = new GitCircuitBreaker();
-  const runner = new Runner(tasks, asyncDb, () => withLibraryPrompts(settingsStore.getGlobal(), deps.promptLibrary), {
+  const runner = new Runner(tasks, asyncDb, promptConfig, {
     isGloballyPaused: () => globalPauseRef?.isLatched ?? false,
     onGloballyPaused: async (taskId) => { await globalPauseRef?.track(taskId); },
     events: {
@@ -472,7 +473,7 @@ export async function createRuntime(deps: {
     () => workspaces.list(),
     {
       integration: {
-        getConfig: () => settingsStore.getGlobal(),
+        getConfig: promptConfig,
         mergeEpicIntegration: (input) => runnerRef!.mergeEpicIntegration(input),
         criticDrive,
         commandSpawn,

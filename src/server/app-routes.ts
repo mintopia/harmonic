@@ -56,7 +56,7 @@ export async function registerRoutes(app: App, ctx: AppContext, contexts: AppCon
   await app.register(conversationRoutes, { prefix: '/api' });
   await app.register((fastify) => permissionRuleRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => promptRoutes(fastify, { prompts }), { prefix: '/api' });
-  await app.register((fastify) => configRoutes(fastify, contexts.execution), { prefix: '/api' });
+  await app.register((fastify) => configRoutes(fastify, { ...contexts.execution, prompts }), { prefix: '/api' });
   await app.register((fastify) => globalPauseRoutes(fastify, contexts.execution), { prefix: '/api' });
   await app.register((fastify) => updateRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => authRoutes(fastify, contexts.persistence), { prefix: '/api' });

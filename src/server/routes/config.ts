@@ -1,4 +1,6 @@
 import type { FastifyInstance } from 'fastify';
+import { changedPromptCodes, namedPromptCodes, syncEditedPrompts, withLibraryPrompts } from '../../domain/prompt-library-sources.js';
+import type { PromptLibrary } from '../../domain/prompt-library-store.js';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { ExecutionContext } from '../app.js';
@@ -142,7 +144,7 @@ const configPatchBodySchema = z
   .partial()
   .meta({ id: 'ConfigPatch' });
 
-export async function configRoutes(fastify: FastifyInstance, ctx: Pick<ExecutionContext, 'autoRunner' | 'settingsStore'>): Promise<void> {
+export async function configRoutes(fastify: FastifyInstance, ctx: Pick<ExecutionContext, 'autoRunner' | 'settingsStore'> & { prompts: PromptLibrary }): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   app.get(
@@ -159,7 +161,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
         },
       },
     },
-    async () => maskConfigSecrets(ctx.settingsStore.getGlobal()),
+    async () => maskConfigSecrets(withLibraryPrompts(ctx.settingsStore.getGlobal(), ctx.prompts)),
   );
 
   app.get(
@@ -172,7 +174,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
         response: { 200: z.object({ baseline: appConfigSchema, global: appConfigSchema, harnessPermissionModes: harnessPermissionModesSchema }).describe('The distributed baseline, effective global config, and adapter-declared Harness permission modes for settings controls.') },
       },
     },
-    async () => ({ baseline: ctx.settingsStore.getBaseline(), global: maskConfigSecrets(ctx.settingsStore.getGlobal()), harnessPermissionModes: harnessPermissionModes() }),
+    async () => ({ baseline: ctx.settingsStore.getBaseline(), global: maskConfigSecrets(withLibraryPrompts(ctx.settingsStore.getGlobal(), ctx.prompts)), harnessPermissionModes: harnessPermissionModes() }),
   );
 
   app.patch(
@@ -191,8 +193,9 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
     },
     async (req) => {
       const updated = await ctx.settingsStore.updateGlobal(req.body as DeepPartial<AppConfig>);
+      await syncEditedPrompts(ctx.prompts, updated, namedPromptCodes(req.body));
       ctx.autoRunner.poke();
-      return maskConfigSecrets(updated);
+      return maskConfigSecrets(withLibraryPrompts(updated, ctx.prompts));
     },
   );
 
@@ -213,9 +216,11 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
       },
     },
     async (req) => {
+      const before = withLibraryPrompts(ctx.settingsStore.getGlobal(), ctx.prompts);
       const updated = await ctx.settingsStore.replaceGlobal(req.body as AppConfig);
+      await syncEditedPrompts(ctx.prompts, updated, changedPromptCodes(before, updated));
       ctx.autoRunner.poke();
-      return maskConfigSecrets(updated);
+      return maskConfigSecrets(withLibraryPrompts(updated, ctx.prompts));
     },
   );
 
@@ -231,8 +236,9 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
     },
     async () => {
       const updated = await ctx.settingsStore.revertGlobal();
+      await syncEditedPrompts(ctx.prompts, updated);
       ctx.autoRunner.poke();
-      return maskConfigSecrets(updated);
+      return maskConfigSecrets(withLibraryPrompts(updated, ctx.prompts));
     },
   );
 }
