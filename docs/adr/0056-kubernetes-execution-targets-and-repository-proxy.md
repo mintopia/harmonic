@@ -31,9 +31,18 @@ holding the Code Repository's credentials or reaching anything else.
   execution in one pod and keeps the warm Session. Step-level runs each step
   in a fresh pod, with a cold Session for each agent step.
 - **`local` is built in.** Operators add named Kubernetes targets, each with
-  cluster access, a namespace, a default pod image, CPU and memory, and a
-  concurrency limit.
+  cluster access, a namespace, a default pod image, CPU and memory, a
+  concurrency limit, and the Repository Proxy's URL.
+- **Cluster access** is a kubeconfig stored as an ADR-0046 Secret, or the
+  in-cluster service account when Harmonic itself runs in the cluster.
 - **Global configuration.** A Workspace may restrict which targets it uses.
+- **Local and Kubernetes steps may mix in one workflow.** The handover between
+  steps goes through the checkpoint push: the next step's target, the `local`
+  worktree included, fetches the Ticket branch from the remote. This needs a
+  Code Repository, as every Kubernetes target does.
+- **A disabled target** keeps its waiting Tickets `ready`, showing "waiting
+  for <target>". **A deleted target** escalates its waiting Tickets, naming
+  it.
 
 ### Control channel
 
@@ -44,7 +53,9 @@ holding the Code Repository's credentials or reaching anything else.
 ### Repository Proxy
 
 - **One proxy service per cluster**, not a sidecar per pod. It holds the real
-  Code Repository credentials.
+  Code Repository credentials. Operators install it from a plain manifest
+  shipped at `deploy/kubernetes/repository-proxy.yaml`; the target
+  configuration holds its URL.
 - **Pods hold a per-Ticket pass.** The pass is stateless and signed by Harmonic
   with a key shared with the proxy. It encodes the Code Repository, the base
   branch, the Ticket branch and an expiry of 24 hours, and a fresh pass is
@@ -92,7 +103,8 @@ holding the Code Repository's credentials or reaching anything else.
 
 - Each target has a default image containing the Harnesses. A workflow or a
   step can override it with `image:`.
-- Harmonic publishes a base image with all four Harnesses.
+- Harmonic's release process publishes a base image with all four Harnesses
+  as `ghcr.io/mintopia/harmonic-harnesses:<harmonic version>`.
 
 ### Concurrency
 
@@ -132,6 +144,9 @@ holding the Code Repository's credentials or reaching anything else.
   measures the Harmonic host's capacity, which pods do not use.
 - **Bake Harness credentials into images.** Rejected: images are shareable
   artefacts and credentials in them outlive any rotation.
+- **Forbid mixing `local` and Kubernetes steps in v1.** Rejected: the
+  checkpoint push already puts the Ticket branch on the remote after every
+  step, so any target can pick it up.
 
 ## Consequences
 
@@ -143,22 +158,13 @@ holding the Code Repository's credentials or reaching anything else.
   remote.
 - Every step costs a push. Step-level `runs_on` also costs a cold Session per
   agent step.
-- Operators deploy and run the proxy per cluster and keep the signing key
+- Operators apply the proxy manifest per cluster and keep the signing key
   shared between it and Harmonic.
+- The release process gains an image build and push per Harmonic version.
+- A `local` step that follows a Kubernetes step works from the fetched Ticket
+  branch, so the `local` worktree tracks the remote for that Ticket.
 - The Ticket page, Cost and Archive behave the same on every target.
 - A `direct` Workspace cannot use Kubernetes targets.
-
-## Open questions
-
-- How the Repository Proxy is deployed and how Harmonic is configured with its
-  address (operator-installed manifest, Helm chart, or deployed by Harmonic).
-- What "cluster access" means in target configuration (kubeconfig, service
-  account token, or both) and where it is stored.
-- Where Harmonic publishes the base image and how its versions track Harmonic
-  releases.
-- How a Ticket whose target is removed or disabled while it waits is handled.
-- Whether `local` steps and Kubernetes steps can mix within one workflow, and
-  how the worktree moves between them.
 
 ## Supersedes
 

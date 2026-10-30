@@ -31,7 +31,8 @@ Choosing per Ticket by hand does not scale on a tracker-driven board.
 - **Global list, additive Workspace overlay**, following ADR-0037 as Routing
   Labels do. Each Workspace turns the Route Classifier on or off and chooses
   its backend. Configured on Settings › Execution. Saving a Model Option whose
-  Harness is not configured is refused.
+  Harness is not configured is refused, and so is one whose Model is not in
+  that Harness's model catalog, the same check Critics get (#830).
 - **Inputs**: the Ticket's title, description and labels, the Attempt number,
   and the previous Attempt's verdict and failure reason.
 - **Re-run at every Attempt start.** A retry can escalate to a stronger Model
@@ -41,7 +42,9 @@ Choosing per Ticket by hand does not scale on a tracker-driven board.
   family, via OpenRouter); (b) an OpenAI-compatible endpoint with structured
   output; (c) a configured Harness, run as a one-shot Session with no tool
   permissions, outside any worktree. Every backend returns `{optionId, reason}`,
-  validated with zod.
+  validated with zod. The TypeSafe and OpenAI-compatible backends reference
+  their credentials by name as ADR-0046 Secrets.
+- **Timeout**: 30 seconds by default, configurable per Workspace.
 - **Abstain, visibly.** On an error, a timeout or invalid output, the Route
   Classifier abstains and the Workspace default applies; the abstention is
   recorded in Activity. This is an advisory layer, distinct from ADR-0049's
@@ -91,20 +94,14 @@ Choosing per Ticket by hand does not scale on a tracker-driven board.
   has nothing to pick from; the classifier abstains every time.
 - The Harness backend spends a one-shot Harness Session per Attempt start; the
   TypeSafe and OpenAI-compatible backends need their own endpoint credentials.
+- Model Options are stricter than Routing Labels: a Routing Label's Model is
+  unvalidated (ADR-0049), a Model Option's Model must be in the catalog.
 - A switch of Harness between Attempts now happens without operator action,
   so cold-Session continuations become more frequent on classified Tickets.
-
-## Open questions
-
-- The classifier timeout and whether it is configurable.
-- Whether a Model Option's Model is validated against its Harness's model
-  catalog on save (ADR-0049 leaves Task Model ids unvalidated; Critics are
-  validated).
-- Where the TypeSafe and OpenAI-compatible backend credentials are stored
-  (an ADR-0046 Secret is the obvious home, but it is not decided).
 
 ## Supersedes
 
 None. Amends ADR-0049: the precedence list gains the Route Classifier between
 the Routing Label and the Workspace default, and Native Tasks, which ADR-0049
-leaves unrouted, are now classified.
+leaves unrouted, are now classified. ADR-0049's Routing Label rules are
+otherwise unchanged.

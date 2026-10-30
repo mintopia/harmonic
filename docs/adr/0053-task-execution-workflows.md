@@ -49,7 +49,10 @@ it is executed.
 
 A workflow that would break any of these is refused at save:
 
-1. **Only the agent commits** to the Ticket branch (ADR-0001).
+1. **Only the agent commits** to the Ticket branch (ADR-0001). Before every
+   `run:` and `command` step the engine records HEAD and the commit count; a
+   new or amended commit, or a moved branch, fails the step as a guardrail
+   trip (ADR-0002).
 2. **Merge always uses the merge-commit policy** (ADR-0001, ADR-0040).
 3. **Guardrails and branch ownership always apply** (ADR-0002).
 4. **Every attempt loop is bounded**, so the process ends in `done` or
@@ -78,15 +81,23 @@ A workflow that would break any of these is refused at save:
   `steps.<id>.outcome` and `steps.<id>.outputs`.
 - **`parallel:`** groups steps that run together, such as Critics.
 - **One bounded `attempts:` block**:
-  `attempts: { max: ${{ vars.maxAttempts }}, steps: [...] }`. A failure inside
-  the block starts the next Attempt; exhausting `max` escalates.
+  `attempts: { max: ${{ vars.maxAttempts }}, steps: [...] }`. A `fail` or
+  `inconclusive` outcome inside the block starts the next Attempt, as
+  `inconclusive` burns an Attempt under ADR-0003; exhausting `max` escalates.
+- **A `fail` outside the `attempts:` block escalates.**
+- **A top-level `cleanup:` step list** runs when the Ticket reaches `done` and
+  when it is Closed.
 - **No `goto` and no unbounded loops.**
+- **Pause keeps ADR-0027's semantics.** The in-flight turn finishes; Resume
+  continues at the next step not yet run.
 
 ### Variables and secrets
 
 - **Read-only context**: `ticket.*` (title, body, labels, ref), `attempt.*`
   (number, previous verdict, failure reason) and `workspace.*`.
-- **`vars:`** declare defaults that a Workspace and a Ticket can override.
+- **`vars:`** declare defaults that a Workspace and a Ticket can override. A
+  Ticket's values are set only in a Variables panel on the Ticket page, and
+  only for vars the workflow declares.
 - **Step outputs** are readable by later steps.
 - **Secrets** are available only through an explicit `secrets.NAME`
   (ADR-0046 Secrets) and are masked in logs.
@@ -109,7 +120,7 @@ works for any workflow. Escalation keeps its three actions (ADR-0002).
 - **Retry** starts a new pass of the `attempts:` block with the counter reset,
   and re-resolves the Workflow Label. ADR-0038's #817 amendment (Retry, Retry
   Now, Harness and Model choice, Session re-use) is unchanged.
-- **Close** runs the workflow's cleanup steps.
+- **Close** runs the workflow's `cleanup:` steps.
 
 ### Assignment: Workflow Labels
 
@@ -205,22 +216,12 @@ ignores routing. The Route Classifier runs once per Attempt, not per step.
   default. The invariants bound safety (who commits, how Merge works,
   guardrails, termination, Harness availability), not quality.
 - `run:` puts arbitrary shell in operator hands, as verify commands already do.
+  A `run:` or `command` step that commits trips a guardrail rather than
+  passing, so a workflow cannot route around the agent-commits invariant.
+- An escalation outside the `attempts:` block (for example a failed step after
+  Merge) gets the same three Escalation actions as any other.
 - Every rename from `workflow` to Issue Workflow touches the schema, API types
   and UI.
-
-## Open questions
-
-- Whether `inconclusive` inside the `attempts:` block counts as a failure that
-  starts the next Attempt (ADR-0003 burns an Attempt on it today), or only
-  when the workflow's `if:` says so.
-- What a `fail` outcome does in a step outside the `attempts:` block (for
-  example after Merge): escalate, or continue to the next step.
-- How invariant 1 is enforced for `run:` steps, which can run any shell
-  command in the worktree, since a save-time check cannot see what a command
-  does.
-- How the workflow marks which steps are "cleanup steps" for Close.
-- How Pause and Resume (ADR-0027) map onto a step in progress.
-- Whether a Ticket-level `vars:` override is set in the UI, by label, or both.
 
 ## Supersedes
 

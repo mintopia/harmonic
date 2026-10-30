@@ -26,15 +26,21 @@ the anatomy put it.
   description of what it is for.
 - **A step uses a prompt by code or by literal text** written into the step.
 - **Prompts include prompts.** A prompt includes another by code,
-  `${{ prompts.code }}`, so shared text is defined once.
+  `${{ prompts.code }}`, so shared text is defined once. An include cycle is
+  refused at save.
+- **No per-Workspace or per-Ticket prompt text.** A Workspace or Ticket that
+  needs different wording chooses a different prompt or workflow, or passes
+  values through `vars:`.
 - **Bundled prompts are read-only.** They ship with Harmonic; Duplicate makes
   an editable copy, as for bundled workflows (ADR-0053).
 - **Prompt Fragments and Prompt Anatomy are removed.** The ordering in
   `src/domain/prompt-anatomy.ts` moves into workflow steps: a step states its
   whole prompt.
-- **One exception: the Critic's JSON verdict contract.** The engine parses the
-  Critic's reply, so the engine appends the contract. It is not a Prompt
-  Library entry and is not editable.
+- **One exception: the Critic's safety guard.** The engine appends the
+  Critic's read-only restraint and its JSON verdict contract. The engine
+  parses the reply against the contract, and the restraint keeps a Critic
+  from changing the work it judges. Neither is a Prompt Library entry and
+  neither is editable.
 - **Critics are not a separate library.** A critic step names its prompt the
   same way as any agent step.
 - **Resolved Prompts stay visible.** ADR-0047's rules carry forward unchanged:
@@ -51,6 +57,11 @@ the anatomy put it.
 - **Keep the verdict contract editable behind a marker gate** (ADR-0047 §2).
   Rejected: the contract is the parser's interface, not prompt wording.
   Appending it from the engine removes a class of bad saves.
+- **Make the read-only restraint a bundled, duplicable prompt.** Rejected: it
+  is a safety guard on every Critic, so it stays with the verdict contract.
+- **Per-Workspace or per-Ticket prompt text overrides**, layered as ADR-0047
+  Fragments were. Rejected: a different prompt, a different workflow, or
+  `vars:` covers the need without a second override system.
 
 ## Consequences
 
@@ -59,19 +70,12 @@ the anatomy put it.
   replaces them.
 - Edited Fragments become Prompt Library entries during migration (ADR-0055).
 - ADR-0047's amendment to ADR-0003, which made the restraint and the verdict
-  contract editable, is partly reversed: the verdict contract is
-  engine-appended again. ADR-0003's malformed-output → `inconclusive` backstop
-  stays.
+  contract editable, is reversed: both are engine-appended again. ADR-0003's
+  malformed-output → `inconclusive` backstop stays.
+- Prompt text has one home per entry; there is no override layering to
+  inspect when a Resolved Prompt looks wrong.
 - Includes make a prompt's sent text differ from what its entry shows; the
   Resolved Prompt in the transcript remains the record of what was sent.
-
-## Open questions
-
-- Whether an include cycle is refused at save or at resolution.
-- Whether the Critic's read-only restraint becomes a bundled Prompt Library
-  entry or stays engine-appended with the verdict contract.
-- Whether a Workspace or a Ticket can override a prompt's text, or only choose
-  a different prompt through its workflow.
 
 ## Supersedes
 
