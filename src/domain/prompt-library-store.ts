@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { loadBaselineConfig } from '../config.js';
 import { DomainError } from './errors.js';
 import { PROMPT_FRAGMENTS, PROMPT_FRAGMENT_NAMES } from './prompt-fragments.js';
+import { ENGINE_APPENDED_FRAGMENTS } from './prompt-library-sources.js';
 import { PROMPT_CODE_PATTERN, resolvePrompt, usedBy, validateIncludes, type PromptEntry } from './prompt-library.js';
 import { PROMPT_TEMPLATES, PROMPT_TEMPLATE_IDS } from './prompt-templates.js';
 
@@ -34,16 +35,34 @@ function bundledEntries(): PromptEntry[] {
     text: atPath(baseline, PROMPT_TEMPLATES[id].config),
     bundled: true,
   }));
-  return [...fragments, ...templates];
+  return [...fragments, ...templates].filter((entry) => !(ENGINE_APPENDED_FRAGMENTS as readonly string[]).includes(entry.code));
 }
 
 /** The Prompt Library: bundled entries (read-only) plus operator entries kept as one JSON file each under `<dataDir>/prompts`. */
 export class PromptLibrary {
   private readonly dir: string;
   private readonly bundled = bundledEntries();
+  private operatorCache = new Map<string, string>();
 
   constructor(dataDir: string) {
     this.dir = join(dataDir, 'prompts');
+  }
+
+  /** Reads the operator entries into memory so synchronous prompt assembly can see them. */
+  async load(): Promise<void> {
+    this.operatorCache = new Map((await this.operatorEntries()).map((e) => [e.code, e.text]));
+  }
+
+  hasOperatorEntry(code: string): boolean {
+    return this.operatorCache.has(code);
+  }
+
+  /** The operator entry's text with includes expanded, or undefined when there is no such entry. */
+  operatorText(code: string): string | undefined {
+    const text = this.operatorCache.get(code);
+    if (text === undefined) return undefined;
+    const lookup = new Map([...this.bundled.map((e) => [e.code, e.text] as const), ...this.operatorCache]);
+    return resolvePrompt(text, lookup, [code]);
   }
 
   private async operatorEntries(): Promise<PromptEntry[]> {
@@ -93,6 +112,7 @@ export class PromptLibrary {
     const tmp = `${file}.tmp`;
     await writeFile(tmp, JSON.stringify({ description, text }, null, 2));
     await rename(tmp, file);
+    this.operatorCache.set(code, text);
     return this.get(code);
   }
 
@@ -123,5 +143,6 @@ export class PromptLibrary {
     if (existing.bundled) throw new DomainError('forbidden', `${code} is a bundled prompt and cannot be deleted`);
     if (existing.usedBy.length > 0) throw new DomainError('conflict', `${code} is included by: ${existing.usedBy.join(', ')}`);
     await rm(join(this.dir, `${code}.json`), { force: true });
+    this.operatorCache.delete(code);
   }
 }

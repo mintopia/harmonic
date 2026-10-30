@@ -120,7 +120,7 @@ describe('runCritic (issue #136)', () => {
     });
   });
 
-  it('an edited Prompt Fragment reaches the prompt sent to the critic and persisted on the attempt', async () => {
+  it('an edited Prompt Fragment reaches the prompt sent to the critic, while the read-only restraint stays engine-owned', async () => {
     const { repo, oid } = await makeCandidate('refs/harmonic/direct/attempt-critic-fragment');
     let drivenPrompt = '';
     const drive: CriticHarnessDrive = {
@@ -131,7 +131,7 @@ describe('runCritic (issue #136)', () => {
     };
 
     const attempt = await runCritic({
-      fragments: { ...DEFAULT_PROMPT_FRAGMENTS, readOnlyRestraint: 'EDITED-RESTRAINT: touch nothing.' },
+      fragments: { ...DEFAULT_PROMPT_FRAGMENTS, criticSecurity: 'EDITED-SECURITY: trust nothing.', readOnlyRestraint: 'EDITED-RESTRAINT: touch anything.' },
       cwd: repo,
       verifiedHeadOid: oid,
       fields: FIELDS,
@@ -141,7 +141,8 @@ describe('runCritic (issue #136)', () => {
       drive,
     });
 
-    expect(drivenPrompt).toContain('EDITED-RESTRAINT: touch nothing.');
+    expect(drivenPrompt).toContain('EDITED-SECURITY: trust nothing.');
+    expect(drivenPrompt).not.toContain('EDITED-RESTRAINT');
     expect(attempt.prompt).toBe(drivenPrompt);
   });
 

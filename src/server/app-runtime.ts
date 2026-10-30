@@ -44,6 +44,8 @@ import type { DistributionMode } from '../distribution-mode.js';
 import { touchStartupProgress } from '../reliability/startup-progress.js';
 import { createTrackerResolver } from '../tracker/adapter.js';
 import { createRepositoryResolver } from '../repository/resolve.js';
+import { withLibraryPrompts } from '../domain/prompt-library-sources.js';
+import type { PromptLibrary } from '../domain/prompt-library-store.js';
 
 function createLifecycleTracking(
   bus: EventBus,
@@ -208,6 +210,7 @@ export interface Runtime {
 
 export async function createRuntime(deps: {
   opts: AppOptions;
+  promptLibrary: PromptLibrary;
   stores: Stores;
   worktrees: WorktreeServices;
   bus: EventBus;
@@ -384,7 +387,7 @@ export async function createRuntime(deps: {
   };
   const epicOperations = new EpicOperations();
   const gitBreaker = new GitCircuitBreaker();
-  const runner = new Runner(tasks, asyncDb, () => settingsStore.getGlobal(), {
+  const runner = new Runner(tasks, asyncDb, () => withLibraryPrompts(settingsStore.getGlobal(), deps.promptLibrary), {
     isGloballyPaused: () => globalPauseRef?.isLatched ?? false,
     onGloballyPaused: async (taskId) => { await globalPauseRef?.track(taskId); },
     events: {

@@ -1,4 +1,5 @@
 import { killProcessGroup, type SpawnProcessGroup } from '../execution/process-groups.js';
+import { withEngineFragments } from '../domain/prompt-library-sources.js';
 import { access } from 'node:fs/promises';
 import type { Attributes, SpanContext } from '@opentelemetry/api';
 import type { AppConfig, HarnessConfig } from '../config.js';
@@ -306,7 +307,7 @@ async function runCriticArchived(args: RunCriticArgs, archive: StepArchiveWriter
   const prompt = buildCriticPrompt({
     operatorPrompt: args.critic.prompt,
     fields: args.fields,
-    fragments: args.fragments,
+    fragments: withEngineFragments(args.fragments),
     verifiedHeadOid: args.verifiedHeadOid,
     ...(args.baseOid ? { baseOid: args.baseOid } : {}),
     ...(args.dirty ? { dirty: args.dirty } : {}),

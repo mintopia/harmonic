@@ -12,6 +12,8 @@ import { readPackageManifest } from './routes/openapi.js';
 import { createStores } from './app-stores.js';
 import { createWorktreeServices } from './app-worktrees.js';
 import { createRuntime } from './app-runtime.js';
+import { convertEditedPrompts } from '../domain/prompt-library-sources.js';
+import { PromptLibrary } from '../domain/prompt-library-store.js';
 import { registerAppJobs } from './app-jobs.js';
 import { registerAppExports } from './app-exports.js';
 import { registerBusListeners } from './app-bus-listeners.js';
@@ -67,8 +69,12 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     worktreesDir,
     managedWorktreesRoot,
   });
+  const promptLibrary = new PromptLibrary(opts.dataDir);
+  await promptLibrary.load();
+  await convertEditedPrompts(promptLibrary, stores.settingsStore.getGlobal());
   const runtime = await createRuntime({
     opts,
+    promptLibrary,
     stores,
     worktrees,
     bus,
@@ -191,6 +197,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     upgrade: runtime.upgrade,
     worktreesDir,
   });
-  await registerRoutes(app, ctx, contexts, opts.dataDir);
+  await registerRoutes(app, ctx, contexts, promptLibrary);
   return app;
 }
