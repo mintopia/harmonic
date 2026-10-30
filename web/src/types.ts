@@ -255,7 +255,7 @@ export interface AgentMessageThread {
 
 /** Tracker mirroring: a Task is authored here or a 1:1 projection of a tracker issue. */
 export type TaskOrigin = 'native' | 'mirrored';
-export type Workflow = 'wayfinder' | 'implement';
+export type IssueWorkflow = 'wayfinder' | 'implement';
 export type WayfinderType = 'research' | 'prototype' | 'grilling' | 'task';
 
 /** Dollar value of Usage, computed server-side on read — never stored. */
@@ -640,7 +640,7 @@ export interface Task {
   /** The mirrored issue's number; null on native Tasks. */
   trackerRef: TrackerRef | null;
   /** Mirrored role: which Issue Workflow the tracker labelled it; null on native Tasks. */
-  issueWorkflow: Workflow | null;
+  issueWorkflow: IssueWorkflow | null;
   /** Mirrored role: the wayfinder decision kind; null on native/implement Tasks. */
   wayfinderType: WayfinderType | null;
   /** The parent Map's tracker ref; null when unmapped or native. */

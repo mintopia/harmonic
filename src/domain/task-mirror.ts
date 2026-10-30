@@ -87,12 +87,12 @@ export class TaskMirror {
         };
         const unchanged = existing.state === state && existing.prompt === input.prompt && existing.issueWorkflow === workflow && existing.wayfinderType === input.wayfinderType && existing.mapRef === input.mapRef && Object.entries(factCols).every(factUnchanged);
         if (unchanged) return { row: existing, dirty: false };
-        const updated = await db.update(tasks).set({ prompt: input.prompt, state, workflow, issueWorkflow: workflow, wayfinderType: input.wayfinderType, mapRef: input.mapRef, ...factCols, updatedAt: now }).where(eq(tasks.id, existing.id)).returning().get();
+        const updated = await db.update(tasks).set({ prompt: input.prompt, state, issueWorkflow: workflow, wayfinderType: input.wayfinderType, mapRef: input.mapRef, ...factCols, updatedAt: now }).where(eq(tasks.id, existing.id)).returning().get();
         return { row: updated, dirty: true };
       }
       const inserted = await db.insert(tasks).values({
         prompt: input.prompt, workspaceId: workspace.id, harness: null, model: null, isolationMode: null, priority: null, conflictResolveTurns: null, workingDir: workspace.workingDir,
-        state: input.closed ? 'done' : 'ready', origin: 'mirrored', trackerRef: input.trackerRef, workflow, issueWorkflow: workflow, wayfinderType: input.wayfinderType, mapRef: input.mapRef,
+        state: input.closed ? 'done' : 'ready', origin: 'mirrored', trackerRef: input.trackerRef, issueWorkflow: workflow, wayfinderType: input.wayfinderType, mapRef: input.mapRef,
         ...(input.facts ? trackerFactColumns(input.facts) : {}), archiveId: randomUUID(), createdAt: now, updatedAt: now,
       }).returning().get();
       return { row: inserted, dirty: true };
