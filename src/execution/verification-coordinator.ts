@@ -3,6 +3,8 @@ import { Git } from './git.js';
 import { adapterFor, adapterVersion } from './harness/registry.js';
 import { collectUsage, toolCallName } from './usage.js';
 import { driveFields } from './prompt-template.js';
+import { epicFixTexts } from '../domain/epic-fix-prompt.js';
+import type { PromptLibrary } from '../domain/prompt-library-store.js';
 import { composeEpicResolvePrompt } from './prompt-assembly.js';
 import { logger } from '../logger.js';
 import { indexWorktree } from './code-index.js';
@@ -46,7 +48,6 @@ export interface EpicVerificationResolutionInput {
   attempt: AttemptRow;
   verifiedHeadOid: string;
   verificationReason: string;
-  resolvePrompt: string;
   continuationSessionId?: string;
   continuationSessionRowId?: number;
 }
@@ -79,6 +80,7 @@ export interface VerificationCoordinatorDeps {
   commandSpawn: CommandSpawn;
   fireAndForget: FireAndForget;
   archive?: TaskArchive | undefined;
+  promptLibrary: PromptLibrary;
   urlFor: (task: TaskRow) => string | null;
   worktreePathForTask: (task: TaskRow) => string;
   latestAttemptFor: (task: Pick<TaskRow, 'id'>) => Promise<AttemptRow>;
@@ -406,10 +408,13 @@ export class VerificationCoordinator {
 
     const step = await this.deps.attempts.createStep(input.attempt.id, { type: 'implementation' });
     await this.deps.attempts.updateStep(step.id, { state: 'running', startedAt: Date.now() });
+    const library = await epicFixTexts(this.deps.promptLibrary);
+    const wsSuffix = resolver.resolveSuffix !== config.verify.epic.resolveSuffix;
+    const wsFailing = resolver.fragments.epicFailingVerification !== config.promptFragments.epicFailingVerification;
     const prompt = composeEpicResolvePrompt({
-      resolvePrompt: input.resolvePrompt,
-      resolveSuffix: resolver.resolveSuffix,
-      fragments: resolver.fragments,
+      resolvePrompt: library.resolvePrompt,
+      resolveSuffix: wsSuffix ? resolver.resolveSuffix : library.resolveSuffix,
+      fragments: wsFailing ? resolver.fragments : { ...resolver.fragments, epicFailingVerification: library.failingVerification },
       epic: { ref: String(input.epicRef), title: input.title ?? `Epic #${input.epicRef}`, body: input.body ?? '', url: input.url ?? '' },
       reason: input.verificationReason,
       branch,

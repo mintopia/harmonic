@@ -41,7 +41,6 @@ export class EpicResolutionRunner {
         attempt,
         verifiedHeadOid,
         verificationReason: guidance ? `${verification.reason}\n\n## Operator guidance\n${guidance}` : verification.reason,
-        resolvePrompt: getConfig().verify.epic.resolvePrompt,
         ...(continuationSessionId && continuationSessionRowId !== undefined ? { continuationSessionId, continuationSessionRowId } : {}),
       });
       await this.settleEpicAttempt(attempt.id, 'failed', 'epic-verification', verification.reason, verifiedHeadOid);

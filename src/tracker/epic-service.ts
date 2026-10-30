@@ -55,7 +55,6 @@ export type EpicResolutionDispatch = (input: {
   attempt: AttemptRow;
   verifiedHeadOid: string;
   verificationReason: string;
-  resolvePrompt: string;
 }) => Promise<void>;
 
 export type MergeEpicIntegration = (input: {
