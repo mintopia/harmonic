@@ -55,14 +55,11 @@ describe('Issue Workflow expand (ADR-0053)', () => {
       rmSync(dir, { recursive: true, force: true });
     });
     const input = (over: Partial<MirrorInput>): MirrorInput => ({
-      trackerRef: trackerRef(5), prompt: 'p', wayfinderType: null, mapRef: null, closed: false, ...over,
+      trackerRef: trackerRef(5), prompt: 'p', issueWorkflow: 'implement', wayfinderType: null, mapRef: null, closed: false, ...over,
     });
 
-    it.each([
-      ['workflow', { workflow: 'wayfinder' }],
-      ['issueWorkflow', { issueWorkflow: 'wayfinder' }],
-    ] as const)('writing %s updates both columns and the API returns both', async (_name, over) => {
-      const created = await tasks.upsertMirrored(input(over));
+    it('writing issueWorkflow updates both columns and the API returns both', async () => {
+      const created = await tasks.upsertMirrored(input({ issueWorkflow: 'wayfinder' }));
       expect([created.workflow, created.issueWorkflow]).toEqual(['wayfinder', 'wayfinder']);
       const updated = await tasks.upsertMirrored(input({ issueWorkflow: 'implement' }));
       expect([updated.workflow, updated.issueWorkflow]).toEqual(['implement', 'implement']);

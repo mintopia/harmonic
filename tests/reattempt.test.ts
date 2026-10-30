@@ -74,7 +74,7 @@ describe('unified corrective attempts', () => {
       {
         trackerRef: trackerRef(55502),
         prompt: crashing,
-        workflow: 'implement',
+        issueWorkflow: 'implement',
         wayfinderType: null,
         mapRef: trackerRef(77),
         closed: false,

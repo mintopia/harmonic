@@ -405,7 +405,7 @@ describe('worktree', () => {
       const task = await server.app.ctx.tasks.upsertMirrored({
         trackerRef: trackerRef(ref++),
         prompt: 'go',
-        workflow: 'implement',
+        issueWorkflow: 'implement',
         wayfinderType: null,
         mapRef: null,
         closed: false,
