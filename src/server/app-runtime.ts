@@ -7,7 +7,6 @@ import { type MergeEffectExec, ticketCloseEffect } from '../domain/merge.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import { CrashRecoveryCoordinator } from '../execution/crash-recovery.js';
 import { Runner } from '../execution/runner.js';
-import { PromptLibrary } from '../domain/prompt-library-store.js';
 import { convertEditedEpicFixPrompts } from '../domain/epic-fix-prompt.js';
 import { TaskArchive } from '../archive/task-archive.js';
 import { backfillCriticPromptKeys } from '../archive/critic-prompt-backfill.js';
@@ -46,6 +45,8 @@ import type { DistributionMode } from '../distribution-mode.js';
 import { touchStartupProgress } from '../reliability/startup-progress.js';
 import { createTrackerResolver } from '../tracker/adapter.js';
 import { createRepositoryResolver } from '../repository/resolve.js';
+import { withLibraryPrompts } from '../domain/prompt-library-sources.js';
+import type { PromptLibrary } from '../domain/prompt-library-store.js';
 
 function createLifecycleTracking(
   bus: EventBus,
@@ -210,6 +211,7 @@ export interface Runtime {
 
 export async function createRuntime(deps: {
   opts: AppOptions;
+  promptLibrary: PromptLibrary;
   stores: Stores;
   worktrees: WorktreeServices;
   bus: EventBus;
@@ -295,7 +297,8 @@ export async function createRuntime(deps: {
       }
     },
   });
-  const transcripts = new TranscriptCapture(sessionStore, verificationAttempts, () => settingsStore.getGlobal());
+  const promptConfig = () => withLibraryPrompts(settingsStore.getGlobal(), deps.promptLibrary);
+  const transcripts = new TranscriptCapture(sessionStore, verificationAttempts, promptConfig);
   const postMergeCheck = createPostMergeCheck({
     getWorkspace: async (workspaceId) => {
       if (workspaceId === null) return undefined;
@@ -304,7 +307,7 @@ export async function createRuntime(deps: {
       });
       return result.ok ? result.value : undefined;
     },
-    getConfig: () => settingsStore.getGlobal(),
+    getConfig: promptConfig,
     verificationAttempts,
     attempts,
     criticDrive,
@@ -386,9 +389,8 @@ export async function createRuntime(deps: {
   };
   const epicOperations = new EpicOperations();
   const gitBreaker = new GitCircuitBreaker();
-  const promptLibrary = new PromptLibrary(opts.dataDir);
-  await convertEditedEpicFixPrompts(promptLibrary, settingsStore.getGlobal());
-  const runner = new Runner(tasks, asyncDb, () => settingsStore.getGlobal(), {
+  await convertEditedEpicFixPrompts(deps.promptLibrary, settingsStore.getGlobal());
+  const runner = new Runner(tasks, asyncDb, promptConfig, {
     isGloballyPaused: () => globalPauseRef?.isLatched ?? false,
     onGloballyPaused: async (taskId) => { await globalPauseRef?.track(taskId); },
     events: {
@@ -423,7 +425,7 @@ export async function createRuntime(deps: {
     getWorkspace: getWorkspaceRow,
     agentMessages: deps.stores.agentMessages,
     archive,
-    promptLibrary,
+    promptLibrary: deps.promptLibrary,
   });
   runnerRef = runner;
   const globalPause = new GlobalPause(tasks, runner, asyncDb);
@@ -474,7 +476,7 @@ export async function createRuntime(deps: {
     () => workspaces.list(),
     {
       integration: {
-        getConfig: () => settingsStore.getGlobal(),
+        getConfig: promptConfig,
         mergeEpicIntegration: (input) => runnerRef!.mergeEpicIntegration(input),
         criticDrive,
         commandSpawn,

@@ -67,21 +67,36 @@ describe('/api/prompts', () => {
   it('lists bundled prompts, refuses editing one, and duplicates it into an editable copy', async () => {
     const list = await server.api('GET', '/api/prompts');
     expect(list.status).toBe(200);
-    const bundled = list.body.prompts.find((p: { code: string }) => p.code === 'readOnlyRestraint');
+    const bundled = list.body.prompts.find((p: { code: string }) => p.code === 'conflictResolution');
     expect(bundled.bundled).toBe(true);
 
-    const edit = await server.api('PUT', '/api/prompts/readOnlyRestraint', { description: 'x', text: 'y' });
+    const edit = await server.api('PUT', '/api/prompts/conflictResolution', { description: 'x', text: 'y' });
     expect(edit.status).toBe(403);
 
-    const copy = await server.api('POST', '/api/prompts/readOnlyRestraint/duplicate', {});
+    const copy = await server.api('POST', '/api/prompts/conflictResolution/duplicate', {});
     expect(copy.status).toBe(201);
-    expect(copy.body.code).toBe('readOnlyRestraint-copy');
+    expect(copy.body.code).toBe('conflictResolution-copy');
     expect(copy.body.bundled).toBe(false);
     expect(copy.body.text).toBe(bundled.text);
 
-    const put = await server.api('PUT', '/api/prompts/readOnlyRestraint-copy', { description: 'mine', text: 'edited' });
+    const put = await server.api('PUT', '/api/prompts/conflictResolution-copy', { description: 'mine', text: 'edited' });
     expect(put.status).toBe(200);
     expect(put.body.text).toBe('edited');
+  });
+
+  it('keeps Settings and the Library in step for a covered prompt', async () => {
+    const patch = await server.api('PATCH', '/api/config', { promptFragments: { criticSecurity: 'SETTINGS EDIT' }, merge: { conflictPrompt: 'MERGE EDIT {taskBranch}' } });
+    expect(patch.status).toBe(200);
+    expect(patch.body.promptFragments.criticSecurity).toBe('SETTINGS EDIT');
+    expect((await server.api('GET', '/api/prompts/criticSecurity-migrated')).body.text).toBe('SETTINGS EDIT');
+    expect((await server.api('GET', '/api/prompts/mergeConflictPrompt-migrated')).body.text).toBe('MERGE EDIT {taskBranch}');
+
+    await server.api('PUT', '/api/prompts/criticSecurity-migrated', { description: 'x', text: 'LIBRARY EDIT' });
+    expect((await server.api('GET', '/api/config')).body.promptFragments.criticSecurity).toBe('LIBRARY EDIT');
+
+    const unrelated = await server.api('PATCH', '/api/config', { maxAttempts: 3 });
+    expect(unrelated.body.promptFragments.criticSecurity).toBe('LIBRARY EDIT');
+    expect((await server.api('GET', '/api/prompts/criticSecurity-migrated')).body.text).toBe('LIBRARY EDIT');
   });
 
   it('refuses a cycle and an unknown include at save', async () => {

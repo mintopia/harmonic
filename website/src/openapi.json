@@ -9909,7 +9909,7 @@
           },
           "text": {
             "type": "string",
-            "example": "Follow the house style. ${{ prompts.readOnlyRestraint }}"
+            "example": "Follow the house style. ${{ prompts.conflictResolution }}"
           },
           "bundled": {
             "type": "boolean",
@@ -20053,7 +20053,7 @@
           },
           "text": {
             "type": "string",
-            "example": "Follow the house style. ${{ prompts.readOnlyRestraint }}"
+            "example": "Follow the house style. ${{ prompts.conflictResolution }}"
           },
           "bundled": {
             "type": "boolean",

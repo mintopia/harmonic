@@ -12,7 +12,7 @@ const promptSchema = z
   .object({
     code: codeSchema,
     description: z.string().meta({ example: 'Wording every agent turn shares.' }),
-    text: z.string().meta({ example: 'Follow the house style. ${{ prompts.readOnlyRestraint }}' }),
+    text: z.string().meta({ example: 'Follow the house style. ${{ prompts.conflictResolution }}' }),
     bundled: z.boolean().describe('Bundled prompts ship with Harmonic and are read-only; duplicate one to edit.'),
     resolved: z.string().describe('The text with every `${{ prompts.<code> }}` include expanded.'),
     usedBy: z.array(z.string()).describe('Codes of the prompts that include this one.'),
