@@ -27,7 +27,7 @@ describe('steering/resuming a Task whose Session is incompatible or stranded (is
     const seed = (await server.api('POST', '/api/tasks', { prompt: 'workspace seed' })).body;
     const workspaceId = (await server.app.ctx.tasks.get(seed.id)).workspaceId ?? undefined;
     const mirrored = await server.app.ctx.tasks.upsertMirrored(
-      { trackerRef: brandRef(trackerRef), prompt: `ticket ${trackerRef}\n\nbody`, workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+      { trackerRef: brandRef(trackerRef), prompt: `ticket ${trackerRef}\n\nbody`, issueWorkflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
       workspaceId,
     );
     await server.api('POST', `/api/tasks/${mirrored.id}/run`);

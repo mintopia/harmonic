@@ -2,7 +2,7 @@ import type { TrackerRef } from '../tracker/adapter.js';
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
-import { taskDependencies, tasks, type RawTaskRow, type TaskRow, type TaskState, type TrackerFacts, type WayfinderType, type Workflow, type WorkspaceRow } from '../db/schema.js';
+import { taskDependencies, tasks, type RawTaskRow, type TaskRow, type TaskState, type TrackerFacts, type WayfinderType, type IssueWorkflow, type WorkspaceRow } from '../db/schema.js';
 import { decideTaskDeletion, type DeletionDecision } from './task-deletion.js';
 import type { TaskBlockerGraph } from './task-blocker-graph.js';
 import { logger } from '../logger.js';
@@ -10,8 +10,7 @@ import { logger } from '../logger.js';
 export interface MirrorInput {
   trackerRef: TrackerRef;
   prompt: string;
-  workflow?: Workflow;
-  issueWorkflow?: Workflow;
+  issueWorkflow: IssueWorkflow;
   wayfinderType: WayfinderType | null;
   mapRef: TrackerRef | null;
   closed: boolean;
@@ -59,8 +58,7 @@ export class TaskMirror {
 
   async upsertMirrored(input: MirrorInput, workspaceId?: number): Promise<TaskRow> {
     const workspace = await this.options.resolveWorkspace(workspaceId);
-    const workflow = input.issueWorkflow ?? input.workflow;
-    if (!workflow) throw new Error('upsertMirrored requires workflow or issueWorkflow');
+    const workflow = input.issueWorkflow;
     const { row, dirty } = await this.db.write(async (db) => {
       const existing = await db.select().from(tasks).where(and(eq(tasks.workspaceId, workspace.id), eq(tasks.trackerRef, input.trackerRef))).get();
       const now = Date.now();
@@ -87,7 +85,7 @@ export class TaskMirror {
           const current = existing[column as keyof typeof existing];
           return typeof value === 'object' && value !== null ? JSON.stringify(current) === JSON.stringify(value) : current === value;
         };
-        const unchanged = existing.state === state && existing.prompt === input.prompt && existing.workflow === workflow && existing.issueWorkflow === workflow && existing.wayfinderType === input.wayfinderType && existing.mapRef === input.mapRef && Object.entries(factCols).every(factUnchanged);
+        const unchanged = existing.state === state && existing.prompt === input.prompt && existing.issueWorkflow === workflow && existing.wayfinderType === input.wayfinderType && existing.mapRef === input.mapRef && Object.entries(factCols).every(factUnchanged);
         if (unchanged) return { row: existing, dirty: false };
         const updated = await db.update(tasks).set({ prompt: input.prompt, state, workflow, issueWorkflow: workflow, wayfinderType: input.wayfinderType, mapRef: input.mapRef, ...factCols, updatedAt: now }).where(eq(tasks.id, existing.id)).returning().get();
         return { row: updated, dirty: true };

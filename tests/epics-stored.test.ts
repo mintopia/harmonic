@@ -140,7 +140,7 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
   it('Dismiss removes the row', async () => {
     await tasks.syncEpics(wsId, [{ ref: trackerRef(10), kind: 'spec' }]);
     const mirrored = await tasks.upsertMirrored(
-      { trackerRef: trackerRef(10), prompt: 'x', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+      { trackerRef: trackerRef(10), prompt: 'x', issueWorkflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
       wsId,
     );
     expect(await readEpics()).toHaveLength(1);

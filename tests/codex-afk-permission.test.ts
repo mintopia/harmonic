@@ -55,7 +55,7 @@ describe('Codex afk permission model', () => {
   const mirroredAfk = (ref: number): MirrorInput => ({
     trackerRef: trackerRef(ref),
     prompt: 'go',
-    workflow: 'implement',
+    issueWorkflow: 'implement',
     wayfinderType: null,
     mapRef: null,
     closed: false,
@@ -119,7 +119,7 @@ describe('Codex afk full-access mode', () => {
   const mirroredAfk = (ref: number): MirrorInput => ({
     trackerRef: trackerRef(ref),
     prompt: 'go',
-    workflow: 'implement',
+    issueWorkflow: 'implement',
     wayfinderType: null,
     mapRef: null,
     closed: false,

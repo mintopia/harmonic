@@ -2,20 +2,20 @@ import type { SpanContext } from '@opentelemetry/api';
 import { isEpicTypeContainer, type Ticket, type TrackerRef } from './adapter.js';
 import type { MirrorInput, TaskService } from '../domain/tasks.js';
 import { deriveStoredEpics } from '../domain/epic-derivation.js';
-import { WAYFINDER_TYPES, type TaskRow, type TrackerFacts, type WayfinderType, type Workflow } from '../db/schema.js';
+import { WAYFINDER_TYPES, type TaskRow, type TrackerFacts, type WayfinderType, type IssueWorkflow } from '../db/schema.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
 
 export interface MirroredRole {
-  workflow: Workflow;
+  issueWorkflow: IssueWorkflow;
   wayfinderType: WayfinderType | null;
 }
 
-/** Derive a mirrored issue's role from its labels: `workflow` = wayfinder when any `wayfinder:<type>` label is present, else implement. */
+/** Derive a mirrored issue's role from its labels: `issueWorkflow` = wayfinder when any `wayfinder:<type>` label is present, else implement. */
 export function deriveRole(ticket: Ticket): MirroredRole {
   const labels = new Set(ticket.labels);
   const wayfinderType = WAYFINDER_TYPES.find((t) => labels.has(`wayfinder:${t}`)) ?? null;
-  return { workflow: wayfinderType ? 'wayfinder' : 'implement', wayfinderType };
+  return { issueWorkflow: wayfinderType ? 'wayfinder' : 'implement', wayfinderType };
 }
 
 const mirrorPrompt = (t: Ticket): string => (t.body.trim() ? `${t.title}\n\n${t.body.trim()}` : t.title);

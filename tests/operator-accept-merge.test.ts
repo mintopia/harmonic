@@ -241,7 +241,7 @@ describe('escalated worktree Run diff snapshot', () => {
       const mirroredAfk = (trackerRef: number): MirrorInput => ({
         trackerRef: brandRef(trackerRef),
         prompt: `ticket ${trackerRef}\n\nbody`,
-        workflow: 'implement',
+        issueWorkflow: 'implement',
         wayfinderType: null,
         mapRef: null,
         closed: false,

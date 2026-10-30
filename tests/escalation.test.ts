@@ -188,7 +188,7 @@ describe('escalation', () => {
         });
         const workspaceId = (await escServer.app.ctx.workspaces.list())[0]!.id;
         const mirrored = await escServer.app.ctx.tasks.upsertMirrored(
-          { trackerRef: trackerRef(31_401), prompt: 'ticket 31401', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+          { trackerRef: trackerRef(31_401), prompt: 'ticket 31401', issueWorkflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
           workspaceId,
         );
         expect((await escServer.api('POST', `/api/tasks/${mirrored.id}/run`)).status).toBe(201);

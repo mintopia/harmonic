@@ -29,7 +29,7 @@ const mirrored = (ref: number, labels: string[]): MirrorInput => {
     url: `https://example.test/${ref}`,
     createdAt: '2026-08-01T00:00:00Z',
   };
-  return { trackerRef: trackerRef(ref), prompt: `ticket ${ref}`, workflow: 'implement', wayfinderType: null, mapRef: null, closed: false, facts };
+  return { trackerRef: trackerRef(ref), prompt: `ticket ${ref}`, issueWorkflow: 'implement', wayfinderType: null, mapRef: null, closed: false, facts };
 };
 
 describe('mirroredAgentEligible with Triage Labels', () => {

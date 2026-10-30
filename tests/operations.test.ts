@@ -351,7 +351,7 @@ describe('Automated merge policy operations (issue #387)', () => {
       const task = await server.app.ctx.tasks.upsertMirrored({
         trackerRef: trackerRef(ref),
         prompt: `ticket ${ref}\n\nbody`,
-        workflow: 'implement',
+        issueWorkflow: 'implement',
         wayfinderType: null,
         mapRef: null,
         closed: false,

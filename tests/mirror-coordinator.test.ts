@@ -34,7 +34,7 @@ const ticket = (number: number, assignees: string[] = []): Ticket => ({
 const mirrored = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput => ({
   trackerRef: trackerRef(ref),
   prompt: `ticket ${ref}`,
-  workflow: 'implement',
+  issueWorkflow: 'implement',
   wayfinderType: null,
   mapRef: null,
   closed: false,
