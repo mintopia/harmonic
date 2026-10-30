@@ -101,11 +101,14 @@ run, phase, candidate, self-heal (all deleted concepts, ADR-0001)
 
 **Step**:
 One individually undertaken step within an Attempt, each a timeline row with
-its own logs and outcome: the **Implementation Step** (the agent implements
-and commits — only the agent ever commits), one **Verification Step** per
-configured command (ordered, fail-fast) and one per **Critic** (parallel), the
-commands gating the critics. There is no rebase step — base movement is
-reconciled by the merge commit, never by re-basing the work (ADR-0001).
+its own logs and outcome, in this order: the **Rebase Step** (a worktree
+Attempt opens by rebasing the Task branch onto the current base tip; a
+conflict is handed to the agent in the Implementation Step, not failed), the
+**Implementation Step** (the agent implements and commits — only the agent
+ever commits), one **Verification Step** per configured command (ordered,
+fail-fast) and one per **Critic** (parallel), the commands gating the critics
+(ADR-0038). Base movement *after* the Attempt opens is reconciled by the merge
+commit at Merge, never by re-basing the verified work (ADR-0001).
 _Avoid_: task (the board unit), run, phase, stage
 
 **Activity Event**:
@@ -216,8 +219,8 @@ disable global entries and add its own, never edit a global one; a label is
 unique within the resolved list. When an issue
 carries several, the first in the list wins, and the Ticket shows which label
 decided. Labels match case-insensitively. Precedence: an operator's explicit
-setting on the Ticket, then the Routing Label, then the Workspace default, then
-the global default. All-or-nothing: a Routing Label applies only when the operator
+setting on the Ticket, then the Routing Label, then the Route Classifier, then
+the Workspace default, then the global default. All-or-nothing: a Routing Label applies only when the operator
 has set neither Harness nor Model on the Ticket; setting either disables the route
 entirely. Re-resolved at every Attempt start, so relabelling an
 escalated Ticket retries it on the new route; an Attempt in flight is never
@@ -228,6 +231,26 @@ Workspace or global default. Distinct from Triage Labels, which mark workflow ro
 settings. Native Tasks carry no labels, so are never routed. (ADR-0049.)
 _Avoid_: agent label (an Agent is a running Session, not a configured choice),
 harness label, model label, profile
+
+**Route Classifier**:
+An AI decision that picks a Ticket's Harness + Model when neither the operator
+nor a Routing Label has. It reads the Ticket (title, description, labels) and
+its history (Attempt number, the previous Attempt's verdict and failure
+reason) and chooses one **Model Option**, giving a one-line reason. Backed
+by a TypeSafe decision model, an OpenAI-compatible endpoint, or a configured
+Harness. Re-run at every Attempt start, so it can move a failing Ticket to a
+stronger Model or another Harness (a Harness change starts a cold Session).
+If it cannot decide, it abstains and the Workspace default applies, visibly in
+Activity. Its Cost is counted on the Attempt it routed. Critics are never
+classified.
+_Avoid_: router, model picker, auto-routing
+
+**Model Option**:
+One operator-defined choice the Route Classifier may pick: a Harness + Model
+with a description of when it fits ("cheap, small fixes"). The Route
+Classifier never picks outside the list. Defined globally as a list that a
+Workspace overlays additively, like Routing Labels.
+_Avoid_: route candidate, profile, tier, preset
 
 **Secret**:
 A per-Workspace named credential (a Forgejo token, a Jira API token) stored
@@ -316,17 +339,48 @@ _Avoid_: story, ticket
 On a mirrored Task, the tracker ref of the parent Map issue; absent on native
 Tasks and on mirrored issues that belong to no Map.
 
-**Workflow**:
+**Issue Workflow**:
 Which mattpocock workflow a mirrored issue belongs to — **wayfinder**
 (charting: a Map and its decision tickets) or **implement** (build tickets
 from `/to-tickets`). Distinct skills, distinct roles, never conflated.
-Derived from labels.
-_Avoid_: pipeline, mode
+Derived from labels. Says what kind of work an issue is; how an Attempt
+executes it is the Task Execution Workflow.
+_Avoid_: Workflow (bare — ambiguous with Task Execution Workflow), pipeline,
+mode
+
+**Task Execution Workflow**:
+The definition of a Ticket's whole execution process: which Steps an Attempt
+runs and in what order, how each outcome moves to the next Step, how a failed
+Attempt loops into the next one and when the loop ends in Escalation, where an
+Escalation action resumes, and what happens at Merge and after it. Assigned
+like a Routing Label, with a Workspace and global default. The process
+Harmonic runs today ships as the built-in default. Written as steps that each call a **Workflow Action**,
+branch on step outcomes, read per-execution variables, and wrap the Attempt
+loop in one bounded block.
+_Avoid_: Workflow (bare), pipeline, phase, stage, mode, playbook
+
+**Workflow Action**:
+One built-in operation a Task Execution Workflow step can call: rebase, an
+agent turn, a verify command, a Critic, Merge, the post-merge check, ticket
+close, a tracker comment, cleanup, or an arbitrary shell command. The set is
+closed: operators compose Workflow Actions, they do not write new ones. Each
+reports an outcome (pass, fail, inconclusive, conflict) and outputs.
+_Avoid_: Action (bare — Escalation's Retry / Accept / Close are its actions),
+job, task, plugin
+
+**Workflow Label**:
+An operator-defined tracker label that picks a Ticket's Task Execution
+Workflow. A list separate from Routing Labels and independent of Harness and
+Model. Same rules: ordered, first match wins, defined globally with an
+additive Workspace overlay. Precedence: an operator's explicit choice on the
+Ticket, then the Workflow Label, then the Workspace default, then the global
+default. Resolved once when the Ticket starts working, never mid-loop.
+_Avoid_: routing label (that picks Harness + Model), workflow tag
 
 **Wayfinder Type**:
-The kind of a `workflow = wayfinder` decision ticket: *research*, *prototype*,
-*grilling*, or *task*. Null for *implement* Tasks — "implementation" is a
-Workflow, never a Wayfinder Type.
+The kind of an Issue Workflow *wayfinder* decision ticket: *research*,
+*prototype*, *grilling*, or *task*. Null for *implement* Tasks —
+"implementation" is an Issue Workflow, never a Wayfinder Type.
 
 **Agent-workable**:
 The derived flag that makes a Ticket eligible for pickup: `ready-for-agent`
@@ -363,7 +417,7 @@ _Avoid_: downgrade, fallback, handoff, adopt / note-to-critic / un-escalate
 The prompt Harmonic injects to auto-run a mirrored Ticket: a settings
 template (global default, per-Workspace override — ADR-0009) of a workflow
 slash-command plus a short preamble, filled from the Task — `{skill}` from
-its Workflow / Wayfinder Type (research→`/research`,
+its Issue Workflow / Wayfinder Type (research→`/research`,
 implement→`/implement`), plus `{ref}` `{url}` `{title}` `{body}`. The
 preamble tells the agent to resolve the ticket end-to-end and comment +
 close it via the tracker doc's `gh` mechanics; the skills stay the source of
@@ -778,8 +832,38 @@ administrative worktree where their merge was built (ADR-0039).
 _Avoid_: review gate (deleted), Review Task / single critic (superseded — a
 Critic is a listable verifier now), validation, lint, test (more than either)
 
+**Prompt Library**:
+The named prompts Harmonic and operators keep, each with a code and a
+description of what it is for. A Task Execution Workflow step uses a prompt
+either by its code or as literal text written into the step. A prompt may
+include another by code, so shared text is defined once. Bundled prompts ship
+read-only and are duplicated to edit. Replaces Prompt Fragments and Prompt
+Anatomy; the one piece outside it is the Critic's verdict contract, which the
+engine appends because it parses the reply.
+_Avoid_: template store, prompt bank, snippets
+
+**Execution Target**:
+Where a Task Execution Workflow step runs, named by `runs_on` on the workflow
+or on one step. `local` (the Harmonic host) is built in; operators add named
+Kubernetes targets, each starting a fresh pod per Ticket or per step.
+Configured globally; a Workspace may restrict which it uses.
+_Avoid_: runner (Auto-Runner), worker, node, agent (a running Session),
+sandbox
+
+**Repository Proxy**:
+The one git gateway a Kubernetes Execution Target's pods use, deployed once
+per cluster. It holds the real Code Repository credentials; a pod only holds
+a per-Ticket pass that lets it fetch its base branch and its own Ticket branch
+and push (force included) to that branch alone. Tags, deletes, other refs and
+forge API calls are refused. Harmonic's own checkpoint pushes go through it
+too.
+_Avoid_: git proxy, mirror, gateway (bare)
+
 **Critic**:
-A read-only reviewer verifier — its own Harness, model, and prompt — that judges
+A step in a Task Execution Workflow, not a separately configured thing: a
+read-only agent turn with its own Harness, Model and prompt (from the Prompt
+Library by code, or literal text) that judges the work in place and returns a
+verdict. Today's description follows. A read-only reviewer verifier — its own Harness, model, and prompt — that judges
 the candidate **in place**, **listable per stage** (many per stage, run in
 parallel, all-must-pass). A **task Critic** carries a prompt **pair**
 (`issuePrompt` / `noIssuePrompt`), chosen at run time by whether the Task has a
@@ -804,7 +888,7 @@ _Avoid_: compiled prompt (that is the settings preview), assembled prompt,
 final prompt
 
 **Prompt Fragment**:
-A named, individually-editable piece that composes into a Resolved Prompt — e.g.
+(Being replaced by the Prompt Library.) A named, individually-editable piece that composes into a Resolved Prompt — e.g.
 the critic's revision block, the read-only restraint, or the JSON verdict
 contract. Each is a setting (baseline default plus per-Workspace override,
 ADR-0022); a Fragment shared across prompts (the restraint) is defined once and
@@ -813,7 +897,7 @@ code and is not a Fragment.
 _Avoid_: prompt piece, prompt section, snippet, segment
 
 **Prompt Anatomy**:
-The ordered Prompt Templates and Prompt Fragments that compose one kind of
+(Being replaced: each Task Execution Workflow step states its own prompt.) The ordered Prompt Templates and Prompt Fragments that compose one kind of
 Resolved Prompt (Implementation turn, mid-Attempt nudges, merge conflict
 resolvers, Epic verification fix, critic review), and the condition under which
 each is included. Declared once in `src/domain/prompt-anatomy.ts`; the Prompts

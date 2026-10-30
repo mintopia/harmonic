@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-10-05
 
+Superseded by ADR-0054 (Prompt Library), which keeps this ADR's visibility rule.
+
 Every piece of text Harmonic assembles into a prompt is an operator-editable
 **Prompt Fragment** (a setting, not a hardcoded string), and every **Resolved
 Prompt** actually sent to any Session is archived and surfaced in the transcript

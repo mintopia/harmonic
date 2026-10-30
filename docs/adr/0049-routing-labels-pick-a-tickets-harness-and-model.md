@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-10-07
 
+Amended by ADR-0052: the Route Classifier sits between the Routing Label and the Workspace default, and Native Tasks are now classified.
+
 An operator maps tracker labels to a Harness + Model (`reasoning` → Claude,
 Opus 5.5) so a mirrored Ticket's execution settings follow how the issue is
 labelled. The route is resolved live at every Attempt start, Epics route by

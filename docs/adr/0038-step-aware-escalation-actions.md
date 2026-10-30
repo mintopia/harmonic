@@ -8,6 +8,8 @@ implemented in `src/execution/turn-completion.ts` and
 `src/domain/escalation.ts`. The "today" statement under Consequences refers
 to the pre-implementation path.
 
+Amended by ADR-0053 (Task Execution Workflows): the hardcoded Accept resume table is superseded by the generic workflow resume rule.
+
 ## Context
 
 An Attempt runs a fixed Step pipeline: `rebase → implementation → verification
