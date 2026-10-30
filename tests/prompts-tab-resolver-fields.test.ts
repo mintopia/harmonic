@@ -43,8 +43,6 @@ describe('Prompts tab resolver fields', () => {
       [/Merge conflicts/, 'Merge conflict resolver', 'settings-merge-conflict-prompt'],
       [/Merge conflicts/, 'Epic merge conflict resolver', 'settings-epic-conflict-prompt'],
       [/Merge conflicts/, 'Epic refresh resolver', 'settings-epic-refresh-prompt'],
-      [/Epic verification fix/, 'Epic resolve prompt', 'settings-epic-resolve-prompt'],
-      [/Epic verification fix/, 'Epic verification resolver suffix', 'settings-epic-resolve-suffix'],
     ];
     for (const [tab, label, id] of parts) {
       await openPartEditor(host, tab, label);
@@ -59,7 +57,5 @@ describe('Prompts tab resolver fields', () => {
     for (const token of ['{turn}', '{taskBranch}', '{baseBranch}', '{paths}', '{fragment.conflictResolution}']) {
       expect(text).toContain(token);
     }
-    await openPartEditor(host, /Epic verification fix/, 'Epic verification resolver suffix');
-    expect(host.querySelector('[role=region][aria-label="Epic verification resolver suffix"]')?.textContent).toContain('{branch}');
   });
 });

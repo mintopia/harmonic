@@ -7,6 +7,8 @@ import { type MergeEffectExec, ticketCloseEffect } from '../domain/merge.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import { CrashRecoveryCoordinator } from '../execution/crash-recovery.js';
 import { Runner } from '../execution/runner.js';
+import { PromptLibrary } from '../domain/prompt-library-store.js';
+import { convertEditedEpicFixPrompts } from '../domain/epic-fix-prompt.js';
 import { TaskArchive } from '../archive/task-archive.js';
 import { backfillCriticPromptKeys } from '../archive/critic-prompt-backfill.js';
 import { TranscriptCapture } from '../execution/transcript-capture.js';
@@ -384,6 +386,8 @@ export async function createRuntime(deps: {
   };
   const epicOperations = new EpicOperations();
   const gitBreaker = new GitCircuitBreaker();
+  const promptLibrary = new PromptLibrary(opts.dataDir);
+  await convertEditedEpicFixPrompts(promptLibrary, settingsStore.getGlobal());
   const runner = new Runner(tasks, asyncDb, () => settingsStore.getGlobal(), {
     isGloballyPaused: () => globalPauseRef?.isLatched ?? false,
     onGloballyPaused: async (taskId) => { await globalPauseRef?.track(taskId); },
@@ -419,6 +423,7 @@ export async function createRuntime(deps: {
     getWorkspace: getWorkspaceRow,
     agentMessages: deps.stores.agentMessages,
     archive,
+    promptLibrary,
   });
   runnerRef = runner;
   const globalPause = new GlobalPause(tasks, runner, asyncDb);

@@ -10,6 +10,7 @@ import { UsageSampler } from './usage-sampler.js';
 import { TranscriptCapture } from './transcript-capture.js';
 import { ActiveRuns, type ActiveRun } from './active-runs.js';
 import { LIVE_RUN_LOG_EVENT_ID_OFFSET } from './live-events.js';
+import { PromptLibrary } from '../domain/prompt-library-store.js';
 import { VerificationCoordinator, type EpicVerificationResolutionInput, type VerificationCoordinatorDeps } from './verification-coordinator.js';
 import { TurnDriver, type TurnDriverDeps } from './turn-driver.js';
 import { EpicRefreshResolver, type EpicRefreshResolverDeps } from './epic-refresh-resolver.js';
@@ -66,6 +67,7 @@ export class Runner {
   private readonly keys: RunnerOptions['keys'];
   private readonly autoDrive: AutoDrive | undefined;
   private readonly archive: RunnerOptions['archive'];
+  private readonly promptLibrary: PromptLibrary;
   private readonly taskEvents: RunnerOptions['taskEvents'];
   private readonly getWorkspace: RunnerOptions['getWorkspace'];
   private readonly agentMessages: RunnerOptions['agentMessages'];
@@ -109,6 +111,7 @@ export class Runner {
     this.keys = options.keys;
     this.autoDrive = options.autoDrive;
     this.archive = options.archive;
+    this.promptLibrary = options.promptLibrary ?? new PromptLibrary(null);
     this.taskEvents = options.taskEvents;
     this.getWorkspace = options.getWorkspace;
     this.agentMessages = options.agentMessages;
@@ -252,6 +255,7 @@ export class Runner {
       transcripts: this.transcripts,
       activeRuns: this.activeRuns,
       archive: this.archive,
+      promptLibrary: this.promptLibrary,
       events: this.events,
       getConfig: this.getConfig,
       getWorkspace: this.getWorkspace,

@@ -9,6 +9,8 @@ export interface AnatomyPart {
   /** Flag id; absent means always included. */
   readonly when?: string;
   readonly note?: string;
+  /** Prompt Library code: the text is no longer a setting, so the Prompts tab points to the Library instead of editing it. */
+  readonly library?: string;
   readonly nested?: readonly AnatomyNode[];
   /** Nested only: `slot` = code fills a `{token}` in the parent; `reference` = `{fragment.x}` in the parent's default text. */
   readonly via?: 'slot' | 'reference';
@@ -233,7 +235,11 @@ export const PROMPT_ANATOMIES: readonly PromptAnatomy[] = [
     description: 'What the agent receives when it fixes a failing Epic verification.',
     flags: [],
     selectorDefaults: {},
-    parts: [template('epicResolvePrompt'), fragment('epicFailingVerification'), template('epicResolveSuffix')],
+    parts: [
+      template('epicResolvePrompt', { library: 'epicResolvePrompt' }),
+      fragment('epicFailingVerification', { library: 'epicFailingVerification' }),
+      template('epicResolveSuffix', { library: 'epicResolveSuffix' }),
+    ],
   },
   {
     id: 'criticReview',

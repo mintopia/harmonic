@@ -152,7 +152,13 @@ export function PartCard({
       {open && (
         <div ref={regionRef} id={editorId} role="region" aria-label={label} onKeyDown={onKeyDown} className="mt-2">
           {part.note && <p className="mb-2 text-small text-muted">{part.note}</p>}
-          {renderPromptPart(key, ctx)}
+          {part.library ? (
+            <p className="text-small text-ink">
+              This text now lives in the Prompt Library as <code className="font-data">{part.library}</code>. Bundled entries are read-only; duplicate one to change the wording.
+            </p>
+          ) : (
+            renderPromptPart(key, ctx)
+          )}
         </div>
       )}
       {children}

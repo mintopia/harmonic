@@ -39,14 +39,16 @@ function bundledEntries(): PromptEntry[] {
 
 /** The Prompt Library: bundled entries (read-only) plus operator entries kept as one JSON file each under `<dataDir>/prompts`. */
 export class PromptLibrary {
-  private readonly dir: string;
+  private readonly dir: string | null;
   private readonly bundled = bundledEntries();
 
-  constructor(dataDir: string) {
-    this.dir = join(dataDir, 'prompts');
+  /** A `null` data directory gives a Library of bundled entries only. */
+  constructor(dataDir: string | null) {
+    this.dir = dataDir === null ? null : join(dataDir, 'prompts');
   }
 
   private async operatorEntries(): Promise<PromptEntry[]> {
+    if (this.dir === null) return [];
     let names: string[];
     try {
       names = await readdir(this.dir);
@@ -86,6 +88,7 @@ export class PromptLibrary {
   }
 
   private async save(code: string, description: string, text: string): Promise<PromptView> {
+    if (this.dir === null) throw new DomainError('forbidden', 'This Prompt Library has no storage');
     const all = await this.all();
     validateIncludes({ code, text }, new Map(all.filter((e) => e.code !== code).map((e) => [e.code, e.text])));
     await mkdir(this.dir, { recursive: true });
@@ -122,6 +125,7 @@ export class PromptLibrary {
     const existing = await this.get(code);
     if (existing.bundled) throw new DomainError('forbidden', `${code} is a bundled prompt and cannot be deleted`);
     if (existing.usedBy.length > 0) throw new DomainError('conflict', `${code} is included by: ${existing.usedBy.join(', ')}`);
+    if (this.dir === null) return;
     await rm(join(this.dir, `${code}.json`), { force: true });
   }
 }

@@ -19,6 +19,7 @@ import type { SettingsStore } from '../src/server/settings-store.js';
 import { TaskArchive } from '../src/archive/task-archive.js';
 import { EpicMergeEventStore } from '../src/domain/epic-merge-events.js';
 import { readFileSync } from 'node:fs';
+import { PromptLibrary } from '../src/domain/prompt-library-store.js';
 import { executionPlumbing, allWorkspaces, makeSettingsStore, waitFor, seedWorkspace } from './helpers.js';
 
 const fakeGit = { revParse: async () => 'develop-tip' };
@@ -366,7 +367,6 @@ describe('epic refresh corrective turn (issue #315)', () => {
         attempt,
         verifiedHeadOid: git(repo, 'rev-parse', 'epic/5'),
         verificationReason: 'tests red',
-        resolvePrompt: 'Fix it',
       }).then(() => null, (err: unknown) => err as Error);
       return { driveCalls, error: result };
     }
@@ -664,11 +664,14 @@ describe('epic refresh corrective turn (issue #315)', () => {
     const cwd: string[] = [];
     const updates: { attemptId: number; payload: { sessionUpdate: string } }[] = [];
     const resolveConfig = baselineConfig();
-    resolveConfig.verify.epic.resolveSuffix = 'CUSTOM SUFFIX for {branch}.';
+    const promptLibrary = new PromptLibrary(join(dir, 'data'));
+    await promptLibrary.create('epicResolvePrompt-edited', 'edited', 'Fix Epic {ref}: {title}\n{description}\n{url}');
+    await promptLibrary.create('epicResolveSuffix-edited', 'edited', 'CUSTOM SUFFIX for {branch}.');
     const archive = new TaskArchive({ dataDir: join(dir, 'data'), ensureArchiveId: async () => 'unused', workspaceName: async () => workspace.name });
     const runner = new Runner(tasks, asyncDb, () => resolveConfig, {
       ...executionPlumbing(),
       archive,
+      promptLibrary,
       worktreesDir: join(dir, 'worktrees'),
       events: {
         onAttemptLogEvent: (event) => updates.push(event),
@@ -702,7 +705,6 @@ describe('epic refresh corrective turn (issue #315)', () => {
       title: 'Resolver epic',
       body: 'Preserve the public API.',
       url: 'https://example.test/issues/5',
-      resolvePrompt: 'Fix Epic {ref}: {title}\n{description}\n{url}',
     });
 
     const stored = await attempts.get(attempt.id);
@@ -794,9 +796,12 @@ describe('epic refresh corrective turn (issue #315)', () => {
     const liveWorktree = join(dir, 'epic-suffix');
     git(repo, 'worktree', 'add', liveWorktree, 'epic/5');
     const driven: string[] = [];
+    const promptLibrary = new PromptLibrary(join(dir, 'data'));
+    await promptLibrary.create('epicResolvePrompt-edited', 'edited', 'Fix it {fragment.readOnlyRestraint}');
     const runner = new Runner(tasks, asyncDb, () => baselineConfig(), {
       ...executionPlumbing(),
       archive: new TaskArchive({ dataDir: join(dir, 'data'), ensureArchiveId: async () => 'unused', workspaceName: async () => workspace.name }),
+      promptLibrary,
       worktreesDir: join(dir, 'worktrees'),
       getWorkspace: async (id) => (id === null ? undefined : workspaces.get(id)),
       criticDrive: {
@@ -817,7 +822,6 @@ describe('epic refresh corrective turn (issue #315)', () => {
       attempt,
       verifiedHeadOid: git(repo, 'rev-parse', 'epic/5'),
       verificationReason: 'tests red',
-      resolvePrompt: 'Fix it {fragment.readOnlyRestraint}',
     });
     expect(driven).toHaveLength(1);
     expect(driven[0]).toBe('Fix it WS RESTRAINT\n\nWS FAILURE: tests red\n\nWS SUFFIX for epic/5. WS RESTRAINT');

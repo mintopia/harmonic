@@ -143,14 +143,17 @@ describe('PromptsTab', () => {
     expect(host.querySelector('[role=alert]')?.textContent).toBe('Required');
   });
 
-  it('shows the Epic resolve prompt read-only on a Workspace', async () => {
+  it('points the Epic fix cards to the Prompt Library instead of an editor', async () => {
     const host = await mountComponent(createElement(WorkspaceHarness));
     await click(tab(host, /Epic verification fix/));
-    await click(card(host, 'Epic resolve prompt'));
-    expect(host.textContent).toContain('Global only — not overridable per Workspace');
-    expect(host.querySelector('textarea#workspace-epic-resolve-prompt')).toBeNull();
-    await click(card(host, 'Epic verification resolver suffix'));
-    expect(host.querySelector('textarea#workspace-epic-resolve-suffix')).not.toBeNull();
+    for (const [label, code, field] of [
+      ['Epic resolve prompt', 'epicResolvePrompt', 'workspace-epic-resolve-prompt'],
+      ['Epic verification resolver suffix', 'epicResolveSuffix', 'workspace-epic-resolve-suffix'],
+    ] as const) {
+      await click(card(host, label));
+      expect(host.textContent).toContain(`Prompt Library as ${code}`);
+      expect(host.querySelector(`textarea#${field}`)).toBeNull();
+    }
   });
 
   it('sends the critic card to the Verification tab', async () => {
