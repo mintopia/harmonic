@@ -9,7 +9,7 @@ export interface AnatomyPart {
   /** Flag id; absent means always included. */
   readonly when?: string;
   readonly note?: string;
-  /** Prompt Library code: the text is no longer a setting, so the Prompts tab points to the Library instead of editing it. */
+  /** Prompt Library code whose text this part uses; the Prompts tab links to the Library instead of editing it. */
   readonly library?: string;
   readonly nested?: readonly AnatomyNode[];
   /** Nested only: `slot` = code fills a `{token}` in the parent; `reference` = `{fragment.x}` in the parent's default text. */

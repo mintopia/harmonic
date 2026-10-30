@@ -151,7 +151,7 @@ describe('PromptsTab', () => {
       ['Epic verification resolver suffix', 'epicResolveSuffix', 'workspace-epic-resolve-suffix'],
     ] as const) {
       await click(card(host, label));
-      expect(host.textContent).toContain(`Prompt Library as ${code}`);
+      expect(host.textContent).toContain(`Duplicate it as ${code}-edited`);
       expect(host.querySelector(`textarea#${field}`)).toBeNull();
     }
   });

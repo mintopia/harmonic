@@ -35,6 +35,13 @@ describe('Epic fix prompt from the Prompt Library', () => {
   const root = mkdtempSync(join(tmpdir(), 'harmonic-epic-fix-'));
   afterAll(() => rmSync(root, { recursive: true, force: true }));
 
+  it('uses a duplicate of a bundled entry named <code>-edited', async () => {
+    const library = new PromptLibrary(join(root, 'duplicated'));
+    await library.duplicate('epicResolveSuffix', 'epicResolveSuffix-edited');
+    await library.update('epicResolveSuffix-edited', 'mine', 'MY SUFFIX for {branch}.');
+    expect(await fromLibrary(library)).toContain('\n\nMY SUFFIX for epic/7.');
+  });
+
   it('is byte-identical to the pre-Library prompt on an unedited install', async () => {
     const library = new PromptLibrary(join(root, 'unedited'));
     expect(await convertEditedEpicFixPrompts(library, baselineConfig())).toEqual([]);

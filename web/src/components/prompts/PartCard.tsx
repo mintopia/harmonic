@@ -154,7 +154,7 @@ export function PartCard({
           {part.note && <p className="mb-2 text-small text-muted">{part.note}</p>}
           {part.library ? (
             <p className="text-small text-ink">
-              This text now lives in the Prompt Library as <code className="font-data">{part.library}</code>. Bundled entries are read-only; duplicate one to change the wording.
+              This text comes from the Prompt Library entry <code className="font-data">{part.library}</code>, which is read-only. Duplicate it as <code className="font-data">{part.library}-edited</code> to change the wording; that entry takes precedence.
             </p>
           ) : (
             renderPromptPart(key, ctx)
