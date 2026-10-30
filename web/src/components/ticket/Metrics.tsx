@@ -141,6 +141,7 @@ export function Properties({ task, allTasks, workspaceName }: { task: Task; allT
         <DependsOn task={task} allTasks={allTasks} />
       </Fact>
       <Fact label="Created">{created}</Fact>
+      {task.issueWorkflow && <Fact label="Issue Workflow">{task.issueWorkflow}</Fact>}
       {task.origin === 'mirrored' && task.trackerLabel && (
         <Fact label="Tracker">
           {task.url ? (

@@ -639,8 +639,7 @@ export interface Task {
   origin: TaskOrigin;
   /** The mirrored issue's number; null on native Tasks. */
   trackerRef: TrackerRef | null;
-  /** Mirrored role: which workflow the tracker labelled it; null on native Tasks. */
-  workflow: Workflow | null;
+  /** Mirrored role: which Issue Workflow the tracker labelled it; null on native Tasks. */
   issueWorkflow: Workflow | null;
   /** Mirrored role: the wayfinder decision kind; null on native/implement Tasks. */
   wayfinderType: WayfinderType | null;

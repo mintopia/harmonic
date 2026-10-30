@@ -110,4 +110,13 @@ describe('TaskForm smoke (issue #469)', () => {
     const submit = [...host!.querySelectorAll('button')].find((b) => b.textContent === 'Save');
     expect(submit?.disabled).toBe(true);
   });
+
+  it('labels the mirrored Issue Workflow on the Edit form', async () => {
+    const task = makeTask({ id: 10, state: 'draft', issueWorkflow: 'implement' });
+
+    await renderForm({ task, workspace: makeWorkspace(), workspaceId: null });
+
+    expect(host!.textContent).toContain('Issue Workflow');
+    expect(host!.textContent).toContain('implement');
+  });
 });

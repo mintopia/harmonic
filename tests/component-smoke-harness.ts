@@ -169,7 +169,6 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     cost: null,
     origin: 'native',
     trackerRef: null,
-    workflow: null,
     issueWorkflow: null,
     wayfinderType: null,
     mapRef: null,

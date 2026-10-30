@@ -111,4 +111,11 @@ describe('Ticket Escape navigation', () => {
     await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
     expect(onClose).toHaveBeenCalledOnce();
   });
+
+  it('labels the mirrored Issue Workflow in the ticket properties', async () => {
+    await renderTicket(makeTask({ issueWorkflow: 'wayfinder' }));
+
+    expect(host!.textContent).toContain('Issue Workflow');
+    expect(host!.textContent).toContain('wayfinder');
+  });
 });
