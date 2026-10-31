@@ -14,8 +14,10 @@ import {
   defaultKubernetesClientFactory,
   withTimeout,
   type ConnectionOutcome,
+  type KubernetesAccess,
   type KubernetesClientFactory,
 } from './kubernetes-client.js';
+import type { PodTarget } from './pod-session.js';
 
 export const LOCAL_TARGET = 'local';
 export const MAX_KUBECONFIG_BYTES = 262_144;
@@ -189,6 +191,15 @@ export class ExecutionTargetService {
   // ponytail: always 0 until `runs_on` ties Tickets to targets.
   private async runningCount(_name: string): Promise<number> {
     return 0;
+  }
+
+  /** What a pod needs to run on `name`: the target's pod settings and the cluster access, with the kubeconfig revealed. */
+  async podAccess(name: string): Promise<{ target: PodTarget & { defaultImage: string }; access: KubernetesAccess }> {
+    const row = await this.row(name);
+    if (!row.enabled) throw new DomainError('invalid_state', `Execution Target '${name}' is disabled`);
+    const kubeconfig = row.authMethod === 'kubeconfig' && row.kubeconfigSecret ? await this.secrets.reveal(row.kubeconfigSecret) : null;
+    const { namespace, cpu, memory, repositoryProxyUrl, defaultImage } = row;
+    return { target: { name: row.name, namespace, cpu, memory, repositoryProxyUrl, defaultImage }, access: { authMethod: row.authMethod, kubeconfig } };
   }
 
   private async row(name: string): Promise<ExecutionTargetRow> {

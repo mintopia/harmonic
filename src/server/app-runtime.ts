@@ -48,6 +48,8 @@ import { createRepositoryResolver } from '../repository/resolve.js';
 import { withLibraryPrompts } from '../domain/prompt-library-sources.js';
 import type { PromptLibrary } from '../domain/prompt-library-store.js';
 import type { WorkflowLibrary } from '../domain/workflow-library-store.js';
+import { defaultPodApiFactory } from '../execution/kubernetes-pods.js';
+import { RepositoryPassService } from '../repository-proxy/pass-service.js';
 
 function createLifecycleTracking(
   bus: EventBus,
@@ -377,7 +379,12 @@ export async function createRuntime(deps: {
     agentMessages: deps.stores.agentMessages,
     archive,
     promptLibrary: deps.promptLibrary,
-    workflows: { library: deps.workflowLibrary, secrets, workspaceName: async (workspaceId) => (await workspaces.get(workspaceId)).name },
+    workflows: {
+      library: deps.workflowLibrary,
+      secrets,
+      workspaceName: async (workspaceId) => (await workspaces.get(workspaceId)).name,
+      pods: { targets: deps.stores.executionTargets, passes: new RepositoryPassService(deps.stores.globalSecrets), apiFactory: opts.podApiFactory ?? defaultPodApiFactory },
+    },
   });
   runnerRef = runner;
   const globalPause = new GlobalPause(tasks, runner, asyncDb);

@@ -31,6 +31,7 @@ import type { WorkflowLibrary } from '../domain/workflow-library-store.js';
 import { SecretService } from '../secrets/secret-service.js';
 import type { ExecutionTargetService } from '../execution/execution-targets.js';
 import type { KubernetesClientFactory } from '../execution/kubernetes-client.js';
+import type { PodApiFactory } from '../execution/kubernetes-pods.js';
 import { NotificationStore } from '../notifications/notification-store.js';
 import { Notifier } from '../notifications/notifier.js';
 import type { TaskArchive } from '../archive/task-archive.js';
@@ -59,6 +60,7 @@ export interface AppOptions {
   reliabilityTuning?: { eventLoop?: { enabled?: boolean; probeMs?: number; stallMs?: number } } | undefined;
   /** Test-only; absent uses the real client. */
   kubernetesClientFactory?: KubernetesClientFactory | undefined;
+  podApiFactory?: PodApiFactory | undefined;
   /** Test-only critic drive override; absent uses the real ACP critic drive. */
   criticDrive?: CriticHarnessDrive | undefined;
   /** Test-only Scheduled Job registrations. */

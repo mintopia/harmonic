@@ -2149,6 +2149,69 @@
             "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "podName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "harmonic-task-42-a1b2"
+                  },
+                  "podState": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "running",
+                      "deleted",
+                      "lost"
+                    ],
+                    "example": "running"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "example": "harmonic-agents"
+                  },
+                  "image": {
+                    "type": "string",
+                    "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "workflow",
+                      "step"
+                    ],
+                    "example": "workflow"
+                  }
+                },
+                "required": [
+                  "target",
+                  "podName",
+                  "podState",
+                  "namespace",
+                  "image",
+                  "source"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Kubernetes pod the Ticket's workflow ran or runs in; kept after the pod is deleted. Null when the Ticket ran on `local`.",
+            "example": null
+          },
           "workflowVarOverrides": {
             "anyOf": [
               {
@@ -2441,6 +2504,7 @@
           "workflowChosen",
           "workflowLabel",
           "workflowReason",
+          "execution",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -2691,6 +2755,69 @@
               }
             ],
             "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
+            "example": null
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "podName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "harmonic-task-42-a1b2"
+                  },
+                  "podState": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "running",
+                      "deleted",
+                      "lost"
+                    ],
+                    "example": "running"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "example": "harmonic-agents"
+                  },
+                  "image": {
+                    "type": "string",
+                    "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "workflow",
+                      "step"
+                    ],
+                    "example": "workflow"
+                  }
+                },
+                "required": [
+                  "target",
+                  "podName",
+                  "podState",
+                  "namespace",
+                  "image",
+                  "source"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Kubernetes pod the Ticket's workflow ran or runs in; kept after the pod is deleted. Null when the Ticket ran on `local`.",
             "example": null
           },
           "workflowVarOverrides": {
@@ -3321,6 +3448,7 @@
           "workflowChosen",
           "workflowLabel",
           "workflowReason",
+          "execution",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -3590,6 +3718,69 @@
             "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "podName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "harmonic-task-42-a1b2"
+                  },
+                  "podState": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "running",
+                      "deleted",
+                      "lost"
+                    ],
+                    "example": "running"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "example": "harmonic-agents"
+                  },
+                  "image": {
+                    "type": "string",
+                    "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "workflow",
+                      "step"
+                    ],
+                    "example": "workflow"
+                  }
+                },
+                "required": [
+                  "target",
+                  "podName",
+                  "podState",
+                  "namespace",
+                  "image",
+                  "source"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Kubernetes pod the Ticket's workflow ran or runs in; kept after the pod is deleted. Null when the Ticket ran on `local`.",
+            "example": null
+          },
           "workflowVarOverrides": {
             "anyOf": [
               {
@@ -4217,6 +4408,7 @@
           "workflowChosen",
           "workflowLabel",
           "workflowReason",
+          "execution",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -4469,6 +4661,69 @@
               }
             ],
             "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
+            "example": null
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "podName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "harmonic-task-42-a1b2"
+                  },
+                  "podState": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "running",
+                      "deleted",
+                      "lost"
+                    ],
+                    "example": "running"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "example": "harmonic-agents"
+                  },
+                  "image": {
+                    "type": "string",
+                    "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "workflow",
+                      "step"
+                    ],
+                    "example": "workflow"
+                  }
+                },
+                "required": [
+                  "target",
+                  "podName",
+                  "podState",
+                  "namespace",
+                  "image",
+                  "source"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Kubernetes pod the Ticket's workflow ran or runs in; kept after the pod is deleted. Null when the Ticket ran on `local`.",
             "example": null
           },
           "workflowVarOverrides": {
@@ -5100,6 +5355,7 @@
           "workflowChosen",
           "workflowLabel",
           "workflowReason",
+          "execution",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -13226,6 +13482,70 @@
             "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "podName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "harmonic-task-42-a1b2"
+                  },
+                  "podState": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "running",
+                      "deleted",
+                      "lost"
+                    ],
+                    "example": "running"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "example": "harmonic-agents"
+                  },
+                  "image": {
+                    "type": "string",
+                    "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "workflow",
+                      "step"
+                    ],
+                    "example": "workflow"
+                  }
+                },
+                "required": [
+                  "target",
+                  "podName",
+                  "podState",
+                  "namespace",
+                  "image",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Kubernetes pod the Ticket's workflow ran or runs in; kept after the pod is deleted. Null when the Ticket ran on `local`.",
+            "example": null
+          },
           "workflowVarOverrides": {
             "anyOf": [
               {
@@ -13520,6 +13840,7 @@
           "workflowChosen",
           "workflowLabel",
           "workflowReason",
+          "execution",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -13772,6 +14093,70 @@
               }
             ],
             "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
+            "example": null
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "podName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "harmonic-task-42-a1b2"
+                  },
+                  "podState": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "running",
+                      "deleted",
+                      "lost"
+                    ],
+                    "example": "running"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "example": "harmonic-agents"
+                  },
+                  "image": {
+                    "type": "string",
+                    "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "workflow",
+                      "step"
+                    ],
+                    "example": "workflow"
+                  }
+                },
+                "required": [
+                  "target",
+                  "podName",
+                  "podState",
+                  "namespace",
+                  "image",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Kubernetes pod the Ticket's workflow ran or runs in; kept after the pod is deleted. Null when the Ticket ran on `local`.",
             "example": null
           },
           "workflowVarOverrides": {
@@ -14408,6 +14793,7 @@
           "workflowChosen",
           "workflowLabel",
           "workflowReason",
+          "execution",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -14679,6 +15065,70 @@
             "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "podName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "harmonic-task-42-a1b2"
+                  },
+                  "podState": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "running",
+                      "deleted",
+                      "lost"
+                    ],
+                    "example": "running"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "example": "harmonic-agents"
+                  },
+                  "image": {
+                    "type": "string",
+                    "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "workflow",
+                      "step"
+                    ],
+                    "example": "workflow"
+                  }
+                },
+                "required": [
+                  "target",
+                  "podName",
+                  "podState",
+                  "namespace",
+                  "image",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Kubernetes pod the Ticket's workflow ran or runs in; kept after the pod is deleted. Null when the Ticket ran on `local`.",
+            "example": null
+          },
           "workflowVarOverrides": {
             "anyOf": [
               {
@@ -15312,6 +15762,7 @@
           "workflowChosen",
           "workflowLabel",
           "workflowReason",
+          "execution",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -15566,6 +16017,70 @@
               }
             ],
             "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
+            "example": null
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "podName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "harmonic-task-42-a1b2"
+                  },
+                  "podState": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "running",
+                      "deleted",
+                      "lost"
+                    ],
+                    "example": "running"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "example": "harmonic-agents"
+                  },
+                  "image": {
+                    "type": "string",
+                    "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "workflow",
+                      "step"
+                    ],
+                    "example": "workflow"
+                  }
+                },
+                "required": [
+                  "target",
+                  "podName",
+                  "podState",
+                  "namespace",
+                  "image",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Kubernetes pod the Ticket's workflow ran or runs in; kept after the pod is deleted. Null when the Ticket ran on `local`.",
             "example": null
           },
           "workflowVarOverrides": {
@@ -16203,6 +16718,7 @@
           "workflowChosen",
           "workflowLabel",
           "workflowReason",
+          "execution",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -23675,6 +24191,49 @@
                                   }
                                 ],
                                 "example": 0
+                              },
+                              "checkpoint": {
+                                "description": "The checkpoint push after a step that ran in a Kubernetes pod; absent for steps that ran locally.",
+                                "type": "object",
+                                "properties": {
+                                  "branch": {
+                                    "type": "string",
+                                    "example": "harmonic/task-42"
+                                  },
+                                  "sha": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "The commit the Ticket branch was pushed at; null when the push failed.",
+                                    "example": "3f2a9c1"
+                                  },
+                                  "forced": {
+                                    "type": "boolean",
+                                    "description": "True when the push rewrote history already on the remote, as after a rebase.",
+                                    "example": false
+                                  },
+                                  "unchanged": {
+                                    "type": "boolean",
+                                    "description": "True when the step left the branch where the previous checkpoint put it.",
+                                    "example": false
+                                  },
+                                  "error": {
+                                    "description": "Why the push failed.",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "branch",
+                                  "sha",
+                                  "forced",
+                                  "unchanged"
+                                ],
+                                "additionalProperties": false
                               }
                             },
                             "required": [
@@ -46176,6 +46735,49 @@
                                   }
                                 ],
                                 "example": 0
+                              },
+                              "checkpoint": {
+                                "description": "The checkpoint push after a step that ran in a Kubernetes pod; absent for steps that ran locally.",
+                                "type": "object",
+                                "properties": {
+                                  "branch": {
+                                    "type": "string",
+                                    "example": "harmonic/task-42"
+                                  },
+                                  "sha": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "The commit the Ticket branch was pushed at; null when the push failed.",
+                                    "example": "3f2a9c1"
+                                  },
+                                  "forced": {
+                                    "type": "boolean",
+                                    "description": "True when the push rewrote history already on the remote, as after a rebase.",
+                                    "example": false
+                                  },
+                                  "unchanged": {
+                                    "type": "boolean",
+                                    "description": "True when the step left the branch where the previous checkpoint put it.",
+                                    "example": false
+                                  },
+                                  "error": {
+                                    "description": "Why the push failed.",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "branch",
+                                  "sha",
+                                  "forced",
+                                  "unchanged"
+                                ],
+                                "additionalProperties": false
                               }
                             },
                             "required": [

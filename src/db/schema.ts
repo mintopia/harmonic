@@ -125,6 +125,8 @@ export const tasks = sqliteTable('tasks', {
   /** How `workflowRef` was resolved; null until the Ticket starts on a workflow. */
   workflowChosen: text('workflow_chosen').$type<WorkflowChosen>(),
   workflowLabel: text('workflow_label'),
+  /** The Kubernetes pod running the Ticket's workflow, set while and after it runs on a non-local Execution Target; null on `local`. */
+  execution: text('execution', { mode: 'json' }).$type<TaskExecution>(),
   /** The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted. */
   workflowReason: text('workflow_reason'),
   /** JSON: Usage and Cost of the workflow classifier call, a routing line separate from any Attempt's Cost. */
@@ -315,6 +317,19 @@ export const steps = sqliteTable('steps', {
   endedAt: integer('ended_at'),
 }, (t) => [uniqueIndex('steps_attempt_position_unique').on(t.attemptId, t.position)]);
 export type StepRow = typeof steps.$inferSelect;
+
+export const TASK_EXECUTION_POD_STATES = ['pending', 'running', 'deleted', 'lost'] as const;
+export type TaskExecutionPodState = (typeof TASK_EXECUTION_POD_STATES)[number];
+
+/** Where a Ticket's execution runs on a Kubernetes Execution Target; kept after the pod is deleted so the Ticket page can still show it. */
+export interface TaskExecution {
+  target: string;
+  podName: string | null;
+  podState: TaskExecutionPodState;
+  namespace: string;
+  image: string;
+  source: 'workflow' | 'step';
+}
 
 export const WORKFLOW_CHOSEN = ['explicit', 'label', 'classifier', 'workspace', 'global'] as const;
 export type WorkflowChosen = (typeof WORKFLOW_CHOSEN)[number];

@@ -18,6 +18,9 @@ import type { CriticDriveRequest, CriticDriveResult } from '../verification/crit
 import { exitCodeToVerdict, OUTPUT_CHAR_CAP, type CommandSpawn } from '../verification/command-verifier.js';
 import type { MergeIntoBaseOutcome } from './branch-merge.js';
 import { Git } from './git.js';
+import { LOCAL_TARGET } from './execution-targets.js';
+import type { PodOpener } from './pod-opener.js';
+import type { PodSession } from './pod-session.js';
 import { buildWorkflowCriticPrompt, renderAgentPrompt } from './prompt-assembly.js';
 import { appendFeedback, type DriveFields } from './prompt-template.js';
 import type { EnginePrompts } from '../domain/bundled-prompts.js';
@@ -109,6 +112,8 @@ export interface WorkflowEngineDeps<S extends EngineSubject = TaskRow> {
     criticTimeoutMs?: number;
   };
   runTimeoutMs?: number;
+  /** Opens the pod a workflow with a Kubernetes `runs_on` runs its shell steps in; absent runs every workflow locally. */
+  pods?: PodOpener<S>;
 }
 
 interface StepResult {
@@ -146,6 +151,8 @@ interface RunContext<S extends EngineSubject> {
   context: ExpressionContext;
   agentState: AgentRunState;
   halted: boolean;
+  pod?: PodSession;
+  podTarget?: string;
 }
 
 interface GitMark {
@@ -196,6 +203,25 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
   /** `resumed` false marks a Retry: the counter and later steps start over. */
   async run(task: S, run: AttemptRow, resumed = true, reuseSession = true): Promise<void> {
     const { workflow, ctx } = await this.prepare(task, run, reuseSession);
+    const runsOn = workflow.runsOn;
+    if (runsOn !== undefined && runsOn !== LOCAL_TARGET && this.deps.pods) {
+      try {
+        ctx.pod = await this.deps.pods.open(task, { runsOn, image: workflow.image, source: 'workflow' });
+        ctx.podTarget = runsOn;
+      } catch (error) {
+        await this.deps.escalate(task, run, maskSecrets(`Execution Target ${runsOn} could not start the Ticket's pod: ${errorMessage(error)}`, ctx.secrets));
+        return;
+      }
+    }
+    try {
+      await this.runWorkflow(ctx, workflow, resumed);
+    } finally {
+      await ctx.pod?.dispose();
+    }
+  }
+
+  private async runWorkflow(ctx: RunContext<S>, workflow: ReturnType<typeof parseWorkflow>, resumed: boolean): Promise<void> {
+    const { task, run } = ctx;
     const { start, end } = workflow.attempts;
     if (!resumed) {
       for (const id of stepIds(workflow.steps.slice(start))) {
@@ -312,18 +338,20 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     const row = await this.deps.stepRuns.start({ ...stepRunOwner(task), workflowRef: ref, stepId: step.id, position, action, attempt });
     this.deps.onStepChanged?.(stepRunOwner(task));
     let result: StepResult;
+    let pod: PodSession | undefined;
     try {
       const falsy = [groupCondition, step.if].find((condition) => condition !== undefined && !evaluateCondition(condition, context));
       if (falsy !== undefined) {
         result = { outcome: 'skipped', summary: `if: ${falsy.trim()} was false`, stdout: '', exitCode: null, output: '' };
       } else {
         const [resolved, env] = resolveStep(step, context);
+        pod = this.podFor(ctx, resolved);
         result =
           resolved.uses === 'agent'
             ? await this.executeAgent(ctx, resolved, row.id)
             : resolved.uses === 'critic'
               ? await this.executeCritic(task, resolved, row.id, secrets, context)
-              : await this.execute(task, run, resolved, env, secrets);
+              : await this.execute(task, run, resolved, env, secrets, pod);
       }
     } catch (error) {
       result = { outcome: 'inconclusive', summary: mask(errorMessage(error)), stdout: '', exitCode: null, output: '' };
@@ -332,11 +360,32 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
       ctx.halted = true;
       return null;
     }
+    if (pod && result.outcome !== 'skipped') result = await this.checkpointed(pod, result, mask);
     const outputs: WorkflowStepOutputs = { stdout: result.stdout, exitCode: result.exitCode, ...result.outputs };
     await this.deps.stepRuns.finish(row.id, { outcome: result.outcome, outputs, summary: result.summary });
     stepsContext[step.id] = { outcome: result.outcome, outputs: outputs as unknown as Value };
     this.deps.onStepChanged?.(stepRunOwner(task));
     return result.outcome === 'pass' || result.outcome === 'skipped' ? null : { stepId: step.id, ...result };
+  }
+
+  private podFor(ctx: RunContext<S>, step: WorkflowStepDefinition): PodSession | undefined {
+    if (!ctx.pod) return undefined;
+    const shell = step.uses === 'rebase' || (step.run !== undefined && (step.uses === undefined || step.uses === 'command'));
+    return shell && (step.runs_on === undefined || step.runs_on === ctx.podTarget) ? ctx.pod : undefined;
+  }
+
+  /** The push is the handover to whatever runs next, so a step whose work could not be pushed did not succeed. */
+  private async checkpointed(pod: PodSession, result: StepResult, mask: (text: string) => string): Promise<StepResult> {
+    let checkpoint;
+    try {
+      checkpoint = await pod.checkpoint();
+    } catch (error) {
+      checkpoint = { branch: '', sha: null, forced: false, unchanged: false, error: errorMessage(error) };
+    }
+    const recorded = checkpoint.error === undefined ? checkpoint : { ...checkpoint, error: mask(checkpoint.error) };
+    const outputs = { ...result.outputs, checkpoint: recorded };
+    if (recorded.error === undefined || result.outcome !== 'pass') return { ...result, outputs };
+    return { ...result, outcome: 'inconclusive', summary: `checkpoint push failed: ${recorded.error}`, outputs };
   }
 
   private async runGroup(ctx: RunContext<S>, group: WorkflowStepDefinition, position: number, attempt: number | null): Promise<FailedStep | null> {
@@ -437,6 +486,22 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     if (!rebased.conflict) return { outcome: 'inconclusive', summary: detail, stdout: '', exitCode: null, output: detail, outputs: { baseSha: baseOid, conflictedFiles: [] } };
     const conflictedFiles = await Git.conflictedFiles(cwd);
     return { outcome: 'conflict', summary: `rebase conflict in ${conflictedFiles.join(', ') || 'the working copy'}`, stdout: '', exitCode: null, output: detail, outputs: { baseSha: baseOid, conflictedFiles } };
+  }
+
+  private async rebaseInPod(pod: PodSession, mask: (text: string) => string): Promise<StepResult> {
+    const rebased = await pod.rebase();
+    if (rebased.ok) return { outcome: 'pass', summary: `rebased onto ${rebased.baseSha}`, stdout: '', exitCode: 0, output: '', outputs: { baseSha: rebased.baseSha, conflictedFiles: [] } };
+    const detail = mask(rebased.detail);
+    const outputs = { ...(rebased.baseSha === null ? {} : { baseSha: rebased.baseSha }), conflictedFiles: rebased.conflictedFiles };
+    if (!rebased.conflict) return { outcome: 'inconclusive', summary: detail, stdout: '', exitCode: null, output: detail, outputs };
+    return { outcome: 'conflict', summary: `rebase conflict in ${rebased.conflictedFiles.join(', ') || 'the working copy'}`, stdout: '', exitCode: null, output: detail, outputs };
+  }
+
+  private async runInPod(pod: PodSession, step: WorkflowStepDefinition, env: Record<string, string>, mask: (text: string) => string): Promise<StepResult> {
+    const result = await pod.run(step.run!, env, this.deps.runTimeoutMs ?? DEFAULT_RUN_TIMEOUT_SECONDS * 1000);
+    const output = result.stdout + result.stderr;
+    const verdict = exitCodeToVerdict({ code: result.code, signal: null, timedOut: result.timedOut, output, stdout: result.stdout });
+    return { outcome: verdict.verdict, summary: mask(verdict.summary), stdout: mask(result.stdout), exitCode: result.code, output: mask(output) };
   }
 
   private async executeBranchAction(task: S, run: AttemptRow, action: 'merge' | 'open-pr' | 'artifact'): Promise<StepResult> {
@@ -602,9 +667,11 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     };
   }
 
-  private async execute(task: S, run: AttemptRow, step: WorkflowStepDefinition, env: Record<string, string>, secrets: string[]): Promise<StepResult> {
+  private async execute(task: S, run: AttemptRow, step: WorkflowStepDefinition, env: Record<string, string>, secrets: string[], pod?: PodSession): Promise<StepResult> {
     const mask = (text: string): string => maskSecrets(text, secrets);
     try {
+      if (pod && step.uses === 'rebase') return await this.rebaseInPod(pod, mask);
+      if (pod) return await this.runInPod(pod, step, env, mask);
       if (step.uses === 'rebase') return await this.rebase(task, mask);
       if (step.uses === 'verify') return { outcome: 'pass', summary: 'no verification commands configured', stdout: '', exitCode: null, output: '' };
       if (step.uses === 'post-merge-check') return await this.postMergeCheck(task, run, step, env, secrets);

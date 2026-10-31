@@ -81,7 +81,7 @@ export function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
   return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
 }
 
-function loadKubeConfig({ authMethod, kubeconfig }: KubernetesAccess): KubeConfig {
+export function loadKubeConfig({ authMethod, kubeconfig }: KubernetesAccess): KubeConfig {
   const config = new KubeConfig();
   try {
     if (authMethod === 'in-cluster') {

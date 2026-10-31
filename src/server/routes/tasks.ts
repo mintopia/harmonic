@@ -18,6 +18,7 @@ import {
   GUARDRAIL_CONFIG_SOURCES,
   VERIFICATION_MECHANISMS,
   STEP_TYPES,
+  TASK_EXECUTION_POD_STATES,
   WORKFLOW_CHOSEN,
   isEpicAttempt,
   isTaskAttempt,
@@ -196,6 +197,18 @@ const taskWithDepsSchema = z
     workflowChosen: z.enum(WORKFLOW_CHOSEN).nullable().describe('How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `classifier`, `workspace` or `global`; null until the Ticket starts on a workflow.').meta({ example: null }),
     workflowLabel: z.string().nullable().describe('The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.').meta({ example: null }),
     workflowReason: z.string().nullable().describe('The workflow classifier\'s one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.').meta({ example: null }),
+    execution: z
+      .object({
+        target: z.string().meta({ example: 'k8s-prod' }),
+        podName: z.string().nullable().meta({ example: 'harmonic-task-42-a1b2' }),
+        podState: z.enum(TASK_EXECUTION_POD_STATES).meta({ example: 'running' }),
+        namespace: z.string().meta({ example: 'harmonic-agents' }),
+        image: z.string().meta({ example: 'ghcr.io/mintopia/harmonic-harnesses:2.19.0' }),
+        source: z.enum(['workflow', 'step']).meta({ example: 'workflow' }),
+      })
+      .nullable()
+      .describe('The Kubernetes pod the Ticket\'s workflow ran or runs in; kept after the pod is deleted. Null when the Ticket ran on `local`.')
+      .meta({ example: null }),
     workflowVarOverrides: z.record(z.string(), varValueSchema).nullable().describe('The Ticket\'s own overrides of the workflow `vars:`; null when none.').meta({ example: null }),
     workflowVars: z.record(z.string(), varValueSchema).nullable().describe('The vars the pinned workflow runs with, resolved when it was pinned; null before the pin.').meta({ example: null }),
     workflowRef: z.string().nullable().describe('The Workflow Library version the Ticket is pinned to, as `<name>@<version>`; null until it starts on one.').meta({ example: null }),

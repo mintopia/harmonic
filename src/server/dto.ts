@@ -520,6 +520,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListR
     workflowRef: null,
     workflowChosen: null,
     workflowLabel: null,
+    execution: null,
     workflowReason: null,
     workflowRouting: null,
     workflowVarOverrides: null,

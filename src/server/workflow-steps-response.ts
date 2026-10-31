@@ -31,7 +31,22 @@ export const workflowStepsResponseSchema = z.object({
       outcome: z.enum(WORKFLOW_STEP_OUTCOMES).nullable().meta({ description: 'Null while the step is running.', example: 'pass' }),
       summary: z.string().nullable().meta({ example: 'command exited 0' }),
       resolvedPrompt: z.string().nullable().meta({ description: 'The prompt an agent step sent, Prompt Library includes expanded; null for other actions.' }),
-      outputs: z.object({ stdout: z.string().meta({ example: 'ok\n' }), exitCode: z.number().int().nullable().meta({ example: 0 }) }).meta({ description: 'Secret values are masked.' }),
+      outputs: z
+        .object({
+          stdout: z.string().meta({ example: 'ok\n' }),
+          exitCode: z.number().int().nullable().meta({ example: 0 }),
+          checkpoint: z
+            .object({
+              branch: z.string().meta({ example: 'harmonic/task-42' }),
+              sha: z.string().nullable().meta({ description: 'The commit the Ticket branch was pushed at; null when the push failed.', example: '3f2a9c1' }),
+              forced: z.boolean().meta({ description: 'True when the push rewrote history already on the remote, as after a rebase.', example: false }),
+              unchanged: z.boolean().meta({ description: 'True when the step left the branch where the previous checkpoint put it.', example: false }),
+              error: z.string().optional().meta({ description: 'Why the push failed.' }),
+            })
+            .optional()
+            .meta({ description: 'The checkpoint push after a step that ran in a Kubernetes pod; absent for steps that ran locally.' }),
+        })
+        .meta({ description: 'Secret values are masked.' }),
       startedAt: z.number().meta({ example: 1784030400000 }),
       endedAt: z.number().nullable().meta({ example: 1784030401000 }),
     }),

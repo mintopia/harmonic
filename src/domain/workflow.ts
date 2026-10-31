@@ -114,6 +114,10 @@ export interface WorkflowDefinition {
   readonly steps: readonly WorkflowStepDefinition[];
   readonly attempts: AttemptsBlock;
   readonly cleanup?: readonly WorkflowStepDefinition[] | undefined;
+  /** The Execution Target the whole workflow runs on; absent means `local`. */
+  readonly runsOn?: string | undefined;
+  /** Overrides the target's default pod image. */
+  readonly image?: string | undefined;
   readonly vars: Readonly<Record<string, string | number | boolean>>;
 }
 
@@ -149,7 +153,7 @@ export function parseWorkflow(text: string, options: { lenient?: boolean } = {})
   }
   const definition = workflowSchema.parse(doc.toJS());
   const { located, block } = layout(definition);
-  return { name: definition.name, description: definition.description, subject: definition.subject ?? 'ticket', cleanup: definition.cleanup, vars: definition.vars ?? {}, steps: located.map((l) => l.step), attempts: block! };
+  return { name: definition.name, description: definition.description, subject: definition.subject ?? 'ticket', cleanup: definition.cleanup, runsOn: definition.runs_on, image: definition.image, vars: definition.vars ?? {}, steps: located.map((l) => l.step), attempts: block! };
 }
 
 /** Checks every `option:` code against `isUsable`. */
