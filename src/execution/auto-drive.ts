@@ -112,27 +112,10 @@ export class AutoDrive {
 
     if (fate === 'open-PR') {
       if (worktree) {
-        const workspace = workspaceTrackerSettings(await this.getWorkspace?.(task.workspaceId));
-        const repository = await this.resolveRepository(task.workingDir, workspace);
-        if (repository) {
-          const { title } = splitTitleBody(task.prompt);
-          let pullRequestUrl: string | null;
-          try {
-            pullRequestUrl = await repository.openPR({
-              branch: run.branch!,
-              baseBranch: run.baseBranch!,
-              title,
-              body: `Auto-driven by Harmonic for ${task.trackerRef == null ? `Task ${task.id}` : await formatWorkspaceTrackerRef(task.workingDir, workspace, task.trackerRef)}.`,
-            });
-          } catch {
-            return 'escalate';
-          }
-          if (pullRequestUrl !== null) {
-            await this.recordPullRequest?.(run, pullRequestUrl).catch((err: unknown) => {
-              logger.warn(`[auto-drive] PR opened for task ${task.id} but its URL was not recorded: ${errorMessage(err)}`);
-            });
-          }
-          return 'completed';
+        try {
+          await this.openPullRequest(task, run);
+        } catch {
+          return 'escalate';
         }
       }
       return 'completed';
@@ -143,6 +126,26 @@ export class AutoDrive {
     }
 
     return 'completed';
+  }
+
+  /** Opens a PR for the Attempt's branch and records its URL; null when the repo has no Code Repository adapter or the kind opens none. Throws when the forge call fails. */
+  async openPullRequest(task: TaskRow, run: AttemptRow): Promise<string | null> {
+    const workspace = workspaceTrackerSettings(await this.getWorkspace?.(task.workspaceId));
+    const repository = await this.resolveRepository(task.workingDir, workspace);
+    if (!repository) return null;
+    const { title } = splitTitleBody(task.prompt);
+    const pullRequestUrl = await repository.openPR({
+      branch: run.branch!,
+      baseBranch: run.baseBranch!,
+      title,
+      body: `Auto-driven by Harmonic for ${task.trackerRef == null ? `Task ${task.id}` : await formatWorkspaceTrackerRef(task.workingDir, workspace, task.trackerRef)}.`,
+    });
+    if (pullRequestUrl !== null) {
+      await this.recordPullRequest?.(run, pullRequestUrl).catch((err: unknown) => {
+        logger.warn(`[auto-drive] PR opened for task ${task.id} but its URL was not recorded: ${errorMessage(err)}`);
+      });
+    }
+    return pullRequestUrl;
   }
 
   /**

@@ -9,6 +9,7 @@ import { AttemptStore } from '../src/domain/attempts.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { WorkflowStepRunStore } from '../src/domain/workflow-step-runs.js';
 import { baselineConfig } from '../src/config.js';
+import { mergeIntoBase } from '../src/execution/branch-merge.js';
 import { WorkflowEngine, ONLY_THE_AGENT_COMMITS, type WorkflowEngineDeps } from '../src/execution/workflow-engine.js';
 import { createChildProcessSpawn } from '../src/verification/command-verifier.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace, testSpawnProcessGroup } from './helpers.js';
@@ -147,10 +148,72 @@ describe('WorkflowEngine', () => {
   });
 
   it('records an action it cannot run yet as inconclusive and escalates', async () => {
-    const { task, run } = await startTask(flow('  - id: merge-it\n    uses: merge\n'));
+    const { task, run } = await startTask(flow('  - id: check\n    uses: post-merge-check\n'));
     await engine().run(task, run);
-    expect((await stepRows(task.id))[0]).toMatchObject({ action: 'merge', outcome: 'inconclusive', summary: 'action not yet supported' });
+    expect((await stepRows(task.id))[0]).toMatchObject({ action: 'post-merge-check', outcome: 'inconclusive', summary: 'action not yet supported' });
     expect(escalations).toHaveLength(1);
+  });
+
+  describe('branch actions', () => {
+    const realMerge: WorkflowEngineDeps['mergeBranch'] = async (_task, r) =>
+      mergeIntoBase({ repoDir: repo, baseBranch: r.baseBranch!, branch: r.branch!, expectedOid: git(repo, 'rev-parse', r.branch!), mode: 'merge', mutexHeld: true });
+    const commitFile = (name: string, body: string): void => {
+      writeFileSync(join(repo, name), body);
+      git(repo, 'add', name);
+      git(repo, 'commit', '-q', '-m', `edit ${name}`);
+    };
+    const onBranch = <T extends object>(run: T): T & { branch: string; baseBranch: string } => ({ ...run, branch: 'feat', baseBranch: 'main' });
+    const fork = (): void => {
+      git(repo, 'checkout', '-q', '-b', 'feat');
+      commitFile('feat.txt', 'feat\n');
+      git(repo, 'checkout', '-q', 'main');
+    };
+
+    it('merges the branch into a base that moved, with a two-parent merge commit, never switching the base checkout', async () => {
+      fork();
+      commitFile('base.txt', 'moved\n');
+      const { task, run } = await startTask(flow('  - id: m\n    uses: merge\n'));
+      await engine({ mergeBranch: realMerge }).run(task, onBranch(run));
+      expect((await stepRows(task.id))[0]).toMatchObject({ action: 'merge', outcome: 'pass' });
+      expect(git(repo, 'rev-list', '--parents', '-n', '1', 'main').split(' ')).toHaveLength(3);
+      expect(git(repo, 'rev-parse', 'HEAD')).toBe(git(repo, 'rev-parse', 'main'));
+      expect(git(repo, 'branch', '--show-current')).toBe('main');
+      expect(readFileSync(join(repo, 'feat.txt'), 'utf8')).toBe('feat\n');
+      expect(completions).toBe(1);
+    });
+
+    it('records a conflict and leaves the base unchanged', async () => {
+      git(repo, 'checkout', '-q', '-b', 'feat');
+      commitFile('same.txt', 'feat\n');
+      git(repo, 'checkout', '-q', 'main');
+      commitFile('same.txt', 'base\n');
+      const before = git(repo, 'rev-parse', 'main');
+      const { task, run } = await startTask(flow('  - id: m\n    uses: merge\n'));
+      await engine({ mergeBranch: realMerge }).run(task, onBranch(run));
+      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'conflict' });
+      expect(git(repo, 'rev-parse', 'main')).toBe(before);
+      expect(git(repo, 'branch', '--show-current')).toBe('main');
+      expect(git(repo, 'status', '--porcelain')).toBe('');
+      expect(escalations).toHaveLength(1);
+    });
+
+    it('opens a pull request and exposes its url and number', async () => {
+      const requests: string[] = [];
+      const { task, run } = await startTask(flow('  - id: pr\n    uses: open-pr\n'));
+      await engine({ openPullRequest: async (_t, r) => { requests.push(`${r.branch}->${r.baseBranch}`); return 'https://github.com/o/r/pull/42'; } }).run(task, onBranch(run));
+      expect(requests).toEqual(['feat->main']);
+      const row = (await stepRows(task.id))[0]!;
+      expect(row.outcome).toBe('pass');
+      expect(JSON.parse(row.outputs!)).toMatchObject({ url: 'https://github.com/o/r/pull/42', number: 42 });
+    });
+
+    it('keeps the branch as an artifact', async () => {
+      const { task, run } = await startTask(flow('  - id: keep\n    uses: artifact\n'));
+      await engine().run(task, onBranch(run));
+      const row = (await stepRows(task.id))[0]!;
+      expect(row.outcome).toBe('pass');
+      expect(JSON.parse(row.outputs!)).toMatchObject({ branch: 'feat' });
+    });
   });
 
   it('resumes after a restart without re-running finished steps', async () => {

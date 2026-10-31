@@ -7,6 +7,9 @@ export interface WorkflowStepOutputs {
   exitCode: number | null;
   baseSha?: string;
   conflictedFiles?: string[];
+  url?: string;
+  number?: number;
+  branch?: string;
 }
 
 export interface WorkflowStepRunStart {
