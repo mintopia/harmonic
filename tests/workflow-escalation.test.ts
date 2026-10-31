@@ -37,7 +37,7 @@ describe('escalation resumes workflows generically', () => {
       secrets: async () => ({}),
       cwdFor: () => repo,
       baseBranchFor: async () => 'main',
-      agent: { drive: { run: async () => { throw new Error('no agent drive in this test'); } }, getConfig: () => baselineConfig(), route: async () => { throw new Error('no route'); }, resolvePrompt: async (text) => text, promptFields: async (task) => ({ taskId: String(task.id), skill: '/implement', ref: '', url: '', title: task.prompt, description: '' }) },
+      agent: { drive: { run: async () => { throw new Error('no agent drive in this test'); } }, getConfig: () => baselineConfig(), route: async () => { throw new Error('no route'); }, resolveOption: async () => { throw new Error('no option'); }, resolvePrompt: async (text) => text, promptFields: async (task) => ({ taskId: String(task.id), skill: '/implement', ref: '', url: '', title: task.prompt, description: '' }) },
       escalate: async (_task, _run, reason) => { escalations.push(reason); },
       complete: async () => { completions += 1; },
       ...over,
@@ -145,7 +145,7 @@ describe('escalation resumes workflows generically', () => {
     const drive = { run: async (input: { continueSessionId?: string }) => { continued.push(input.continueSessionId); return { output: '', sessionId: 'warm-1' }; } };
     const agentStep = '  - id: work\n    uses: agent\n    with:\n      harness: claude\n      model: m\n      prompt: hi\n';
     const { task, run } = await startTask(flow(`${agentStep}  - id: gate\n    run: exit 1\n`, 1));
-    const wf = engine({ agent: { drive: drive as never, getConfig: () => baselineConfig(), route: async () => { throw new Error('no route'); }, resolvePrompt: async (text) => text, promptFields: async (task) => ({ taskId: String(task.id), skill: '/implement', ref: '', url: '', title: task.prompt, description: '' }) } });
+    const wf = engine({ agent: { drive: drive as never, getConfig: () => baselineConfig(), route: async () => { throw new Error('no route'); }, resolveOption: async () => { throw new Error('no option'); }, resolvePrompt: async (text) => text, promptFields: async (task) => ({ taskId: String(task.id), skill: '/implement', ref: '', url: '', title: task.prompt, description: '' }) } });
     await wf.run(task, run);
     await wf.run(task, run, false, true);
     await wf.run(task, run, false, false);

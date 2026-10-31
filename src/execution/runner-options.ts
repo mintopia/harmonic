@@ -106,7 +106,7 @@ export interface RunnerOptions {
         | 'mergeEpicRefreshPrompt'
         | 'verifyEpicResolveSuffix'
       > &
-        Partial<Pick<WorkspaceRow, 'workingDir' | 'workflow' | 'workflowLabels' | 'workflowVars'>>)
+        Partial<Pick<WorkspaceRow, 'workingDir' | 'workflow' | 'workflowLabels' | 'workflowVars' | 'modelOptions'>>)
     | undefined
   >;
   /** The agent-critic drive; the real one spawns the builder's configured harness as a contained read-only reviewer. */

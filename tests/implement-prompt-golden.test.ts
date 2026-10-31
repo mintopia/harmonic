@@ -90,6 +90,7 @@ describe('bundled implement workflow through the engine', () => {
         drive: { run: async (req) => { driven.push(req.prompt); turns[driven.length - 1]?.(req.cwd, driven.length); return { output: '', sessionId: 's', permissionRequests: [] }; } },
         getConfig: () => config,
         route: async () => resolveRoute(config, 'claude', 'm', null),
+        resolveOption: async () => { throw new Error('no option'); },
         resolvePrompt: (text) => prompts.resolve(text),
         promptFields: async (t) => fields(t),
       },

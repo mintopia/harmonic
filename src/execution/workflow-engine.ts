@@ -7,6 +7,7 @@ import type { WorkflowEntry } from '../domain/workflow-library-store.js';
 import { evaluateCondition, findInterpolations, interpolate, type ExpressionContext, type Value } from '../domain/workflow-expression.js';
 import { agentStepWith, criticStepWith, parseWorkflow, resolveAttemptsMax, type WorkflowStepDefinition } from '../domain/workflow.js';
 import { snapshotVars } from '../domain/workflow-vars.js';
+import type { ModelOptionResolution } from '../domain/model-options.js';
 import { harnessConfig, resolveRoute, type ResolvedRoute } from '../domain/route.js';
 import type { WorkflowStepOutputs, WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
 import { maskSecrets } from '../secrets/mask.js';
@@ -55,6 +56,7 @@ export interface WorkflowEngineDeps {
     drive: CriticHarnessDrive;
     getConfig: () => Pick<AppConfig, 'harnesses'>;
     route: (task: TaskRow) => Promise<ResolvedRoute>;
+    resolveOption: (task: TaskRow, code: string) => Promise<ModelOptionResolution>;
     resolvePrompt: (text: string) => Promise<string>;
     promptFields: (task: TaskRow) => Promise<DriveFields>;
     timeoutMs?: number;
@@ -70,6 +72,7 @@ interface StepResult {
   exitCode: number | null;
   output: string;
   outputs?: Partial<WorkflowStepOutputs>;
+  configFailure?: true;
 }
 
 type FailedStep = StepResult & { stepId: string };
@@ -78,6 +81,7 @@ interface StepFailure {
   outcome: WorkflowStepOutcome;
   reason: string;
   output: string;
+  configFailure?: true;
 }
 
 interface AgentRunState {
@@ -201,7 +205,7 @@ export class WorkflowEngine {
       }
       const failure = await this.runSteps(ctx, body, workflow.attempts.start, 'return', number);
       if (failure === null) return !ctx.halted;
-      if (failure.outcome === 'conflict') return false;
+      if (failure.outcome === 'conflict' || failure.configFailure) return false;
       previousVerdict = failure.outcome;
       failureReason = failure.reason;
       failureOutput = failure.output;
@@ -244,9 +248,10 @@ export class WorkflowEngine {
       if (onFailure === 'record') continue;
       const tail = failed.output.length > ESCALATION_OUTPUT_CHARS ? failed.output.slice(-ESCALATION_OUTPUT_CHARS) : failed.output;
       const reason = `workflow step ${failed.stepId} ${failed.outcome}: ${failed.summary}`;
-      if (onFailure === 'return' && failed.outcome !== 'conflict') return { outcome: failed.outcome, reason, output: tail };
+      const flag = failed.configFailure ? { configFailure: true as const } : {};
+      if (onFailure === 'return' && failed.outcome !== 'conflict' && !failed.configFailure) return { outcome: failed.outcome, reason, output: tail, ...flag };
       await this.deps.escalate(task, run, `${reason}${tail ? `\n${tail}` : ''}`);
-      return { outcome: failed.outcome, reason, output: tail };
+      return { outcome: failed.outcome, reason, output: tail, ...flag };
     }
     return null;
   }
@@ -295,6 +300,7 @@ export class WorkflowEngine {
       stdout: '',
       exitCode: null,
       output: failures.map((f) => f.output).filter((text) => text !== '').join('\n'),
+      ...(failures.some((f) => f.configFailure) ? { configFailure: true as const } : {}),
     };
   }
 
@@ -303,9 +309,16 @@ export class WorkflowEngine {
     const inconclusive = (summary: string): StepResult => ({ outcome: 'inconclusive', summary: mask(summary), stdout: '', exitCode: null, output: '' });
     try {
       const options = criticStepWith(step.with);
-      if (!options) return inconclusive('invalid critic step options: a critic needs its own prompt, harness and model');
+      if (!options) return inconclusive('invalid critic step options: a critic needs its own prompt and either an option or a harness and model');
       const { agent } = this.deps;
-      const route = resolveRoute(agent.getConfig(), options.harness, options.model, null);
+      let route: ResolvedRoute;
+      if (options.option !== undefined) {
+        const picked = await this.optionRoute(task, options.option, step.id);
+        if ('failure' in picked) return { ...picked.failure, summary: mask(picked.failure.summary) };
+        route = picked.route;
+      } else {
+        route = resolveRoute(agent.getConfig(), options.harness!, options.model!, null);
+      }
       if (!route.ok) return inconclusive(route.reason);
       const prompt = buildWorkflowCriticPrompt(await this.renderPrompt(options.prompt, await this.promptFields(task, context, route), context), fragments);
       await this.deps.stepRuns.setResolvedPrompt(rowId, mask(prompt));
@@ -399,6 +412,14 @@ export class WorkflowEngine {
     return done('pass', `opened ${url}`, { url, ...(number === null ? {} : { number }) });
   }
 
+  private async optionRoute(task: TaskRow, code: string, stepId: string): Promise<{ route: ResolvedRoute } | { failure: StepResult }> {
+    const resolved = await this.deps.agent.resolveOption(task, code);
+    if (resolved.kind === 'miss') {
+      return { failure: { outcome: 'inconclusive', summary: `step ${stepId} names model option '${code}', which is ${resolved.reason} for this Ticket; the step does not fall back to another route`, stdout: '', exitCode: null, output: '', configFailure: true } };
+    }
+    return { route: resolveRoute(this.deps.agent.getConfig(), resolved.option.harness, resolved.option.model, null) };
+  }
+
   private async executeAgent(task: TaskRow, step: WorkflowStepDefinition, rowId: number, secrets: string[], state: AgentRunState, context: ExpressionContext): Promise<StepResult> {
     const mask = (text: string): string => maskSecrets(text, secrets);
     const inconclusive = (summary: string): StepResult => ({ outcome: 'inconclusive', summary: mask(summary), stdout: '', exitCode: null, output: '' });
@@ -407,7 +428,11 @@ export class WorkflowEngine {
       if (!options) return inconclusive('invalid agent step options');
       const { agent } = this.deps;
       let route: ResolvedRoute;
-      if (options.harness === undefined && options.model === undefined) {
+      if (options.option !== undefined) {
+        const picked = await this.optionRoute(task, options.option, step.id);
+        if ('failure' in picked) return { ...picked.failure, summary: mask(picked.failure.summary) };
+        route = picked.route;
+      } else if (options.harness === undefined && options.model === undefined) {
         state.route ??= agent.route(task);
         route = await state.route;
       } else {

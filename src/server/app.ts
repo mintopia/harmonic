@@ -12,6 +12,7 @@ import { readPackageManifest } from './routes/openapi.js';
 import { createStores } from './app-stores.js';
 import { createWorktreeServices } from './app-worktrees.js';
 import { createRuntime } from './app-runtime.js';
+import { resolveModelOption } from '../domain/model-options.js';
 import { convertEditedPrompts } from '../domain/prompt-library-sources.js';
 import { isNotNull } from 'drizzle-orm';
 import { tasks } from '../db/schema.js';
@@ -76,6 +77,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   await promptLibrary.load();
   await convertEditedPrompts(promptLibrary, stores.settingsStore.getGlobal());
   const workflowLibrary = new WorkflowLibrary(opts.dataDir, {
+    optionCodeUsable: async (code) => {
+      const config = stores.settingsStore.getGlobal();
+      if (resolveModelOption(code, { config }).kind === 'found') return true;
+      return (await stores.workspaces.list()).some((ws) => resolveModelOption(code, { workspace: ws, config }).kind === 'found');
+    },
     referencedVersions: async () => new Set((await asyncDb.read((db) => db.selectDistinct({ ref: tasks.workflowRef }).from(tasks).where(isNotNull(tasks.workflowRef)).all())).map((r) => r.ref!)),
   });
   await workflowLibrary.load();

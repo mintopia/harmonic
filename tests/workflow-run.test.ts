@@ -128,4 +128,23 @@ describe('a Ticket with a chosen workflow', () => {
     await patch({ workflow: null, workflowLabels: null });
     await bad({ workflowLabels: [] });
   });
+
+  describe('model option steps', () => {
+    const optionFlow = (name: string, max = 3): string => `name: ${name}\ndescription: test\nsteps:\n${inBlock('  - id: build\n    uses: agent\n    with:\n      option: cheap\n', max)}`;
+
+    it('escalates at once, with no retry, when the code is deleted after the workflow was saved', async () => {
+      const harnesses = (await server.api('GET', '/api/config')).body.harnesses as Record<string, { defaultModel: string }>;
+      const option = { id: 'cheap', harness: 'claude', model: harnesses.claude!.defaultModel, description: 'd' };
+      expect((await server.api('PATCH', '/api/config', { modelOptions: [option] })).status).toBe(200);
+      expect((await server.api('PUT', '/api/workflows/by-option', { text: optionFlow('by-option') })).status).toBe(200);
+      expect((await server.api('PATCH', '/api/config', { modelOptions: [] })).status).toBe(200);
+      const id = (await create('by-option')).body.id as number;
+      await server.api('POST', `/api/tasks/${id}/run`);
+      await waitFor(async () => (await server.api('GET', `/api/tasks/${id}`)).body.state === 'escalated');
+      const { body } = await server.api('GET', `/api/tasks/${id}/workflow-steps`);
+      expect(body.steps).toHaveLength(1);
+      expect(body.steps[0]).toMatchObject({ stepId: 'build', outcome: 'inconclusive' });
+      expect(body.steps[0].summary).toMatch(/'cheap'.*missing/);
+    });
+  });
 });

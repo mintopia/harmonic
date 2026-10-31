@@ -15,9 +15,7 @@ import { logger } from '../logger.js';
 import type { StepArchiveWriter } from '../archive/task-archive.js';
 
 function rejectOptionId(request: PermissionRequest): string | null {
-  const options = request.options;
-  const pick = options.find((o) => o.kind === 'reject_always') ?? options.find((o) => o.kind === 'reject_once');
-  return pick?.optionId ?? null;
+  return (request.options.find((o) => o.kind === 'reject_once') ?? request.options.find((o) => o.kind === 'reject_always'))?.optionId ?? null;
 }
 
 function grantOptionId(request: PermissionRequest): string | null {
