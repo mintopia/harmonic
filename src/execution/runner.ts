@@ -715,7 +715,7 @@ export class Runner {
     await this.workspaceProvisioner.prepareWorkspace(task, run);
     this.drives.add((async () => {
       try {
-        await engine.run(task, run, resumedAttempt !== undefined);
+        await engine.run(task, run, resumedAttempt !== undefined, task.continuationChoice !== 'condensed');
       } catch (error) {
         logger.error(`task ${task.id} attempt ${run.id}: workflow engine crashed: ${errorMessage(error)}`);
         await bestEffort(async () => {

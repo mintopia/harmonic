@@ -317,7 +317,7 @@ export const api: typeof RealApi = {
     ok({ attempts: timelineSpans().filter((s) => s.startedAt <= to && (s.endedAt ?? Date.now()) >= from), from, to }),
   epicStats: (_epicRef: TrackerRef, _workspaceId: number) => ok(f.epicStats),
   workflows: () => ok({ workflows: [], total: 0 }),
-  workflowSteps: (_id: number) => ok({ workflowRef: null, workflowChosen: null, steps: [] }),
+  workflowSteps: (_id: number) => ok({ workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, steps: [] }),
   createTask: (_input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready'; workflow?: string }) => ok(f.task),
   browseFs: (path?: string) => ok(fsListing(path)),
   workspaceFiles: (_workspaceId: number, path = '', offset = 0) => {

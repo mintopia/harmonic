@@ -137,4 +137,16 @@ describe('escalation resumes workflows generically', () => {
     expect(await outcomes(task.id)).toEqual([['one', 1, 'pass'], ['two', 1, 'pass']]);
     expect(completions).toBe(1);
   });
+
+  it('Retry reuses the warm Session when asked, and starts a fresh one otherwise', async () => {
+    const continued: Array<string | undefined> = [];
+    const drive = { run: async (input: { continueSessionId?: string }) => { continued.push(input.continueSessionId); return { output: '', sessionId: 'warm-1' }; } };
+    const agentStep = '  - id: work\n    uses: agent\n    with:\n      harness: claude\n      model: m\n      prompt: hi\n';
+    const { task, run } = await startTask(flow(`${agentStep}  - id: gate\n    run: exit 1\n`, 1));
+    const wf = engine({ agent: { drive: drive as never, getConfig: () => baselineConfig(), route: async () => { throw new Error('no route'); }, resolvePrompt: async (text) => text } });
+    await wf.run(task, run);
+    await wf.run(task, run, false, true);
+    await wf.run(task, run, false, false);
+    expect(continued).toEqual([undefined, 'warm-1', undefined]);
+  });
 });

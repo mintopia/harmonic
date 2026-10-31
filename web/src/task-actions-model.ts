@@ -61,19 +61,39 @@ export interface WorkflowEscalationNotes {
   close: string;
 }
 
-/** What each escalation action does to a workflow-run Ticket's failed step (ADR-0053); null when no step has failed. */
-export function workflowEscalationNotes(steps: readonly Pick<WorkflowStepRun, 'stepId' | 'action' | 'outcome' | 'attempt'>[]): WorkflowEscalationNotes | null {
-  const latest = new Map<string, Pick<WorkflowStepRun, 'stepId' | 'action' | 'outcome' | 'attempt'>>();
+type StepFacts = Pick<WorkflowStepRun, 'stepId' | 'action' | 'outcome' | 'attempt'>;
+type WorkflowFacts = { steps: readonly StepFacts[]; outline: readonly { id: string; children: readonly string[] }[]; cleanupCount: number };
+
+const FAILED: ReadonlySet<string> = new Set(['fail', 'inconclusive', 'conflict']);
+
+function latestSteps(steps: readonly StepFacts[]): Map<string, StepFacts> {
+  const latest = new Map<string, StepFacts>();
   for (const step of steps) latest.set(step.stepId, step);
-  const failed = [...latest.values()].filter((step) => step.outcome === 'fail' || step.outcome === 'inconclusive' || step.outcome === 'conflict').at(-1);
+  return latest;
+}
+
+const outlineIndex = (outline: WorkflowFacts['outline'], stepId: string): number => outline.findIndex((entry) => entry.id === stepId || entry.children.includes(stepId));
+
+/** What each escalation action does to a workflow-run Ticket's failed step (ADR-0053); null when no step has failed. */
+export function workflowEscalationNotes(workflow: WorkflowFacts): WorkflowEscalationNotes | null {
+  const failed = [...latestSteps(workflow.steps).values()].filter((step) => step.outcome !== null && FAILED.has(step.outcome)).at(-1);
   if (!failed) return null;
-  const name = `${failed.stepId} (${failed.action})`;
+  const next = workflow.outline[outlineIndex(workflow.outline, failed.stepId) + 1];
+  const where = next ? `continues with ${next.id}` : 'continues to Merge';
+  const cleanup = `${workflow.cleanupCount} ${workflow.cleanupCount === 1 ? 'step' : 'steps'}`;
   return {
     heading: `Escalated at step ${failed.stepId}`,
-    accept: `Marks step ${name} as pass and continues with the next step. No re-verify; a candidate commit is required. At the last step, Accept continues to Merge.`,
-    retry: 'Starts a new pass of the attempts: block with the counter reset and re-resolves the Workflow Label.',
-    close: 'Runs the cleanup: list, then removes the worktree and branch.',
+    accept: `marks step ${failed.stepId} (${failed.action}) as pass and ${where}. No re-verify; a candidate commit is required. At the last step, Accept continues to Merge.`,
+    retry: 'starts a new pass of attempts: with the counter reset.',
+    close: `runs the cleanup: list (${cleanup}), then removes the worktree and branch.`,
   };
+}
+
+/** The first outline step with no `pass` or `skipped` run: where Resume continues; null when every step has run. */
+export function nextUnexecutedStep(workflow: Pick<WorkflowFacts, 'steps' | 'outline'>): string | null {
+  const latest = latestSteps(workflow.steps);
+  const done = (id: string): boolean => latest.get(id)?.outcome === 'pass' || latest.get(id)?.outcome === 'skipped';
+  return workflow.outline.find((entry) => !(entry.children.length > 0 ? entry.children.every(done) : done(entry.id)))?.id ?? null;
 }
 
 export function acceptPresentation(failedStep: StepType | null) {

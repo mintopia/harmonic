@@ -36,11 +36,17 @@ import { listResponse, paginate, paginationQuerySchema } from '../pagination.js'
 import { diffFilesResponseSchema } from './diff.js';
 import { deleteTaskKeepingArchive, operatorReasonSchema, recordOperatorActionBestEffort, recordOperatorActionsBestEffort, requestActor } from '../operator-inputs.js';
 import { WorkflowStepRunStore, type WorkflowStepOutputs } from '../../domain/workflow-step-runs.js';
+import { parseWorkflow, type WorkflowDefinition } from '../../domain/workflow.js';
+import { parseWorkflowRef } from '../../execution/workflow-engine.js';
 import { attemptDiffFiles, attemptDiffStat } from '../../execution/worktree-diff.js';
 
 const workflowStepsResponseSchema = z.object({
   workflowRef: z.string().nullable().meta({ example: 'implement@1' }),
   workflowChosen: z.enum(WORKFLOW_CHOSEN).nullable().meta({ example: 'explicit' }),
+  outline: z
+    .array(z.object({ id: z.string().meta({ example: 'verify' }), children: z.array(z.string()).meta({ description: 'Ids of a `parallel:` group\'s steps; empty for a plain step.' }) }))
+    .meta({ description: 'Every step of the pinned workflow in execution order; empty for a Ticket without a workflow.' }),
+  cleanupCount: z.number().int().meta({ description: 'How many steps the workflow\'s `cleanup:` list runs on done and on Close.', example: 1 }),
   steps: z.array(
     z.object({
       stepId: z.string().meta({ example: 'lint' }),
@@ -56,6 +62,15 @@ const workflowStepsResponseSchema = z.object({
     }),
   ),
 });
+
+async function pinnedWorkflow(library: { getVersion(name: string, version: number): Promise<{ text: string }> }, ref: string): Promise<WorkflowDefinition | null> {
+  const { name, version } = parseWorkflowRef(ref);
+  try {
+    return parseWorkflow((await library.getVersion(name, version)).text);
+  } catch {
+    return null;
+  }
+}
 
 /** A `GitError` whose stderr says the worktree/branch is simply gone — an expected absence, not a failure. */
 const worktreeGone = (err: unknown): boolean =>
@@ -532,9 +547,12 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req) => {
       const task = await ctx.tasks.get(req.params.id);
       const rows = await new WorkflowStepRunStore(ctx.asyncDb).listForTask(task.id);
+      const definition = task.workflowRef === null ? null : await pinnedWorkflow(ctx.workflows, task.workflowRef);
       return {
         workflowRef: task.workflowRef,
         workflowChosen: task.workflowChosen,
+        outline: (definition?.steps ?? []).map((step) => ({ id: step.id, children: (step.parallel ?? []).map((child) => child.id) })),
+        cleanupCount: definition?.cleanup?.length ?? 0,
         steps: rows
           .filter((row) => row.workflowRef === task.workflowRef)
           .map((row) => ({

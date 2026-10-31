@@ -31,7 +31,7 @@ import { taskExportTarget } from '../export-targets';
 import { ChangesPane, NoRunsYet } from './ticket/ChangesPane';
 import { AttemptsNav, PanelNav } from './ticket/AttemptsNav';
 import { AttemptPanel } from './ticket/AttemptPanel';
-import { workflowEscalationNotes } from '../task-actions-model';
+import { nextUnexecutedStep, workflowEscalationNotes } from '../task-actions-model';
 import { WorkflowSteps } from './ticket/WorkflowSteps';
 import { UnconfiguredHarnessGate, UnconfiguredHarnessMessage } from './ticket/UnconfiguredHarnessGate';
 
@@ -138,7 +138,7 @@ export function TicketPage({
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
   const gateModel = gateForAttempt({ task, runs, selectedAttemptId: selectedRunId });
   const failedStep = latestAttempt?.steps.slice().reverse().find((step) => step.state === 'failed')?.type ?? null;
-  const workflowNotes = task.state === 'escalated' ? workflowEscalationNotes(workflowSteps?.steps ?? []) : null;
+  const workflowNotes = task.state === 'escalated' ? workflowSteps ? workflowEscalationNotes(workflowSteps) : null : null;
   const panel = contentPanel(resolved);
   const selectAttempt = (attempt: Attempt) => onSelect({ kind: 'attempt', attemptNumber: attempt.number });
   const selectRunById = (runId: number) => {
@@ -272,6 +272,7 @@ export function TicketPage({
                       <dt className="inline font-semibold">{name}</dt> <dd className="inline text-muted">{text}</dd>
                     </div>
                   ))}
+                  {!task.hasCandidate && <div className="text-muted">Accept is unavailable: no candidate commit on the Ticket branch.</div>}
                 </dl>
               )}
               {unconfiguredHarness && <UnconfiguredHarnessGate taskId={task.id} onChanged={onChanged} onClose={onClose} />}
@@ -288,6 +289,15 @@ export function TicketPage({
                 />
               )}
               </div>
+            )}
+
+            {workflowSteps && workflowSteps.workflowRef !== null && task.state === 'working' && (
+              <p className="mb-4 text-small text-muted">Pause: the in-flight turn finishes before the Ticket holds.</p>
+            )}
+            {workflowSteps && workflowSteps.workflowRef !== null && task.state === 'paused' && (
+              <p className="mb-4 text-small text-muted">
+                Resume continues at the next unexecuted step{nextUnexecutedStep(workflowSteps) ? <>, <code>{nextUnexecutedStep(workflowSteps)}</code></> : ''}.
+              </p>
             )}
 
             {/* content panel: driven by the sidebar selection — Stats (default),

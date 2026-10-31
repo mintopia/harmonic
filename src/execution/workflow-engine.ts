@@ -106,9 +106,11 @@ export function parseWorkflowRef(ref: string): { name: string; version: number }
 }
 
 export class WorkflowEngine {
+  private readonly warmSessions = new Map<number, { key: string; id: string }>();
+
   constructor(private readonly deps: WorkflowEngineDeps) {}
 
-  private async prepare(task: TaskRow, run: AttemptRow): Promise<{ workflow: ReturnType<typeof parseWorkflow>; ctx: RunContext }> {
+  private async prepare(task: TaskRow, run: AttemptRow, reuseSession = false): Promise<{ workflow: ReturnType<typeof parseWorkflow>; ctx: RunContext }> {
     const ref = task.workflowRef!;
     const { name, version } = parseWorkflowRef(ref);
     const workflow = parseWorkflow((await this.deps.library.getVersion(name, version)).text);
@@ -127,13 +129,14 @@ export class WorkflowEngine {
       vars: workflow.vars,
       secrets: secretMap,
     };
-    const ctx: RunContext = { task, run, ref, secrets: Object.values(secretMap), latest, stepsContext, context, agentState: {}, criticFragments: withEngineFragments(loadBaselineConfig().promptFragments), halted: false };
+    const warm = reuseSession ? this.warmSessions.get(task.id) : undefined;
+    const ctx: RunContext = { task, run, ref, secrets: Object.values(secretMap), latest, stepsContext, context, agentState: warm ? { session: warm } : {}, criticFragments: withEngineFragments(loadBaselineConfig().promptFragments), halted: false };
     return { workflow, ctx };
   }
 
-  /** `resumed` continues the Attempt where it stopped; otherwise (a Retry) the `attempts:` block and everything after it starts a new pass with the counter reset. */
-  async run(task: TaskRow, run: AttemptRow, resumed = true): Promise<void> {
-    const { workflow, ctx } = await this.prepare(task, run);
+  /** `resumed` continues the Attempt where it stopped; otherwise (a Retry) the `attempts:` block and everything after it starts a new pass with the counter reset. `reuseSession` lets the first agent step continue the Ticket's still-warm Session when its route is unchanged. */
+  async run(task: TaskRow, run: AttemptRow, resumed = true, reuseSession = true): Promise<void> {
+    const { workflow, ctx } = await this.prepare(task, run, reuseSession);
     const { start, end } = workflow.attempts;
     if (!resumed) {
       for (const id of stepIds(workflow.steps.slice(start))) {
@@ -148,6 +151,7 @@ export class WorkflowEngine {
     if (ctx.halted) return;
     await this.deps.complete(task, run);
     await this.runSteps(ctx, workflow.cleanup ?? [], workflow.steps.length, 'record');
+    this.warmSessions.delete(task.id);
   }
 
   /** Marks the Ticket's failed steps `pass` on the operator's say-so; the next `run` continues from the step after them. */
@@ -159,6 +163,7 @@ export class WorkflowEngine {
   /** Runs the workflow's `cleanup:` list for a Ticket the operator closed. */
   async close(task: TaskRow, run: AttemptRow): Promise<void> {
     const { workflow, ctx } = await this.prepare(task, run);
+    this.warmSessions.delete(task.id);
     await this.runSteps(ctx, workflow.cleanup ?? [], workflow.steps.length, 'record');
   }
 
@@ -386,7 +391,10 @@ export class WorkflowEngine {
           timeoutMs: agent.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,
           ...(state.session?.key === key ? { continueSessionId: state.session.id } : {}),
         });
-        if (result.sessionId) state.session = { key, id: result.sessionId };
+        if (result.sessionId) {
+          state.session = { key, id: result.sessionId };
+          this.warmSessions.set(task.id, state.session);
+        }
         output += result.output;
         if (!(await Git.isDirty(cwd))) break;
         if (turn >= nudges) return { outcome: 'fail', summary: UNCOMMITTED_AFTER_AGENT, stdout: mask(output), exitCode: null, output: mask(output) };
