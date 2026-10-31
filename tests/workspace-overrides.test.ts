@@ -169,6 +169,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     const cleared = await workspaces.update(ws.id, {
       epicPreMergeCommands: null,
       epicPreMergeCritics: null,
+      epicWorkflow: null,
     });
     expect(cleared.epicPreMergeCommands).toBeNull();
     expect(cleared.epicPreMergeCritics).toBeNull();
@@ -299,6 +300,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       contextReuseTokenLimit: null,
       epicPreMergeCommands: null,
       epicPreMergeCritics: null,
+      epicWorkflow: null,
       routingLabels: null,
       workflow: null,
       workflowLabels: null,

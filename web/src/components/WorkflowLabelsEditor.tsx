@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { arrayMove } from '@dnd-kit/sortable';
 import { describeWorkflowLabelIssue, workflowLabelIssueMessage, workflowLabelIssues, workflowLabelOverlayIssues, workflowLabelRef, type WorkflowLabelIssue } from '../../../src/domain/setting-override.js';
 import { api } from '../api';
@@ -105,24 +106,28 @@ function DefaultWorkflow({
   library,
   value,
   inheritLabel,
+  subject = 'ticket',
+  bare = false,
   onChange,
 }: {
   id: string;
   label: string;
-  note: string;
+  note: ReactNode;
   library: readonly WorkflowLibraryEntry[];
   value: string | null;
   inheritLabel?: string;
+  subject?: 'ticket' | 'epic';
+  bare?: boolean;
   onChange: (workflow: string | null) => void;
 }) {
   return (
-    <div className="mt-5 border-t border-hairline pt-4">
+    <div className={bare ? '' : 'mt-5 border-t border-hairline pt-4'}>
       <label htmlFor={id} className={fieldLabel}>
         {label}
       </label>
       <select id={id} className={`${compactSelect} sm:max-w-sm`} value={value ?? ''} onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}>
         <option value="">{inheritLabel ?? 'None · today’s path'}</option>
-        {workflowOptions(library, value ?? '').map((name) => (
+        {workflowOptions(library, value ?? '', subject).map((name) => (
           <option key={name} value={name}>
             {name}
             {versionSuffix(library, name)}
@@ -131,6 +136,38 @@ function DefaultWorkflow({
       </select>
       <p className="mt-2 text-small text-faint">{note}</p>
     </div>
+  );
+}
+
+export function EpicWorkflowEditor({
+  surface,
+  value,
+  globalValue,
+  onChange,
+}: {
+  surface: 'global' | 'workspace';
+  value: string | null;
+  globalValue: string | null;
+  onChange: (workflow: string | null) => void;
+}) {
+  const library = useWorkflowLibrary();
+  const workspace = surface === 'workspace';
+  return (
+    <DefaultWorkflow
+      bare
+      subject="epic"
+      id={workspace ? 'workspace-epic-workflow' : 'settings-epic-workflow'}
+      label="Epic workflow"
+      note={
+        workspace
+          ? <>Lists Epic workflows only (<code className={codeChip}>subject: epic</code>). Applies from the next Epic verification.</>
+          : 'Used when the Workspace has no Epic workflow of its own.'
+      }
+      library={library}
+      value={value}
+      inheritLabel={workspace ? `Use global default · ${globalValue ?? 'none'}` : 'None'}
+      onChange={onChange}
+    />
   );
 }
 
@@ -164,7 +201,7 @@ export function WorkflowLabelsEditor({ config, onChange }: { config: AppConfig; 
         noun={WORKFLOW_LABEL}
         count={items.length}
         onMove={(from, to) => set(arrayMove(items, from, to))}
-        onAdd={() => set([...items, { label: '', workflow: library[0]?.name ?? '' }])}
+        onAdd={() => set([...items, { label: '', workflow: workflowOptions(library, '')[0] ?? '' }])}
         onRemove={(index) => set(items.filter((_, i) => i !== index))}
         emptyText="No Workflow Labels. A Ticket uses the Workspace or Global default workflow."
         renderRow={({ id, index, touched, touch, remove }) => {
@@ -219,7 +256,7 @@ export function WorkflowLabelOverlayEditor({
         noun={WORKFLOW_LABEL}
         count={rows.length}
         onMove={(from, to) => onChange(arrayMove(rows, from, to))}
-        onAdd={() => onChange([...rows, newLocalWorkflowEntry(library[0]?.name ?? '')])}
+        onAdd={() => onChange([...rows, newLocalWorkflowEntry(workflowOptions(library, '')[0] ?? '')])}
         onRemove={(index) => onChange(rows.filter((_, i) => i !== index))}
         emptyText="No Workflow Labels. A Ticket uses the Workspace or Global default workflow."
         renderRow={({ id, index, touched, touch, remove }) => {

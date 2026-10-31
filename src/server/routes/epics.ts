@@ -9,6 +9,7 @@ import type { Epic } from '../../domain/epic-view.js';
 import { diffFilesResponseSchema } from './diff.js';
 import { parseUnifiedDiff } from '../../domain/unified-diff.js';
 import { epicAttemptTimelineToApi } from '../serialize.js';
+import { resolveEpicWorkflow } from '../../domain/workflow-assignment.js';
 import { ATTEMPT_STATES } from '../../db/schema.js';
 
 /** Path params for a whole-Epic action: the owning Workspace and the Epic's tracker ref. */
@@ -139,6 +140,12 @@ const epicSchema = z
   })
   .meta({ id: 'Epic' });
 
+const epicDetailSchema = epicSchema
+  .extend({
+    workflow: z.object({ name: z.string().meta({ example: 'epic' }), version: z.number().int().meta({ example: 1 }), chosen: z.enum(['workspace', 'global']) }).nullable().describe('The Epic workflow this Epic runs and which setting chose it; null when the library no longer holds it.'),
+  })
+  .meta({ id: 'EpicDetail' });
+
 const epicsListResponseSchema = listResponse('epics', epicSchema);
 
 const verificationAttemptSchema = z.object({
@@ -256,7 +263,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: epicParamsSchema,
         response: {
-          200: epicSchema.describe('The derived Epic.'),
+          200: epicDetailSchema.describe('The derived Epic with its resolved Epic workflow.'),
           404: errorResponse('No Workspace has that id, or its last scan derives no Epic with that ref.'),
         },
       },
@@ -267,7 +274,10 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       if (!epic) {
         throw new DomainError('not_found', `no Epic ${req.params.epicRef} derived for workspace ${req.params.workspaceId}`);
       }
-      return epicToApi(epic);
+      const workspace = await ctx.workspaces.get(req.params.workspaceId);
+      const assignment = resolveEpicWorkflow(workspace, ctx.settingsStore.getGlobal(), (name) => ctx.workflows.list().some((w) => w.name === name && w.subject === 'epic'));
+      const entry = ctx.workflows.list().find((w) => w.name === assignment.name);
+      return { ...epicToApi(epic), workflow: entry ? { name: entry.name, version: entry.version, chosen: assignment.chosen } : null };
     },
   );
 

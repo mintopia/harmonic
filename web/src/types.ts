@@ -47,9 +47,17 @@ export interface WorkflowIssue {
 
 export type WorkflowDocument = Pick<WorkflowLibraryEntry, 'name' | 'description' | 'bundled' | 'version'> & { text: string };
 
+/** The Epic workflow an Epic runs and which setting chose it. */
+export interface EpicWorkflowRef {
+  name: string;
+  version: number;
+  chosen: 'workspace' | 'global';
+}
+
 export interface WorkflowLibraryEntry {
   name: string;
   description: string;
+  subject: 'ticket' | 'epic';
   bundled: boolean;
   version: number;
   inUse: { tickets: number; workspaces: number };
@@ -505,6 +513,7 @@ export interface Workspace {
   /** Routing Label overlay; `null` inherits every global Routing Label in order. */
   routingLabels: RoutingLabelOverlayEntry[] | null;
   workflow: string | null;
+  epicWorkflow?: string | null;
   workflowLabels: WorkflowLabelOverlayEntry[] | null;
   workflowVars?: Record<string, Record<string, string | number | boolean>> | null;
   /** Model Option overlay; `null` inherits every global Model Option in order, enabled. */
@@ -1254,6 +1263,7 @@ export interface AppConfig {
     /** Conflict-resolve bound. */
     conflictResolveTurns: number;
     workflow: string | null;
+    epicWorkflow: string | null;
   };
   /** The default Harness and model a new Conversation ("chat") starts with,
    * separate from the Task defaults. Global-default with a per-Workspace

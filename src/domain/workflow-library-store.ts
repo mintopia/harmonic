@@ -3,11 +3,12 @@ import { join } from 'node:path';
 import { logger } from '../logger.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { DomainError } from './errors.js';
-import { optionCodeProblems, parseWorkflow, WORKFLOW_NAME_PATTERN } from './workflow.js';
+import { optionCodeProblems, parseWorkflow, WORKFLOW_NAME_PATTERN, type WorkflowSubject } from './workflow.js';
 
 export interface WorkflowEntry {
   readonly name: string;
   readonly description: string;
+  readonly subject: WorkflowSubject;
   readonly text: string;
   readonly bundled: boolean;
   readonly version: number;
@@ -81,8 +82,50 @@ steps:
     uses: artifact
 `;
 
+const BUNDLED_EPIC = `name: epic
+description: Verify the Epic integration branch, review it, merge it into the base and close the Epic ticket.
+subject: epic
+vars:
+  maxAttempts: 2
+  review: false
+steps:
+  - attempts:
+      max: \${{ vars.maxAttempts }}
+      steps:
+        - id: resolve
+          if: \${{ attempt.number > 1 }}
+          uses: agent
+          with:
+            prompt: epic-resolve
+            continueAttempts: 1
+            continuePrompt: commitNudge
+        - id: verify
+          uses: verify
+        - id: review
+          if: \${{ vars.review }}
+          parallel:
+            - id: critic
+              uses: critic
+              with:
+                harness: claude
+                model: claude-sonnet-5-5
+                prompt: criticReview
+  - id: merge
+    uses: merge
+  - id: post-merge-check
+    uses: post-merge-check
+  - id: close-ticket
+    uses: close-ticket
+cleanup:
+  - id: cleanup
+    uses: cleanup
+`;
+
 function bundledEntries(): WorkflowEntry[] {
-  return [BUNDLED_IMPLEMENT, BUNDLED_RESEARCH].map((text) => ({ name: parseWorkflow(text).name, description: parseWorkflow(text).description, text, bundled: true, version: 1 }));
+  return [BUNDLED_IMPLEMENT, BUNDLED_RESEARCH, BUNDLED_EPIC].map((text) => {
+    const def = parseWorkflow(text);
+    return { name: def.name, description: def.description, subject: def.subject, text, bundled: true, version: 1 };
+  });
 }
 
 const isMissing = (err: unknown): boolean => (err as NodeJS.ErrnoException).code === 'ENOENT';
@@ -122,7 +165,7 @@ export class WorkflowLibrary {
         const text = await readFile(join(this.dir!, file), 'utf8');
         const def = parseWorkflow(text, { lenient: true });
         if (def.name !== name) throw new Error(`file holds workflow ${def.name}`);
-        this.operator.set(name, { name, description: def.description, text, bundled: false, version: await this.settledVersion(name, text) });
+        this.operator.set(name, { name, description: def.description, subject: def.subject, text, bundled: false, version: await this.settledVersion(name, text) });
       } catch (err) {
         logger.warn(`skipping invalid workflow file ${file}: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -184,7 +227,7 @@ export class WorkflowLibrary {
     }
     try {
       const text = await readFile(join(this.versionDir(name), `${version}.yaml`), 'utf8');
-      return { name, description: parseWorkflow(text, { lenient: true }).description, text, bundled: false, version };
+      return { name, description: parseWorkflow(text, { lenient: true }).description, subject: parseWorkflow(text, { lenient: true }).subject, text, bundled: false, version };
     } catch (err) {
       if (isMissing(err)) throw new DomainError('not_found', `${name} has no version ${version}`);
       throw err;
@@ -221,7 +264,7 @@ export class WorkflowLibrary {
       await rm(versionFile, { force: true });
       throw err;
     }
-    const entry: WorkflowEntry = { name, description: def.description, text, bundled: false, version };
+    const entry: WorkflowEntry = { name, description: def.description, subject: def.subject, text, bundled: false, version };
     this.operator.set(name, entry);
     await this.prune(name, version);
     return entry;

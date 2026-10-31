@@ -42,6 +42,20 @@ export function resolveWorkflow(input: ResolveWorkflowInput): WorkflowAssignment
   return { name: 'implement', chosen: 'global' };
 }
 
+export type EpicWorkflowAssignment = { name: string; chosen: 'workspace' | 'global' };
+
+export function resolveEpicWorkflow(
+  workspace: Partial<Pick<WorkspaceRow, 'epicWorkflow'>> | null,
+  config: Pick<AppConfig, 'defaults'>,
+  exists: (name: string) => boolean = () => true,
+): EpicWorkflowAssignment {
+  const workspaceChoice = workspace?.epicWorkflow ?? null;
+  if (workspaceChoice != null && exists(workspaceChoice)) return { name: workspaceChoice, chosen: 'workspace' };
+  const globalChoice = config.defaults.epicWorkflow;
+  if (globalChoice != null && exists(globalChoice)) return { name: globalChoice, chosen: 'global' };
+  return { name: 'epic', chosen: 'global' };
+}
+
 export function workflowInputOf(
   task: Pick<RawTaskRow, 'origin' | 'trackerLabels' | 'workflowRequested' | 'wayfinderType'>,
   workspace: ResolveWorkflowInput['workspace'],

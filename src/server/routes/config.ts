@@ -28,13 +28,14 @@ const harnessPermissionModesSchema = z.record(
   z.object({ modes: z.record(z.string(), z.string()), defaultMode: z.string() }),
 );
 
-/** Rejects workflow names the library lacks; names the stored config already references are tolerated so a stale one cannot block unrelated saves. */
-function assertWorkflowRefs(ctx: Pick<ExecutionContext, 'settingsStore'> & { workflows: WorkflowLibrary }, workflow: string | null | undefined, labels: readonly { label: string; workflow: string }[] | undefined): void {
+/** Rejects workflow names the library lacks; a name already stored in the same slot is tolerated so a stale one cannot block unrelated saves. */
+function assertWorkflowRefs(ctx: Pick<ExecutionContext, 'settingsStore'> & { workflows: WorkflowLibrary }, workflow: string | null | undefined, epicWorkflow: string | null | undefined, labels: readonly { label: string; workflow: string }[] | undefined): void {
   const stored = ctx.settingsStore.getGlobal();
-  const known = new Set([stored.defaults.workflow, ...stored.workflowLabels.map((l) => l.workflow)]);
+  const knownLabels = new Set(stored.workflowLabels.map((l) => l.workflow));
   const problems = workflowReferenceProblems(ctx.workflows, {
-    workflow: workflow != null && !known.has(workflow) ? workflow : null,
-    labels: (labels ?? []).filter((l) => !known.has(l.workflow)),
+    workflow: workflow != null && workflow !== stored.defaults.workflow ? workflow : null,
+    epicWorkflow: epicWorkflow != null && epicWorkflow !== stored.defaults.epicWorkflow ? epicWorkflow : null,
+    labels: (labels ?? []).filter((l) => !knownLabels.has(l.workflow)),
   });
   if (problems[0]) throw new DomainError('validation', problems[0]);
 }
@@ -92,6 +93,7 @@ const configPatchBodySchema = z
         priority: z.enum(PRIORITIES).meta({ example: 'normal' }),
         conflictResolveTurns: z.number().int().min(0).meta({ example: 2 }),
         workflow: z.string().min(1).nullable().meta({ example: 'implement' }),
+        epicWorkflow: z.string().min(1).nullable().meta({ example: 'epic' }),
       })
       .partial()
       .optional(),
@@ -205,7 +207,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
       },
     },
     async (req) => {
-      assertWorkflowRefs(ctx, req.body.defaults?.workflow, req.body.workflowLabels);
+      assertWorkflowRefs(ctx, req.body.defaults?.workflow, req.body.defaults?.epicWorkflow, req.body.workflowLabels);
       const updated = await ctx.settingsStore.updateGlobal(req.body as DeepPartial<AppConfig>);
       await syncEditedPrompts(ctx.prompts, updated, namedPromptCodes(req.body));
       ctx.autoRunner.poke();
@@ -231,7 +233,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
     },
     async (req) => {
       const before = withLibraryPrompts(ctx.settingsStore.getGlobal(), ctx.prompts);
-      assertWorkflowRefs(ctx, req.body.defaults.workflow, req.body.workflowLabels);
+      assertWorkflowRefs(ctx, req.body.defaults.workflow, req.body.defaults.epicWorkflow, req.body.workflowLabels);
       const updated = await ctx.settingsStore.replaceGlobal(req.body as AppConfig);
       await syncEditedPrompts(ctx.prompts, updated, changedPromptCodes(before, updated));
       ctx.autoRunner.poke();

@@ -13,6 +13,7 @@ const workflowSchema = z
   .object({
     name: nameSchema,
     description: z.string(),
+    subject: z.enum(['ticket', 'epic']).describe('What the workflow runs: a Ticket, or an Epic. Ticket workflow selectors exclude Epic workflows.'),
     text: z.string().describe('The workflow YAML exactly as saved.'),
     bundled: z.boolean().describe('Bundled workflows ship with Harmonic and are read-only; duplicate one to edit.'),
     version: z.number().int().describe('The current version; every save creates the next one.'),

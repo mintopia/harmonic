@@ -65,6 +65,13 @@ export const settingsRegistry = {
     label: 'Default workflow',
     help: 'Workflow a Ticket runs when no operator choice or Workflow Label applies; inherits the global default when unset.',
   },
+  epicWorkflow: {
+    scope: 'overridable',
+    control: 'select',
+    tab: 'execution',
+    label: 'Epic workflow',
+    help: 'Workflow an Epic runs to verify, merge and close; inherits the global Epic workflow when unset.',
+  },
   workflowLabels: {
     scope: 'overridable',
     control: 'workflow-labels',

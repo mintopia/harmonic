@@ -313,6 +313,7 @@ export const appConfigSchema = z.object({
     /** Agentic resolve-turns a rebase conflict gets before it escalates; 0 escalates on the first conflict. */
     conflictResolveTurns: z.number().int().min(0).meta({ example: 2 }),
     workflow: z.string().min(1).nullable().meta({ example: null }),
+    epicWorkflow: z.string().min(1).nullable().meta({ example: null }),
   }),
   /** Ordered tracker-label → Harness + Model mappings for mirrored Tickets; the first match in list order wins. */
   routingLabels: z.array(routingLabelSchema).meta({ example: [{ label: 'reasoning', harness: 'claude', model: 'claude-opus-5-5' }] }),

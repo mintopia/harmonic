@@ -88,6 +88,7 @@ export const workspaceOverridesSchema = z.object({
   /** Routing Label overlay; null inherits every global Routing Label in order. */
   routingLabels: routingLabelOverrideSchema.nullable().optional(),
   workflow: z.string().min(1).nullable().optional().meta({ example: 'implement' }),
+  epicWorkflow: z.string().min(1).nullable().optional().meta({ example: 'epic' }),
   workflowLabels: workflowLabelOverrideSchema.nullable().optional(),
   workflowVars: workspaceWorkflowVarsSchema.nullable().optional().meta({ example: { implement: { maxAttempts: 3 } } }),
   /** Ordered Model Option overlay (ADR-0037); null inherits every global, enabled. */
@@ -181,6 +182,7 @@ export const OVERRIDE_KEYS = [
   'epicPreMergeCritics',
   'routingLabels',
   'workflow',
+  'epicWorkflow',
   'workflowLabels',
   'workflowVars',
   'modelOptions',
@@ -284,6 +286,7 @@ export class WorkspaceService {
       epicPreMergeCritics: o.epicPreMergeCritics != null ? JSON.stringify(o.epicPreMergeCritics) : null,
       routingLabels: o.routingLabels != null ? JSON.stringify(o.routingLabels) : null,
       workflow: o.workflow,
+      epicWorkflow: o.epicWorkflow,
       workflowLabels: o.workflowLabels != null ? JSON.stringify(o.workflowLabels) : null,
       workflowVars: o.workflowVars != null ? JSON.stringify(o.workflowVars) : null,
       modelOptions: o.modelOptions != null ? JSON.stringify(o.modelOptions) : null,

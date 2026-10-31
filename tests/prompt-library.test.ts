@@ -75,7 +75,7 @@ steps:
           with:
             prompt: something else
 `;
-    lib.attachWorkflows({ list: () => [{ name: 'wf', description: 'd', text, bundled: false, version: 1 }] });
+    lib.attachWorkflows({ list: () => [{ name: 'wf', description: 'd', subject: 'ticket' as const, text, bundled: false, version: 1 }] });
     expect((await lib.get('step-used')).usedBySteps).toEqual([
       { workflow: 'wf', workflowBundled: false, stepId: 'build' },
       { workflow: 'wf', workflowBundled: false, stepId: 'review' },

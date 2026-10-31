@@ -8,6 +8,9 @@ export const VAR_NAME_PATTERN = /^[a-z][a-zA-Z0-9_-]{0,63}$/;
 
 export const WORKFLOW_ACTIONS = ['rebase', 'agent', 'verify', 'command', 'critic', 'merge', 'open-pr', 'artifact', 'post-merge-check', 'close-ticket', 'comment', 'cleanup'] as const;
 
+export const WORKFLOW_SUBJECTS = ['ticket', 'epic'] as const;
+export type WorkflowSubject = (typeof WORKFLOW_SUBJECTS)[number];
+
 const stepIdSchema = z.string().regex(WORKFLOW_NAME_PATTERN, 'a step id starts with a lowercase letter and holds lowercase letters, digits, - or _');
 
 const leafStepSchema = z
@@ -26,6 +29,7 @@ const workflowSchema = z
   .object({
     name: z.string().regex(WORKFLOW_NAME_PATTERN, 'a name starts with a lowercase letter and holds lowercase letters, digits, - or _ (max 64)'),
     description: z.string(),
+    subject: z.enum(WORKFLOW_SUBJECTS).optional(),
     vars: z.record(z.string().regex(VAR_NAME_PATTERN, 'a var name starts with a lowercase letter and holds letters, digits, - or _'), z.union([z.string(), z.number(), z.boolean()])).optional(),
     steps: z.array(z.unknown()).min(1, 'a workflow needs at least one step'),
     cleanup: z.array(stepSchema).optional(),
@@ -61,7 +65,7 @@ const withHint = (message: string, input: string, candidates: readonly string[])
 };
 
 const STEP_KEYS = ['id', 'run', 'uses', 'with', 'if', 'parallel'] as const;
-const TOP_KEYS = ['name', 'description', 'vars', 'steps', 'cleanup'] as const;
+const TOP_KEYS = ['name', 'description', 'subject', 'vars', 'steps', 'cleanup'] as const;
 
 const unknownKey = (key: string, candidates: readonly string[]): string => withHint(`unknown key: ${key}`, key, candidates);
 
@@ -98,6 +102,7 @@ export interface AttemptsBlock {
 export interface WorkflowDefinition {
   readonly name: string;
   readonly description: string;
+  readonly subject: WorkflowSubject;
   /** Every step in execution order, the `attempts:` block's steps included. */
   readonly steps: readonly WorkflowStepDefinition[];
   readonly attempts: AttemptsBlock;
@@ -137,7 +142,7 @@ export function parseWorkflow(text: string, options: { lenient?: boolean } = {})
   }
   const definition = workflowSchema.parse(doc.toJS());
   const { located, block } = layout(definition);
-  return { name: definition.name, description: definition.description, cleanup: definition.cleanup, vars: definition.vars ?? {}, steps: located.map((l) => l.step), attempts: block! };
+  return { name: definition.name, description: definition.description, subject: definition.subject ?? 'ticket', cleanup: definition.cleanup, vars: definition.vars ?? {}, steps: located.map((l) => l.step), attempts: block! };
 }
 
 /** Checks every `option:` code against `isUsable`. */

@@ -100,7 +100,7 @@ function DependsOn({ refs }: { refs: TrackerRef[] }) {
 
 /** The rail's Epic facts: the header's Properties card moved beside the content,
  * plus the two roll-ups an operator scans for first (Tasks done, Total cost). */
-function EpicMeta({ epic, stats }: { epic: Epic | null; stats: Stats | null }) {
+export function EpicMeta({ epic, stats }: { epic: Epic | null; stats: Stats | null }) {
   const summary = epic && stats ? epicUsageSummary(stats, epic.memberCount) : null;
   return (
     <section className="border-b border-hairline px-3.5 py-3.5">
@@ -121,6 +121,12 @@ function EpicMeta({ epic, stats }: { epic: Epic | null; stats: Stats | null }) {
           <Fact label="Depends on">
             <DependsOn refs={epic.dependsOn} />
           </Fact>
+          {epic.workflow && (
+            <Fact label="Workflow" className="col-span-2">
+              <strong>{epic.workflow.name}</strong> <span className="font-data text-faint">v{epic.workflow.version}</span>{' '}
+              <span className="text-muted">— {epic.workflow.chosen === 'workspace' ? 'Workspace' : 'global'} Epic workflow</span>
+            </Fact>
+          )}
           <Fact label="Created">{fmtDate(epic.createdAt)}</Fact>
           <Fact label="Last activity">{epic.updatedAt != null ? fmtRelative(epic.updatedAt) : '—'}</Fact>
         </dl>

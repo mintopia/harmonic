@@ -321,7 +321,7 @@ async function writeWorkflow(library: WorkflowLibrary, workflow: PlannedWorkflow
 async function pinInFlight(deps: SettingsMigrationDeps): Promise<void> {
   const workspaces = new Map((await deps.workspaces.list()).map((workspace) => [workspace.id, workspace]));
   const config = deps.settings.getGlobal();
-  const names = new Set(deps.workflows.list().map((entry) => entry.name));
+  const names = new Set(deps.workflows.list().filter((entry) => entry.subject === 'ticket').map((entry) => entry.name));
   const inFlight = (await deps.tasks.list({ state: [...IN_FLIGHT_STATES] })).filter((task) => task.workflowRef === null);
   await forEachYielding(inFlight, async (task: TaskRow) => {
     const workspace = workspaces.get(task.workspaceId ?? -1) ?? null;

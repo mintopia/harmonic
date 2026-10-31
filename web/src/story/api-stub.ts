@@ -363,10 +363,10 @@ export const api: typeof RealApi = {
   workflows: () =>
     ok({
       workflows: [
-        { name: 'Migrated (global)', description: '', bundled: false, version: 2, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
-        { name: 'Migrated (harmonic)', description: '', bundled: false, version: 1, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
-        { name: 'Security review on label', description: '', bundled: false, version: 4, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
-        { name: 'Docs only', description: '', bundled: false, version: 2, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
+        { name: 'Migrated (global)', description: '', subject: 'ticket', bundled: false, version: 2, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
+        { name: 'Migrated (harmonic)', description: '', subject: 'ticket', bundled: false, version: 1, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
+        { name: 'Security review on label', description: '', subject: 'ticket', bundled: false, version: 4, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
+        { name: 'Docs only', description: '', subject: 'ticket', bundled: false, version: 2, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
       ],
       total: 4,
     }),
