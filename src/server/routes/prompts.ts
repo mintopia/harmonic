@@ -8,6 +8,12 @@ import { listResponse } from '../pagination.js';
 
 const codeSchema = z.string().regex(PROMPT_CODE_PATTERN, 'a code starts with a letter and holds letters, digits, - or _ (max 64)').meta({ example: 'house-style' });
 
+const stepUseSchema = z.object({
+  workflow: z.string().meta({ example: 'implement' }),
+  workflowBundled: z.boolean().describe('Whether the workflow ships with Harmonic.'),
+  stepId: z.string().meta({ example: 'review' }),
+});
+
 const promptSchema = z
   .object({
     code: codeSchema,
@@ -16,6 +22,8 @@ const promptSchema = z
     bundled: z.boolean().describe('Bundled prompts ship with Harmonic and are read-only; duplicate one to edit.'),
     resolved: z.string().describe('The text with every `${{ prompts.<code> }}` include expanded.'),
     usedBy: z.array(z.string()).describe('Codes of the prompts that include this one.'),
+    usedBySteps: z.array(stepUseSchema).describe('Workflow steps whose `with.prompt` names this prompt.'),
+    updatedAt: z.string().nullable().describe('When the operator prompt was last saved (ISO 8601); null for bundled prompts.'),
   })
   .meta({ id: 'Prompt' });
 

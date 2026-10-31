@@ -1,6 +1,7 @@
 import type { TrackerRef } from './types.js';
 import type { PromptFragmentOverrides } from '../../src/domain/prompt-fragments.js';
 import type {
+  Prompt,
   WorkflowLibraryEntry,
   WorkflowStepsResponse,
   Attempt,
@@ -154,6 +155,13 @@ export const api = {
     request<unknown>('DELETE', `/api/workspaces/${workspaceId}/secrets/${encodeURIComponent(name)}`),
   harnessProviders: (harness: string) => request<{ providers: HarnessProvider[] }>('GET', `/api/harnesses/${encodeURIComponent(harness)}/providers`),
   harnessModels: (harness: string, provider: string) => request<{ models: DiscoveredHarnessModel[] }>('GET', `/api/harnesses/${encodeURIComponent(harness)}/models?provider=${encodeURIComponent(provider)}`),
+  prompts: () => request<{ prompts: Prompt[]; total: number }>('GET', '/api/prompts'),
+  createPrompt: (body: { code: string; description: string; text: string }) => request<Prompt>('POST', '/api/prompts', body),
+  updatePrompt: (code: string, body: { description: string; text: string }) =>
+    request<Prompt>('PUT', `/api/prompts/${encodeURIComponent(code)}`, body),
+  deletePrompt: (code: string) => request<{ ok: true }>('DELETE', `/api/prompts/${encodeURIComponent(code)}`),
+  duplicatePrompt: (code: string, copyCode?: string) =>
+    request<Prompt>('POST', `/api/prompts/${encodeURIComponent(code)}/duplicate`, copyCode ? { code: copyCode } : {}),
   config: () => request<AppConfig>('GET', '/api/config'),
   globalPause: () => request<{ paused: boolean }>('GET', '/api/global-pause'),
   updateState: () => request<UpdateState>('GET', '/api/update'),

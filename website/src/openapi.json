@@ -10193,6 +10193,43 @@
               "type": "string"
             },
             "description": "Codes of the prompts that include this one."
+          },
+          "usedBySteps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "workflow": {
+                  "type": "string",
+                  "example": "implement"
+                },
+                "workflowBundled": {
+                  "type": "boolean",
+                  "description": "Whether the workflow ships with Harmonic."
+                },
+                "stepId": {
+                  "type": "string",
+                  "example": "review"
+                }
+              },
+              "required": [
+                "workflow",
+                "workflowBundled",
+                "stepId"
+              ]
+            },
+            "description": "Workflow steps whose `with.prompt` names this prompt."
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the operator prompt was last saved (ISO 8601); null for bundled prompts."
           }
         },
         "required": [
@@ -10201,7 +10238,9 @@
           "text",
           "bundled",
           "resolved",
-          "usedBy"
+          "usedBy",
+          "usedBySteps",
+          "updatedAt"
         ]
       },
       "WorkflowInput": {
@@ -20644,6 +20683,44 @@
               "type": "string"
             },
             "description": "Codes of the prompts that include this one."
+          },
+          "usedBySteps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "workflow": {
+                  "type": "string",
+                  "example": "implement"
+                },
+                "workflowBundled": {
+                  "type": "boolean",
+                  "description": "Whether the workflow ships with Harmonic."
+                },
+                "stepId": {
+                  "type": "string",
+                  "example": "review"
+                }
+              },
+              "required": [
+                "workflow",
+                "workflowBundled",
+                "stepId"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Workflow steps whose `with.prompt` names this prompt."
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the operator prompt was last saved (ISO 8601); null for bundled prompts."
           }
         },
         "required": [
@@ -20652,7 +20729,9 @@
           "text",
           "bundled",
           "resolved",
-          "usedBy"
+          "usedBy",
+          "usedBySteps",
+          "updatedAt"
         ],
         "additionalProperties": false
       },
