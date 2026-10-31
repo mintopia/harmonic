@@ -229,7 +229,7 @@ export class Runner {
           const outcome = await mergeRemoteTicketBranch({ repoDir: task.workingDir, remote: 'origin', baseBranch: run.baseBranch!, taskBranch: run.branch! });
           return outcome.kind === 'merged'
             ? { ok: true, mode: 'cas', oid: outcome.mergeOid, baseBranch: run.baseBranch!, branch: run.branch! }
-            : { ok: false, reason: outcome.reason === 'conflict' ? 'conflict' : 'target-advanced', detail: outcome.message };
+            : { ok: false, reason: outcome.reason === 'conflict' ? 'conflict' : 'stale-base', detail: outcome.message };
         }
         return withBaseCheckoutLock(task.workingDir, () =>
           withRepoLock(task.workingDir, async () =>
@@ -569,7 +569,6 @@ export class Runner {
     }
   }
 
-  /** The latest Attempt when a restart interrupted it: its workflow resumes rather than starting over. */
   private async runsOnKubernetes(task: TaskRow): Promise<boolean> {
     if (task.workflowRef === null) return false;
     const { name, version } = parseWorkflowRef(task.workflowRef);
@@ -577,6 +576,7 @@ export class Runner {
     return kubernetesTargetOf({ list: () => [{ name, text }] }, name) !== undefined;
   }
 
+  /** The latest Attempt when a restart interrupted it: its workflow resumes rather than starting over. */
   private async interruptedAttempt(task: TaskRow): Promise<AttemptRow | undefined> {
     const latest = (await this.attempts.listForTask(task.id)).at(-1);
     return latest?.state === 'failed' && latest.reason === 'process-death' ? latest : undefined;
