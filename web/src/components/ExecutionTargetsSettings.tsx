@@ -46,7 +46,7 @@ function StatusPill({ label }: { label: string }) {
   );
 }
 
-const ROW_GRID = 'grid grid-cols-1 items-center gap-3 px-3.5 py-2.5 md:grid-cols-[190px_130px_120px_110px_minmax(0,1fr)_190px]';
+const ROW_GRID = 'grid grid-cols-1 items-center gap-3 px-3.5 py-2.5 md:grid-cols-[190px_130px_110px_minmax(0,1fr)_190px]';
 
 export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) {
   const targets = useAsyncResource(() => api.executionTargets(), []);
@@ -104,12 +104,11 @@ export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) 
           </button>
         </div>
         <div role="table" aria-label="Execution Targets" className="flex flex-col gap-1.5 rounded-lg border border-hairline bg-sunken p-1.5">
-          <div role="row" className={`hidden text-label font-semibold uppercase text-faint md:grid md:grid-cols-[190px_130px_120px_110px_minmax(0,1fr)_190px] md:gap-3 md:px-3.5`}>
+          <div role="row" className={`hidden text-label font-semibold uppercase text-faint md:grid md:grid-cols-[190px_130px_110px_minmax(0,1fr)_190px] md:gap-3 md:px-3.5`}>
             <span role="columnheader">Target</span>
-            <span role="columnheader">Namespace</span>
-            <span role="columnheader">Concurrency</span>
+            <span role="columnheader">Running</span>
             <span role="columnheader">Waiting</span>
-            <span role="columnheader">Default image</span>
+            <span role="columnheader">Note</span>
             <span role="columnheader" className="sr-only">Actions</span>
           </div>
           {list.map((target) => {
@@ -121,7 +120,6 @@ export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) 
                   <span className="whitespace-nowrap font-data font-semibold">{view.name}</span>
                   <StatusPill label={view.statusLabel} />
                 </div>
-                <div role="cell" className={dim}>{target.builtIn ? 'the Harmonic host' : <code className={codeInline}>{target.namespace}</code>}</div>
                 <div role="cell" className="flex flex-col gap-1">
                   {target.builtIn ? (
                     <span className="text-[13px]">Host Ceiling <b>{hostCeiling}</b></span>
@@ -134,7 +132,7 @@ export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) 
                     </>
                   )}
                 </div>
-                <div role="cell" className={target.builtIn ? 'hidden' : ''}>
+                <div role="cell">
                   {!target.builtIn && target.waiting > 0 && (
                     <WaitChip
                       label={`${target.waiting} waiting`}
@@ -143,11 +141,18 @@ export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) 
                     />
                   )}
                 </div>
-                <div role="cell" className={`${dim} ${target.builtIn ? 'md:col-span-2' : ''}`}>
+                <div role="cell" className={`${dim} flex flex-col gap-1 text-small text-muted`}>
                   {target.builtIn ? (
-                    <span className="text-small text-muted">Not editable. Bounded by the Host Ceiling.</span>
+                    <span>Runs on the Harmonic host. Bounded by the Host Ceiling; does not share capacity with Kubernetes targets.</span>
                   ) : (
-                    <code className="break-words font-data text-[11.5px] leading-snug">{target.defaultImage}</code>
+                    <>
+                      <span>
+                        {!target.enabled ? 'Disabled. Waiting Tickets stay ready until it is re-enabled.' : view.full ? 'Full. The next Ticket waits and starts when a running one finishes.' : 'Starts Tickets while under its limit.'}
+                      </span>
+                      <span className="break-words">
+                        <code className={codeInline}>{target.namespace}</code> <code className="font-data text-[11.5px]">{target.defaultImage}</code>
+                      </span>
+                    </>
                   )}
                 </div>
                 <div role="cell" className="flex items-center justify-end gap-1.5">
