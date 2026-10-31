@@ -7,7 +7,7 @@ import type { TrackerRef } from '../tracker/adapter.js';
 import type { VarRecord } from '../domain/workflow-vars.js';
 import type { WorkflowEntry } from '../domain/workflow-library-store.js';
 import { evaluateCondition, findInterpolations, interpolate, type ExpressionContext, type Value } from '../domain/workflow-expression.js';
-import { agentStepWith, criticStepWith, parseWorkflow, resolveAttemptsMax, type WorkflowStepDefinition } from '../domain/workflow.js';
+import { agentStepWith, criticStepWith, definitionIsMixed, parseWorkflow, resolveAttemptsMax, stepRunsInWorkspace, stepTarget, type WorkflowStepDefinition } from '../domain/workflow.js';
 import { snapshotVars } from '../domain/workflow-vars.js';
 import type { ModelOptionResolution } from '../domain/model-options.js';
 import { harnessConfig, resolveRoute, type ResolvedRoute } from '../domain/route.js';
@@ -19,7 +19,7 @@ import { exitCodeToVerdict, OUTPUT_CHAR_CAP, type CommandSpawn } from '../verifi
 import type { MergeIntoBaseOutcome } from './branch-merge.js';
 import { Git } from './git.js';
 import { HARNESS_CREDENTIALS, LOCAL_TARGET } from './execution-targets.js';
-import type { PodOpener } from './pod-opener.js';
+import { ticketBranch, type PodOpener } from './pod-opener.js';
 import type { PodSession } from './pod-session.js';
 import { buildWorkflowCriticPrompt, renderAgentPrompt } from './prompt-assembly.js';
 import { appendFeedback, type DriveFields } from './prompt-template.js';
@@ -154,6 +154,11 @@ interface RunContext<S extends EngineSubject> {
   pod?: PodSession;
   podTarget?: string;
   coldPod?: boolean;
+  mixed: boolean;
+  runsOn: string | undefined;
+  image: string | undefined;
+  location: string;
+  mover: Promise<void>;
 }
 
 interface GitMark {
@@ -197,7 +202,7 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
       secrets: secretMap,
     };
     const warm = reuseSession ? this.warmSessions.get(stepRunOwnerKey(stepRunOwner(task))) : undefined;
-    const ctx: RunContext<S> = { task, run, ref, secrets: Object.values(secretMap), latest, stepsContext, context, agentState: warm ? { session: warm } : {}, halted: false };
+    const ctx: RunContext<S> = { task, run, ref, secrets: Object.values(secretMap), latest, stepsContext, context, agentState: warm ? { session: warm } : {}, halted: false, mixed: false, runsOn: workflow.runsOn, image: workflow.image, location: LOCAL_TARGET, mover: Promise.resolve() };
     return { workflow, ctx };
   }
 
@@ -205,17 +210,13 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
   async run(task: S, run: AttemptRow, resumed = true, reuseSession = true): Promise<void> {
     const { workflow, ctx } = await this.prepare(task, run, reuseSession);
     const runsOn = workflow.runsOn;
-    if (runsOn !== undefined && runsOn !== LOCAL_TARGET) {
-      if (!this.deps.pods) {
-        await this.deps.escalate(task, run, `workflow runs_on ${runsOn} needs a Kubernetes Execution Target, which this engine cannot start`);
-        return;
-      }
+    ctx.mixed = definitionIsMixed(workflow);
+    if (!ctx.mixed && runsOn !== undefined && runsOn !== LOCAL_TARGET) {
       try {
-        ctx.pod = await this.deps.pods.open(task, { runsOn, image: workflow.image, source: 'workflow' });
-        ctx.podTarget = runsOn;
-        ctx.secrets.push(...ctx.pod.credentialValues);
+        await this.openPod(ctx, runsOn);
+        ctx.location = runsOn;
       } catch (error) {
-        await this.deps.escalate(task, run, maskSecrets(`Execution Target ${runsOn} could not start the Ticket's pod: ${errorMessage(error)}`, ctx.secrets));
+        await this.deps.escalate(task, run, maskSecrets(errorMessage(error), ctx.secrets));
         return;
       }
     }
@@ -224,6 +225,56 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     } finally {
       await ctx.pod?.dispose();
     }
+  }
+
+  private async openPod(ctx: RunContext<S>, target: string): Promise<void> {
+    if (!this.deps.pods) throw new Error(`workflow runs_on ${target} needs a Kubernetes Execution Target, which this engine cannot start`);
+    try {
+      ctx.pod = await this.deps.pods.open(ctx.task, { runsOn: target, image: ctx.image, source: 'workflow' });
+    } catch (error) {
+      throw new Error(`Execution Target ${target} could not start the Ticket's pod: ${errorMessage(error)}`);
+    }
+    ctx.podTarget = target;
+    ctx.secrets.push(...ctx.pod.credentialValues);
+  }
+
+  private ticketBranchOf(task: S): string {
+    if (task.id === undefined) throw new Error('only a Task hands work over between local and a pod');
+    return ticketBranch(task.id);
+  }
+
+  private async relocate(ctx: RunContext<S>, step: WorkflowStepDefinition): Promise<void> {
+    const target = stepRunsInWorkspace(step) ? stepTarget(step, ctx.runsOn) : undefined;
+    const publishes = target === undefined && (step.uses === 'merge' || step.uses === 'open-pr' || step.uses === 'artifact');
+    if (target === undefined && !publishes) return;
+    const next = ctx.mover.then(() => (target === undefined ? this.publishLocal(ctx) : this.moveTo(ctx, target)));
+    ctx.mover = next.catch(() => undefined);
+    await next;
+  }
+
+  private async publishLocal(ctx: RunContext<S>): Promise<void> {
+    if (ctx.location !== LOCAL_TARGET) return;
+    await Git.pushHeadToRemoteBranch(this.deps.cwdFor(ctx.task), 'origin', this.ticketBranchOf(ctx.task));
+  }
+
+  private async moveTo(ctx: RunContext<S>, target: string): Promise<void> {
+    if (target === ctx.location) return;
+    const { task } = ctx;
+    const branch = this.ticketBranchOf(task);
+    const cwd = this.deps.cwdFor(task);
+    if (ctx.location === LOCAL_TARGET) {
+      await Git.pushHeadToRemoteBranch(cwd, 'origin', branch);
+    } else {
+      if (target === LOCAL_TARGET && (await Git.remoteBranchTip(cwd, 'origin', branch)) !== null) await Git.resetHardTo(cwd, await Git.fetchRemoteBranch(cwd, 'origin', branch));
+      await ctx.pod?.dispose();
+      delete ctx.pod;
+      delete ctx.podTarget;
+      ctx.location = LOCAL_TARGET;
+    }
+    if (target !== LOCAL_TARGET) await this.openPod(ctx, target);
+    ctx.location = target;
+    delete ctx.agentState.session;
+    this.warmSessions.delete(stepRunOwnerKey(stepRunOwner(task)));
   }
 
   private async runWorkflow(ctx: RunContext<S>, workflow: ReturnType<typeof parseWorkflow>, resumed: boolean): Promise<void> {
@@ -353,7 +404,10 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
       } else {
         const [resolved, env] = resolveStep(step, context);
         let stepCtx = ctx;
-        if (this.opensOwnPod(resolved)) {
+        if (ctx.mixed) {
+          await this.relocate(ctx, resolved);
+          pod = this.podFor(ctx, resolved);
+        } else if (this.opensOwnPod(resolved)) {
           if (!this.deps.pods) throw new Error(`step runs_on ${resolved.runs_on} needs a Kubernetes Execution Target, which this engine cannot start`);
           pod = ownPod = await this.deps.pods.open(task, { runsOn: resolved.runs_on!, image: resolved.image, source: 'workflow' });
           secrets.push(...ownPod.credentialValues);
@@ -389,16 +443,12 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
   }
 
   private opensOwnPod(step: WorkflowStepDefinition): boolean {
-    return step.runs_on !== undefined && step.runs_on !== LOCAL_TARGET && this.stepRunsInPod(step);
-  }
-
-  private stepRunsInPod(step: WorkflowStepDefinition): boolean {
-    return step.uses === 'rebase' || step.uses === 'agent' || step.uses === 'critic' || (step.run !== undefined && (step.uses === undefined || step.uses === 'command'));
+    return step.runs_on !== undefined && step.runs_on !== LOCAL_TARGET && stepRunsInWorkspace(step);
   }
 
   private podFor(ctx: RunContext<S>, step: WorkflowStepDefinition): PodSession | undefined {
     if (!ctx.pod) return undefined;
-    return this.stepRunsInPod(step) && step.runs_on === undefined ? ctx.pod : undefined;
+    return stepRunsInWorkspace(step) && (step.runs_on === undefined || (ctx.mixed && step.runs_on === ctx.podTarget)) ? ctx.pod : undefined;
   }
 
   private async resyncWorkflowPod(workflowPod: PodSession, result: StepResult, mask: (text: string) => string): Promise<StepResult> {

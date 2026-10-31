@@ -32,7 +32,7 @@ import { parseClassifierEndpoint, parseModelOptionOverlay } from '../../domain/m
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
-import { assertWorkspaceExecutionTargets, directWorkspaceRefusal } from '../../execution/workspace-execution-targets.js';
+import { assertWorkspaceExecutionTargets, directWorkspaceRefusal, workspaceMixedRefusal } from '../../execution/workspace-execution-targets.js';
 import { maskWorkspaceSecrets } from '../../archive/export-secrets.js';
 
 /** The Resolved Tracker flattened for the API; `null` when tracking is off. `ok` discriminates `label` vs (`code`, `reason`). */
@@ -358,6 +358,18 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
         ctx.settingsStore.getGlobal(),
       );
       if (directRefusal) throw new DomainError('validation', directRefusal);
+      const mixedRefusal = await workspaceMixedRefusal(
+        ctx.workflows,
+        {
+          name: req.body.name ?? current.name,
+          workingDir: req.body.workingDir ?? current.workingDir,
+          codeRepository: req.body.codeRepository === undefined ? current.codeRepository : req.body.codeRepository,
+          workflow: req.body.workflow === undefined ? current.workflow : req.body.workflow,
+          workflowLabels: req.body.workflowLabels === undefined ? current.workflowLabels : req.body.workflowLabels === null ? null : JSON.stringify(req.body.workflowLabels),
+        },
+        ctx.settingsStore.getGlobal(),
+      );
+      if (mixedRefusal) throw new DomainError('validation', mixedRefusal);
       const workspace = await ctx.workspaces.update(req.params.id, req.body);
       await ctx.trackerManager.sync();
       await ctx.workspaceWatcher.sync(await ctx.workspaces.list());

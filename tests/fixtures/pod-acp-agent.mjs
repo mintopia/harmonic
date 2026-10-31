@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
@@ -18,7 +18,8 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   } else if (msg.method === 'session/set_mode' || msg.method === 'session/set_model') {
     send({ jsonrpc: '2.0', id: msg.id, result: {} });
   } else if (msg.method === 'session/prompt') {
-    const file = `agent-${++turns}.txt`;
+    let file = `agent-${++turns}.txt`;
+    while (existsSync(join(cwd, file))) file = `agent-${++turns}.txt`;
     writeFileSync(join(cwd, file), 'from the agent\n');
     if (!process.env.POD_AGENT_NO_COMMIT) {
       execFileSync('git', ['add', file], { cwd });

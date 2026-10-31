@@ -30,6 +30,8 @@ export interface PodOpenerDeps<S extends PodOpenerSubject> {
   workdir?: string;
 }
 
+export const ticketBranch = (taskId: number): string => `harmonic/task-${taskId}`;
+
 const withoutCredentials = (url: string): string => {
   try {
     const parsed = new URL(url);
@@ -51,7 +53,7 @@ export function createPodOpener<S extends PodOpenerSubject>(deps: PodOpenerDeps<
       const origin = await Git.originUrl(task.workingDir);
       if (origin === null) throw new DomainError('invalid_state', `Execution Target '${target.name}' needs a Code Repository, and ${task.workingDir} has no origin remote`);
       const session = new PodSession(
-        { taskId, target, image: request.image ?? target.defaultImage, source: request.source, codeRepository: withoutCredentials(origin), baseBranch: await deps.baseBranchFor(task), branch: `harmonic/task-${taskId}`, credentials },
+        { taskId, target, image: request.image ?? target.defaultImage, source: request.source, codeRepository: withoutCredentials(origin), baseBranch: await deps.baseBranchFor(task), branch: ticketBranch(taskId), credentials },
         { api: deps.apiFactory(access), passes: deps.passes, onExecution: (execution) => deps.setExecution(task, execution), ...(deps.workdir === undefined ? {} : { workdir: deps.workdir }) },
       );
       await session.start();

@@ -18,7 +18,7 @@ import {
   workflowLabelSchema,
   modelOptionsSchema,
 } from '../../config.js';
-import { directWorkspaceRefusal } from '../../execution/workspace-execution-targets.js';
+import { directWorkspaceRefusal, workspaceMixedRefusal } from '../../execution/workspace-execution-targets.js';
 import { workflowReferenceProblems } from '../../domain/workflow-labels.js';
 import type { WorkflowLibrary } from '../../domain/workflow-library-store.js';
 import type { WorkspaceService } from '../../domain/workspaces.js';
@@ -50,7 +50,7 @@ async function assertDirectWorkspacesFit(ctx: Pick<ExecutionContext, 'settingsSt
     workflowLabels: next.labels ?? stored.workflowLabels,
   };
   for (const ws of await ctx.workspaces.list()) {
-    const refusal = directWorkspaceRefusal(ctx.workflows, ws, config);
+    const refusal = directWorkspaceRefusal(ctx.workflows, ws, config) ?? (await workspaceMixedRefusal(ctx.workflows, ws, config));
     if (refusal) throw new DomainError('validation', refusal);
   }
 }
