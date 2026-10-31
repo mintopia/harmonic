@@ -265,6 +265,17 @@ export function rotatedSummary(revokedRunning: number): string {
   return `Rotated just now · ${revokedRunning} ${revokedRunning === 1 ? 'pass' : 'passes'} revoked.`;
 }
 
+export function proxyCheckPanel(outcome: 'agrees' | 'rejected' | 'unreachable'): { tone: 'ok' | 'fail'; title: string; body: string } {
+  switch (outcome) {
+    case 'agrees':
+      return { tone: 'ok', title: 'Repository Proxy accepts Harmonic’s passes.', body: 'The proxy and Harmonic share the same key.' };
+    case 'rejected':
+      return { tone: 'fail', title: 'Repository Proxy rejected the last pass.', body: 'The proxy is likely still on the old key. Update it, then Test connection.' };
+    case 'unreachable':
+      return { tone: 'fail', title: 'Repository Proxy unreachable.', body: 'Check the Repository Proxy URL and that Harmonic can reach it.' };
+  }
+}
+
 export function daysAgo(at: number, now: number): string {
   const days = Math.floor((now - at) / 86_400_000);
   if (days <= 0) return 'today';

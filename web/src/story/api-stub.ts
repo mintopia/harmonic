@@ -297,6 +297,7 @@ export const api: typeof RealApi = {
   updateExecutionTarget: (name) => ok(executionTargetFixtures.find((t) => t.name === name) ?? stubTarget(name, true, 0, 1, 'default')),
   executionTargetDeletionImpact: () => ok({ running: 2, waiting: 1, total: 3 }),
   deleteExecutionTarget: () => ok({ ok: true as const, escalated: 3 }),
+  checkExecutionTargetProxyKey: () => ok({ outcome: 'rejected' as const }),
   rotateExecutionTargetProxyKey: () => ok({ key: 'hrk_7f3a9c2e51b84d06a1e9c0b3', rotatedAt: Date.now(), revokedRunning: 2 }),
   setExecutionTargetKubeconfig: () => ok(null),
   clearExecutionTargetKubeconfig: () => ok(null),

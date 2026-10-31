@@ -52,6 +52,7 @@ import type {
   ExportState,
   ExecutionTarget,
   ExecutionTargetBody,
+  ProxyKeyCheck,
   ProxyKeyRotation,
   DeletionImpact,
   ConnectionTestResult,
@@ -293,6 +294,8 @@ export const api = {
     request<unknown>('DELETE', `/api/execution-targets/${encodeURIComponent(name)}/kubeconfig`),
   rotateExecutionTargetProxyKey: (name: string) =>
     request<ProxyKeyRotation>('POST', `/api/execution-targets/${encodeURIComponent(name)}/rotate-proxy-key`),
+  checkExecutionTargetProxyKey: (name: string) =>
+    request<{ outcome: ProxyKeyCheck }>('POST', `/api/execution-targets/${encodeURIComponent(name)}/check-proxy-key`),
   testExecutionTargetConnection: (body: ConnectionTestRequest) =>
     request<ConnectionTestResult>('POST', '/api/execution-targets/test-connection', body),
   workspaceExecutionTargets: (workspaceId: number) =>

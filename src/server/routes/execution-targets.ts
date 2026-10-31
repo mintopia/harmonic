@@ -276,6 +276,25 @@ export async function executionTargetRoutes(fastify: FastifyInstance, ctx: Pick<
   );
 
   app.post(
+    '/execution-targets/:name/check-proxy-key',
+    {
+      schema: {
+        tags,
+        description:
+          'Check that the Repository Proxy accepts passes signed with the current key: Harmonic sends the proxy a probe pass for a repository that does not exist. `rejected` means the proxy is likely still on the old key. 409 when no signing key is set.',
+        security,
+        params: targetParamsSchema,
+        response: {
+          200: z.object({ outcome: z.enum(['agrees', 'rejected', 'unreachable']).meta({ example: 'agrees' }) }).meta({ id: 'ExecutionTargetProxyKeyCheck' }).describe('The proxy verdict.'),
+          404: errorResponse('No target has that name.'),
+          409: errorResponse('`local` is built in, or no signing key is set.'),
+        },
+      },
+    },
+    async (req) => ({ outcome: await ctx.executionTargets.checkProxyKey(req.params.name) }),
+  );
+
+  app.post(
     '/execution-targets/:name/test-connection',
     {
       schema: {

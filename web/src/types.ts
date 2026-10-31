@@ -1337,6 +1337,8 @@ export interface ProxyKeyRotation {
   revokedRunning: number;
 }
 
+export type ProxyKeyCheck = 'agrees' | 'rejected' | 'unreachable';
+
 export interface DeletionImpact {
   running: number;
   waiting: number;

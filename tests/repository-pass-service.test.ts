@@ -101,4 +101,13 @@ describe('RepositoryPassService', () => {
     expect(await fetchWith(oldToken)).toBe(true);
     expect(await fetchWith(newToken)).toBe(false);
       });
+
+  it('reports whether the proxy accepts Harmonic\'s key', async () => {
+    const url = () => origin;
+    await startProxy((await service.rotate('k8s-prod')).key);
+    expect(await service.checkProxy('k8s-prod', url())).toBe('agrees');
+    await service.rotate('k8s-prod');
+    expect(await service.checkProxy('k8s-prod', url())).toBe('rejected');
+    expect(await service.checkProxy('k8s-prod', 'http://127.0.0.1:1')).toBe('unreachable');
+  });
 });

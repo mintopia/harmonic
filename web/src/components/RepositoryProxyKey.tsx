@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { api } from '../api';
 import { errorText } from '../error-text';
-import { daysAgo, rotateKeyCopy, rotatedSummary } from '../execution-targets-model';
-import type { ExecutionTarget, ProxyKeyRotation } from '../types';
+import { daysAgo, proxyCheckPanel, rotateKeyCopy, rotatedSummary } from '../execution-targets-model';
+import type { ExecutionTarget, ProxyKeyCheck, ProxyKeyRotation } from '../types';
 import { btnDestructive, btnGhost, btnQuiet, statePillShape } from '../ui';
-import { CopyButton } from './CopyButton';
+import { useCopyConfirmation } from './CopyButton';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
 import { Parts } from './execution-target-parts';
@@ -18,6 +18,9 @@ export function RepositoryProxyKey({ target, onRotated }: { target: ExecutionTar
   const [rotating, setRotating] = useState(false);
   const [rotation, setRotation] = useState<ProxyKeyRotation | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [check, setCheck] = useState<ProxyKeyCheck | null>(null);
+  const [checking, setChecking] = useState(false);
+  const { copied, copy: copyKey } = useCopyConfirmation();
   const [now] = useState(() => Date.now());
   const key = target.proxyKey;
   const copy = rotateKeyCopy(target.name, target.running);
@@ -35,9 +38,18 @@ export function RepositoryProxyKey({ target, onRotated }: { target: ExecutionTar
     ).finally(() => setRotating(false));
   };
 
+  const runCheck = () => {
+    setChecking(true);
+    api.checkExecutionTargetProxyKey(target.name).then(
+      (result) => setCheck(result.outcome),
+      (e) => setError(errorText(e)),
+    ).finally(() => setChecking(false));
+  };
+
+  const panel = check ? proxyCheckPanel(check) : null;
+
   return (
-    <div className="border-t border-hairline py-[18px]">
-      <h3 className="mb-1 text-[13px] font-bold">Signing key and passes</h3>
+    <div className="pb-[18px]">
       <p className="mb-3 text-muted">Pods never hold the Code Repository&apos;s credentials. The proxy does, and lets a pod through only with a pass Harmonic signed.</p>
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -105,6 +117,7 @@ export function RepositoryProxyKey({ target, onRotated }: { target: ExecutionTar
       <div className="flex flex-wrap items-center gap-3">
         <button type="button" className={btnGhost} onClick={() => setConfirming(true)}>Rotate signing key…</button>
         <span className="text-small text-muted">Replaces the shared key. Do this after a suspected leak or on your own schedule.</span>
+        {key?.set && <button type="button" className={btnGhost} onClick={runCheck} disabled={checking}>{checking ? 'Checking…' : 'Check proxy key'}</button>}
       </div>
 
       {rotation && (
@@ -118,9 +131,19 @@ export function RepositoryProxyKey({ target, onRotated }: { target: ExecutionTar
           </div>
           <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
             <code aria-label="New signing key, hidden" className="font-data text-muted">••••••••••••</code>
-            <CopyButton text={rotation.key} label="Copy new key" variant="text" />
+            <button type="button" className="min-h-8 rounded-md border border-edge bg-surface px-2.5 py-0.5 text-small font-medium text-ink transition-colors hover:border-faint" onClick={() => copyKey(rotation.key)}>{copied ? 'Copied' : 'Copy new key'}</button>
             <span className="text-small text-muted">Shown once.</span>
           </div>
+        </div>
+      )}
+
+      {panel && (
+        <div role={panel.tone === 'ok' ? 'status' : 'alert'} className={`mt-3 flex items-start gap-2.5 rounded-md px-3 py-2.5 text-[13px] text-ink ${panel.tone === 'ok' ? 'bg-merged-tint' : 'bg-fail-tint'}`}>
+          <span className={`mt-0.5 shrink-0 ${panel.tone === 'ok' ? 'text-merged' : 'text-fail'}`}><Icon name={panel.tone === 'ok' ? 'check' : 'x-circle'} /></span>
+          <span>
+            <b className="font-semibold">{panel.title}</b>
+            <span className="mt-0.5 block text-small text-muted">{panel.body}</span>
+          </span>
         </div>
       )}
 

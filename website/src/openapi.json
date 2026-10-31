@@ -11018,6 +11018,23 @@
           "entries"
         ]
       },
+      "ExecutionTargetProxyKeyCheckInput": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "agrees",
+              "rejected",
+              "unreachable"
+            ],
+            "example": "agrees"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
       "ErrorResponse": {
         "type": "object",
         "properties": {
@@ -22263,6 +22280,24 @@
           "path",
           "parent",
           "entries"
+        ],
+        "additionalProperties": false
+      },
+      "ExecutionTargetProxyKeyCheck": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "agrees",
+              "rejected",
+              "unreachable"
+            ],
+            "example": "agrees"
+          }
+        },
+        "required": [
+          "outcome"
         ],
         "additionalProperties": false
       }
@@ -44346,6 +44381,67 @@
           },
           "409": {
             "description": "`local` is built in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/execution-targets/{name}/check-proxy-key": {
+      "post": {
+        "tags": [
+          "Execution Targets"
+        ],
+        "description": "Check that the Repository Proxy accepts passes signed with the current key: Harmonic sends the proxy a probe pass for a repository that does not exist. `rejected` means the proxy is likely still on the old key. 409 when no signing key is set. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "example": "k8s-prod"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The proxy verdict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionTargetProxyKeyCheck"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No target has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`local` is built in, or no signing key is set.",
             "content": {
               "application/json": {
                 "schema": {

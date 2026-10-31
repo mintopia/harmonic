@@ -5,6 +5,7 @@ import {
   connectionTestRequest,
   daysAgo,
   deleteCopy,
+  proxyCheckPanel,
   rotateKeyCopy,
   rotatedSummary,
   draftBody,
@@ -191,5 +192,17 @@ describe('rotate signing key copy', () => {
     expect(daysAgo(0, 28 * day + 5)).toBe('28 days ago');
     expect(daysAgo(0, day + 1)).toBe('1 day ago');
     expect(daysAgo(0, 1000)).toBe('today');
+  });
+});
+
+describe('proxy key check panel', () => {
+  it('uses the mockup wording when the proxy rejects the pass', () => {
+    expect(proxyCheckPanel('rejected')).toEqual({
+      tone: 'fail',
+      title: 'Repository Proxy rejected the last pass.',
+      body: 'The proxy is likely still on the old key. Update it, then Test connection.',
+    });
+    expect(proxyCheckPanel('agrees').tone).toBe('ok');
+    expect(proxyCheckPanel('unreachable').tone).toBe('fail');
   });
 });

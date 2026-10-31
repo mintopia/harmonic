@@ -6,7 +6,7 @@ import { EXECUTION_TARGET_AUTH_METHODS, executionTargets, type ExecutionTargetRo
 import { DomainError } from '../domain/errors.js';
 import type { WorkspaceService } from '../domain/workspaces.js';
 import { forEachYielding } from '../reliability/yield.js';
-import { RepositoryPassService, signingKeySecretName } from '../repository-proxy/pass-service.js';
+import { RepositoryPassService, signingKeySecretName, type ProxyKeyCheck } from '../repository-proxy/pass-service.js';
 import type { GlobalSecretService } from '../secrets/global-secret-service.js';
 import {
   CONNECTION_TEST_TIMEOUT_MS,
@@ -295,6 +295,11 @@ export class ExecutionTargetService {
     const current = await this.row(name);
     const rotated = await this.passes.rotate(current.name);
     return { ...rotated, revokedRunning: await this.runningCount(current.name) };
+  }
+
+  async checkProxyKey(name: string): Promise<ProxyKeyCheck> {
+    const current = await this.row(name);
+    return this.passes.checkProxy(current.name, current.repositoryProxyUrl);
   }
 
   // ponytail: escalates nothing until `runs_on` ties Tickets to targets.
