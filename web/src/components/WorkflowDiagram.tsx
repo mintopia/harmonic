@@ -18,33 +18,53 @@ function NodeBox({ p }: { p: PlacedNode }) {
   const { node, x, y, width, height } = p;
   const group = node.kind === 'attempts' || node.kind === 'parallel';
   const cx = x + width / 2;
-  const fill = node.kind === 'escalation' ? 'var(--hm-await-tint)' : node.kind === 'cleanup' ? 'var(--hm-sunken)' : group ? 'none' : 'var(--hm-surface)';
-  const stroke = node.kind === 'attempts' ? 'var(--hm-accent)' : node.kind === 'escalation' ? 'var(--hm-await)' : node.kind === 'parallel' ? 'var(--hm-edge)' : 'var(--hm-edge-strong)';
-  const dash = group || node.kind === 'cleanup' ? '5 3' : undefined;
+  const fill = node.kind === 'escalation' ? 'var(--hm-await-tint)' : node.kind === 'cleanup' ? 'var(--hm-sunken)' : node.uses === 'merge' ? 'var(--hm-merged-tint)' : group ? 'none' : 'var(--hm-surface)';
+  const stroke =
+    node.kind === 'attempts' ? 'var(--hm-accent)'
+    : node.kind === 'escalation' ? 'var(--hm-await)'
+    : node.kind === 'parallel' ? 'var(--hm-edge-strong)'
+    : node.kind === 'cleanup' ? 'var(--hm-faint)'
+    : node.uses === 'merge' ? 'var(--hm-merged)'
+    : node.uses === 'critic' ? 'var(--hm-ready)'
+    : node.uses === 'agent' ? 'var(--hm-accent)'
+    : 'var(--hm-edge-strong)';
+  const dash = node.kind === 'attempts' ? '5 4' : group || node.kind === 'cleanup' ? '2 3' : undefined;
+  const mono = 'var(--hm-mono, monospace)';
   return (
     <g data-node={node.id} data-kind={node.kind}>
       <rect x={x} y={y} width={width} height={height} rx={4} fill={fill} stroke={stroke} strokeDasharray={dash} strokeWidth={1.2} />
       {group ? (
         <text x={x + 10} y={y + 18} fontSize={10} fontWeight={700} letterSpacing={0.6} fill={node.kind === 'attempts' ? 'var(--hm-accent)' : 'var(--hm-muted)'}>
-          {node.kind === 'attempts' ? `ATTEMPTS${node.detail ? ` · ${node.detail}` : ''}` : `PARALLEL · ${node.label}`}
+          {node.kind === 'attempts' ? `ATTEMPTS${node.detail ? ` · ${node.detail}` : ''}` : 'PARALLEL'}
         </text>
       ) : node.kind === 'cleanup' ? (
         <>
-          <text x={x + 10} y={y + 18} fontSize={10} fontWeight={700} letterSpacing={0.6} fill="var(--hm-muted)">CLEANUP</text>
+          <text x={x + 10} y={y + 17} fontSize={10} fontWeight={700} letterSpacing={0.6} fill="var(--hm-muted)">CLEANUP</text>
           {(node.detail ?? '').split('\n').map((line, i) => (
-            <text key={line + i} x={x + 10} y={y + 32 + i * 12} fontSize={10} fontFamily="var(--hm-mono, monospace)" fill="var(--hm-muted)">{line}</text>
+            <text key={line + i} x={x + 10} y={y + 32 + i * 12} fontSize={10} fontFamily={mono} fill="var(--hm-muted)">{line}</text>
           ))}
+          <text x={x + 10} y={y + 32 + Math.max(1, (node.detail ?? '').split('\n').length) * 12} fontSize={10} fill="var(--hm-faint)">runs on done and on Close</text>
+        </>
+      ) : p.inParallel ? (
+        <>
+          <text x={x + 12} y={y + 17} fontSize={12} fontWeight={700} fill="var(--hm-ink)">{node.label}</text>
+          {(node.detail ?? '').split('\n').map((line, i) => (
+            <text key={line + i} x={x + 12} y={y + 31 + i * 13} fontSize={9.5} fontFamily={mono} fill="var(--hm-muted)">{line}</text>
+          ))}
+          {node.condition && <text x={x + 12} y={y + height - 12} fontSize={9.5} fontWeight={700} fill="var(--hm-ink)">{`◇ if: ${conditionLabel(node.condition)}`}</text>}
         </>
       ) : (
         <>
-          <text x={cx} y={y + (node.detail ? 19 : height / 2 + 4)} textAnchor="middle" fontSize={12} fontWeight={700} fill="var(--hm-ink)">{node.label}</text>
-          {node.detail && <text x={cx} y={y + 33} textAnchor="middle" fontSize={9.5} fontFamily="var(--hm-mono, monospace)" fill="var(--hm-muted)">{node.detail}</text>}
-          {node.condition && <text x={cx} y={y + 47} textAnchor="middle" fontSize={9.5} fontWeight={700} fill="var(--hm-ink)">{`◇ if: ${conditionLabel(node.condition)}`}</text>}
+          <text x={cx} y={y + (node.detail ? 17 : height / 2 + 4)} textAnchor="middle" fontSize={12} fontWeight={700} fill={node.kind === 'escalation' ? 'var(--hm-await)' : 'var(--hm-ink)'}>{node.label}</text>
+          {node.detail && <text x={cx} y={y + 30} textAnchor="middle" fontSize={9.5} fontFamily={node.kind === 'escalation' ? undefined : mono} fill={node.kind === 'escalation' ? 'var(--hm-await)' : 'var(--hm-muted)'}>{node.detail}</text>}
+          {node.condition && <text x={cx} y={y + 44} textAnchor="middle" fontSize={9.5} fontWeight={700} fill="var(--hm-ink)">{`◇ if: ${conditionLabel(node.condition)}`}</text>}
         </>
       )}
     </g>
   );
 }
+
+const HALO = { paintOrder: 'stroke', stroke: 'var(--hm-surface)', strokeWidth: 4, strokeLinejoin: 'round' } as const;
 
 function EdgePath({ p }: { p: PlacedEdge }) {
   if (p.points.length < 2) return null;
@@ -53,8 +73,8 @@ function EdgePath({ p }: { p: PlacedEdge }) {
   return (
     <g data-edge={`${p.edge.from}>${p.edge.to}`} data-kind={p.edge.kind}>
       <path d={d} fill="none" stroke={style.stroke} strokeDasharray={style.dash} strokeWidth={1.3} markerEnd={`url(#wfd-arrow-${p.edge.kind})`} />
-      {p.edge.label && <text x={p.labelAt.x + 6} y={p.labelAt.y} fontSize={10.5} fontWeight={700} fill={style.text}>{p.edge.label}</text>}
-      {p.edge.kind === 'back' && <text x={p.labelAt.x + 6} y={p.labelAt.y + 11} fontSize={9.5} fill="var(--hm-muted)">next Attempt</text>}
+      {p.label && <text x={p.label.x} y={p.label.y} textAnchor={p.label.anchor} fontSize={11} fontWeight={700} fill={style.text} style={HALO}>{p.label.text}</text>}
+      {p.subLabel && <text x={p.subLabel.x} y={p.subLabel.y} textAnchor={p.subLabel.anchor} fontSize={9.5} fill="var(--hm-muted)" style={HALO}>{p.subLabel.text}</text>}
     </g>
   );
 }
@@ -128,7 +148,7 @@ export function WorkflowDiagram({ model, stale, errorCount }: { model: WorkflowD
                 </marker>
               ))}
             </defs>
-            {[...ready.nodes].sort((a, b) => Number(b.node.kind === 'attempts') - Number(a.node.kind === 'attempts')).map((p) => <NodeBox key={p.node.id} p={p} />)}
+            {[...ready.nodes].sort((a, b) => Number(b.node.kind === 'attempts' || b.node.kind === 'parallel') - Number(a.node.kind === 'attempts' || a.node.kind === 'parallel')).map((p) => <NodeBox key={p.node.id} p={p} />)}
             {ready.edges.map((p, i) => <EdgePath key={i} p={p} />)}
           </svg>
         ) : (

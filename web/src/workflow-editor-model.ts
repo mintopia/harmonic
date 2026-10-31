@@ -32,3 +32,14 @@ export function validateWorkflowText(text: string, prev: WorkflowDiagramModel | 
     return { issues: found, diagram: prev, stale: prev !== null };
   }
 }
+
+export interface MessagePart { text: string; code: boolean }
+
+/** Splits `unknown key: x (did you mean y?)` so the offending token and the suggestion render as code chips. */
+export function messageParts(message: string): MessagePart[] {
+  const m = /^unknown key: (\S+?)(?: \(did you mean (\S+?)\?\))?$/.exec(message);
+  if (!m) return [{ text: message, code: false }];
+  const parts: MessagePart[] = [{ text: 'unknown key ', code: false }, { text: m[1]!, code: true }];
+  if (m[2] !== undefined) parts.push({ text: ' (did you mean ', code: false }, { text: m[2], code: true }, { text: '?)', code: false });
+  return parts;
+}

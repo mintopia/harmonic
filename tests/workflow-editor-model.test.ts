@@ -34,3 +34,13 @@ describe('validateWorkflowText', () => {
     expect(serverRefusalIssues({ message: 'name taken' })[0]).toMatchObject({ line: 1, source: 'server' });
   });
 });
+
+describe('messageParts', () => {
+  it('chips the token and the suggestion', async () => {
+    const { messageParts } = await import('../web/src/workflow-editor-model.js');
+    expect(messageParts('unknown key: retries (did you mean attempts?)')).toEqual([
+      { text: 'unknown key ', code: false }, { text: 'retries', code: true }, { text: ' (did you mean ', code: false }, { text: 'attempts', code: true }, { text: '?)', code: false },
+    ]);
+    expect(messageParts('invalid expression')).toEqual([{ text: 'invalid expression', code: false }]);
+  });
+});

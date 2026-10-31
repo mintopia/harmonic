@@ -32,6 +32,44 @@ const workflowSchema = z
   })
   .strict();
 
+const KEY_ALIASES: Readonly<Record<string, string>> = { retries: 'attempts', retry: 'attempts', tries: 'attempts', when: 'if', condition: 'if', action: 'uses', command: 'run', name: 'id' };
+
+function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++) row.push(Math.min(prev[j]! + 1, row[j - 1]! + 1, prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1)));
+    prev = row;
+  }
+  return prev[b.length]!;
+}
+
+/** The valid name closest to a mistyped one: a known synonym, or within two edits. */
+export function didYouMean(input: string, candidates: readonly string[]): string | undefined {
+  const alias = KEY_ALIASES[input];
+  if (alias !== undefined && candidates.includes(alias)) return alias;
+  let best: { name: string; distance: number } | undefined;
+  for (const name of candidates) {
+    const distance = editDistance(input.toLowerCase(), name.toLowerCase());
+    if (distance <= 2 && (best === undefined || distance < best.distance)) best = { name, distance };
+  }
+  return best?.name;
+}
+
+const withHint = (message: string, input: string, candidates: readonly string[]): string => {
+  const hint = didYouMean(input, candidates);
+  return hint === undefined ? message : `${message} (did you mean ${hint}?)`;
+};
+
+const STEP_KEYS = ['id', 'run', 'uses', 'with', 'if', 'parallel'] as const;
+const TOP_KEYS = ['name', 'description', 'vars', 'steps', 'cleanup'] as const;
+
+const unknownKey = (key: string, candidates: readonly string[]): string => withHint(`unknown key: ${key}`, key, candidates);
+
+const valueAt = (root: unknown, path: readonly PropertyKey[]): unknown => path.reduce<unknown>((value, key) => (isRecord(value) || Array.isArray(value) ? (value as Record<PropertyKey, unknown>)[key] : undefined), root);
+
+const actionHint = (message: string, raw: unknown): string => (typeof raw === 'string' ? withHint(message, raw, WORKFLOW_ACTIONS) : message);
+
 interface Problem {
   path: PropertyKey[];
   message: string;
@@ -82,7 +120,14 @@ export function parseWorkflow(text: string, options: { lenient?: boolean } = {})
     const parsed = workflowSchema.safeParse(doc.toJS());
     const shaped = parsed.success ? layout(parsed.data) : undefined;
     const invariants: Problem[] = parsed.success && shaped ? [...shaped.problems, ...stepInvariants(shaped.located, parsed.data, options.lenient === true), ...expressionProblems(shaped.located, parsed.data, doc, text)] : [];
-    const problems: Problem[] = parsed.success ? invariants : parsed.error.issues.flatMap((i): Problem[] => (i.code === 'unrecognized_keys' ? i.keys.map((k) => ({ path: [...i.path, k], message: `unknown key: ${k}`, key: true })) : [{ path: i.path, message: i.message }]));
+    const js: unknown = doc.toJS();
+    const problems: Problem[] = parsed.success
+      ? invariants
+      : parsed.error.issues.flatMap((i): Problem[] =>
+          i.code === 'unrecognized_keys'
+            ? i.keys.map((k) => ({ path: [...i.path, k], message: unknownKey(k, i.path.length === 0 ? TOP_KEYS : STEP_KEYS), key: true }))
+            : [{ path: i.path, message: i.path[i.path.length - 1] === 'uses' ? actionHint(i.message, valueAt(js, i.path)) : i.message }],
+        );
     for (const problem of problems) {
       const node = problem.offset ?? (problem.key ? keyOffset(doc, problem.path) : nearestNode(doc, problem.path));
       issues.push({ message: problem.message, ...at(node ?? 0) });
@@ -157,7 +202,7 @@ function layout(wf: z.infer<typeof workflowSchema>): { located: Located[]; block
     }
     const parsed = stepSchema.safeParse(raw);
     if (parsed.success) located.push({ step: parsed.data, path });
-    else problems.push(...stepProblems(parsed.error.issues, path));
+    else problems.push(...stepProblems(parsed.error.issues, path, raw));
   };
   wf.steps.forEach((raw, i) => {
     const path: PropertyKey[] = ['steps', i];
@@ -171,7 +216,7 @@ function layout(wf: z.infer<typeof workflowSchema>): { located: Located[]; block
       problems.push({ path: [...path, 'attempts'], message: 'attempts needs max and steps' });
       return;
     }
-    for (const key of Object.keys(body).filter((k) => k !== 'max' && k !== 'steps')) problems.push({ path: [...path, 'attempts', key], message: `unknown key: ${key}`, key: true });
+    for (const key of Object.keys(body).filter((k) => k !== 'max' && k !== 'steps')) problems.push({ path: [...path, 'attempts', key], message: unknownKey(key, ['max', 'steps']), key: true });
     const max = body.max;
     const inner = body.steps;
     if (typeof max !== 'number' && typeof max !== 'string') problems.push({ path: [...path, 'attempts', 'max'], message: `attempts.max must be ${MAX_RULE} or a single \${{ vars.NAME }}` });
@@ -192,8 +237,14 @@ function layout(wf: z.infer<typeof workflowSchema>): { located: Located[]; block
   return { located, block, problems };
 }
 
-function stepProblems(issues: z.core.$ZodIssue[], path: PropertyKey[]): Problem[] {
-  return issues.flatMap((i): Problem[] => (i.code === 'unrecognized_keys' ? i.keys.map((k) => ({ path: [...path, ...i.path, k], message: `unknown key: ${k}`, key: true })) : [{ path: [...path, ...i.path], message: i.message }]));
+function stepProblems(issues: z.core.$ZodIssue[], path: PropertyKey[], raw: unknown): Problem[] {
+  const keys: readonly string[] = path.length === 2 && path[0] === 'steps' ? [...STEP_KEYS, 'attempts'] : STEP_KEYS;
+  const misspelledKey = issues.some((i) => i.code === 'unrecognized_keys');
+  return issues.filter((i) => !(misspelledKey && i.path.length === 1 && i.path[0] === 'id' && valueAt(raw, i.path) === undefined)).flatMap((i): Problem[] =>
+    i.code === 'unrecognized_keys'
+      ? i.keys.map((k) => ({ path: [...path, ...i.path, k], message: unknownKey(k, keys), key: true }))
+      : [{ path: [...path, ...i.path], message: i.path[i.path.length - 1] === 'uses' ? actionHint(i.message, valueAt(raw, i.path)) : i.message }],
+  );
 }
 
 const agentWithSchema = z
@@ -238,13 +289,14 @@ export function criticStepWith(input: unknown): CriticStepWith | null {
 const emptyWithSchema = z.object({}).strict();
 const postMergeCheckWithSchema = z.object({ run: z.string().min(1).optional() }).strict();
 const EMPTY_WITH_ACTIONS: ReadonlySet<string> = new Set(['verify', 'rebase', 'merge', 'cleanup', 'artifact']);
+const withKeys = (schema: z.ZodType): string[] => (schema instanceof z.ZodObject ? Object.keys(schema.shape) : []);
 
 function withProblems(path: PropertyKey[], schema: z.ZodType, input: unknown): Problem[] {
   const parsed = schema.safeParse(input ?? {});
   if (parsed.success) return [];
   return parsed.error.issues.flatMap((issue): Problem[] =>
     issue.code === 'unrecognized_keys'
-      ? issue.keys.map((key) => ({ path: [...path, 'with', key], message: `unknown key: ${key}`, key: true }))
+      ? issue.keys.map((key) => ({ path: [...path, 'with', key], message: unknownKey(key, withKeys(schema)), key: true }))
       : [{ path: [...path, 'with', ...issue.path], message: `with.${issue.path.join('.')}: ${issue.message}` }],
   );
 }

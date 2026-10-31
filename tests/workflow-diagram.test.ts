@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseWorkflow } from '../src/domain/workflow.js';
 import { buildWorkflowDiagram } from '../src/domain/workflow-diagram.js';
-import { diagramElkGraph } from '../web/src/workflow-diagram-layout.js';
+import { computeLayout } from '../web/src/workflow-diagram-layout.js';
 
 const edgeKeys = (text: string) => buildWorkflowDiagram(parseWorkflow(text)).edges.map((e) => `${e.from}>${e.to}:${e.kind}:${e.label ?? ''}`);
 
@@ -101,10 +101,35 @@ describe('buildWorkflowDiagram', () => {
     expect(edgeKeys(IMPLEMENT).some((e) => e.includes('cleanup'))).toBe(false);
   });
 
-  it('nests group children in the ELK graph', () => {
-    const g = diagramElkGraph(buildWorkflowDiagram(parseWorkflow(PARALLEL)));
-    const attempts = g.children?.find((c) => c.id === 'attempts');
-    expect(attempts?.children?.find((c) => c.id === 'checks')?.children?.map((c) => c.id)).toEqual(['correctness', 'security']);
-    expect(g.edges).toHaveLength(buildWorkflowDiagram(parseWorkflow(PARALLEL)).edges.length);
+  it('places Escalation beside merge and routes escalation edges as in the mockup', () => {
+    const wf = `${PARALLEL}`;
+    const layout = computeLayout(buildWorkflowDiagram(parseWorkflow(wf)));
+    const at = (id: string) => layout.nodes.find((n) => n.node.id === id)!;
+    const esc = at('escalation');
+    expect(esc.y).toBe(at('merge').y);
+    expect(esc.x).toBeGreaterThan(at('merge').x + at('merge').width);
+    const attempts = at('attempts');
+    const maxReached = layout.edges.find((e) => e.edge.label === 'max reached')!;
+    expect(maxReached.points[0]!.x).toBeCloseTo(attempts.x + attempts.width);
+    expect(maxReached.points.at(-1)!.y).toBe(esc.y);
+    const conflict = layout.edges.find((e) => e.edge.label === 'conflict')!;
+    expect(new Set(conflict.points.map((p) => p.y)).size).toBe(1);
+    const nested = at('security');
+    expect(nested.inParallel).toBe(true);
+    expect(nested.y).toBeGreaterThan(at('checks').y);
+  });
+
+  it('keeps edge labels off the node boxes', () => {
+    const layout = computeLayout(buildWorkflowDiagram(parseWorkflow(PARALLEL)));
+    for (const { label } of layout.edges) {
+      if (!label) continue;
+      const w = label.text.length * 6.2;
+      const x0 = label.anchor === 'start' ? label.x : label.anchor === 'end' ? label.x - w : label.x - w / 2;
+      for (const n of layout.nodes) {
+        if (n.node.kind === 'attempts' || n.node.kind === 'parallel') continue;
+        const overlaps = x0 < n.x + n.width && x0 + w > n.x && label.y - 10 < n.y + n.height && label.y > n.y;
+        expect(overlaps, `${label.text} over ${n.node.id}`).toBe(false);
+      }
+    }
   });
 });
