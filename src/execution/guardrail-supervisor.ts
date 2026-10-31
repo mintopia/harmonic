@@ -1,4 +1,4 @@
-import type { AttemptRow, WorkspaceRow } from '../db/schema.js';
+import type { AttemptRow, StepType, WorkspaceRow } from '../db/schema.js';
 import type { BudgetGuardrail } from '../config.js';
 import type { ResolvedGuardrails } from '../domain/setting-override.js';
 import { hasWorkspaceOverride } from '../domain/settings-registry.js';
@@ -218,14 +218,17 @@ export class GuardrailSupervisor {
     }
   }
 
-  /** One wall-clock watchdog fire. A trip only counts while a Step is actively running. */
+  /** A supervised turn is the agent step; Attempts of a workflow carry no legacy Step rows. */
+  private async stepType(): Promise<StepType> {
+    return (await this.deps.attempts.currentStepType(this.turn.taskId, this.turn.attemptNumber)) ?? 'implementation';
+  }
+
   async evaluateWallClock(): Promise<void> {
     if (!this.budget) return;
     if (this.turn.isSettled()) return;
     const now = await this.deps.attempts.get(this.turn.attemptId);
     if (now.state !== 'running') return;
-    const stepType = await this.deps.attempts.currentStepType(this.turn.taskId, this.turn.attemptNumber);
-    if (!stepType) return;
+    const stepType = await this.stepType();
     const trip = wallClockTrip({ elapsedMs: Date.now() - now.startedAt, stepType, budget: this.budget });
     if (!trip) return;
     await this.appendAndSettle(
@@ -244,7 +247,7 @@ export class GuardrailSupervisor {
     if (this.turn.isSettled()) return;
     const now = await this.deps.attempts.get(this.turn.attemptId);
     if (now.state !== 'running') return;
-    const stepType = await this.deps.attempts.currentStepType(this.turn.taskId, this.turn.attemptNumber);
+    const stepType = await this.stepType();
     const snap = await this.deps.sampleSnapshot(this.turn.attemptId);
     const observedTokens = snap ? totalTokensOf(snap.usage) : null;
     const cost = snap ? costOfUsages([snap.usage], this.priceTable) : null;
@@ -302,7 +305,7 @@ export class GuardrailSupervisor {
     if (this.turn.isSettled()) return;
     const now = await this.deps.attempts.get(this.turn.attemptId);
     if (now.state !== 'running') return;
-    if (!countsTowardExecutionBudget(await this.deps.attempts.currentStepType(this.turn.taskId, this.turn.attemptNumber))) return;
+    if (!countsTowardExecutionBudget(await this.stepType())) return;
     let oldest: { id: string; startedAt: number; title: string | null } | null = null;
     for (const [id, t] of this.outstandingTools) {
       if (!oldest || t.startedAt < oldest.startedAt) oldest = { id, startedAt: t.startedAt, title: t.title };

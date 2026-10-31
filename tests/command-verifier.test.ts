@@ -89,37 +89,37 @@ describe('command verifier (issue #135)', () => {
 
   describe('exitCodeToVerdict table (AC2)', () => {
     it('exit 0 → pass', () => {
-      expect(exitCodeToVerdict({ code: 0, signal: null, output: '' })).toEqual({
+      expect(exitCodeToVerdict({ code: 0, signal: null, output: '', stdout: '' })).toEqual({
         verdict: 'pass',
         summary: 'command exited 0',
       });
     });
     it('non-zero exit → fail, naming the code', () => {
-      expect(exitCodeToVerdict({ code: 1, signal: null, output: '' })).toMatchObject({ verdict: 'fail' });
-      expect(exitCodeToVerdict({ code: 42, signal: null, output: '' })).toEqual({
+      expect(exitCodeToVerdict({ code: 1, signal: null, output: '', stdout: '' })).toMatchObject({ verdict: 'fail' });
+      expect(exitCodeToVerdict({ code: 42, signal: null, output: '', stdout: '' })).toEqual({
         verdict: 'fail',
         summary: 'command exited 42',
       });
     });
     it('spawn error → inconclusive', () => {
       expect(
-        exitCodeToVerdict({ spawnError: new Error('spawn npm ENOENT'), code: null, signal: null, output: '' }),
+        exitCodeToVerdict({ spawnError: new Error('spawn npm ENOENT'), code: null, signal: null, output: '', stdout: '' }),
       ).toMatchObject({ verdict: 'inconclusive' });
     });
     it('timeout → inconclusive', () => {
-      expect(exitCodeToVerdict({ timedOut: true, code: null, signal: 'SIGKILL', output: '' })).toEqual({
+      expect(exitCodeToVerdict({ timedOut: true, code: null, signal: 'SIGKILL', output: '', stdout: '' })).toEqual({
         verdict: 'inconclusive',
         summary: 'command timed out',
       });
     });
     it('cancelled → inconclusive', () => {
-      expect(exitCodeToVerdict({ aborted: true, code: null, signal: 'SIGKILL', output: '' })).toEqual({
+      expect(exitCodeToVerdict({ aborted: true, code: null, signal: 'SIGKILL', output: '', stdout: '' })).toEqual({
         verdict: 'inconclusive',
         summary: 'command cancelled',
       });
     });
     it('killed by signal with no exit code → inconclusive', () => {
-      expect(exitCodeToVerdict({ code: null, signal: 'SIGSEGV', output: '' })).toMatchObject({
+      expect(exitCodeToVerdict({ code: null, signal: 'SIGSEGV', output: '', stdout: '' })).toMatchObject({
         verdict: 'inconclusive',
       });
     });
@@ -131,7 +131,7 @@ describe('command verifier (issue #135)', () => {
       cwd: repo,
       verifiedHeadOid: oid,
       command: nodeCommand('process.exit(0)'),
-      spawn: fakeSpawn({ code: 0, signal: null, output: 'ok' }),
+      spawn: fakeSpawn({ code: 0, signal: null, output: 'ok', stdout: '' }),
     });
     expect(attempt.verdict).toBe('pass');
     expect(attempt.verifier).toBe('command');
@@ -155,7 +155,7 @@ describe('command verifier (issue #135)', () => {
         cwd: repo,
         verifiedHeadOid: oid,
         command: nodeCommand('process.exit(1)'),
-        spawn: fakeSpawn({ code: 1, signal: null, output: 'nope' }),
+        spawn: fakeSpawn({ code: 1, signal: null, output: 'nope', stdout: '' }),
         parent: parent.spanContext,
         attributes: { 'task.id': 3, 'attempt.id': 7 },
       }),
@@ -183,7 +183,7 @@ describe('command verifier (issue #135)', () => {
       cwd: repo,
       verifiedHeadOid: oid,
       command: nodeCommand('process.exit(1)'),
-      spawn: fakeSpawn({ code: 1, signal: null, output: '' }),
+      spawn: fakeSpawn({ code: 1, signal: null, output: '', stdout: '' }),
     });
     expect(attempt.verdict).toBe('fail');
   });

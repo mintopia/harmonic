@@ -272,3 +272,65 @@ This amends ADR-0052: a Model Option gains a code, a Ticket override joins the
 global list and Workspace overlay, and a code may repeat across those three
 lists, the inner definition shadowing the outer. Within one list a code is
 unique.
+
+## Amendment (2026-10-31): Bundled `implement` and `research` workflows
+
+Two workflows ship in the package: `implement` and `research`. On an unedited
+install they reproduce today's execution.
+
+- **`research` has no `cleanup:`.** Cleanup deletes the Ticket branch, and that
+  branch holds the research artifact.
+- **`verify`** is a marker step that always passes. The Task-side verify
+  command and critic lists were removed (ADR-0055), so a Ticket's checks are the
+  explicit `run:`, `command` and `critic` steps in its workflow.
+- **`post-merge-check`** runs its `run:` script in the detached base checkout
+  after the merge. With no `run:` it passes.
+- **Prompt Library codes.** The prompt on an `agent` or `critic` step may select
+  a Prompt Library code with an expression. After the Library lookup, `{field}`
+  placeholders are filled once. Field values are never expanded again.
+- **`merge` always produces a merge commit.** `merge` and `artifact` pass for
+  Tasks that work in place. A refused `close-ticket` marks the close pending and
+  passes.
+- **Accepted divergences from today's path:**
+  - A rebase conflict escalates instead of going to the agent.
+  - There are no `finish_task` continue nudges.
+  - There is no peer or code-index prompt text.
+  - The engine's post-merge check runs after the Merge is published.
+  - Critic prompts are not byte-identical to the old critic prompt.
+
+## Amendment (2026-10-31): a workflow classifier may choose the workflow
+
+Issue #930. The Workflow Label is the only automatic input to a Ticket's
+workflow choice in § Assignment. This amendment adds a second, AI-based
+input, so a Ticket with no label can still reach the right workflow.
+
+- **Precedence**: an operator's explicit choice on the Ticket, then the
+  Workflow Label, then the workflow classifier, then the Workspace default,
+  then the global default. The classifier is consulted only when neither the
+  operator nor a Workflow Label has decided.
+- **The Route Classifier does not choose workflows.** ADR-0052's Route
+  Classifier still picks only Harness and Model. The clause "Not chosen by
+  AI. The Route Classifier picks Harness and Model only." in § Assignment
+  is replaced by the rule below.
+- **A separate workflow classifier, off by default.** Each Workspace turns it
+  on or off with its own field, `workflowClassifierEnabled`. It chooses one
+  workflow from the global library by name and description.
+- **Shared backend and settings.** The backend (TypeSafe, OpenAI-compatible
+  or configured Harness), timeout, Harness and Model, endpoint and Secrets are
+  the same settings ADR-0052 defines for the Route Classifier. Only the
+  on/off switch is separate.
+- **When it runs.** When the Ticket starts working and on Retry, the same
+  moments the Workflow Label resolves. It never runs per Attempt. An in-flight
+  Ticket never switches workflow.
+- **Not classified.** A Ticket with a wayfinder research type, an operator
+  choice, or a matching Workflow Label is not classified.
+- **Abstain, visibly.** On an error, a timeout, invalid output, or an id not in
+  the library, the classifier abstains and the Workspace default applies. A
+  Task event in Activity records the reason.
+- **Shown on the Ticket.** The Ticket page shows the workflow as "chosen by
+  classifier" with the one-line reason.
+- **Cost is a routing line.** Its Usage and Cost are recorded on the Ticket as
+  a routing cost line, in columns `workflow_routing_usage` and
+  `workflow_routing_cost`. They are kept apart from implementation Cost.
+- **Not a Step.** The classification adds no Step type and no Step, as with
+  the Route Classifier (ADR-0052).

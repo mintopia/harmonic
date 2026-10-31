@@ -1,29 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { baselineConfig } from '../src/config.js';
-import type { PromptFragments } from '../src/domain/prompt-fragments.js';
+import { bundledEnginePrompts, type EnginePrompts } from '../src/domain/bundled-prompts.js';
 import {
   composeAttemptPrompt,
-  composeCommitNudge,
-  composeContinuePrompt,
-  composeDriveOpening,
-  composeEpicResolvePrompt,
   composePauseMessage,
   composePeerContext,
   peerFrame,
-  placePriorContext,
-  planAttemptContext,
   renderConflictPrompt,
   renderEpicRefreshPrompt,
-  type AttemptContextFacts,
   type AttemptPromptInput,
   type PeerEntry,
 } from '../src/execution/prompt-assembly.js';
-import { renderFragment } from '../src/execution/prompt-template.js';
+import { renderPrompt } from '../src/execution/prompt-template.js';
 
-const defaults = (): PromptFragments => ({ ...baselineConfig().promptFragments });
+const defaults = (): EnginePrompts => bundledEnginePrompts();
 
-const peerSection = (held: readonly PeerEntry[], fragments: PromptFragments): string =>
-  composePeerContext(held, fragments).replace(`\n\n${renderFragment('peerLine', fragments)}`, '');
+const peerSection = (held: readonly PeerEntry[], prompts: EnginePrompts): string =>
+  composePeerContext(held, prompts).replace(`\n\n${renderPrompt('peerLine', prompts)}`, '');
 
 const OPERATOR = '## Operator message\n\nfocus on X';
 const HEAL =
@@ -127,36 +119,18 @@ describe('peer context', () => {
   });
 });
 
-describe('Drive opening and Continue prompt', () => {
-  const fields = { taskId: '5', skill: '/implement', ref: '42', url: 'http://x/42', title: 'T', description: 'B' };
-  const drive = { prompt: '{skill} {ref} {title}', unattendedReminder: 'Task {taskId} {taskId}.' };
-
-  it('fills the template and appends the reminder with the Task id', () => {
-    expect(composeDriveOpening(drive, fields)).toBe('/implement 42 T\n\nTask 5 5.');
-  });
-
-  it('inserts trimmed feedback between the template and the reminder', () => {
-    expect(composeDriveOpening(drive, fields, '  fix it  ')).toBe('/implement 42 T\n\n## Feedback from the previous attempt\n\nfix it\n\nTask 5 5.');
-    expect(composeDriveOpening(drive, fields, '   ')).toBe('/implement 42 T\n\nTask 5 5.');
-  });
-
-  it('puts the unattended reminder after the Continue prompt', () => {
-    expect(composeContinuePrompt({ continuePrompt: 'Go on, task {taskId}.', unattendedReminder: 'Task {taskId}.' }, 5)).toBe('Go on, task 5.\n\nTask 5.');
-  });
-});
-
 describe('resolver prompts', () => {
-  it('renderConflictPrompt expands fragments, then fills merge placeholders', () => {
+  it('renderConflictPrompt expands includes, then fills merge placeholders', () => {
     const out = renderConflictPrompt(
-      'Turn {turn}: {taskBranch} into {baseBranch} at {baseDir}\n{paths}\n{fragment.note}',
-      { note: 'NOTE {baseDir}' },
+      'Turn {turn}: {taskBranch} into {baseBranch} at {baseDir}\n{paths}\n${{ prompts.conflictResolution }}',
+      { ...defaults(), conflictResolution: 'NOTE {baseDir}' },
       { turn: 2, baseBranch: 'develop', taskBranch: 'task/1', unmergedPaths: ['a.ts', 'b.ts'], baseDir: '/w' },
     );
     expect(out).toBe('Turn 2: task/1 into develop at /w\n- a.ts\n- b.ts\nNOTE /w');
   });
 
   it('renderEpicRefreshPrompt maps the refresh context onto the merge placeholders', () => {
-    const out = renderEpicRefreshPrompt('{defaultBranch}|{branch}|{detail}|{baseDir}|{baseBranch}|{taskBranch}', {}, {
+    const out = renderEpicRefreshPrompt('{defaultBranch}|{branch}|{detail}|{baseDir}|{baseBranch}|{taskBranch}', defaults(), {
       defaultBranch: 'develop',
       branch: 'epic/3',
       detail: 'D',
@@ -164,59 +138,11 @@ describe('resolver prompts', () => {
     });
     expect(out).toBe('develop|epic/3|D|/wt|epic/3|develop');
   });
-
-  it('composeEpicResolvePrompt joins prompt, failing verification and suffix with blank lines', () => {
-    const fragments = { ...defaults(), epicFailingVerification: 'FAILED: {reason}' };
-    const out = composeEpicResolvePrompt({
-      resolvePrompt: 'Fix {ref} {title} {description} {url}',
-      resolveSuffix: 'Push to {branch}.',
-      fragments,
-      epic: { ref: '3', title: 'Epic three', body: '$& body', url: 'http://x/3' },
-      reason: 'tests red',
-      branch: 'epic/3',
-    });
-    expect(out).toBe('Fix 3 Epic three $& body http://x/3\n\nFAILED: tests red\n\nPush to epic/3.');
-  });
-});
-
-describe('attempt context planning', () => {
-  const facts = (over: Partial<AttemptContextFacts> = {}): AttemptContextFacts => ({
-    seeded: false,
-    healing: false,
-    continuesOpenAttempt: false,
-    freshSession: false,
-    condensedContinuation: false,
-    ...over,
-  });
-
-  it.each([
-    ['a seeded fresh Session puts the prior context in place of the opening', facts({ seeded: true, freshSession: true }), 'freshSessionContext'],
-    ['a seeded turn in an open Session needs no prior context', facts({ seeded: true }), null],
-    ['a self-heal condenses the prior Session', facts({ healing: true }), 'condensed'],
-    ['a self-heal outranks a fresh-Session seed', facts({ healing: true, seeded: true, freshSession: true }), 'condensed'],
-    ['a condensed continuation condenses the prior Session', facts({ condensedContinuation: true }), 'condensed'],
-    ['an unseeded plain turn needs none', facts(), null],
-  ] as const)('%s', (_name, input, slot) => {
-    expect(planAttemptContext(input).priorSlot).toBe(slot);
-  });
-
-  it('replaces the whole prompt only when the turn continues an open Attempt', () => {
-    expect(planAttemptContext(facts({ continuesOpenAttempt: true })).seedMode).toBe('replace-all');
-    expect(planAttemptContext(facts()).seedMode).toBe('append');
-  });
-
-  it('places the prior context in exactly the planned slot, treating empty text as absent', () => {
-    expect(placePriorContext('freshSessionContext', 'ctx')).toEqual({ freshSessionContext: 'ctx', condensed: null });
-    expect(placePriorContext('condensed', 'ctx')).toEqual({ freshSessionContext: null, condensed: 'ctx' });
-    expect(placePriorContext('condensed', '')).toEqual({ freshSessionContext: null, condensed: null });
-    expect(placePriorContext(null, 'ctx')).toEqual({ freshSessionContext: null, condensed: null });
-  });
 });
 
 describe('nudge templates', () => {
-  it('expands fragment references in the commit nudge and pause message', () => {
-    const fragments = { ...defaults(), conflictResolution: 'SHARED' };
-    expect(composeCommitNudge('Commit. {fragment.conflictResolution}', fragments)).toBe('Commit. SHARED');
-    expect(composePauseMessage('Stop. {fragment.conflictResolution}', fragments)).toBe('Stop. SHARED');
+  it('expands included prompts in the pause message', () => {
+    const prompts = { ...defaults(), conflictResolution: 'SHARED' };
+    expect(composePauseMessage('Stop. ${{ prompts.conflictResolution }}', prompts)).toBe('Stop. SHARED');
   });
 });

@@ -3,24 +3,14 @@ import {
   type AppConfig,
   type VerificationCommand,
   type VerificationCommandOverlayEntry,
-  type TaskVerificationCritic,
-  type TaskVerificationCriticOverlayEntry,
-  type TaskVerificationStage,
   type EpicVerificationCritic,
   type EpicVerificationCriticOverlayEntry,
   type EpicVerificationStage,
   type BudgetGuardrail,
-  type MergeFate,
   type RoutingLabel,
 } from '../config.js';
-import { composeCommitNudge, composePauseMessage } from '../execution/prompt-assembly.js';
-import { expandFragments } from '../execution/prompt-template.js';
-import {
-  PROMPT_FRAGMENT_NAMES,
-  promptFragmentOverrideKey,
-  type PromptFragmentOverrides,
-  type PromptFragments,
-} from './prompt-fragments.js';
+import { composePauseMessage } from '../execution/prompt-assembly.js';
+import type { EnginePrompts } from './bundled-prompts.js';
 import { isOverridable, type SettingKey } from './settings-registry.js';
 
 /**
@@ -51,7 +41,6 @@ export function resolveCap(workspaceCap: number | null | undefined, hostCeiling:
 
 /** A Workspace's effective Verification verifiers, resolved at stage/list grain. */
 export type ResolvedVerifiers = {
-  task: { preMerge: TaskVerificationStage; postMerge: TaskVerificationStage };
   epic: { preMerge: EpicVerificationStage };
 };
 
@@ -61,14 +50,10 @@ export type ResolvedVerifiers = {
  * just that verifier list off. Nothing executes here.
  */
 export function resolveVerifiers(
-  ws: Pick<WorkspaceRow, 'taskPreMergeCommands' | 'taskPreMergeCritics' | 'taskPostMergeCommands' | 'taskPostMergeCritics' | 'epicPreMergeCommands' | 'epicPreMergeCritics'>,
+  ws: Pick<WorkspaceRow, 'epicPreMergeCommands' | 'epicPreMergeCritics'>,
   config: Pick<AppConfig, 'verify'>,
 ): ResolvedVerifiers {
   return {
-    task: {
-      preMerge: resolveTaskStage('taskPreMergeCommands', ws.taskPreMergeCommands, 'taskPreMergeCritics', ws.taskPreMergeCritics, config.verify.task.preMerge),
-      postMerge: resolveTaskStage('taskPostMergeCommands', ws.taskPostMergeCommands, 'taskPostMergeCritics', ws.taskPostMergeCritics, config.verify.task.postMerge),
-    },
     epic: { preMerge: resolveEpicStage('epicPreMergeCommands', ws.epicPreMergeCommands, 'epicPreMergeCritics', ws.epicPreMergeCritics, config.verify.epic.preMerge) },
   };
 }
@@ -162,24 +147,21 @@ export function routingLabelIssues(labels: readonly Pick<RoutingLabel, 'label'>[
   return routingLabelOverlayIssues(labels.map((routingLabel) => ({ kind: 'local', enabled: true, routingLabel })), []);
 }
 
-/**
- * Problems that make a Workspace overlay unsavable: an enabled local label may
- * not be blank, repeat an enabled Global label (a disabled Global frees its
- * label), or repeat an earlier enabled local one. Disabled locals are not checked.
- */
-export function routingLabelOverlayIssues(
-  overlay: readonly (
-    | { kind: 'global'; ref: string; enabled: boolean }
-    | { kind: 'local'; enabled: boolean; routingLabel: Pick<RoutingLabel, 'label'> }
-  )[],
-  globals: readonly Pick<RoutingLabel, 'label'>[],
+type LabelOverlayEntry<K extends string> =
+  | { kind: 'global'; ref: string; enabled: boolean }
+  | ({ kind: 'local'; enabled: boolean } & { [P in K]: { label: string } });
+
+export function labelOverlayIssues<K extends string>(
+  itemKey: K,
+  overlay: readonly LabelOverlayEntry<K>[],
+  globals: readonly { label: string }[],
 ): RoutingLabelIssue[] {
   const disabled = new Set(overlay.flatMap((e) => (e.kind === 'global' && !e.enabled ? [e.ref] : [])));
   const globalRefs = new Set(globals.map(routingLabelRef).filter((ref) => !disabled.has(ref)));
   const seen = new Set<string>();
   return overlay.flatMap((entry, index): RoutingLabelIssue[] => {
     if (entry.kind !== 'local' || !entry.enabled) return [];
-    const ref = routingLabelRef(entry.routingLabel);
+    const ref = routingLabelRef(entry[itemKey]);
     if (ref === '') return [{ index, kind: 'blank' }];
     if (globalRefs.has(ref)) return [{ index, kind: 'duplicate-global', globalRef: ref }];
     if (seen.has(ref)) return [{ index, kind: 'duplicate' }];
@@ -188,23 +170,40 @@ export function routingLabelOverlayIssues(
   });
 }
 
-function resolveTaskStage(
-  commandsKey: SettingKey,
-  commandsStored: string | null,
-  criticsKey: SettingKey,
-  criticsStored: string | null,
-  globalDefault: TaskVerificationStage,
-): TaskVerificationStage {
-  return {
-    commands: resolveOverlay<VerificationCommand, VerificationCommandOverlayEntry>(
-      commandsKey, commandsStored, globalDefault.commands,
-      (e) => e.ref, (e) => e.command,
-    ),
-    critics: resolveOverlay<TaskVerificationCritic, TaskVerificationCriticOverlayEntry>(
-      criticsKey, criticsStored, globalDefault.critics,
-      (e) => e.ref, (e) => e.critic,
-    ),
-  };
+export function routingLabelOverlayIssues(
+  overlay: readonly LabelOverlayEntry<'routingLabel'>[],
+  globals: readonly Pick<RoutingLabel, 'label'>[],
+): RoutingLabelIssue[] {
+  return labelOverlayIssues('routingLabel', overlay, globals);
+}
+
+export const workflowLabelRef = routingLabelRef;
+export type WorkflowLabelIssue = RoutingLabelIssue;
+export const workflowLabelIssueMessage = routingLabelIssueMessage;
+export const describeWorkflowLabelIssue = describeRoutingLabelIssue;
+
+export function workflowLabelIssues<T extends { label: string }>(labels: readonly T[]): WorkflowLabelIssue[] {
+  return workflowLabelOverlayIssues(labels.map((workflowLabel) => ({ kind: 'local', enabled: true, workflowLabel })), []);
+}
+
+export function workflowLabelOverlayIssues(
+  overlay: readonly LabelOverlayEntry<'workflowLabel'>[],
+  globals: readonly { label: string }[],
+): WorkflowLabelIssue[] {
+  return labelOverlayIssues('workflowLabel', overlay, globals);
+}
+
+export function mergeLabelOverlay<T extends { label: string }, E extends { kind: 'global' | 'local'; enabled: boolean }>(
+  overlay: readonly E[] | null,
+  globals: readonly T[],
+  ref: (entry: E & { kind: 'global' }) => string,
+  local: (entry: E & { kind: 'local' }) => T,
+): T[] {
+  const merged = mergeOverlay<T, E>(overlay, globals, routingLabelRef, ref, local);
+  if (overlay == null) return merged;
+  const globalSet = new Set<T>(globals);
+  const enabledGlobalRefs = new Set(merged.filter((item) => globalSet.has(item)).map(routingLabelRef));
+  return merged.filter((item) => globalSet.has(item) || !enabledGlobalRefs.has(routingLabelRef(item)));
 }
 
 function resolveEpicStage(
@@ -249,101 +248,33 @@ function parseGuardrailBudget(stored: string | null | undefined): BudgetGuardrai
   return stored ? (JSON.parse(stored) as BudgetGuardrail) : null;
 }
 
-/** A Workspace's effective auto-drive config: the five `drive.*` fields, each resolved `workspace ?? global`; the prompt templates arrive with their `{fragment.<name>}` references expanded. */
-export type ResolvedDrive = {
-  prompt: string;
-  unattendedReminder: string;
-  continuePrompt: string;
-  mergeFate: MergeFate;
-  continueAttempts: number;
-};
-
-/** Resolve a Workspace's effective auto-drive config. A missing `ws` inherits every global default. */
-export function resolveDrive(
-  ws:
-    | (Partial<PromptFragmentOverrides> &
-        Pick<
-          WorkspaceRow,
-          'drivePrompt' | 'driveUnattendedReminder' | 'driveContinuePrompt' | 'driveMergeFate' | 'driveContinueAttempts'
-        >)
-    | null
-    | undefined,
-  config: Pick<AppConfig, 'drive' | 'promptFragments'>,
-): ResolvedDrive {
-  const fragments = resolvePromptFragments(ws, config);
-  return {
-    prompt: expandFragments(resolveScoped('drivePrompt', ws?.drivePrompt, config.drive.prompt), fragments),
-    unattendedReminder: expandFragments(resolveScoped('driveUnattendedReminder', ws?.driveUnattendedReminder, config.drive.unattendedReminder), fragments),
-    continuePrompt: expandFragments(resolveScoped('driveContinuePrompt', ws?.driveContinuePrompt, config.drive.continuePrompt), fragments),
-    mergeFate: resolveScoped('driveMergeFate', ws?.driveMergeFate as MergeFate | null | undefined, config.drive.mergeFate),
-    continueAttempts: resolveScoped('driveContinueAttempts', ws?.driveContinueAttempts, config.drive.continueAttempts),
-  };
-}
-
-/**
- * Resolve a Workspace's effective Task Prompt: the template wrapping a native
- * Task's own prompt (`{prompt}` / `{id}` / `{workingDir}` / …), with its
- * `{fragment.<name>}` references expanded. A missing `ws` inherits the global default.
- */
-export function resolveTaskPrompt(
-  ws: (Partial<PromptFragmentOverrides> & Pick<WorkspaceRow, 'taskPrompt'>) | null | undefined,
-  config: Pick<AppConfig, 'taskPrompt' | 'promptFragments'>,
-): string {
-  return expandFragments(resolveScoped('taskPrompt', ws?.taskPrompt, config.taskPrompt), resolvePromptFragments(ws, config));
-}
-
 /** Resolve the message that asks an active Task to pause at its next turn boundary. */
 export function resolvePauseMessage(
-  ws: (Partial<PromptFragmentOverrides> & Pick<WorkspaceRow, 'pauseMessage'>) | null | undefined,
-  config: Pick<AppConfig, 'pauseMessage' | 'promptFragments'>,
+  ws: Pick<WorkspaceRow, 'pauseMessage'> | null | undefined,
+  config: Pick<AppConfig, 'pauseMessage'>,
+  prompts: EnginePrompts,
 ): string {
-  return composePauseMessage(resolveScoped('pauseMessage', ws?.pauseMessage, config.pauseMessage), resolvePromptFragments(ws, config));
+  return composePauseMessage(resolveScoped('pauseMessage', ws?.pauseMessage, config.pauseMessage), prompts);
 }
 
-/** Resolve the nudge sent when an Attempt ends its turn with uncommitted changes. */
-export function resolveCommitNudge(
-  ws: (Partial<PromptFragmentOverrides> & Pick<WorkspaceRow, 'driveCommitNudge'>) | null | undefined,
-  config: Pick<AppConfig, 'drive' | 'promptFragments'>,
-): string {
-  return composeCommitNudge(resolveScoped('driveCommitNudge', ws?.driveCommitNudge, config.drive.commitNudge), resolvePromptFragments(ws, config));
-}
-
-/** Resolve the Prompt Fragments a Workspace's prompts reference, each `workspace ?? global`. */
-export function resolvePromptFragments(
-  ws: Partial<PromptFragmentOverrides> | null | undefined,
-  config: Pick<AppConfig, 'promptFragments'>,
-): AppConfig['promptFragments'] {
-  return {
-    ...config.promptFragments,
-    ...(Object.fromEntries(
-      PROMPT_FRAGMENT_NAMES.map((name) => {
-        const key = promptFragmentOverrideKey(name);
-        return [name, resolveScoped(key, ws?.[key], config.promptFragments[name])];
-      }),
-    ) as PromptFragments),
-  };
-}
-
-/** Resolve the merge-conflict resolution prompts and their shared fragment for a Workspace, each `workspace ?? global`. */
+/** Resolve the merge-conflict resolution prompts for a Workspace, each `workspace ?? global`. */
 export function resolveMergePrompts(
-  ws: (Partial<PromptFragmentOverrides> & Pick<WorkspaceRow, 'mergeConflictPrompt' | 'mergeEpicConflictPrompt'>) | null | undefined,
-  config: Pick<AppConfig, 'merge' | 'promptFragments'>,
-): { conflictPrompt: string; epicConflictPrompt: string; fragments: AppConfig['promptFragments'] } {
+  ws: Pick<WorkspaceRow, 'mergeConflictPrompt' | 'mergeEpicConflictPrompt'> | null | undefined,
+  config: Pick<AppConfig, 'merge'>,
+): { conflictPrompt: string; epicConflictPrompt: string } {
   return {
     conflictPrompt: resolveScoped('mergeConflictPrompt', ws?.mergeConflictPrompt, config.merge.conflictPrompt),
     epicConflictPrompt: resolveScoped('mergeEpicConflictPrompt', ws?.mergeEpicConflictPrompt, config.merge.epicConflictPrompt),
-    fragments: resolvePromptFragments(ws, config),
   };
 }
 
-/** Resolve the Epic resolver prompts (integration refresh, verification-failure suffix) and the fragments they reference for a Workspace, each `workspace ?? global`. */
+/** Resolve the Epic resolver prompts (integration refresh, verification-failure suffix) for a Workspace, each `workspace ?? global`. */
 export function resolveEpicResolverPrompts(
-  ws: (Partial<PromptFragmentOverrides> & Pick<WorkspaceRow, 'mergeEpicRefreshPrompt' | 'verifyEpicResolveSuffix'>) | null | undefined,
-  config: Pick<AppConfig, 'merge' | 'verify' | 'promptFragments'>,
-): { refreshPrompt: string; resolveSuffix: string; fragments: AppConfig['promptFragments'] } {
+  ws: Pick<WorkspaceRow, 'mergeEpicRefreshPrompt' | 'verifyEpicResolveSuffix'> | null | undefined,
+  config: Pick<AppConfig, 'merge' | 'verify'>,
+): { refreshPrompt: string; resolveSuffix: string } {
   return {
     refreshPrompt: resolveScoped('mergeEpicRefreshPrompt', ws?.mergeEpicRefreshPrompt, config.merge.epicRefreshPrompt),
     resolveSuffix: resolveScoped('verifyEpicResolveSuffix', ws?.verifyEpicResolveSuffix, config.verify.epic.resolveSuffix),
-    fragments: resolvePromptFragments(ws, config),
   };
 }

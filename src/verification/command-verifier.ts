@@ -98,6 +98,7 @@ export interface CommandSpawnResult {
   signal: NodeJS.Signals | null;
   /** Combined stdout+stderr preview (head + marker + tail) already capped by the spawner. */
   output: string;
+  stdout: string;
   /** Output was truncated and the full log was written without error. */
   fullOutputSaved?: boolean | undefined;
 }
@@ -132,6 +133,7 @@ export function createChildProcessSpawn(spawnProcessGroup: SpawnProcessGroup): C
         delete env.HARMONIC_MCP_URL;
 
         const preview = createOutputPreview(req.outputCap);
+        const stdoutPreview = createOutputPreview(req.outputCap);
         let file: WriteStream | undefined;
         let logComplete = req.outputLogPath !== undefined;
         let fileClosed: Promise<void> = Promise.resolve();
@@ -199,17 +201,20 @@ export function createChildProcessSpawn(spawnProcessGroup: SpawnProcessGroup): C
           const stream = file;
           file = undefined;
           if (stream && !stream.destroyed) stream.end();
-          void fileClosed.then(() => resolve({ ...result, output: preview.text(), fullOutputSaved: logComplete && preview.truncated() }));
+          void fileClosed.then(() => resolve({ ...result, output: preview.text(), stdout: stdoutPreview.text(), fullOutputSaved: logComplete && preview.truncated() }));
         };
 
         child.stdout?.setEncoding('utf8');
-        child.stdout?.on('data', append);
+        child.stdout?.on('data', (chunk: string) => {
+          stdoutPreview.append(chunk);
+          append(chunk);
+        });
         child.stderr?.setEncoding('utf8');
         child.stderr?.on('data', append);
 
         // node emits 'error' (ENOENT/EACCES) before 'close' for an unspawnable command; `finish` is idempotent so the later 'close' is ignored.
-        child.on('error', (err) => finish({ spawnError: err, code: null, signal: null, output: '' }));
-        child.on('close', (code, signal) => finish({ timedOut, aborted, code, signal, output: '' }));
+        child.on('error', (err) => finish({ spawnError: err, code: null, signal: null, output: '', stdout: '' }));
+        child.on('close', (code, signal) => finish({ timedOut, aborted, code, signal, output: '', stdout: '' }));
       });
     },
   };

@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { parse, stringify } from 'yaml';
 import type { CorsPolicy } from '../src/server/cors.js';
 import { randomBytes, scryptSync } from 'node:crypto';
 import { copyFileSync, mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -13,6 +14,14 @@ import { settings, workspaces } from '../src/db/schema.js';
 import type { ScheduledJobRegistration } from '../src/scheduler/scheduler.js';
 import type { DistributionMode } from '../src/distribution-mode.js';
 import { SettingsStore } from '../src/server/settings-store.js';
+import { NO_RETIRED } from '../src/domain/retired-settings.js';
+import { planSettingsMigration } from '../src/domain/settings-workflow-migration.js';
+import { parseLegacyGlobal, parseLegacyWorkspace, pickLegacyGlobal, withLegacyGlobal, type LegacyGlobalPatch, type LegacySettings, type LegacyWorkspacePatch } from '../src/domain/legacy-execution-settings.js';
+import { splitLegacyConfig, type LegacyConfigOverrides } from './helpers/legacy-settings.js';
+
+export type { LegacyConfigOverrides };
+import { PromptLibrary } from '../src/domain/prompt-library-store.js';
+import { WorkflowLibrary } from '../src/domain/workflow-library-store.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import { BackgroundWork } from '../src/error-handling.js';
 import { spawn } from 'node:child_process';
@@ -287,6 +296,8 @@ export interface TestServer {
   baseUrl: string;
   dataDir: string;
   app: App;
+  /** Sets the pre-workflow settings the test's migrated workflows are planned from. */
+  legacy: LegacyExecutionControl;
   /** Session token, usable as the WebSocket subprotocol for `/api/ws` connections. */
   sessionToken: string;
   /** Authenticated JSON fetch helper: returns { status, body } without throwing. */
@@ -336,8 +347,94 @@ function testPasswordSettingsValue(): string {
   return cachedAuthValue;
 }
 
+const VERIFIER_OVERLAY_KEY = /^(task|epic)(Pre|Post)Merge(Commands|Critics)$/;
+
+export interface LegacyExecutionControl {
+  setWorkspace(workspaceId: number, patch: { [K in keyof LegacyWorkspacePatch]?: LegacyWorkspacePatch[K] | null }): Promise<void>;
+}
+
+function legacySettingsOf(global: LegacyGlobalPatch, workspaces: ReadonlyMap<number, LegacyWorkspacePatch>): LegacySettings {
+  return {
+    global: parseLegacyGlobal(withDefaultTimeouts(global)),
+    workspaces: new Map([...workspaces].map(([id, patch]) => [id, parseLegacyWorkspace(withDefaultTimeouts(patch))])),
+  };
+}
+
+function withDefaultTimeouts<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(withDefaultTimeouts) as T;
+  if (value === null || typeof value !== 'object') return value;
+  const copy: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (key === 'timeoutSeconds' && typeof entry === 'number') copy[key] = 'command' in value ? 600 : 300;
+    else if (VERIFIER_OVERLAY_KEY.test(key) && typeof entry === 'string') copy[key] = JSON.stringify(withDefaultTimeouts(JSON.parse(entry)));
+    else copy[key] = withDefaultTimeouts(entry);
+  }
+  return copy as T;
+}
+
+/** Settings changed after boot re-plan the migrated workflows, as the first-boot migration would have planned them. */
+function replanWorkflowsOnSettingsChange(app: App, legacyGlobal: LegacyGlobalPatch): LegacyExecutionControl {
+  const legacyWorkspaces = new Map<number, LegacyWorkspacePatch>();
+  const store = app.ctx.settingsStore;
+  const prompts = (app.ctx.runner as unknown as { promptLibrary: PromptLibrary }).promptLibrary;
+  const updateGlobal = store.updateGlobal.bind(store);
+  const setOverrides = store.setOverrides.bind(store);
+  const replan = async (): Promise<void> => {
+    const rows = await app.ctx.workspaces.list();
+    const plan = await planSettingsMigration({ config: withDefaultTimeouts(store.getGlobal()), legacy: legacySettingsOf(legacyGlobal, legacyWorkspaces), retired: store.getRetired(), workspaces: withDefaultTimeouts(rows), promptText: (code) => prompts.operatorText(code) });
+    for (const entry of plan.prompts) {
+      if (prompts.operatorText(entry.code) === entry.text) continue;
+      if (prompts.hasOperatorEntry(entry.code)) await prompts.update(entry.code, entry.description, entry.text);
+      else await prompts.create(entry.code, entry.description, entry.text);
+    }
+    for (const workflow of plan.workflows) {
+      const existing = app.ctx.workflows.list().find((entry) => entry.name === workflow.name && !entry.bundled);
+      if (existing?.text !== workflow.text) await app.ctx.workflows.save(workflow.name, workflow.text);
+    }
+    const planned = new Map(plan.workspaceWorkflows.map((entry) => [entry.workspaceId, entry.workflow]));
+    for (const row of rows) {
+      const current = store.getOverrides(row.id).workflow;
+      const wanted = planned.get(row.id) ?? null;
+      if (wanted !== null ? current !== wanted : current?.startsWith('migrated-')) await setOverrides(row.id, { workflow: wanted });
+    }
+  };
+  store.updateGlobal = async (patch) => {
+    const config = await updateGlobal(patch);
+    await replan();
+    return config;
+  };
+  store.setOverrides = async (workspaceId, patch) => {
+    await setOverrides(workspaceId, patch);
+    await replan();
+  };
+  return {
+    setWorkspace: async (workspaceId, patch) => {
+      const next: Record<string, unknown> = { ...legacyWorkspaces.get(workspaceId) };
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null) delete next[key];
+        else next[key] = value;
+      }
+      legacyWorkspaces.set(workspaceId, next as LegacyWorkspacePatch);
+      await replan();
+    },
+  };
+}
+
+/** Runner options carrying the workflows the first-boot migration would write for `config`, so a directly-built Runner runs the pipeline those settings describe. */
+export async function migratedWorkflowOptions(config: AppConfig, dir: string, legacy: LegacyGlobalPatch = {}): Promise<{ config: AppConfig; promptLibrary: PromptLibrary; workflows: { library: WorkflowLibrary } }> {
+  const promptLibrary = new PromptLibrary(dir);
+  await promptLibrary.load();
+  const library = new WorkflowLibrary(dir);
+  await library.load();
+  promptLibrary.attachWorkflows(library);
+  const plan = await planSettingsMigration({ config: withDefaultTimeouts(config), legacy: legacySettingsOf(legacy, new Map()), retired: NO_RETIRED, workspaces: [], promptText: (code) => promptLibrary.operatorText(code) });
+  for (const entry of plan.prompts) await promptLibrary.create(entry.code, entry.description, entry.text);
+  for (const workflow of plan.workflows) await library.save(workflow.name, workflow.text);
+  return { config: { ...config, defaults: { ...config.defaults, workflow: plan.globalWorkflow } }, promptLibrary, workflows: { library } };
+}
+
 export async function startServer(
-  configOverrides?: DeepPartial<AppConfig>,
+  legacyConfigOverrides?: LegacyConfigOverrides,
   opts: {
     dataDir?: string;
     password?: string;
@@ -358,8 +455,15 @@ export async function startServer(
     corsOrigins?: CorsPolicy | undefined;
   } = {},
 ): Promise<TestServer> {
+  const { config: configOverrides, legacy: legacyGlobal } = splitLegacyConfig(legacyConfigOverrides);
   const dataDir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'harmonic-test-'));
   const fastAuth = opts.password === undefined;
+  if (Object.keys(legacyGlobal).length > 0) {
+    mkdirSync(dataDir, { recursive: true });
+    const path = join(dataDir, 'settings.yaml');
+    const stored = existsSync(path) ? (parse(readFileSync(path, 'utf8')) as { global?: unknown; workspaces?: unknown }) : {};
+    writeFileSync(path, stringify({ ...stored, global: withLegacyGlobal(stored.global, pickLegacyGlobal(legacyGlobal)), workspaces: stored.workspaces ?? {} }));
+  }
   if (!existsSync(join(dataDir, 'harmonic.db'))) {
     mkdirSync(dataDir, { recursive: true });
     copyFileSync(await migratedDbTemplate(), join(dataDir, 'harmonic.db'));
@@ -391,6 +495,7 @@ export async function startServer(
   await app.ctx.asyncDb.write((d) =>
     d.insert(workspaces).values({ name: 'Default', workingDir: workspaceDir, createdAt: now, updatedAt: now }).run(),
   );
+  const legacy = replanWorkflowsOnSettingsChange(app, legacyGlobal);
   await app.listen({ port: 0, host: '127.0.0.1' });
   const { port } = app.server.address() as AddressInfo;
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -432,6 +537,7 @@ export async function startServer(
     baseUrl,
     dataDir,
     app,
+    legacy,
     sessionToken,
     api,
     anonApi,
@@ -465,3 +571,6 @@ export async function withArchivedPrompt<T extends { taskId: number | null; numb
   const prompts = await server.app.ctx.archive.readArchivedPromptSegments(task, run.number, 'implementation/prompt.md');
   return { ...run, prompt: (containing === undefined ? prompts?.at(-1) : prompts?.findLast((prompt) => prompt.includes(containing))) ?? null } as never;
 }
+
+/** Wraps a 2-space-indented `steps:` list body in a single-pass `attempts:` block, so fixtures keep one-pass behaviour. */
+export const inBlock = (steps: string, max = 1): string => `  - attempts:\n      max: ${max}\n      steps:\n${steps.replace(/^(?=.)/gm, '      ')}`;

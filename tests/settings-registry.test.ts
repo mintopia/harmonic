@@ -38,10 +38,6 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
     'agentMessagesSendCap',
     'maxAttempts',
     'contextReuseTokenLimit',
-    'taskPreMergeCommands',
-    'taskPreMergeCritics',
-    'taskPostMergeCommands',
-    'taskPostMergeCritics',
     'epicPreMergeCommands',
     'epicPreMergeCritics',
     'guardrailBudget',
@@ -50,8 +46,6 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
     'drivePrompt',
     'driveUnattendedReminder',
     'driveContinuePrompt',
-    'driveMergeFate',
-    'driveContinueAttempts',
     'taskPrompt',
     'exportEnabled',
     'exportDirectoryPath',
@@ -82,8 +76,6 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
       'drivePrompt',
       'driveUnattendedReminder',
       'driveContinuePrompt',
-      'driveMergeFate',
-      'driveContinueAttempts',
       'taskPrompt',
     ] as const) {
       expect(isOverridable(key), `'${key}' should be overridable`).toBe(true);
@@ -110,22 +102,11 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
     }
   });
 
-  it('declares exactly 7 tabs, unique ids, in the expected order', () => {
-    expect(SETTING_TABS).toHaveLength(7);
+  it('declares exactly 6 tabs, unique ids, in the expected order', () => {
+    expect(SETTING_TABS).toHaveLength(6);
     const ids = SETTING_TABS.map((t) => t.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids).toEqual(['general', 'execution', 'verification', 'prompts', 'integrations', 'security', 'archive']);
-  });
-
-  it('settingsForTab("verification") returns exactly the verification settings', () => {
-    expect(settingsForTab('verification')).toEqual([
-      'taskPreMergeCommands',
-      'taskPreMergeCritics',
-      'taskPostMergeCommands',
-      'taskPostMergeCritics',
-      'epicPreMergeCommands',
-      'epicPreMergeCritics',
-    ]);
+    expect(ids).toEqual(['general', 'execution', 'prompts', 'integrations', 'security', 'archive']);
   });
 
   it('settingsForTab("general") returns exactly the general settings', () => {
@@ -137,7 +118,6 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
     expect(execution).toEqual(
       expect.arrayContaining(['harness', 'maxAttempts', 'guardrailBudget', 'toolTimeoutMinutes']),
     );
-    expect(execution).not.toContain('taskPreMergeCommands');
     expect(execution).not.toContain('chatHarness');
   });
 
@@ -148,30 +128,6 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
       'driveContinuePrompt',
       'taskPrompt',
       'pauseMessage',
-      'promptFragmentReadOnlyRestraint',
-      'promptFragmentConflictResolution',
-      'promptFragmentOperatorMessage',
-      'promptFragmentSelfHeal',
-      'promptFragmentPeerMessages',
-      'promptFragmentPeerMessage',
-      'promptFragmentPeerLine',
-      'promptFragmentPeerLiveMessage',
-      'promptFragmentRebaseConflict',
-      'promptFragmentPriorSession',
-      'promptFragmentCodeIndexGuidance',
-      'promptFragmentCriticRevisionIdentical',
-      'promptFragmentCriticRevisionDiff',
-      'promptFragmentCriticRevisionAlone',
-      'promptFragmentCriticTicketFirst',
-      'promptFragmentCriticInstructionsFirst',
-      'promptFragmentCriticSpecTicket',
-      'promptFragmentCriticSpecInstructions',
-      'promptFragmentCriticWorkingTreeNote',
-      'promptFragmentCriticRole',
-      'promptFragmentCriticSecurity',
-      'promptFragmentCriticVerdictContract',
-      'promptFragmentRouteClassifier',
-      'promptFragmentEpicFailingVerification',
       'driveCommitNudge',
       'mergeConflictPrompt',
       'mergeEpicConflictPrompt',
@@ -194,7 +150,7 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
   });
 
   it('workspaceTabs drops the tabs with no overridable field', () => {
-    expect(workspaceTabs().map((t) => t.id)).toEqual(['general', 'execution', 'verification', 'prompts', 'integrations', 'archive']);
+    expect(workspaceTabs().map((t) => t.id)).toEqual(['general', 'execution', 'prompts', 'integrations', 'archive']);
   });
 
   it('a tab whose only field turns global-only drops off the Workspace surface', () => {
@@ -283,22 +239,18 @@ describe('scope changes control live resolution (registry is the single authorit
   it('resolveVerifiers: a Workspace overlay is additive (local + globals); global-only ignores it (ADR-0037)', () => {
     const globalCommand = { id: 'g1', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
     const localCommand = { id: 'l1', command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
-    const config = { verify: { task: { preMerge: { commands: [globalCommand], critics: [] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve it.', resolveSuffix: 'Branch {branch}.' } } } as never;
+    const config = { verify: { epic: { preMerge: { commands: [globalCommand], critics: [] }, resolvePrompt: 'Resolve it.', resolveSuffix: 'Branch {branch}.' } } } as never;
     const ws = {
       // Overlay: one local verifier added; the global is unnamed, so it is appended enabled.
-      taskPreMergeCommands: JSON.stringify([{ kind: 'local', enabled: true, command: localCommand }]),
-      taskPreMergeCritics: null,
-      taskPostMergeCommands: null,
-      taskPostMergeCritics: null,
-      epicPreMergeCommands: null,
+      epicPreMergeCommands: JSON.stringify([{ kind: 'local', enabled: true, command: localCommand }]),
       epicPreMergeCritics: null,
     };
 
     // Additive: the local runs, and the untouched global still runs after it.
-    expect(resolveVerifiers(ws, config).task.preMerge.commands).toEqual([localCommand, globalCommand]);
+    expect(resolveVerifiers(ws, config).epic.preMerge.commands).toEqual([localCommand, globalCommand]);
     // global-only reclassification ignores the Workspace overlay entirely — just the globals.
-    withScope('taskPreMergeCommands', 'global-only', () => {
-      expect(resolveVerifiers(ws, config).task.preMerge.commands).toEqual([globalCommand]);
+    withScope('epicPreMergeCommands', 'global-only', () => {
+      expect(resolveVerifiers(ws, config).epic.preMerge.commands).toEqual([globalCommand]);
     });
   });
 
@@ -311,8 +263,8 @@ describe('scope changes control live resolution (registry is the single authorit
   });
 
   it('hasWorkspaceOverride: an explicit boolean false counts as an override (not truthiness)', () => {
-    expect(hasWorkspaceOverride('taskPreMergeCommands', '[]')).toBe(true);
-    expect(hasWorkspaceOverride('taskPreMergeCommands', null)).toBe(false);
+    expect(hasWorkspaceOverride('epicPreMergeCommands', '[]')).toBe(true);
+    expect(hasWorkspaceOverride('epicPreMergeCommands', null)).toBe(false);
     expect(hasWorkspaceOverride('guardrailProgress', false)).toBe(true);
   });
 });

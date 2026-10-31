@@ -1,0 +1,164 @@
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { parse, stringify } from 'yaml';
+import { openAsyncDb, type AsyncDbHandle } from '../../src/db/async.js';
+import { workspaces } from '../../src/db/schema.js';
+import { pickLegacyGlobal, withLegacyGlobal } from '../../src/domain/legacy-execution-settings.js';
+import { splitLegacyConfig, splitLegacyWorkspace, type LegacyConfigOverrides, type LegacyWorkspaceOverrides } from './legacy-settings.js';
+import { PromptLibrary } from '../../src/domain/prompt-library-store.js';
+import { convertEditedPrompts } from '../../src/domain/prompt-library-sources.js';
+import { convertRetiredEditedPrompts, RETIRED_GLOBAL_KEY, retiredBaseline, retiredWorkspaceKey } from '../../src/domain/retired-settings.js';
+import { migrateSettingsToWorkflows, type SettingsMigrationDeps } from '../../src/domain/settings-workflow-migration.js';
+import { TaskService } from '../../src/domain/tasks.js';
+import { WorkflowLibrary } from '../../src/domain/workflow-library-store.js';
+import { WorkspaceService } from '../../src/domain/workspaces.js';
+import { SettingsStore } from '../../src/server/settings-store.js';
+
+export interface WorkspaceSeed {
+  name: string;
+  overrides?: LegacyWorkspaceOverrides;
+  retired?: Record<string, string>;
+}
+
+export interface Seed {
+  global?: LegacyConfigOverrides;
+  /** Retired prompt keys written to the global settings, as a pre-Library release stored them. */
+  retiredGlobal?: Record<string, string>;
+  workspaces?: WorkspaceSeed[];
+}
+
+export const retiredRef = (code: string): string => `{${'fragment'}.${code}}`;
+
+const command = (id: string, name: string, args: string[], extra: Record<string, unknown> = {}) => ({ id, command: name, args, env: {}, timeoutSeconds: 600, ...extra });
+
+export const EDITED_GLOBAL: LegacyConfigOverrides = {
+  maxAttempts: 3,
+  drive: { continueAttempts: 4, mergeFate: 'auto-merge', prompt: 'Resolve {ref} carefully: {title}.' },
+  verify: {
+    task: {
+      preMerge: {
+        commands: [command('cmd-test', 'npm', ['test']), command('cmd-lint', 'node', ['scripts/lint.mjs', '--mode strict'], { cwd: 'packages/api', env: { CI: '1' } })],
+        critics: [
+          {
+            id: 'critic-correctness',
+            name: 'Correctness',
+            harness: 'claude',
+            model: 'claude-sonnet-5-5',
+            timeoutSeconds: 300,
+            issuePrompt: `Review {ref}: {title}. ${retiredRef('criticRole')}`,
+            noIssuePrompt: 'Review task {taskId}: {title}.',
+          },
+        ],
+      },
+      postMerge: { commands: [command('cmd-smoke', 'npm', ['run', 'smoke'])], critics: [] },
+    },
+  },
+};
+
+export const EDITED_RETIRED_GLOBAL: Record<string, string> = { selfHeal: `${retiredBaseline('selfHeal')}\nBe concise.` };
+
+export const FIXTURE_WORKSPACES: WorkspaceSeed[] = [
+  { name: 'Alpha App', overrides: { maxAttempts: 5, driveMergeFate: 'artifact', driveUnattendedReminder: 'Alpha runs unattended.' } },
+  { name: 'Plain', overrides: { priority: 'high' } },
+  {
+    name: 'Beta Service',
+    overrides: {
+      taskPreMergeCommands: [
+        { kind: 'global', ref: 'cmd-test', enabled: false },
+        { kind: 'local', enabled: true, command: command('cmd-make', 'make', ['check']) },
+        { kind: 'global', ref: 'cmd-lint', enabled: true },
+      ],
+      taskPreMergeCritics: [{ kind: 'global', ref: 'critic-correctness', enabled: false }],
+    },
+  },
+];
+
+export interface Harness {
+  dir: string;
+  db: AsyncDbHandle;
+  settings: SettingsStore;
+  prompts: PromptLibrary;
+  workflows: WorkflowLibrary;
+  workspaceService: WorkspaceService;
+  tasks: TaskService;
+  deps: SettingsMigrationDeps;
+}
+
+function writeRetired(dir: string, seed: Seed, ids: number[]): void {
+  const file = join(dir, 'settings.yaml');
+  const stored = (parse(readFileSync(file, 'utf8')) ?? {}) as { global?: Record<string, unknown>; workspaces?: Record<string, Record<string, unknown>> };
+  stored.global ??= {};
+  if (seed.retiredGlobal) stored.global[RETIRED_GLOBAL_KEY] = seed.retiredGlobal;
+  for (const [i, workspace] of (seed.workspaces ?? []).entries()) {
+    if (!workspace.retired) continue;
+    stored.workspaces ??= {};
+    const entry = (stored.workspaces[String(ids[i])] ??= {});
+    for (const [code, text] of Object.entries(workspace.retired)) entry[retiredWorkspaceKey(code)] = text;
+  }
+  writeFileSync(file, stringify(stored));
+}
+
+export async function seedOldSettings(dir: string, seed: Seed): Promise<number[]> {
+  mkdirSync(dir, { recursive: true });
+  const db = await openAsyncDb(dir);
+  const { config, legacy } = splitLegacyConfig(seed.global);
+  const store = await SettingsStore.create(dir, config);
+  const ids: number[] = [];
+  const legacyByWorkspace: Record<number, Record<string, unknown>> = {};
+  for (const [i, workspace] of (seed.workspaces ?? []).entries()) {
+    const now = Date.now();
+    const row = await db.write((d) => d.insert(workspaces).values({ name: workspace.name, workingDir: join(dir, `repo-${i}`), createdAt: now, updatedAt: now }).returning().get());
+    if (workspace.overrides) {
+      const split = splitLegacyWorkspace(workspace.overrides);
+      await store.setOverrides(row.id, split.overrides);
+      legacyByWorkspace[row.id] = split.legacy;
+    }
+    ids.push(row.id);
+  }
+  const path = join(dir, 'settings.yaml');
+  const stored = parse(readFileSync(path, 'utf8')) as { global: unknown; workspaces: Record<string, Record<string, unknown>> };
+  for (const [id, entry] of Object.entries(legacyByWorkspace)) stored.workspaces[id] = { ...stored.workspaces[id], ...entry };
+  writeFileSync(path, stringify({ global: withLegacyGlobal(stored.global, pickLegacyGlobal(legacy)), workspaces: stored.workspaces }));
+  await db.close();
+  writeRetired(dir, seed, ids);
+  return ids;
+}
+
+export async function openHarness(dir: string, extra: Partial<SettingsMigrationDeps> = {}): Promise<Harness> {
+  const db = await openAsyncDb(dir);
+  const settings = await SettingsStore.create(dir);
+  const prompts = new PromptLibrary(dir);
+  await prompts.load();
+  await convertEditedPrompts(prompts, settings.getGlobal());
+  await convertRetiredEditedPrompts(prompts, settings.getRetired());
+  const workflows = new WorkflowLibrary(dir);
+  await workflows.load();
+  prompts.attachWorkflows(workflows);
+  const workspaceService = new WorkspaceService(db, settings);
+  const tasks = new TaskService(db, () => settings.getGlobal(), () => workspaceService.list());
+  return { dir, db, settings, prompts, workflows, workspaceService, tasks, deps: { db, settings, prompts, workflows, workspaces: workspaceService, tasks, ...extra } };
+}
+
+export function migrate(harness: Harness): Promise<void> {
+  return migrateSettingsToWorkflows(harness.deps);
+}
+
+export function treeOf(dir: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const walk = (current: string): void => {
+    for (const entry of readdirSync(current).sort()) {
+      const full = join(current, entry);
+      if (statSync(full).isDirectory()) walk(full);
+      else out[relative(dir, full)] = readFileSync(full, 'utf8');
+    }
+  };
+  for (const sub of ['workflows', 'prompts']) {
+    try {
+      walk(join(dir, sub));
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
+  }
+  out['settings.yaml'] = readFileSync(join(dir, 'settings.yaml'), 'utf8');
+  return out;
+}

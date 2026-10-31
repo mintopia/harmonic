@@ -51,7 +51,7 @@ describe('afk drive loop — finish_task + lost prompt response → verify, not 
   const mirroredAfk = (ref: number): MirrorInput => ({
     trackerRef: trackerRef(ref),
     prompt: `ticket ${ref}\n\nbody`,
-    workflow: 'implement',
+    issueWorkflow: 'implement',
     wayfinderType: null,
     mapRef: null,
     closed: false,

@@ -7,6 +7,7 @@ import { humanizeSaveError, parseFieldErrors } from './SettingsSection';
 import { firstPatternError, normalizeConfigExport } from '../archive-export-model';
 import { SettingsForm } from './SettingsForm';
 import { firstRoutingLabelError } from './RoutingLabelsEditor';
+import { firstWorkflowLabelError } from './workflow-label-model';
 import { firstGlobalModelOptionError } from './model-option-model';
 import { LoadError } from './LoadError';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -60,7 +61,10 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
   if (loadError) return <LoadError message={`settings: ${loadError}`} onRetry={() => { setLoadError(null); setLoadAttempt((n) => n + 1); }} />;
   if (!local || !pristine || !baseline) return <p role="status" className="p-4 text-muted">Loading settings…</p>;
 
-  const routingError = firstRoutingLabelError(local.routingLabels) ?? firstGlobalModelOptionError(local.modelOptions);
+  const routingError =
+    firstRoutingLabelError(local.routingLabels) ??
+    firstWorkflowLabelError(local.workflowLabels) ??
+    firstGlobalModelOptionError(local.modelOptions);
   const configDirty = JSON.stringify(local) !== JSON.stringify(pristine);
   const dirty = configDirty || channelsDirty(localChannels, pristineChannels);
 

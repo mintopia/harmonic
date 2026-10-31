@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { formatCost } from '../../cost';
-import type { Attempt, AttemptSummary, AttemptUsageEvent, Task } from '../../types';
+import type { Attempt, AttemptSummary, AttemptUsageEvent, Task, WorkflowChosen } from '../../types';
 import { changedFilesFromNumstat } from '../../attempt-rail-model';
 import { sumCosts } from '../../activity-model';
 import { codeChip } from '../../ui';
@@ -9,6 +9,7 @@ import { Fact } from '../Fact';
 import { formatModelLabel } from '../TaskIdentity';
 import { harnessLabel, pullRequestLink } from '../../task-detail-model';
 import { wallClockRemaining } from '../../wall-clock-model';
+import { parseWorkflowRef, snapshotNote } from '../../workflow-ref-model';
 
 export function fmtDur(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -119,6 +120,45 @@ function RoutedByNote({ routing }: { routing: NonNullable<Task['routing']> }) {
   );
 }
 
+const CHOSEN_BY: Record<Exclude<WorkflowChosen, 'label' | 'classifier'>, string> = {
+  explicit: 'operator choice on this Ticket',
+  workspace: 'Workspace default',
+  global: 'global default',
+};
+
+function WorkflowRefLabel({ task, latestVersion }: { task: Task & { workflowRef: string }; latestVersion: number | null | undefined }) {
+  const { name, version } = parseWorkflowRef(task.workflowRef);
+  const chosen = task.workflowChosen;
+  const note = snapshotNote(task.workflowRef, latestVersion);
+  return (
+    <>
+      <span className="font-semibold">{name}</span>
+      {version !== null && <span className="font-data text-muted"> v{version}</span>}
+      {chosen === 'label' ? (
+        <span className="text-muted">
+          {' '}
+          — chosen by Workflow Label
+          {task.workflowLabel ? (
+            <>
+              {' '}
+              <code className={`${codeChip} bg-accent-tint text-accent`}>{task.workflowLabel}</code>
+            </>
+          ) : null}
+        </span>
+      ) : chosen === 'classifier' ? (
+        <span className="text-muted">
+          {' '}
+          — chosen by classifier
+          {task.workflowReason ? <span className="text-small text-muted">: {task.workflowReason}</span> : null}
+        </span>
+      ) : (
+        chosen && <span className="text-muted"> — {CHOSEN_BY[chosen]}</span>
+      )}
+      {note && <div className="mt-0.5 text-small text-muted">{note}</div>}
+    </>
+  );
+}
+
 function priorVerdict(previous: Attempt | undefined): string {
   if (!previous) return 'first Attempt, no prior verdict';
   const why = previous.feedback ?? previous.escalationReason;
@@ -196,7 +236,7 @@ function ClassifierNote({ task, classifier, attempts }: { task: Task; classifier
   );
 }
 
-export function Properties({ task, allTasks, workspaceName, attempts = [] }: { task: Task; allTasks: Task[]; workspaceName: string | null; attempts?: Attempt[] }) {
+export function Properties({ task, allTasks, workspaceName, latestVersion, attempts = [] }: { task: Task; allTasks: Task[]; workspaceName: string | null; latestVersion?: number | null; attempts?: Attempt[] }) {
   const createdAt = new Date(task.createdAt);
   const created = `${createdAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${createdAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`;
   const notStarted = task.state === 'escalated' && task.escalationCause?.kind === 'harness_unconfigured';
@@ -219,6 +259,12 @@ export function Properties({ task, allTasks, workspaceName, attempts = [] }: { t
         <DependsOn task={task} allTasks={allTasks} />
       </Fact>
       <Fact label="Created">{created}</Fact>
+      {task.workflowRef && (
+        <Fact label="Workflow" className="col-span-2">
+          <WorkflowRefLabel task={{ ...task, workflowRef: task.workflowRef }} latestVersion={latestVersion} />
+        </Fact>
+      )}
+      {task.issueWorkflow && <Fact label="Issue Workflow">{task.issueWorkflow}</Fact>}
       {task.origin === 'mirrored' && task.trackerLabel && (
         <Fact label="Tracker">
           {task.url ? (

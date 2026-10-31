@@ -55,6 +55,8 @@ export const stackedCell = 'col-span-2 col-start-3 @[44rem]:col-span-1 @[44rem]:
 /** Trailing controls (Remove, or Global chip + switch): top-right of a stacked row. */
 export const trailingCell = 'col-start-4 row-start-1 justify-self-end @[44rem]:col-start-auto @[44rem]:row-start-auto';
 
+export const workflowCellsGrid =
+  'grid grid-cols-[16px_24px_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-2 px-3 py-2.5 @[44rem]:grid-cols-[16px_24px_minmax(120px,1fr)_20px_minmax(170px,1fr)_104px] @[44rem]:gap-y-0';
 const optionCellsGrid = 'grid grid-cols-[16px_24px_minmax(0,1fr)_auto] items-start gap-x-2.5 px-3 py-2.5';
 
 export function RoutingRowShell({
@@ -63,9 +65,10 @@ export function RoutingRowShell({
   locked,
   pinned,
   accent,
-  noun = 'Routing Label',
   stacked,
   error,
+  noun = 'Routing Label',
+  grid = cellsGrid,
   children,
 }: {
   id: string;
@@ -74,10 +77,11 @@ export function RoutingRowShell({
   /** A row that holds its position: no drag. */
   pinned?: boolean;
   accent?: boolean;
-  noun?: string;
   /** Lay the children out in the fixed four-column Model Option grid. */
   stacked?: boolean;
   error?: ReactNode;
+  noun?: string;
+  grid?: string;
   children: ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: pinned });
@@ -89,7 +93,7 @@ export function RoutingRowShell({
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={`relative rounded-lg bg-surface ${isDragging ? 'z-10 shadow-float ring-1 ring-accent/40' : 'shadow-card'} ${locked ? 'opacity-85' : ''} ${accent ? 'shadow-[inset_3px_0_0_var(--accent)]' : ''}`}
     >
-      <div className={stacked ? optionCellsGrid : cellsGrid}>
+      <div className={stacked ? optionCellsGrid : grid}>
         <button
           type="button"
           ref={setActivatorNodeRef}
@@ -196,7 +200,18 @@ export function RemoveButton({ index, onRemove, noun = 'Routing Label', inline }
   );
 }
 
-export function Precedence({ highlight = 'routing-label' }: { highlight?: 'routing-label' | 'route-classifier' }) {
+const ROUTING_STEPS = ['Operator setting on the Ticket', 'Routing Label', 'Route Classifier', 'Workspace default', 'Global default'];
+
+export function Precedence({
+  steps = ROUTING_STEPS,
+  accent = 'Routing Label',
+  highlight,
+}: {
+  steps?: readonly string[];
+  accent?: string;
+  highlight?: 'routing-label' | 'route-classifier';
+}) {
+  const accented = highlight === 'route-classifier' ? 'Route Classifier' : highlight === 'routing-label' ? 'Routing Label' : accent;
   const step = 'font-semibold text-ink';
   const arrow = (
     <span className="text-faint" aria-hidden="true">
@@ -206,15 +221,12 @@ export function Precedence({ highlight = 'routing-label' }: { highlight?: 'routi
   return (
     <div className="mb-3.5 flex flex-wrap items-center gap-1.5 rounded-sm border border-hairline bg-sunken px-3 py-2 text-small text-muted">
       <span className="mr-1 text-label font-semibold uppercase text-faint">Precedence</span>
-      <b className={step}>Operator setting on the Ticket</b>
-      {arrow}
-      <b className={highlight === 'routing-label' ? 'font-semibold text-accent' : step}>Routing Label</b>
-      {arrow}
-      <b className={highlight === 'route-classifier' ? 'font-semibold text-accent' : step}>Route Classifier</b>
-      {arrow}
-      <b className={step}>Workspace default</b>
-      {arrow}
-      <b className={step}>Global default</b>
+      {steps.map((name, i) => (
+        <Fragment key={name}>
+          {i > 0 && arrow}
+          <b className={name === accented ? 'font-semibold text-accent' : step}>{name}</b>
+        </Fragment>
+      ))}
     </div>
   );
 }
@@ -226,8 +238,9 @@ export function RoutingListFrame({
   onRemove,
   renderRow,
   emptyText,
-  heading = 'Routing Labels',
-  addLabel = '+ Add Routing Label',
+  noun = 'Routing Label',
+  heading = `${noun}s`,
+  addLabel = `+ Add ${noun}`,
 }: {
   count: number;
   onMove: (from: number, to: number) => void;
@@ -235,6 +248,7 @@ export function RoutingListFrame({
   onRemove: (index: number) => void;
   renderRow: (row: { id: string; index: number; touched: boolean; touch: () => void; remove: () => void }) => ReactNode;
   emptyText: ReactNode;
+  noun?: string;
   heading?: string;
   addLabel?: string;
 }) {

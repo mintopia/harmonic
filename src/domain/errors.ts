@@ -10,10 +10,17 @@ const HTTP_STATUS: Record<DomainErrorCode, number> = {
   rate_limited: 429,
 };
 
+export interface ErrorIssue {
+  readonly message: string;
+  readonly line: number;
+  readonly column: number;
+}
+
 export class DomainError extends Error {
   constructor(
     public readonly code: DomainErrorCode,
     message: string,
+    public readonly issues?: readonly ErrorIssue[],
   ) {
     super(message);
     this.name = 'DomainError';

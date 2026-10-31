@@ -1,4 +1,4 @@
-import { baselineConfig } from '../src/config.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,7 +12,7 @@ import {
   resetCodeIndexAvailabilityForTest,
 } from '../src/execution/code-index.js';
 
-const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
+const DEFAULT_PROMPTS = bundledEnginePrompts();
 
 const FAKE_CLI = `#!/usr/bin/env node
 const fs = require('node:fs');
@@ -24,13 +24,13 @@ if (args[0] === 'list-repos') {
 process.exit(0);
 `;
 
-describe('codeIndexRepoGuidance (pure prompt fragment)', () => {
+describe('codeIndexRepoGuidance (pure engine prompt)', () => {
   it('renders nothing for an empty repo id', () => {
-    expect(codeIndexRepoGuidance('', { ...DEFAULT_PROMPT_FRAGMENTS })).toBe('');
+    expect(codeIndexRepoGuidance('', { ...DEFAULT_PROMPTS })).toBe('');
   });
 
   it('names the repo id and forbids resolving the repo by `.`', () => {
-    const block = codeIndexRepoGuidance('local/run-7-abc123', { ...DEFAULT_PROMPT_FRAGMENTS });
+    const block = codeIndexRepoGuidance('local/run-7-abc123', { ...DEFAULT_PROMPTS });
     expect(block).toContain('local/run-7-abc123');
     expect(block).toMatch(/do not resolve the repo by `\.`/i);
     expect(block).toMatch(/stale code/i);

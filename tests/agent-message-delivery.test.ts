@@ -157,18 +157,16 @@ describe('agent message delivery (stub Harness, run-control seam)', () => {
     expect(byTask.get(idle)).toMatchObject({ receipt: 'held' });
   });
 
-  it('uses edited peer Prompt Fragments for the live frame and the held-message prompt', async () => {
+  it('uses edited peer Library prompts for the live frame and the held-message prompt', async () => {
     await boot();
     const b = await liveRecipient();
     const a = await sender();
     const c = await readyRecipient();
-    const workspaceId = (await server.app.ctx.tasks.get(a.id)).workspaceId!;
-    await server.app.ctx.workspaces.update(workspaceId, {
-      promptFragmentPeerLiveMessage: 'LIVE from #{taskId} ({harness}) :: {text}',
-      promptFragmentPeerMessages: 'INBOX\n{messages}',
-      promptFragmentPeerMessage: '* #{taskId}/{harness}: {text}',
-      promptFragmentPeerLine: 'Peers can be reached.',
-    });
+    const { promptLibrary } = server.app.ctx;
+    await promptLibrary.create('peerLiveMessage-edited', 'live frame', 'LIVE from #{taskId} ({harness}) :: {text}');
+    await promptLibrary.create('peerMessages-edited', 'inbox', 'INBOX\n{messages}');
+    await promptLibrary.create('peerMessage-edited', 'entry', '* #{taskId}/{harness}: {text}');
+    await promptLibrary.create('peerLine-edited', 'line', 'Peers can be reached.');
 
     await a.client.callTool({ name: 'send_message', arguments: { to: b, text: 'live note' } });
     const injected = await waitFor(async () => {

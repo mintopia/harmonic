@@ -1,15 +1,15 @@
 import { sql } from 'drizzle-orm';
 import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, check, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { Verdict } from '../verification/critic-schema.js';
-import type { PromptFragmentOverrides } from '../domain/prompt-fragments.js';
 import type { TicketRef, TicketState, TrackerRef } from '../tracker/adapter.js';
 import type { EscalationCause } from '../domain/task-routing.js';
+import type { VarRecord } from '../domain/workflow-vars.js';
 
 /** A Task is either authored here or a 1:1 projection of a tracker issue. */
 export const TASK_ORIGINS = ['native', 'mirrored'] as const;
 export type TaskOrigin = (typeof TASK_ORIGINS)[number];
-export const WORKFLOWS = ['wayfinder', 'implement'] as const;
-export type Workflow = (typeof WORKFLOWS)[number];
+export const ISSUE_WORKFLOWS = ['wayfinder', 'implement'] as const;
+export type IssueWorkflow = (typeof ISSUE_WORKFLOWS)[number];
 export const WAYFINDER_TYPES = ['research', 'prototype', 'grilling', 'task'] as const;
 export type WayfinderType = (typeof WAYFINDER_TYPES)[number];
 
@@ -56,15 +56,14 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   conflictResolveTurns: number | null; maxConcurrentAttempts: number | null; autoRunnerEnabled: boolean | null;
   agentMessagesEnabled: boolean | null; agentMessagesSendCap: number | null;
   maxAttempts: number | null; contextReuseTokenLimit: number | null;
-  taskPreMergeCommands: string | null; taskPreMergeCritics: string | null;
-  taskPostMergeCommands: string | null; taskPostMergeCritics: string | null;
   epicPreMergeCommands: string | null; epicPreMergeCritics: string | null; routingLabels: string | null;
+  workflow: string | null; epicWorkflow: string | null; workflowLabels: string | null; workflowVars: string | null; workflowClassifierEnabled: boolean | null;
   modelOptions: string | null; classifierEnabled: boolean | null; classifierBackend: 'typesafe' | 'openai-compatible' | 'harness' | null; classifierTimeoutSeconds: number | null;
   classifierTypesafeModel: string | null; classifierTypesafeSecret: string | null; classifierHarness: string | null; classifierModel: string | null;
   classifierEndpoint: string | null;
   guardrailBudget: string | null; guardrailProgress: boolean | null; toolTimeoutMinutes: number | null;
   drivePrompt: string | null; driveUnattendedReminder: string | null; driveContinuePrompt: string | null;
-  driveMergeFate: string | null; driveContinueAttempts: number | null; taskPrompt: string | null; pauseMessage: string | null;
+  taskPrompt: string | null; pauseMessage: string | null;
   driveCommitNudge: string | null; mergeConflictPrompt: string | null; mergeEpicConflictPrompt: string | null;
   mergeEpicRefreshPrompt: string | null; verifyEpicResolveSuffix: string | null;
   exportEnabled: boolean | null; exportDirectoryPath: string | null; exportRedactPatterns: string | null;
@@ -72,7 +71,7 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   exportS3ForcePathStyle: boolean | null; exportS3AccessKeyId: string | null; exportS3SecretAccessKey: string | null;
   exportIncludeStates: string | null;
   configuredTracker: string | null; codeRepository: 'github' | 'gitlab' | 'forgejo' | 'git' | null; triageLabels: string | null; archiveRetentionDays: number | null; archiveRetentionMaxTotalMB: number | null;
-} & PromptFragmentOverrides;
+};
 
 /** `jobKey` is the job name plus optional Workspace id, so SQLite's NULL-distinct unique semantics can't duplicate global job rows. */
 export const scheduledJobs = sqliteTable('scheduled_jobs', {
@@ -118,7 +117,21 @@ export const tasks = sqliteTable('tasks', {
   /** The mirrored issue's portable number; the upsert key. Null on native Tasks. */
   trackerRef: text('tracker_ref').$type<TrackerRef>(),
   /** wayfinder (charting) | implement (build tickets). Derived from labels. */
-  workflow: text('workflow').$type<Workflow>(),
+  issueWorkflow: text('issue_workflow').$type<IssueWorkflow>(),
+  /** The Workflow Library version this Ticket is pinned to, as `<name>@<version>`; null until it starts on one. */
+  workflowRef: text('workflow_ref'),
+  /** The Workflow Library name the operator chose at creation; becomes `workflowRef` when the Ticket starts working. */
+  workflowRequested: text('workflow_requested'),
+  /** How `workflowRef` was resolved; null until the Ticket starts on a workflow. */
+  workflowChosen: text('workflow_chosen').$type<WorkflowChosen>(),
+  workflowLabel: text('workflow_label'),
+  /** The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted. */
+  workflowReason: text('workflow_reason'),
+  /** JSON: Usage and Cost of the workflow classifier call, a routing line separate from any Attempt's Cost. */
+  workflowRoutingUsage: text('workflow_routing_usage'),
+  workflowRoutingCost: text('workflow_routing_cost'),
+  workflowVarOverrides: text('workflow_var_overrides', { mode: 'json' }).$type<VarRecord>(),
+  workflowVars: text('workflow_vars', { mode: 'json' }).$type<VarRecord>(),
   /** research/prototype/grilling/task; null for implement and native Tasks. */
   wayfinderType: text('wayfinder_type').$type<WayfinderType>(),
   /** Why the Ticket is `escalated`; null otherwise. */
@@ -302,6 +315,41 @@ export const steps = sqliteTable('steps', {
   endedAt: integer('ended_at'),
 }, (t) => [uniqueIndex('steps_attempt_position_unique').on(t.attemptId, t.position)]);
 export type StepRow = typeof steps.$inferSelect;
+
+export const WORKFLOW_CHOSEN = ['explicit', 'label', 'classifier', 'workspace', 'global'] as const;
+export type WorkflowChosen = (typeof WORKFLOW_CHOSEN)[number];
+export const WORKFLOW_STEP_OUTCOMES = ['pass', 'fail', 'inconclusive', 'conflict', 'skipped'] as const;
+export type WorkflowStepOutcome = (typeof WORKFLOW_STEP_OUTCOMES)[number];
+
+/** One execution of a Task Execution Workflow step; `outcome` is null while the step runs. */
+export const workflowStepRuns = sqliteTable('workflow_step_runs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  /** Exactly one owner: a Task, or a stored Epic identified by workspace and tracker refs. */
+  taskId: integer('task_id').references(() => tasks.id),
+  workspaceId: integer('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+  epicRef: text('epic_ref').$type<TrackerRef>(),
+  workflowRef: text('workflow_ref').notNull(),
+  stepId: text('step_id').notNull(),
+  position: integer('position').notNull(),
+  action: text('action').notNull(),
+  outcome: text('outcome').$type<WorkflowStepOutcome>(),
+  /** JSON `{stdout, exitCode}`, secrets already masked. */
+  outputs: text('outputs'),
+  summary: text('summary'),
+  resolvedPrompt: text('resolved_prompt'),
+  /** The `attempts:` block pass (1-based) this step ran in; null outside the block. */
+  attempt: integer('attempt'),
+  startedAt: integer('started_at').notNull(),
+  endedAt: integer('ended_at'),
+}, (t) => [
+  index('workflow_step_runs_task_idx').on(t.taskId, t.workflowRef, t.stepId),
+  index('workflow_step_runs_epic_idx').on(t.workspaceId, t.epicRef, t.workflowRef, t.stepId),
+  check(
+    'workflow_step_runs_exactly_one_owner',
+    sql`(${t.taskId} IS NOT NULL AND ${t.workspaceId} IS NULL AND ${t.epicRef} IS NULL) OR (${t.taskId} IS NULL AND ${t.workspaceId} IS NOT NULL AND ${t.epicRef} IS NOT NULL)`,
+  ),
+]);
+export type WorkflowStepRunRow = typeof workflowStepRuns.$inferSelect;
 
 /** Per-Attempt tool-call counts; Task and Epic totals are derived on read. */
 export const attemptToolCalls = sqliteTable(
@@ -590,6 +638,8 @@ export const epics = sqliteTable('epics', {
   state: text('state').$type<EpicLifecycleState>().notNull(),
   /** Member refs snapshotted at integration (JSON int array); null while live. */
   memberRefs: text('member_refs', { mode: 'json' }).$type<TrackerRef[]>(),
+  /** The `name@version` Epic workflow pinned when Epic Pre-Merge Verification last started; null before the first run. */
+  workflowRef: text('workflow_ref'),
 }, (t) => [primaryKey({ columns: [t.workspaceId, t.trackerRef] })]);
 export type EpicRow = typeof epics.$inferSelect;
 

@@ -62,7 +62,7 @@ describe('Retry Now Session re-use (worktree isolation)', () => {
       {
         trackerRef: trackerRef(nextRef++),
         prompt: 'reuse ticket',
-        workflow: 'implement',
+        issueWorkflow: 'implement',
         wayfinderType: null,
         mapRef: null,
         closed: false,
@@ -147,7 +147,7 @@ describe('queued Retry Session re-use', () => {
       drive: { prompt: JSON.stringify({ mcpEscalate: { reason: 'need a human' }, usage: { inputTokens: 5000, outputTokens: 100 } }) },
     });
     const mirrored = await server.app.ctx.tasks.upsertMirrored(
-      { trackerRef: trackerRef(nextRef++), prompt: 'queued retry ticket', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+      { trackerRef: trackerRef(nextRef++), prompt: 'queued retry ticket', issueWorkflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
       wsId,
     );
     await server.api('POST', `/api/tasks/${mirrored.id}/run`);
@@ -214,7 +214,7 @@ describe('Retry Now re-using a cold Session', () => {
       drive: { prompt: JSON.stringify({ mcpEscalate: { reason: 'need a human' }, usage: { inputTokens: 5000, outputTokens: 100 } }) },
     });
     const mirrored = await server.app.ctx.tasks.upsertMirrored(
-      { trackerRef: trackerRef(99_900), prompt: 'cold reuse ticket', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+      { trackerRef: trackerRef(99_900), prompt: 'cold reuse ticket', issueWorkflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
       wsId,
     );
     const taskId = mirrored.id;

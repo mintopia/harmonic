@@ -4,7 +4,6 @@ import { z } from 'zod';
 import type { TrackingContext } from '../app.js';
 import type { WorkspaceRow } from '../../db/schema.js';
 import type { ResolvedTracker } from '../../tracker/adapter.js';
-import { PROMPT_FRAGMENT_OVERRIDE_KEYS, type PromptFragmentOverrideKey } from '../../domain/prompt-fragments.js';
 import { createWorkspaceInputSchema, updateWorkspaceInputSchema, codeRepositorySchema, workspaceOverridesSchema } from '../../domain/workspaces.js';
 import { configuredTrackerSchema } from '../../tracker/configured.js';
 import { triageLabelsOverrideSchema } from '../../tracker/triage-labels.js';
@@ -13,7 +12,7 @@ import { CLASSIFIER_BACKENDS, classifierEndpointSchema, EXPORT_STATES, modelOpti
 import {
   verificationCommandOverrideSchema,
   routingLabelOverrideSchema,
-  taskVerificationCriticOverrideSchema,
+  workflowLabelOverrideSchema,
   epicVerificationCriticOverrideSchema,
   budgetGuardrailSchema,
   unpricedModelsForCostCap,
@@ -26,6 +25,9 @@ import { requestIsOperator } from '../auth.js';
 import type { AppContext } from '../app.js';
 import { resolveScoped, routingLabelIssueMessage, routingLabelOverlayIssues } from '../../domain/setting-override.js';
 import { parseRoutingLabelOverlay } from '../../domain/routing-labels.js';
+import { parseWorkflowLabelOverlay, workflowReferenceProblems } from '../../domain/workflow-labels.js';
+import { parseWorkspaceWorkflowVars, validateVarOverrides, workspaceWorkflowVarsSchema } from '../../domain/workflow-vars.js';
+import { parseWorkflow } from '../../domain/workflow.js';
 import { parseClassifierEndpoint, parseModelOptionOverlay } from '../../domain/model-options.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
@@ -44,10 +46,6 @@ const resolvedTrackerSchema = z
   })
   .nullable()
   .meta({ description: 'The tracker this Workspace resolved (issue #83), or null when tracking is off.' });
-
-const promptFragmentOverrideResponseShape = Object.fromEntries(
-  PROMPT_FRAGMENT_OVERRIDE_KEYS.map((key) => [key, z.string().nullable().meta({ example: null })]),
-) as Record<PromptFragmentOverrideKey, z.ZodNullable<z.ZodString>>;
 
 /** A Workspace as the API serves it: the `WorkspaceRow` plus its `resolvedTracker`. */
 const workspaceSchema = z
@@ -78,17 +76,18 @@ const workspaceSchema = z
     /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
     maxAttempts: z.number().nullable().meta({ example: null }),
     contextReuseTokenLimit: z.number().nullable().meta({ example: null }),
-    taskPreMergeCommands: verificationCommandOverrideSchema.nullable().meta({ example: null }),
-    taskPreMergeCritics: taskVerificationCriticOverrideSchema.nullable().meta({ example: null }),
-    taskPostMergeCommands: verificationCommandOverrideSchema.nullable().meta({ example: null }),
-    taskPostMergeCritics: taskVerificationCriticOverrideSchema.nullable().meta({ example: null }),
     epicPreMergeCommands: verificationCommandOverrideSchema.nullable().meta({ example: null }),
     epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().meta({ example: null }),
     /** Routing Label overlay; null inherits every global Routing Label in order. */
     routingLabels: routingLabelOverrideSchema.nullable().meta({ example: null }),
+    workflow: z.string().nullable().meta({ example: null }),
+    epicWorkflow: z.string().nullable().meta({ example: null }),
+    workflowLabels: workflowLabelOverrideSchema.nullable().meta({ example: null }),
+    workflowVars: workspaceWorkflowVarsSchema.nullable().meta({ description: 'Per-workflow overrides of declared `vars:`, keyed by workflow name then var name; null when none.', example: null }),
     /** Model Option overlay; null inherits every global Model Option in order, enabled. */
     modelOptions: modelOptionOverrideSchema.nullable().meta({ example: null }),
     classifierEnabled: z.boolean().nullable().meta({ example: null }),
+    workflowClassifierEnabled: z.boolean().nullable().meta({ example: null }),
     classifierBackend: z.enum(CLASSIFIER_BACKENDS).nullable().meta({ example: null }),
     classifierTimeoutSeconds: z.number().nullable().meta({ example: null }),
     classifierTypesafeModel: z.string().nullable().meta({ example: null }),
@@ -104,13 +103,10 @@ const workspaceSchema = z
     drivePrompt: z.string().nullable().meta({ example: null }),
     driveUnattendedReminder: z.string().nullable().meta({ example: null }),
     driveContinuePrompt: z.string().nullable().meta({ example: null }),
-    driveMergeFate: z.string().nullable().meta({ example: null }),
-    driveContinueAttempts: z.number().nullable().meta({ example: null }),
     /** Task Prompt override; null inherits `config.taskPrompt`. */
     taskPrompt: z.string().nullable().meta({ example: null }),
     /** Pause message override; null inherits `config.pauseMessage`. */
     pauseMessage: z.string().nullable().meta({ example: null }),
-    ...promptFragmentOverrideResponseShape,
     /** Commit nudge override; null inherits `config.drive.commitNudge`. */
     driveCommitNudge: z.string().nullable().meta({ example: null }),
     /** Task merge-conflict prompt override; null inherits `config.merge.conflictPrompt`. */
@@ -172,7 +168,7 @@ const workspaceSummarySchema = workspaceSchema.pick({ id: true, name: true, colo
 const workspacesListResponseSchema = listResponse('workspaces', workspaceSchema);
 const workspaceSummariesListResponseSchema = listResponse('workspaces', workspaceSummarySchema);
 
-export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces' | 'settingsStore' | 'trackerManager' | 'workspaceWatcher'> & Pick<AppContext, 'auth' | 'tasks' | 'archive' | 'routeClassifier'>): Promise<void> {
+export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces' | 'settingsStore' | 'trackerManager' | 'workspaceWatcher'> & Pick<AppContext, 'auth' | 'tasks' | 'archive' | 'workflows' | 'routeClassifier'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   const serializeResolvedTracker = (r: ResolvedTracker | null) =>
@@ -197,13 +193,11 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
   /** A Workspace row plus its live Resolved Tracker; JSON-text override columns parsed back to the shape a client PATCHes. */
   const serialize = (ws: WorkspaceRow) => ({
     ...maskWorkspaceSecrets(ws),
-    taskPreMergeCommands: ws.taskPreMergeCommands ? JSON.parse(ws.taskPreMergeCommands) : null,
-    taskPreMergeCritics: ws.taskPreMergeCritics ? JSON.parse(ws.taskPreMergeCritics) : null,
-    taskPostMergeCommands: ws.taskPostMergeCommands ? JSON.parse(ws.taskPostMergeCommands) : null,
-    taskPostMergeCritics: ws.taskPostMergeCritics ? JSON.parse(ws.taskPostMergeCritics) : null,
     epicPreMergeCommands: ws.epicPreMergeCommands ? JSON.parse(ws.epicPreMergeCommands) : null,
     epicPreMergeCritics: ws.epicPreMergeCritics ? JSON.parse(ws.epicPreMergeCritics) : null,
     routingLabels: parseRoutingLabelOverlay(ws.routingLabels),
+    workflowLabels: parseWorkflowLabelOverlay(ws.workflowLabels),
+    workflowVars: parseWorkspaceWorkflowVars(ws.workflowVars),
     modelOptions: parseModelOptionOverlay(ws.modelOptions),
     classifierEndpoint: parseClassifierEndpoint(ws.classifierEndpoint),
     exportRedactPatterns: ws.exportRedactPatterns ? JSON.parse(ws.exportRedactPatterns) : null,
@@ -315,18 +309,30 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
           }
         });
       }
+      if (req.body.workflowLabels || req.body.workflow || req.body.epicWorkflow) {
+        const global = ctx.settingsStore.getGlobal();
+        const first = workflowReferenceProblems(ctx.workflows, { workflow: req.body.workflow ?? null, epicWorkflow: req.body.epicWorkflow ?? null, overlay: req.body.workflowLabels ?? null, globals: global.workflowLabels })[0];
+        if (first) throw new DomainError('validation', first);
+      }
+      if (req.body.workflowVars) {
+        for (const [name, overrides] of Object.entries(req.body.workflowVars)) {
+          const entry = ctx.workflows.list().find((w) => w.name === name);
+          if (!entry) throw new DomainError('validation', `workflowVars.${name}: No workflow is named ${name}`);
+          const defaults = parseWorkflow((await ctx.workflows.getVersion(name, entry.version)).text).vars;
+          const first = validateVarOverrides(defaults, overrides)[0];
+          if (first) throw new DomainError('validation', `workflowVars.${name}.${first}`);
+        }
+      }
       if (req.body.modelOptions) {
         assertModelOptionOverlay(req.body.modelOptions);
       }
-      for (const [key, list] of [['taskPreMergeCritics', req.body.taskPreMergeCritics], ['taskPostMergeCritics', req.body.taskPostMergeCritics], ['epicPreMergeCritics', req.body.epicPreMergeCritics]] as const) {
-        list?.forEach((entry, index) => {
-          if (entry.kind !== 'local') return;
-          const models = harnesses[entry.critic.harness]?.models ?? [];
-          if (models.length > 0 && !models.some((m) => m.id === entry.critic.model)) {
-            throw new DomainError('validation', `${key}.${index}.critic.model: ${criticModelMessage(entry.critic)}`);
-          }
-        });
-      }
+      req.body.epicPreMergeCritics?.forEach((entry, index) => {
+        if (entry.kind !== 'local') return;
+        const models = harnesses[entry.critic.harness]?.models ?? [];
+        if (models.length > 0 && !models.some((m) => m.id === entry.critic.model)) {
+          throw new DomainError('validation', `epicPreMergeCritics.${index}.critic.model: ${criticModelMessage(entry.critic)}`);
+        }
+      });
       if (req.body.guardrailBudget) {
         const unpriced = unpricedModelsForCostCap(req.body.guardrailBudget, ctx.settingsStore.getGlobal());
         if (unpriced.length > 0) {

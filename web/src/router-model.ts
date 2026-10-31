@@ -18,7 +18,7 @@ export const DEFAULT_ROUTE: Route = { scope: { kind: 'global' }, view: 'board', 
 export const LAST_ROUTE_KEY = 'harmonic.last-route';
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 
-const GLOBAL_PATHS: Readonly<Record<string, View>> = { '/': 'board', '/tasks': 'table', '/activity': 'activity', '/timeline': 'timeline', '/stats': 'stats', '/operations': 'operations', '/api': 'api', '/settings': 'settings', '/notifications': 'notifications' };
+const GLOBAL_PATHS: Readonly<Record<string, View>> = { '/': 'board', '/tasks': 'table', '/activity': 'activity', '/timeline': 'timeline', '/stats': 'stats', '/operations': 'operations', '/workflows': 'workflows', '/api': 'api', '/settings': 'settings', '/notifications': 'notifications' };
 const WORKSPACE_PATHS: Readonly<Record<string, View>> = { board: 'board', conversations: 'conversations', graph: 'graph', activity: 'activity', tasks: 'table', timeline: 'timeline', stats: 'stats', files: 'files', operations: 'operations', settings: 'workspace', notifications: 'notifications' };
 const csvValues = (raw: string, allowed: readonly string[]) => {
   const values: string[] = [];

@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { baselineConfig } from '../src/config.js';
 import { RouteClassifier, type ClassifierInput } from '../src/domain/route-classifier.js';
 import { createTypesafeClassifierBackend } from '../src/domain/typesafe-classifier.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 
 const KEY = 'sk-or-test-secret-key';
 const OPTIONS = [
@@ -72,7 +73,7 @@ describe('TypeSafe classifier backend', () => {
   });
 
   it('feeds usage and cost to the routing line through the classifier', async () => {
-    const classifier = new RouteClassifier(() => baselineConfig(), { typesafe: backend() });
+    const classifier = new RouteClassifier(() => baselineConfig(), { typesafe: backend() }, bundledEnginePrompts);
     const workspace = { id: 7, classifierEnabled: true, classifierBackend: 'typesafe', classifierTimeoutSeconds: 5, classifierTypesafeSecret: 'OR_KEY', modelOptions: JSON.stringify(OPTIONS.map((modelOption) => ({ kind: 'local', enabled: true, modelOption }))) } as never;
     const outcome = await classifier.classify({ workspace, title: 't', description: 'd', labels: [], attemptNumber: 1 });
     expect(outcome).toMatchObject({ kind: 'chosen', option: { id: 'deep-work' } });
@@ -81,7 +82,7 @@ describe('TypeSafe classifier backend', () => {
   });
 
   it('picks from the list resolved with the Ticket overrides', async () => {
-    const classifier = new RouteClassifier(() => baselineConfig(), { typesafe: backend() });
+    const classifier = new RouteClassifier(() => baselineConfig(), { typesafe: backend() }, bundledEnginePrompts);
     const workspace = { id: 7, classifierEnabled: true, classifierBackend: 'typesafe', classifierTypesafeSecret: 'OR_KEY', modelOptions: JSON.stringify(OPTIONS.map((modelOption) => ({ kind: 'local', enabled: true, modelOption }))) } as never;
     const modelOptionOverrides = [{ id: 'deep-work', harness: 'codex', model: 'gpt-5-mini' }];
     const outcome = await classifier.classify({ workspace, title: 't', description: 'd', labels: [], attemptNumber: 1, modelOptionOverrides });
@@ -91,7 +92,7 @@ describe('TypeSafe classifier backend', () => {
 
   it('abstains on an unknown decision', async () => {
     respond = (res) => res.end(JSON.stringify({ answers: { route: { type: 'choice', choice: 'nope' } } }));
-    const classifier = new RouteClassifier(() => ({ ...baselineConfig(), modelOptions: OPTIONS }), { typesafe: backend() });
+    const classifier = new RouteClassifier(() => ({ ...baselineConfig(), modelOptions: OPTIONS }), { typesafe: backend() }, bundledEnginePrompts);
     const workspace = { id: 7, classifierEnabled: true, classifierBackend: 'typesafe', classifierTypesafeSecret: 'OR_KEY' } as never;
     expect(await classifier.classify({ workspace, title: 't', description: 'd', labels: [], attemptNumber: 1 })).toMatchObject({ kind: 'abstained' });
   });

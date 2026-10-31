@@ -1,5 +1,4 @@
 import type { TrackerResolveFailureCode } from '../../src/tracker/adapter.js';
-import type { PromptFragmentOverrides, PromptFragments } from '../../src/domain/prompt-fragments.js';
 import type { AttemptClassifier, EscalationCause, TaskClassifier, TaskRouting } from '../../src/domain/task-routing.js';
 import type { Verdict } from '../../src/verification/critic-schema.js';
 
@@ -36,6 +35,76 @@ export type MergeStatus = (typeof MERGE_STATUSES)[number];
 export type AttemptState = 'running' | 'passed' | 'failed' | 'escalated' | 'cancelled';
 export type StepType = 'rebase' | 'implementation' | 'verification' | 'review';
 export type StepState = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'cancelled';
+
+export type WorkflowChosen = 'explicit' | 'label' | 'classifier' | 'workspace' | 'global';
+export type WorkflowStepOutcome = 'pass' | 'fail' | 'inconclusive' | 'conflict' | 'skipped';
+
+export interface WorkflowIssue {
+  message: string;
+  line: number;
+  column: number;
+}
+
+export type WorkflowDocument = Pick<WorkflowLibraryEntry, 'name' | 'description' | 'bundled' | 'version'> & { text: string };
+
+export interface EpicWorkflowRef {
+  name: string;
+  version: number;
+  chosen: 'workspace' | 'global';
+}
+
+export interface WorkflowLibraryEntry {
+  name: string;
+  description: string;
+  subject: 'ticket' | 'epic';
+  bundled: boolean;
+  version: number;
+  inUse: { tickets: number; workspaces: number };
+  assignedAs: Array<{ kind: 'global-default' | 'workspace-default' | 'label'; label?: string }>;
+}
+
+export interface TaskWorkflowVars {
+  workflowRef: string | null;
+  workflow: string | null;
+  vars: {
+    name: string;
+    default: string | number | boolean;
+    workspace: string | number | boolean | null;
+    ticket: string | number | boolean | null;
+    value: string | number | boolean;
+    source: 'default' | 'workspace' | 'ticket';
+  }[];
+  snapshot: Record<string, string | number | boolean> | null;
+}
+
+export interface WorkflowStepRun {
+  stepId: string;
+  action: string;
+  position: number;
+  /** The `attempts:` block pass (1-based); null outside the block. */
+  attempt: number | null;
+  /** null while the step is still running. */
+  outcome: WorkflowStepOutcome | null;
+  summary: string | null;
+  resolvedPrompt: string | null;
+  outputs: { stdout: string; exitCode: number | null };
+  startedAt: number | null;
+  endedAt: number | null;
+}
+
+export interface WorkflowStepsResponse {
+  workflowRef: string | null;
+  workflowChosen: WorkflowChosen | null;
+  outline: { id: string; children: string[] }[];
+  cleanupCount: number;
+  /** What the pinned workflow says each step is, by step id; children and cleanup steps included. */
+  stepInfo?: Record<string, { uses: string; detail: string | null; condition: string | null }>;
+  blockStepIds?: string[];
+  cleanupIds?: string[];
+  maxAttempts?: number | null;
+  latestVersion: number | null;
+  steps: WorkflowStepRun[];
+}
 
 export interface Step {
   id: number;
@@ -262,7 +331,7 @@ export interface AgentMessageThread {
 
 /** Tracker mirroring: a Task is authored here or a 1:1 projection of a tracker issue. */
 export type TaskOrigin = 'native' | 'mirrored';
-export type Workflow = 'wayfinder' | 'implement';
+export type IssueWorkflow = 'wayfinder' | 'implement';
 export type WayfinderType = 'research' | 'prototype' | 'grilling' | 'task';
 
 /** Dollar value of Usage, computed server-side on read — never stored. */
@@ -413,7 +482,7 @@ export type VerifyResult = { ok: true; identity: string } | { ok: false; reason:
 export type TrackerSource = 'configured' | 'detected' | 'code-repository';
 
 /** A Workspace: a named Working Directory, unique by absolute path. */
-export interface Workspace extends PromptFragmentOverrides {
+export interface Workspace {
   id: number;
   name: string;
   workingDir: string;
@@ -443,17 +512,18 @@ export interface Workspace extends PromptFragmentOverrides {
   /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: number | null;
   contextReuseTokenLimit: number | null;
-  taskPreMergeCommands: CommandOverlayEntry[] | null;
-  taskPreMergeCritics: TaskCriticOverlayEntry[] | null;
-  taskPostMergeCommands: CommandOverlayEntry[] | null;
-  taskPostMergeCritics: TaskCriticOverlayEntry[] | null;
   epicPreMergeCommands: CommandOverlayEntry[] | null;
   epicPreMergeCritics: EpicCriticOverlayEntry[] | null;
   /** Routing Label overlay; `null` inherits every global Routing Label in order. */
   routingLabels: RoutingLabelOverlayEntry[] | null;
+  workflow: string | null;
+  epicWorkflow?: string | null;
+  workflowLabels: WorkflowLabelOverlayEntry[] | null;
+  workflowVars?: Record<string, Record<string, string | number | boolean>> | null;
   /** Model Option overlay; `null` inherits every global Model Option in order, enabled. */
   modelOptions: ModelOptionOverlayEntry[] | null;
   classifierEnabled: boolean | null;
+  workflowClassifierEnabled?: boolean | null;
   classifierBackend: 'typesafe' | 'openai-compatible' | 'harness' | null;
   classifierTimeoutSeconds: number | null;
   classifierTypesafeModel: string | null;
@@ -492,8 +562,6 @@ export interface Workspace extends PromptFragmentOverrides {
   driveUnattendedReminder: string | null;
   driveContinuePrompt: string | null;
   driveCommitNudge: string | null;
-  driveMergeFate: 'auto-merge' | 'open-PR' | 'artifact' | null;
-  driveContinueAttempts: number | null;
   /** Task Prompt override; `null` inherits `config.taskPrompt`. */
   taskPrompt: string | null;
   /** Pause message override; `null` inherits `config.pauseMessage`. */
@@ -518,21 +586,6 @@ export interface VerificationCommand {
   timeoutSeconds: number;
 }
 
-/** An agent critic verifier: a read-only reviewer with
- * its own prompt and model. Mirrors `verificationCriticSchema`. */
-export interface TaskVerificationCritic {
-  /** Stable identity, independent of `name` (not guaranteed unique). */
-  id: string;
-  /** Operator-facing label; the critic's row title in settings. */
-  name: string;
-  issuePrompt: string;
-  noIssuePrompt: string;
-  model: string;
-  harness: string;
-  /** Hard timeout in seconds for the critic's review turn (default 300). */
-  timeoutSeconds: number;
-}
-
 export interface EpicVerificationCritic {
   /** Stable identity, independent of `name` (not guaranteed unique). */
   id: string;
@@ -543,11 +596,6 @@ export interface EpicVerificationCritic {
   harness: string;
   /** Hard timeout in seconds for the critic's review turn (default 300). */
   timeoutSeconds: number;
-}
-
-export interface TaskVerificationStage {
-  commands: VerificationCommand[];
-  critics: TaskVerificationCritic[];
 }
 
 export interface EpicVerificationStage {
@@ -564,12 +612,6 @@ export type CommandOverlayEntry =
   | { kind: 'global'; ref: string; enabled: boolean }
   | { kind: 'local'; enabled: boolean; command: VerificationCommand };
 
-/** The task-critic counterpart of {@link CommandOverlayEntry}. */
-export type TaskCriticOverlayEntry =
-  | { kind: 'global'; ref: string; enabled: boolean }
-  | { kind: 'local'; enabled: boolean; critic: TaskVerificationCritic };
-
-/** The epic-critic counterpart of {@link CommandOverlayEntry}. */
 export type EpicCriticOverlayEntry =
   | { kind: 'global'; ref: string; enabled: boolean }
   | { kind: 'local'; enabled: boolean; critic: EpicVerificationCritic };
@@ -578,6 +620,10 @@ export type EpicCriticOverlayEntry =
 export type RoutingLabelOverlayEntry =
   | { kind: 'global'; ref: string; enabled: boolean }
   | { kind: 'local'; enabled: boolean; routingLabel: { label: string; harness: string; model: string } };
+
+export type WorkflowLabelOverlayEntry =
+  | { kind: 'global'; ref: string; enabled: boolean }
+  | { kind: 'local'; enabled: boolean; workflowLabel: { label: string; workflow: string } };
 
 /** A Workspace Model Option overlay entry; a `global` entry's `ref` is the global option's code. */
 export type ModelOptionOverlayEntry =
@@ -681,8 +727,14 @@ export interface Task {
   origin: TaskOrigin;
   /** The mirrored issue's number; null on native Tasks. */
   trackerRef: TrackerRef | null;
-  /** Mirrored role: which workflow the tracker labelled it; null on native Tasks. */
-  workflow: Workflow | null;
+  /** Mirrored role: which Issue Workflow the tracker labelled it; null on native Tasks. */
+  issueWorkflow: IssueWorkflow | null;
+  /** `name@version` of the workflow pinned when the Ticket started; null on Tickets on today's path. */
+  workflowRef: string | null;
+  workflowChosen: WorkflowChosen | null;
+  workflowLabel?: string | null;
+  /** The Workflow classifier's one-line reason when workflowChosen is 'classifier'; otherwise null. */
+  workflowReason?: string | null;
   /** Mirrored role: the wayfinder decision kind; null on native/implement Tasks. */
   wayfinderType: WayfinderType | null;
   /** The parent Map's tracker ref; null when unmapped or native. */
@@ -1214,6 +1266,8 @@ export interface AppConfig {
     priority: 'high' | 'normal' | 'low';
     /** Conflict-resolve bound. */
     conflictResolveTurns: number;
+    workflow: string | null;
+    epicWorkflow: string | null;
   };
   /** The default Harness and model a new Conversation ("chat") starts with,
    * separate from the Task defaults. Global-default with a per-Workspace
@@ -1223,12 +1277,12 @@ export interface AppConfig {
     model: string;
   };
   routingLabels: { label: string; harness: string; model: string }[];
+  workflowLabels: { label: string; workflow: string }[];
   modelOptions: ModelOption[];
   autoRunner: { enabled: boolean; maxConcurrentAttempts: number };
   agentMessages: { enabled: boolean; sendCap: number };
   /** Per-stage command and critic verifier lists. */
   verify: {
-    task: { preMerge: TaskVerificationStage; postMerge: TaskVerificationStage };
     epic: { preMerge: EpicVerificationStage; resolvePrompt: string; resolveSuffix: string };
   };
   /** Attempt Guardrails: the global-default budget bounds, progress
@@ -1244,14 +1298,9 @@ export interface AppConfig {
     continuePrompt: string;
     /** Sent when an Attempt ends its turn with uncommitted changes. No placeholders. */
     commitNudge: string;
-    mergeFate: 'auto-merge' | 'open-PR' | 'artifact';
-    /** How many times an Attempt that ended its turn without finish/escalate is re-prompted to continue before it is treated as unresolved and verified. 0 keeps single-turn behaviour. */
-    continueAttempts: number;
   };
-  /** Merge-conflict resolver prompts, with {turn}/{taskBranch}/{baseBranch}/{paths}/{fragment.conflictResolution} placeholders. */
+  /** Merge-conflict resolver prompts, with {turn}/{taskBranch}/{baseBranch}/{paths}/${{ prompts.conflictResolution }} placeholders. */
   merge: { postMergeCheck: boolean; conflictPrompt: string; epicConflictPrompt: string; epicRefreshPrompt: string };
-  /** Maximum implementation attempts before the ticket is escalated. */
-  maxAttempts: number;
   /** Reuse a warm Session into the next attempt while its context occupancy stays
    * below this many tokens; at or above it, start a condensed new Session. */
   contextReuseTokenLimit: number;
@@ -1261,8 +1310,6 @@ export interface AppConfig {
   /** The Task Prompt template for native Attempts, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
   taskPrompt: string;
   pauseMessage: string;
-  /** Shared Prompt Fragments, referenced from prompts as `{fragment.<name>}`. */
-  promptFragments: PromptFragments;
   archive: { retain: { days: number | null; maxTotalMB: number | null } };
   /** S3 credentials arrive masked (`********`) when set; writing the mask back keeps the stored value. */
   export: {
@@ -1295,4 +1342,21 @@ export interface ConfigLayers {
   baseline: AppConfig;
   global: AppConfig;
   harnessPermissionModes: Record<string, { modes: Record<string, string>; defaultMode: string }>;
+}
+
+export interface Prompt {
+  code: string;
+  description: string;
+  text: string;
+  bundled: boolean;
+  resolved: string;
+  usedBy: string[];
+  usedBySteps: PromptStepUse[];
+  updatedAt: string | null;
+}
+
+export interface PromptStepUse {
+  workflow: string;
+  workflowBundled: boolean;
+  stepId: string;
 }

@@ -5,6 +5,7 @@ export type IconName =
   | 'activity'
   | 'conversations'
   | 'operations'
+  | 'workflows'
   | 'table'
   | 'graph'
   | 'stats'
@@ -72,6 +73,14 @@ const PATHS: Record<IconName, JSX.Element> = {
       <circle cx="12" cy="4" r="1.5" />
       <circle cx="8" cy="12" r="1.5" />
       <path d="M5.25 5.25 7 10.5M10.75 5.25 9 10.5M5.5 4h5" />
+    </>
+  ),
+  workflows: (
+    <>
+      <rect height="3.5" rx="0.75" width="5" x="1.5" y="2.5" />
+      <rect height="3.5" rx="0.75" width="5" x="9.5" y="6.25" />
+      <rect height="3.5" rx="0.75" width="5" x="1.5" y="10" />
+      <path d="M4 6v4M6.5 4.25H8a1.5 1.5 0 0 1 1.5 1.5v.5M6.5 11.75H8A1.5 1.5 0 0 0 9.5 10.25v-.5" />
     </>
   ),
   table: (

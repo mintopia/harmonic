@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { api, type ClassifierTestResult } from '../api';
 import { buildClassifierPrompt } from '../../../src/execution/prompt-assembly.js';
-import { promptSettingsView, SAMPLE_CLASSIFIER_INPUT } from '../prompt-preview-model';
+import { bundledEnginePrompts } from '../../../src/domain/bundled-prompts.js';
+import { SAMPLE_CLASSIFIER_INPUT } from '../prompt-preview-model';
 import type { AppConfig, ClassifierEndpoint, Workspace } from '../types';
 import { btnGhost, btnPrimary, chip, field, selectField } from '../ui';
 import { useAsyncResource } from '../useAsyncResource';
@@ -108,7 +109,7 @@ function resolvedPrompt(config: AppConfig, workspace: Workspace): string {
     .map(({ option }) => option);
   return buildClassifierPrompt(
     { ...SAMPLE_CLASSIFIER_INPUT, options: options.length > 0 ? options : SAMPLE_CLASSIFIER_INPUT.options },
-    promptSettingsView({ config, workspace }).fragments,
+    bundledEnginePrompts(),
   );
 }
 

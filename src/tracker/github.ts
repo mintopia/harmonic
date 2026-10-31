@@ -139,6 +139,10 @@ export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): Writ
       await run(args, repoRoot);
     },
 
+    async comment(ticket: TicketRef, body: string) {
+      await run(['issue', 'comment', String(ticket.ref), '--body', body], repoRoot);
+    },
+
     async reopen(ticket: TicketRef, comment: string) {
       const args = ['issue', 'reopen', String(ticket.ref)];
       if (comment) args.push('--comment', comment);

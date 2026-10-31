@@ -1,6 +1,5 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { card, field, labelType } from '../ui';
-import { PROMPT_FRAGMENTS, PROMPT_FRAGMENT_NAMES, promptFragmentOverrideKey } from '../../../src/domain/prompt-fragments.js';
 import type { LabeledPreview, Placeholder } from '../prompt-preview-model';
 
 export function SettingsSection({
@@ -235,7 +234,6 @@ const FIELD_SEGMENT_LABELS: Record<string, string> = {
   issuePrompt: 'Issue prompt',
   noIssuePrompt: 'No-issue prompt',
   maxConcurrentAttempts: 'Concurrency cap',
-  maxAttempts: 'Attempt limit',
   agentMessagesSendCap: 'Send cap',
   contextReuseTokenLimit: 'Context reuse limit',
   wallClockMinutes: 'Wall-clock (min)',
@@ -243,22 +241,10 @@ const FIELD_SEGMENT_LABELS: Record<string, string> = {
   toolTimeoutMinutes: 'Tool timeout (min)',
   conflictResolveTurns: 'Conflict-resolve turns',
   isolationMode: 'Isolation mode',
-  mergeFate: 'Merge fate',
-  continueAttempts: 'Continue attempts',
   unattendedReminder: 'Unattended reminder',
   continuePrompt: 'Continue prompt',
   taskPrompt: 'Task prompt',
   pauseMessage: 'Pause message',
-  criticRevisionDiff: 'Critic revision block',
-  criticRevisionIdentical: 'Critic revision block (no change)',
-  criticRevisionAlone: 'Critic revision block (no base)',
-  criticVerdictContract: 'Critic verdict contract',
-  ...Object.fromEntries(
-    PROMPT_FRAGMENT_NAMES.flatMap((name) => [
-      [name, PROMPT_FRAGMENTS[name].label],
-      [promptFragmentOverrideKey(name), PROMPT_FRAGMENTS[name].label],
-    ]),
-  ),
 };
 
 function humanizeSegment(seg: string): string {

@@ -9,7 +9,10 @@ import type { Epic } from '../../domain/epic-view.js';
 import { diffFilesResponseSchema } from './diff.js';
 import { parseUnifiedDiff } from '../../domain/unified-diff.js';
 import { epicAttemptTimelineToApi } from '../serialize.js';
+import { resolveEpicWorkflow } from '../../domain/workflow-assignment.js';
 import { ATTEMPT_STATES } from '../../db/schema.js';
+import { WorkflowStepRunStore } from '../../domain/workflow-step-runs.js';
+import { workflowStepsResponse, workflowStepsResponseSchema } from '../workflow-steps-response.js';
 
 /** Path params for a whole-Epic action: the owning Workspace and the Epic's tracker ref. */
 const epicParamsSchema = z.object({
@@ -139,6 +142,12 @@ const epicSchema = z
   })
   .meta({ id: 'Epic' });
 
+const epicDetailSchema = epicSchema
+  .extend({
+    workflow: z.object({ name: z.string().meta({ example: 'epic' }), version: z.number().int().meta({ example: 1 }), chosen: z.enum(['workspace', 'global']) }).nullable().describe('The Epic workflow this Epic runs and which setting chose it; null when the library no longer holds it.'),
+  })
+  .meta({ id: 'EpicDetail' });
+
 const epicsListResponseSchema = listResponse('epics', epicSchema);
 
 const verificationAttemptSchema = z.object({
@@ -256,7 +265,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: epicParamsSchema,
         response: {
-          200: epicSchema.describe('The derived Epic.'),
+          200: epicDetailSchema.describe('The derived Epic with its resolved Epic workflow.'),
           404: errorResponse('No Workspace has that id, or its last scan derives no Epic with that ref.'),
         },
       },
@@ -267,7 +276,10 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       if (!epic) {
         throw new DomainError('not_found', `no Epic ${req.params.epicRef} derived for workspace ${req.params.workspaceId}`);
       }
-      return epicToApi(epic);
+      const workspace = await ctx.workspaces.get(req.params.workspaceId);
+      const assignment = resolveEpicWorkflow(workspace, ctx.settingsStore.getGlobal(), (name) => ctx.workflows.list().some((w) => w.name === name && w.subject === 'epic'));
+      const entry = ctx.workflows.list().find((w) => w.name === assignment.name);
+      return { ...epicToApi(epic), workflow: entry ? { name: entry.name, version: entry.version, chosen: assignment.chosen } : null };
     },
   );
 
@@ -288,6 +300,31 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
       return epicAttemptTimelineToApi(ctx, { workspaceId: req.params.workspaceId, epicRef: req.params.epicRef });
+    },
+  );
+
+  app.get(
+    '/workspaces/:workspaceId/epics/:epicRef/workflow-steps',
+    {
+      schema: {
+        tags: ['Epics'],
+        description: "The Epic workflow pinned on this Epic and every step the engine has executed on it, in execution order. `workflowChosen` is `workspace` or `global`, whichever Epic workflow setting the Epic's workflow resolves from.",
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: epicParamsSchema,
+        response: {
+          200: workflowStepsResponseSchema.describe('The workflow pin and its executed steps; `steps` is empty for an Epic that has not run on the engine.'),
+          404: errorResponse('No Workspace has that id.'),
+        },
+      },
+    },
+    async (req) => {
+      const { workspaceId, epicRef } = req.params;
+      await ctx.workspaces.assertExists(workspaceId);
+      const workflowRef = await ctx.tasks.epicWorkflowRef(workspaceId, epicRef);
+      const rows = await new WorkflowStepRunStore(ctx.asyncDb).listForOwner({ workspaceId, epicRef });
+      const workspace = await ctx.workspaces.get(workspaceId);
+      const assignment = resolveEpicWorkflow(workspace, ctx.settingsStore.getGlobal(), (name) => ctx.workflows.list().some((w) => w.name === name && w.subject === 'epic'));
+      return await workflowStepsResponse(ctx.workflows, { workflowRef, workflowChosen: workflowRef === null ? null : assignment.chosen, rows });
     },
   );
 

@@ -153,6 +153,8 @@ export const Git = {
   /** Resolve a revision to its object id (e.g. a branch tip, `HEAD`). */
   revParse: (dir: string, rev: string) => git(dir, 'rev-parse', rev),
 
+  commitCount: async (dir: string, rev: string): Promise<number> => parseInt(await git(dir, 'rev-list', '--count', rev), 10),
+
   /** Rejects with the git error when `dir` is not a repository with a resolvable `HEAD`. */
   assertRepo: async (dir: string): Promise<void> => {
     await git(dir, 'rev-parse', 'HEAD');
@@ -658,13 +660,13 @@ export const Git = {
    * fast-forwards, otherwise a merge commit is created — either way HEAD ends
    * at a descendant of the base.
    */
-  async mergeNoEdit(worktreeDir: string, branch: string): Promise<{ ok: boolean; detail?: string }> {
+  async mergeNoEdit(worktreeDir: string, branch: string, noFastForward = false): Promise<{ ok: boolean; detail?: string }> {
     return withGitOperation(
       'git.merge',
       { 'git.branch': branch, 'git.ref': 'HEAD' },
       async () => {
         try {
-          await gitRefWrite(worktreeDir, ...IDENTITY, 'merge', '--no-edit', branch);
+          await gitRefWrite(worktreeDir, ...IDENTITY, 'merge', ...(noFastForward ? ['--no-ff'] : []), '--no-edit', branch);
           return { ok: true };
         } catch (err) {
           const detail = err instanceof GitError ? err.message : String(err);
@@ -753,6 +755,18 @@ export const Git = {
         }
       },
     );
+  },
+
+  async conflictedFiles(worktreeDir: string): Promise<string[]> {
+    const out = await git(worktreeDir, 'diff', '--name-only', '--diff-filter=U');
+    return out.split('\n').filter((line) => line.length > 0);
+  },
+
+  /** Abort a rebase left in progress, restoring the pre-rebase tip; a no-op when none is in progress. */
+  async abortRebase(worktreeDir: string): Promise<void> {
+    await git(worktreeDir, 'rebase', '--abort').catch((err) => {
+      logger.debug('git: rebase --abort found nothing to abort', { 'git.dir': worktreeDir, error: errorMessage(err) });
+    });
   },
 
   /**

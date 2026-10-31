@@ -36,13 +36,13 @@ describe('TaskService.orderedEligibleWork', () => {
     const mirrored = await taskService.upsertMirrored({
       trackerRef: trackerRef(501),
       prompt: 'mirrored',
-      workflow: 'implement',
+      issueWorkflow: 'implement',
       wayfinderType: null,
       mapRef: null,
       closed: false,
       facts: { state: 'open', parent: null, blockedBy: [], labels: ['ready-for-agent'], title: 'mirrored', body: '', url: 'https://example.test/501', createdAt: '2026-08-01T00:00:00Z' },
     }, workspaceId);
-    await taskService.upsertMirrored({ trackerRef: trackerRef(502), prompt: 'unlabelled mirror', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false }, workspaceId);
+    await taskService.upsertMirrored({ trackerRef: trackerRef(502), prompt: 'unlabelled mirror', issueWorkflow: 'implement', wayfinderType: null, mapRef: null, closed: false }, workspaceId);
     const blocker = await taskService.create({ prompt: 'blocker', workspaceId });
     await taskService.create({ prompt: 'dependent', workspaceId, dependsOn: [blocker.id] });
 
@@ -92,7 +92,7 @@ describe('TaskService.orderedEligibleWork', () => {
         {
           trackerRef: trackerRef(n),
           prompt: `member ${n}`,
-          workflow: 'implement',
+          issueWorkflow: 'implement',
           wayfinderType: null,
           mapRef: null,
           closed: false,
@@ -170,7 +170,7 @@ describe('TaskService.orderedEligibleWork', () => {
       await tracked.syncEpics(workspaceId, [71, 61, 80, 73].map((n) => ({ ref: trackerRef(n), kind: 'epic' as const })));
       const mk = (n: number, parent: number, labels = ['ready-for-agent']) =>
         tracked.upsertMirrored(
-          { trackerRef: trackerRef(n), prompt: `m${n}`, workflow: 'implement', wayfinderType: null, mapRef: null, closed: false, facts: facts(trackerRef(parent), [], labels) },
+          { trackerRef: trackerRef(n), prompt: `m${n}`, issueWorkflow: 'implement', wayfinderType: null, mapRef: null, closed: false, facts: facts(trackerRef(parent), [], labels) },
           workspaceId,
         );
       const held = await mk(101, 73);

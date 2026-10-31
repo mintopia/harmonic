@@ -1916,8 +1916,8 @@
           "notNull": false,
           "autoincrement": false
         },
-        "workflow": {
-          "name": "workflow",
+        "issue_workflow": {
+          "name": "issue_workflow",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

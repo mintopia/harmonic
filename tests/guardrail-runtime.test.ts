@@ -253,7 +253,7 @@ describe('guardrail-supervisor', () => {
       expect(h.kill).toHaveBeenCalledTimes(1);
     });
 
-    it('does not trip when no counted Step is running (Attempt has reached merging)', async () => {
+    it('treats a missing Step row as the agent turn and trips', async () => {
       const h = makeSupervisor({
         config: budgetSnapshot({}),
         startedAt: Date.now() - 46 * 60_000,
@@ -262,8 +262,8 @@ describe('guardrail-supervisor', () => {
       await h.sup.prime();
       await h.sup.evaluateWallClock();
 
-      expect(h.appended).toHaveLength(0);
-      expect(h.settles).toHaveLength(0);
+      expect(h.appended).toHaveLength(1);
+      expect(h.settles).toHaveLength(1);
     });
 
     it('extending the cap keeps a run that was over-budget from tripping', async () => {

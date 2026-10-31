@@ -170,7 +170,7 @@ describe('ticket-closed-while-working', () => {
   const mirrored = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput => ({
     trackerRef: trackerRef(ref),
     prompt: `ticket ${ref}\n\nbody`,
-    workflow: 'implement',
+    issueWorkflow: 'implement',
     wayfinderType: null,
     mapRef: null,
     closed: false,

@@ -1,4 +1,6 @@
 import type { FastifyInstance } from 'fastify';
+import { changedPromptCodes, namedPromptCodes, syncEditedPrompts, withLibraryPrompts } from '../../domain/prompt-library-sources.js';
+import type { PromptLibrary } from '../../domain/prompt-library-store.js';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { ExecutionContext } from '../app.js';
@@ -6,24 +8,37 @@ import { adapterFor } from '../../execution/harness/registry.js';
 import {
   HARNESS_IDS,
   ISOLATION_MODES,
-  MERGE_FATES,
   PRIORITIES,
   appConfigSchema,
   modelCatalogEntrySchema,
-  taskVerificationStageSchema,
   epicVerificationStageSchema,
   type AppConfig,
   type DeepPartial,
-  promptFragmentsShape,
   routingLabelSchema,
+  workflowLabelSchema,
   modelOptionsSchema,
 } from '../../config.js';
+import { workflowReferenceProblems } from '../../domain/workflow-labels.js';
+import type { WorkflowLibrary } from '../../domain/workflow-library-store.js';
+import { DomainError } from '../../domain/errors.js';
 import { maskConfigSecrets } from '../../archive/export-secrets.js';
 
 const harnessPermissionModesSchema = z.record(
   z.string(),
   z.object({ modes: z.record(z.string(), z.string()), defaultMode: z.string() }),
 );
+
+/** Rejects workflow names the library lacks; a name already stored in the same slot is tolerated so a stale one cannot block unrelated saves. */
+function assertWorkflowRefs(ctx: Pick<ExecutionContext, 'settingsStore'> & { workflows: WorkflowLibrary }, workflow: string | null | undefined, epicWorkflow: string | null | undefined, labels: readonly { label: string; workflow: string }[] | undefined): void {
+  const stored = ctx.settingsStore.getGlobal();
+  const knownLabels = new Set(stored.workflowLabels.map((l) => l.workflow));
+  const problems = workflowReferenceProblems(ctx.workflows, {
+    workflow: workflow != null && workflow !== stored.defaults.workflow ? workflow : null,
+    epicWorkflow: epicWorkflow != null && epicWorkflow !== stored.defaults.epicWorkflow ? epicWorkflow : null,
+    labels: (labels ?? []).filter((l) => !knownLabels.has(l.workflow)),
+  });
+  if (problems[0]) throw new DomainError('validation', problems[0]);
+}
 
 function harnessPermissionModes() {
   return Object.fromEntries(
@@ -77,11 +92,14 @@ const configPatchBodySchema = z
         isolationMode: z.enum(ISOLATION_MODES).meta({ example: 'worktree' }),
         priority: z.enum(PRIORITIES).meta({ example: 'normal' }),
         conflictResolveTurns: z.number().int().min(0).meta({ example: 2 }),
+        workflow: z.string().min(1).nullable().meta({ example: 'implement' }),
+        epicWorkflow: z.string().min(1).nullable().meta({ example: 'epic' }),
       })
       .partial()
       .optional(),
     /** Replaces the whole ordered list; labels are unique case-insensitively and each Harness must be configured. */
     routingLabels: z.array(routingLabelSchema).meta({ example: [{ label: 'reasoning', harness: 'claude', model: 'claude-opus-5-5' }] }).optional(),
+    workflowLabels: z.array(workflowLabelSchema).meta({ example: [{ label: 'bug', workflow: 'implement' }] }).optional(),
     /** Replaces the whole ordered list; ids are unique, each Harness must be configured and each Model in that Harness's catalog. */
     modelOptions: modelOptionsSchema.optional(),
     chat: z
@@ -115,17 +133,13 @@ const configPatchBodySchema = z
         prompt: z.string().meta({ example: '{skill} {ref}\n\nResolve #{ref} ({url}) end to end — read the issue yourself.' }),
         unattendedReminder: z.string().meta({ example: '## Running unattended\n\nYou are Harmonic Task {taskId}…' }),
         continuePrompt: z.string().meta({ example: "Your last turn ended but Task {taskId} isn't finished…" }),
-        mergeFate: z.enum(MERGE_FATES).meta({ example: 'auto-merge' }),
-        continueAttempts: z.number().int().min(0).meta({ example: 1 }),
         commitNudge: z.string().min(1).meta({ example: 'Commit the completed work now, then finish.' }),
       })
       .partial()
       .optional(),
-    promptFragments: z.object(promptFragmentsShape).partial().optional(),
     merge: appConfigSchema.shape.merge.partial().optional(),
     verify: z
       .object({
-        task: z.object({ preMerge: taskVerificationStageSchema, postMerge: taskVerificationStageSchema }).partial(),
         epic: z.object({ preMerge: epicVerificationStageSchema, resolvePrompt: z.string().min(1), resolveSuffix: appConfigSchema.shape.verify.shape.epic.shape.resolveSuffix }).partial(),
       })
       .partial()
@@ -145,7 +159,7 @@ const configPatchBodySchema = z
   .partial()
   .meta({ id: 'ConfigPatch' });
 
-export async function configRoutes(fastify: FastifyInstance, ctx: Pick<ExecutionContext, 'autoRunner' | 'settingsStore'>): Promise<void> {
+export async function configRoutes(fastify: FastifyInstance, ctx: Pick<ExecutionContext, 'autoRunner' | 'settingsStore'> & { prompts: PromptLibrary; workflows: WorkflowLibrary }): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   app.get(
@@ -162,7 +176,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
         },
       },
     },
-    async () => maskConfigSecrets(ctx.settingsStore.getGlobal()),
+    async () => maskConfigSecrets(withLibraryPrompts(ctx.settingsStore.getGlobal(), ctx.prompts)),
   );
 
   app.get(
@@ -175,7 +189,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
         response: { 200: z.object({ baseline: appConfigSchema, global: appConfigSchema, harnessPermissionModes: harnessPermissionModesSchema }).describe('The distributed baseline, effective global config, and adapter-declared Harness permission modes for settings controls.') },
       },
     },
-    async () => ({ baseline: ctx.settingsStore.getBaseline(), global: maskConfigSecrets(ctx.settingsStore.getGlobal()), harnessPermissionModes: harnessPermissionModes() }),
+    async () => ({ baseline: ctx.settingsStore.getBaseline(), global: maskConfigSecrets(withLibraryPrompts(ctx.settingsStore.getGlobal(), ctx.prompts)), harnessPermissionModes: harnessPermissionModes() }),
   );
 
   app.patch(
@@ -193,9 +207,11 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
       },
     },
     async (req) => {
+      assertWorkflowRefs(ctx, req.body.defaults?.workflow, req.body.defaults?.epicWorkflow, req.body.workflowLabels);
       const updated = await ctx.settingsStore.updateGlobal(req.body as DeepPartial<AppConfig>);
+      await syncEditedPrompts(ctx.prompts, updated, namedPromptCodes(req.body));
       ctx.autoRunner.poke();
-      return maskConfigSecrets(updated);
+      return maskConfigSecrets(withLibraryPrompts(updated, ctx.prompts));
     },
   );
 
@@ -216,9 +232,12 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
       },
     },
     async (req) => {
+      const before = withLibraryPrompts(ctx.settingsStore.getGlobal(), ctx.prompts);
+      assertWorkflowRefs(ctx, req.body.defaults.workflow, req.body.defaults.epicWorkflow, req.body.workflowLabels);
       const updated = await ctx.settingsStore.replaceGlobal(req.body as AppConfig);
+      await syncEditedPrompts(ctx.prompts, updated, changedPromptCodes(before, updated));
       ctx.autoRunner.poke();
-      return maskConfigSecrets(updated);
+      return maskConfigSecrets(withLibraryPrompts(updated, ctx.prompts));
     },
   );
 
@@ -234,8 +253,9 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
     },
     async () => {
       const updated = await ctx.settingsStore.revertGlobal();
+      await syncEditedPrompts(ctx.prompts, updated);
       ctx.autoRunner.poke();
-      return maskConfigSecrets(updated);
+      return maskConfigSecrets(withLibraryPrompts(updated, ctx.prompts));
     },
   );
 }

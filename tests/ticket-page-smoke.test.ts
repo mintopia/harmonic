@@ -15,6 +15,7 @@ function stubTicketFetch(task: Task, workspace: Workspace) {
     if (path === `/api/tasks/${task.id}/timeline`) return new Response(JSON.stringify({ events: [], total: 0 }));
     if (path === `/api/tasks/${task.id}/attempts/timeline`) return new Response(JSON.stringify({ attempts: [], budgetBase: 0, total: 0 }));
     if (path === `/api/tasks/${task.id}/attempts`) return new Response(JSON.stringify({ attempts: [], total: 0 }));
+    if (path === `/api/tasks/${task.id}/workflow-vars`) return new Response(JSON.stringify({ workflowRef: null, workflow: null, vars: [], snapshot: null }));
     return new Response(JSON.stringify({}));
   });
 }
@@ -110,5 +111,12 @@ describe('Ticket Escape navigation', () => {
     await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click());
     await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('labels the mirrored Issue Workflow in the ticket properties', async () => {
+    await renderTicket(makeTask({ issueWorkflow: 'wayfinder' }));
+
+    expect(host!.textContent).toContain('Issue Workflow');
+    expect(host!.textContent).toContain('wayfinder');
   });
 });

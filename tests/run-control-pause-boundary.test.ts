@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { RunControl, type RunControlDeps } from '../src/execution/run-control.js';
 import { ActiveRuns, type ActiveRun } from '../src/execution/active-runs.js';
 import type { TaskRow } from '../src/db/schema.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 
 function workingTask(over: Partial<TaskRow> = {}): TaskRow {
   return { id: 7, state: 'working', continuationChoice: null, ...over } as TaskRow;
@@ -15,6 +16,7 @@ function baseDeps(overrides: Partial<RunControlDeps> = {}): RunControlDeps {
     events: {} as unknown as RunControlDeps['events'],
     getWorkspace: undefined,
     getConfig: vi.fn() as unknown as RunControlDeps['getConfig'],
+    prompts: bundledEnginePrompts,
     isGloballyPaused: undefined,
     onGloballyPaused: undefined,
     sessionContinuation: {} as unknown as RunControlDeps['sessionContinuation'],

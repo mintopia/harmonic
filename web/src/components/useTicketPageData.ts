@@ -3,7 +3,7 @@ import { api } from '../api';
 import { subscribe } from '../ws';
 import { useLiveEffect } from '../useLiveEffect';
 import { toastError } from '../toast';
-import type { AppConfig, GuardrailEvent, Task, TicketTimelineEvent, Workspace } from '../types';
+import type { GuardrailEvent, Task, TicketTimelineEvent, Workspace, WorkflowStepsResponse } from '../types';
 
 /** The api calls this hook depends on, injectable so tests can supply fakes
  * directly instead of stubbing global `fetch`. Defaults to the real `api`. */
@@ -11,18 +11,18 @@ export type TicketPageDataDeps = {
   loadAllTasks: () => Promise<{ tasks: Task[] }>;
   loadTask: (id: number) => Promise<Task>;
   loadTimeline: (id: number) => Promise<{ events: TicketTimelineEvent[] }>;
-  loadConfig: () => Promise<AppConfig>;
   loadWorkspaces: () => Promise<{ workspaces: Workspace[] }>;
   loadGuardrailEvents: (attemptId: number) => Promise<{ guardrailEvents: GuardrailEvent[] }>;
+  loadWorkflowSteps: (id: number) => Promise<WorkflowStepsResponse>;
 };
 
 const defaultDeps: TicketPageDataDeps = {
   loadAllTasks: api.tasks,
   loadTask: api.task,
   loadTimeline: api.taskTimeline,
-  loadConfig: api.config,
   loadWorkspaces: api.workspaces,
   loadGuardrailEvents: api.attemptGuardrailEvents,
+  loadWorkflowSteps: api.workflowSteps,
 };
 
 export type TicketPageData = {
@@ -31,27 +31,20 @@ export type TicketPageData = {
   /** The full Task (richer than the list-derived `task` prop, e.g. `prompt`); null until loaded. */
   detail: Task | null;
   timelineEvents: TicketTimelineEvent[];
-  maxAttempts: number | null;
   workspaceName: string | null;
-  commandConfigured: boolean;
   guardrailEvents: GuardrailEvent[];
+  /** The executed workflow steps; null until loaded or when the Ticket has no workflow. */
+  workflowSteps: WorkflowStepsResponse | null;
 };
 
-/**
- * The Ticket page's whole-Task data: the sibling Task list, the full Task
- * detail, the lifecycle timeline, the owning workspace's attempt/command
- * config, and the selected Attempt's guardrail events. Each loads on mount
- * and re-fetches on the relevant `ws` broadcast; the full Task detail also
- * live-patches from `task_changed` without a refetch.
- */
+/** The Ticket page's whole-Task data, loaded on mount and refreshed on `ws` broadcasts. */
 export function useTicketPageData(task: Task, selectedAttemptId: number | null, deps: TicketPageDataDeps = defaultDeps): TicketPageData {
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [detail, setDetail] = useState<Task | null>(null);
   const [timelineEvents, setTimelineEvents] = useState<TicketTimelineEvent[]>([]);
-  const [maxAttempts, setMaxAttempts] = useState<number | null>(null);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
-  const [commandConfigured, setCommandConfigured] = useState(true);
   const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[]>([]);
+  const [workflowSteps, setWorkflowSteps] = useState<WorkflowStepsResponse | null>(null);
 
   // Read through a ref, same as useAsyncResource's loadRef: a caller-supplied
   // `deps` object has no referential-stability guarantee, so it can't sit in
@@ -93,12 +86,10 @@ export function useTicketPageData(task: Task, selectedAttemptId: number | null, 
   );
 
   useLiveEffect((live) => {
-    Promise.all([depsRef.current.loadConfig(), depsRef.current.loadWorkspaces()]).then(([config, { workspaces }]) => {
+    depsRef.current.loadWorkspaces().then(({ workspaces }) => {
       if (!live()) return;
       const workspace = workspaces.find((workspace) => workspace.id === task.workspaceId);
-      setMaxAttempts(workspace?.maxAttempts ?? config.maxAttempts);
       setWorkspaceName(workspace?.name ?? null);
-      setCommandConfigured((workspace?.taskPreMergeCommands ?? config.verify.task.preMerge.commands).length > 0);
     }, toastError);
   }, [task.workspaceId]);
 
@@ -118,5 +109,24 @@ export function useTicketPageData(task: Task, selectedAttemptId: number | null, 
     };
   }, [selectedAttemptId]);
 
-  return { allTasks, detail, timelineEvents, maxAttempts, workspaceName, commandConfigured, guardrailEvents };
+  const hasWorkflow = (detail?.workflowRef ?? task.workflowRef) !== null;
+  useLiveEffect((live) => {
+    if (!hasWorkflow) {
+      setWorkflowSteps(null);
+      return;
+    }
+    const load = () =>
+      depsRef.current.loadWorkflowSteps(task.id).then((next) => {
+        if (live()) setWorkflowSteps(next);
+      }, toastError);
+    load();
+    const unsubscribe = subscribe((msg) => {
+      if ((msg.type === 'attempt_timeline_changed' && msg.taskId === task.id) || (msg.type === 'task_changed' && msg.task.id === task.id)) load();
+    }, load);
+    return () => {
+      unsubscribe();
+    };
+  }, [task.id, hasWorkflow]);
+
+  return { allTasks, detail, timelineEvents, workspaceName, guardrailEvents, workflowSteps };
 }

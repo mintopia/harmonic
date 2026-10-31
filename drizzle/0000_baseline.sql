@@ -150,6 +150,7 @@ CREATE TABLE `epics` (
 	`merge_commit` text,
 	`state` text NOT NULL,
 	`member_refs` text,
+	`workflow_ref` text,
 	PRIMARY KEY(`workspace_id`, `tracker_ref`),
 	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE cascade
 );
@@ -320,7 +321,16 @@ CREATE TABLE `tasks` (
 	`continuation_choice` text,
 	`origin` text DEFAULT 'native' NOT NULL,
 	`tracker_ref` text,
-	`workflow` text,
+	`issue_workflow` text,
+	`workflow_ref` text,
+	`workflow_requested` text,
+	`workflow_chosen` text,
+	`workflow_label` text,
+	`workflow_reason` text,
+	`workflow_routing_usage` text,
+	`workflow_routing_cost` text,
+	`workflow_var_overrides` text,
+	`workflow_vars` text,
 	`wayfinder_type` text,
 	`escalation_reason` text,
 	`escalation_cause` text,
@@ -389,6 +399,29 @@ CREATE TABLE `verification_attempts` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `verification_attempts_attempt_seq_unique` ON `verification_attempts` (`attempt_id`,`seq`);--> statement-breakpoint
+CREATE TABLE `workflow_step_runs` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`task_id` integer,
+	`workspace_id` integer,
+	`epic_ref` text,
+	`workflow_ref` text NOT NULL,
+	`step_id` text NOT NULL,
+	`position` integer NOT NULL,
+	`action` text NOT NULL,
+	`outcome` text,
+	`outputs` text,
+	`summary` text,
+	`resolved_prompt` text,
+	`attempt` integer,
+	`started_at` integer NOT NULL,
+	`ended_at` integer,
+	FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`workspace_id`, `epic_ref`) REFERENCES `epics`(`workspace_id`, `tracker_ref`) ON UPDATE no action ON DELETE cascade,
+	CHECK ((`task_id` IS NOT NULL AND `workspace_id` IS NULL AND `epic_ref` IS NULL) OR (`task_id` IS NULL AND `workspace_id` IS NOT NULL AND `epic_ref` IS NOT NULL))
+);
+--> statement-breakpoint
+CREATE INDEX `workflow_step_runs_task_idx` ON `workflow_step_runs` (`task_id`,`workflow_ref`,`step_id`);--> statement-breakpoint
+CREATE INDEX `workflow_step_runs_epic_idx` ON `workflow_step_runs` (`workspace_id`,`epic_ref`,`workflow_ref`,`step_id`);--> statement-breakpoint
 CREATE TABLE `workspaces` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`name` text NOT NULL,

@@ -173,11 +173,10 @@ describe('Accept is recorded (#732)', () => {
     git(repoDir, 'commit', '-m', 'init');
     server = await startServer(stubHarness(), { dataDir });
     const ws = (await server.app.ctx.workspaces.list())[0]!;
+    await server.legacy.setWorkspace(ws.id, { taskPreMergeCommands: [], taskPreMergeCritics: null });
     await server.app.ctx.workspaces.update(ws.id, {
       workingDir: repoDir,
       isolationMode: 'worktree',
-      taskPreMergeCommands: [],
-      taskPreMergeCritics: null,
     });
     await server.app.ctx.settingsStore.updateGlobal({ maxAttempts: 1 });
   });

@@ -5,11 +5,7 @@ import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { AttemptStore } from '../src/domain/attempts.js';
-import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
-import { EscalationService } from '../src/domain/escalation.js';
 import { DomainError } from '../src/domain/errors.js';
-import type { MergeEffectExec } from '../src/domain/merge.js';
 import type { TaskState } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
@@ -27,14 +23,6 @@ const LEGAL: Record<TaskState, TaskState[]> = {
   done: [],
   cancelled: ['ready'],
 };
-
-function deferred<T = void>() {
-  let resolve!: (v: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
-  });
-  return { promise, resolve };
-}
 
 describe('Task lifecycle state machine (ADR-0020)', () => {
   let dir: string;
@@ -129,103 +117,6 @@ describe('Task lifecycle state machine (ADR-0020)', () => {
       const err = await tasks.pause(created.id).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(DomainError);
       expect((err as DomainError).code).toBe('invalid_state');
-    });
-  });
-
-  describe('per-Task serialization (regression: task 452)', () => {
-    it('Accept-merge holds the Task across verify→merge→settle so a racing requeue-to-ready cannot strand it', async () => {
-      const attempts = new AttemptStore(asyncDb);
-      const settle = new AttemptSettleCoordinator(tasks, attempts);
-
-      // Escalate a Task with a candidate to accept.
-      const created = await tasks.create({ prompt: 'p', state: 'ready' });
-      await tasks.setState(created.id, 'working');
-      const run = await attempts.update((await attempts.create(created.id)).id, { verifiedHeadOid: 'b'.repeat(40) });
-      await settle.settle(await tasks.get(created.id), run, 'escalate', {
-        runState: 'failed',
-        taskAction: 'escalate',
-        reason: 'escalated to human',
-      });
-      expect((await tasks.get(created.id)).state).toBe('escalated');
-
-      // A merge effect that blocks mid-flight, modelling the slow conflict-resolving
-      // merge under the Workspace mutex that stranded task 452.
-      const mergeEntered = deferred();
-      const releaseMerge = deferred();
-      const effects: MergeEffectExec[] = [
-        {
-          effect: 'target-ref',
-          idempotencyKey: 'main<-branch',
-          expected: {},
-          apply: async () => {
-            mergeEntered.resolve();
-            await releaseMerge.promise;
-            return { ok: true, observed: {} };
-          },
-        },
-      ];
-      const service = new EscalationService(attempts, tasks, settle, () => effects, {
-        resume: async () => {},
-        cleanup: async () => {},
-        candidateHead: async () => 'cand-oid',
-        advance: async () => {},
-      });
-
-      const acceptDone = service.accept(created.id);
-      await mergeEntered.promise; // Accept is now inside its merge, holding the Task lock.
-
-      // The verify/requeue loop fires a raw setState(ready) — as runner.ts and
-      // auto-runner.ts do on a transient fault — while the merge is in flight.
-      const requeue = tasks.setState(created.id, 'ready').catch((e: unknown) => e);
-
-      releaseMerge.resolve();
-
-      const accepted = await acceptDone;
-      const requeueResult = await requeue;
-
-      // The Task ends done, never ready; the racing requeue was serialized behind
-      // the Accept and then failed cleanly (done → ready is illegal), never a blind write.
-      expect(accepted.state).toBe('done');
-      expect((await tasks.get(created.id)).state).toBe('done');
-      expect(requeueResult).toBeInstanceOf(DomainError);
-      expect((requeueResult as DomainError).code).toBe('invalid_state');
-      expect(await attempts.get(run.id)).toMatchObject({ state: 'passed', reason: 'operator-accept' });
-    });
-
-    it('Accept-merge that throws (a git failure, not a conflict) refuses with 409, leaving the Task escalated with no stale merging indicator', async () => {
-      const attempts = new AttemptStore(asyncDb);
-      const settle = new AttemptSettleCoordinator(tasks, attempts);
-      const created = await tasks.create({ prompt: 'p', state: 'ready' });
-      await tasks.setState(created.id, 'working');
-      const run = await attempts.update((await attempts.create(created.id)).id, { verifiedHeadOid: 'b'.repeat(40) });
-      await settle.settle(await tasks.get(created.id), run, 'escalate', {
-        runState: 'failed',
-        taskAction: 'escalate',
-        reason: 'escalated to human',
-      });
-      const effects: MergeEffectExec[] = [
-        {
-          effect: 'target-ref',
-          idempotencyKey: 'main<-branch',
-          expected: {},
-          apply: async () => {
-            throw new Error("git merge --no-ff failed: fatal: Unable to create '/repo/.git/worktrees/admin/index.lock': File exists.");
-          },
-        },
-      ];
-      const service = new EscalationService(attempts, tasks, settle, () => effects, {
-        resume: async () => {},
-        cleanup: async () => {},
-        candidateHead: async () => 'cand-oid',
-        advance: async () => {},
-      });
-
-      const err = await service.accept(created.id).catch((e: unknown) => e);
-
-      expect(err).toBeInstanceOf(DomainError);
-      expect((err as DomainError).httpStatus).toBe(409);
-      expect(await tasks.get(created.id)).toMatchObject({ state: 'escalated', mergeStatus: null });
-      expect(await attempts.get(run.id)).toMatchObject({ state: 'escalated' });
     });
   });
 });

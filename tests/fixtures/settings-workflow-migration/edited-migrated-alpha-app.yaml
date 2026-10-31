@@ -1,0 +1,28 @@
+name: migrated-alpha-app
+description: Migrated (Alpha App)
+vars:
+  maxAttempts: 5
+steps:
+  - id: rebase
+    uses: rebase
+  - attempts:
+      max: ${{ vars.maxAttempts }}
+      steps:
+        - id: build
+          uses: agent
+          with:
+            prompt: ${{ ticket.origin == 'mirrored' && (attempt.number > 1 && 'migrated-w1-implement-ticket-heal' || 'migrated-w1-implement-ticket') || (attempt.number > 1 && 'migrated-w1-implement-native-heal' || 'implement-native') }}
+            continueAttempts: 4
+            continuePrompt: commitNudge
+        - id: verify-1
+          run: npm test
+        - id: verify-2
+          run: cd packages/api && env CI=1 node scripts/lint.mjs '--mode strict'
+        - id: critic-1
+          uses: critic
+          with:
+            harness: claude
+            model: claude-sonnet-5-5
+            prompt: ${{ ticket.origin == 'mirrored' && 'migrated-w1-critic1-issue' || 'migrated-w1-critic1-noissue' }}
+  - id: artifact
+    uses: artifact

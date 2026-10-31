@@ -3,10 +3,10 @@ import type { AsyncDbHandle } from '../db/async.js';
 import { dropIndexForPath } from '../execution/code-index.js';
 import { Git } from '../execution/git.js';
 import { BranchRetirementCoordinator } from '../execution/branch-retirement.js';
-import { type MergeEffectExec, ticketCloseEffect } from '../domain/merge.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import { CrashRecoveryCoordinator } from '../execution/crash-recovery.js';
 import { Runner } from '../execution/runner.js';
+import { convertEditedEpicFixPrompts } from '../domain/epic-fix-prompt.js';
 import { TaskArchive } from '../archive/task-archive.js';
 import { backfillCriticPromptKeys } from '../archive/critic-prompt-backfill.js';
 import { TranscriptCapture } from '../execution/transcript-capture.js';
@@ -20,7 +20,7 @@ import { HostLoadSampler } from '../host-load.js';
 import { WorkspaceWatcher } from '../domain/workspace-watcher.js';
 import { logger } from '../logger.js';
 import { ProcessGroupJournal } from '../execution/process-groups.js';
-import { attempted, errorMessage, type FireAndForget } from '../error-handling.js';
+import { errorMessage, type FireAndForget } from '../error-handling.js';
 import { createTypesafeClassifierBackend } from '../domain/typesafe-classifier.js';
 import { RouteClassifier, createHarnessClassifierBackend, createOpenAiCompatibleClassifierBackend } from '../domain/route-classifier.js';
 import { createAcpCriticDrive } from '../verification/critic.js';
@@ -30,22 +30,24 @@ import type { Scheduler } from '../scheduler/scheduler.js';
 import { AutoDrive } from '../execution/auto-drive.js';
 import { TrackerPollerManager } from '../tracker/manager.js';
 import { TrackerEpicService, type EpicService } from '../tracker/epic-service.js';
+import { WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
 import type { MirrorClaim } from '../execution/auto-runner.js';
 import { operationRegistry, startOperation } from '../telemetry/operations.js';
 import { EventBus } from './bus.js';
 import { SettingsUpdateAvailabilityStore } from '../upgrade/update-check.js';
 import { UpgradeCoordinator, type UpgradeCancellation, type UpgradeIdleHandoffOutcome } from '../upgrade/upgrade-coordinator.js';
-import { AttemptSettleCoordinator } from '../domain/attempt-settle.js';
 import { SessionRetirementCoordinator } from '../domain/session-retirement-coordinator.js';
 import { EscalationService } from '../domain/escalation.js';
 import type { AppOptions } from './app-context.js';
 import type { Stores } from './app-stores.js';
 import type { WorktreeServices } from './app-worktrees.js';
-import { createPostMergeCheck } from '../verification/post-merge-check.js';
 import type { DistributionMode } from '../distribution-mode.js';
 import { touchStartupProgress } from '../reliability/startup-progress.js';
 import { createTrackerResolver } from '../tracker/adapter.js';
 import { createRepositoryResolver } from '../repository/resolve.js';
+import { withLibraryPrompts } from '../domain/prompt-library-sources.js';
+import type { PromptLibrary } from '../domain/prompt-library-store.js';
+import type { WorkflowLibrary } from '../domain/workflow-library-store.js';
 
 function createLifecycleTracking(
   bus: EventBus,
@@ -99,17 +101,12 @@ async function runStartupRecovery(deps: {
   attempts: Stores['attempts'];
   tasks: Stores['tasks'];
   auth: Stores['auth'];
-  operatorSettle: AttemptSettleCoordinator;
-  postMergeCheck: ReturnType<typeof createPostMergeCheck>;
-  postMerge: PostMergeHook;
   bus: EventBus;
   archive: TaskArchive;
   sessionTranscriptPath: (sessionRowId: number) => Promise<string | null>;
 }): Promise<void> {
-  const { attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus, archive, sessionTranscriptPath } = deps;
-  const crashRecovery = new CrashRecoveryCoordinator(attempts, tasks, operatorSettle, {
-    runPostMergeCheck: postMergeCheck,
-    postMerge,
+  const { attempts, tasks, auth, bus, archive, sessionTranscriptPath } = deps;
+  const crashRecovery = new CrashRecoveryCoordinator(attempts, tasks, {
     onEpicAttemptInterrupted: (attempt) => { bus.emit('attempt_changed', attempt); },
     archive,
     sessionTranscriptPath,
@@ -211,6 +208,8 @@ export interface Runtime {
 
 export async function createRuntime(deps: {
   opts: AppOptions;
+  promptLibrary: PromptLibrary;
+  workflowLibrary: WorkflowLibrary;
   stores: Stores;
   worktrees: WorktreeServices;
   bus: EventBus;
@@ -274,17 +273,6 @@ export async function createRuntime(deps: {
     fireAndForget(() => notifier.notify('task.failed', task, { reason }), { op: 'notifier.taskFailed', level: 'warn', context: { taskId: task.id } });
   const onTaskMerged = (task: TaskRow): void =>
     fireAndForget(() => notifier.recordMerged(task), { op: 'notifier.taskMerged', level: 'warn', context: { taskId: task.id } });
-  const operatorSettle = new AttemptSettleCoordinator(
-    tasks,
-    attempts,
-    (run) => {
-      fireAndForget(() => runnerRef?.finishRunOperation(run.id), { op: 'runner.finishRunOperation', level: 'warn', context: { attemptId: run.id } });
-      bus.emit('attempt_changed', run);
-    },
-    sessionRetirement,
-    branchRetirement,
-    { onFailedAttemptRequeued, onTaskMerged },
-  );
   const archive = new TaskArchive({
     dataDir: opts.dataDir,
     ensureArchiveId: (taskId) => tasks.ensureArchiveId(taskId),
@@ -296,27 +284,11 @@ export async function createRuntime(deps: {
       }
     },
   });
-  const transcripts = new TranscriptCapture(sessionStore, verificationAttempts, () => settingsStore.getGlobal());
-  const postMergeCheck = createPostMergeCheck({
-    getWorkspace: async (workspaceId) => {
-      if (workspaceId === null) return undefined;
-      const result = await attempted(() => workspaces.get(workspaceId), {
-        op: 'postMerge.resolveWorkspace', level: 'error', context: { workspaceId },
-      });
-      return result.ok ? result.value : undefined;
-    },
-    getConfig: () => settingsStore.getGlobal(),
-    verificationAttempts,
-    attempts,
-    criticDrive,
-    commandSpawn,
-    fireAndForget,
-    archive,
-    transcripts,
-  });
+  const promptConfig = () => withLibraryPrompts(settingsStore.getGlobal(), deps.promptLibrary);
+  const transcripts = new TranscriptCapture(sessionStore, verificationAttempts, promptConfig);
   touchStartupProgress(opts.dataDir);
   await runStartupRecovery({
-    attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus, archive,
+    attempts, tasks, auth, bus, archive,
     sessionTranscriptPath: (id) => transcripts.ensureSessionTranscript(id),
   });
   touchStartupProgress(opts.dataDir);
@@ -329,7 +301,6 @@ export async function createRuntime(deps: {
     }
   };
   const autoDrive = new AutoDrive(
-    () => settingsStore.getGlobal(),
     (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
     resolveTracker,
     getWorkspaceRow,
@@ -361,38 +332,15 @@ export async function createRuntime(deps: {
     resolveRepository,
     (run, url) => attempts.update(run.id, { pullRequestUrl: url }).then(() => undefined),
   );
-  const mergeEffectsFor = (task: TaskRow, run: AttemptRow): MergeEffectExec[] => {
-    const effects: MergeEffectExec[] = [];
-    const trackerRef = task.trackerRef;
-    if (trackerRef != null) {
-      effects.push(ticketCloseEffect(trackerRef, () => autoDrive.closeCompleted(task), () => tasks.setTicketClosePending(task.id, true)));
-    }
-    if (task.isolationMode !== 'worktree') return effects;
-    if (!run.branch || !run.baseBranch || !run.verifiedHeadOid) return effects;
-    const baseBranch = run.baseBranch;
-    const branch = run.branch;
-    return [
-      {
-        effect: 'target-ref',
-        idempotencyKey: `${baseBranch}<-${branch}`,
-        expected: { baseBranch, branch },
-        apply: async () => {
-          const outcome = await runnerRef!.mergeAcceptedBranch(task, run);
-          if (outcome.kind === 'escalated') return { ok: false, detail: outcome.message, observed: { reason: outcome.reason } };
-          return { ok: true, observed: { baseBranch, branch, oid: outcome.mergeOid } };
-        },
-      },
-      ...effects,
-    ];
-  };
   const epicOperations = new EpicOperations();
   const gitBreaker = new GitCircuitBreaker();
-  const routeClassifier = new RouteClassifier(() => settingsStore.getGlobal(), {
+  await convertEditedEpicFixPrompts(deps.promptLibrary, settingsStore.getGlobal(), settingsStore.getRetired());
+  const routeClassifier = new RouteClassifier(promptConfig, {
     typesafe: createTypesafeClassifierBackend({ reveal: (workspaceId, name) => secrets.reveal(workspaceId, name) }),
     harness: createHarnessClassifierBackend({ drive: criticDrive, getConfig: () => settingsStore.getGlobal() }),
     'openai-compatible': createOpenAiCompatibleClassifierBackend({ reveal: (workspaceId, name) => secrets.reveal(workspaceId, name) }),
-  });
-  const runner = new Runner(tasks, asyncDb, () => settingsStore.getGlobal(), {
+  }, () => deps.promptLibrary.enginePrompts());
+  const runner = new Runner(tasks, asyncDb, promptConfig, {
     isGloballyPaused: () => globalPauseRef?.isLatched ?? false,
     onGloballyPaused: async (taskId) => { await globalPauseRef?.track(taskId); },
     events: {
@@ -428,6 +376,8 @@ export async function createRuntime(deps: {
     getWorkspace: getWorkspaceRow,
     agentMessages: deps.stores.agentMessages,
     archive,
+    promptLibrary: deps.promptLibrary,
+    workflows: { library: deps.workflowLibrary, secrets, workspaceName: async (workspaceId) => (await workspaces.get(workspaceId)).name },
   });
   runnerRef = runner;
   const globalPause = new GlobalPause(tasks, runner, asyncDb);
@@ -438,11 +388,11 @@ export async function createRuntime(deps: {
   touchStartupProgress(opts.dataDir);
   await backfillCriticPromptKeys({ db: asyncDb, archive, getTask: (taskId) => tasks.get(taskId) });
   touchStartupProgress(opts.dataDir);
-  const escalation = new EscalationService(attempts, tasks, operatorSettle, mergeEffectsFor, {
+  const escalation = new EscalationService(attempts, tasks, {
     resume: (task, guidance, options) => runner.resumeWithGuidance(task, guidance, options),
     cleanup: (task, run) => runner.cleanupClosed(task, run),
     candidateHead: (task, run) => runner.candidateHead(task, run),
-    advance: (task, run, failedStep) => runner.advanceAccepted(task, run, failedStep),
+    acceptWorkflow: (task, run) => runner.acceptWorkflowStep(task, run),
   });
   touchStartupProgress(opts.dataDir);
   await drainRetirement();
@@ -478,16 +428,22 @@ export async function createRuntime(deps: {
     () => workspaces.list(),
     {
       integration: {
-        getConfig: () => settingsStore.getGlobal(),
+        getConfig: promptConfig,
+        prompts: () => deps.promptLibrary.enginePrompts(),
         mergeEpicIntegration: (input) => runnerRef!.mergeEpicIntegration(input),
-        criticDrive,
         commandSpawn,
+        workflows: {
+          library: deps.workflowLibrary,
+          stepRuns: new WorkflowStepRunStore(asyncDb),
+          secrets,
+          resolvePrompt: (text) => deps.promptLibrary.resolve(text),
+          drive: { run: (req) => (req.task ? runnerRef!.runEpicAgentTurn(req) : criticDrive.run(req)) },
+        },
       },
       operations: epicOperations,
       dispatchRefreshResolution: (target, detail, escalate, retry) => runnerRef!.enqueueEpicRefreshResolution(target, detail, escalate, retry),
       epicMergeEvents,
       epicAttempts: attempts,
-      dispatchEpicResolution: (input) => runnerRef!.resolveEpicVerification(input),
       worktreesDir,
       onEpicAttemptChanged: (attempt) => bus.emit('attempt_changed', attempt),
       onEpicMergeStep: (payload) => bus.emit('epic_changed', payload),
@@ -499,9 +455,7 @@ export async function createRuntime(deps: {
           context: payload,
         });
       },
-      verificationAttemptStore: verificationAttempts,
       fireAndForget,
-      archive,
       resolveAdapter: resolveTracker,
     },
   );

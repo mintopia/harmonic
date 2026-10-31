@@ -18,6 +18,7 @@ export class TurnState {
   sessionRowId: number | undefined;
   toolCallFlushTimer: ReturnType<typeof setInterval> | undefined;
   archive: StepArchiveWriter | undefined;
+  output = '';
 
   constructor(
     readonly attemptAtStart: AttemptRow,
@@ -73,6 +74,10 @@ export class TurnListeners {
     const runtime = this.runtime;
     const { task, run, state } = this.input;
     state.archive?.appendUpdate(update);
+    if (update.sessionUpdate === 'agent_message_chunk') {
+      const content = update.content as { type?: string; text?: unknown } | undefined;
+      if (content?.type === 'text' && typeof content.text === 'string') state.output += content.text;
+    }
     const seq = this.input.nextProgressSequence();
     this.input.events.onAttemptLogEvent?.({
       id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,

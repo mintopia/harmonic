@@ -2,15 +2,19 @@ import type { TrackerRef } from '../tracker/adapter.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from './git.js';
+import { mergeIntoBase } from './branch-merge.js';
+import { repoKey, withBaseCheckoutLock, withRepoLock } from './repo-lock.js';
 import { bestEffort, errorMessage, type FailureReport, type FireAndForget } from '../error-handling.js';
-import type { GitCircuitBreaker } from './git-failure.js';
+import { classifyGitFailure, type GitCircuitBreaker } from './git-failure.js';
 import type { AttemptUsageSnapshot } from './usage.js';
 import { LiveUsageTailer } from './live-usage-tailer.js';
 import { UsageSampler } from './usage-sampler.js';
 import { TranscriptCapture } from './transcript-capture.js';
 import { ActiveRuns, type ActiveRun } from './active-runs.js';
 import { LIVE_RUN_LOG_EVENT_ID_OFFSET } from './live-events.js';
-import { VerificationCoordinator, type EpicVerificationResolutionInput, type VerificationCoordinatorDeps } from './verification-coordinator.js';
+import { driveFields } from './prompt-template.js';
+import { PromptLibrary } from '../domain/prompt-library-store.js';
+import { VerificationCoordinator, type VerificationCoordinatorDeps } from './verification-coordinator.js';
 import { TurnDriver, type TurnDriverDeps } from './turn-driver.js';
 import { EpicRefreshResolver, type EpicRefreshResolverDeps } from './epic-refresh-resolver.js';
 import { WorkspaceProvisioner, type WorkspaceProvisionerDeps } from './workspace-provisioner.js';
@@ -18,10 +22,12 @@ import { RunControl, type RunControlDeps, type RunBoundaryResult } from './run-c
 import { UsageBackfiller, type UsageBackfillerDeps } from './usage-backfiller.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig } from '../config.js';
-import type { TaskRow, AttemptRow, StepRow } from '../db/schema.js';
+import type { TaskRow, AttemptRow } from '../db/schema.js';
 import { SessionStore } from '../domain/sessions.js';
-import type { ClassifierOutcome } from '../domain/route-classifier.js';
-import { DomainError } from '../domain/errors.js';
+import { resolveModelOption } from '../domain/model-options.js';
+import type { ClassifierOutcome, WorkflowClassifierOutcome } from '../domain/route-classifier.js';
+import { NO_CLASSIFIER, type WorkflowClassifierRecord } from '../domain/tasks.js';
+import { DomainError, GitError } from '../domain/errors.js';
 import { AttemptStore, type AttemptGuardrailSnapshot } from '../domain/attempts.js';
 import type { EscalationCause } from '../domain/task-routing.js';
 import { AttemptSettleCoordinator, type SettleProjection, type DispositionKind } from '../domain/attempt-settle.js';
@@ -30,12 +36,11 @@ import type { TaskService } from '../domain/tasks.js';
 import { resolveGuardrails } from '../domain/setting-override.js';
 import { SessionContinuation } from './session-continuation.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
-import { createPostMergeCheck } from '../verification/post-merge-check.js';
 import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { MergeCoordinator, BaseBranchUnresolved, EpicBaseNotReady, type EpicIntegrationMergeInput, type MergeCoordinatorDeps } from './merge-coordinator.js';
 export { BaseBranchUnresolved, EpicBaseNotReady };
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
-import { pricesForHarness } from '../domain/pricing.js';
+import { parseCost, pricesForHarness, sumCosts } from '../domain/pricing.js';
 import { isForeignKeyViolation } from '../db/errors.js';
 import { logger } from '../logger.js';
 import type { MergePolicyOutcome } from './merge-policy.js';
@@ -46,9 +51,17 @@ import { startOperation } from '../telemetry/operations.js';
 import { InFlight } from '../reliability/in-flight.js';
 import { childExited } from './child-exit.js';
 import { killProcessGroup } from './process-groups.js';
+import { resolveBeforeClassifier, resolveTaskWorkflow, workflowInputOf } from '../domain/workflow-assignment.js';
+import { resolveVars, workspaceVarsFor, type VarRecord } from '../domain/workflow-vars.js';
+import { parseWorkflow } from '../domain/workflow.js';
+import type { WorkflowChosen } from '../db/schema.js';
+import { WorkflowEngine, type AgentDriveRequest, type AgentDriveResult, type EpicSubject } from './workflow-engine.js';
+import { WorkflowLibrary } from '../domain/workflow-library-store.js';
+import { seedLegacyResume } from './legacy-resume-seeding.js';
+import { WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
+import { createChildProcessSpawn } from '../verification/command-verifier.js';
 
 export type { LiveAttemptEvent } from './live-events.js';
-export type { EpicVerificationResolutionInput } from './verification-coordinator.js';
 export type { RunnerEvents, RunnerOptions, Workspace } from './runner-options.js';
 import type { RunnerEvents, RunnerOptions } from './runner-options.js';
 
@@ -67,6 +80,7 @@ export class Runner {
   private readonly keys: RunnerOptions['keys'];
   private readonly autoDrive: AutoDrive | undefined;
   private readonly archive: RunnerOptions['archive'];
+  private readonly promptLibrary: PromptLibrary;
   private readonly taskEvents: RunnerOptions['taskEvents'];
   private readonly getWorkspace: RunnerOptions['getWorkspace'];
   private readonly agentMessages: RunnerOptions['agentMessages'];
@@ -93,6 +107,9 @@ export class Runner {
   private readonly spendGraceMs: number;
   private readonly verification: VerificationCoordinator;
   private readonly turnDriver: TurnDriver;
+  private readonly workflowEngine: WorkflowEngine;
+  private readonly workflowLibrary: WorkflowLibrary;
+  private readonly stepRuns: WorkflowStepRunStore;
   private readonly epicRefreshResolver: EpicRefreshResolver;
   private readonly workspaceProvisioner: WorkspaceProvisioner;
   readonly runControl: RunControl;
@@ -111,6 +128,7 @@ export class Runner {
     this.keys = options.keys;
     this.autoDrive = options.autoDrive;
     this.archive = options.archive;
+    this.promptLibrary = options.promptLibrary ?? new PromptLibrary(null);
     this.taskEvents = options.taskEvents;
     this.getWorkspace = options.getWorkspace;
     this.agentMessages = options.agentMessages;
@@ -179,39 +197,80 @@ export class Runner {
     this.workspaceProvisioner = new WorkspaceProvisioner(this.workspaceProvisionerDeps());
     this.verification = new VerificationCoordinator(this.verificationCoordinatorDeps());
     this.turnDriver = new TurnDriver(this.turnDriverDeps());
+    this.workflowLibrary = options.workflows?.library ?? new WorkflowLibrary(null);
+    this.stepRuns = new WorkflowStepRunStore(this.asyncDb);
+    this.workflowEngine = this.createWorkflowEngine(options.workflows);
     this.runControl = new RunControl(this.runControlDeps());
     this.usageBackfiller = new UsageBackfiller(this.usageBackfillerDeps());
+  }
+
+  private createWorkflowEngine(workflows: RunnerOptions['workflows']): WorkflowEngine {
+    const secrets = workflows?.secrets;
+    const workspaceName = workflows?.workspaceName;
+    return new WorkflowEngine({
+      library: this.workflowLibrary,
+      stepRuns: this.stepRuns,
+      spawn: this.commandSpawn ?? createChildProcessSpawn(this.spawnProcessGroup),
+      secrets: async (task) => {
+        if (task.workspaceId == null || !secrets) return {};
+        const workspaceId = task.workspaceId;
+        const entries = await Promise.all((await secrets.list(workspaceId)).map(async (secret) => [secret.name, await secrets.reveal(workspaceId, secret.name)] as const));
+        return Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => entry[1] !== null));
+      },
+      workspaceName: async (task) => (task.workspaceId == null || !workspaceName ? '' : workspaceName(task.workspaceId)),
+      cwdFor: (task) => this.workspaceProvisioner.dispatchCwd(task),
+      baseBranchFor: (task) => this.mergeCoordinator.resolveBaseBranch(task),
+      mergeBranch: async (task, run) => {
+        await this.attempts.update(run.id, await this.diffSnapshotFor(task, run.id));
+        return withBaseCheckoutLock(task.workingDir, () =>
+          withRepoLock(task.workingDir, async () =>
+            mergeIntoBase({
+              repoDir: task.workingDir,
+              baseBranch: run.baseBranch!,
+              branch: run.branch!,
+              expectedOid: await Git.revParse(task.workingDir, run.branch!),
+              mode: 'merge',
+              noFastForward: true,
+              mutexHeld: true,
+            }),
+          ),
+        );
+      },
+      markTicketClosePending: async (task) => {
+        await this.taskService.setTicketClosePending(task.id, true);
+      },
+      closeTicket: (task, comment) => this.autoDrive?.closeTicket(task, comment) ?? Promise.resolve(false),
+      commentOnTicket: (task, body) => this.autoDrive?.commentOnTicket(task, body) ?? Promise.resolve(false),
+      openPullRequest: (task, run) => this.autoDrive?.openPullRequest(task, run) ?? Promise.resolve(null),
+      escalate: async (task, run, reason) => this.settleEscalated(task, await this.attempts.get(run.id), reason, {}),
+      complete: async (task, run) => this.settleAutoCompleted(task, await this.attempts.get(run.id), {}),
+      onStepChanged: (owner) => ('taskId' in owner ? this.events.onStepChanged?.(owner.taskId) : this.events.onEpicMergeStep?.(owner)),
+      boundary: async (task) => (await this.runControl.checkRunBoundary(task.id)).stop,
+      agent: {
+        drive: { run: (req) => (req.task ? this.turnDriver.runAgentTurn(req) : this.criticDrive.run(req)) },
+        getConfig: this.getConfig,
+        prompts: () => this.promptLibrary.enginePrompts(),
+        route: (task) => this.taskService.routing.ticketRoute(task),
+        resolveOption: async (task, code) => resolveModelOption(code, { ticketOverrides: task.modelOptionOverrides, workspace: { modelOptions: (await this.getWorkspace?.(task.workspaceId))?.modelOptions ?? null }, config: this.getConfig() }),
+        resolvePrompt: (text) => this.promptLibrary.resolve(text),
+        promptFields: (task) => (this.autoDrive ? this.autoDrive.promptFields(task) : Promise.resolve(driveFields(task, this.urlFor))),
+      },
+    });
   }
 
   private mergeCoordinatorDeps(): MergeCoordinatorDeps {
     return {
       getConfig: this.getConfig,
+      prompts: () => this.promptLibrary.enginePrompts(),
       attempts: this.attempts,
       epicMergeEvents: new EpicMergeEventStore(this.asyncDb),
       criticDrive: this.criticDrive,
       archive: this.archive,
       onAttemptEvent: (event) => this.events.onAttemptEvent?.(event),
       getWorkspace: this.getWorkspace,
-      postMergeCheck: createPostMergeCheck({
-        commandSpawn: this.commandSpawn,
-        fireAndForget: this.fireAndForget,
-        getConfig: this.getConfig,
-        getWorkspace: async (workspaceId) => this.getWorkspace?.(workspaceId),
-        verificationAttempts: this.verificationAttempts,
-        attempts: this.attempts,
-        criticDrive: this.criticDrive,
-        archive: this.archive,
-        transcripts: this.transcripts,
-      }),
       postMerge: this.postMerge,
-      urlFor: this.urlFor,
       listWorkingTasks: () => this.taskService.list({ state: 'working' }),
       routing: this.taskService.routing,
-      latestAttemptFor: (task) => this.latestAttemptFor(task),
-      updateStep: (taskId, id, patch) => this.updateStep(taskId, id, patch),
-      criticUpdateRelay: (attemptId) => this.criticUpdateRelay(attemptId),
-      recordRunEvent: (task, run, type, payload) => this.recordRunEvent(task, run, type, payload),
-      settleEscalated: (task, run, reason, patch) => this.settleEscalated(task, run, reason, patch),
       onEpicMergeStep: (payload) => this.events.onEpicMergeStep?.(payload),
     };
   }
@@ -224,6 +283,7 @@ export class Runner {
       epicMergeEvents: new EpicMergeEventStore(this.asyncDb),
       onAttemptEvent: (event) => this.events.onAttemptEvent?.(event),
       getConfig: this.getConfig,
+      prompts: () => this.promptLibrary.enginePrompts(),
       getWorkspace: this.getWorkspace,
       worktreesDir: this.worktreesDir,
       criticDrive: this.criticDrive,
@@ -247,24 +307,12 @@ export class Runner {
 
   private verificationCoordinatorDeps(): VerificationCoordinatorDeps {
     return {
-      taskService: this.taskService,
-      routing: this.taskService.routing,
       attempts: this.attempts,
-      verificationAttempts: this.verificationAttempts,
       sessionStore: this.sessionStore,
-      transcripts: this.transcripts,
       activeRuns: this.activeRuns,
       archive: this.archive,
       events: this.events,
-      getConfig: this.getConfig,
-      getWorkspace: this.getWorkspace,
       criticDrive: this.criticDrive,
-      commandSpawn: this.commandSpawn,
-      fireAndForget: this.fireAndForget,
-      urlFor: this.urlFor,
-      worktreePathForTask: (task) => this.workspaceProvisioner.worktreePathForTask(task),
-      latestAttemptFor: (task) => this.latestAttemptFor(task),
-      updateStep: (taskId, id, patch) => this.updateStep(taskId, id, patch),
     };
   }
 
@@ -277,9 +325,8 @@ export class Runner {
       usage: this.usage,
       tailer: this.tailer,
       getConfig: this.getConfig,
+      prompts: () => this.promptLibrary.enginePrompts(),
       activeRuns: this.activeRuns,
-      mergeCoordinator: this.mergeCoordinator,
-      verification: this.verification,
       sessionContinuation: this.sessionContinuation,
       archive: this.archive,
       events: this.events,
@@ -288,7 +335,6 @@ export class Runner {
       fireAndForget: this.fireAndForget,
       getWorkspace: this.getWorkspace,
       agentMessages: this.agentMessages,
-      postMerge: this.postMerge,
       gitBreaker: this.gitBreaker,
       onGloballyPaused: this.onGloballyPaused,
       spendPollMs: this.spendPollMs,
@@ -298,15 +344,11 @@ export class Runner {
       prepareWorkspace: (task, run, resume) => this.workspaceProvisioner.prepareWorkspace(task, run, resume),
       finalizeWorkspace: (task, run, attemptNumber, workspace) => this.workspaceProvisioner.finalizeWorkspace(task, run, attemptNumber, workspace),
       spawnHarness: (task, harness, cwd, extraEnv, unattended) => this.workspaceProvisioner.spawnHarness(task, harness, cwd, extraEnv, unattended),
-      updateStep: (taskId, id, patch) => this.updateStep(taskId, id, patch),
       checkRunBoundary: (taskId) => this.checkRunBoundary(taskId),
       latestAttemptFor: (task) => this.latestAttemptFor(task),
       recordRunEvent: (task, run, type, payload) => this.recordRunEvent(task, run, type, payload),
       coordinateSettle: (task, run, type, projection, patch) => this.coordinateSettle(task, run, type, projection, patch),
       settleEscalated: (task, run, reason, patch) => this.settleEscalated(task, run, reason, patch),
-      settleAutoCompleted: (task, run, patch) => this.settleAutoCompleted(task, run, patch),
-      diffSnapshotFor: (task, attemptId) => this.diffSnapshotFor(task, attemptId),
-      worktreePathForTask: (task) => this.workspaceProvisioner.worktreePathForTask(task),
       kill: (active) => this.kill(active),
     };
   }
@@ -319,6 +361,7 @@ export class Runner {
       events: this.events,
       getWorkspace: this.getWorkspace,
       getConfig: this.getConfig,
+      prompts: () => this.promptLibrary.enginePrompts(),
       isGloballyPaused: this.isGloballyPaused,
       onGloballyPaused: this.onGloballyPaused,
       sessionContinuation: this.sessionContinuation,
@@ -368,25 +411,6 @@ export class Runner {
     });
   }
 
-  /**
-   * Relay one critic turn's ACP session updates onto the critic-log channel,
-   * verbatim and keyed by the builder Attempt — the same event shape the builder
-   * streams, so the running critic renders through the identical chat viewer.
-   */
-  private criticUpdateRelay(attemptId: number): (update: { sessionUpdate: string; [key: string]: unknown }) => void {
-    return (update) => {
-      const seq = this.activeRuns.nextCriticLogSequence(attemptId);
-      this.events.onCriticLogEvent?.({
-        id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
-        attemptId,
-        seq,
-        ts: Date.now(),
-        type: 'session_update',
-        payload: update,
-      });
-    };
-  }
-
   private async latestAttemptFor(task: Pick<TaskRow, 'id'>): Promise<AttemptRow> {
     // The Task's LATEST Attempt, not just its `running` one: this is also
     // called from an operator Accept's merge (`mergePolicyDeps`), which runs
@@ -429,6 +453,7 @@ export class Runner {
   /** Resume an escalated ticket, optionally recording guidance for its next Attempt. */
   async resumeWithGuidance(task: TaskRow, guidance: string, options: { startNow: boolean; reuseSession: boolean }): Promise<void> {
     const { startNow, reuseSession } = options;
+    await this.repinWorkflow(task);
     const trimmed = guidance.trim();
     if (!trimmed && !startNow) {
       await this.taskService.requeue(task.id);
@@ -451,44 +476,13 @@ export class Runner {
     }
   }
 
-  /**
-   * Operator Accept step-advance (ADR-0038): `failedStep` is already known
-   * `failed` on `run`'s escalated Attempt. Marks it `passed` (the operator's
-   * override) and resumes the pipeline at the next Step, on the same Attempt.
-   * `rebase` re-drives a full implementation turn; `implementation` and
-   * `verification` skip straight to the remaining verification stages with no
-   * new turn, merging and settling `done` on pass or escalating again on fail.
-   */
-  async advanceAccepted(task: TaskRow, run: AttemptRow, failedStep: StepRow): Promise<void> {
-    await this.attempts.updateStep(failedStep.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
-    this.events.onStepChanged?.(task.id);
+  /** Operator Accept (ADR-0038): overrides the failed workflow step and resumes the workflow after it on the same Attempt. */
+  async acceptWorkflowStep(task: TaskRow, run: AttemptRow): Promise<void> {
+    const pinned = await this.workflowTaskFor(task);
+    await seedLegacyResume({ library: this.workflowLibrary, stepRuns: this.stepRuns, attempts: this.attempts }, pinned, await this.attempts.get(run.id), true);
+    await this.workflowEngine.acceptFailed(pinned);
     const working = await this.taskService.setState(task.id, 'working');
-    if (failedStep.type === 'rebase') {
-      await this.beginRun(working, undefined, await this.attempts.get(run.id));
-      return;
-    }
-    const running = await this.attempts.update(run.id, { state: 'running', endedAt: null, reason: null, detail: null });
-    await this.driveAccept(working, running, failedStep.type === 'implementation' ? 'commands' : 'critics');
-  }
-
-  private async driveAccept(task: TaskRow, run: AttemptRow, startAt: 'commands' | 'critics'): Promise<void> {
-    const operation = startOperation({ type: 'attempt', attributes: { 'task.id': task.id, 'attempt.id': run.id } });
-    try {
-      await operation.run(() =>
-        this.turnDriver.driveAccept({
-          task,
-          run,
-          record: (type, payload) => this.recordRunEvent(task, run, type, payload),
-          parent: operation.spanContext,
-          signal: new AbortController().signal,
-          startAt,
-        }),
-      );
-      operation.end();
-    } catch (err) {
-      operation.fail(err instanceof Error ? err.message : String(err));
-      throw err;
-    }
+    await this.beginRun(working, undefined, await this.attempts.get(run.id));
   }
 
   /**
@@ -505,6 +499,10 @@ export class Runner {
 
   /** @see {@link WorkspaceProvisioner.cleanupClosed} */
   async cleanupClosed(task: TaskRow, run: AttemptRow | undefined): Promise<void> {
+    if (task.workflowRef !== null && run) {
+      const engine = this.workflowEngine;
+      await bestEffort(async () => engine.close(task, await this.attempts.get(run.id)), { op: 'runner.workflow.closeCleanup', level: 'warn', context: { taskId: task.id, attemptId: run.id } });
+    }
     return this.workspaceProvisioner.cleanupClosed(task, run);
   }
 
@@ -519,26 +517,21 @@ export class Runner {
   }
 
   private async beginRun(requested: TaskRow, parent?: SpanContext, resumedAttempt?: AttemptRow): Promise<AttemptRow> {
-    let task: TaskRow = resumedAttempt?.harness
-      ? { ...requested, harness: resumedAttempt.harness, model: resumedAttempt.model ?? requested.model }
-      : requested;
-    let classification: ClassifierOutcome | null = null;
     // Covers the pre-spawn/between-turns gaps too, so a steer can't mistake a healthy Task for stranded.
-    this.activeRuns.markDriving(task.id);
-    let created: AttemptRow | undefined;
+    this.activeRuns.markDriving(requested.id);
     try {
-      const baseGate = (await this.epicBaseNotReady?.(task)) ?? 'ready';
+      const baseGate = (await this.epicBaseNotReady?.(requested)) ?? 'ready';
       switch (baseGate) {
         case 'stale':
           throw new DomainError(
             'invalid_state',
-            `task ${task.id} is an Epic member whose integration branch (${task.baseBranch}) is behind its base; ` +
+            `task ${requested.id} is an Epic member whose integration branch (${requested.baseBranch}) is behind its base; ` +
               'it is refreshed when the blocking Epic is integrated — retry shortly',
           );
         case 'missing':
           throw new DomainError(
             'invalid_state',
-            `task ${task.id} is an Epic member whose integration branch (${task.baseBranch ?? 'unassigned'}) is not ready yet; ` +
+            `task ${requested.id} is an Epic member whose integration branch (${requested.baseBranch ?? 'unassigned'}) is not ready yet; ` +
               'it is cut/re-cut on the next tracker poll — retry shortly',
           );
         case 'ready':
@@ -546,7 +539,101 @@ export class Runner {
         default:
           baseGate satisfies never;
       }
-      const config = this.getConfig();
+      const pinned = await this.workflowTaskFor(requested);
+      const resumed = resumedAttempt ?? (await this.interruptedAttempt(pinned));
+      const task: TaskRow = resumed?.harness ? { ...pinned, harness: resumed.harness, model: resumed.model ?? pinned.model } : pinned;
+      return await this.beginWorkflowRun(task, parent, resumed);
+    } catch (err) {
+      this.activeRuns.clearDriving(requested.id);
+      throw err;
+    }
+  }
+
+  /** The latest Attempt when a restart interrupted it: its workflow resumes rather than starting over. */
+  private async interruptedAttempt(task: TaskRow): Promise<AttemptRow | undefined> {
+    const latest = (await this.attempts.listForTask(task.id)).at(-1);
+    return latest?.state === 'failed' && latest.reason === 'process-death' ? latest : undefined;
+  }
+
+  private async assignWorkflow(task: TaskRow): Promise<{ ref: string; chosen: WorkflowChosen; label: string | null; vars: VarRecord; classifier: WorkflowClassifierRecord }> {
+    const library = this.workflowLibrary;
+    const entries = library.list();
+    const names = new Set(entries.filter((entry) => entry.subject === 'ticket').map((entry) => entry.name));
+    const workspace = (await this.getWorkspace?.(task.workspaceId)) ?? null;
+    const config = this.getConfig();
+    const exists = (name: string) => names.has(name);
+    let classifier = NO_CLASSIFIER;
+    let classified: { name: string; reason: string } | null = null;
+    if (resolveBeforeClassifier(workflowInputOf(task, workspace, config, exists)) === null) {
+      const outcome = await this.classifyWorkflow(task, entries);
+      if (outcome) {
+        classifier = {
+          reason: outcome.reason,
+          routingUsage: outcome.routing ? JSON.stringify(outcome.routing.usage) : null,
+          routingCost: outcome.routing?.cost ? JSON.stringify(outcome.routing.cost) : null,
+        };
+        if (outcome.kind === 'chosen') classified = { name: outcome.name, reason: outcome.reason };
+      }
+    }
+    classifier = this.withEarlierSpend(task, classifier);
+    const assignment = resolveTaskWorkflow(task, workspace, config, exists, classified);
+    const version = library.get(assignment.name).version;
+    const defaults = parseWorkflow((await library.getVersion(assignment.name, version)).text).vars;
+    const vars = resolveVars(defaults, workspaceVarsFor(workspace, assignment.name), task.workflowVarOverrides);
+    return { ref: `${assignment.name}@${version}`, chosen: assignment.chosen, label: assignment.label ?? null, vars, classifier };
+  }
+
+  /** A Retry's classifier call adds to the routing spend already on the Ticket instead of replacing it. */
+  private withEarlierSpend(task: TaskRow, now: WorkflowClassifierRecord): WorkflowClassifierRecord {
+    if (task.workflowRoutingUsage === null) return now;
+    const total = sumCosts([parseCost(task.workflowRoutingCost), parseCost(now.routingCost)]);
+    return { reason: now.reason, routingUsage: now.routingUsage ?? task.workflowRoutingUsage, routingCost: total ? JSON.stringify(total) : null };
+  }
+
+  /** Runs the workflow classifier when it is on for this Ticket's Workspace; never throws, since it is advisory. */
+  private async classifyWorkflow(task: TaskRow, entries: ReadonlyArray<{ name: string; description: string }>): Promise<WorkflowClassifierOutcome | null> {
+    const classifier = this.routeClassifier;
+    if (!classifier) return null;
+    let outcome: WorkflowClassifierOutcome;
+    try {
+      const workspace = await this.taskService.routing.workflowClassifierWorkspace(task);
+      if (!workspace) return null;
+      outcome = await classifier.classifyWorkflow({
+        workspace,
+        title: task.trackerTitle ?? task.prompt.split('\n').find((line) => line.trim().length > 0)?.trim() ?? `Task ${task.id}`,
+        description: task.prompt,
+        labels: task.trackerLabels ?? [],
+        workflows: entries.map(({ name, description }) => ({ name, description })),
+      });
+    } catch (error) {
+      outcome = { kind: 'abstained', reason: errorMessage(error), routing: null };
+    }
+    await bestEffort(async () => {
+      await this.taskEvents?.appendEvent(task.id, outcome.kind === 'chosen'
+        ? { event: 'workflow-classified', workflow: outcome.name, reason: outcome.reason, prompt: outcome.prompt }
+        : { event: 'workflow-classifier-abstained', message: `Workflow classifier abstained: ${outcome.reason}`, reason: outcome.reason, ...(outcome.prompt === undefined ? {} : { prompt: outcome.prompt }) });
+      this.events.onTaskEvent?.(task.id);
+    }, { op: 'runner.assignWorkflow.recordClassification', level: 'warn', context: { taskId: task.id } });
+    return outcome;
+  }
+
+  private async workflowTaskFor(task: TaskRow): Promise<TaskRow> {
+    if (task.workflowRef !== null) return task;
+    const assigned = await this.assignWorkflow(task);
+    return this.taskService.pinWorkflow(task.id, assigned.ref, assigned.chosen, assigned.label, assigned.vars, assigned.classifier);
+  }
+
+  private async repinWorkflow(task: TaskRow): Promise<void> {
+    if (task.workflowRef === null) return;
+    const assigned = await this.assignWorkflow(task);
+    if (assigned.ref !== task.workflowRef || assigned.chosen !== task.workflowChosen || assigned.label !== task.workflowLabel || assigned.classifier.reason !== task.workflowReason || assigned.classifier.routingCost !== task.workflowRoutingCost || JSON.stringify(assigned.vars) !== JSON.stringify(task.workflowVars)) await this.taskService.repinWorkflow(task.id, assigned.ref, assigned.chosen, assigned.label, assigned.vars, assigned.classifier);
+  }
+
+  private async beginWorkflowRun(requested: TaskRow, parent: SpanContext | undefined, resumedAttempt: AttemptRow | undefined): Promise<AttemptRow> {
+    let task = requested;
+    let created: AttemptRow | undefined;
+    try {
+      let classification: ClassifierOutcome | null = null;
       if (!resumedAttempt) {
         classification = await this.classifyRoute(task);
         if (classification?.kind === 'chosen') task = { ...task, harness: classification.option.harness, model: classification.option.model };
@@ -558,11 +645,10 @@ export class Runner {
         this.activeRuns.clearDriving(task.id);
         return unspawned;
       }
-      const harness = route.config;
       const ws = (await this.getWorkspace?.(task.workspaceId)) ?? { guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null };
       const snapshot: AttemptGuardrailSnapshot = {
-        guardrailConfig: resolveGuardrails(ws, config),
-        priceTable: pricesForHarness(harness),
+        guardrailConfig: resolveGuardrails(ws, this.getConfig()),
+        priceTable: pricesForHarness(route.config),
       };
       created = resumedAttempt
         ? await this.attempts.update(resumedAttempt.id, {
@@ -579,11 +665,8 @@ export class Runner {
           })
         : await this.attempts.create(task.id, { guardrails: snapshot, route: { harness: task.harness, model: task.model } });
       const pendingContinuation = this.activeRuns.takePendingContinuation(task.id);
-      if (pendingContinuation !== undefined) {
-        await this.attempts.setContinuation(created.id, pendingContinuation);
-      }
-      const run = created;
-      const bound = await this.sessionContinuation.bindContinuationIfEligible(task, run);
+      if (pendingContinuation !== undefined) await this.attempts.setContinuation(created.id, pendingContinuation);
+      const bound = await this.sessionContinuation.bindContinuationIfEligible(task, created);
       if (!resumedAttempt) {
         if (classification) await this.recordClassification(task, bound, classification);
         await this.recordRouteChange(task, bound);
@@ -592,42 +675,16 @@ export class Runner {
         this.activeRuns.clearDriving(task.id);
         return bound;
       }
-      const operation = startOperation({
-        type: 'attempt',
-        parent,
-        attributes: {
-          'task.id': task.id,
-          'task.title': task.trackerTitle ?? task.prompt.split('\n').find((line) => line.trim().length > 0)?.trim() ?? `Task ${task.id}`,
-          'attempt.id': bound.id,
-          'task.origin': task.origin,
-          ...(task.workspaceId == null ? {} : { 'workspace.id': task.workspaceId }),
-        },
-      });
-      this.activeRuns.setOperation(bound.id, operation);
-      this.drives.add(operation.run(async () => {
-        try {
-          await this.turnDriver.drive(task, bound, harness, operation.spanContext);
-          await this.finishRunOperation(bound.id);
-        } catch (error) {
-          operation.fail(errorMessage(error));
-          this.activeRuns.deleteOperation(bound.id);
-          logger.error(`task ${task.id} attempt ${bound.id}: agent loop crashed: ${errorMessage(error)}`);
-          await bestEffort(async () => {
-            const current = await this.attempts.get(bound.id);
-            if (current.state !== 'running') return;
-            await this.settleEscalated(task, current, `agent loop crashed: ${errorMessage(error)}`, {});
-          }, { op: 'runner.drive.settleCrashed', level: 'warn', context: { taskId: task.id, attemptId: bound.id } });
-        } finally {
-          this.activeRuns.clearDriving(task.id);
-          const leftoverSeed = this.activeRuns.takePendingOperatorSeed(task.id);
-          if (leftoverSeed !== undefined) {
-            await this.redeliverOrphanedSteer(task.id, leftoverSeed);
-          }
-        }
-      }), 'runner.drive');
-      return bound;
+      if (resumedAttempt) await seedLegacyResume({ library: this.workflowLibrary, stepRuns: this.stepRuns, attempts: this.attempts }, task, bound, false);
+      const operation = this.startRunOperation(task, bound, parent);
+      if (!(await this.prepareRunWorkspace(task, bound))) {
+        this.activeRuns.clearDriving(task.id);
+        return await this.attempts.get(bound.id);
+      }
+      const run = await this.attempts.get(bound.id);
+      this.driveWorkflow(task, run, operation, resumedAttempt !== undefined);
+      return run;
     } catch (err) {
-      this.activeRuns.clearDriving(task.id);
       if (created) {
         const attemptId = created.id;
         await bestEffort(async () => {
@@ -637,6 +694,67 @@ export class Runner {
       }
       throw err;
     }
+  }
+
+  /** Prepares the Attempt's workspace; a refusal settles the Attempt (back to `ready` when transient, escalated when not) and returns false. */
+  private async prepareRunWorkspace(task: TaskRow, run: AttemptRow): Promise<boolean> {
+    try {
+      await this.workspaceProvisioner.prepareWorkspace(task, run);
+      this.gitBreaker?.recordSuccess(repoKey(task.workingDir));
+      return true;
+    } catch (err) {
+      if (err instanceof EpicBaseNotReady) {
+        await this.coordinateSettle(task, run, 'failed', { runState: 'failed', taskAction: 'ready', reason: err.reason });
+      } else if (err instanceof BaseBranchUnresolved) {
+        await this.settleEscalated(task, run, err.reason, {});
+      } else if (err instanceof GitError) {
+        const cls = classifyGitFailure([err.stderr, err.message].filter(Boolean).join('\n'));
+        const failure = this.gitBreaker?.recordFailure(repoKey(task.workingDir));
+        if (cls === 'permanent' || failure?.opened) await this.settleEscalated(task, run, `git workspace preparation failed (${cls}): ${err.message}`, {});
+        else await this.coordinateSettle(task, run, 'failed', { runState: 'failed', taskAction: 'ready', reason: err.message });
+      } else {
+        throw err;
+      }
+      return false;
+    }
+  }
+
+  private startRunOperation(task: TaskRow, run: AttemptRow, parent: SpanContext | undefined): ReturnType<typeof startOperation> {
+    const operation = startOperation({
+      type: 'attempt',
+      parent,
+      attributes: {
+        'task.id': task.id,
+        'task.title': task.trackerTitle ?? task.prompt.split('\n').find((line) => line.trim().length > 0)?.trim() ?? `Task ${task.id}`,
+        'attempt.id': run.id,
+        'task.origin': task.origin,
+        ...(task.workspaceId == null ? {} : { 'workspace.id': task.workspaceId }),
+      },
+    });
+    this.activeRuns.setOperation(run.id, operation);
+    return operation;
+  }
+
+  private driveWorkflow(task: TaskRow, run: AttemptRow, operation: ReturnType<typeof startOperation>, resumed: boolean): void {
+    this.drives.add(operation.run(async () => {
+      try {
+        await this.workflowEngine.run(task, run, resumed, task.continuationChoice !== 'condensed' && (resumed || run.sessionId != null));
+        await this.finishRunOperation(run.id);
+      } catch (error) {
+        operation.fail(errorMessage(error));
+        this.activeRuns.deleteOperation(run.id);
+        logger.error(`task ${task.id} attempt ${run.id}: workflow engine crashed: ${errorMessage(error)}`);
+        await bestEffort(async () => {
+          const current = await this.attempts.get(run.id);
+          if (current.state !== 'running') return;
+          await this.settleEscalated(task, current, `workflow engine crashed: ${errorMessage(error)}`, {});
+        }, { op: 'runner.workflow.settleCrashed', level: 'warn', context: { taskId: task.id, attemptId: run.id } });
+      } finally {
+        this.activeRuns.clearDriving(task.id);
+        const leftoverSeed = this.activeRuns.takePendingOperatorSeed(task.id);
+        if (leftoverSeed !== undefined) await this.redeliverOrphanedSteer(task.id, leftoverSeed);
+      }
+    }), 'runner.drive');
   }
 
   /** Runs the Route Classifier when it decides this Ticket's route; never throws, since the classifier is advisory. */
@@ -773,11 +891,7 @@ export class Runner {
     }
   }
 
-  /**
-   * The agent-driven finish signal (`finish_task` MCP tool): mark this task's
-   * active Attempt so the auto-drive continue loop stops re-prompting it. Returns
-   * whether an active Attempt was found.
-   */
+  /** The agent-driven finish signal (`finish_task` MCP tool): ends the active turn. Returns whether an active Attempt was found. */
   markAgentFinished(taskId: number): boolean {
     return this.forActiveTask(taskId, (active) => {
       active.agentFinished = true;
@@ -884,23 +998,9 @@ export class Runner {
     this.usage.clearReaders();
   }
 
-  /** Patch a Step and announce the transition, so the Task-detail timeline
-   * follows the live phase. Wraps every mid-Attempt Step mutation: each Step is
-   * created then immediately set `running`, so patching alone covers every
-   * open/settle transition without a second emit on creation. */
-  private async updateStep(
-    taskId: number,
-    id: number,
-    patch: Parameters<AttemptStore['updateStep']>[1],
-  ): Promise<Awaited<ReturnType<AttemptStore['updateStep']>>> {
-    const step = await this.attempts.updateStep(id, patch);
-    this.events.onStepChanged?.(taskId);
-    return step;
-  }
-
   /** Run the corrective turn for a failed whole-Epic verification in a checked-out integration worktree. */
-  async resolveEpicVerification(input: EpicVerificationResolutionInput): Promise<void> {
-    return this.verification.resolveEpicVerification(input);
+  async runEpicAgentTurn(req: AgentDriveRequest<EpicSubject>): Promise<AgentDriveResult> {
+    return this.verification.runEpicAgentTurn(req);
   }
 
   /** @see {@link EpicRefreshResolver.enqueueEpicRefreshResolution} */
@@ -916,11 +1016,6 @@ export class Runner {
   /** @see {@link MergeCoordinator.mergeEpicIntegration} */
   async mergeEpicIntegration(input: EpicIntegrationMergeInput): Promise<MergePolicyOutcome> {
     return this.mergeCoordinator.mergeEpicIntegration(input);
-  }
-
-  /** @see {@link MergeCoordinator.mergeAcceptedBranch} */
-  async mergeAcceptedBranch(task: TaskRow, run: AttemptRow): Promise<MergePolicyOutcome> {
-    return this.mergeCoordinator.mergeAcceptedBranch(task, run);
   }
 
   /** @see {@link MergeCoordinator.candidateHead} */
@@ -998,19 +1093,10 @@ export class Runner {
     projection: SettleProjection,
     patch: Partial<AttemptRow> = {},
   ): Promise<void> {
-    if (patch.stat === undefined && run.branch && run.baseBranch) {
+    if (patch.stat === undefined && run.diffHeadOid == null && run.branch && run.baseBranch) {
       patch = { ...patch, ...(await this.diffSnapshotFor(task, run.id)) };
     }
     await this.settleCoordinator.settle(task, run, type, projection, patch);
-    const timelineSteps = await this.attempts.listSteps(run.id);
-    const now = Date.now();
-    await Promise.all(timelineSteps.filter((timelineStep) => timelineStep.state === 'running').map((timelineStep) =>
-      this.attempts.updateStep(timelineStep.id, {
-        state: projection.runState === 'completed' ? 'passed' : 'failed',
-        endedAt: now,
-        verdict: projection.runState === 'completed' ? 'pass' : 'fail',
-      }),
-    ));
     await this.finishRunOperation(run.id);
   }
 

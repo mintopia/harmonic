@@ -5,9 +5,8 @@ import type { AttemptRow, AttemptState, TaskAttemptRow, VerificationAttemptRow, 
 import { attempts, steps, guardrailEvents, attemptEvents, isEpicAttempt, isTaskAttempt, verificationAttempts } from '../db/schema.js';
 import { and, desc, eq } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
-import { resolveVerifiers } from '../domain/setting-override.js';
 import { resolveAgentMessages } from '../domain/agent-messages.js';
-import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
+import { NO_CONFIGURED_VERIFIERS, verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
 import { costOfUsages, pricesForHarness, resolveContextWindowForHarness, parseCost, withCriticContribution, withRoutingContribution, type Cost } from '../domain/pricing.js';
 import { DomainError } from '../domain/errors.js';
 import type { AttemptUsageSnapshot } from '../execution/usage.js';
@@ -58,8 +57,6 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
     ctx.attempts.listForTask(taskId),
     ctx.attempts.budgetBase(taskId),
   ]);
-  const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
-  const configuredVerifiers = resolveVerifiers(workspace, ctx.settingsStore.getGlobal());
   const sessionPaths = task.isolationMode === 'worktree'
     ? await ctx.sessions.worktreePaths(rows.flatMap((attempt) => (attempt.sessionRowId === null ? [] : [attempt.sessionRowId])))
     : new Map<number, string>();
@@ -74,7 +71,7 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
         ctx.attempts.listSteps(attempt.id),
         ctx.verificationAttempts.list(attempt.id),
       ]);
-      return attemptToTimelineApi(attempt, stepRows, attemptVerifications, configuredVerifiers, workingDirOf(attempt));
+      return attemptToTimelineApi(attempt, stepRows, attemptVerifications, workingDirOf(attempt));
     })),
   };
 }
@@ -85,8 +82,6 @@ export async function verifierStatusesToApi(
   run: Pick<TaskAttemptRow, 'id' | 'taskId' | 'number'>,
   recordedAttempts?: readonly VerificationAttemptRow[],
 ): Promise<VerifierStatus[]> {
-  const task = await ctx.tasks.get(run.taskId);
-  const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
   const listAttempts = async (): Promise<readonly VerificationAttemptRow[]> => {
     if (recordedAttempts) return recordedAttempts;
     const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.number);
@@ -96,7 +91,7 @@ export async function verifierStatusesToApi(
     listAttempts(),
     ctx.attempts.currentStepType(run.taskId, run.number),
   ]);
-  return verifierStatuses({ verifiers: resolveVerifiers(workspace, ctx.settingsStore.getGlobal()).task.preMerge, attempts, stepType });
+  return verifierStatuses({ verifiers: NO_CONFIGURED_VERIFIERS, attempts, stepType });
 }
 
 type PendingTicketTimelineEvent = ApiTicketTimelineEvent & { order: number };
@@ -122,7 +117,6 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
   ]);
   const task = await ctx.tasks.get(taskId);
   const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
-  const configuredVerifiers = resolveVerifiers(workspace, ctx.settingsStore.getGlobal());
   const attemptsByNumber = new Map<number, AttemptRow>(taskAttempts.map((a) => [a.number, a]));
   const verificationByAttempt = new Map<number, VerificationAttemptRow[]>();
   for (const { attempt: v } of verification) {
@@ -134,7 +128,7 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
   const add = (event: ApiTicketTimelineEvent, order: number) => pending.push({ ...event, order });
 
   await forEachYielding(taskAttempts, async (attempt) => {
-    for (const status of verifierStatuses({ verifiers: configuredVerifiers.task.preMerge, attempts: verificationByAttempt.get(attempt.id) ?? [] })) {
+    for (const status of verifierStatuses({ verifiers: NO_CONFIGURED_VERIFIERS, attempts: verificationByAttempt.get(attempt.id) ?? [] })) {
       if (status.state !== 'disabled') continue;
       add({
         attemptId: attempt.id,
