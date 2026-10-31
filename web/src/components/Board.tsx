@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { TargetWaitChip } from './TargetWaitChip';
 import type { Task, TaskState } from '../types';
 import type { Epic, EpicMember, MemberPipStatus } from '../epic-model';
 import { closedMembers, isEpicIntegrating, memberPipLabel, memberPipStatus } from '../epic-model';
@@ -260,6 +261,7 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
             <span className="shrink-0 rounded-[3px] bg-raised px-1.5 py-0.5 text-label font-medium text-muted">mirrored</span>
           )}
           <WhoLine harness={task.harness} model={task.model} routedBy={task.routing?.applied ? task.routing.label : undefined} classifier={task.classifier ?? undefined} />
+          {task.state === 'ready' && <TargetWaitChip skipReason={task.skipReason} />}
         </div>
         {task.escalationReason && (
           <div className="mt-1.5 line-clamp-2 text-[12.5px] text-await" title={task.escalationReason}>

@@ -2,7 +2,8 @@ import type { TrackerRef } from '../types.js';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { Attempt, Task } from '../types';
-import { parseSkipReasonTaskRef } from '../skip-reason-model';
+import { parseSkipReasonTaskRef, parseTargetWait } from '../skip-reason-model';
+import { TargetWaitChip } from './TargetWaitChip';
 import { Icon } from './Icon';
 import { useAsyncResource } from '../useAsyncResource';
 import { gateForAttempt } from '../ticket-gate-model';
@@ -189,6 +190,7 @@ export function TicketPage({
               </h1>
               <span className="mt-2.5 flex shrink-0 items-center gap-1.5 max-sm:mt-0">
                 <StatePill state={task.state} />
+                <TargetWaitChip skipReason={task.skipReason} />
                 {task.mergeStatus && (
                   <span className={mergeStatusPill(task.mergeStatus)}>{task.mergeStatus.replace(/-/g, ' ')}</span>
                 )}
@@ -225,7 +227,7 @@ export function TicketPage({
 
             <ExportPanel target={taskExportTarget(task.id)} finished={task.state === 'done' || task.state === 'cancelled'} refreshKey={timelineEvents.length} />
 
-            {task.skipReason && (
+            {task.skipReason && parseTargetWait(task.skipReason) === null && (
               <div className="mb-4 text-small text-muted">
                 <span className={labelType}>Waiting to run</span> —{' '}
                 {skipHolderId === null ? (

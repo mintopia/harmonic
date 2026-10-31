@@ -15,6 +15,7 @@ import type { EpicBlocker } from '../domain/epic-hold.js';
 import type { EpicBaseGate } from './epic-coordinator.js';
 import { startOperation, type Operation } from '../telemetry/operations.js';
 import { errorMessage } from '../error-handling.js';
+import { EMPTY_TARGET_GATE, type TargetGate } from './target-gate.js';
 
 function taskOperationAttributes(task: Pick<TaskRow, 'id' | 'origin' | 'priority' | 'workspaceId' | 'prompt' | 'trackerTitle'>): Record<string, string | number> {
   const title = task.trackerTitle ?? task.prompt.split('\n').find((line) => line.trim().length > 0)?.trim() ?? `Task ${task.id}`;
@@ -61,6 +62,8 @@ export interface AutoRunnerOptions {
   mirror?: MirrorClaim;
   epicBaseNotReady?: (task: TaskRow) => EpicBaseGate | Promise<EpicBaseGate>;
   gitBreaker?: GitCircuitBreaker;
+  /** Per-target concurrency for Kubernetes Execution Targets; the Host Ceiling bounds `local` only. */
+  targetGate?: TargetGate;
   /** A Task's `skipReason` is scheduler memory, not a row write, so a live board only sees it change through this. */
   onSkipReasonChanged?: (task: TaskRow) => void;
   /** Fixed scheduler cadence; tests inject a short interval. */
@@ -100,6 +103,7 @@ export class AutoRunner {
   private readonly mirror: MirrorClaim | undefined;
   private readonly epicBaseNotReady: ((task: TaskRow) => EpicBaseGate | Promise<EpicBaseGate>) | undefined;
   private readonly gitBreaker: GitCircuitBreaker | undefined;
+  private readonly targetGate: TargetGate | undefined;
   private readonly onSkipReasonChanged: (task: TaskRow) => void;
   private readonly intervalMs: number;
   private readonly missingEpicBaseGraceMs: number;
@@ -121,6 +125,7 @@ export class AutoRunner {
     this.mirror = options.mirror;
     this.epicBaseNotReady = options.epicBaseNotReady;
     this.gitBreaker = options.gitBreaker;
+    this.targetGate = options.targetGate;
     this.onSkipReasonChanged = options.onSkipReasonChanged ?? (() => {});
     this.intervalMs = options.intervalMs ?? 1_000;
     this.missingEpicBaseGraceMs = options.missingEpicBaseGraceMs ?? DEFAULT_MISSING_EPIC_BASE_GRACE_MS;
@@ -262,6 +267,8 @@ export class AutoRunner {
       this.runStore.countRunningByWorkspace(),
     ]);
     const occupied = await occupiedDirectContexts(all);
+    const gate = (await this.targetGate?.snapshot(all)) ?? EMPTY_TARGET_GATE;
+    const localRunning = Math.max(0, running - gate.runningKubernetes);
     const missingThisPass = new Map<number, number>();
     const next = new Map<number, string>();
     const record = (taskId: number, reason: string) => next.set(taskId, reason);
@@ -291,13 +298,18 @@ export class AutoRunner {
         record(task.id, 'workspace disabled');
         return;
       }
-      if (running >= ceiling) {
+      const targetWait = gate.waitReason(task);
+      if (targetWait !== undefined) {
+        record(task.id, targetWait);
+        return;
+      }
+      if (localRunning >= ceiling && gate.targetOf(task) === undefined) {
         record(task.id, 'at capacity');
         return;
       }
       const cap = resolveCap(workspace?.maxConcurrentAttempts, ceiling);
-      const workspaceRunning = task.workspaceId == null ? 0 : (runningByWorkspace.get(task.workspaceId) ?? 0);
-      if (workspaceRunning >= cap) {
+      const workspaceRunning = task.workspaceId == null ? 0 : (runningByWorkspace.get(task.workspaceId) ?? 0) - (gate.runningKubernetesByWorkspace.get(task.workspaceId) ?? 0);
+      if (workspaceRunning >= cap && gate.targetOf(task) === undefined) {
         record(task.id, 'at capacity');
         return;
       }
@@ -368,11 +380,14 @@ export class AutoRunner {
       this.runStore.countRunning(),
       this.runStore.countRunningByWorkspace(),
     ]);
-    let running = running0;
-    const runningByWorkspace = new Map(runningByWorkspace0);
+    const gate = (await this.targetGate?.snapshot(all)) ?? EMPTY_TARGET_GATE;
+    let running = Math.max(0, running0 - gate.runningKubernetes);
+    const runningByWorkspace = new Map(
+      [...runningByWorkspace0].map(([id, n]) => [id, Math.max(0, n - (gate.runningKubernetesByWorkspace.get(id) ?? 0))]),
+    );
     const occupied = await occupiedDirectContexts(all);
     const epicGate = new Map<number, EpicBaseGate>();
-    if (this.epicBaseNotReady && running0 < ceiling) {
+    if (this.epicBaseNotReady && (running < ceiling || gate.hasKubernetes)) {
       const gate = this.epicBaseNotReady;
       await forEachYielding(all, async (t) => {
         if (t.state === 'ready' && t.origin === 'mirrored' && !skip.has(t.id)) {
@@ -384,15 +399,19 @@ export class AutoRunner {
     let stopped = false;
     await forEachYielding(ordered, async (task) => {
       if (stopped) return;
-      if (running >= ceiling) {
-        stopped = true;
+      const kubernetes = gate.targetOf(task) !== undefined;
+      if (running >= ceiling && !kubernetes) {
+        if (!gate.hasKubernetes) stopped = true;
         return;
       }
-      if (!this.slotCandidate(task, { skip, workspacesById, runningByWorkspace, ceiling, occupied, epicGate })) return;
+      if (!this.slotCandidate(task, { skip, workspacesById, runningByWorkspace, ceiling, occupied, epicGate, kubernetes })) return;
+      const targetWait = gate.waitReason(task);
+      if (targetWait !== undefined) return;
       const started = await this.startPicked(task, skip, tickParent);
       if (!started) return;
-      running += 1;
-      if (task.workspaceId != null) {
+      if (kubernetes) gate.started(task);
+      else running += 1;
+      if (task.workspaceId != null && !kubernetes) {
         runningByWorkspace.set(task.workspaceId, (runningByWorkspace.get(task.workspaceId) ?? 0) + 1);
       }
       const key = directContextKey(task);
@@ -413,6 +432,7 @@ export class AutoRunner {
       ceiling,
       occupied,
       epicGate,
+      kubernetes,
     }: {
       skip: Set<number>;
       workspacesById: Map<number, WorkspaceRow>;
@@ -420,6 +440,7 @@ export class AutoRunner {
       ceiling: number;
       occupied: Map<string, TaskRow>;
       epicGate: Map<number, EpicBaseGate>;
+      kubernetes: boolean;
     },
   ): boolean {
     if (t.state !== 'ready' || skip.has(t.id)) return false;
@@ -428,7 +449,7 @@ export class AutoRunner {
     if (!resolveScoped('autoRunnerEnabled', workspace?.autoRunnerEnabled, true)) return false;
     const cap = resolveCap(workspace?.maxConcurrentAttempts, ceiling);
     const wsRunning = t.workspaceId != null ? (runningByWorkspace.get(t.workspaceId) ?? 0) : 0;
-    if (wsRunning >= cap) return false;
+    if (wsRunning >= cap && !kubernetes) return false;
     if (this.gitBreaker && !this.gitBreaker.allows(repoKey(t.workingDir))) {
       this.recordSkipReason(t.id, 'git workspace-prep backoff (repeated failures on this repo)');
       this.recordWaiting(t.id);

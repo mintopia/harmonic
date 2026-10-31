@@ -13,6 +13,8 @@ import { TranscriptCapture } from '../execution/transcript-capture.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import { ConversationDriver, createHarnessProcessSpawn } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
+import { TargetGate } from '../execution/target-gate.js';
+import { forEachYielding } from '../reliability/yield.js';
 import { GlobalPause } from '../execution/global-pause.js';
 import { GitCircuitBreaker } from '../execution/git-failure.js';
 import { EventLoopMonitor } from '../reliability/event-loop-monitor.js';
@@ -410,6 +412,17 @@ export async function createRuntime(deps: {
       await trackerManagerRef?.coordinatorFor(task.workspaceId)?.advertiseClaim(task);
     },
   };
+  deps.stores.executionTargets.attachTickets({
+    forTarget: async (name) => {
+      const found = { running: [] as number[], waiting: [] as number[] };
+      await forEachYielding(await tasks.list({ state: ['ready', 'working'] }), async (task) => {
+        if ((await runner.kubernetesTargetOfTask(task)) !== name) return;
+        (task.state === 'working' ? found.running : found.waiting).push(task.id);
+      });
+      return found;
+    },
+    escalate: (taskId, reason) => runner.escalateForTarget(taskId, reason),
+  });
   const autoRunner = new AutoRunner(
     tasks,
     attempts,
@@ -420,6 +433,7 @@ export async function createRuntime(deps: {
       mirror,
       epicBaseNotReady: (task) => epicServiceRef?.epicBaseNotReady(task) ?? 'ready',
       gitBreaker,
+      targetGate: new TargetGate({ targets: deps.stores.executionTargets, targetOf: (task) => runner.kubernetesTargetOfTask(task) }),
       onSkipReasonChanged: (task) => bus.emit('task_changed', task),
     },
   );

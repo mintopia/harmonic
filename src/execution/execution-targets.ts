@@ -150,6 +150,11 @@ export interface DeletionImpact {
   total: number;
 }
 
+export interface TargetTickets {
+  forTarget(name: string): Promise<{ running: number[]; waiting: number[] }>;
+  escalate(taskId: number, reason: string): Promise<void>;
+}
+
 export const LOCAL_TARGET_VIEW: ExecutionTargetView = {
   name: LOCAL_TARGET,
   builtIn: true,
@@ -188,6 +193,7 @@ export class ExecutionTargetService {
   private readonly testTimeoutMs: number;
   private readonly passes: RepositoryPassService;
   private readonly harnessConfigured: (harness: HarnessId) => boolean;
+  private tickets: TargetTickets | undefined;
 
   constructor(deps: ExecutionTargetServiceDeps) {
     this.db = deps.db;
@@ -237,9 +243,16 @@ export class ExecutionTargetService {
     };
   }
 
-  // ponytail: always 0 until `runs_on` ties Tickets to targets.
-  private async runningCount(_name: string): Promise<number> {
-    return 0;
+  attachTickets(tickets: TargetTickets): void {
+    this.tickets = tickets;
+  }
+
+  private async ticketsOn(name: string): Promise<{ running: number[]; waiting: number[] }> {
+    return (await this.tickets?.forTarget(name)) ?? { running: [], waiting: [] };
+  }
+
+  private async runningCount(name: string): Promise<number> {
+    return (await this.ticketsOn(name)).running.length;
   }
 
   async podAccess(name: string): Promise<{ target: PodTarget & { defaultImage: string }; access: KubernetesAccess }> {
@@ -403,21 +416,23 @@ export class ExecutionTargetService {
     return this.passes.checkProxy(current.name, current.repositoryProxyUrl);
   }
 
-  // ponytail: escalates nothing until `runs_on` ties Tickets to targets.
   async deletionImpact(name: string): Promise<DeletionImpact> {
     await this.row(name);
-    return { running: 0, waiting: 0, total: 0 };
+    const { running, waiting } = await this.ticketsOn(name);
+    return { running: running.length, waiting: waiting.length, total: running.length + waiting.length };
   }
 
   async delete(name: string): Promise<DeletionImpact> {
     const current = await this.row(name);
-    const impact = await this.deletionImpact(name);
+    const { running, waiting } = await this.ticketsOn(name);
     await this.db.write((db) => db.delete(executionTargets).where(eq(executionTargets.id, current.id)).run());
     if (current.kubeconfigSecret) await this.secrets.clear(current.kubeconfigSecret);
     await this.secrets.clear(signingKeySecretName(name));
     for (const harness of HARNESS_IDS) await this.secrets.clear(credentialSecretName(name, harness));
     await this.rewriteWorkspaceLists(name, null);
-    return impact;
+    const reason = `Execution Target '${name}' was deleted`;
+    await forEachYielding([...running, ...waiting], (id) => this.tickets?.escalate(id, reason));
+    return { running: running.length, waiting: waiting.length, total: running.length + waiting.length };
   }
 
   private async rewriteWorkspaceLists(from: string, to: string | null): Promise<void> {
