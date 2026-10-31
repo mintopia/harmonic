@@ -336,6 +336,7 @@ export const api = {
       workflowVars?: Record<string, Record<string, string | number | boolean>> | null;
       modelOptions?: ModelOptionOverlayEntry[] | null;
       classifierEnabled?: boolean | null;
+      workflowClassifierEnabled?: boolean | null;
       classifierBackend?: 'typesafe' | 'openai-compatible' | 'harness' | null;
       classifierTimeoutSeconds?: number | null;
       classifierTypesafeModel?: string | null;

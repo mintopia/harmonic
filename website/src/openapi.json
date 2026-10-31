@@ -2113,6 +2113,7 @@
                 "enum": [
                   "explicit",
                   "label",
+                  "classifier",
                   "workspace",
                   "global"
                 ]
@@ -2121,7 +2122,7 @@
                 "type": "null"
               }
             ],
-            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
+            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `classifier`, `workspace` or `global`; null until the Ticket starts on a workflow.",
             "example": null
           },
           "workflowLabel": {
@@ -2134,6 +2135,18 @@
               }
             ],
             "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
+            "example": null
+          },
+          "workflowReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
           "workflowVarOverrides": {
@@ -2427,6 +2440,7 @@
           "issueWorkflow",
           "workflowChosen",
           "workflowLabel",
+          "workflowReason",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -2643,6 +2657,7 @@
                 "enum": [
                   "explicit",
                   "label",
+                  "classifier",
                   "workspace",
                   "global"
                 ]
@@ -2651,7 +2666,7 @@
                 "type": "null"
               }
             ],
-            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
+            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `classifier`, `workspace` or `global`; null until the Ticket starts on a workflow.",
             "example": null
           },
           "workflowLabel": {
@@ -2664,6 +2679,18 @@
               }
             ],
             "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
+            "example": null
+          },
+          "workflowReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
           "workflowVarOverrides": {
@@ -2975,6 +3002,33 @@
                 "type": "null"
               }
             ]
+          },
+          "workflowRouting": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "cost": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/CostInput"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "cost"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cost of the workflow classifier call, a routing line separate from any Attempt; null when it was not consulted.",
+            "example": null
           },
           "routing": {
             "anyOf": [
@@ -3266,6 +3320,7 @@
           "issueWorkflow",
           "workflowChosen",
           "workflowLabel",
+          "workflowReason",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -3285,6 +3340,7 @@
           "summary",
           "modelOptionOverrides",
           "cost",
+          "workflowRouting",
           "routing",
           "classifier",
           "url",
@@ -3498,6 +3554,7 @@
                 "enum": [
                   "explicit",
                   "label",
+                  "classifier",
                   "workspace",
                   "global"
                 ]
@@ -3506,7 +3563,7 @@
                 "type": "null"
               }
             ],
-            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
+            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `classifier`, `workspace` or `global`; null until the Ticket starts on a workflow.",
             "example": null
           },
           "workflowLabel": {
@@ -3519,6 +3576,18 @@
               }
             ],
             "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
+            "example": null
+          },
+          "workflowReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
           "workflowVarOverrides": {
@@ -3830,6 +3899,33 @@
                 "type": "null"
               }
             ]
+          },
+          "workflowRouting": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "cost": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/CostInput"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "cost"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cost of the workflow classifier call, a routing line separate from any Attempt; null when it was not consulted.",
+            "example": null
           },
           "routing": {
             "anyOf": [
@@ -4120,6 +4216,7 @@
           "issueWorkflow",
           "workflowChosen",
           "workflowLabel",
+          "workflowReason",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -4139,6 +4236,7 @@
           "summary",
           "modelOptionOverrides",
           "cost",
+          "workflowRouting",
           "routing",
           "classifier",
           "url",
@@ -4337,6 +4435,7 @@
                 "enum": [
                   "explicit",
                   "label",
+                  "classifier",
                   "workspace",
                   "global"
                 ]
@@ -4345,7 +4444,7 @@
                 "type": "null"
               }
             ],
-            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
+            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `classifier`, `workspace` or `global`; null until the Ticket starts on a workflow.",
             "example": null
           },
           "workflowLabel": {
@@ -4358,6 +4457,18 @@
               }
             ],
             "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
+            "example": null
+          },
+          "workflowReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
           "workflowVarOverrides": {
@@ -4669,6 +4780,33 @@
                 "type": "null"
               }
             ]
+          },
+          "workflowRouting": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "cost": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/CostInput"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "cost"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cost of the workflow classifier call, a routing line separate from any Attempt; null when it was not consulted.",
+            "example": null
           },
           "routing": {
             "anyOf": [
@@ -4961,6 +5099,7 @@
           "issueWorkflow",
           "workflowChosen",
           "workflowLabel",
+          "workflowReason",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -4980,6 +5119,7 @@
           "summary",
           "modelOptionOverrides",
           "cost",
+          "workflowRouting",
           "routing",
           "classifier",
           "url",
@@ -8077,6 +8217,17 @@
             ],
             "example": null
           },
+          "workflowClassifierEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "classifierBackend": {
             "anyOf": [
               {
@@ -8936,6 +9087,7 @@
           "workflowVars",
           "modelOptions",
           "classifierEnabled",
+          "workflowClassifierEnabled",
           "classifierBackend",
           "classifierTimeoutSeconds",
           "classifierTypesafeModel",
@@ -13466,6 +13618,7 @@
                 "enum": [
                   "explicit",
                   "label",
+                  "classifier",
                   "workspace",
                   "global"
                 ]
@@ -13474,7 +13627,7 @@
                 "type": "null"
               }
             ],
-            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
+            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `classifier`, `workspace` or `global`; null until the Ticket starts on a workflow.",
             "example": null
           },
           "workflowLabel": {
@@ -13487,6 +13640,18 @@
               }
             ],
             "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
+            "example": null
+          },
+          "workflowReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
           "workflowVarOverrides": {
@@ -13782,6 +13947,7 @@
           "issueWorkflow",
           "workflowChosen",
           "workflowLabel",
+          "workflowReason",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -14000,6 +14166,7 @@
                 "enum": [
                   "explicit",
                   "label",
+                  "classifier",
                   "workspace",
                   "global"
                 ]
@@ -14008,7 +14175,7 @@
                 "type": "null"
               }
             ],
-            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
+            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `classifier`, `workspace` or `global`; null until the Ticket starts on a workflow.",
             "example": null
           },
           "workflowLabel": {
@@ -14021,6 +14188,18 @@
               }
             ],
             "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
+            "example": null
+          },
+          "workflowReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
           "workflowVarOverrides": {
@@ -14335,6 +14514,34 @@
                 "type": "null"
               }
             ]
+          },
+          "workflowRouting": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "cost": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/Cost"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "cost"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cost of the workflow classifier call, a routing line separate from any Attempt; null when it was not consulted.",
+            "example": null
           },
           "routing": {
             "anyOf": [
@@ -14628,6 +14835,7 @@
           "issueWorkflow",
           "workflowChosen",
           "workflowLabel",
+          "workflowReason",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -14647,6 +14855,7 @@
           "summary",
           "modelOptionOverrides",
           "cost",
+          "workflowRouting",
           "routing",
           "classifier",
           "url",
@@ -14862,6 +15071,7 @@
                 "enum": [
                   "explicit",
                   "label",
+                  "classifier",
                   "workspace",
                   "global"
                 ]
@@ -14870,7 +15080,7 @@
                 "type": "null"
               }
             ],
-            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
+            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `classifier`, `workspace` or `global`; null until the Ticket starts on a workflow.",
             "example": null
           },
           "workflowLabel": {
@@ -14883,6 +15093,18 @@
               }
             ],
             "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
+            "example": null
+          },
+          "workflowReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
           "workflowVarOverrides": {
@@ -15197,6 +15419,34 @@
                 "type": "null"
               }
             ]
+          },
+          "workflowRouting": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "cost": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/Cost"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "cost"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cost of the workflow classifier call, a routing line separate from any Attempt; null when it was not consulted.",
+            "example": null
           },
           "routing": {
             "anyOf": [
@@ -15489,6 +15739,7 @@
           "issueWorkflow",
           "workflowChosen",
           "workflowLabel",
+          "workflowReason",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -15508,6 +15759,7 @@
           "summary",
           "modelOptionOverrides",
           "cost",
+          "workflowRouting",
           "routing",
           "classifier",
           "url",
@@ -15708,6 +15960,7 @@
                 "enum": [
                   "explicit",
                   "label",
+                  "classifier",
                   "workspace",
                   "global"
                 ]
@@ -15716,7 +15969,7 @@
                 "type": "null"
               }
             ],
-            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
+            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `classifier`, `workspace` or `global`; null until the Ticket starts on a workflow.",
             "example": null
           },
           "workflowLabel": {
@@ -15729,6 +15982,18 @@
               }
             ],
             "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
+            "example": null
+          },
+          "workflowReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
           "workflowVarOverrides": {
@@ -16043,6 +16308,34 @@
                 "type": "null"
               }
             ]
+          },
+          "workflowRouting": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "cost": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/Cost"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "cost"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cost of the workflow classifier call, a routing line separate from any Attempt; null when it was not consulted.",
+            "example": null
           },
           "routing": {
             "anyOf": [
@@ -16337,6 +16630,7 @@
           "issueWorkflow",
           "workflowChosen",
           "workflowLabel",
+          "workflowReason",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -16356,6 +16650,7 @@
           "summary",
           "modelOptionOverrides",
           "cost",
+          "workflowRouting",
           "routing",
           "classifier",
           "url",
@@ -19555,6 +19850,17 @@
             ],
             "example": null
           },
+          "workflowClassifierEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "classifierBackend": {
             "anyOf": [
               {
@@ -20422,6 +20728,7 @@
           "workflowVars",
           "modelOptions",
           "classifierEnabled",
+          "workflowClassifierEnabled",
           "classifierBackend",
           "classifierTimeoutSeconds",
           "classifierTypesafeModel",
@@ -24029,6 +24336,7 @@
                           "enum": [
                             "explicit",
                             "label",
+                            "classifier",
                             "workspace",
                             "global"
                           ]
@@ -28794,6 +29102,17 @@
                     ]
                   },
                   "classifierEnabled": {
+                    "example": true,
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "workflowClassifierEnabled": {
                     "example": true,
                     "anyOf": [
                       {

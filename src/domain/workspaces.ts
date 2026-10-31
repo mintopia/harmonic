@@ -101,6 +101,8 @@ export const workspaceOverridesSchema = z.object({
   modelOptions: modelOptionOverrideSchema.nullable().optional(),
   /** Route Classifier on/off override; null inherits off. */
   classifierEnabled: z.boolean().nullable().optional().meta({ example: true }),
+  /** Workflow classifier on/off override; null inherits off. */
+  workflowClassifierEnabled: z.boolean().nullable().optional().meta({ example: true }),
   classifierBackend: z.enum(CLASSIFIER_BACKENDS).nullable().optional().meta({ example: 'harness' }),
   /** Seconds the Route Classifier may take before it abstains; null inherits 30. */
   classifierTimeoutSeconds: z.number().positive().nullable().optional().meta({ example: 30 }),
@@ -200,6 +202,7 @@ export const OVERRIDE_KEYS = [
   'workflowLabels',
   'workflowVars',
   'modelOptions',
+  'workflowClassifierEnabled',
   'classifierEnabled',
   'classifierBackend',
   'classifierTimeoutSeconds',
@@ -312,6 +315,7 @@ export class WorkspaceService {
       workflowLabels: o.workflowLabels != null ? JSON.stringify(o.workflowLabels) : null,
       workflowVars: o.workflowVars != null ? JSON.stringify(o.workflowVars) : null,
       modelOptions: o.modelOptions != null ? JSON.stringify(o.modelOptions) : null,
+      workflowClassifierEnabled: o.workflowClassifierEnabled,
       classifierEnabled: o.classifierEnabled,
       classifierBackend: o.classifierBackend,
       classifierTimeoutSeconds: o.classifierTimeoutSeconds,

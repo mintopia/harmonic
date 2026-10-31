@@ -199,6 +199,13 @@ export const settingsRegistry = {
     label: 'Model Options',
     help: 'Harness and Model choices the Route Classifier may pick from. A Workspace reorders or turns off global options and adds its own.',
   },
+  workflowClassifierEnabled: {
+    scope: 'overridable',
+    control: 'toggle',
+    tab: 'execution',
+    label: 'Workflow classifier',
+    help: "Let a classifier pick a Ticket's workflow from the library when no operator choice or Workflow Label applies. Off unless set.",
+  },
   classifierEnabled: {
     scope: 'overridable',
     control: 'toggle',

@@ -88,6 +88,7 @@ const workspace = {
   workflowVars: null,
   modelOptions: [{ kind: 'local', enabled: true, modelOption: { id: 'deep-dive', harness: 'claude', model: 'claude-opus-5-5', description: 'Workspace-only deep work' } }],
   classifierEnabled: null,
+  workflowClassifierEnabled: null,
   classifierBackend: null,
   classifierTimeoutSeconds: null,
   classifierTypesafeModel: null,

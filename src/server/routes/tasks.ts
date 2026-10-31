@@ -225,8 +225,9 @@ const taskWithDepsSchema = z
     trackerRef: z.string().nullable().meta({ example: null }),
     /** 'wayfinder' | 'implement'; null on native Tasks. */
     issueWorkflow: z.enum(ISSUE_WORKFLOWS).nullable().meta({ example: null }),
-    workflowChosen: z.enum(WORKFLOW_CHOSEN).nullable().describe('How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.').meta({ example: null }),
+    workflowChosen: z.enum(WORKFLOW_CHOSEN).nullable().describe('How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `classifier`, `workspace` or `global`; null until the Ticket starts on a workflow.').meta({ example: null }),
     workflowLabel: z.string().nullable().describe('The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.').meta({ example: null }),
+    workflowReason: z.string().nullable().describe('The workflow classifier\'s one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.').meta({ example: null }),
     workflowVarOverrides: z.record(z.string(), varValueSchema).nullable().describe('The Ticket\'s own overrides of the workflow `vars:`; null when none.').meta({ example: null }),
     workflowVars: z.record(z.string(), varValueSchema).nullable().describe('The vars the pinned workflow runs with, resolved when it was pinned; null before the pin.').meta({ example: null }),
     workflowRef: z.string().nullable().describe('The Workflow Library version the Ticket is pinned to, as `<name>@<version>`; null until it starts on one.').meta({ example: null }),
@@ -278,6 +279,7 @@ const taskSchema = taskWithDepsSchema
     modelOptionOverrides: z.array(z.object({ id: z.string(), harness: z.string(), model: z.string() })).meta({ example: [{ id: 'cheap-fix', harness: 'claude', model: 'claude-haiku-5-5' }] }),
     cost: costSchema.nullable(),
     /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. Null when none matches or on native Tasks. */
+    workflowRouting: z.object({ cost: costSchema.nullable() }).nullable().describe('Cost of the workflow classifier call, a routing line separate from any Attempt; null when it was not consulted.').meta({ example: null }),
     routing: taskRoutingSchema.nullable().meta({ example: { label: 'reasoning', applied: true } }),
     /** What the Route Classifier did: `routed` chose a Model Option (`optionId`, `reason`), `abstained` fell to the default (`reason` is the cause), `overridden` was skipped because an operator Harness/Model won. Null when it did not decide. */
     classifier: taskClassifierSchema

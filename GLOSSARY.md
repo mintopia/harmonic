@@ -380,6 +380,17 @@ Ticket, then the Workflow Label, then the Workspace default, then the global
 default. Resolved once when the Ticket starts working, never mid-loop.
 _Avoid_: routing label (that picks Harness + Model), workflow tag
 
+**Workflow Classifier**:
+An AI decision that picks a Ticket's Task Execution Workflow when neither the
+operator nor a Workflow Label has. A separate per-Workspace switch from the
+Route Classifier, off by default, and it shares that classifier's backend and
+settings. It chooses by name and description from the global library. Runs when
+the Ticket starts working and on Retry, never per Attempt, so an in-flight Ticket
+never switches. A wayfinder research Ticket is not classified. If it cannot
+decide, it abstains to the Workspace default, visibly in Activity. Its Cost is a
+routing line on the Ticket, separate from implementation Cost. Not a Step.
+_Avoid_: router, workflow picker, auto-workflow
+
 **Wayfinder Type**:
 The kind of an Issue Workflow *wayfinder* decision ticket: *research*,
 *prototype*, *grilling*, or *task*. Null for *implement* Tasks —
