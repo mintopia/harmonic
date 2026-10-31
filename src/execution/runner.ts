@@ -203,6 +203,7 @@ export class Runner {
         return values.filter((value): value is string => value !== null);
       },
       cwdFor: (task) => this.workspaceProvisioner.dispatchCwd(task),
+      baseBranchFor: (task) => this.mergeCoordinator.resolveBaseBranch(task),
       escalate: async (task, run, reason) => this.settleEscalated(task, await this.attempts.get(run.id), reason, {}),
       complete: async (task, run) => this.settleAutoCompleted(task, await this.attempts.get(run.id), {}),
       onStepChanged: (taskId) => this.events.onStepChanged?.(taskId),

@@ -36,6 +36,7 @@ describe('WorkflowEngine', () => {
       commandById: async (_task, id) => (commands[id] ? { id, env: {}, ...commands[id] } : undefined),
       secretValues: async () => secretValues,
       cwdFor: () => repo,
+      baseBranchFor: async () => 'main',
       escalate: async (_task, _run, reason) => { escalations.push(reason); },
       complete: async () => { completions += 1; },
       ...over,
@@ -174,5 +175,50 @@ describe('WorkflowEngine', () => {
     await store.start({ taskId: task.id, workflowRef: 'flow@1', stepId: 'only', position: 0, action: 'run' });
     await engine().run(task, run);
     expect((await stepRows(task.id)).map((r) => r.outcome)).toEqual([null, 'pass']);
+  });
+
+  describe('uses: rebase', () => {
+    let wt: string;
+    const commitFile = (cwd: string, file: string, body: string, msg: string): void => {
+      writeFileSync(join(cwd, file), body);
+      git(cwd, 'add', file);
+      git(cwd, 'commit', '-q', '-m', msg);
+    };
+    const rebaseEngine = () => engine({ cwdFor: () => wt });
+    const rebaseOutputs = async (taskId: number) => JSON.parse((await stepRows(taskId))[0]!.outputs!);
+
+    beforeEach(() => {
+      commitFile(repo, 'shared.txt', 'base\n', 'shared');
+      wt = join(dir, 'wt');
+      git(repo, 'worktree', 'add', '-q', '-b', 'ticket', wt);
+    });
+
+    it('rebases onto the new base commits and leaves the base checkout on its branch', async () => {
+      commitFile(wt, 'mine.txt', 'mine\n', 'mine');
+      commitFile(repo, 'theirs.txt', 'theirs\n', 'theirs');
+      const { task, run } = await startTask(flow('  - id: sync\n    uses: rebase\n'));
+      await rebaseEngine().run(task, run);
+      const newBase = git(repo, 'rev-parse', 'main');
+      expect((await stepRows(task.id))[0]).toMatchObject({ action: 'rebase', outcome: 'pass' });
+      expect(await rebaseOutputs(task.id)).toMatchObject({ baseSha: newBase, conflictedFiles: [] });
+      expect(git(wt, 'merge-base', '--is-ancestor', newBase, 'HEAD')).toBe('');
+      expect(git(wt, 'log', '--format=%s', '-1')).toBe('mine');
+      expect(git(repo, 'branch', '--show-current')).toBe('main');
+      expect(completions).toBe(1);
+    });
+
+    it('reports a conflict with the file and aborts back to the pre-rebase tip', async () => {
+      commitFile(wt, 'shared.txt', 'ticket\n', 'ticket edit');
+      const before = git(wt, 'rev-parse', 'HEAD');
+      commitFile(repo, 'shared.txt', 'main\n', 'main edit');
+      const { task, run } = await startTask(flow('  - id: sync\n    uses: rebase\n'));
+      await rebaseEngine().run(task, run);
+      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'conflict' });
+      expect(await rebaseOutputs(task.id)).toMatchObject({ baseSha: git(repo, 'rev-parse', 'main'), conflictedFiles: ['shared.txt'] });
+      expect(escalations).toHaveLength(1);
+      expect(git(wt, 'rev-parse', 'HEAD')).toBe(before);
+      expect(git(wt, 'status', '--porcelain')).toBe('');
+      expect(git(repo, 'branch', '--show-current')).toBe('main');
+    });
   });
 });
