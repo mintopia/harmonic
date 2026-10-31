@@ -28,7 +28,8 @@ import { resolveModelOption } from '../domain/model-options.js';
 import type { ClassifierOutcome, WorkflowClassifierOutcome } from '../domain/route-classifier.js';
 import { NO_CLASSIFIER, type WorkflowClassifierRecord } from '../domain/tasks.js';
 import { DomainError, GitError } from '../domain/errors.js';
-import { kubernetesWorkflowRefusal } from './workspace-execution-targets.js';
+import { kubernetesTargetOf, kubernetesWorkflowRefusal } from './workspace-execution-targets.js';
+import { mergeRemoteTicketBranch } from './remote-merge.js';
 import { AttemptStore, type AttemptGuardrailSnapshot } from '../domain/attempts.js';
 import type { EscalationCause } from '../domain/task-routing.js';
 import { AttemptSettleCoordinator, type SettleProjection, type DispositionKind } from '../domain/attempt-settle.js';
@@ -56,7 +57,7 @@ import { resolveBeforeClassifier, resolveTaskWorkflow, workflowInputOf } from '.
 import { resolveVars, workspaceVarsFor, type VarRecord } from '../domain/workflow-vars.js';
 import { parseWorkflow } from '../domain/workflow.js';
 import type { WorkflowChosen } from '../db/schema.js';
-import { WorkflowEngine, type AgentDriveRequest, type AgentDriveResult, type EpicSubject } from './workflow-engine.js';
+import { WorkflowEngine, parseWorkflowRef, type AgentDriveRequest, type AgentDriveResult, type EpicSubject } from './workflow-engine.js';
 import { WorkflowLibrary } from '../domain/workflow-library-store.js';
 import { seedLegacyResume } from './legacy-resume-seeding.js';
 import { WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
@@ -224,6 +225,12 @@ export class Runner {
       baseBranchFor: (task) => this.mergeCoordinator.resolveBaseBranch(task),
       mergeBranch: async (task, run) => {
         await this.attempts.update(run.id, await this.diffSnapshotFor(task, run.id));
+        if (await this.runsOnKubernetes(task)) {
+          const outcome = await mergeRemoteTicketBranch({ repoDir: task.workingDir, remote: 'origin', baseBranch: run.baseBranch!, taskBranch: run.branch! });
+          return outcome.kind === 'merged'
+            ? { ok: true, mode: 'cas', oid: outcome.mergeOid, baseBranch: run.baseBranch!, branch: run.branch! }
+            : { ok: false, reason: outcome.reason === 'conflict' ? 'conflict' : 'target-advanced', detail: outcome.message };
+        }
         return withBaseCheckoutLock(task.workingDir, () =>
           withRepoLock(task.workingDir, async () =>
             mergeIntoBase({
@@ -563,6 +570,13 @@ export class Runner {
   }
 
   /** The latest Attempt when a restart interrupted it: its workflow resumes rather than starting over. */
+  private async runsOnKubernetes(task: TaskRow): Promise<boolean> {
+    if (task.workflowRef === null) return false;
+    const { name, version } = parseWorkflowRef(task.workflowRef);
+    const { text } = await this.workflowLibrary.getVersion(name, version);
+    return kubernetesTargetOf({ list: () => [{ name, text }] }, name) !== undefined;
+  }
+
   private async interruptedAttempt(task: TaskRow): Promise<AttemptRow | undefined> {
     const latest = (await this.attempts.listForTask(task.id)).at(-1);
     return latest?.state === 'failed' && latest.reason === 'process-death' ? latest : undefined;
