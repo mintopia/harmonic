@@ -106,7 +106,14 @@ const issueTheme = EditorView.theme({
   '.cm-gutterElement.cm-issue-gutter': { color: 'var(--hm-fail)', fontWeight: 700, background: 'var(--hm-fail-tint)' },
   '&': { backgroundColor: 'transparent' },
   '.cm-completionIcon': { display: 'none' },
-  '.cm-tooltip-autocomplete::after': { content: '"Closed set of Workflow Actions · Tab to accept"', display: 'block', padding: '3px 8px', fontSize: '11px', color: 'var(--hm-faint)', borderTop: '1px solid var(--hm-hairline)' },
+  '.cm-tooltip.cm-tooltip-autocomplete': { minWidth: '300px', background: 'var(--hm-surface)', border: 'none', borderRadius: '4px', boxShadow: 'var(--hm-shadow-bar)', padding: '4px 0', fontFamily: 'var(--font-sans, inherit)', fontSize: '13px' },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul': { maxHeight: 'none', fontFamily: 'inherit', minWidth: '300px' },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul > li': { display: 'flex', alignItems: 'baseline', gap: '10px', padding: '5px 10px', color: 'var(--hm-ink)' },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]': { background: 'var(--hm-raised)', color: 'var(--hm-ink)' },
+  '.cm-completionLabel': { fontFamily: 'var(--font-code, monospace)', fontSize: '12px', color: 'var(--hm-ink)' },
+  '.cm-completionMatchedText': { color: 'var(--hm-accent)', fontWeight: 700, textDecoration: 'none' },
+  '.cm-completionDetail': { marginLeft: 'auto', paddingLeft: '16px', fontStyle: 'normal', fontSize: '11px', color: 'var(--hm-muted)', textAlign: 'right' },
+  '.cm-tooltip-autocomplete::after': { content: '"Closed set of Workflow Actions · Tab to accept"', display: 'block', marginTop: '4px', padding: '4px 10px 2px', fontSize: '10px', color: 'var(--hm-faint)', borderTop: '1px solid var(--hm-hairline)' },
 });
 
 export function YamlEditor({

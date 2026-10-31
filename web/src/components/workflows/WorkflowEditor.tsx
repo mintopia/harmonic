@@ -132,7 +132,7 @@ function EditorBody({
         <button type="button" className={btnGhost} disabled={blocked !== null} title={blocked ?? undefined} onClick={() => setConfirmingDelete(true)}>
           Delete
         </button>
-        <button type="button" className={btnPrimary} disabled={saveDisabled} onClick={save}>
+        <button type="button" className={`${btnPrimary} disabled:border disabled:border-hairline disabled:bg-raised disabled:bg-none disabled:text-faint disabled:opacity-100 disabled:shadow-none disabled:hover:bg-raised`} disabled={saveDisabled} onClick={save}>
           {readOnly ? 'Save' : status.saveLabel}
         </button>
       </div>
