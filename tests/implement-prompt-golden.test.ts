@@ -54,7 +54,7 @@ describe('bundled implement workflow through the engine', () => {
   let prompts: PromptLibrary;
   let driven: string[];
   let turns: ((cwd: string, n: number) => void)[];
-  let verifyFails: number;
+  let verifyFails: boolean;
   let escalations: string[];
 
   const commitFile = (cwd: string, name: string): void => {
@@ -70,13 +70,14 @@ describe('bundled implement workflow through the engine', () => {
     const config = { ...baselineConfig(), harnesses: { claude: { command: 'x', args: [], env: {}, models: [{ id: 'm' }], defaultModel: 'm', cacheWarmSeconds: 300 } } } as unknown as ReturnType<typeof baselineConfig>;
     const fields = (t: TaskRow) => driveFields({ ...t, id: TICKET_TASK.id, trackerRef: TICKET_TASK.trackerRef, mapRef: null } as never, urlFor);
     const urlFor = () => TICKET_URL;
+    const bundled = new WorkflowLibrary(null);
+    const flag = join(dir, 'verify-ran');
+    const failOnce = `test -f ${flag} || { touch ${flag}; echo O; exit 1; }`;
+    if (!verifyFails) writeFileSync(flag, '');
     const engine = new WorkflowEngine({
-      library: new WorkflowLibrary(null),
+      library: { getVersion: async (name, version) => { const entry = await bundled.getVersion(name, version); return { ...entry, text: entry.text.replace('uses: verify', `run: ${JSON.stringify(failOnce)}`) }; } },
       stepRuns: new WorkflowStepRunStore(db),
       spawn: createChildProcessSpawn(testSpawnProcessGroup),
-      commandById: async () => undefined,
-      preMergeCommands: async () => (verifyFails-- > 0 ? [{ id: 'v', command: 'sh', args: ['-c', 'echo O; exit 1'], env: {}, timeoutSeconds: 30 }] : []),
-      postMergeCommands: async () => [],
       secrets: async () => ({}),
       cwdFor: () => repo,
       baseBranchFor: async () => 'main',
@@ -111,7 +112,7 @@ describe('bundled implement workflow through the engine', () => {
     prompts = new PromptLibrary(null);
     driven = [];
     turns = [(cwd) => writeFileSync(join(cwd, 'a.txt'), 'dirty'), (cwd) => { git(cwd, 'add', '-A'); git(cwd, 'commit', '-q', '-m', 'work'); }];
-    verifyFails = 0;
+    verifyFails = false;
     escalations = [];
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
@@ -141,7 +142,7 @@ describe('bundled implement workflow through the engine', () => {
     ['native', 'nativeHeal', { prompt: NATIVE_TASK.prompt, origin: 'native' as const }],
     ['mirrored', 'ticketHeal', { prompt: TICKET_TASK.prompt, origin: 'mirrored' as const, trackerRef: String(TICKET_TASK.trackerRef) as TaskRow['trackerRef'] }],
   ])('sends the %s self-heal prompt on the second attempt byte for byte against the bundled Library entry', async (_kind, key, over) => {
-    verifyFails = 1;
+    verifyFails = true;
     turns[2] = (cwd) => commitFile(cwd, 'b.txt');
     const { rows } = await run({ ...over, feedback: null });
     expect(driven).toHaveLength(3);

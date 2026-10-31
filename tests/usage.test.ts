@@ -653,13 +653,11 @@ describe('usage collection and statistics', () => {
     // workspace's task pre-merge command list.
     server = await startServer({ ...stubHarness(), maxAttempts: 1 });
     const ws = (await server.app.ctx.workspaces.list())[0]!;
-    await server.app.ctx.workspaces.update(ws.id, {
-      taskPreMergeCommands: [{
+    await server.legacy.setWorkspace(ws.id, { taskPreMergeCommands: [{
         kind: 'local',
         enabled: true,
         command: verificationCommandSchema.parse({ id: 'cmd-exit-1', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }),
-      }],
-    });
+      }] });
 
     const usageScenario = JSON.stringify({ usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 } });
     const created = await server.api('POST', '/api/tasks', { prompt: usageScenario });
@@ -667,7 +665,7 @@ describe('usage collection and statistics', () => {
     await server.api('POST', `/api/tasks/${taskId}/run`);
     await waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated' ? true : undefined));
 
-    await server.app.ctx.workspaces.update(ws.id, { taskPreMergeCommands: null });
+    await server.legacy.setWorkspace(ws.id, { taskPreMergeCommands: null });
     expect((await server.api('POST', `/api/tasks/${taskId}/retry`, { guidance: '' })).status).toBe(200);
     await server.api('POST', `/api/tasks/${taskId}/run`);
     await waitFor(async () => {

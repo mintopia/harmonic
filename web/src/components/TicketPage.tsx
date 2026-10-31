@@ -83,7 +83,7 @@ export function TicketPage({
   const { events, logUnavailable, fromArchive } = useAttemptLogStream(selectedRunId);
   const { verificationAttempts, verifierStatuses } = useAttemptVerification(selectedRunId);
 
-  const { allTasks, detail, timelineEvents, maxAttempts, workspaceName, commandConfigured, guardrailEvents, workflowSteps } = useTicketPageData(
+  const { allTasks, detail, timelineEvents, workspaceName, guardrailEvents, workflowSteps } = useTicketPageData(
     task,
     selectedRunId,
   );
@@ -215,7 +215,7 @@ export function TicketPage({
               </div>
             </div>
 
-            <TaskProgressBar task={task} attempts={runs} attemptDetails={attempts} commandConfigured={commandConfigured} />
+            <TaskProgressBar task={task} attempts={runs} attemptDetails={attempts} />
 
             <WorkflowSteps data={workflowSteps} />
             <TicketVariables taskId={task.id} />
@@ -353,7 +353,6 @@ export function TicketPage({
           <div className="min-h-0 flex-1 overflow-y-auto max-rail:overflow-visible max-rail:border-t max-rail:border-hairline max-rail:bg-surface">
             <AttemptsNav
               attempts={attempts}
-              maxAttempts={maxAttempts}
               selectedNumber={resolved.kind === 'attempt' ? resolved.attemptNumber : null}
               onSelect={selectAttempt}
             />

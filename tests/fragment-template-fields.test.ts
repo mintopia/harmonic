@@ -37,9 +37,7 @@ const CRITIC = { id: 'critic-1', name: 'c', harness: 'claude' as const, model: '
 
 function configWithCritics(): AppConfig {
   const config = clone(baselineConfig());
-  for (const stage of [config.verify.task.preMerge, config.verify.task.postMerge, config.verify.epic.preMerge]) {
-    stage.critics = [clone(CRITIC)];
-  }
+  config.verify.epic.preMerge.critics = [clone(CRITIC)];
   return config;
 }
 
@@ -88,24 +86,9 @@ describe('runtime expansion of every fragment-expanding template, with Workspace
     const { key } = field.workspace!;
     if (field.workspace!.path.length === 0) wsOverrides[key] = tpl('W', field);
   }
-  for (const key of ['taskPreMergeCritics', 'taskPostMergeCritics'] as const) {
-    wsOverrides[key] = JSON.stringify([
-      {
-        kind: 'local',
-        enabled: true,
-        critic: {
-          ...CRITIC,
-          issuePrompt: tpl('W', workspaceFields.find((f) => f.workspace!.key === key && f.workspace!.path.at(-1) === 'issuePrompt')!),
-          noIssuePrompt: tpl('W', workspaceFields.find((f) => f.workspace!.key === key && f.workspace!.path.at(-1) === 'noIssuePrompt')!),
-        },
-      },
-    ]);
-  }
   wsOverrides.epicPreMergeCritics = JSON.stringify([
     { kind: 'local', enabled: true, critic: { ...CRITIC, prompt: tpl('W', workspaceFields.find((f) => f.workspace!.key === 'epicPreMergeCritics')!) } },
   ]);
-  wsOverrides.taskPreMergeCommands = null;
-  wsOverrides.taskPostMergeCommands = null;
   wsOverrides.epicPreMergeCommands = null;
   const ws = wsOverrides as never;
 
@@ -115,17 +98,6 @@ describe('runtime expansion of every fragment-expanding template, with Workspace
     const template = (scoped as Record<string, string> | undefined)?.[wsKey] ?? global;
     return expandFragments(template, resolvePromptFragments(scoped, globalConfig));
   };
-  const critic = (scope: 'G' | 'W', pick: (c: ReturnType<typeof resolveVerifiers>['task']['preMerge']['critics'][number]) => string, stage: 'task.preMerge' | 'task.postMerge' = 'task.preMerge') => {
-    const resolved = resolveVerifiers(scope === 'W' ? (ws as never) : { taskPreMergeCritics: null, taskPostMergeCritics: null, epicPreMergeCritics: null, taskPreMergeCommands: null, taskPostMergeCommands: null, epicPreMergeCommands: null }, globalConfig);
-    const critics = stage === 'task.preMerge' ? resolved.task.preMerge.critics : resolved.task.postMerge.critics;
-    return buildCriticPrompt({
-      operatorPrompt: pick(critics[0]!),
-      fields: { taskId: '7', skill: '/implement', ref: '5', url: 'u', title: 't', description: 'd' },
-      verifiedHeadOid: 'abc',
-      fragments: resolvePromptFragments(scope === 'W' ? (ws as never) : undefined, globalConfig),
-    });
-  };
-
   const runtime: Record<string, (scope: 'G' | 'W') => Promise<string> | string> = {
     taskPrompt: (s) => promptForTask(task as never, expanded(s, 'taskPrompt', globalConfig.taskPrompt)),
     'drive.prompt': (s) => expanded(s, 'drivePrompt', globalConfig.drive.prompt),
@@ -141,12 +113,8 @@ describe('runtime expansion of every fragment-expanding template, with Workspace
       const merge = resolveMergePrompts(s === 'W' ? (ws as never) : undefined, globalConfig);
       return renderConflictPrompt(merge.epicConflictPrompt, merge.fragments, { turn: 1, baseBranch: 'b', taskBranch: 't', unmergedPaths: [], baseDir: '/w' });
     },
-    'verify.task.preMerge.critics.*.issuePrompt': (s) => critic(s, (c) => c.issuePrompt),
-    'verify.task.preMerge.critics.*.noIssuePrompt': (s) => critic(s, (c) => c.noIssuePrompt),
-    'verify.task.postMerge.critics.*.issuePrompt': (s) => critic(s, (c) => c.issuePrompt, 'task.postMerge'),
-    'verify.task.postMerge.critics.*.noIssuePrompt': (s) => critic(s, (c) => c.noIssuePrompt, 'task.postMerge'),
     'verify.epic.preMerge.critics.*.prompt': (s) => {
-      const resolved = resolveVerifiers(s === 'W' ? (ws as never) : { taskPreMergeCritics: null, taskPostMergeCritics: null, epicPreMergeCritics: null, taskPreMergeCommands: null, taskPostMergeCommands: null, epicPreMergeCommands: null }, globalConfig);
+      const resolved = resolveVerifiers(s === 'W' ? (ws as never) : { epicPreMergeCritics: null, epicPreMergeCommands: null }, globalConfig);
       return buildCriticPrompt({
         operatorPrompt: resolved.epic.preMerge.critics[0]!.prompt,
         fields: { taskId: '7', skill: '/implement', ref: '5', url: 'u', title: 't', description: 'd' },

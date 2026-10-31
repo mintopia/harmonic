@@ -3,7 +3,7 @@ import { act, createElement, useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Tabs } from '../web/src/components/Tabs.js';
 import { SettingsForm } from '../web/src/components/SettingsForm.js';
-import { cleanup, makeConfig, mountComponent } from './component-smoke-harness.js';
+import { cleanup, makeConfig, makeWorkspace, mountComponent } from './component-smoke-harness.js';
 
 afterEach(cleanup);
 
@@ -100,5 +100,64 @@ describe('settings tab keyboard navigation', () => {
       expect(host.querySelector('[aria-selected="true"]')?.id).toBe(`settings-tab-${selected}`);
       expect(tabs.filter((tab) => tab.tabIndex === 0)).toHaveLength(1);
     }
+  });
+});
+
+
+describe('settings Execution tab without Ticket-side execution controls (ADR-0055)', () => {
+  const channels = { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} };
+  const mountTab = async (surface: 'global' | 'workspace', tab: 'execution' | 'verification') => {
+    const config = makeConfig();
+    const workspace = makeWorkspace();
+    const ctx =
+      surface === 'global'
+        ? { surface: 'global' as const, config, baseline: config, setConfig: () => {}, errors: {}, harnessPermissionModes: {}, channels }
+        : {
+            surface: 'workspace' as const,
+            config,
+            workspace,
+            pristineWorkspace: workspace,
+            setWorkspace: () => {},
+            errors: {},
+            blockedByRunningTask: false,
+            onRequestDelete: () => {},
+          };
+    return mountComponent(
+      createElement(SettingsForm, {
+        title: 'Settings',
+        intro: 'Configure Harmonic.',
+        tabs: [{ id: tab, label: tab }],
+        tab,
+        onTab: () => {},
+        ctx,
+        dirty: false,
+        saving: false,
+        error: null,
+        onSave: () => {},
+        onDiscard: () => {},
+      }),
+    );
+  };
+
+  it.each(['global', 'workspace'] as const)('renders none of the removed controls on the %s Execution tab', async (surface) => {
+    const host = await mountTab(surface, 'execution');
+    const text = host.textContent ?? '';
+    for (const label of ['Attempt limit', 'Merge fate', 'Continue attempts', 'Unattended drive']) expect(text).not.toContain(label);
+    for (const id of ['settings-max-attempts', 'workspace-max-attempts', 'settings-merge-fate', 'workspace-merge-fate', 'settings-continue-attempts', 'workspace-continue-attempts']) {
+      expect(host.querySelector(`#${id}`), id).toBeNull();
+    }
+    expect(text).toContain('Session reuse');
+  });
+
+  it.each(['global', 'workspace'] as const)('keeps Epic verification controls and drops the Task ones on the %s verification tab', async (surface) => {
+    const host = await mountTab(surface, 'verification');
+    const text = host.textContent ?? '';
+    expect(host.querySelector('[role="tablist"][aria-label="Verification scope"]')).toBeNull();
+    expect(text).toContain('before the epic merges');
+    expect(text).not.toContain('before the task merges');
+    expect(text).not.toContain('Post-merge');
+    expect(host.querySelector('[id^="settings-task-"], [id^="workspace-task-"]')).toBeNull();
+    expect(text).toContain('+ Add command');
+    expect(text).toContain('+ Add critic');
   });
 });

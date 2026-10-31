@@ -69,64 +69,25 @@ describe('verification-attempts-route', () => {
       ]));
     });
 
-    it('reconciles recorded attempts with configured verifier statuses', async () => {
-      const configured = await startServer({
-        ...stubHarness(),
-        verify: { task: { preMerge: { commands: [{ id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [{ id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the issue diff.', noIssuePrompt: 'Review the Task diff.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 }] } } },
+    it('reports a mechanism with no recorded attempt as disabled, since Tickets configure no verifiers', async () => {
+      const created = await server.api('POST', '/api/tasks', { prompt: 'verification status target' });
+      const task = await server.app.ctx.tasks.get(created.body.id);
+      const run = await server.app.ctx.attempts.create(task.id);
+      await server.app.ctx.verificationAttempts.append(run.id, {
+        mechanism: 'critic',
+        inputOid: 'oid1',
+        verdict: 'pass',
+        summary: 'looks good',
+        output: '',
       });
-      try {
-        const created = await configured.api('POST', '/api/tasks', { prompt: 'verification status target' });
-        const task = await configured.app.ctx.tasks.get(created.body.id);
-        const run = await configured.app.ctx.attempts.create(task.id);
-        const attempt = run;
-        await configured.app.ctx.verificationAttempts.append(attempt.id, {
-          mechanism: 'critic',
-          inputOid: 'oid1',
-          verdict: 'pass',
-          summary: 'looks good',
-          output: '',
-          });
 
-        const res = await configured.api('GET', `/api/attempts/${run.id}/verification-attempts`);
+      const res = await server.api('GET', `/api/attempts/${run.id}/verification-attempts`);
 
-        expect(res.status).toBe(200);
-        expect(res.body.verifierStatuses).toEqual([
-          { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this attempt.', commands: ['npm test'] },
-          { mechanism: 'critic', state: 'passed', reason: null, harness: 'claude' },
-        ]);
-      } finally {
-        await configured.close();
-      }
-    });
-
-    it('reconciles recorded attempts with configured verifier statuses', async () => {
-      const configured = await startServer({
-        ...stubHarness(),
-        verify: { task: { preMerge: { commands: [{ id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [{ id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the issue diff.', noIssuePrompt: 'Review the Task diff.', harness: 'claude' as const, model: 'stub-model', timeoutSeconds: 300 }] } } },
-      });
-      try {
-        const created = await configured.api('POST', '/api/tasks', { prompt: 'verification status target' });
-        const task = await configured.app.ctx.tasks.get(created.body.id);
-        const run = await configured.app.ctx.attempts.create(task.id);
-        const attempt = run;
-        await configured.app.ctx.verificationAttempts.append(attempt.id, {
-          mechanism: 'critic',
-          inputOid: 'oid1',
-          verdict: 'pass',
-          summary: 'looks good',
-          output: '',
-          });
-
-        const res = await configured.api('GET', `/api/attempts/${run.id}/verification-attempts`);
-
-        expect(res.status).toBe(200);
-        expect(res.body.verifierStatuses).toEqual([
-          { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this attempt.', commands: ['npm test'] },
-          { mechanism: 'critic', state: 'passed', reason: null, harness: 'claude' },
-        ]);
-      } finally {
-        await configured.close();
-      }
+      expect(res.status).toBe(200);
+      expect(res.body.verifierStatuses).toEqual([
+        { mechanism: 'command', state: 'disabled', reason: 'No command verifier is configured.' },
+        { mechanism: 'critic', state: 'passed', reason: null },
+      ]);
     });
 
     it('404s for an unknown run', async () => {
@@ -191,9 +152,9 @@ describe('verification-command', () => {
     }
 
     it('a direct Run works in place: its verified commit is the base branch tip, with no private ref and no run branch', async () => {
+      await server.legacy.setWorkspace(workspaceId, { taskPreMergeCommands: localCommands(exitCommand(0)) });
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'direct',
-        taskPreMergeCommands: localCommands(exitCommand(0)),
       });
       const baseBefore = git(repoDir, 'rev-parse', 'main');
       const { taskId } = await createAndRun();
@@ -214,9 +175,9 @@ describe('verification-command', () => {
     });
 
     it('a pre-existing dirty tree does not fail a direct Run; its candidate is the agent\'s own commit', async () => {
+      await server.legacy.setWorkspace(workspaceId, { taskPreMergeCommands: localCommands(exitCommand(0)) });
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'direct',
-        taskPreMergeCommands: localCommands(exitCommand(0)),
       });
       writeFileSync(join(repoDir, 'operator-scratch.txt'), 'not the agent\n');
 
@@ -233,9 +194,9 @@ describe('verification-command', () => {
     });
 
     it('a worktree left dirty at implementation end is not committed while verification blocks', async () => {
+      await server.legacy.setWorkspace(workspaceId, { taskPreMergeCommands: localCommands(exitCommand(1)) });
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'worktree',
-        taskPreMergeCommands: localCommands(exitCommand(1)),
       });
       const { taskId } = await createAndRun({ writeFiles: { 'blocked-dirty.txt': 'left uncommitted\n' }, commit: false });
 
@@ -283,9 +244,7 @@ describe('verification-command', () => {
     }
 
     it('a passing verification merges directly — there is no review gate to park at', async () => {
-      await server.app.ctx.workspaces.update(workspaceId, {
-        taskPreMergeCommands: localCommands(exitCommand(0)),
-      });
+      await server.legacy.setWorkspace(workspaceId, { taskPreMergeCommands: localCommands(exitCommand(0)) });
       const { taskId } = await createAndRun();
 
       const task = await waitFor(async () => {
@@ -299,9 +258,7 @@ describe('verification-command', () => {
     });
 
     it('a worktree run merges the merge into the base branch (no human gate)', async () => {
-      await server.app.ctx.workspaces.update(workspaceId, {
-        taskPreMergeCommands: localCommands(exitCommand(0)),
-      });
+      await server.legacy.setWorkspace(workspaceId, { taskPreMergeCommands: localCommands(exitCommand(0)) });
       const baseOidBefore = git(repoDir, 'rev-parse', 'main');
 
       const created = await server.api('POST', '/api/tasks', {

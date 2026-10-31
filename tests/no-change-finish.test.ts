@@ -54,10 +54,9 @@ describe('a finish_task that changed nothing', () => {
   });
   beforeEach(async () => {
     criticResult = { verdict: 'pass', summary: 'the ticket needs no change' };
+    await server.legacy.setWorkspace(workspaceId, { taskPreMergeCommands: null, ...critic() });
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'worktree',
-      taskPreMergeCommands: null,
-      ...critic(),
     });
   });
 
@@ -104,7 +103,7 @@ describe('a finish_task that changed nothing', () => {
   }, 30_000);
 
   it('completes with a no-op merge when no critic is configured (ADR-0053)', async () => {
-    await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCritics: [], taskPreMergeCommands: null });
+    await server.legacy.setWorkspace(workspaceId, { taskPreMergeCritics: [], taskPreMergeCommands: null });
     const { taskId } = await runNoChangeFinish();
     const task = await waitState(taskId, 'done');
     expect(task.state).toBe('done');

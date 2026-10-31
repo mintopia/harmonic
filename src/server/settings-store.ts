@@ -14,6 +14,15 @@ import {
   type DeepPartial,
 } from '../config.js';
 import { DomainError } from '../domain/errors.js';
+import {
+  parseLegacyGlobal,
+  parseLegacyWorkspace,
+  pickLegacyGlobal,
+  pickLegacyWorkspace,
+  withLegacyGlobal,
+  type LegacyGlobalRaw,
+  type LegacySettings,
+} from '../domain/legacy-execution-settings.js';
 import { logger } from '../logger.js';
 import { isMaskedWorkspaceSecret, restoreConfigSecrets } from '../archive/export-secrets.js';
 
@@ -32,7 +41,15 @@ interface SettingsFile {
   /** Sparse per-Workspace override entries keyed by Workspace id (string) —
    * only non-null (i.e. actually overridden) keys are present. */
   workspaces: Record<string, WorkspaceOverrides>;
+  legacy: { preserved: StoredLegacy; view: StoredLegacy };
 }
+
+interface StoredLegacy {
+  global: LegacyGlobalRaw;
+  workspaces: Record<string, Record<string, unknown>>;
+}
+
+const NO_STORED_LEGACY = (): StoredLegacy => ({ global: {}, workspaces: {} });
 
 interface RawSettingsFile {
   global?: unknown;
@@ -258,11 +275,19 @@ function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
       : storedGlobal;
     const global = mergeConfig(baseline, globalPatch);
     const workspaces: Record<string, WorkspaceOverrides> = {};
+    const preserved: StoredLegacy = { global: pickLegacyGlobal(raw.global), workspaces: {} };
+    const view: StoredLegacy = { global: pickLegacyGlobal(migratedGlobal), workspaces: {} };
     const catalog = harnessCatalog(baseline, migratedGlobal);
     for (const [id, entry] of Object.entries(raw.workspaces ?? {})) {
-      workspaces[id] = workspaceOverridesSchema.parse(migrateWorkspaceCriticHarnesses(migrateWorkspaceOverlays(entry, global.modelOptions.map((o) => o.id)), catalog, global.defaults.harness));
+      const migrated = migrateWorkspaceCriticHarnesses(migrateWorkspaceOverlays(entry, global.modelOptions.map((o) => o.id)), catalog, global.defaults.harness);
+      workspaces[id] = workspaceOverridesSchema.parse(migrated);
+      const stored = pickLegacyWorkspace(entry);
+      if (Object.keys(stored).length > 0) {
+        preserved.workspaces[id] = stored;
+        view.workspaces[id] = pickLegacyWorkspace(migrated);
+      }
     }
-    return { globalPatch, global, workspaces };
+    return { globalPatch, global, workspaces, legacy: { preserved, view } };
   } catch (err) {
     throw new Error(`Invalid Harmonic settings file at ${path}: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -277,6 +302,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
   private global: AppConfig;
   private globalPatch: unknown;
   private workspaces: Record<string, WorkspaceOverrides>;
+  private legacy: SettingsFile['legacy'];
   private loadedMtimeMs = 0;
   private lastCheckMs = 0;
 
@@ -288,6 +314,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
     this.global = file.global;
     this.globalPatch = file.globalPatch;
     this.workspaces = file.workspaces;
+    this.legacy = file.legacy;
   }
 
   static async create(
@@ -303,7 +330,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
       file = loadFromDisk(path, baselineConfig());
     } catch (err) {
       if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
-        file = { globalPatch: {}, global: baselineConfig(), workspaces: {} };
+        file = { globalPatch: {}, global: baselineConfig(), workspaces: {}, legacy: { preserved: NO_STORED_LEGACY(), view: NO_STORED_LEGACY() } };
       } else {
         throw err;
       }
@@ -318,6 +345,15 @@ export class SettingsStore implements WorkspaceSettingsStore {
   getGlobal(): AppConfig {
     this.reloadIfChanged();
     return this.global;
+  }
+
+  getLegacySettings(): LegacySettings {
+    this.reloadIfChanged();
+    const { view } = this.legacy;
+    return {
+      global: parseLegacyGlobal(view.global),
+      workspaces: new Map(Object.entries(view.workspaces).map(([id, entry]) => [Number(id), parseLegacyWorkspace(entry)])),
+    };
   }
 
   getBaseline(): AppConfig {
@@ -390,6 +426,8 @@ export class SettingsStore implements WorkspaceSettingsStore {
   async deleteOverrides(workspaceId: number): Promise<void> {
     this.reloadIfChanged();
     delete this.workspaces[String(workspaceId)];
+    delete this.legacy.preserved.workspaces[String(workspaceId)];
+    delete this.legacy.view.workspaces[String(workspaceId)];
     this.persist();
   }
 
@@ -408,15 +446,18 @@ export class SettingsStore implements WorkspaceSettingsStore {
     this.global = file.global;
     this.globalPatch = file.globalPatch;
     this.workspaces = file.workspaces;
+    this.legacy = file.legacy;
     this.loadedMtimeMs = stat.mtimeMs;
   }
 
-  private snapshot(): { global: unknown; workspaces: Record<string, WorkspaceOverrides> } {
-    const workspaces: Record<string, WorkspaceOverrides> = {};
-    for (const [id, entry] of Object.entries(this.workspaces)) {
+  private snapshot(): { global: unknown; workspaces: Record<string, unknown> } {
+    const { preserved } = this.legacy;
+    const workspaces: Record<string, unknown> = {};
+    for (const id of new Set([...Object.keys(this.workspaces), ...Object.keys(preserved.workspaces)])) {
+      const entry = { ...this.workspaces[id], ...preserved.workspaces[id] };
       if (Object.keys(entry).length > 0) workspaces[id] = entry;
     }
-    return { global: this.globalPatch, workspaces };
+    return { global: withLegacyGlobal(this.globalPatch, preserved.global), workspaces };
   }
 
   private persist(): void {

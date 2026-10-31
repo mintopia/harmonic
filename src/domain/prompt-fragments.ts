@@ -215,12 +215,6 @@ export interface FragmentTemplateField {
   readonly workspace: { readonly key: string; readonly path: readonly string[] } | null;
 }
 
-const criticPromptFields = (stage: 'preMerge' | 'postMerge', key: 'taskPreMergeCritics' | 'taskPostMergeCritics'): FragmentTemplateField[] =>
-  (['issuePrompt', 'noIssuePrompt'] as const).map((prompt) => ({
-    config: ['verify', 'task', stage, 'critics', '*', prompt],
-    workspace: { key, path: ['*', 'critic', prompt] },
-  }));
-
 const templateFields: FragmentTemplateField[] = PROMPT_TEMPLATE_IDS.map((id) => {
   const spec = PROMPT_TEMPLATES[id];
   return { config: spec.config, workspace: spec.workspace ? { key: spec.workspace, path: [] } : null };
@@ -229,8 +223,6 @@ const templateFields: FragmentTemplateField[] = PROMPT_TEMPLATE_IDS.map((id) => 
 /** Every prompt template that expands `{fragment.<name>}` at runtime. */
 export const FRAGMENT_TEMPLATE_FIELDS: readonly FragmentTemplateField[] = [
   ...templateFields,
-  ...criticPromptFields('preMerge', 'taskPreMergeCritics'),
-  ...criticPromptFields('postMerge', 'taskPostMergeCritics'),
   { config: ['verify', 'epic', 'preMerge', 'critics', '*', 'prompt'], workspace: { key: 'epicPreMergeCritics', path: ['*', 'critic', 'prompt'] } },
 ];
 

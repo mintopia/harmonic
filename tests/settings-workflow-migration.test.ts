@@ -4,7 +4,9 @@ import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 import { settings, tasks } from '../src/db/schema.js';
-import { baselineConfig, mergeConfig, type AppConfig, type DeepPartial } from '../src/config.js';
+import { baselineConfig, mergeConfig } from '../src/config.js';
+import { parseLegacyGlobal } from '../src/domain/legacy-execution-settings.js';
+import { splitLegacyConfig, type LegacyConfigOverrides } from './helpers/legacy-settings.js';
 import { parseWorkflow } from '../src/domain/workflow.js';
 import { planSettingsMigration, SETTINGS_MIGRATION_MARKER, UnconvertibleSettingError } from '../src/domain/settings-workflow-migration.js';
 import { SettingsStore } from '../src/server/settings-store.js';
@@ -61,6 +63,23 @@ describe('settings to workflows migration', () => {
     const [alpha, plain, beta] = (await harness.workspaceService.list()).map((w) => harness.settings.getOverrides(w.id).workflow);
     expect([alpha, plain, beta]).toEqual(['migrated-alpha-app', null, 'migrated-beta-service']);
     expect(await markerRow(harness)).toMatchObject({ value: 'done' });
+  });
+
+  it('leaves the old execution keys, global and per-Workspace, in settings.yaml after the migration writes its defaults', async () => {
+    const harness = await boot({ global: EDITED_GLOBAL, workspaces: FIXTURE_WORKSPACES });
+    const [alphaId, , betaId] = (await harness.workspaceService.list()).map((w) => w.id);
+    const before = parse(readFileSync(join(harness.dir, 'settings.yaml'), 'utf8')) as { global: any; workspaces: Record<string, any> };
+
+    await migrate(harness);
+
+    const after = parse(readFileSync(join(harness.dir, 'settings.yaml'), 'utf8')) as { global: any; workspaces: Record<string, any> };
+    expect(after.global.defaults.workflow).toBe('migrated-global');
+    expect(after.workspaces[String(alphaId)].workflow).toBe('migrated-alpha-app');
+    expect(after.global.drive).toMatchObject({ continueAttempts: 4, mergeFate: 'auto-merge' });
+    expect(after.global.verify.task).toEqual(before.global.verify.task);
+    expect(after.workspaces[String(alphaId)].driveMergeFate).toBe('artifact');
+    expect(after.workspaces[String(betaId)].taskPreMergeCommands).toEqual(before.workspaces[String(betaId)].taskPreMergeCommands);
+    expect(after.workspaces[String(betaId)].taskPreMergeCritics).toEqual(before.workspaces[String(betaId)].taskPreMergeCritics);
   });
 
   it('is a no-op the second time, even with the done-marker gone', async () => {
@@ -157,8 +176,9 @@ describe('settings to workflows migration', () => {
   });
 
   describe('Merge Fate and post-merge steps', () => {
-    const planned = async (patch: DeepPartial<AppConfig>) => {
-      const plan = await planSettingsMigration({ config: mergeConfig(baselineConfig(), patch), workspaces: [], promptText: () => undefined });
+    const planned = async (patch: LegacyConfigOverrides) => {
+      const { config, legacy } = splitLegacyConfig(patch);
+      const plan = await planSettingsMigration({ config: mergeConfig(baselineConfig(), config), legacy: { global: parseLegacyGlobal(legacy), workspaces: new Map() }, workspaces: [], promptText: () => undefined });
       return parseWorkflow(plan.workflows[0]!.text);
     };
 

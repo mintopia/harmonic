@@ -1,29 +1,32 @@
-import { mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../../src/db/async.js';
 import { workspaces } from '../../src/db/schema.js';
-import { baselineConfig, type AppConfig, type DeepPartial } from '../../src/config.js';
+import { parse, stringify } from 'yaml';
+import { baselineConfig } from '../../src/config.js';
+import { pickLegacyGlobal, withLegacyGlobal } from '../../src/domain/legacy-execution-settings.js';
+import { splitLegacyConfig, splitLegacyWorkspace, type LegacyConfigOverrides, type LegacyWorkspaceOverrides } from './legacy-settings.js';
 import { PromptLibrary } from '../../src/domain/prompt-library-store.js';
 import { convertEditedPrompts } from '../../src/domain/prompt-library-sources.js';
 import { migrateSettingsToWorkflows, type SettingsMigrationDeps } from '../../src/domain/settings-workflow-migration.js';
 import { TaskService } from '../../src/domain/tasks.js';
 import { WorkflowLibrary } from '../../src/domain/workflow-library-store.js';
-import { WorkspaceService, type WorkspaceOverrides } from '../../src/domain/workspaces.js';
+import { WorkspaceService } from '../../src/domain/workspaces.js';
 import { SettingsStore } from '../../src/server/settings-store.js';
 
 export interface WorkspaceSeed {
   name: string;
-  overrides?: WorkspaceOverrides;
+  overrides?: LegacyWorkspaceOverrides;
 }
 
 export interface Seed {
-  global?: DeepPartial<AppConfig>;
+  global?: LegacyConfigOverrides;
   workspaces?: WorkspaceSeed[];
 }
 
 const command = (id: string, name: string, args: string[], extra: Record<string, unknown> = {}) => ({ id, command: name, args, env: {}, timeoutSeconds: 600, ...extra });
 
-export const EDITED_GLOBAL: DeepPartial<AppConfig> = {
+export const EDITED_GLOBAL: LegacyConfigOverrides = {
   maxAttempts: 3,
   drive: { continueAttempts: 4, mergeFate: 'auto-merge', prompt: 'Resolve {ref} carefully: {title}.' },
   promptFragments: { selfHeal: `${baselineConfig().promptFragments.selfHeal}\nBe concise.` },
@@ -78,14 +81,24 @@ export interface Harness {
 export async function seedOldSettings(dir: string, seed: Seed): Promise<number[]> {
   mkdirSync(dir, { recursive: true });
   const db = await openAsyncDb(dir);
-  const store = await SettingsStore.create(dir, seed.global);
+  const { config, legacy } = splitLegacyConfig(seed.global);
+  const store = await SettingsStore.create(dir, config);
   const ids: number[] = [];
+  const legacyByWorkspace: Record<number, Record<string, unknown>> = {};
   for (const [i, workspace] of (seed.workspaces ?? []).entries()) {
     const now = Date.now();
     const row = await db.write((d) => d.insert(workspaces).values({ name: workspace.name, workingDir: join(dir, `repo-${i}`), createdAt: now, updatedAt: now }).returning().get());
-    if (workspace.overrides) await store.setOverrides(row.id, workspace.overrides);
+    if (workspace.overrides) {
+      const split = splitLegacyWorkspace(workspace.overrides);
+      await store.setOverrides(row.id, split.overrides);
+      legacyByWorkspace[row.id] = split.legacy;
+    }
     ids.push(row.id);
   }
+  const path = join(dir, 'settings.yaml');
+  const stored = parse(readFileSync(path, 'utf8')) as { global: unknown; workspaces: Record<string, Record<string, unknown>> };
+  for (const [id, entry] of Object.entries(legacyByWorkspace)) stored.workspaces[id] = { ...stored.workspaces[id], ...entry };
+  writeFileSync(path, stringify({ global: withLegacyGlobal(stored.global, pickLegacyGlobal(legacy)), workspaces: stored.workspaces }));
   await db.close();
   return ids;
 }

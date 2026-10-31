@@ -17,8 +17,7 @@ import type { IsolationMode, Priority } from '../config.js';
 import type { Ticket, TrackerRef } from '../tracker/adapter.js';
 import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
 import { worktreeId, type WorktreeInventoryEntry } from '../domain/worktree-inventory.js';
-import { resolveVerifiers } from '../domain/setting-override.js';
-import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
+import { NO_CONFIGURED_VERIFIERS, verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
 import { parseCost, sumCosts, type Cost } from '../domain/pricing.js';
 import type { AttemptUsage, AttemptUsageSnapshot, ProcessTree } from '../execution/usage.js';
 import type { OperationEvent, OperationSnapshot } from '../telemetry/operations.js';
@@ -138,13 +137,10 @@ export function verifiedShaOf(verificationAttempts: readonly VerificationAttempt
   return passing.length ? passing[passing.length - 1]!.inputOid : null;
 }
 
-/** One Attempt row projected onto its timeline DTO, given the Attempt's already
- * read Steps and Verification Attempts plus the Task's configured verifiers. */
 export function attemptToTimelineApi(
   attempt: TaskAttemptRow,
   stepRows: readonly StepRow[],
   attemptVerifications: readonly VerificationAttemptRow[],
-  verifiers: ReturnType<typeof resolveVerifiers>,
   workingDir: string | null,
 ): ApiAttempt {
   const stepType = [...stepRows].reverse().find((row) => row.state === 'running')?.type ?? null;
@@ -173,7 +169,7 @@ export function attemptToTimelineApi(
         }
       : null,
     routing: attempt.routingUsage ? { cost: parseCost(attempt.routingCost), models: Object.keys(parseUsage(attempt.routingUsage)?.models ?? {}) } : null,
-    verifierStatuses: verifierStatuses({ verifiers: verifiers.task.preMerge, attempts: attemptVerifications, stepType }),
+    verifierStatuses: verifierStatuses({ verifiers: NO_CONFIGURED_VERIFIERS, attempts: attemptVerifications, stepType }),
     steps: stepRows.map(stepToApi),
   };
 }

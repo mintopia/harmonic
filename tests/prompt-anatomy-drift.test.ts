@@ -112,7 +112,6 @@ function markerView(): PromptSettingsView {
   return {
     template: (id) => refText(templateKey(id)),
     fragments: { ...base.fragments, ...fragments },
-    criticPrompt: { name: 'Marker critic', issue: 'issue prompt', noIssue: 'no issue prompt' },
   };
 }
 

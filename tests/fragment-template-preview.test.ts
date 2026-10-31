@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { promptFragmentOverrideKey } from '../src/domain/prompt-fragments.js';
 import { PROMPT_TEMPLATES, PROMPT_TEMPLATE_IDS, type PromptTemplateId } from '../src/domain/prompt-templates.js';
 import { templateKey, type AnatomyId } from '../src/domain/prompt-anatomy.js';
-import { assemblePreview, compileCriticPreview, defaultConditions, promptSettingsView, type PreviewSegment } from '../web/src/prompt-preview-model.js';
+import { assemblePreview, compileEpicCriticPreview, defaultConditions, promptSettingsView, type PreviewSegment } from '../web/src/prompt-preview-model.js';
 import { PROMPT_ANATOMIES } from '../src/domain/prompt-anatomy.js';
 import { buildCriticPrompt } from '../src/execution/prompt-assembly.js';
 import { makeConfig, makeWorkspace } from './component-smoke-harness.js';
@@ -92,14 +92,14 @@ describe('settings preview expands fragments the way the runtime does', () => {
     const config = makeConfig();
     config.promptFragments[FRAGMENT] = 'GLOBAL-FRAG';
     const operator = `critic<{fragment.${FRAGMENT}}>`;
-    const [mirrored] = compileCriticPreview({ issuePrompt: operator, noIssuePrompt: operator }, config.promptFragments);
+    const preview = compileEpicCriticPreview(operator, config.promptFragments);
     const runtime = buildCriticPrompt({
       operatorPrompt: operator,
       fields: { taskId: '123', skill: '/implement', ref: '', url: '', title: '', description: '' },
       verifiedHeadOid: 'x',
       fragments: config.promptFragments,
     });
-    expect(mirrored!.text).toContain('critic<GLOBAL-FRAG>');
+    expect(preview).toContain('critic<GLOBAL-FRAG>');
     expect(runtime).toContain('critic<GLOBAL-FRAG>');
   });
 });

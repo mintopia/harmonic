@@ -32,7 +32,6 @@ describe('WorkflowEngine', () => {
   let completions: number;
   let workflows: Map<string, string>;
   let secretValues: string[];
-  let commands: Record<string, { command: string; args: string[]; timeoutSeconds: number }>;
 
   const flow = (steps: string, max = 1): string => `name: flow\ndescription: test\nsteps:\n${inBlock(steps, max)}`;
   const engine = (over: Partial<WorkflowEngineDeps> = {}): WorkflowEngine =>
@@ -40,9 +39,6 @@ describe('WorkflowEngine', () => {
       library: { getVersion: async (name, version) => ({ name, description: '', text: workflows.get(`${name}@${version}`)!, bundled: false, version }) },
       stepRuns: new WorkflowStepRunStore(db),
       spawn: createChildProcessSpawn(testSpawnProcessGroup),
-      commandById: async (_task, id) => (commands[id] ? { id, env: {}, ...commands[id] } : undefined),
-      preMergeCommands: async () => [],
-      postMergeCommands: async () => [],
       secrets: async () => Object.fromEntries(secretValues.map((value, i) => [`S${i}`, value])),
       cwdFor: () => repo,
       baseBranchFor: async () => 'main',
@@ -77,7 +73,6 @@ describe('WorkflowEngine', () => {
     completions = 0;
     workflows = new Map();
     secretValues = [];
-    commands = {};
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -168,16 +163,7 @@ describe('WorkflowEngine', () => {
     expect(JSON.parse((await stepRows(task.id))[0]!.outputs!).stdout).toContain('touch');
   });
 
-  it('runs a configured verification command by id', async () => {
-    commands = { check: { command: 'sh', args: ['-c', 'echo checked; exit 2'], timeoutSeconds: 30 } };
-    const { task, run } = await startTask(flow('  - id: verify-it\n    uses: command\n    with:\n      id: check\n'));
-    await engine().run(task, run);
-    const [row] = await stepRows(task.id);
-    expect(row).toMatchObject({ action: 'command', outcome: 'fail' });
-    expect(JSON.parse(row!.outputs!)).toEqual({ stdout: 'checked\n', exitCode: 2 });
-  });
-
-  it('records an unknown command id as inconclusive and escalates', async () => {
+  it('records a command step with no run as inconclusive and escalates', async () => {
     const { task, run } = await startTask(flow('  - id: v\n    uses: command\n    with:\n      id: missing\n'));
     await engine().run(task, run);
     expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'inconclusive' });
@@ -197,28 +183,11 @@ describe('WorkflowEngine', () => {
 
   describe('uses: verify', () => {
     const verifyFlow = (): string => flow('  - id: check\n    uses: verify\n');
-    const sh = (id: string, script: string) => ({ id, command: 'sh', args: ['-c', script], env: {}, timeoutSeconds: 30 });
-
     it('passes with a summary when no verification commands are configured', async () => {
       const { task, run } = await startTask(verifyFlow());
       await engine().run(task, run);
       expect((await stepRows(task.id))[0]).toMatchObject({ action: 'verify', outcome: 'pass', summary: 'no verification commands configured' });
       expect(completions).toBe(1);
-    });
-
-    it('runs the commands in order and stops at the first that does not pass', async () => {
-      const log = join(dir, 'log');
-      const { task, run } = await startTask(verifyFlow());
-      await engine({ preMergeCommands: async () => [sh('a', `echo a >> ${log}`), sh('b', `echo b >> ${log}; exit 1`), sh('c', `echo c >> ${log}`)] }).run(task, run);
-      expect(readFileSync(log, 'utf8')).toBe('a\nb\n');
-      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'fail' });
-      expect(escalations).toHaveLength(1);
-    });
-
-    it('fails a command that makes a commit', async () => {
-      const { task, run } = await startTask(verifyFlow());
-      await engine({ preMergeCommands: async () => [sh('a', 'git commit -q --allow-empty -m sneaky')] }).run(task, run);
-      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'fail', summary: ONLY_THE_AGENT_COMMITS });
     });
   });
 
@@ -791,16 +760,11 @@ describe('WorkflowEngine', () => {
       expect(escalations).toHaveLength(1);
     });
 
-    it('post-merge-check without run uses the resolved post-merge commands, and an empty list passes', async () => {
+    it('post-merge-check without run passes', async () => {
       const bare = `name: flow\ndescription: test\nsteps:\n${inBlock('  - id: check\n    uses: post-merge-check\n')}`;
       const { task, run } = await startTask(bare);
       await engine().run(task, { ...run, branch: 'feat', baseBranch: 'main' });
-      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'pass' });
-      const second = await startTask(bare);
-      const seen = join(dir, 'seen-pm');
-      await engine({ postMergeCommands: async () => [{ id: 'pm', command: 'sh', args: ['-c', `pwd > ${seen}; exit 1`], env: {}, timeoutSeconds: 30 }] }).run(second.task, { ...second.run, branch: 'feat', baseBranch: 'main' });
-      expect((await stepRows(second.task.id)).at(-1)).toMatchObject({ outcome: 'fail' });
-      expect(readFileSync(seen, 'utf8').trim()).not.toBe(repo);
+      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'pass', summary: 'no post-merge commands configured' });
     });
 
     it('cleanup removes the Ticket worktree directory and its branch', async () => {

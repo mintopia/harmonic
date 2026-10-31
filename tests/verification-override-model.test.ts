@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   newCommand,
-  newCritic,
   newEpicCritic,
   setCommandField,
-  setCriticField,
+  setEpicCriticField,
   startingHarness,
   defaultHarnessId,
   harnessChoices,
@@ -15,10 +14,10 @@ import {
   withHarness,
   withMissingGlobals,
 } from '../web/src/components/verification-override-model.js';
-import type { CommandOverlayEntry, TaskVerificationCritic, VerificationCommand } from '../web/src/types.js';
+import type { CommandOverlayEntry, EpicVerificationCritic, VerificationCommand } from '../web/src/types.js';
 
 const baseCommand: VerificationCommand = { id: 'cmd-1', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-const baseCritic: TaskVerificationCritic = { id: 'critic-1', name: 'Test critic', issuePrompt: 'review the issue diff', noIssuePrompt: 'review the Task diff', harness: 'claude', model: 'claude-opus-5', timeoutSeconds: 300 };
+const baseCritic: EpicVerificationCritic = { id: 'critic-1', name: 'Test critic', prompt: 'review the Epic diff', harness: 'claude', model: 'claude-opus-5', timeoutSeconds: 300 };
 
 describe('setCommandField (issue #165)', () => {
   it('sets the executable from a text input', () => {
@@ -63,10 +62,10 @@ describe('summarizeCommands (issue #338)', () => {
   });
 });
 
-describe('setCriticField (issue #165)', () => {
+describe('setEpicCriticField', () => {
   it('sets a free-text field', () => {
-    expect(setCriticField(baseCritic, 'model', 'gpt-5')).toEqual({ ...baseCritic, model: 'gpt-5' });
-    expect(setCriticField(baseCritic, 'noIssuePrompt', 'check tests')).toEqual({ ...baseCritic, noIssuePrompt: 'check tests' });
+    expect(setEpicCriticField(baseCritic, 'model', 'gpt-5')).toEqual({ ...baseCritic, model: 'gpt-5' });
+    expect(setEpicCriticField(baseCritic, 'prompt', 'check tests')).toEqual({ ...baseCritic, prompt: 'check tests' });
   });
 });
 
@@ -76,7 +75,7 @@ describe('summarizeCritic (issue #165)', () => {
   });
 
   it('reads the empty seed back as "Not configured"', () => {
-    expect(summarizeCritic(newCritic({ harness: 'claude', model: '' }))).toBe('Not configured');
+    expect(summarizeCritic(newEpicCritic({ harness: 'claude', model: '' }))).toBe('Not configured');
   });
 });
 
@@ -89,10 +88,9 @@ const choices: HarnessChoices = {
   },
 };
 
-describe('newCommand/newCritic/newEpicCritic (ADR-0037)', () => {
+describe('newCommand/newEpicCritic (ADR-0037)', () => {
   it('seeds each with its own id, never the same one twice', () => {
     expect(newCommand().id).not.toBe(newCommand().id);
-    expect(newCritic(start).id).not.toBe(newCritic(start).id);
     expect(newEpicCritic(start).id).not.toBe(newEpicCritic(start).id);
   });
 });
@@ -103,7 +101,7 @@ describe('Critic Harness choice', () => {
     expect(startingHarness(codexDefault)).toEqual({ harness: 'codex', model: 'gpt-5' });
 
     expect(startingHarness(choices)).toEqual({ harness: 'claude', model: 'claude-opus-5' });
-    expect(newCritic(startingHarness(choices))).toMatchObject({ harness: 'claude', model: 'claude-opus-5' });
+    expect(newEpicCritic(startingHarness(choices))).toMatchObject({ harness: 'claude', model: 'claude-opus-5' });
   });
 
   it('resets the model to the new Harness default when the current one is not in its list', () => {

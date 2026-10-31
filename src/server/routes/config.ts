@@ -8,11 +8,9 @@ import { adapterFor } from '../../execution/harness/registry.js';
 import {
   HARNESS_IDS,
   ISOLATION_MODES,
-  MERGE_FATES,
   PRIORITIES,
   appConfigSchema,
   modelCatalogEntrySchema,
-  taskVerificationStageSchema,
   epicVerificationStageSchema,
   type AppConfig,
   type DeepPartial,
@@ -134,8 +132,6 @@ const configPatchBodySchema = z
         prompt: z.string().meta({ example: '{skill} {ref}\n\nResolve #{ref} ({url}) end to end — read the issue yourself.' }),
         unattendedReminder: z.string().meta({ example: '## Running unattended\n\nYou are Harmonic Task {taskId}…' }),
         continuePrompt: z.string().meta({ example: "Your last turn ended but Task {taskId} isn't finished…" }),
-        mergeFate: z.enum(MERGE_FATES).meta({ example: 'auto-merge' }),
-        continueAttempts: z.number().int().min(0).meta({ example: 1 }),
         commitNudge: z.string().min(1).meta({ example: 'Commit the completed work now, then finish.' }),
       })
       .partial()
@@ -144,7 +140,6 @@ const configPatchBodySchema = z
     merge: appConfigSchema.shape.merge.partial().optional(),
     verify: z
       .object({
-        task: z.object({ preMerge: taskVerificationStageSchema, postMerge: taskVerificationStageSchema }).partial(),
         epic: z.object({ preMerge: epicVerificationStageSchema, resolvePrompt: z.string().min(1), resolveSuffix: appConfigSchema.shape.verify.shape.epic.shape.resolveSuffix }).partial(),
       })
       .partial()

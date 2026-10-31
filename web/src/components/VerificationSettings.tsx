@@ -1,21 +1,12 @@
-import { useState, type ReactNode } from "react";
-import type {
-  AppConfig,
-  EpicVerificationCritic,
-  TaskVerificationCritic,
-  VerificationCommand,
-  Workspace,
-} from "../types";
+import type { ReactNode } from "react";
+import type { AppConfig, EpicVerificationCritic, VerificationCommand, Workspace } from "../types";
 import { resolvePromptFragments } from "../../../src/domain/setting-override.js";
 import { CommandListEditor, CommandOverlayEditor } from "./CommandListEditor";
 import {
   PromptFragmentsContext,
   EpicCriticListEditor,
   EpicCriticOverlayEditor,
-  TaskCriticListEditor,
-  TaskCriticOverlayEditor,
 } from "./CriticListEditor";
-import { Tabs } from "./Tabs";
 import { harnessChoices, type HarnessChoices } from "./verification-override-model";
 
 type EditorProps = {
@@ -25,11 +16,6 @@ type EditorProps = {
   errorPrefix: string;
   fieldErrors: Record<string, string>;
 };
-
-const SCOPE_TABS = [
-  { id: "task", label: "Task" },
-  { id: "epic", label: "Epic" },
-] as const;
 
 function CountPill({ n, label }: { n: number; label: string }) {
   return (
@@ -43,6 +29,7 @@ function CountPill({ n, label }: { n: number; label: string }) {
     </span>
   );
 }
+
 
 /** One verification stage under a scope tab. The title carries real hierarchy
  * (Title role, not the field-label micro-caps the flat layout used), a one-line
@@ -76,42 +63,6 @@ function StageBlock({
   );
 }
 
-function TaskStage({
-  commands,
-  onCommands,
-  critics,
-  onCritics,
-  idPrefix,
-  errorPrefix,
-  fieldErrors,
-  harnessModels,
-}: EditorProps & {
-  critics: TaskVerificationCritic[];
-  onCritics: (critics: TaskVerificationCritic[]) => void;
-  harnessModels: HarnessChoices;
-}) {
-  return (
-    <div className="flex flex-col gap-5">
-      <CommandListEditor
-        commands={commands}
-        onChange={onCommands}
-        idPrefix={idPrefix}
-        errorPrefix={`${errorPrefix}.commands`}
-        fieldErrors={fieldErrors}
-        emptyText="No commands run at this stage."
-      />
-      <TaskCriticListEditor
-        critics={critics}
-        onChange={onCritics}
-        idPrefix={idPrefix}
-        errorPrefix={`${errorPrefix}.critics`}
-        fieldErrors={fieldErrors}
-        harnessModels={harnessModels}
-        emptyText="No critics run after commands pass."
-      />
-    </div>
-  );
-}
 
 function EpicStage({
   commands,
@@ -150,6 +101,7 @@ function EpicStage({
   );
 }
 
+
 export function GlobalVerificationSettings({
   config,
   setConfig,
@@ -159,19 +111,7 @@ export function GlobalVerificationSettings({
   setConfig: (config: AppConfig) => void;
   fieldErrors: Record<string, string>;
 }) {
-  const [scope, setScope] = useState<"task" | "epic">("task");
   const harnessModels = harnessChoices(config);
-  const setTaskStage = (
-    stage: "preMerge" | "postMerge",
-    next: AppConfig["verify"]["task"]["preMerge"],
-  ) =>
-    setConfig({
-      ...config,
-      verify: {
-        ...config.verify,
-        task: { ...config.verify.task, [stage]: next },
-      },
-    });
   const setEpicStage = (preMerge: AppConfig["verify"]["epic"]["preMerge"]) =>
     setConfig({
       ...config,
@@ -180,141 +120,31 @@ export function GlobalVerificationSettings({
 
   return (
     <PromptFragmentsContext.Provider value={config.promptFragments}>
-      <div>
-      <Tabs
-        tabs={SCOPE_TABS}
-        active={scope}
-        onChange={(id) => setScope(id as "task" | "epic")}
-        label="Verification scope"
-      />
-      <div className="mt-5 flex flex-col gap-5">
-        {scope === "task" ? (
-          <>
-            <StageBlock
-              title="Pre-merge"
-              hint="runs in the worktree before the task merges"
-              counts={{
-                commands: config.verify.task.preMerge.commands.length,
-                critics: config.verify.task.preMerge.critics.length,
-              }}
-            >
-              <TaskStage
-                commands={config.verify.task.preMerge.commands}
-                onCommands={(commands) =>
-                  setTaskStage("preMerge", { ...config.verify.task.preMerge, commands })
-                }
-                critics={config.verify.task.preMerge.critics}
-                onCritics={(critics) =>
-                  setTaskStage("preMerge", { ...config.verify.task.preMerge, critics })
-                }
-                idPrefix="settings-task-pre-merge"
-                errorPrefix="verify.task.preMerge"
-                fieldErrors={fieldErrors}
-                harnessModels={harnessModels}
-              />
-            </StageBlock>
-            <StageBlock
-              title="Post-merge"
-              hint="runs on the base after the merge commit; a failure reverts it"
-              counts={{
-                commands: config.verify.task.postMerge.commands.length,
-                critics: config.verify.task.postMerge.critics.length,
-              }}
-            >
-              <TaskStage
-                commands={config.verify.task.postMerge.commands}
-                onCommands={(commands) =>
-                  setTaskStage("postMerge", { ...config.verify.task.postMerge, commands })
-                }
-                critics={config.verify.task.postMerge.critics}
-                onCritics={(critics) =>
-                  setTaskStage("postMerge", { ...config.verify.task.postMerge, critics })
-                }
-                idPrefix="settings-task-post-merge"
-                errorPrefix="verify.task.postMerge"
-                fieldErrors={fieldErrors}
-                harnessModels={harnessModels}
-              />
-            </StageBlock>
-          </>
-        ) : (
-          <>
-            <StageBlock
-              title="Pre-merge"
-              hint="runs on the integration branch before the epic merges"
-              counts={{
-                commands: config.verify.epic.preMerge.commands.length,
-                critics: config.verify.epic.preMerge.critics.length,
-              }}
-            >
-              <EpicStage
-                commands={config.verify.epic.preMerge.commands}
-                onCommands={(commands) =>
-                  setEpicStage({ ...config.verify.epic.preMerge, commands })
-                }
-                critics={config.verify.epic.preMerge.critics}
-                onCritics={(critics) =>
-                  setEpicStage({ ...config.verify.epic.preMerge, critics })
-                }
-                idPrefix="settings-epic-pre-merge"
-                errorPrefix="verify.epic.preMerge"
-                fieldErrors={fieldErrors}
-                harnessModels={harnessModels}
-              />
-            </StageBlock>
-            <p className="text-small text-faint">
-              The prompt for fixing a failing Epic verification is on the Prompts tab (Epic verification fix).
-            </p>
-          </>
-        )}
-      </div>
+      <div className="flex flex-col gap-5">
+        <StageBlock
+          title="Pre-merge"
+          hint="runs on the integration branch before the epic merges"
+          counts={{
+            commands: config.verify.epic.preMerge.commands.length,
+            critics: config.verify.epic.preMerge.critics.length,
+          }}
+        >
+          <EpicStage
+            commands={config.verify.epic.preMerge.commands}
+            onCommands={(commands) => setEpicStage({ ...config.verify.epic.preMerge, commands })}
+            critics={config.verify.epic.preMerge.critics}
+            onCritics={(critics) => setEpicStage({ ...config.verify.epic.preMerge, critics })}
+            idPrefix="settings-epic-pre-merge"
+            errorPrefix="verify.epic.preMerge"
+            fieldErrors={fieldErrors}
+            harnessModels={harnessModels}
+          />
+        </StageBlock>
+        <p className="text-small text-faint">
+          The prompt for fixing a failing Epic verification is on the Prompts tab (Epic verification fix).
+        </p>
       </div>
     </PromptFragmentsContext.Provider>
-  );
-}
-
-function WorkspaceTaskStage({
-  workspace,
-  config,
-  harnessModels,
-  setWorkspace,
-  commandsKey,
-  criticsKey,
-  stage,
-  fieldErrors,
-}: {
-  workspace: Workspace;
-  config: AppConfig;
-  harnessModels: HarnessChoices;
-  setWorkspace: (workspace: Workspace) => void;
-  commandsKey: "taskPreMergeCommands" | "taskPostMergeCommands";
-  criticsKey: "taskPreMergeCritics" | "taskPostMergeCritics";
-  stage: "preMerge" | "postMerge";
-  fieldErrors: Record<string, string>;
-}) {
-  const idPrefix = `workspace-task-${stage === "preMerge" ? "pre" : "post"}-merge`;
-  return (
-    <div className="flex flex-col gap-5">
-      <CommandOverlayEditor
-        overlay={workspace[commandsKey]}
-        globals={config.verify.task[stage].commands}
-        onChange={(commands) => setWorkspace({ ...workspace, [commandsKey]: commands })}
-        idPrefix={idPrefix}
-        errorPrefix={commandsKey}
-        fieldErrors={fieldErrors}
-        emptyText="No commands run at this stage."
-      />
-      <TaskCriticOverlayEditor
-        overlay={workspace[criticsKey]}
-        globals={config.verify.task[stage].critics}
-        onChange={(critics) => setWorkspace({ ...workspace, [criticsKey]: critics })}
-        idPrefix={idPrefix}
-        errorPrefix={criticsKey}
-        fieldErrors={fieldErrors}
-        harnessModels={harnessModels}
-        emptyText="No critics run after commands pass."
-      />
-    </div>
   );
 }
 
@@ -367,64 +197,18 @@ export function WorkspaceVerificationSettings({
   setWorkspace: (workspace: Workspace) => void;
   fieldErrors: Record<string, string>;
 }) {
-  const [scope, setScope] = useState<"task" | "epic">("task");
   const harnessModels = harnessChoices(config);
   return (
     <PromptFragmentsContext.Provider value={resolvePromptFragments(workspace, config)}>
-      <div>
-      <Tabs
-        tabs={SCOPE_TABS}
-        active={scope}
-        onChange={(id) => setScope(id as "task" | "epic")}
-        label="Verification scope"
-      />
-      <div className="mt-5 flex flex-col gap-5">
-        {scope === "task" ? (
-          <>
-            <StageBlock title="Pre-merge" hint="runs in the worktree before the task merges">
-              <WorkspaceTaskStage
-                workspace={workspace}
-                config={config}
-                harnessModels={harnessModels}
-                setWorkspace={setWorkspace}
-                commandsKey="taskPreMergeCommands"
-                criticsKey="taskPreMergeCritics"
-                stage="preMerge"
-                fieldErrors={fieldErrors}
-              />
-            </StageBlock>
-            <StageBlock
-              title="Post-merge"
-              hint="runs on the base after the merge commit; a failure reverts it"
-            >
-              <WorkspaceTaskStage
-                workspace={workspace}
-                config={config}
-                harnessModels={harnessModels}
-                setWorkspace={setWorkspace}
-                commandsKey="taskPostMergeCommands"
-                criticsKey="taskPostMergeCritics"
-                stage="postMerge"
-                fieldErrors={fieldErrors}
-              />
-            </StageBlock>
-          </>
-        ) : (
-          <StageBlock
-            title="Pre-merge"
-            hint="runs on the integration branch before the epic merges"
-          >
-            <WorkspaceEpicStage
-              workspace={workspace}
-              config={config}
-              harnessModels={harnessModels}
-              setWorkspace={setWorkspace}
-              fieldErrors={fieldErrors}
-            />
-          </StageBlock>
-        )}
-      </div>
-      </div>
+      <StageBlock title="Pre-merge" hint="runs on the integration branch before the epic merges">
+        <WorkspaceEpicStage
+          workspace={workspace}
+          config={config}
+          harnessModels={harnessModels}
+          setWorkspace={setWorkspace}
+          fieldErrors={fieldErrors}
+        />
+      </StageBlock>
     </PromptFragmentsContext.Provider>
   );
 }

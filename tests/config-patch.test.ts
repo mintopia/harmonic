@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { parse } from 'yaml';
 import { baselineConfig } from '../src/config.js';
 import { startServer, stubHarness, type TestServer } from './helpers.js';
 
@@ -67,24 +70,32 @@ describe('PATCH /api/config verification', () => {
     await server.close();
   });
 
-  it('accepts a drive.continueAttempts patch and round-trips it (#339 — parity with appConfig)', async () => {
-    const patched = await server.api('PATCH', '/api/config', { drive: { continueAttempts: 4, mergeFate: 'open-PR' } });
+  it('ignores the removed drive.continueAttempts and drive.mergeFate keys (ADR-0055)', async () => {
+    const patched = await server.api('PATCH', '/api/config', { drive: { continueAttempts: 4, mergeFate: 'open-PR', commitNudge: 'Commit now.' } });
     expect(patched.status).toBe(200);
-    expect(patched.body.drive.continueAttempts).toBe(4);
-    expect(patched.body.drive.mergeFate).toBe('open-PR');
+    expect(patched.body.drive.commitNudge).toBe('Commit now.');
+    expect(patched.body.drive).not.toHaveProperty('continueAttempts');
+    expect(patched.body.drive).not.toHaveProperty('mergeFate');
+    expect((await server.api('GET', '/api/config')).body.drive).not.toHaveProperty('continueAttempts');
+  });
 
-    const after = await server.api('GET', '/api/config');
-    expect(after.body.drive.continueAttempts).toBe(4);
+  it('ignores the removed verify.task key (ADR-0055)', async () => {
+    const patched = await server.api('PATCH', '/api/config', {
+      verify: { epic: { preMerge: { commands: [{ command: 'npm', args: ['test'] }], critics: [] } } },
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.body.verify).not.toHaveProperty('task');
+    expect(parse(readFileSync(join(server.dataDir, 'settings.yaml'), 'utf8')).global.verify?.task).toBeUndefined();
   });
 
   it('accepts a command verifier and fills its defaults', async () => {
     const patched = await server.api('PATCH', '/api/config', {
-      verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'] }], critics: [] } } },
+      verify: { epic: { preMerge: { commands: [{ command: 'npm', args: ['test'] }], critics: [] } } },
     });
     expect(patched.status).toBe(200);
-    expect(patched.body.verify.task.preMerge.commands[0].command).toBe('npm');
-    expect(patched.body.verify.task.preMerge.commands[0].args).toEqual(['test']);
-    expect(patched.body.verify.task.preMerge.commands[0].timeoutSeconds).toBe(600);
+    expect(patched.body.verify.epic.preMerge.commands[0].command).toBe('npm');
+    expect(patched.body.verify.epic.preMerge.commands[0].args).toEqual(['test']);
+    expect(patched.body.verify.epic.preMerge.commands[0].timeoutSeconds).toBe(600);
   });
 
   it('round-trips routingLabels through PATCH and refuses case-insensitive duplicates (ADR-0049)', async () => {
@@ -112,26 +123,26 @@ describe('PATCH /api/config verification', () => {
 
   it('accepts an agent critic', async () => {
     const patched = await server.api('PATCH', '/api/config', {
-      verify: { task: { preMerge: { commands: [], critics: [{ name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.',model: 'stub-model', harness: 'claude' }] } } },
+      verify: { epic: { preMerge: { commands: [], critics: [{ name: 'Test critic', prompt: 'Review the diff.', model: 'stub-model', harness: 'claude' }] } } },
     });
     expect(patched.status).toBe(200);
-    expect(patched.body.verify.task.preMerge.critics[0].model).toBe('stub-model');
+    expect(patched.body.verify.epic.preMerge.critics[0].model).toBe('stub-model');
   });
 
   it('accepts a critic harness (issue #174) and round-trips it', async () => {
     const withHarness = await server.api('PATCH', '/api/config', {
-      verify: { task: { preMerge: { commands: [], critics: [{ name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.',model: 'gpt-6-sol', harness: 'codex' }] } } },
+      verify: { epic: { preMerge: { commands: [], critics: [{ name: 'Test critic', prompt: 'Review the diff.', model: 'gpt-6-sol', harness: 'codex' }] } } },
     });
     expect(withHarness.status).toBe(200);
-    expect(withHarness.body.verify.task.preMerge.critics[0].harness).toBe('codex');
+    expect(withHarness.body.verify.epic.preMerge.critics[0].harness).toBe('codex');
 
     const after = await server.api('GET', '/api/config');
-    expect(after.body.verify.task.preMerge.critics[0].harness).toBe('codex');
+    expect(after.body.verify.epic.preMerge.critics[0].harness).toBe('codex');
   });
 
   it('rejects a critic with no harness', async () => {
     const patched = await server.api('PATCH', '/api/config', {
-      verify: { task: { preMerge: { commands: [], critics: [{ name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.', model: 'claude-opus-5' }] } } },
+      verify: { epic: { preMerge: { commands: [], critics: [{ name: 'Test critic', prompt: 'Review the diff.', model: 'claude-opus-5' }] } } },
     });
     expect(patched.status).toBe(400);
     expect(patched.body.error.message).toContain('harness');
@@ -139,7 +150,7 @@ describe('PATCH /api/config verification', () => {
 
   it('rejects a critic whose model is not in its harness, naming both', async () => {
     const patched = await server.api('PATCH', '/api/config', {
-      verify: { task: { preMerge: { commands: [], critics: [{ name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.', model: 'gpt-6-sol', harness: 'claude' }] } } },
+      verify: { epic: { preMerge: { commands: [], critics: [{ name: 'Test critic', prompt: 'Review the diff.', model: 'gpt-6-sol', harness: 'claude' }] } } },
     });
     expect(patched.status).toBe(400);
     expect(patched.body.error.message).toContain('gpt-6-sol');
@@ -148,7 +159,7 @@ describe('PATCH /api/config verification', () => {
 
   it('rejects an invalid critic harness (issue #174) — not one of the known harness ids', async () => {
     const invalid = await server.api('PATCH', '/api/config', {
-      verify: { task: { preMerge: { commands: [], critics: [{ name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.',model: 'claude-opus-5', harness: 'nonexistent' }] } } },
+      verify: { epic: { preMerge: { commands: [], critics: [{ name: 'Test critic', prompt: 'Review the diff.', model: 'claude-opus-5', harness: 'nonexistent' }] } } },
     });
     expect(invalid.status).toBe(400);
   });
@@ -171,13 +182,13 @@ describe('PATCH /api/config verification', () => {
 
   it('clears a configured command back to null', async () => {
     const withCommand = await server.api('PATCH', '/api/config', {
-      verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'] }], critics: [] } } },
+      verify: { epic: { preMerge: { commands: [{ command: 'npm', args: ['test'] }], critics: [] } } },
     });
-    expect(withCommand.body.verify.task.preMerge.commands[0].command).toBe('npm');
+    expect(withCommand.body.verify.epic.preMerge.commands[0].command).toBe('npm');
 
-    const cleared = await server.api('PATCH', '/api/config', { verify: { task: { preMerge: { commands: [], critics: [] } } } });
+    const cleared = await server.api('PATCH', '/api/config', { verify: { epic: { preMerge: { commands: [], critics: [] } } } });
     expect(cleared.status).toBe(200);
-    expect(cleared.body.verify.task.preMerge.commands).toEqual([]);
+    expect(cleared.body.verify.epic.preMerge.commands).toEqual([]);
   });
 
   it('accepts a maxAttempts patch and leaves verification settings untouched', async () => {

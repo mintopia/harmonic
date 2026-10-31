@@ -212,9 +212,6 @@ export class Runner {
       library: this.workflowLibrary,
       stepRuns: this.stepRuns,
       spawn: this.commandSpawn ?? createChildProcessSpawn(this.spawnProcessGroup),
-      commandById: (task, id) => this.verification.preMergeCommandById(task, id),
-      preMergeCommands: (task) => this.verification.preMergeCommands(task),
-      postMergeCommands: (task) => this.verification.postMergeCommands(task),
       secrets: async (task) => {
         if (task.workspaceId == null || !secrets) return {};
         const workspaceId = task.workspaceId;

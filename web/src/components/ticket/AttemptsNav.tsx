@@ -9,19 +9,17 @@ import { NAV_DOT, NAV_WORD } from './shared';
 
 export function AttemptsNav({
   attempts,
-  maxAttempts,
   selectedNumber,
   onSelect,
 }: {
   attempts: Attempt[];
-  maxAttempts: number | null;
   selectedNumber: number | null;
   onSelect: (attempt: Attempt) => void;
 }) {
   return (
     <section className="border-b border-hairline px-3.5 py-3.5" aria-label="Attempt history">
       <div className={railSectionHead}>
-        Attempts <span className={railSectionCount}>{attempts.length}{maxAttempts !== null && ` / ${maxAttempts}`}</span>
+        Attempts <span className={railSectionCount}>{attempts.length}</span>
       </div>
       {attempts.length === 0 ? (
         <p className="text-small text-muted">This ticket hasn't been attempted yet.</p>
