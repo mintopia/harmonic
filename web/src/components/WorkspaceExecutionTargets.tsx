@@ -38,8 +38,8 @@ export function WorkspaceExecutionTargets({
       <div className="flex flex-col gap-1.5 rounded-lg border border-hairline bg-sunken p-1.5">
         {rows.map((row) => (
           <div key={row.name} className="rounded-lg bg-surface px-3.5 py-3.5 shadow-card">
-            <div className="grid grid-cols-[24px_minmax(100px,1fr)] items-center gap-3 md:grid-cols-[24px_minmax(140px,1fr)_2fr]">
-              <span className="[&_button:disabled]:opacity-100">
+            <div className="grid grid-cols-[32px_minmax(100px,1fr)] items-center gap-3 md:grid-cols-[32px_minmax(140px,1fr)_2fr]">
+              <span className="flex [&_button:disabled]:opacity-100">
                 <Switch
                   checked={row.on}
                   disabled={row.builtIn}

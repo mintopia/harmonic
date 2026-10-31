@@ -21,7 +21,7 @@ import type {
   Workspace,
   TrackerKindInfo,
 } from '../types.js';
-import type { ExecutionTarget } from '../types.js';
+import type { ConnectionOutcome, ExecutionTarget } from '../types.js';
 import type { EpicIntegrateOutcome } from '../epic-model.js';
 import type { WorktreeInventoryEntry } from '../worktree-inventory-model.js';
 
@@ -298,8 +298,18 @@ export const api: typeof RealApi = {
   deleteExecutionTarget: () => ok({ ok: true as const, escalated: 3 }),
   setExecutionTargetKubeconfig: () => ok(null),
   clearExecutionTargetKubeconfig: () => ok(null),
-  testExecutionTargetConnection: (body) =>
-    ok({ ok: true, outcome: 'connected' as const, message: 'connected', podCount: 6, namespace: body.namespace, secretName: body.name ? `${body.name}-kubeconfig` : null }),
+  testExecutionTargetConnection: (body) => {
+    const outcome = (new URLSearchParams(window.location.search).get('outcome') ?? 'connected') as ConnectionOutcome;
+    const secretName = body.name ? `${body.name}-kubeconfig` : null;
+    const messages: Record<ConnectionOutcome, string> = {
+      connected: 'connected',
+      unauthorized: 'unauthorized',
+      'namespace-not-found': 'namespace not found',
+      unreachable: 'timed out after 10 s',
+      'invalid-kubeconfig': 'invalid kubeconfig: no current-context set',
+    };
+    return ok({ ok: outcome === 'connected', outcome, message: messages[outcome], ...(outcome === 'connected' ? { podCount: 6 } : {}), namespace: body.namespace, secretName });
+  },
   workspaceExecutionTargets: () =>
     ok({
       restricted: false,

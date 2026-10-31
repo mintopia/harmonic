@@ -19,7 +19,7 @@ import {
   type DraftField,
   type TargetDraft,
 } from '../execution-targets-model';
-import { btnDestructive, btnGhost, btnPrimary, btnQuiet, btnQuietDestructive, card, field, panelTitle, sectionTitle, statePillShape } from '../ui';
+import { btnDestructive, btnGhost, btnPrimary, btnQuiet, btnQuietDestructive, card, field, sectionTitle, statePillShape } from '../ui';
 import { Modal } from './Modal';
 import { Icon } from './Icon';
 import { LoadError } from './LoadError';
@@ -183,8 +183,8 @@ function DeleteTargetDialog({ name, impact, onConfirm, onCancel }: { name: strin
   return (
     <Modal label={`Delete Execution Target ${name}`} onClose={onCancel} className="max-w-lg">
       <div className="p-5">
-        <h2 className={`${panelTitle} mb-2 pr-6`}>
-          {copy.title} <code className="font-data">{name}</code>?
+        <h2 className="mb-2 pr-6 text-[15px] font-semibold text-ink">
+          {copy.title} <code className="font-data text-small">{name}</code>?
         </h2>
         {copy.banner && (
           <div role="alert" className="mb-3 rounded-md bg-fail-tint px-3 py-2.5 text-[13px] text-ink">
@@ -274,11 +274,11 @@ function TargetEditor({
   };
 
   const input = (key: DraftField, label: string, opts: { help?: ReactNode; short?: boolean; mono?: boolean; inputMode?: 'numeric'; placeholder?: string } = {}) => (
-    <div className={opts.short ? 'sm:max-w-60' : undefined}>
+    <div>
       <label htmlFor={`target-${key}`} className={fieldLabel}>{label}</label>
       <input
         id={`target-${key}`}
-        className={`${field} min-h-11 font-data`}
+        className={`${field} min-h-11 font-data ${opts.short ? 'sm:max-w-60' : ''}`}
         value={draft[key]}
         inputMode={opts.inputMode}
         placeholder={opts.placeholder}

@@ -87,9 +87,9 @@ const workspaceSchema = z
     epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().meta({ example: null }),
     /** Routing Label overlay; null inherits every global Routing Label in order. */
     routingLabels: routingLabelOverrideSchema.nullable().meta({ example: null }),
-    /** Model Option overlay; null inherits every global Model Option in order, enabled. */
     /** `local` is always available; null inherits every enabled target. */
     executionTargets: z.array(z.string()).nullable().meta({ example: null }),
+    /** Model Option overlay; null inherits every global Model Option in order, enabled. */
     modelOptions: modelOptionOverrideSchema.nullable().meta({ example: null }),
     classifierEnabled: z.boolean().nullable().meta({ example: null }),
     classifierBackend: z.enum(CLASSIFIER_BACKENDS).nullable().meta({ example: null }),
