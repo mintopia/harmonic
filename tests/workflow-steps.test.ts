@@ -24,7 +24,7 @@ function step(overrides: Partial<WorkflowStepRun>): WorkflowStepRun {
   };
 }
 
-const response = (steps: WorkflowStepRun[]): WorkflowStepsResponse => ({ workflowRef: 'implement@2', workflowChosen: 'explicit', steps });
+const response = (steps: WorkflowStepRun[]): WorkflowStepsResponse => ({ workflowRef: 'implement@2', workflowChosen: 'explicit', outline: [], cleanupCount: 0, steps });
 
 describe('WorkflowSteps', () => {
   it('groups steps under their Attempt number', async () => {
@@ -46,7 +46,7 @@ describe('WorkflowSteps', () => {
   });
 
   it('renders nothing without a workflowRef', async () => {
-    const host = await mountComponent(createElement(WorkflowSteps, { data: { workflowRef: null, workflowChosen: null, steps: [] } }));
+    const host = await mountComponent(createElement(WorkflowSteps, { data: { workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, steps: [] } }));
     expect(host.innerHTML).toBe('');
     const empty = await mountComponent(createElement(WorkflowSteps, { data: null }));
     expect(empty.innerHTML).toBe('');

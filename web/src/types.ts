@@ -65,6 +65,8 @@ export interface WorkflowStepRun {
 export interface WorkflowStepsResponse {
   workflowRef: string | null;
   workflowChosen: WorkflowChosen | null;
+  outline: { id: string; children: string[] }[];
+  cleanupCount: number;
   steps: WorkflowStepRun[];
 }
 

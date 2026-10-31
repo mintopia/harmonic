@@ -35,6 +35,7 @@ export interface EscalationHooks {
    * next Step on the same Attempt, merging and settling `done` on an eventual
    * pass or escalating again on a later failure. */
   advance: (task: TaskRow, run: AttemptRow, failedStep: StepRow) => Promise<void>;
+  acceptWorkflow: (task: TaskRow, run: AttemptRow) => Promise<void>;
 }
 
 /**
@@ -86,6 +87,10 @@ export class EscalationService {
       const head = run ? await this.hooks.candidateHead(task, run) : null;
       if (!run || !head) {
         throw new DomainError('conflict', `task ${taskId} has no candidate to accept; the branch has no commits ahead of its base`);
+      }
+      if (task.workflowRef !== null) {
+        await this.hooks.acceptWorkflow(task, run);
+        return await this.taskService.get(taskId);
       }
       const steps = await this.attempts.listSteps(run.id);
       const failedStep = [...steps].reverse().find((step) => step.state === 'failed');

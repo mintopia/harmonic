@@ -243,6 +243,7 @@ describe('escalation-service', () => {
           candidateHeadCalls.push({ taskId: task.id, runId: run.id });
           return candidateHeadValue;
         },
+        acceptWorkflow: async () => {},
         advance: async () => {},
       });
     });

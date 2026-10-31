@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceptPresentation, acceptedOutcome, escalationActions, taskActions } from '../web/src/task-actions-model.js';
+import { acceptPresentation, acceptedOutcome, escalationActions, nextUnexecutedStep, taskActions, workflowEscalationNotes } from '../web/src/task-actions-model.js';
 import { TASK_STATES } from '../web/src/types.js';
 
 describe('taskActions', () => {
@@ -96,5 +96,36 @@ describe('Accept disposition', () => {
     expect(acceptedOutcome({ state: 'working', mergeStatus: null, currentStep: null })).toBe('continuing the pipeline');
     expect(acceptedOutcome({ state: 'done', mergeStatus: null, currentStep: null })).toBe('completed');
     expect(acceptedOutcome({ state: 'escalated', mergeStatus: null, currentStep: null })).toBe('needs your attention');
+  });
+});
+
+describe('workflowEscalationNotes', () => {
+  const outline = [{ id: 'implement', children: [] }, { id: 'security', children: [] }, { id: 'merge', children: [] }];
+  const run = (stepId: string, action: string, outcome: 'pass' | 'fail') => ({ stepId, action, outcome, attempt: 1 });
+
+  it('names the failed step, the step Accept continues with and the cleanup count', () => {
+    const notes = workflowEscalationNotes({ steps: [run('implement', 'agent', 'pass'), run('security', 'critic', 'fail')], outline, cleanupCount: 1 });
+    expect(notes?.heading).toBe('Escalated at step security');
+    expect(notes?.accept).toBe('marks step security (critic) as pass and continues with merge. No re-verify; a candidate commit is required. At the last step, Accept continues to Merge.');
+    expect(notes?.retry).toBe('starts a new pass of attempts: with the counter reset.');
+    expect(notes?.close).toBe('runs the cleanup: list (1 step), then removes the worktree and branch.');
+  });
+
+  it('continues to Merge from the last step and finds a failed child through its group', () => {
+    expect(workflowEscalationNotes({ steps: [run('merge', 'merge', 'fail')], outline, cleanupCount: 2 })?.accept).toContain('continues to Merge');
+    const grouped = [{ id: 'panel', children: ['a', 'b'] }, { id: 'merge', children: [] }];
+    expect(workflowEscalationNotes({ steps: [run('b', 'critic', 'fail')], outline: grouped, cleanupCount: 0 })?.accept).toContain('continues with merge');
+  });
+
+  it('returns null when nothing is failed', () => {
+    expect(workflowEscalationNotes({ steps: [run('a', 'run', 'fail'), run('a', 'run', 'pass')], outline, cleanupCount: 0 })).toBeNull();
+  });
+});
+
+describe('nextUnexecutedStep', () => {
+  it('is the first outline step without a pass or skipped run', () => {
+    const outline = [{ id: 'implement', children: [] }, { id: 'verify', children: [] }];
+    expect(nextUnexecutedStep({ steps: [{ stepId: 'implement', action: 'agent', outcome: 'pass', attempt: 1 }], outline })).toBe('verify');
+    expect(nextUnexecutedStep({ steps: [], outline: [] })).toBeNull();
   });
 });

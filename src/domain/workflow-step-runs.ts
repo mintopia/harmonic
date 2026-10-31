@@ -55,6 +55,20 @@ export class WorkflowStepRunStore {
     return this.db.read((db) => db.select().from(workflowStepRuns).where(eq(workflowStepRuns.taskId, taskId)).orderBy(asc(workflowStepRuns.id)).all());
   }
 
+  async acceptFailed(taskId: number, workflowRef: string): Promise<number> {
+    const failed = [...(await this.latestByStep(taskId, workflowRef)).values()].filter((row) => row.outcome === 'fail' || row.outcome === 'inconclusive' || row.outcome === 'conflict');
+    await this.db.write(async (db) => {
+      for (const row of failed) {
+        await db
+          .update(workflowStepRuns)
+          .set({ outcome: 'pass', summary: `accepted by the operator (was ${row.outcome}): ${row.summary ?? ''}`.trimEnd() })
+          .where(eq(workflowStepRuns.id, row.id))
+          .run();
+      }
+    });
+    return failed.length;
+  }
+
   /** The latest run of each step under `workflowRef`, by step id; a run left `running` has a null outcome. */
   async latestByStep(taskId: number, workflowRef: string): Promise<Map<string, WorkflowStepRunRow>> {
     const latest = new Map<string, WorkflowStepRunRow>();

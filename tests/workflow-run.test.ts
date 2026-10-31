@@ -52,6 +52,7 @@ describe('a Ticket with a chosen workflow', () => {
     expect(task).toMatchObject({ workflowRef: 'greet@1', workflowChosen: 'explicit' });
     const { body } = await server.api('GET', `/api/tasks/${id}/workflow-steps`);
     expect(body.workflowRef).toBe('greet@1');
+    expect(body).toMatchObject({ outline: [{ id: 'hello', children: [] }], cleanupCount: 0 });
     expect(body.steps).toEqual([
       expect.objectContaining({ stepId: 'hello', action: 'run', position: 0, outcome: 'pass', outputs: { stdout: 'hello\n', exitCode: 0 } }),
     ]);
@@ -69,6 +70,6 @@ describe('a Ticket with a chosen workflow', () => {
   it('leaves a Ticket without a workflow unpinned with no steps', async () => {
     const created = await create();
     expect(created.body).toMatchObject({ workflowRef: null, workflowChosen: null });
-    expect((await server.api('GET', `/api/tasks/${created.body.id}/workflow-steps`)).body).toEqual({ workflowRef: null, workflowChosen: null, steps: [] });
+    expect((await server.api('GET', `/api/tasks/${created.body.id}/workflow-steps`)).body).toEqual({ workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, steps: [] });
   });
 });

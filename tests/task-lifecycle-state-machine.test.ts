@@ -168,6 +168,7 @@ describe('Task lifecycle state machine (ADR-0020)', () => {
         resume: async () => {},
         cleanup: async () => {},
         candidateHead: async () => 'cand-oid',
+        acceptWorkflow: async () => {},
         advance: async () => {},
       });
 
@@ -217,6 +218,7 @@ describe('Task lifecycle state machine (ADR-0020)', () => {
         resume: async () => {},
         cleanup: async () => {},
         candidateHead: async () => 'cand-oid',
+        acceptWorkflow: async () => {},
         advance: async () => {},
       });
 

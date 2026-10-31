@@ -20953,6 +20953,38 @@
                       ],
                       "example": "explicit"
                     },
+                    "outline": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "example": "verify"
+                          },
+                          "children": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Ids of a `parallel:` group's steps; empty for a plain step."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "children"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "Every step of the pinned workflow in execution order; empty for a Ticket without a workflow."
+                    },
+                    "cleanupCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "How many steps the workflow's `cleanup:` list runs on done and on Close.",
+                      "example": 1
+                    },
                     "steps": {
                       "type": "array",
                       "items": {
@@ -21090,6 +21122,8 @@
                   "required": [
                     "workflowRef",
                     "workflowChosen",
+                    "outline",
+                    "cleanupCount",
                     "steps"
                   ],
                   "additionalProperties": false,
