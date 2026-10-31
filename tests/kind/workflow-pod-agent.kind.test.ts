@@ -13,6 +13,7 @@ const NAMESPACE = 'harmonic-agents';
 const IMAGE = process.env.HARMONIC_KIND_AGENT_IMAGE ?? 'node:22-bookworm';
 const TOKEN = 'kind-fake-oauth-token';
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+const kubectl = (...args: string[]): string => execFileSync('kubectl', ['--kubeconfig', kubeconfigPath!, '-n', NAMESPACE, ...args], { encoding: 'utf8' }).trim();
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8', env }).trim();
 const agentSource = readFileSync(resolve(import.meta.dirname, '../fixtures/pod-acp-agent.mjs'), 'utf8').replace('process.env.POD_AGENT_SESSION', "'1'").replace('process.env.POD_AGENT_HOLD_MS ?? 0', "'8000'");
 
@@ -118,4 +119,37 @@ describe.skipIf(!kubeconfigPath)('an agent step on a real kind cluster', () => {
     expect(task.state).toBe('escalated');
     expect(JSON.stringify(task)).toContain('has no credential for Harness Codex');
   }, 360_000);
+
+  const podsOf = (id: number): string[] => kubectl('get', 'pods', '-l', `harmonic.mintopia.net/task=${id}`, '-o', 'name').split('\n').filter((line) => line !== '');
+  const deleteWhenRunning = async (id: number): Promise<string> => {
+    const [pod] = await waitFor(async () => {
+      const pods = podsOf(id);
+      return pods.length > 0 && kubectl('get', pods[0]!, '-o', 'jsonpath={.status.phase}') === 'Running' ? pods : false;
+    }, { timeoutMs: 120_000, intervalMs: 500 }).then(() => podsOf(id));
+    kubectl('delete', pod!, '--force', '--grace-period=0', '--wait=false');
+    return pod!;
+  };
+
+  it('brings up a new pod from the checkpoint when the pod is deleted mid-step, re-runs the step once and keeps the Attempt number', async () => {
+    const id = await start('agent-claude');
+    const lost = await deleteWhenRunning(id);
+    await runToDone('agent-claude', id);
+    const task = (await server.api('GET', `/api/tasks/${id}`)).body;
+    expect(task.state).toBe('done');
+    const steps = (await server.api('GET', `/api/tasks/${id}/workflow-steps`)).body.steps as { outcome: string; attempt: number | null }[];
+    expect(steps.map((step) => step.outcome)).toEqual(['pass']);
+    expect(steps[0]!.attempt).toBe(1);
+    expect(podsOf(id)).not.toContain(lost);
+  }, 420_000);
+
+  it('escalates with reason 3 when the replacement pod is deleted too', async () => {
+    const id = await start('agent-claude');
+    const first = await deleteWhenRunning(id);
+    await waitFor(async () => podsOf(id).some((pod) => pod !== first), { timeoutMs: 120_000, intervalMs: 500 });
+    await deleteWhenRunning(id);
+    await runToDone('agent-claude', id);
+    const task = (await server.api('GET', `/api/tasks/${id}`)).body;
+    expect(task.state).toBe('escalated');
+    expect(JSON.stringify(task)).toContain('permanent infrastructure failure');
+  }, 420_000);
 });

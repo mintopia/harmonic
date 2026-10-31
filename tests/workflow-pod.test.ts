@@ -263,4 +263,37 @@ describe('a workflow whose runs_on names a Kubernetes Execution Target', () => {
     expect(api.calls.filter((c) => c.startsWith('createPod'))).toHaveLength(2);
     expect(api.pods.size + api.secrets.size).toBe(0);
   });
+
+  it('re-runs a step once in a fresh pod when its pod is deleted mid-step, without spending an Attempt', async () => {
+    let api!: FakePodApi;
+    let killed = false;
+    api = new FakePodApi(scripted((s) => {
+      if (s !== 'echo work' || killed) return undefined;
+      killed = true;
+      api.pods.clear();
+      return ok('', 137);
+    }));
+    const { task, run } = await start(flow('  - id: one\n    run: echo work\n'));
+    await engine(api).run(task, run);
+    const rows = await stepRows(task.id);
+    expect(rows.map((r) => [r.stepId, r.outcome, r.attempt])).toEqual([['one', 'pass', 1]]);
+    expect(api.calls.filter((c) => c.startsWith('createPod'))).toHaveLength(2);
+    expect(escalations).toEqual([]);
+    expect(completions).toBe(1);
+  });
+
+  it('escalates when the replacement pod is lost on the same step too', async () => {
+    let api!: FakePodApi;
+    api = new FakePodApi(scripted((s) => {
+      if (s !== 'echo work') return undefined;
+      api.pods.clear();
+      return ok('', 137);
+    }));
+    const { task, run } = await start(flow('  - id: one\n    run: echo work\n'));
+    await engine(api).run(task, run);
+    expect(api.calls.filter((c) => c.startsWith('createPod'))).toHaveLength(2);
+    expect(escalations).toHaveLength(1);
+    expect(escalations[0]).toContain('lost twice');
+    expect(completions).toBe(0);
+  });
 });

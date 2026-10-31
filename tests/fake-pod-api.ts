@@ -64,6 +64,10 @@ export class FakePodApi implements PodApi {
     this.pods.delete(name);
   }
 
+  async podGone(_namespace: string, name: string): Promise<boolean> {
+    return !this.pods.has(name);
+  }
+
   async deleteSecret(namespace: string, name: string): Promise<void> {
     this.calls.push(`deleteSecret ${namespace}/${name}`);
     this.secrets.delete(name);
