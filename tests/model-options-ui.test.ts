@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, type ClassifierTestResult } from '../web/src/api.js';
 import { ModelOptionsEditor } from '../web/src/components/ModelOptionsEditor.js';
 import { RouteClassifierSettings } from '../web/src/components/RouteClassifierSettings.js';
+import { SETTINGS_SCHEMA, type RenderCtx } from '../web/src/components/settings-schema.js';
 import { firstGlobalModelOptionError, firstModelOptionError } from '../web/src/components/model-option-model.js';
 
 import type { ModelOption, ModelOptionOverlayEntry, Workspace } from '../web/src/types.js';
@@ -283,18 +284,26 @@ describe('RouteClassifierSettings', () => {
   const onSaveSpy = vi.fn();
   function Classifier({ initial, optionCount = 1, errors = {} }: { initial: Workspace; optionCount?: number; errors?: Record<string, string> }) {
     const [ws, setWs] = useState(initial);
-    return createElement(RouteClassifierSettings, {
-      workspace: ws,
-      config: { ...config, promptFragments: { ...config.promptFragments, routeClassifier: 'Pick one optionId.\n{options}\n{ticket}' } },
-      optionCount,
-      saving: savingFlag,
-      onSave: onSaveSpy,
-      errors,
-      onChange: (next: Workspace) => {
-        captureWs(next);
-        setWs(next);
-      },
-    });
+    const onChange = (next: Workspace) => {
+      captureWs(next);
+      setWs(next);
+    };
+    const section = SETTINGS_SCHEMA.find((s) => s.title === 'Route Classifier')!;
+    const action = section.action!({ surface: 'workspace', workspace: ws, setWorkspace: onChange } as unknown as RenderCtx);
+    return createElement(
+      'div',
+      null,
+      action,
+      createElement(RouteClassifierSettings, {
+        workspace: ws,
+        config: { ...config, promptFragments: { ...config.promptFragments, routeClassifier: 'Pick one optionId.\n{options}\n{ticket}' } },
+        optionCount,
+        saving: savingFlag,
+        onSave: onSaveSpy,
+        errors,
+        onChange,
+      }),
+    );
   }
   const mountClassifier = (initial: Partial<Workspace> = {}, optionCount = 1, errors: Record<string, string> = {}) =>
     mountComponent(createElement(Classifier, { initial: makeWorkspace(initial), optionCount, errors }));

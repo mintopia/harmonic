@@ -92,7 +92,6 @@ export const workspaceOverridesSchema = z.object({
   epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().optional(),
   /** Routing Label overlay; null inherits every global Routing Label in order. */
   routingLabels: routingLabelOverrideSchema.nullable().optional(),
-  /** Workspace-only Model Options, added after the global list; null adds none. */
   /** Ordered Model Option overlay (ADR-0037); null inherits every global, enabled. */
   modelOptions: modelOptionOverrideSchema.nullable().optional(),
   /** Route Classifier on/off override; null inherits off. */

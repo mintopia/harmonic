@@ -796,6 +796,8 @@ interface SectionNode {
   title: PerSurface<string>;
   description: PerSurface<string>;
   body: (ctx: RenderCtx) => ReactNode;
+  /** Control at the right of the card's title row. */
+  action?: (ctx: RenderCtx) => ReactNode;
   /** Span both columns of the settings grid — for wide, table-shaped bodies. */
   wide?: boolean;
   /** Render the body without the SettingsSection card — the body owns its own chrome. */
@@ -923,6 +925,14 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     wide: true,
     description:
       'Picks one Model Option for each Attempt on a Native Task. Advisory: when it abstains, errors or times out, the Workspace default applies and the Attempt starts anyway.',
+    action: (ctx) =>
+      ctx.surface === 'workspace' ? (
+        <Switch
+          checked={ctx.workspace.classifierEnabled ?? false}
+          onChange={(v) => ctx.setWorkspace({ ...ctx.workspace, classifierEnabled: v })}
+          label="Route Classifier"
+        />
+      ) : null,
     body: (ctx) =>
       ctx.surface === 'workspace' ? (
         <RouteClassifierSettings
@@ -1153,10 +1163,14 @@ export function sectionsForTab(surface: Surface, tab: SettingTab): SectionNode[]
 }
 
 /** Render a section's card title/description/body for a surface. */
-export function renderSection(section: SectionNode, ctx: RenderCtx): { title: string; description: string; body: ReactNode } {
+export function renderSection(
+  section: SectionNode,
+  ctx: RenderCtx,
+): { title: string; description: string; body: ReactNode; action: ReactNode } {
   return {
     title: pick(section.title, ctx.surface),
     description: pick(section.description, ctx.surface),
     body: section.body(ctx),
+    action: section.action?.(ctx) ?? null,
   };
 }

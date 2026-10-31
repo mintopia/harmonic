@@ -8,7 +8,6 @@ import { useAsyncResource } from '../useAsyncResource';
 import { DiscoveryModelPicker } from './DiscoveryModelPicker';
 import { modelOptionRows } from './model-option-model';
 import { FieldError, fieldLabel } from './SettingsSection';
-import { Switch } from './Switch';
 import { providerLabel } from './TaskIdentity';
 import { defaultHarnessId } from './verification-override-model';
 
@@ -189,12 +188,9 @@ export function RouteClassifierSettings({
 
   return (
     <div>
-      <div className="flex items-start justify-between gap-4">
-        <p className="mb-2 text-small text-muted">
-          {enabled ? 'On.' : 'Off. Attempts start with the Routing Label or Workspace default; nothing is classified or charged.'}
-        </p>
-        <Switch checked={enabled} onChange={(v) => set({ classifierEnabled: v })} label="Route Classifier" />
-      </div>
+      <p className="mb-2 text-small text-muted">
+        {enabled ? 'On.' : 'Off. Attempts start with the Routing Label or Workspace default; nothing is classified or charged.'}
+      </p>
       {enabled && optionCount === 0 && (
         <div role="status" className={`${notice} mb-3 bg-raised text-ink`}>
           <TriangleIcon />
