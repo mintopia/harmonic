@@ -21,7 +21,7 @@ import { HostLoadSampler } from '../host-load.js';
 import { WorkspaceWatcher } from '../domain/workspace-watcher.js';
 import { logger } from '../logger.js';
 import { ProcessGroupJournal } from '../execution/process-groups.js';
-import { attempted, errorMessage, type FireAndForget } from '../error-handling.js';
+import { errorMessage, type FireAndForget } from '../error-handling.js';
 import { createTypesafeClassifierBackend } from '../domain/typesafe-classifier.js';
 import { RouteClassifier, createHarnessClassifierBackend, createOpenAiCompatibleClassifierBackend } from '../domain/route-classifier.js';
 import { createAcpCriticDrive } from '../verification/critic.js';
@@ -42,7 +42,6 @@ import { EscalationService } from '../domain/escalation.js';
 import type { AppOptions } from './app-context.js';
 import type { Stores } from './app-stores.js';
 import type { WorktreeServices } from './app-worktrees.js';
-import { createPostMergeCheck } from '../verification/post-merge-check.js';
 import type { DistributionMode } from '../distribution-mode.js';
 import { touchStartupProgress } from '../reliability/startup-progress.js';
 import { createTrackerResolver } from '../tracker/adapter.js';
@@ -103,17 +102,12 @@ async function runStartupRecovery(deps: {
   attempts: Stores['attempts'];
   tasks: Stores['tasks'];
   auth: Stores['auth'];
-  operatorSettle: AttemptSettleCoordinator;
-  postMergeCheck: ReturnType<typeof createPostMergeCheck>;
-  postMerge: PostMergeHook;
   bus: EventBus;
   archive: TaskArchive;
   sessionTranscriptPath: (sessionRowId: number) => Promise<string | null>;
 }): Promise<void> {
-  const { attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus, archive, sessionTranscriptPath } = deps;
-  const crashRecovery = new CrashRecoveryCoordinator(attempts, tasks, operatorSettle, {
-    runPostMergeCheck: postMergeCheck,
-    postMerge,
+  const { attempts, tasks, auth, bus, archive, sessionTranscriptPath } = deps;
+  const crashRecovery = new CrashRecoveryCoordinator(attempts, tasks, {
     onEpicAttemptInterrupted: (attempt) => { bus.emit('attempt_changed', attempt); },
     archive,
     sessionTranscriptPath,
@@ -304,26 +298,9 @@ export async function createRuntime(deps: {
   });
   const promptConfig = () => withLibraryPrompts(settingsStore.getGlobal(), deps.promptLibrary);
   const transcripts = new TranscriptCapture(sessionStore, verificationAttempts, promptConfig);
-  const postMergeCheck = createPostMergeCheck({
-    getWorkspace: async (workspaceId) => {
-      if (workspaceId === null) return undefined;
-      const result = await attempted(() => workspaces.get(workspaceId), {
-        op: 'postMerge.resolveWorkspace', level: 'error', context: { workspaceId },
-      });
-      return result.ok ? result.value : undefined;
-    },
-    getConfig: promptConfig,
-    verificationAttempts,
-    attempts,
-    criticDrive,
-    commandSpawn,
-    fireAndForget,
-    archive,
-    transcripts,
-  });
   touchStartupProgress(opts.dataDir);
   await runStartupRecovery({
-    attempts, tasks, auth, operatorSettle, postMergeCheck, postMerge, bus, archive,
+    attempts, tasks, auth, bus, archive,
     sessionTranscriptPath: (id) => transcripts.ensureSessionTranscript(id),
   });
   touchStartupProgress(opts.dataDir);

@@ -30,11 +30,30 @@ export interface WorkflowStepRunFinish {
   summary: string;
 }
 
+export interface WorkflowStepRunSeed {
+  taskId: number;
+  workflowRef: string;
+  stepId: string;
+  position: number;
+  action: string;
+  attempt: number | null;
+  outcome: WorkflowStepOutcome;
+  summary: string;
+}
+
 export class WorkflowStepRunStore {
   constructor(private readonly db: AsyncDbHandle) {}
 
   start(input: WorkflowStepRunStart, now: number = Date.now()): Promise<WorkflowStepRunRow> {
     return this.db.write((db) => db.insert(workflowStepRuns).values({ ...input, startedAt: now }).returning().get());
+  }
+
+  async seed(rows: readonly WorkflowStepRunSeed[], now: number = Date.now()): Promise<void> {
+    if (rows.length === 0) return;
+    const outputs = JSON.stringify({ stdout: '', exitCode: null } satisfies WorkflowStepOutputs);
+    await this.db.write(async (db) => {
+      for (const row of rows) await db.insert(workflowStepRuns).values({ ...row, outputs, startedAt: now, endedAt: now }).run();
+    });
   }
 
   async finish(id: number, result: WorkflowStepRunFinish, now: number = Date.now()): Promise<void> {

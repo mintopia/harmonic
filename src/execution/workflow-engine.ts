@@ -12,7 +12,7 @@ import { harnessConfig, resolveRoute, type ResolvedRoute } from '../domain/route
 import type { WorkflowStepOutputs, WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
 import { maskSecrets } from '../secrets/mask.js';
 import { errorMessage } from '../error-handling.js';
-import type { CriticHarnessDrive } from '../verification/critic.js';
+import type { CriticDriveRequest, CriticDriveResult } from '../verification/critic.js';
 import { exitCodeToVerdict, OUTPUT_CHAR_CAP, type CommandSpawn } from '../verification/command-verifier.js';
 import type { MergeIntoBaseOutcome } from './branch-merge.js';
 import { Git } from './git.js';
@@ -31,6 +31,24 @@ export const CRITIC_CHANGED_THE_WORK = 'a critic must not change the work it jud
 const DEFAULT_CRITIC_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_RUN_TIMEOUT_SECONDS = 600;
 const ESCALATION_OUTPUT_CHARS = 4000;
+
+/** An agent step carries `task`, `run` and `stepRowId` so the driver can run a full session turn; a critic request carries none. */
+export interface AgentDriveRequest extends CriticDriveRequest {
+  task?: TaskRow;
+  run?: AttemptRow;
+  stepRowId?: number;
+}
+
+export interface AgentDriveResult extends CriticDriveResult {
+  /** The turn did not finish: 'paused' by the operator, 'settled' by a guardrail trip or cancel. */
+  halt?: 'paused' | 'settled';
+  /** The agent asked to escalate with this reason. */
+  escalate?: string;
+}
+
+export interface AgentDrive {
+  run(req: AgentDriveRequest): Promise<AgentDriveResult>;
+}
 
 export interface WorkflowEngineDeps {
   library: { getVersion(name: string, version: number): Promise<WorkflowEntry> };
@@ -53,7 +71,7 @@ export interface WorkflowEngineDeps {
   onStepChanged?: (taskId: number) => void;
   boundary?: (task: TaskRow) => Promise<boolean>;
   agent: {
-    drive: CriticHarnessDrive;
+    drive: AgentDrive;
     getConfig: () => Pick<AppConfig, 'harnesses'>;
     route: (task: TaskRow) => Promise<ResolvedRoute>;
     resolveOption: (task: TaskRow, code: string) => Promise<ModelOptionResolution>;
@@ -73,6 +91,7 @@ interface StepResult {
   output: string;
   outputs?: Partial<WorkflowStepOutputs>;
   configFailure?: true;
+  halt?: true;
 }
 
 type FailedStep = StepResult & { stepId: string };
@@ -242,6 +261,7 @@ export class WorkflowEngine {
         ctx.halted = true;
         return null;
       }
+      if (ctx.halted) return null;
       const failed = step.parallel ? await this.runGroup(ctx, step, firstPosition + index, attempt) : await this.runStep(ctx, step, firstPosition + index, attempt);
       if (failed === null) continue;
       if (failed.outcome === 'conflict') await Git.abortRebase(this.deps.cwdFor(task));
@@ -273,13 +293,17 @@ export class WorkflowEngine {
         const [resolved, env] = resolveStep(step, context);
         result =
           resolved.uses === 'agent'
-            ? await this.executeAgent(task, resolved, row.id, secrets, ctx.agentState, context)
+            ? await this.executeAgent(ctx, resolved, row.id)
             : resolved.uses === 'critic'
               ? await this.executeCritic(task, resolved, row.id, secrets, ctx.criticFragments, context)
               : await this.execute(task, run, resolved, env, secrets);
       }
     } catch (error) {
       result = { outcome: 'inconclusive', summary: mask(errorMessage(error)), stdout: '', exitCode: null, output: '' };
+    }
+    if (result.halt) {
+      ctx.halted = true;
+      return null;
     }
     const outputs: WorkflowStepOutputs = { stdout: result.stdout, exitCode: result.exitCode, ...result.outputs };
     await this.deps.stepRuns.finish(row.id, { outcome: result.outcome, outputs, summary: result.summary });
@@ -420,7 +444,8 @@ export class WorkflowEngine {
     return { route: resolveRoute(this.deps.agent.getConfig(), resolved.option.harness, resolved.option.model, null) };
   }
 
-  private async executeAgent(task: TaskRow, step: WorkflowStepDefinition, rowId: number, secrets: string[], state: AgentRunState, context: ExpressionContext): Promise<StepResult> {
+  private async executeAgent(ctx: RunContext, step: WorkflowStepDefinition, rowId: number): Promise<StepResult> {
+    const { task, run, secrets, agentState: state, context } = ctx;
     const mask = (text: string): string => maskSecrets(text, secrets);
     const inconclusive = (summary: string): StepResult => ({ outcome: 'inconclusive', summary: mask(summary), stdout: '', exitCode: null, output: '' });
     try {
@@ -461,12 +486,17 @@ export class WorkflowEngine {
           cwd,
           prompt: text,
           timeoutMs: agent.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,
+          task,
+          run,
+          stepRowId: rowId,
           ...(state.session?.key === key ? { continueSessionId: state.session.id } : {}),
         });
         if (result.sessionId) {
           state.session = { key, id: result.sessionId };
           this.warmSessions.set(task.id, state.session);
         }
+        if (result.halt) return { outcome: 'inconclusive', summary: `agent turn ${result.halt}`, stdout: '', exitCode: null, output: '', halt: true };
+        if (result.escalate !== undefined) return { ...inconclusive(result.escalate), configFailure: true };
         output += result.output;
         if (!(await Git.isDirty(cwd))) break;
         if (turn >= nudges) return { outcome: 'fail', summary: UNCOMMITTED_AFTER_AGENT, stdout: mask(output), exitCode: null, output: mask(output) };
