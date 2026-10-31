@@ -75,6 +75,7 @@ describe('Epic settings to workflows migration', () => {
     const [alpha, plain] = (await harness.workspaceService.list()).map((w) => harness.settings.getOverrides(w.id).epicWorkflow);
     expect([alpha, plain]).toEqual(['migrated-epic-alpha-app', null]);
     const text = readFileSync(join(harness.dir, 'workflows', 'migrated-epic-alpha-app.yaml'), 'utf8');
+    expect(workflowDef(harness, 'migrated-epic-alpha-app').description).toBe('Migrated Epic (Alpha App)');
     expect(text).toContain('run: make check');
     expect(text).not.toContain('npm test');
   });

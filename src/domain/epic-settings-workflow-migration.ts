@@ -58,7 +58,7 @@ function scopeOf(ws: WorkspaceRow | null, input: EpicPlanInput): EpicScope {
   };
 }
 
-function workflowFor(name: string, label: string, scopeKey: string, scope: EpicScope, entries: Map<string, PlannedPrompt>): string {
+function workflowFor(name: string, label: string, description: string, scopeKey: string, scope: EpicScope, entries: Map<string, PlannedPrompt>): string {
   const where = (path: string): string => (label === '' ? path : `${label} ${path}`);
   if (!Number.isInteger(scope.maxAttempts) || scope.maxAttempts < 1 || scope.maxAttempts > MAX_ATTEMPTS_LIMIT) {
     throw new UnconvertibleSettingError(where('maxAttempts'), `it is ${scope.maxAttempts} and a workflow allows 1 to ${MAX_ATTEMPTS_LIMIT}`);
@@ -81,7 +81,7 @@ function workflowFor(name: string, label: string, scopeKey: string, scope: EpicS
   });
   const doc = {
     name,
-    description: `Migrated Epic (${label === '' ? 'global' : label})`,
+    description,
     subject: 'epic',
     vars: { maxAttempts: scope.maxAttempts },
     steps: [
@@ -112,13 +112,13 @@ export async function planEpicSettingsMigration(input: EpicPlanInput): Promise<E
   const workflows: PlannedWorkflow[] = [];
   const taken = new Set([MIGRATED_EPIC_GLOBAL]);
   const global = scopeOf(null, input);
-  workflows.push({ name: MIGRATED_EPIC_GLOBAL, text: workflowFor(MIGRATED_EPIC_GLOBAL, '', 'epic-global', global, entries) });
+  workflows.push({ name: MIGRATED_EPIC_GLOBAL, text: workflowFor(MIGRATED_EPIC_GLOBAL, '', 'Migrated Epic (global)', 'epic-global', global, entries) });
   const workspaceWorkflows: { workspaceId: number; workflow: string }[] = [];
   await forEachYielding([...input.workspaces].sort((a, b) => a.id - b.id), (workspace) => {
     const own = scopeOf(workspace, input);
     if (isDeepStrictEqual(own, global)) return;
     const name = workflowNameFor(workspace, taken, 'migrated-epic');
-    workflows.push({ name, text: workflowFor(name, `Workspace "${workspace.name}"`, `epic-w${workspace.id}`, own, entries) });
+    workflows.push({ name, text: workflowFor(name, `Workspace "${workspace.name}"`, `Migrated Epic (${workspace.name})`, `epic-w${workspace.id}`, own, entries) });
     workspaceWorkflows.push({ workspaceId: workspace.id, workflow: name });
   });
   return { prompts: [...entries.values()], workflows, globalWorkflow: MIGRATED_EPIC_GLOBAL, workspaceWorkflows };
