@@ -105,3 +105,11 @@ None. Amends ADR-0049: the precedence list gains the Route Classifier between
 the Routing Label and the Workspace default, and Native Tasks, which ADR-0049
 leaves unrouted, are now classified. ADR-0049's Routing Label rules are
 otherwise unchanged.
+
+## Amendment (2026-10-31): Model Options have codes and Ticket overrides
+
+Amended by ADR-0053's 2026-10-31 amendment (#944). Each Model Option has a
+unique code, which is the `optionId` the classifier returns, and workflow
+steps can reference it with `option:`. Model Options resolve Ticket, then
+Workspace, then global; a Ticket may override an existing code's Harness and
+Model on the Ticket page, and the classifier picks from that resolved list.

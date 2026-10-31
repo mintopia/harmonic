@@ -247,9 +247,12 @@ _Avoid_: router, model picker, auto-routing
 
 **Model Option**:
 One operator-defined choice the Route Classifier may pick: a Harness + Model
-with a description of when it fits ("cheap, small fixes"). The Route
-Classifier never picks outside the list. Defined globally as a list that a
-Workspace overlays additively, like Routing Labels.
+with a description of when it fits ("cheap, small fixes"), identified by a
+short code (e.g. `opus-deep`). The Route Classifier never picks outside the
+list, and a Task Execution Workflow step may name an option by its code.
+Defined globally as a list that a Workspace overlays additively, like Routing
+Labels; a Ticket may override an existing option for itself. A code resolves
+Ticket first, then Workspace, then global.
 _Avoid_: route candidate, profile, tier, preset
 
 **Secret**:
