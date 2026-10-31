@@ -30,15 +30,19 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   } else if (msg.method === 'session/set_mode' || msg.method === 'session/set_model') {
     send({ jsonrpc: '2.0', id: msg.id, result: {} });
   } else if (msg.method === 'session/prompt') {
-    const file = `agent-${++turns}.txt`;
-    writeFileSync(join(cwd, file), 'from the agent\n');
-    if (!process.env.POD_AGENT_NO_COMMIT) {
-      execFileSync('git', ['add', file], { cwd });
-      execFileSync('git', ['commit', '-qm', `agent ${file}`], { cwd });
-    }
-    record({ type: 'assistant', message: { id: `msg-${turns}`, model: 'claude-sonnet-5', content: [{ type: 'text', text: 'done ✓ 日本語' }], usage: { input_tokens: 11, output_tokens: 7, cache_read_input_tokens: 5, cache_creation_input_tokens: 3 } } });
-    const text = `done ${file} token=${process.env.CLAUDE_CODE_OAUTH_TOKEN ?? ''}`;
-    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'pod-session', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } } } });
-    send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } });
+    setTimeout(() => prompt(msg), Number(process.env.POD_AGENT_HOLD_MS ?? 0));
   }
 });
+
+function prompt(msg) {
+  const file = `agent-${++turns}.txt`;
+  writeFileSync(join(cwd, file), 'from the agent\n');
+  if (!process.env.POD_AGENT_NO_COMMIT) {
+    execFileSync('git', ['add', file], { cwd });
+    execFileSync('git', ['commit', '-qm', `agent ${file}`], { cwd });
+  }
+  record({ type: 'assistant', message: { id: `msg-${turns}`, model: 'claude-sonnet-5', content: [{ type: 'text', text: 'done ✓ 日本語' }], usage: { input_tokens: 11, output_tokens: 7, cache_read_input_tokens: 5, cache_creation_input_tokens: 3 } } });
+  const text = `done ${file} token=${process.env.CLAUDE_CODE_OAUTH_TOKEN ?? ''}`;
+  send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'pod-session', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } } } });
+  send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } });
+}
