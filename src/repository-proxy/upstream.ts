@@ -62,7 +62,6 @@ function httpUpstream(url: string, auth: UpstreamAuth | undefined): Upstream {
   };
 }
 
-/** Local paths and file:// URLs run git directly; http(s) URLs are reached with the proxy's own credentials. */
 export function resolveUpstream(codeRepository: string, auth: UpstreamAuth | undefined): Upstream {
   if (/^https?:\/\//.test(codeRepository)) return httpUpstream(codeRepository, auth);
   return localUpstream(codeRepository.replace(/^file:\/\//, ''));

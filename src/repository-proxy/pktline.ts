@@ -9,7 +9,6 @@ export function encodePkt(text: string | Buffer): Buffer {
 
 export const FLUSH = Buffer.from('0000');
 
-/** Reads pkt-lines from `start`; stops after the first flush when `untilFlush`. Returns the offset after the last packet read. */
 export function readPkts(
   buf: Buffer,
   { start = 0, untilFlush = false }: { start?: number; untilFlush?: boolean } = {},
@@ -48,7 +47,6 @@ export interface Advertisement {
   capabilities: string;
 }
 
-/** Parses a v0 ref advertisement, tolerating the leading `# service=` packet and its flush. */
 export function parseAdvertisement(raw: Buffer): Advertisement {
   const { pkts } = readPkts(raw);
   const refs: AdvertisedRef[] = [];
@@ -69,7 +67,6 @@ export function parseAdvertisement(raw: Buffer): Advertisement {
   return { refs, capabilities };
 }
 
-/** Builds a v0 advertisement body restricted to `allowedRefs`; HEAD and symref hints are dropped. */
 export function buildAdvertisement(
   service: string,
   adv: Advertisement,

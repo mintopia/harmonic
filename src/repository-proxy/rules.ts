@@ -9,7 +9,6 @@ export function allowedRefs(pass: RepositoryPass): string[] {
   return [`refs/heads/${pass.baseBranch}`, `refs/heads/${pass.ticketBranch}`];
 }
 
-/** Every `want` must be the current tip of the base branch or the pass's Ticket branch. */
 export function checkFetch(body: Buffer, pass: RepositoryPass, adv: Advertisement): Decision {
   const allowedShas = new Set(
     adv.refs.filter((r) => allowedRefs(pass).includes(r.name)).map((r) => r.sha),
@@ -31,7 +30,6 @@ export function checkFetch(body: Buffer, pass: RepositoryPass, adv: Advertisemen
   return { allow: true };
 }
 
-/** Every command must update the pass's Ticket branch; force is allowed, deletes are not. */
 export function checkPush(body: Buffer, pass: RepositoryPass): Decision {
   let pkts;
   try {
