@@ -16,7 +16,7 @@ export interface WorkflowEntry {
 export interface WorkflowLibraryOptions {
   /** `<name>@<version>` refs that Tickets currently pin; those versions are never pruned. */
   referencedVersions?: () => Promise<ReadonlySet<string>>;
-  /** Swappable so a test can crash between the temp write and the rename. */
+  /** The step that publishes the temp file over the current one. */
   rename?: (from: string, to: string) => Promise<void>;
 }
 
@@ -73,7 +73,7 @@ export class WorkflowLibrary {
         const text = await readFile(join(this.dir!, file), 'utf8');
         const def = parseWorkflow(text);
         if (def.name !== name) throw new Error(`file holds workflow ${def.name}`);
-        this.operator.set(name, { name, description: def.description, text, bundled: false, version: await this.latestVersion(name) });
+        this.operator.set(name, { name, description: def.description, text, bundled: false, version: await this.settledVersion(name, text) });
       } catch (err) {
         logger.warn(`skipping invalid workflow file ${file}: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -91,6 +91,16 @@ export class WorkflowLibrary {
       if (isMissing(err)) return [];
       throw err;
     }
+  }
+
+  /** The current version, discarding a newest version file whose text never reached the current file (a save that died before its rename). */
+  private async settledVersion(name: string, currentText: string): Promise<number> {
+    const latest = await this.latestVersion(name);
+    if (latest === 0) return 0;
+    const file = join(this.versionDir(name), `${latest}.yaml`);
+    if ((await readFile(file, 'utf8')) === currentText) return latest;
+    await rm(file, { force: true });
+    return this.settledVersion(name, currentText);
   }
 
   private async latestVersion(name: string): Promise<number> {
@@ -143,7 +153,13 @@ export class WorkflowLibrary {
     const version = (await this.latestVersion(name)) + 1;
     await mkdir(this.versionDir(name), { recursive: true });
     await writeFile(join(this.versionDir(name), `${version}.yaml`), text, { flag: 'wx' });
-    await this.writeAtomic(join(this.dir, `${name}.yaml`), text);
+    const versionFile = join(this.versionDir(name), `${version}.yaml`);
+    try {
+      await this.writeAtomic(join(this.dir, `${name}.yaml`), text);
+    } catch (err) {
+      await rm(versionFile, { force: true });
+      throw err;
+    }
     const entry: WorkflowEntry = { name, description: def.description, text, bundled: false, version };
     this.operator.set(name, entry);
     await this.prune(name, version);

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -71,7 +71,21 @@ describe('WorkflowLibrary on a real filesystem', () => {
     const reloaded = new WorkflowLibrary(dir);
     await reloaded.load();
     expect(reloaded.get('crashy').text).toBe(flow('crashy'));
+    expect(reloaded.get('crashy').version).toBe(1);
+    expect(await reloaded.listVersions('crashy')).toEqual([1]);
     expect(readdirSync(join(dir, 'workflows')).filter((f) => f.endsWith('.yaml'))).toEqual(['crashy.yaml']);
+  });
+
+  it('discards a version file orphaned by a process that died before its rename', async () => {
+    const dir = join(root, 'orphan');
+    await new WorkflowLibrary(dir).save('orphaned', flow('orphaned'));
+    mkdirSync(join(dir, 'workflows', '.versions', 'orphaned'), { recursive: true });
+    writeFileSync(join(dir, 'workflows', '.versions', 'orphaned', '2.yaml'), flow('orphaned', '  - id: lost\n    run: echo\n'));
+
+    const reloaded = new WorkflowLibrary(dir);
+    await reloaded.load();
+    expect(reloaded.get('orphaned').version).toBe(1);
+    expect((await reloaded.save('orphaned', flow('orphaned', '  - id: kept\n    run: echo\n'))).version).toBe(2);
   });
 
   it('keeps a Ticket-referenced version readable after two edits and prunes unreferenced ones', async () => {
