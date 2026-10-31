@@ -45,11 +45,11 @@ This workspace ships `"mode": "advisory"` so the newly-gating `security`/`commen
 
 > **Warning**: in enforcing mode a gate FAIL fails the whole Harmonic Attempt and burns an attempt counter — read a reasonable stretch of advisory reports first.
 
-## Wiring it into a workspace's verify stage
+## Wiring it into a workflow
 
-Harmonic's verify stage (`verify.task.preMerge.commands[]`) is configured per-workspace via the Harmonic settings UI, which is runtime database state, not a file in this git repo — so wiring the gate in is an operator action, not something this repo's code can do on its own.
+A Ticket's checks are the `run:` and `command` steps of its Task Execution Workflow, which live in Harmonic's workflow library (runtime state, not a file in this git repo) — so wiring the gate in is an operator action, not something this repo's code can do on its own.
 
-An operator wiring in the gate types these exact `VerificationCommand` fields into the settings UI:
+An operator wiring in the gate enters these exact `VerificationCommand` fields in the workflow step:
 
 - **Command**: `npm`
 - **Args**: `run`, `--silent`, `jev:gate`
@@ -59,7 +59,7 @@ An operator wiring in the gate types these exact `VerificationCommand` fields in
 
 **API key placement**: do NOT put `OPENROUTER_API_KEY` in the verifier's own `Env` map — that stores it in plaintext in Harmonic's settings/exports. Instead set it on the Harmonic service's own process environment (e.g. the systemd unit's `EnvironmentFile`) — verify commands inherit the full Harmonic daemon environment (minus `HARMONIC_API_KEY`/`HARMONIC_MCP_URL`, always stripped for every verifier).
 
-This repo's shipped default config (`src/baseline.yaml`, `verify.task.preMerge.commands: []`) is intentionally NOT changed by this work — that file is the out-of-the-box default for every Harmonic install, most of which have no `OPENROUTER_API_KEY` and don't ship `scripts/` in their npm package (only `dist/` and `drizzle/` are published). The gate is opt-in, wired per-workspace by an operator who wants it.
+This repo's shipped default config (`src/baseline.yaml`) is intentionally NOT changed by this work — that file is the out-of-the-box default for every Harmonic install, most of which have no `OPENROUTER_API_KEY` and don't ship `scripts/` in their npm package (only `dist/` and `drizzle/` are published). The gate is opt-in, wired per-workspace by an operator who wants it.
 
 ## Rollout phases
 
@@ -87,7 +87,7 @@ A knowingly-accepted gate failure should carry a label + written justification o
 
 This work does not:
 
-- (a) Change Harmonic's shipped default `verify.task.preMerge.commands` in `src/baseline.yaml`.
+- (a) Change Harmonic's shipped default workflows or `src/baseline.yaml`.
 - (b) Auto-write the baseline back on merge.
 - (c) Add a CI job (possible later, but needs a repo secret for the API key).
 - (d) Support per-category threshold overrides beyond what's in `jev.gate.json`.

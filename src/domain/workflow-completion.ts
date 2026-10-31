@@ -13,7 +13,7 @@ export interface WorkflowCompletion {
 const ACTION_DETAIL: Record<(typeof WORKFLOW_ACTIONS)[number], string> = {
   rebase: 'rebase the branch onto its base',
   agent: 'run a Harness on a prompt',
-  verify: 'run the Workspace verify command',
+  verify: 'marker step that always passes',
   command: 'shell verify command',
   critic: 'Harness, Model, prompt',
   merge: 'merge the branch into its base',
