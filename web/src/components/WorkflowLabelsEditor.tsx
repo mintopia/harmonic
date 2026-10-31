@@ -125,7 +125,7 @@ function DefaultWorkflow({
       <label htmlFor={id} className={fieldLabel}>
         {label}
       </label>
-      <select id={id} className={`${compactSelect} sm:max-w-sm`} value={value ?? ''} onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}>
+      <select id={id} className={`${compactSelect} ${bare ? 'sm:max-w-[360px]' : 'sm:max-w-sm'}`} value={value ?? ''} onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}>
         <option value="">{inheritLabel ?? 'None · today’s path'}</option>
         {workflowOptions(library, value ?? '', subject).map((name) => (
           <option key={name} value={name}>
