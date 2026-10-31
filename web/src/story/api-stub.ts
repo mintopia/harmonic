@@ -21,6 +21,7 @@ import type {
   Workspace,
   TrackerKindInfo,
 } from '../types.js';
+import type { ExecutionTarget } from '../types.js';
 import type { EpicIntegrateOutcome } from '../epic-model.js';
 import type { WorktreeInventoryEntry } from '../worktree-inventory-model.js';
 
@@ -267,7 +268,49 @@ const storyResolvedPrompts = [
   'Whole-Epic verification failed: `npm test` regressed in tests/guardrails.test.ts. Fix the failure on `epic/166` and commit.',
 ];
 
+const stubTarget = (name: string, enabled: boolean, running: number, limit: number, namespace: string): ExecutionTarget => ({
+  name,
+  builtIn: false,
+  enabled,
+  authMethod: 'kubeconfig',
+  namespace,
+  defaultImage: 'ghcr.io/mintopia/harmonic-harnesses:2.19.0',
+  cpu: '2',
+  memory: '4Gi',
+  concurrencyLimit: limit,
+  repositoryProxyUrl: 'https://repo-proxy.harmonic-agents.svc.cluster.local',
+  kubeconfig: { set: true, secretName: `${name}-kubeconfig`, updatedAt: Date.UTC(2026, 9, 12) },
+  running,
+  createdAt: 1,
+  updatedAt: 1,
+});
+const executionTargetFixtures: ExecutionTarget[] = [
+  { name: 'local', builtIn: true, enabled: true, authMethod: null, namespace: null, defaultImage: null, cpu: null, memory: null, concurrencyLimit: null, repositoryProxyUrl: null, kubeconfig: null, running: 0, createdAt: null, updatedAt: null },
+  stubTarget('k8s-prod', true, 2, 4, 'harmonic-agents'),
+  stubTarget('k8s-staging', false, 0, 1, 'harmonic-staging'),
+];
+
 export const api: typeof RealApi = {
+  executionTargets: () => ok({ targets: executionTargetFixtures, total: executionTargetFixtures.length }),
+  createExecutionTarget: (body) => ok({ ...stubTarget(body.name, body.enabled, 0, body.concurrencyLimit, body.namespace) }),
+  updateExecutionTarget: (name) => ok(executionTargetFixtures.find((t) => t.name === name) ?? stubTarget(name, true, 0, 1, 'default')),
+  executionTargetDeletionImpact: () => ok({ running: 2, waiting: 1, total: 3 }),
+  deleteExecutionTarget: () => ok({ ok: true as const, escalated: 3 }),
+  setExecutionTargetKubeconfig: () => ok(null),
+  clearExecutionTargetKubeconfig: () => ok(null),
+  testExecutionTargetConnection: (body) =>
+    ok({ ok: true, outcome: 'connected' as const, message: 'connected', podCount: 6, namespace: body.namespace, secretName: body.name ? `${body.name}-kubeconfig` : null }),
+  workspaceExecutionTargets: () =>
+    ok({
+      restricted: false,
+      codeRepository: 'mintopia/harmonic',
+      isolationMode: 'worktree' as const,
+      targets: [
+        { name: 'local', builtIn: true, globallyEnabled: true, allowed: true, effective: true, ineffectiveReason: null, refusal: null },
+        { name: 'k8s-prod', builtIn: false, globallyEnabled: true, allowed: true, effective: true, ineffectiveReason: null, refusal: null },
+        { name: 'k8s-staging', builtIn: false, globallyEnabled: false, allowed: false, effective: false, ineffectiveReason: null, refusal: null },
+      ],
+    }),
   scheduledJobs: () => ok({ jobs: [] }),
   operations: () => ok({ operations: [], recent: [] }),
   trackerKinds: () => ok({ kinds: trackerKindFixtures }),

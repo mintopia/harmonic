@@ -13,6 +13,8 @@ import { SessionStore } from '../domain/sessions.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { SecretService } from '../secrets/secret-service.js';
+import { GlobalSecretService } from '../secrets/global-secret-service.js';
+import { ExecutionTargetService } from '../execution/execution-targets.js';
 import { loadSecretKey } from '../secrets/secret-key.js';
 import { logger } from '../logger.js';
 import { ChannelService } from '../notifications/channels.js';
@@ -27,6 +29,8 @@ export interface Stores {
   workspaces: WorkspaceService;
   channels: ChannelService;
   secrets: SecretService;
+  globalSecrets: GlobalSecretService;
+  executionTargets: ExecutionTargetService;
   notifier: Notifier;
   notifications: NotificationStore;
   tasks: TaskService;
@@ -43,7 +47,7 @@ export interface Stores {
 }
 
 export interface CreateStoresDeps {
-  opts: Pick<AppOptions, 'dataDir' | 'configOverrides' | 'password'>;
+  opts: Pick<AppOptions, 'dataDir' | 'configOverrides' | 'password' | 'kubernetesClientFactory'>;
   asyncDb: AsyncDbHandle;
   bus: EventBus;
   fireAndForget: FireAndForget;
@@ -53,7 +57,10 @@ export async function createStores({ opts, asyncDb, bus, fireAndForget }: Create
   const settingsStore = await SettingsStore.create(opts.dataDir, opts.configOverrides);
   const workspaces = new WorkspaceService(asyncDb, settingsStore);
   const channels = new ChannelService(asyncDb);
-  const secrets = new SecretService(asyncDb, loadSecretKey(opts.dataDir));
+  const secretKey = loadSecretKey(opts.dataDir);
+  const secrets = new SecretService(asyncDb, secretKey);
+  const globalSecrets = new GlobalSecretService(asyncDb, secretKey);
+  const executionTargets = new ExecutionTargetService({ db: asyncDb, secrets: globalSecrets, workspaces, ...(opts.kubernetesClientFactory ? { clientFactory: opts.kubernetesClientFactory } : {}) });
   const notifications = new NotificationStore(asyncDb, {
     created: (row) => bus.emit('notification_created', row),
     read: (ids) => bus.emit('notifications_read', { ids }),
@@ -96,6 +103,8 @@ export async function createStores({ opts, asyncDb, bus, fireAndForget }: Create
     workspaces,
     channels,
     secrets,
+    globalSecrets,
+    executionTargets,
     notifier,
     notifications,
     tasks,

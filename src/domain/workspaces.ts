@@ -92,6 +92,8 @@ export const workspaceOverridesSchema = z.object({
   epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().optional(),
   /** Routing Label overlay; null inherits every global Routing Label in order. */
   routingLabels: routingLabelOverrideSchema.nullable().optional(),
+  /** Allowed Kubernetes Execution Target names (ADR-0056; `local` is always available); null inherits every enabled target. */
+  executionTargets: z.array(z.string().min(1).max(64)).max(100).nullable().optional().meta({ example: ['k8s-prod'] }),
   /** Ordered Model Option overlay (ADR-0037); null inherits every global, enabled. */
   modelOptions: modelOptionOverrideSchema.nullable().optional(),
   /** Route Classifier on/off override; null inherits off. */
@@ -192,6 +194,7 @@ export const OVERRIDE_KEYS = [
   'epicPreMergeCritics',
   'routingLabels',
   'modelOptions',
+  'executionTargets',
   'classifierEnabled',
   'classifierBackend',
   'classifierTimeoutSeconds',
@@ -301,6 +304,7 @@ export class WorkspaceService {
       epicPreMergeCritics: o.epicPreMergeCritics != null ? JSON.stringify(o.epicPreMergeCritics) : null,
       routingLabels: o.routingLabels != null ? JSON.stringify(o.routingLabels) : null,
       modelOptions: o.modelOptions != null ? JSON.stringify(o.modelOptions) : null,
+      executionTargets: o.executionTargets,
       classifierEnabled: o.classifierEnabled,
       classifierBackend: o.classifierBackend,
       classifierTimeoutSeconds: o.classifierTimeoutSeconds,

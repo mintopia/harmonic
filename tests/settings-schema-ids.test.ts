@@ -78,6 +78,7 @@ function makeWorkspace(): Workspace {
     epicPreMergeCritics: null,
     routingLabels: null,
     modelOptions: null,
+    executionTargets: null,
     classifierEnabled: null,
     classifierBackend: null,
     classifierTimeoutSeconds: null,

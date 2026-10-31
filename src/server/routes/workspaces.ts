@@ -30,6 +30,7 @@ import { parseClassifierEndpoint, parseModelOptionOverlay } from '../../domain/m
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
+import { assertWorkspaceExecutionTargets } from '../../execution/workspace-execution-targets.js';
 import { maskWorkspaceSecrets } from '../../archive/export-secrets.js';
 
 /** The Resolved Tracker flattened for the API; `null` when tracking is off. `ok` discriminates `label` vs (`code`, `reason`). */
@@ -87,6 +88,8 @@ const workspaceSchema = z
     /** Routing Label overlay; null inherits every global Routing Label in order. */
     routingLabels: routingLabelOverrideSchema.nullable().meta({ example: null }),
     /** Model Option overlay; null inherits every global Model Option in order, enabled. */
+    /** Allowed Kubernetes Execution Target names (`local` is always available); null inherits every enabled target. */
+    executionTargets: z.array(z.string()).nullable().meta({ example: null }),
     modelOptions: modelOptionOverrideSchema.nullable().meta({ example: null }),
     classifierEnabled: z.boolean().nullable().meta({ example: null }),
     classifierBackend: z.enum(CLASSIFIER_BACKENDS).nullable().meta({ example: null }),
@@ -172,7 +175,7 @@ const workspaceSummarySchema = workspaceSchema.pick({ id: true, name: true, colo
 const workspacesListResponseSchema = listResponse('workspaces', workspaceSchema);
 const workspaceSummariesListResponseSchema = listResponse('workspaces', workspaceSummarySchema);
 
-export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces' | 'settingsStore' | 'trackerManager' | 'workspaceWatcher'> & Pick<AppContext, 'auth' | 'tasks' | 'archive' | 'routeClassifier'>): Promise<void> {
+export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces' | 'settingsStore' | 'trackerManager' | 'workspaceWatcher'> & Pick<AppContext, 'auth' | 'tasks' | 'archive' | 'routeClassifier' | 'executionTargets'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   const serializeResolvedTracker = (r: ResolvedTracker | null) =>
@@ -333,6 +336,10 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
           throw new DomainError('validation', `guardrailBudget.costUsd: ${costCapMessage(unpriced)}`);
         }
       }
+      await assertWorkspaceExecutionTargets(await ctx.workspaces.get(req.params.id), req.body, {
+        targets: ctx.executionTargets,
+        globalIsolationMode: ctx.settingsStore.getGlobal().defaults.isolationMode,
+      });
       const workspace = await ctx.workspaces.update(req.params.id, req.body);
       await ctx.trackerManager.sync();
       await ctx.workspaceWatcher.sync(await ctx.workspaces.list());

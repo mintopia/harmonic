@@ -139,6 +139,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     auth: stores.auth,
     channels: stores.channels,
     secrets: stores.secrets,
+    executionTargets: stores.executionTargets,
     notifier: stores.notifier,
     notifications: stores.notifications,
     bus,

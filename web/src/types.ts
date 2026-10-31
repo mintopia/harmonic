@@ -451,6 +451,8 @@ export interface Workspace extends PromptFragmentOverrides {
   epicPreMergeCritics: EpicCriticOverlayEntry[] | null;
   /** Routing Label overlay; `null` inherits every global Routing Label in order. */
   routingLabels: RoutingLabelOverlayEntry[] | null;
+  /** Allowed Kubernetes Execution Target names (`local` is always available); `null` inherits every enabled target. */
+  executionTargets: string[] | null;
   /** Model Option overlay; `null` inherits every global Model Option in order, enabled. */
   modelOptions: ModelOptionOverlayEntry[] | null;
   classifierEnabled: boolean | null;
@@ -1295,4 +1297,76 @@ export interface ConfigLayers {
   baseline: AppConfig;
   global: AppConfig;
   harnessPermissionModes: Record<string, { modes: Record<string, string>; defaultMode: string }>;
+}
+
+export interface ExecutionTarget {
+  name: string;
+  builtIn: boolean;
+  enabled: boolean;
+  authMethod: 'kubeconfig' | 'in-cluster' | null;
+  namespace: string | null;
+  defaultImage: string | null;
+  cpu: string | null;
+  memory: string | null;
+  concurrencyLimit: number | null;
+  repositoryProxyUrl: string | null;
+  kubeconfig: { set: boolean; secretName: string | null; updatedAt: number | null } | null;
+  running: number;
+  createdAt: number | null;
+  updatedAt: number | null;
+}
+
+export type ExecutionTargetFields = Pick<ExecutionTarget, 'enabled' | 'authMethod' | 'namespace' | 'defaultImage' | 'cpu' | 'memory' | 'concurrencyLimit' | 'repositoryProxyUrl'>;
+
+export interface ExecutionTargetBody {
+  name: string;
+  enabled: boolean;
+  authMethod: 'kubeconfig' | 'in-cluster';
+  namespace: string;
+  defaultImage: string;
+  cpu: string;
+  memory: string;
+  concurrencyLimit: number;
+  repositoryProxyUrl: string;
+}
+
+export interface DeletionImpact {
+  running: number;
+  waiting: number;
+  total: number;
+}
+
+export type ConnectionOutcome = 'connected' | 'unauthorized' | 'namespace-not-found' | 'unreachable' | 'invalid-kubeconfig';
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  outcome: ConnectionOutcome;
+  message: string;
+  podCount?: number;
+  namespace: string;
+  secretName: string | null;
+}
+
+export interface ConnectionTestRequest {
+  name?: string;
+  authMethod: 'kubeconfig' | 'in-cluster';
+  namespace: string;
+  kubeconfig?: string;
+}
+
+export interface WorkspaceTargetItem {
+  name: string;
+  builtIn: boolean;
+  globallyEnabled: boolean;
+  allowed: boolean;
+  effective: boolean;
+  ineffectiveReason: string | null;
+  refusal: string | null;
+}
+
+export interface WorkspaceTargets {
+  restricted: boolean;
+  codeRepository: string | null;
+  isolationMode: 'direct' | 'worktree';
+  targets: WorkspaceTargetItem[];
 }

@@ -50,6 +50,12 @@ import type {
   TaskExportStatus,
   TaskExportAgainResult,
   ExportState,
+  ExecutionTarget,
+  ExecutionTargetBody,
+  DeletionImpact,
+  ConnectionTestResult,
+  ConnectionTestRequest,
+  WorkspaceTargets,
 } from './types.js';
 import type { Epic, EpicIntegrateOutcome } from './epic-model.js';
 import type { Stats } from './stats-model.js';
@@ -272,6 +278,22 @@ export const api = {
   dirtyWorktreeFiles: (id: string, workspaceId?: number) => request<{ files: string[] }>('GET', `/api/worktrees/${encodeURIComponent(id)}/dirty-files${workspaceId === undefined ? '' : `?workspaceId=${workspaceId}`}`),
   cleanupWorktree: (id: string, workspaceId?: number) => request<{ removed: boolean }>('POST', `/api/worktrees/${encodeURIComponent(id)}/cleanup${workspaceId === undefined ? '' : `?workspaceId=${workspaceId}`}`),
   reconcileWorktrees: (workspaceId?: number) => request<{ removed: number; recreated: number; flagged: number }>('POST', `/api/operations/reconcile${workspaceId === undefined ? '' : `?workspaceId=${workspaceId}`}`),
+  executionTargets: () => request<{ targets: ExecutionTarget[]; total: number }>('GET', '/api/execution-targets'),
+  createExecutionTarget: (body: ExecutionTargetBody) => request<ExecutionTarget>('POST', '/api/execution-targets', body),
+  updateExecutionTarget: (name: string, patch: Partial<ExecutionTargetBody>) =>
+    request<ExecutionTarget>('PATCH', `/api/execution-targets/${encodeURIComponent(name)}`, patch),
+  executionTargetDeletionImpact: (name: string) =>
+    request<DeletionImpact>('GET', `/api/execution-targets/${encodeURIComponent(name)}/deletion-impact`),
+  deleteExecutionTarget: (name: string) =>
+    request<{ ok: true; escalated: number }>('DELETE', `/api/execution-targets/${encodeURIComponent(name)}`),
+  setExecutionTargetKubeconfig: (name: string, kubeconfig: string) =>
+    request<unknown>('PUT', `/api/execution-targets/${encodeURIComponent(name)}/kubeconfig`, { kubeconfig }),
+  clearExecutionTargetKubeconfig: (name: string) =>
+    request<unknown>('DELETE', `/api/execution-targets/${encodeURIComponent(name)}/kubeconfig`),
+  testExecutionTargetConnection: (body: ConnectionTestRequest) =>
+    request<ConnectionTestResult>('POST', '/api/execution-targets/test-connection', body),
+  workspaceExecutionTargets: (workspaceId: number) =>
+    request<WorkspaceTargets>('GET', `/api/workspaces/${workspaceId}/execution-targets`),
   workspaces: () => request<{ workspaces: Workspace[]; total: number }>('GET', '/api/workspaces'),
   createWorkspace: (input: { name: string; workingDir: string }) =>
     request<Workspace>('POST', '/api/workspaces', input),
@@ -306,6 +328,7 @@ export const api = {
       epicPreMergeCommands?: CommandOverlayEntry[] | null;
       epicPreMergeCritics?: EpicCriticOverlayEntry[] | null;
       routingLabels?: RoutingLabelOverlayEntry[] | null;
+      executionTargets?: string[] | null;
       modelOptions?: ModelOptionOverlayEntry[] | null;
       classifierEnabled?: boolean | null;
       classifierBackend?: 'typesafe' | 'openai-compatible' | 'harness' | null;

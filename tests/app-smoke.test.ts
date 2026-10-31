@@ -97,6 +97,7 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     epicPreMergeCritics: null,
     routingLabels: null,
     modelOptions: null,
+    executionTargets: null,
     classifierEnabled: null,
     classifierBackend: null,
     classifierTimeoutSeconds: null,

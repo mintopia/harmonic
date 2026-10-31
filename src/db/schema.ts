@@ -59,7 +59,7 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   taskPreMergeCommands: string | null; taskPreMergeCritics: string | null;
   taskPostMergeCommands: string | null; taskPostMergeCritics: string | null;
   epicPreMergeCommands: string | null; epicPreMergeCritics: string | null; routingLabels: string | null;
-  modelOptions: string | null; classifierEnabled: boolean | null; classifierBackend: 'typesafe' | 'openai-compatible' | 'harness' | null; classifierTimeoutSeconds: number | null;
+  modelOptions: string | null; executionTargets: string[] | null; classifierEnabled: boolean | null; classifierBackend: 'typesafe' | 'openai-compatible' | 'harness' | null; classifierTimeoutSeconds: number | null;
   classifierTypesafeModel: string | null; classifierTypesafeSecret: string | null; classifierHarness: string | null; classifierModel: string | null;
   classifierEndpoint: string | null;
   guardrailBudget: string | null; guardrailProgress: boolean | null; toolTimeoutMinutes: number | null;
@@ -556,6 +556,36 @@ export const secrets = sqliteTable('secrets', {
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [primaryKey({ columns: [t.workspaceId, t.name] })]);
 export type SecretRow = typeof secrets.$inferSelect;
+
+/** An instance-wide named credential (not tied to a Workspace), encrypted like `secrets`. */
+export const globalSecrets = sqliteTable('global_secrets', {
+  name: text('name').primaryKey(),
+  ciphertext: text('ciphertext').notNull(),
+  nonce: text('nonce').notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
+
+export const EXECUTION_TARGET_AUTH_METHODS = ['kubeconfig', 'in-cluster'] as const;
+export type ExecutionTargetAuthMethod = (typeof EXECUTION_TARGET_AUTH_METHODS)[number];
+
+/** A named Kubernetes Execution Target (ADR-0056); `local` is built in and has no row. */
+export const executionTargets = sqliteTable('execution_targets', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  authMethod: text('auth_method', { enum: EXECUTION_TARGET_AUTH_METHODS }).notNull(),
+  namespace: text('namespace').notNull(),
+  defaultImage: text('default_image').notNull(),
+  cpu: text('cpu').notNull(),
+  memory: text('memory').notNull(),
+  concurrencyLimit: integer('concurrency_limit').notNull(),
+  repositoryProxyUrl: text('repository_proxy_url').notNull(),
+  kubeconfigSecret: text('kubeconfig_secret'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (t) => [uniqueIndex('execution_targets_name_idx').on(t.name)]);
+export type ExecutionTargetRow = typeof executionTargets.$inferSelect;
 
 /** Persisted facts for tracker containers that deliberately have no Task row, currently Maps. */
 export const trackerContainers = sqliteTable('tracker_containers', {

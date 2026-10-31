@@ -48,6 +48,7 @@ function classifier(opts: { timeoutSeconds?: number; secret?: string | null } = 
   const workspace = {
     id: 7,
     modelOptions: null,
+    executionTargets: null,
     classifierEnabled: true,
     classifierBackend: 'openai-compatible',
     classifierTimeoutSeconds: opts.timeoutSeconds ?? 5,
