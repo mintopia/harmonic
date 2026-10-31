@@ -14,6 +14,8 @@ import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
 import { RoutingLabelOverlayEditor } from './RoutingLabelOverlayEditor';
 import { RoutingLabelsEditor } from './RoutingLabelsEditor';
+import { ModelOptionsEditor } from './ModelOptionsEditor';
+import { RouteClassifierSettings } from './RouteClassifierSettings';
 import { SecuritySection } from './SecuritySection';
 import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection } from './ArchiveExportSettings';
 import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './VerificationSettings';
@@ -881,6 +883,53 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
           onChange={(routingLabels) => ctx.setWorkspace({ ...ctx.workspace, routingLabels })}
         />
       ),
+  },
+  {
+    tab: 'execution',
+    surfaces: BOTH,
+    title: 'Model Options',
+    wide: true,
+    description: {
+      global:
+        'A closed list the Route Classifier picks from. It never picks outside the list. Each Model Option has a code that Task Execution Workflow YAML can reference. Write each description as when it fits: the classifier reads it to choose.',
+      workspace:
+        'Global rows are managed in Global settings and always apply here. Model Options you add are local to this Workspace and follow them. Codes are unique across both.',
+    },
+    body: (ctx) =>
+      ctx.surface === 'global' ? (
+        <ModelOptionsEditor
+          items={ctx.config.modelOptions}
+          config={ctx.config}
+          errors={ctx.errors}
+          onChange={(modelOptions) => ctx.setConfig({ ...ctx.config, modelOptions })}
+        />
+      ) : (
+        <ModelOptionsEditor
+          workspace
+          items={ctx.workspace.modelOptions ?? []}
+          globals={ctx.config.modelOptions}
+          config={ctx.config}
+          errors={ctx.errors}
+          onChange={(modelOptions) => ctx.setWorkspace({ ...ctx.workspace, modelOptions: modelOptions.length > 0 ? modelOptions : null })}
+        />
+      ),
+  },
+  {
+    tab: 'execution',
+    surfaces: ['workspace'],
+    title: 'Route Classifier',
+    wide: true,
+    description:
+      'Picks one Model Option for each Attempt on a Native Task. Advisory: when it abstains, errors or times out, the Workspace default applies and the Attempt starts anyway.',
+    body: (ctx) =>
+      ctx.surface === 'workspace' ? (
+        <RouteClassifierSettings
+          workspace={ctx.workspace}
+          optionCount={ctx.config.modelOptions.length + (ctx.workspace.modelOptions?.length ?? 0)}
+          errors={ctx.errors}
+          onChange={ctx.setWorkspace}
+        />
+      ) : null,
   },
   {
     tab: 'execution',

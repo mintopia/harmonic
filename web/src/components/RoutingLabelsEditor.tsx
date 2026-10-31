@@ -55,34 +55,46 @@ export const stackedCell = 'col-span-2 col-start-3 @[44rem]:col-span-1 @[44rem]:
 /** Trailing controls (Remove, or Global chip + switch): top-right of a stacked row. */
 export const trailingCell = 'col-start-4 row-start-1 justify-self-end @[44rem]:col-start-auto @[44rem]:row-start-auto';
 
+const optionCellsGrid = 'grid grid-cols-[16px_24px_minmax(0,1fr)_auto] items-start gap-x-2.5 px-3 py-2.5';
+
 export function RoutingRowShell({
   id,
   index,
   locked,
+  pinned,
+  accent,
+  noun = 'Routing Label',
+  stacked,
   error,
   children,
 }: {
   id: string;
   index: number;
   locked?: boolean;
+  /** A row that holds its position: no drag. */
+  pinned?: boolean;
+  accent?: boolean;
+  noun?: string;
+  /** Lay the children out in the fixed four-column Model Option grid. */
+  stacked?: boolean;
   error?: ReactNode;
   children: ReactNode;
 }) {
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: pinned });
   const n = index + 1;
   return (
     <div
       ref={setNodeRef}
       data-routing-row={index}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`relative rounded-lg bg-surface ${isDragging ? 'z-10 shadow-float ring-1 ring-accent/40' : 'shadow-card'} ${locked ? 'opacity-85' : ''}`}
+      className={`relative rounded-lg bg-surface ${isDragging ? 'z-10 shadow-float ring-1 ring-accent/40' : 'shadow-card'} ${locked ? 'opacity-85' : ''} ${accent ? 'shadow-[inset_3px_0_0_var(--accent)]' : ''}`}
     >
-      <div className={cellsGrid}>
+      <div className={stacked ? optionCellsGrid : cellsGrid}>
         <button
           type="button"
           ref={setActivatorNodeRef}
-          aria-label={`Reorder Routing Label ${n}`}
-          className="flex h-6 w-4 shrink-0 cursor-grab touch-none items-center justify-center text-faint hover:text-muted focus-visible:text-accent"
+          aria-label={`Reorder ${noun} ${n}`}
+          className={`flex h-6 w-4 shrink-0 touch-none items-center justify-center text-faint ${pinned ? 'cursor-not-allowed opacity-40' : 'cursor-grab hover:text-muted focus-visible:text-accent'}`}
           {...attributes}
           {...listeners}
         >
@@ -171,12 +183,12 @@ export function RouteCells({
   );
 }
 
-export function RemoveButton({ index, onRemove }: { index: number; onRemove: () => void }) {
+export function RemoveButton({ index, onRemove, noun = 'Routing Label', inline }: { index: number; onRemove: () => void; noun?: string; inline?: boolean }) {
   return (
     <button
       type="button"
-      aria-label={`Remove Routing Label ${index + 1}`}
-      className={`-my-2 shrink-0 py-2 text-small text-faint hover:text-fail ${trailingCell}`}
+      aria-label={`Remove ${noun} ${index + 1}`}
+      className={`-my-2 shrink-0 py-2 text-small text-faint hover:text-fail ${inline ? '' : trailingCell}`}
       onClick={onRemove}
     >
       Remove
@@ -184,7 +196,7 @@ export function RemoveButton({ index, onRemove }: { index: number; onRemove: () 
   );
 }
 
-export function Precedence() {
+export function Precedence({ highlight = 'routing-label' }: { highlight?: 'routing-label' | 'route-classifier' }) {
   const step = 'font-semibold text-ink';
   const arrow = (
     <span className="text-faint" aria-hidden="true">
@@ -196,7 +208,9 @@ export function Precedence() {
       <span className="mr-1 text-label font-semibold uppercase text-faint">Precedence</span>
       <b className={step}>Operator setting on the Ticket</b>
       {arrow}
-      <b className="font-semibold text-accent">Routing Label</b>
+      <b className={highlight === 'routing-label' ? 'font-semibold text-accent' : step}>Routing Label</b>
+      {arrow}
+      <b className={highlight === 'route-classifier' ? 'font-semibold text-accent' : step}>Route Classifier</b>
       {arrow}
       <b className={step}>Workspace default</b>
       {arrow}
@@ -212,13 +226,17 @@ export function RoutingListFrame({
   onRemove,
   renderRow,
   emptyText,
+  heading = 'Routing Labels',
+  addLabel = '+ Add Routing Label',
 }: {
   count: number;
   onMove: (from: number, to: number) => void;
   onAdd: () => void;
   onRemove: (index: number) => void;
   renderRow: (row: { id: string; index: number; touched: boolean; touch: () => void; remove: () => void }) => ReactNode;
-  emptyText: string;
+  emptyText: ReactNode;
+  heading?: string;
+  addLabel?: string;
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -252,13 +270,13 @@ export function RoutingListFrame({
   return (
     <>
       <div className="mb-1.5 flex items-center justify-between">
-        <span className={fieldLabel}>Routing Labels</span>
+        <span className={fieldLabel}>{heading}</span>
         <button type="button" className="text-small font-semibold text-accent hover:text-accent-hot" onClick={add}>
-          + Add Routing Label
+          {addLabel}
         </button>
       </div>
       {count === 0 ? (
-        <p className="rounded-md border border-dashed border-hairline bg-sunken px-3.5 py-3 text-small text-faint">{emptyText}</p>
+        <div className="rounded-md border border-dashed border-hairline bg-sunken px-3.5 py-3 text-small text-faint">{emptyText}</div>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
