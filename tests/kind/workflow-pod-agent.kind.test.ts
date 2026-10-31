@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -86,8 +86,9 @@ describe.skipIf(!kubeconfigPath)('an agent step on a real kind cluster', () => {
   }, 360_000);
 
   it('mirrors the in-pod session file so the transcript, Archive and Usage match a local run', async () => {
+    rmSync(mirrorFile(), { force: true });
     const started = await start('agent-claude');
-    await waitFor(async () => readFileSync(mirrorFile(), 'utf8').includes('h\u00e9llo'), { timeoutMs: 120_000, intervalMs: 250 }).catch(() => undefined);
+    await waitFor(async () => existsSync(mirrorFile()) && readFileSync(mirrorFile(), 'utf8').includes('h\u00e9llo'), { timeoutMs: 120_000, intervalMs: 250 }).catch(() => undefined);
     const liveText = (() => {
       try {
         return readFileSync(mirrorFile(), 'utf8');
@@ -120,33 +121,39 @@ describe.skipIf(!kubeconfigPath)('an agent step on a real kind cluster', () => {
     expect(JSON.stringify(task)).toContain('has no credential for Harness Codex');
   }, 360_000);
 
-  const podsOf = (id: number): string[] => kubectl('get', 'pods', '-l', `harmonic.mintopia.net/task=${id}`, '-o', 'name').split('\n').filter((line) => line !== '');
-  const deleteWhenRunning = async (id: number): Promise<string> => {
-    const [pod] = await waitFor(async () => {
-      const pods = podsOf(id);
-      return pods.length > 0 && kubectl('get', pods[0]!, '-o', 'jsonpath={.status.phase}') === 'Running' ? pods : false;
-    }, { timeoutMs: 120_000, intervalMs: 500 }).then(() => podsOf(id));
-    kubectl('delete', pod!, '--force', '--grace-period=0', '--wait=false');
-    return pod!;
+  const livePods = (id: number): string[] => {
+    const list = JSON.parse(kubectl('get', 'pods', '-l', `harmonic.mintopia.net/task=${id}`, '-o', 'json')) as { items: { metadata: { name: string; deletionTimestamp?: string }; status?: { phase?: string } }[] };
+    return list.items.filter((pod) => pod.metadata.deletionTimestamp === undefined && pod.status?.phase === 'Running').map((pod) => pod.metadata.name);
+  };
+  const agentRunningIn = (pod: string): boolean => {
+    try {
+      return kubectl('exec', pod, '--', 'sh', '-c', 'grep -l "[i]nput-type" /proc/[0-9]*/cmdline 2>/dev/null | head -n 1') !== '';
+    } catch {
+      return false;
+    }
+  };
+  const deleteOnceAgentIsLive = async (id: number, except: string[] = []): Promise<string> => {
+    const pod = await waitFor(async () => livePods(id).find((name) => !except.includes(name) && agentRunningIn(name)), { timeoutMs: 180_000, intervalMs: 500 });
+    kubectl('delete', 'pod', pod, '--force', '--grace-period=0', '--wait=false');
+    return pod;
   };
 
   it('brings up a new pod from the checkpoint when the pod is deleted mid-step, re-runs the step once and keeps the Attempt number', async () => {
     const id = await start('agent-claude');
-    const lost = await deleteWhenRunning(id);
+    const lost = await deleteOnceAgentIsLive(id);
     await runToDone('agent-claude', id);
     const task = (await server.api('GET', `/api/tasks/${id}`)).body;
     expect(task.state).toBe('done');
     const steps = (await server.api('GET', `/api/tasks/${id}/workflow-steps`)).body.steps as { outcome: string; attempt: number | null }[];
     expect(steps.map((step) => step.outcome)).toEqual(['pass']);
     expect(steps[0]!.attempt).toBe(1);
-    expect(podsOf(id)).not.toContain(lost);
+    expect(livePods(id)).not.toContain(lost);
   }, 420_000);
 
   it('escalates with reason 3 when the replacement pod is deleted too', async () => {
     const id = await start('agent-claude');
-    const first = await deleteWhenRunning(id);
-    await waitFor(async () => podsOf(id).some((pod) => pod !== first), { timeoutMs: 120_000, intervalMs: 500 });
-    await deleteWhenRunning(id);
+    const first = await deleteOnceAgentIsLive(id);
+    await deleteOnceAgentIsLive(id, [first]);
     await runToDone('agent-claude', id);
     const task = (await server.api('GET', `/api/tasks/${id}`)).body;
     expect(task.state).toBe('escalated');
