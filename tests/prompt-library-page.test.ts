@@ -12,12 +12,20 @@ afterEach(async () => {
 });
 
 function prompt(code: string, over: Partial<Prompt> = {}): Prompt {
-  return { code, description: `${code} description`, text: `Body of ${code}`, bundled: false, resolved: `Body of ${code}`, usedBy: [], ...over };
+  return { code, description: `${code} description`, text: `Body of ${code}`, bundled: false, resolved: `Body of ${code}`, usedBy: [], usedBySteps: [], updatedAt: null, ...over };
 }
 
 const LIB: Prompt[] = [
   prompt('implement', { bundled: true, text: 'Implement ${{ ticket.title }}.' }),
-  prompt('team-style', { text: 'Keep it small.\n${{ prompts.security-checklist }}', usedBy: ['release-notes'] }),
+  prompt('team-style', {
+    text: 'Keep it small.\n${{ prompts.security-checklist }}',
+    usedBy: ['release-notes'],
+    usedBySteps: [
+      { workflow: 'Default', workflowBundled: true, stepId: 'implement' },
+      { workflow: 'Security review', workflowBundled: false, stepId: 'security' },
+    ],
+    updatedAt: new Date(2026, 9, 29, 14, 2).toISOString(),
+  }),
   prompt('security-checklist', { text: 'Check secrets.' }),
   prompt('release-notes', { text: 'Notes.\nUse ${{ prompts.team-style }}' }),
 ];
@@ -54,7 +62,7 @@ describe('Prompt Library page', () => {
     expect(host.textContent).toContain('4 prompts · 1 Bundled · 3 yours');
     const row = host.querySelector('[data-prompt="team-style"]');
     expect(row?.textContent).toContain('Yours');
-    expect(row?.textContent).toContain('1 prompt');
+    expect(row?.textContent).toContain('2 steps · 1 prompt');
     expect(host.querySelector('[data-prompt="implement"]')?.textContent).toContain('Bundled');
     expect(host.querySelector('[data-prompt="implement"]')?.textContent).toContain('Unused');
   });
@@ -148,6 +156,29 @@ describe('Prompt Library page', () => {
     expect(host.textContent).toContain('Includes team-style on line 2');
     await click(button(host, 'Open prompt'));
     expect(host.querySelector('section[aria-label="Prompt release-notes"]')).not.toBeNull();
+  });
+
+  it('lists workflow steps in Used by and shows when the prompt was edited', async () => {
+    const host = await mountLibrary();
+    await click(host.querySelector('[data-prompt="team-style"] button'));
+    expect(host.textContent).toContain('Edited Oct 29 · 14:02');
+    const rows = [...host.querySelectorAll('[data-used-by]')];
+    expect(rows.map((r) => r.getAttribute('data-used-by'))).toEqual(['step', 'step', 'prompt']);
+    expect(rows[0]?.textContent).toContain('Default · step implement');
+    expect(rows[0]?.textContent).toContain('Task Execution Workflow, Bundled');
+    expect(rows[1]?.textContent).toContain('Task Execution Workflow, yours');
+    expect(rows[0]?.querySelector('a')?.textContent).toBe('Open workflow');
+  });
+
+  it('draws the offending reference as a bad span in the text box', async () => {
+    const host = await mountLibrary();
+    vi.spyOn(api, 'updatePrompt').mockRejectedValue(new ApiError(400, 'Prompt includes unknown prompt code: secuirty-checklist', 'validation'));
+    await click(host.querySelector('[data-prompt="team-style"] button'));
+    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Hi\n${{ prompts.secuirty-checklist }}');
+    expect(host.querySelector('[data-ref="include"]')?.textContent).toBe('${{ prompts.secuirty-checklist }}');
+    await click(button(host, 'Save'));
+    expect(host.querySelector('[data-ref="bad"]')?.textContent).toBe('${{ prompts.secuirty-checklist }}');
+    expect(host.querySelector('[data-ref="include"]')).toBeNull();
   });
 
   it('confirms before deleting and rejects a bad new code inline', async () => {

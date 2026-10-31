@@ -27,8 +27,8 @@ export function PromptList({
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h3 className="text-title font-semibold text-ink">Prompt Library</h3>
-          <p className="mt-0.5 text-muted">
+          <h3 className="text-[18px] font-bold tracking-[-0.015em] text-ink">Prompt Library</h3>
+          <p className="mt-0.5 text-[13px] text-muted">
             Named prompts that Task Execution Workflow steps use by code. A prompt can include another with <code className="font-data">{'${{ prompts.code }}'}</code>.
           </p>
         </div>
@@ -72,7 +72,7 @@ export function PromptList({
                       type="button"
                       onClick={() => onSelect(p.code)}
                       aria-current={selected === p.code ? 'true' : undefined}
-                      className="min-h-11 font-data font-medium text-ink underline-offset-2 hover:underline"
+                      className="relative font-data font-medium text-ink underline-offset-2 after:absolute after:-inset-3 after:content-[''] hover:underline"
                     >
                       {p.code}
                     </button>

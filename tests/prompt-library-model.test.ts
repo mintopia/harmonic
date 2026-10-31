@@ -1,21 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import {
   applySuggestion,
+  badSpans,
   copyCode,
+  editedLabel,
   countsLabel,
   filterPrompts,
+  highlightLine,
   localIssues,
   malformedReference,
   parseSaveError,
   previewTree,
   suggestCode,
   usedByLabel,
+  usedByRows,
   validateCode,
 } from '../web/src/prompt-library-model.js';
 import type { Prompt } from '../web/src/types.js';
 
 function prompt(code: string, over: Partial<Prompt> = {}): Prompt {
-  return { code, description: `${code} desc`, text: '', bundled: false, resolved: '', usedBy: [], ...over };
+  return { code, description: `${code} desc`, text: '', bundled: false, resolved: '', usedBy: [], usedBySteps: [], updatedAt: null, ...over };
 }
 
 const LIB = [prompt('implement', { bundled: true }), prompt('critic', { bundled: true, description: 'Correctness Critic' }), prompt('team-style')];
@@ -33,10 +37,39 @@ describe('prompt library model', () => {
     expect(countsLabel([prompt('a')])).toBe('1 prompt · 0 Bundled · 1 yours');
   });
 
-  it('labels used-by', () => {
-    expect(usedByLabel({ usedBy: [] })).toBe('Unused');
-    expect(usedByLabel({ usedBy: ['a'] })).toBe('1 prompt');
-    expect(usedByLabel({ usedBy: ['a', 'b'] })).toBe('2 prompts');
+  it('labels used-by with steps and prompts', () => {
+    const step = { workflow: 'w', workflowBundled: false, stepId: 's' };
+    expect(usedByLabel({ usedBy: [], usedBySteps: [] })).toBe('Unused');
+    expect(usedByLabel({ usedBy: ['a'], usedBySteps: [] })).toBe('1 prompt');
+    expect(usedByLabel({ usedBy: ['a', 'b'], usedBySteps: [] })).toBe('2 prompts');
+    expect(usedByLabel({ usedBy: [], usedBySteps: [step] })).toBe('1 step');
+    expect(usedByLabel({ usedBy: ['a'], usedBySteps: [step, step] })).toBe('2 steps · 1 prompt');
+  });
+
+  it('orders Used by rows steps first, then prompts with the include line', () => {
+    const lib = [prompt('team-style'), prompt('release-notes', { text: 'a\nb\n${{ prompts.team-style }}' })];
+    const rows = usedByRows({ code: 'team-style', usedBy: ['release-notes'], usedBySteps: [{ workflow: 'w', workflowBundled: true, stepId: 'build' }] }, lib);
+    expect(rows).toEqual([
+      { kind: 'step', workflow: 'w', bundled: true, stepId: 'build' },
+      { kind: 'prompt', code: 'release-notes', line: 3 },
+    ]);
+  });
+
+  it('words the edited stamp and leaves bundled prompts without one', () => {
+    expect(editedLabel(new Date(2026, 9, 29, 14, 2).toISOString())).toBe('Edited Oct 29 · 14:02');
+    expect(editedLabel(null)).toBeNull();
+  });
+
+  it('marks bad spans from issues and highlights them', () => {
+    const text = 'ok\nFinish ${{ vars.x';
+    const spans = badSpans(text, [{ kind: 'malformed', field: 'text', position: { line: 2, column: 8 } }]);
+    expect(spans).toEqual([{ line: 2, column: 8, length: 10 }]);
+    expect(highlightLine('Finish ${{ vars.x', spans)).toEqual([
+      { kind: 'text', value: 'Finish ' },
+      { kind: 'bad', value: '${{ vars.x' },
+    ]);
+    const cycle = badSpans('a\n${{ prompts.b }}', [{ kind: 'cycle', field: 'text', path: ['a', 'b', 'a'], position: { line: 2, column: 1 } }]);
+    expect(cycle).toEqual([{ line: 2, column: 1, length: 16 }]);
   });
 
   it('names a duplicate <code>-copy and avoids taken names', () => {

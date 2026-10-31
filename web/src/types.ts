@@ -1307,4 +1307,12 @@ export interface Prompt {
   bundled: boolean;
   resolved: string;
   usedBy: string[];
+  usedBySteps: PromptStepUse[];
+  updatedAt: string | null;
+}
+
+export interface PromptStepUse {
+  workflow: string;
+  workflowBundled: boolean;
+  stepId: string;
 }

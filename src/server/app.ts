@@ -79,6 +79,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     referencedVersions: async () => new Set((await asyncDb.read((db) => db.selectDistinct({ ref: tasks.workflowRef }).from(tasks).where(isNotNull(tasks.workflowRef)).all())).map((r) => r.ref!)),
   });
   await workflowLibrary.load();
+  promptLibrary.attachWorkflows(workflowLibrary);
   const runtime = await createRuntime({
     opts,
     promptLibrary,

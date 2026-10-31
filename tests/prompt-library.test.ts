@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolvePrompt, validateIncludes } from '../src/domain/prompt-library.js';
@@ -41,6 +41,47 @@ describe('PromptLibrary on a real filesystem', () => {
     const top = await second.get('top');
     expect(top.resolved).toBe('Say: Hello');
     expect((await second.get('base')).usedBy).toEqual(['top']);
+  });
+
+  it('reports the file mtime as updatedAt for operator prompts and null for bundled ones', async () => {
+    const lib = new PromptLibrary(root);
+    await lib.create('stamped', 'x', 'T');
+    expect((await lib.get('stamped')).updatedAt).toBe(statSync(join(root, 'prompts', 'stamped.json')).mtime.toISOString());
+    expect((await lib.list()).find((p) => p.bundled)?.updatedAt).toBeNull();
+    await lib.delete('stamped');
+  });
+
+  it('lists the workflow steps that name a prompt by code, nested and parallel steps included', async () => {
+    const lib = new PromptLibrary(root);
+    await lib.create('step-used', 'x', 'T');
+    const text = `name: wf
+description: d
+steps:
+  - attempts:
+      max: 2
+      steps:
+        - id: build
+          uses: agent
+          with:
+            prompt: step-used
+        - id: review
+          uses: critic
+          with:
+            harness: claude
+            model: m
+            prompt: step-used
+        - id: other
+          uses: agent
+          with:
+            prompt: something else
+`;
+    lib.attachWorkflows({ list: () => [{ name: 'wf', description: 'd', text, bundled: false, version: 1 }] });
+    expect((await lib.get('step-used')).usedBySteps).toEqual([
+      { workflow: 'wf', workflowBundled: false, stepId: 'build' },
+      { workflow: 'wf', workflowBundled: false, stepId: 'review' },
+    ]);
+    expect((await lib.get('step-used')).usedBy).toEqual([]);
+    await lib.delete('step-used');
   });
 
   it('refuses deleting an included prompt, then deletes once free', async () => {
@@ -112,6 +153,8 @@ describe('/api/prompts', () => {
   it('returns the resolved preview and usedBy', async () => {
     const res = await server.api('GET', '/api/prompts/cyc-a');
     expect(res.body.usedBy).toEqual(['cyc-b']);
+    expect(res.body.usedBySteps).toEqual([]);
+    expect(Number.isNaN(Date.parse(res.body.updatedAt))).toBe(false);
     expect((await server.api('GET', '/api/prompts/cyc-b')).body.resolved).toBe('x');
     expect((await server.api('GET', '/api/prompts/missing')).status).toBe(404);
   });

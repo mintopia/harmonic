@@ -36,6 +36,7 @@ import { SettingsSection } from '../components/SettingsSection';
 import { RetryDialog } from '../components/RetryDialog';
 import { PromptsTab } from '../components/prompts/PromptsTab';
 import { workflowStory, workflowTaskFields } from './api-stub';
+import { PromptLibrary } from '../components/prompt-library/PromptLibrary';
 import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline, verificationAttempts as storyVerificationAttempts, verifierStatuses } from './fixtures';
 
 const mergedSteps: MergeStepEvent[] = [
@@ -154,6 +155,14 @@ function PromptsTabStory() {
           channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
         }}
       />
+    </div>
+  );
+}
+
+function PromptLibraryStory() {
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24, maxWidth: 1040, margin: '0 auto' }}>
+      <PromptLibrary />
     </div>
   );
 }
@@ -593,6 +602,7 @@ function RetryStory() {
 const STORIES: Record<string, () => JSX.Element> = {
   settings: SettingsStory,
   'prompts-tab': PromptsTabStory,
+  'prompt-library': PromptLibraryStory,
   board: BoardStory,
   'critic-running': CriticRunningStory,
   'critic-prompts': CriticPromptsStory,

@@ -9,6 +9,7 @@ export interface PromptEntry {
   readonly description: string;
   readonly text: string;
   readonly bundled: boolean;
+  readonly updatedAt?: string | undefined;
 }
 
 export function includedCodes(text: string): string[] {

@@ -17,9 +17,33 @@ export function countsLabel(prompts: readonly Prompt[]): string {
   return `${total} ${total === 1 ? 'prompt' : 'prompts'} · ${bundled} Bundled · ${yours} yours`;
 }
 
-export function usedByLabel(prompt: Pick<Prompt, 'usedBy'>): string {
-  const n = prompt.usedBy.length;
-  return n === 0 ? 'Unused' : `${n} ${n === 1 ? 'prompt' : 'prompts'}`;
+export function usedByLabel(prompt: Pick<Prompt, 'usedBy' | 'usedBySteps'>): string {
+  const counts = [
+    [prompt.usedBySteps.length, 'step'],
+    [prompt.usedBy.length, 'prompt'],
+  ] as const;
+  const parts = counts.filter(([n]) => n > 0).map(([n, noun]) => `${n} ${noun}${n === 1 ? '' : 's'}`);
+  return parts.length === 0 ? 'Unused' : parts.join(' · ');
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+export function editedLabel(iso: string | null): string | null {
+  if (iso === null) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `Edited ${MONTHS[d.getMonth()]} ${d.getDate()} · ${two(d.getHours())}:${two(d.getMinutes())}`;
+}
+
+export type UsedByRow =
+  | { kind: 'step'; workflow: string; bundled: boolean; stepId: string }
+  | { kind: 'prompt'; code: string; line: number | null };
+
+export function usedByRows(prompt: Pick<Prompt, 'code' | 'usedBy' | 'usedBySteps'>, prompts: readonly Prompt[]): UsedByRow[] {
+  const steps = prompt.usedBySteps.map((u): UsedByRow => ({ kind: 'step', workflow: u.workflow, bundled: u.workflowBundled, stepId: u.stepId }));
+  const includes = prompt.usedBy.map((code): UsedByRow => ({ kind: 'prompt', code, line: includeLine(prompts.find((p) => p.code === code)?.text ?? '', prompt.code) }));
+  return [...steps, ...includes];
 }
 
 export function copyCode(code: string, prompts: readonly Prompt[]): string {
@@ -142,7 +166,7 @@ export type PreviewNode =
 
 const TOKEN = /\$\{\{\s*([^\s}]+)\s*\}\}/g;
 
-export function previewTree(text: string, lookup: ReadonlyMap<string, string>, seen: readonly string[] = []): PreviewNode[] {
+export function previewTree(text: string, lookup: ReadonlyMap<string, string>, seen: readonly string[] = [], depth = 1): PreviewNode[] {
   const nodes: PreviewNode[] = [];
   let last = 0;
   for (const m of text.matchAll(TOKEN)) {
@@ -153,7 +177,7 @@ export function previewTree(text: string, lookup: ReadonlyMap<string, string>, s
     const code = ref.startsWith('prompts.') ? ref.slice('prompts.'.length) : null;
     const body = code === null ? undefined : lookup.get(code);
     if (code !== null && body !== undefined && !seen.includes(code)) {
-      nodes.push({ kind: 'include', code, depth: seen.length + 1, children: previewTree(body, lookup, [...seen, code]) });
+      nodes.push({ kind: 'include', code, depth, children: previewTree(body, lookup, [...seen, code], depth + 1) });
     } else if (code === null) {
       nodes.push({ kind: 'context', value: ref });
     } else {
@@ -164,19 +188,45 @@ export function previewTree(text: string, lookup: ReadonlyMap<string, string>, s
   return nodes;
 }
 
-export type TextSegment = { kind: 'text' | 'include' | 'context'; value: string };
+export type TextSegment = { kind: 'text' | 'include' | 'context' | 'bad'; value: string };
 
-export function highlightLine(line: string): TextSegment[] {
-  const out: TextSegment[] = [];
-  let last = 0;
+export interface BadSpan {
+  line: number;
+  column: number;
+  length: number;
+}
+
+export function highlightLine(line: string, bad: readonly Pick<BadSpan, 'column' | 'length'>[] = []): TextSegment[] {
+  const kinds: TextSegment['kind'][] = Array.from({ length: line.length }, () => 'text');
   for (const m of line.matchAll(TOKEN)) {
-    const index = m.index as number;
-    if (index > last) out.push({ kind: 'text', value: line.slice(last, index) });
-    out.push({ kind: (m[1] as string).startsWith('prompts.') ? 'include' : 'context', value: m[0] });
-    last = index + m[0].length;
+    const kind = (m[1] as string).startsWith('prompts.') ? 'include' : 'context';
+    kinds.fill(kind, m.index as number, (m.index as number) + m[0].length);
   }
-  if (last < line.length) out.push({ kind: 'text', value: line.slice(last) });
+  for (const b of bad) kinds.fill('bad', b.column - 1, Math.min(line.length, b.column - 1 + b.length));
+  const out: TextSegment[] = [];
+  for (let i = 0; i < line.length; i++) {
+    const last = out[out.length - 1];
+    if (last && last.kind === kinds[i]) last.value += line[i];
+    else out.push({ kind: kinds[i] as TextSegment['kind'], value: line[i] as string });
+  }
   return out;
+}
+
+export function badSpans(text: string, issues: readonly SaveIssue[]): BadSpan[] {
+  const spans: BadSpan[] = [];
+  for (const issue of issues) {
+    if (issue.kind === 'malformed') {
+      const line = text.split('\n')[issue.position.line - 1] ?? '';
+      const rest = line.slice(issue.position.column - 1);
+      const next = rest.indexOf('${{', 3);
+      spans.push({ line: issue.position.line, column: issue.position.column, length: next === -1 ? rest.length : next });
+    } else if (issue.kind === 'cycle' || issue.kind === 'unknown') {
+      const code = issue.kind === 'unknown' ? issue.code : issue.path[1];
+      const found = code === undefined ? null : findInclude(text, code);
+      if (found) spans.push({ line: found.line, column: found.column, length: found.length });
+    }
+  }
+  return spans;
 }
 
 export function includeLine(text: string, code: string): number | null {

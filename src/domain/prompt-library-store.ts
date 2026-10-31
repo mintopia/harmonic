@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { loadBaselineConfig } from '../config.js';
@@ -7,10 +7,34 @@ import { PROMPT_FRAGMENTS, PROMPT_FRAGMENT_NAMES } from './prompt-fragments.js';
 import { ENGINE_APPENDED_FRAGMENTS } from './prompt-library-sources.js';
 import { PROMPT_CODE_PATTERN, resolvePrompt, usedBy, validateIncludes, type PromptEntry } from './prompt-library.js';
 import { PROMPT_TEMPLATES, PROMPT_TEMPLATE_IDS } from './prompt-templates.js';
+import { parseWorkflow, type WorkflowStepDefinition } from './workflow.js';
+import type { WorkflowEntry } from './workflow-library-store.js';
 
-export interface PromptView extends PromptEntry {
+export interface StepUse {
+  readonly workflow: string;
+  readonly workflowBundled: boolean;
+  readonly stepId: string;
+}
+
+export interface PromptView extends Omit<PromptEntry, 'updatedAt'> {
   readonly resolved: string;
   readonly usedBy: string[];
+  readonly usedBySteps: StepUse[];
+  readonly updatedAt: string | null;
+}
+
+export interface WorkflowSource {
+  list(): WorkflowEntry[];
+}
+
+function stepsOf(text: string): WorkflowStepDefinition[] {
+  const def = parseWorkflow(text);
+  return [...def.steps, ...(def.cleanup ?? [])].flatMap((step) => [step, ...(step.parallel ?? [])]);
+}
+
+function promptCodeOf(step: WorkflowStepDefinition): string | undefined {
+  const prompt = step.with?.prompt;
+  return typeof prompt === 'string' ? prompt.trim() : undefined;
 }
 
 const fileSchema = z.object({ description: z.string(), text: z.string() });
@@ -43,6 +67,7 @@ export class PromptLibrary {
   private readonly dir: string | null;
   private readonly bundled = bundledEntries();
   private operatorCache = new Map<string, string>();
+  private workflows: WorkflowSource | null = null;
 
   /** A `null` data directory gives a Library of bundled entries only. */
   constructor(dataDir: string | null) {
@@ -52,6 +77,16 @@ export class PromptLibrary {
   /** Reads the operator entries into memory so synchronous prompt assembly can see them. */
   async load(): Promise<void> {
     this.operatorCache = new Map((await this.operatorEntries()).map((e) => [e.code, e.text]));
+  }
+
+  attachWorkflows(workflows: WorkflowSource): void {
+    this.workflows = workflows;
+  }
+
+  private stepUses(code: string): StepUse[] {
+    return (this.workflows?.list() ?? []).flatMap((wf) =>
+      stepsOf(wf.text).filter((step) => promptCodeOf(step) === code).map((step) => ({ workflow: wf.name, workflowBundled: wf.bundled, stepId: step.id })),
+    );
   }
 
   hasOperatorEntry(code: string): boolean {
@@ -79,8 +114,9 @@ export class PromptLibrary {
     for (const name of names.filter((n) => n.endsWith('.json')).sort()) {
       const code = name.slice(0, -'.json'.length);
       if (!PROMPT_CODE_PATTERN.test(code)) continue;
-      const parsed = fileSchema.safeParse(JSON.parse(await readFile(join(this.dir, name), 'utf8')));
-      if (parsed.success) entries.push({ code, ...parsed.data, bundled: false });
+      const file = join(this.dir, name);
+      const parsed = fileSchema.safeParse(JSON.parse(await readFile(file, 'utf8')));
+      if (parsed.success) entries.push({ code, ...parsed.data, bundled: false, updatedAt: (await stat(file)).mtime.toISOString() });
     }
     return entries;
   }
@@ -91,7 +127,13 @@ export class PromptLibrary {
 
   private view(entry: PromptEntry, all: readonly PromptEntry[]): PromptView {
     const lookup = new Map(all.map((e) => [e.code, e.text]));
-    return { ...entry, resolved: resolvePrompt(entry.text, lookup, [entry.code]), usedBy: usedBy(entry.code, all) };
+    return {
+      ...entry,
+      updatedAt: entry.updatedAt ?? null,
+      resolved: resolvePrompt(entry.text, lookup, [entry.code]),
+      usedBy: usedBy(entry.code, all),
+      usedBySteps: this.stepUses(entry.code),
+    };
   }
 
   async list(): Promise<PromptView[]> {
