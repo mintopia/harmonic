@@ -3,7 +3,9 @@ import type { Prompt, TrackerRef } from '../types.js';
 import * as f from './fixtures';
 
 export const workflowStory = new URLSearchParams(window.location.search).get('workflow') === '1';
-export const workflowTaskFields = { workflowRef: 'Security review on label@4', workflowChosen: 'label' as const, workflowLabel: 'security' };
+const podParam = new URLSearchParams(window.location.search).get('pod');
+export const storyExecution: Task['execution'] = podParam === null ? null : { target: 'k8s-prod', podName: 'harmonic-task-482-7f9c', podState: podParam as 'pending' | 'running' | 'deleted' | 'lost', namespace: 'harmonic-agents', image: 'harmonic-harnesses:2.19.0', source: 'workflow' };
+export const workflowTaskFields = { workflowRef: 'Security review on label@4', workflowChosen: 'label' as const, workflowLabel: 'security', execution: storyExecution };
 import { agentMessageThreads } from './agent-message-fixtures';
 import { conversationDetail, conversationEventsFixture, conversationList, permissionRulesFixture } from './conversation-fixtures';
 import type { api as RealApi, ResolvedPromptOwner, ClassifierTestSettings } from '../api';
@@ -436,7 +438,11 @@ export const api: typeof RealApi = {
   setWorkflowVars: (_id: number, vars: Record<string, string | number | boolean>) => ok(storyVars(vars)),
   epicWorkflowSteps: (_workspaceId: number, _epicRef: string) => ok({ workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, latestVersion: null, steps: [] }),
   workflowSteps: (_id: number) => ok(workflowStory
-    ? { ...workflowTaskFields, outline: [], cleanupCount: 0, latestVersion: 5, steps: [{ stepId: 'implement', action: 'agent', position: 0, attempt: 1, outcome: 'pass', summary: null, resolvedPrompt: null, outputs: { stdout: '', exitCode: null }, startedAt: 1, endedAt: 2 }] }
+    ? { ...workflowTaskFields, outline: [], cleanupCount: 0, latestVersion: 5, stepInfo: { rebase: { uses: 'rebase', detail: null, condition: null }, install: { uses: 'run', detail: 'npm ci', condition: null }, implement: { uses: 'agent', detail: 'Claude', condition: null } }, steps: [
+      { stepId: 'rebase', action: 'rebase', position: 0, attempt: 1, outcome: 'pass', summary: null, resolvedPrompt: null, outputs: { stdout: '', exitCode: null, checkpoint: { branch: 'harmonic/task-482', sha: 'a41c9e2b07', forced: true, unchanged: false } }, startedAt: 1, endedAt: 2 },
+      { stepId: 'install', action: 'run', position: 1, attempt: 1, outcome: 'pass', summary: null, resolvedPrompt: null, outputs: { stdout: '', exitCode: 0, checkpoint: { branch: 'harmonic/task-482', sha: null, forced: false, unchanged: true } }, startedAt: 2, endedAt: 3 },
+      { stepId: 'implement', action: 'agent', position: 2, attempt: 1, outcome: 'pass', summary: null, resolvedPrompt: null, outputs: { stdout: '', exitCode: null, checkpoint: { branch: 'harmonic/task-482', sha: '7be03d1aa0', forced: false, unchanged: false, files: 6 } }, startedAt: 3, endedAt: 4 },
+    ] }
     : { workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, latestVersion: null, steps: [] }),
   createTask: (_input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready'; workflow?: string }) => ok(f.task),
   browseFs: (path?: string) => ok(fsListing(path)),

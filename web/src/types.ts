@@ -77,6 +77,23 @@ export interface TaskWorkflowVars {
   snapshot: Record<string, string | number | boolean> | null;
 }
 
+export interface StepCheckpoint {
+  branch: string;
+  sha: string | null;
+  forced: boolean;
+  unchanged?: boolean;
+  files?: number;
+}
+
+export interface TaskExecution {
+  target: string;
+  podName: string | null;
+  podState: 'pending' | 'running' | 'deleted' | 'lost';
+  namespace: string;
+  image: string;
+  source: 'workflow' | 'step';
+}
+
 export interface WorkflowStepRun {
   stepId: string;
   action: string;
@@ -87,7 +104,7 @@ export interface WorkflowStepRun {
   outcome: WorkflowStepOutcome | null;
   summary: string | null;
   resolvedPrompt: string | null;
-  outputs: { stdout: string; exitCode: number | null };
+  outputs: { stdout: string; exitCode: number | null; checkpoint?: StepCheckpoint };
   startedAt: number | null;
   endedAt: number | null;
 }
@@ -657,6 +674,8 @@ export interface EpicBlocker {
 
 export interface Task {
   id: number;
+  /** Where the Ticket runs when it is not local; null for a local Ticket. */
+  execution?: TaskExecution | null;
   /** The full prompt is served only on the item GET (`GET /api/tasks/:id`) and
    * the WS `task_changed` broadcast, never on a lean list row
    * — hence optional. List surfaces render {@link Task.summary} instead. */

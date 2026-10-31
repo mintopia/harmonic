@@ -17,6 +17,7 @@ import {
   TASK_STATES,
   type TaskRow,
   type RawTaskRow,
+  type TaskExecution,
   type WorkflowChosen,
   type TaskState,
   type MergeStatus,
@@ -949,6 +950,13 @@ export class TaskService {
       }
       return this.setState(id, 'ready');
     });
+  }
+
+  async setExecution(id: number, execution: TaskExecution | null): Promise<TaskRow> {
+    const row = await this.db.write((db) =>
+      db.update(tasks).set({ execution, updatedAt: Date.now() }).where(eq(tasks.id, id)).returning().get(),
+    );
+    return await this.changed(row!);
   }
 
   async setTicketClosePending(id: number, pending: boolean): Promise<TaskRow> {

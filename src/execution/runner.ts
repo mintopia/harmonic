@@ -60,6 +60,7 @@ import { WorkflowEngine, type AgentDriveRequest, type AgentDriveResult, type Epi
 import { WorkflowLibrary } from '../domain/workflow-library-store.js';
 import { seedLegacyResume } from './legacy-resume-seeding.js';
 import { WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
+import { createPodOpener } from './pod-opener.js';
 import { createChildProcessSpawn } from '../verification/command-verifier.js';
 
 export type { LiveAttemptEvent } from './live-events.js';
@@ -243,6 +244,17 @@ export class Runner {
       closeTicket: (task, comment) => this.autoDrive?.closeTicket(task, comment) ?? Promise.resolve(false),
       commentOnTicket: (task, body) => this.autoDrive?.commentOnTicket(task, body) ?? Promise.resolve(false),
       openPullRequest: (task, run) => this.autoDrive?.openPullRequest(task, run) ?? Promise.resolve(null),
+      ...(workflows?.pods
+        ? {
+            pods: createPodOpener<TaskRow>({
+              ...workflows.pods,
+              baseBranchFor: (task) => this.mergeCoordinator.resolveBaseBranch(task),
+              setExecution: async (task, execution) => {
+                await this.taskService.setExecution(task.id, execution);
+              },
+            }),
+          }
+        : {}),
       escalate: async (task, run, reason) => this.settleEscalated(task, await this.attempts.get(run.id), reason, {}),
       complete: async (task, run) => this.settleAutoCompleted(task, await this.attempts.get(run.id), {}),
       onStepChanged: (owner) => ('taskId' in owner ? this.events.onStepChanged?.(owner.taskId) : this.events.onEpicMergeStep?.(owner)),

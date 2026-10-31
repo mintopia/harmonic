@@ -351,6 +351,7 @@ CREATE TABLE `tasks` (
 	`workflow_requested` text,
 	`workflow_chosen` text,
 	`workflow_label` text,
+	`execution` text,
 	`workflow_reason` text,
 	`workflow_routing_usage` text,
 	`workflow_routing_cost` text,

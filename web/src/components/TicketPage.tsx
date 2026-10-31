@@ -24,7 +24,8 @@ import { useTicketPageData } from './useTicketPageData';
 import { StatsPanel, statsAttemptsOf } from './ticket/StatsPanel';
 import { StatePill } from './ticket/shared';
 import { Description } from './ticket/Description';
-import { Metrics, Properties } from './ticket/Metrics';
+import { AgentFact, Metrics, Properties } from './ticket/Metrics';
+import { ExecutionRow } from './ticket/TargetParts';
 import { ModelOptionOverrides } from './ticket/ModelOptionOverrides';
 import { TaskProgressBar } from './ticket/TaskProgressBar';
 import { ExportPanel } from './ticket/ExportPanel';
@@ -183,7 +184,7 @@ export function TicketPage({
               </button>
             )}
             <div className="flex flex-wrap items-start gap-4 pb-1">
-              <h1 className="min-w-0 max-w-[680px] flex-1 text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em] [overflow-wrap:anywhere] max-sm:basis-full">
+              <h1 className={`min-w-0 max-w-[680px] ${task.execution ? '' : 'flex-1'} text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em] [overflow-wrap:anywhere] max-sm:basis-full`}>
                 {cardTitle(task.summary)}
               </h1>
               <span className="mt-2.5 flex shrink-0 items-center gap-1.5 max-sm:mt-0">
@@ -202,6 +203,8 @@ export function TicketPage({
               </span>
             </div>
 
+            {task.execution && <ExecutionRow execution={task.execution} branch={task.branch} agent={<AgentFact task={task} attempts={attempts} />} />}
+
             <div className="mt-3 grid grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] gap-11 max-rail:grid-cols-1 max-rail:gap-3">
               <div className="min-w-0">
                 {(detail?.prompt ?? task.prompt) != null && (
@@ -217,7 +220,7 @@ export function TicketPage({
 
             <TaskProgressBar task={task} attempts={runs} attemptDetails={attempts} />
 
-            <WorkflowSteps data={workflowSteps} attemptSelector />
+            <WorkflowSteps data={workflowSteps} attemptSelector execution={task.execution} />
             <TicketVariables taskId={task.id} />
 
             <ExportPanel target={taskExportTarget(task.id)} finished={task.state === 'done' || task.state === 'cancelled'} refreshKey={timelineEvents.length} />
