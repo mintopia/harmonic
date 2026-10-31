@@ -56,7 +56,7 @@ export interface RunnerOptions {
   agentMessages?: AgentMessageStore;
   archive?: TaskArchive;
   /** Where Tickets find their Task Execution Workflow; absent → only the bundled workflows, with no secrets. */
-  workflows?: { library: WorkflowLibrary; secrets?: SecretService; workspaceName?: (workspaceId: number) => Promise<string>; pods?: Pick<PodOpenerDeps<TaskRow>, 'targets' | 'passes' | 'apiFactory'> };
+  workflows?: { library: WorkflowLibrary; secrets?: SecretService; workspaceName?: (workspaceId: number) => Promise<string>; pods?: Pick<PodOpenerDeps<TaskRow>, 'targets' | 'passes' | 'apiFactory'>; podTranscriptDir?: string };
   /** Source of the Epic fix prompt text; absent → bundled prompts only. */
   promptLibrary?: PromptLibrary;
   isGloballyPaused?: () => boolean;

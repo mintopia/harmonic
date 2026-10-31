@@ -21,6 +21,7 @@ import { Git } from './git.js';
 import { HARNESS_CREDENTIALS, LOCAL_TARGET } from './execution-targets.js';
 import type { PodOpener } from './pod-opener.js';
 import type { PodSession } from './pod-session.js';
+import type { PodTranscripts } from './pod-transcript.js';
 import { buildWorkflowCriticPrompt, renderAgentPrompt } from './prompt-assembly.js';
 import { appendFeedback, type DriveFields } from './prompt-template.js';
 import type { EnginePrompts } from '../domain/bundled-prompts.js';
@@ -114,6 +115,7 @@ export interface WorkflowEngineDeps<S extends EngineSubject = TaskRow> {
   };
   runTimeoutMs?: number;
   pods?: PodOpener<S>;
+  podTranscripts?: PodTranscripts<S>;
 }
 
 interface StepResult {
@@ -466,16 +468,23 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
       this.deps.onStepChanged?.(stepRunOwner(task));
       const before = await markGit(cwd, pod);
       const dirtyBefore = await isDirty(cwd, pod);
-      const result = await agent.drive.run({
-        harness: route.config,
-        harnessId: route.harness,
-        model: route.model,
-        cwd,
-        prompt,
-        timeoutMs: agent.criticTimeoutMs ?? DEFAULT_CRITIC_TIMEOUT_MS,
-        readOnly: true,
-        ...(pod ? { pod } : {}),
-      });
+      const transcript = pod ? this.deps.podTranscripts?.begin({ pod, task, run: ctx.run, harnessId: route.harness, model: route.model, cwd, kind: 'critic', stepId: step.id }) : undefined;
+      let result: CriticDriveResult;
+      try {
+        result = await agent.drive.run({
+          harness: route.config,
+          harnessId: route.harness,
+          model: route.model,
+          cwd,
+          prompt,
+          timeoutMs: agent.criticTimeoutMs ?? DEFAULT_CRITIC_TIMEOUT_MS,
+          readOnly: true,
+          ...(pod ? { pod } : {}),
+          ...(transcript ? { onSessionCreated: transcript.onSessionCreated } : {}),
+        });
+      } finally {
+        await transcript?.finish();
+      }
       const output = mask(result.output);
       const after = await markGit(cwd, pod);
       const changed = before.head !== after.head || before.branch !== after.branch || before.branchOid !== after.branchOid || before.commits !== after.commits || (!dirtyBefore && (await isDirty(cwd, pod)));
@@ -624,30 +633,36 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
       let output = '';
       let text = prompt;
       const nudges = options.continueAttempts ?? 0;
-      for (let turn = 0; ; turn++) {
-        const result = await agent.drive.run({
-          harness: route.config,
-          harnessId: route.harness,
-          model: route.model,
-          cwd,
-          prompt: text,
-          timeoutMs: agent.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,
-          task,
-          run,
-          stepRowId: rowId,
-          ...(pod ? { pod } : {}),
-          ...(state.session?.key === key ? { continueSessionId: state.session.id } : {}),
-        });
-        if (result.sessionId) {
-          state.session = { key, id: result.sessionId };
-          if (!ctx.coldPod) this.warmSessions.set(stepRunOwnerKey(stepRunOwner(task)), state.session);
+      const transcript = pod ? this.deps.podTranscripts?.begin({ pod, task, run, harnessId: route.harness, model: route.model, cwd, kind: 'agent', stepId: step.id }) : undefined;
+      try {
+        for (let turn = 0; ; turn++) {
+          const result = await agent.drive.run({
+            harness: route.config,
+            harnessId: route.harness,
+            model: route.model,
+            cwd,
+            prompt: text,
+            timeoutMs: agent.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,
+            task,
+            run,
+            stepRowId: rowId,
+            ...(pod ? { pod } : {}),
+            ...(transcript ? { onSessionCreated: transcript.onSessionCreated } : {}),
+            ...(state.session?.key === key ? { continueSessionId: state.session.id } : {}),
+          });
+          if (result.sessionId) {
+            state.session = { key, id: result.sessionId };
+            if (!ctx.coldPod) this.warmSessions.set(stepRunOwnerKey(stepRunOwner(task)), state.session);
+          }
+          if (result.halt) return { outcome: 'inconclusive', summary: `agent turn ${result.halt}`, stdout: '', exitCode: null, output: '', halt: true };
+          if (result.escalate !== undefined) return { ...inconclusive(result.escalate), configFailure: true };
+          output += result.output;
+          if (!(await isDirty(cwd, pod).catch(() => false))) break;
+          if (turn >= nudges) return { outcome: 'fail', summary: UNCOMMITTED_AFTER_AGENT, stdout: mask(output), exitCode: null, output: mask(output) };
+          text = options.continuePrompt === undefined ? DEFAULT_CONTINUE_PROMPT : await this.renderPrompt(options.continuePrompt, fields, context);
         }
-        if (result.halt) return { outcome: 'inconclusive', summary: `agent turn ${result.halt}`, stdout: '', exitCode: null, output: '', halt: true };
-        if (result.escalate !== undefined) return { ...inconclusive(result.escalate), configFailure: true };
-        output += result.output;
-        if (!(await isDirty(cwd, pod).catch(() => false))) break;
-        if (turn >= nudges) return { outcome: 'fail', summary: UNCOMMITTED_AFTER_AGENT, stdout: mask(output), exitCode: null, output: mask(output) };
-        text = options.continuePrompt === undefined ? DEFAULT_CONTINUE_PROMPT : await this.renderPrompt(options.continuePrompt, fields, context);
+      } finally {
+        await transcript?.finish();
       }
       return { outcome: 'pass', summary: `agent turn finished on ${route.harness}/${route.model}`, stdout: mask(output), exitCode: null, output: mask(output) };
     } catch (error) {

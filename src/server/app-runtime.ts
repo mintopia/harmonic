@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { defaultBranchPostMerge, type PostMergeHook } from '../execution/branch-merge.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import { dropIndexForPath } from '../execution/code-index.js';
@@ -384,6 +385,7 @@ export async function createRuntime(deps: {
       secrets,
       workspaceName: async (workspaceId) => (await workspaces.get(workspaceId)).name,
       pods: { targets: deps.stores.executionTargets, passes: new RepositoryPassService(deps.stores.globalSecrets), apiFactory: opts.podApiFactory ?? defaultPodApiFactory },
+      podTranscriptDir: join(opts.dataDir, 'pod-transcripts'),
     },
   });
   runnerRef = runner;
