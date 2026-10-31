@@ -3,7 +3,7 @@ import type { TrackerRef } from '../types.js';
 import * as f from './fixtures';
 import { agentMessageThreads } from './agent-message-fixtures';
 import { conversationDetail, conversationEventsFixture, conversationList, permissionRulesFixture } from './conversation-fixtures';
-import type { api as RealApi, ResolvedPromptOwner } from '../api';
+import type { api as RealApi, ResolvedPromptOwner, ClassifierTestSettings } from '../api';
 import type {
   ActivityProcess,
   AppConfig,
@@ -274,6 +274,9 @@ export const api: typeof RealApi = {
   trackerDetection: (_id: number) => ok({ detectedTracker: { name: 'GitHub', kind: 'github' }, detectedCodeRepository: 'github' as const }),
   verifyTracker: (_id: number) => ok({ ok: true as const, identity: 'octocat' }),
   verifyRepository: (_id: number) => ok({ ok: true as const, identity: 'octocat' }),
+  secrets: (_id: number) => ok({ secrets: [{ name: 'OPENROUTER_API_KEY', set: true as const, updatedAt: 1 }], total: 1 }),
+  testClassifier: (_id: number, _settings: ClassifierTestSettings) =>
+    ok({ outcome: 'chosen' as const, optionId: 'opus-deep', reason: 'Spans several files.', prompt: null }),
   secretStatus: (_id: number, name: string) => ok({ name, set: false }),
   setSecret: (_id: number, _name: string, _value: string) => ok(null),
   clearSecret: (_id: number, _name: string) => ok(null),

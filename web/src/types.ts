@@ -451,13 +451,16 @@ export interface Workspace extends PromptFragmentOverrides {
   epicPreMergeCritics: EpicCriticOverlayEntry[] | null;
   /** Routing Label overlay; `null` inherits every global Routing Label in order. */
   routingLabels: RoutingLabelOverlayEntry[] | null;
-  /** Workspace-only Model Options added after the global list; `null` adds none. */
-  modelOptions: ModelOption[] | null;
+  /** Model Option overlay; `null` inherits every global Model Option in order, enabled. */
+  modelOptions: ModelOptionOverlayEntry[] | null;
   classifierEnabled: boolean | null;
   classifierBackend: 'typesafe' | 'openai-compatible' | 'harness' | null;
   classifierTimeoutSeconds: number | null;
   classifierTypesafeModel: string | null;
   classifierTypesafeSecret: string | null;
+  /** Harness and Model the Harness backend runs on; `null` uses the Workspace default. */
+  classifierHarness: string | null;
+  classifierModel: string | null;
   /** OpenAI-compatible endpoint for the Route Classifier; the API key lives in a Secret named by `apiKeySecret`. */
   classifierEndpoint: ClassifierEndpoint | null;
   /** Guardrail overrides; `null` inherits
@@ -575,6 +578,11 @@ export type EpicCriticOverlayEntry =
 export type RoutingLabelOverlayEntry =
   | { kind: 'global'; ref: string; enabled: boolean }
   | { kind: 'local'; enabled: boolean; routingLabel: { label: string; harness: string; model: string } };
+
+/** A Workspace Model Option overlay entry; a `global` entry's `ref` is the global option's code. */
+export type ModelOptionOverlayEntry =
+  | { kind: 'global'; ref: string; enabled: boolean }
+  | { kind: 'local'; enabled: boolean; modelOption: ModelOption };
 
 /** The budget Guardrail: a mandatory wall-clock bound per afk Attempt
  * plus optional token and cost caps (`null` = that cap is off). */

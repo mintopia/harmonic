@@ -14,6 +14,9 @@ import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
 import { RoutingLabelOverlayEditor } from './RoutingLabelOverlayEditor';
 import { RoutingLabelsEditor } from './RoutingLabelsEditor';
+import { ModelOptionsEditor } from './ModelOptionsEditor';
+import { enabledOptionCount } from './model-option-model';
+import { RouteClassifierSettings } from './RouteClassifierSettings';
 import { SecuritySection } from './SecuritySection';
 import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection } from './ArchiveExportSettings';
 import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './VerificationSettings';
@@ -56,6 +59,8 @@ export interface WorkspaceRenderCtx {
   blockedByRunningTask: boolean;
   onRequestDelete: () => void;
   dirty?: boolean;
+  saving?: boolean;
+  onSave?: () => void;
   onTab?: (tab: SettingTab) => void;
 }
 
@@ -791,6 +796,8 @@ interface SectionNode {
   title: PerSurface<string>;
   description: PerSurface<string>;
   body: (ctx: RenderCtx) => ReactNode;
+  /** Control at the right of the card's title row. */
+  action?: (ctx: RenderCtx) => ReactNode;
   /** Span both columns of the settings grid — for wide, table-shaped bodies. */
   wide?: boolean;
   /** Render the body without the SettingsSection card — the body owns its own chrome. */
@@ -881,6 +888,63 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
           onChange={(routingLabels) => ctx.setWorkspace({ ...ctx.workspace, routingLabels })}
         />
       ),
+  },
+  {
+    tab: 'execution',
+    surfaces: BOTH,
+    title: 'Model Options',
+    wide: true,
+    description: {
+      global:
+        'A closed list the Route Classifier picks from. It never picks outside the list. Each Model Option has a code that Task Execution Workflow YAML can reference. Write each description as when it fits: the classifier reads it to choose.',
+      workspace:
+        'Global rows are managed in Global settings. You can reorder them and turn them off here; Model Options you add are local to this Workspace. Codes are unique across both.',
+    },
+    body: (ctx) =>
+      ctx.surface === 'global' ? (
+        <ModelOptionsEditor
+          items={ctx.config.modelOptions}
+          config={ctx.config}
+          errors={ctx.errors}
+          onChange={(modelOptions) => ctx.setConfig({ ...ctx.config, modelOptions })}
+        />
+      ) : (
+        <ModelOptionsEditor
+          workspace
+          overlay={ctx.workspace.modelOptions}
+          config={ctx.config}
+          errors={ctx.errors}
+          onChange={(modelOptions) => ctx.setWorkspace({ ...ctx.workspace, modelOptions })}
+        />
+      ),
+  },
+  {
+    tab: 'execution',
+    surfaces: ['workspace'],
+    title: 'Route Classifier',
+    wide: true,
+    description:
+      'Picks one Model Option for each Attempt on a Native Task. Advisory: when it abstains, errors or times out, the Workspace default applies and the Attempt starts anyway.',
+    action: (ctx) =>
+      ctx.surface === 'workspace' ? (
+        <Switch
+          checked={ctx.workspace.classifierEnabled ?? false}
+          onChange={(v) => ctx.setWorkspace({ ...ctx.workspace, classifierEnabled: v })}
+          label="Route Classifier"
+        />
+      ) : null,
+    body: (ctx) =>
+      ctx.surface === 'workspace' ? (
+        <RouteClassifierSettings
+          workspace={ctx.workspace}
+          config={ctx.config}
+          optionCount={enabledOptionCount(ctx.workspace.modelOptions, ctx.config.modelOptions)}
+          errors={ctx.errors}
+          saving={ctx.saving ?? false}
+          {...(ctx.onSave ? { onSave: ctx.onSave } : {})}
+          onChange={ctx.setWorkspace}
+        />
+      ) : null,
   },
   {
     tab: 'execution',
@@ -1099,10 +1163,14 @@ export function sectionsForTab(surface: Surface, tab: SettingTab): SectionNode[]
 }
 
 /** Render a section's card title/description/body for a surface. */
-export function renderSection(section: SectionNode, ctx: RenderCtx): { title: string; description: string; body: ReactNode } {
+export function renderSection(
+  section: SectionNode,
+  ctx: RenderCtx,
+): { title: string; description: string; body: ReactNode; action: ReactNode } {
   return {
     title: pick(section.title, ctx.surface),
     description: pick(section.description, ctx.surface),
     body: section.body(ctx),
+    action: section.action?.(ctx) ?? null,
   };
 }

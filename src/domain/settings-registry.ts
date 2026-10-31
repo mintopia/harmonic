@@ -176,7 +176,7 @@ export const settingsRegistry = {
     control: 'json',
     tab: 'execution',
     label: 'Model Options',
-    help: 'Harness and Model choices the Route Classifier may pick from. A Workspace adds its own after the global list; global options cannot be removed.',
+    help: 'Harness and Model choices the Route Classifier may pick from. A Workspace reorders or turns off global options and adds its own.',
   },
   classifierEnabled: {
     scope: 'overridable',
@@ -212,6 +212,20 @@ export const settingsRegistry = {
     tab: 'execution',
     label: 'TypeSafe classifier Secret',
     help: 'Name of the Secret holding the OpenRouter key for the TypeSafe backend.',
+  },
+  classifierHarness: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'execution',
+    label: 'Route Classifier Harness',
+    help: 'Harness the Harness backend runs on. Defaults to the Workspace default Harness.',
+  },
+  classifierModel: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'execution',
+    label: 'Route Classifier Model',
+    help: 'Model the Harness backend runs on. Defaults to the Harness default.',
   },
   classifierEndpoint: {
     scope: 'overridable',

@@ -7,17 +7,24 @@ export function SettingsSection({
   title,
   description,
   className,
+  action,
   children,
 }: {
   title: string;
   description: string;
   className?: string;
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <section className={`${card} p-5${className ? ` ${className}` : ''}`}>
-      <h2 className="text-title font-semibold">{title}</h2>
-      <p className="mb-4 mt-0.5 text-muted">{description}</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-title font-semibold">{title}</h2>
+          <p className="mb-4 mt-0.5 text-muted">{description}</p>
+        </div>
+        {action && <div className="mt-1 shrink-0">{action}</div>}
+      </div>
       {children}
     </section>
   );

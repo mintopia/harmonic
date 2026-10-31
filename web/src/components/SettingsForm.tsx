@@ -64,7 +64,7 @@ export function SettingsForm({
         className="mt-5 grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-2 xl:items-start"
       >
         {sections.map((section) => {
-          const { title: sectionTitle, description, body } = renderSection(section, { ...ctx, dirty, onTab });
+          const { title: sectionTitle, description, body, action } = renderSection(section, { ...ctx, dirty, onTab });
           if (section.bare) {
             return (
               <div key={`${section.tab}:${sectionTitle}`} className="min-w-0 xl:col-span-2">
@@ -77,6 +77,7 @@ export function SettingsForm({
               key={`${section.tab}:${sectionTitle}`}
               title={sectionTitle}
               description={description}
+              action={action}
               className={section.wide ? 'xl:col-span-2' : undefined}
             >
               {body}

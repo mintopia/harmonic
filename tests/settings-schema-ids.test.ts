@@ -83,6 +83,8 @@ function makeWorkspace(): Workspace {
     classifierTimeoutSeconds: null,
     classifierTypesafeModel: null,
     classifierTypesafeSecret: null,
+    classifierHarness: null,
+    classifierModel: null,
     classifierEndpoint: null,
     guardrailBudget: null,
     guardrailProgress: null,

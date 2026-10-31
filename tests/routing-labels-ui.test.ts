@@ -67,7 +67,7 @@ describe('RoutingLabelsEditor', () => {
   it('shows the precedence hint and the add control', async () => {
     const host = await mountEditor([]);
     expect(host.textContent).toContain('Precedence');
-    expect(host.textContent).toContain('Operator setting on the Ticket→Routing Label→Workspace default→Global default');
+    expect(host.textContent).toContain('Operator setting on the Ticket→Routing Label→Route Classifier→Workspace default→Global default');
     expect(host.textContent).toContain('+ Add Routing Label');
   });
 

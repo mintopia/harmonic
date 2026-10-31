@@ -194,6 +194,7 @@ export interface Runtime {
   sessionRetirement: SessionRetirementCoordinator;
   drainRetirement: () => Promise<number>;
   runner: Runner;
+  routeClassifier: RouteClassifier;
   globalPause: GlobalPause;
   escalation: EscalationService;
   autoDrive: AutoDrive;
@@ -523,6 +524,7 @@ export async function createRuntime(deps: {
     sessionRetirement,
     drainRetirement,
     runner,
+    routeClassifier,
     globalPause,
     escalation,
     autoDrive,
