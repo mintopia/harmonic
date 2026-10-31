@@ -1,6 +1,3 @@
-/**
- * Runs against a kind cluster; skipped unless HARMONIC_KIND_KUBECONFIG is set (ADR-0056, #936).
- */
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import type { Server } from 'node:http';

@@ -5,7 +5,6 @@ export type ExecHandler = (argv: string[], options: PodExecOptions, podEnv: Reco
 
 export const ok = (stdout = '', code = 0): PodExecResult => ({ code, stdout, stderr: '', timedOut: false });
 
-/** Runs the argv on the host the way the pod's shell would: the container env, then the exec's own env. */
 export const hostExec: ExecHandler = (argv, options, podEnv) =>
   new Promise((resolve) => {
     const child = spawn(argv[0]!, argv.slice(1), { cwd: options.cwd, env: { ...process.env, ...podEnv, ...options.env } });
