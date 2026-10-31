@@ -66,6 +66,7 @@ describe('scope rails', () => {
     expect(VIEW_LABELS.board).toBe('Board');
     expect(VIEW_LABELS.conversations).toBe('Conversations');
     expect(VIEW_LABELS.api).toBe('API');
+    expect(VIEW_LABELS.workflows).toBe('Workflows');
     expect(VIEW_LABELS.graph).toBe('Graph');
     expect(VIEW_LABELS.operations).toBe('Operations');
     expect(VIEW_LABELS.timeline).toBe('Timeline');

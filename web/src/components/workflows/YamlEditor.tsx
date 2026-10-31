@@ -1,19 +1,21 @@
 import { useEffect, useRef } from 'react';
-import { Compartment, EditorState, StateEffect, StateField, type Extension } from '@codemirror/state';
-import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view';
+import { Compartment, EditorState, RangeSet, StateEffect, StateField, type Extension } from '@codemirror/state';
+import { Decoration, EditorView, GutterMarker, WidgetType, gutterLineClass, type DecorationSet } from '@codemirror/view';
 import { basicSetup } from 'codemirror';
+import { acceptCompletion, type CompletionContext } from '@codemirror/autocomplete';
+import { keymap } from '@codemirror/view';
+import { completeWorkflow } from '../../../../src/domain/workflow-completion.js';
 import { LanguageDescription, syntaxHighlighting } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
-import type { WorkflowIssue } from '../../types';
-import { issueText } from './workflows-model';
+import { messageParts, type WorkflowEditorIssue } from '../../workflow-editor-model';
 import { paperHighlight, paperTheme } from '../CodeViewer';
 
 class IssueWidget extends WidgetType {
-  constructor(private readonly issue: WorkflowIssue) {
+  constructor(private readonly issue: WorkflowEditorIssue) {
     super();
   }
   eq(other: IssueWidget) {
-    return other.issue.line === this.issue.line && other.issue.column === this.issue.column && other.issue.message === this.issue.message;
+    return other.issue.line === this.issue.line && other.issue.column === this.issue.column && other.issue.message === this.issue.message && other.issue.source === this.issue.source;
   }
   toDOM() {
     const el = document.createElement('div');
@@ -21,14 +23,35 @@ class IssueWidget extends WidgetType {
     el.setAttribute('role', 'alert');
     el.dataset.line = String(this.issue.line);
     el.dataset.column = String(this.issue.column);
-    el.textContent = issueText(this.issue);
+    const source = document.createElement('span');
+    source.className = 'cm-issue-src';
+    source.textContent = this.issue.source;
+    const where = document.createElement('b');
+    where.textContent = `Line ${this.issue.line}, col ${this.issue.column}:`;
+    const message = document.createElement('span');
+    for (const part of messageParts(this.issue.message)) {
+      if (!part.code) message.append(part.text);
+      else {
+        const chip = document.createElement('code');
+        chip.className = 'cm-issue-chip';
+        chip.textContent = part.text;
+        message.append(chip);
+      }
+    }
+    el.append(source, where, message);
     return el;
   }
 }
 
-const setIssues = StateEffect.define<readonly WorkflowIssue[]>();
+const completionSource = (ctx: CompletionContext) => {
+  const hit = completeWorkflow(ctx.state.doc.toString(), ctx.pos);
+  if (!hit) return null;
+  return { from: hit.from, options: hit.options.map((o) => ({ label: o.label, detail: o.detail, type: 'keyword' })), validFor: /^[\w-]*$/ };
+};
 
-function buildDecorations(state: EditorState, issues: readonly WorkflowIssue[]): DecorationSet {
+const setIssues = StateEffect.define<readonly WorkflowEditorIssue[]>();
+
+function buildDecorations(state: EditorState, issues: readonly WorkflowEditorIssue[]): DecorationSet {
   const ranges = [];
   for (const issue of issues) {
     const line = state.doc.line(Math.min(Math.max(issue.line, 1), state.doc.lines));
@@ -44,6 +67,26 @@ function buildDecorations(state: EditorState, issues: readonly WorkflowIssue[]):
   return Decoration.set(ranges, true);
 }
 
+class IssueGutterMarker extends GutterMarker {
+  elementClass = 'cm-issue-gutter';
+}
+
+const issueGutterMarker = new IssueGutterMarker();
+
+function buildGutter(state: EditorState, issues: readonly WorkflowEditorIssue[]): RangeSet<GutterMarker> {
+  const lines = new Set(issues.map((issue) => state.doc.line(Math.min(Math.max(issue.line, 1), state.doc.lines)).from));
+  return RangeSet.of([...lines].map((from) => issueGutterMarker.range(from)), true);
+}
+
+const gutterField = StateField.define<RangeSet<GutterMarker>>({
+  create: () => RangeSet.empty,
+  update(value, tr) {
+    for (const effect of tr.effects) if (effect.is(setIssues)) return buildGutter(tr.state, effect.value);
+    return tr.docChanged ? RangeSet.empty : value;
+  },
+  provide: (field) => gutterLineClass.from(field),
+});
+
 const issueField = StateField.define<DecorationSet>({
   create: () => Decoration.none,
   update(value, tr) {
@@ -56,8 +99,21 @@ const issueField = StateField.define<DecorationSet>({
 const issueTheme = EditorView.theme({
   '.cm-issue-line': { backgroundColor: 'var(--hm-fail-tint)' },
   '.cm-issue-mark': { textDecoration: 'underline wavy var(--hm-fail)' },
-  '.cm-issue-message': { backgroundColor: 'var(--hm-fail-tint)', color: 'var(--hm-fail)', padding: '3px 12px 4px', fontFamily: 'var(--font-sans, inherit)', fontSize: '12px' },
+  '.cm-issue-chip': { fontFamily: 'var(--font-code, monospace)', background: 'var(--hm-surface)', padding: '0 4px', borderRadius: '3px' },
+  '.cm-issue-message': { backgroundColor: 'var(--hm-fail-tint)', color: 'var(--hm-fail)', padding: '3px 12px 4px', fontFamily: 'var(--font-sans, inherit)', fontSize: '12px', display: 'flex', gap: '8px', alignItems: 'baseline' },
+  '.cm-issue-src': { fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--hm-muted)', flex: 'none' },
+  '.cm-issue-message b': { fontWeight: 600, whiteSpace: 'nowrap' },
+  '.cm-gutterElement.cm-issue-gutter': { color: 'var(--hm-fail)', fontWeight: 700, background: 'var(--hm-fail-tint)' },
   '&': { backgroundColor: 'transparent' },
+  '.cm-completionIcon': { display: 'none' },
+  '.cm-tooltip.cm-tooltip-autocomplete': { minWidth: '300px', background: 'var(--hm-surface)', border: 'none', borderRadius: '4px', boxShadow: 'var(--hm-shadow-bar)', padding: '4px 0', fontFamily: 'var(--font-sans, inherit)', fontSize: '13px' },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul': { maxHeight: 'none', fontFamily: 'inherit', minWidth: '300px' },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul > li': { display: 'flex', alignItems: 'baseline', gap: '10px', padding: '5px 10px', color: 'var(--hm-ink)' },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]': { background: 'var(--hm-raised)', color: 'var(--hm-ink)' },
+  '.cm-completionLabel': { fontFamily: 'var(--font-code, monospace)', fontSize: '12px', color: 'var(--hm-ink)' },
+  '.cm-completionMatchedText': { color: 'var(--hm-accent)', fontWeight: 700, textDecoration: 'none' },
+  '.cm-completionDetail': { marginLeft: 'auto', paddingLeft: '16px', fontStyle: 'normal', fontSize: '11px', color: 'var(--hm-muted)', textAlign: 'right' },
+  '.cm-tooltip-autocomplete::after': { content: '"Closed set of Workflow Actions · Tab to accept"', display: 'block', marginTop: '4px', padding: '4px 10px 2px', fontSize: '10px', color: 'var(--hm-faint)', borderTop: '1px solid var(--hm-hairline)' },
 });
 
 export function YamlEditor({
@@ -69,7 +125,7 @@ export function YamlEditor({
 }: {
   text: string;
   readOnly: boolean;
-  issues: readonly WorkflowIssue[];
+  issues: readonly WorkflowEditorIssue[];
   onChange: (text: string) => void;
   onSave: () => void;
 }) {
@@ -96,7 +152,10 @@ export function YamlEditor({
       paperTheme,
       issueTheme,
       issueField,
+      gutterField,
       language.of([]),
+      EditorState.languageData.of(() => [{ autocomplete: completionSource }]),
+      keymap.of([{ key: 'Tab', run: acceptCompletion }]),
       EditorView.lineWrapping,
       EditorState.readOnly.of(readOnly),
       EditorView.editable.of(!readOnly),

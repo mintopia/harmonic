@@ -1,4 +1,4 @@
-import { useReducer, useState } from 'react';
+import { useMemo, useReducer, useState } from 'react';
 import { api } from '../../api';
 import { toastError, toastSuccess } from '../../toast';
 import { useAsyncResource } from '../../useAsyncResource';
@@ -9,6 +9,9 @@ import { LoadError } from '../LoadError';
 import { Icon } from '../Icon';
 import { downloadText } from './download';
 import { YamlEditor } from './YamlEditor';
+import { WorkflowDiagram } from '../WorkflowDiagram';
+import { messageParts, toEditorIssues, validateWorkflowText } from '../../workflow-editor-model';
+import type { WorkflowDiagramModel } from '../../../../src/domain/workflow-diagram.js';
 import { deleteBlock, editorReducer, editorStatus, initialEditor, issuesOf, type EditorStatusKind } from './workflows-model';
 
 const PILL_STYLES: Record<EditorStatusKind, string> = {
@@ -58,7 +61,12 @@ function EditorBody({
 }) {
   const [state, dispatch] = useReducer(editorReducer, initialEditor(doc.text, doc.version));
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const status = editorStatus(state);
+  const [lastGood, setLastGood] = useState<WorkflowDiagramModel | null>(null);
+  const parsed = useMemo(() => validateWorkflowText(state.text), [state.text]);
+  if (parsed.diagram !== null && parsed.diagram !== lastGood) setLastGood(parsed.diagram);
+  const live = { issues: parsed.issues, diagram: parsed.diagram ?? lastGood, stale: parsed.diagram === null && lastGood !== null };
+  const issues = useMemo(() => [...live.issues, ...toEditorIssues(state.issues, 'server')], [live.issues, state.issues]);
+  const status = editorStatus({ ...state, issues });
   const blocked = deleteBlock(entry);
   const readOnly = doc.bundled;
   const saveDisabled = readOnly || status.saveDisabled;
@@ -102,7 +110,8 @@ function EditorBody({
   };
 
   return (
-    <section className="rounded-lg bg-surface pb-3 shadow-card" aria-label={`Workflow ${doc.name}`}>
+    <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(360px,1fr)_minmax(0,1.5fr)]">
+    <section className="min-w-0 rounded-lg bg-surface pb-3 shadow-card" aria-label={`Workflow ${doc.name}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-3">
         <h2 className={sectionTitle}>{doc.name}</h2>
         <span className="font-data text-small text-muted">v{state.version}</span>
@@ -123,7 +132,7 @@ function EditorBody({
         <button type="button" className={btnGhost} disabled={blocked !== null} title={blocked ?? undefined} onClick={() => setConfirmingDelete(true)}>
           Delete
         </button>
-        <button type="button" className={btnPrimary} disabled={saveDisabled} onClick={save}>
+        <button type="button" className={`${btnPrimary} disabled:border disabled:border-hairline disabled:bg-raised disabled:bg-none disabled:text-faint disabled:opacity-100 disabled:shadow-none disabled:hover:bg-raised`} disabled={saveDisabled} onClick={save}>
           {readOnly ? 'Save' : status.saveLabel}
         </button>
       </div>
@@ -135,8 +144,30 @@ function EditorBody({
           </div>
         </div>
       )}
+      {issues.length > 0 && (
+        <div className="px-3.5 pb-2">
+          <ul aria-label="Workflow errors" className="m-0 list-none p-0 text-small text-fail">
+            {issues.map((issue, i) => (
+              <li key={i} className="flex gap-2 py-0.5">
+                <span className="min-w-[76px] whitespace-nowrap font-data text-label text-muted">Line {issue.line}, col {issue.column}</span>
+                <span>
+                  {messageParts(issue.message).map((part, j) =>
+                    part.code ? (
+                      <code key={j} className="rounded-sm bg-raised px-1 font-data text-ink">
+                        {part.text}
+                      </code>
+                    ) : (
+                      part.text
+                    ),
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="px-3.5">
-        <YamlEditor text={state.text} readOnly={readOnly} issues={state.issues} onChange={(text) => dispatch({ type: 'edit', text })} onSave={save} />
+        <YamlEditor text={state.text} readOnly={readOnly} issues={issues} onChange={(text) => dispatch({ type: 'edit', text })} onSave={save} />
       </div>
       <p className="px-3.5 pt-2 text-small text-faint">Edits apply from the Ticket&apos;s next Retry; in-flight Tickets finish on the version they snapshotted.</p>
       {confirmingDelete && (
@@ -145,5 +176,7 @@ function EditorBody({
         </ConfirmDialog>
       )}
     </section>
+    <WorkflowDiagram model={live.diagram} stale={live.stale} errorCount={issues.length} />
+    </div>
   );
 }
