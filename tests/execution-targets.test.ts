@@ -144,6 +144,37 @@ describe('kubeconfig Secret', () => {
   });
 });
 
+describe('Repository Proxy signing key', () => {
+  it('is created and replaced by rotation, shown once, and follows a rename and delete', async () => {
+    server = await startServer();
+    const created = await server.api('POST', '/api/execution-targets', body());
+    expect(created.body.proxyKey).toEqual({ set: false, secretName: 'k8s-prod-proxy-key', rotatedAt: null });
+
+    const first = await server.api('POST', '/api/execution-targets/k8s-prod/rotate-proxy-key');
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ revokedRunning: 0 });
+    const second = await server.api('POST', '/api/execution-targets/k8s-prod/rotate-proxy-key');
+    expect(second.body.key).not.toBe(first.body.key);
+
+    const read = await server.api('GET', '/api/execution-targets/k8s-prod');
+    expect(read.body.proxyKey).toMatchObject({ set: true, rotatedAt: second.body.rotatedAt });
+    expect(JSON.stringify(read.body)).not.toContain(second.body.key);
+
+    const renamed = await server.api('PATCH', '/api/execution-targets/k8s-prod', { name: 'k8s-main' });
+    expect(renamed.body.proxyKey).toMatchObject({ set: true, secretName: 'k8s-main-proxy-key' });
+
+    await server.api('DELETE', '/api/execution-targets/k8s-main');
+    await server.api('POST', '/api/execution-targets', body({ name: 'k8s-main' }));
+    expect((await server.api('GET', '/api/execution-targets/k8s-main')).body.proxyKey.set).toBe(false);
+  });
+
+  it('refuses rotating local and an unknown target', async () => {
+    server = await startServer();
+    expect((await server.api('POST', '/api/execution-targets/local/rotate-proxy-key')).status).toBe(409);
+    expect((await server.api('POST', '/api/execution-targets/nope/rotate-proxy-key')).status).toBe(404);
+  });
+});
+
 describe('deletion impact', () => {
   it('reports zero Tickets escalating while no run state references targets', async () => {
     server = await startServer();

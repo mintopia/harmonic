@@ -10550,6 +10550,61 @@
         ],
         "description": "Whether the kubeconfig Secret is set. The kubeconfig itself is write-only and never returned."
       },
+      "ExecutionTargetProxyKeyInput": {
+        "type": "object",
+        "properties": {
+          "set": {
+            "type": "boolean",
+            "example": true
+          },
+          "secretName": {
+            "type": "string",
+            "example": "k8s-prod-proxy-key"
+          },
+          "rotatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784030400000,
+            "description": "When the signing key was last created or rotated."
+          }
+        },
+        "required": [
+          "set",
+          "secretName",
+          "rotatedAt"
+        ],
+        "description": "Whether the Repository Proxy signing key Secret is set. The key is never returned except once by rotation."
+      },
+      "ExecutionTargetProxyKeyRotationInput": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "Zm9v...",
+            "description": "The new signing key. Shown only in this response; copy it to the Repository Proxy."
+          },
+          "rotatedAt": {
+            "type": "number",
+            "example": 1784030400000
+          },
+          "revokedRunning": {
+            "type": "number",
+            "example": 2,
+            "description": "Tickets running on the target whose pass is now revoked."
+          }
+        },
+        "required": [
+          "key",
+          "rotatedAt",
+          "revokedRunning"
+        ]
+      },
       "ExecutionTargetInput": {
         "type": "object",
         "properties": {
@@ -10657,6 +10712,16 @@
               }
             ]
           },
+          "proxyKey": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionTargetProxyKeyInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "running": {
             "type": "number",
             "example": 0,
@@ -10697,6 +10762,7 @@
           "concurrencyLimit",
           "repositoryProxyUrl",
           "kubeconfig",
+          "proxyKey",
           "running",
           "createdAt",
           "updatedAt"
@@ -21722,6 +21788,63 @@
         "additionalProperties": false,
         "description": "Whether the kubeconfig Secret is set. The kubeconfig itself is write-only and never returned."
       },
+      "ExecutionTargetProxyKey": {
+        "type": "object",
+        "properties": {
+          "set": {
+            "type": "boolean",
+            "example": true
+          },
+          "secretName": {
+            "type": "string",
+            "example": "k8s-prod-proxy-key"
+          },
+          "rotatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784030400000,
+            "description": "When the signing key was last created or rotated."
+          }
+        },
+        "required": [
+          "set",
+          "secretName",
+          "rotatedAt"
+        ],
+        "additionalProperties": false,
+        "description": "Whether the Repository Proxy signing key Secret is set. The key is never returned except once by rotation."
+      },
+      "ExecutionTargetProxyKeyRotation": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "Zm9v...",
+            "description": "The new signing key. Shown only in this response; copy it to the Repository Proxy."
+          },
+          "rotatedAt": {
+            "type": "number",
+            "example": 1784030400000
+          },
+          "revokedRunning": {
+            "type": "number",
+            "example": 2,
+            "description": "Tickets running on the target whose pass is now revoked."
+          }
+        },
+        "required": [
+          "key",
+          "rotatedAt",
+          "revokedRunning"
+        ],
+        "additionalProperties": false
+      },
       "ExecutionTarget": {
         "type": "object",
         "properties": {
@@ -21829,6 +21952,16 @@
               }
             ]
           },
+          "proxyKey": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionTargetProxyKey"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "running": {
             "type": "number",
             "example": 0,
@@ -21869,6 +22002,7 @@
           "concurrencyLimit",
           "repositoryProxyUrl",
           "kubeconfig",
+          "proxyKey",
           "running",
           "createdAt",
           "updatedAt"
@@ -44151,6 +44285,67 @@
           },
           "404": {
             "description": "No target has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/execution-targets/{name}/rotate-proxy-key": {
+      "post": {
+        "tags": [
+          "Execution Targets"
+        ],
+        "description": "Replace the Repository Proxy signing key, which revokes every outstanding pass. Creates the key when none is set. The new key is returned once; copy it to the Repository Proxy, which rejects every pass until it has the new key. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "example": "k8s-prod"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new key, shown once.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionTargetProxyKeyRotation"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No target has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`local` is built in.",
             "content": {
               "application/json": {
                 "schema": {

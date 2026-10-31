@@ -3,7 +3,10 @@ import {
   NEW_TARGET_DRAFT,
   canTestConnection,
   connectionTestRequest,
+  daysAgo,
   deleteCopy,
+  rotateKeyCopy,
+  rotatedSummary,
   draftBody,
   draftErrors,
   draftFromTarget,
@@ -28,6 +31,7 @@ const prod: ExecutionTarget = {
   concurrencyLimit: 4,
   repositoryProxyUrl: 'https://repo-proxy.example',
   kubeconfig: { set: true, secretName: 'k8s-prod-kubeconfig', updatedAt: 1 },
+  proxyKey: { set: true, secretName: 'k8s-prod-proxy-key', rotatedAt: 1 },
   running: 2,
   createdAt: 1,
   updatedAt: 1,
@@ -170,5 +174,22 @@ describe('Workspace allow list', () => {
     const refusal = workspaceRefusal('k8s-prod', 'mintopia/harmonic');
     expect(refusal.link).toBeNull();
     expect(plain(refusal.parts)).toBe('Kubernetes targets are not available to a Workspace in direct mode. Switch the Isolation Mode to worktree first.');
+  });
+});
+
+describe('rotate signing key copy', () => {
+  it('says who loses git access, counting running Tickets', () => {
+    expect(rotateKeyCopy('k8s-prod', 2).running.map((p) => p.text).join('')).toBe('2 Tickets are running on k8s-prod now. Their next checkpoint push fails until they start a new pod.');
+    expect(rotateKeyCopy('k8s-prod', 1).running[0]?.text).toBe('1 Ticket is running on ');
+    expect(rotateKeyCopy('k8s-prod', 0).running.map((p) => p.text).join('')).toContain('No Tickets are running');
+  });
+
+  it('summarises the revoked passes and the key age', () => {
+    expect(rotatedSummary(2)).toBe('Rotated just now · 2 passes revoked.');
+    expect(rotatedSummary(1)).toBe('Rotated just now · 1 pass revoked.');
+    const day = 86_400_000;
+    expect(daysAgo(0, 28 * day + 5)).toBe('28 days ago');
+    expect(daysAgo(0, day + 1)).toBe('1 day ago');
+    expect(daysAgo(0, 1000)).toBe('today');
   });
 });

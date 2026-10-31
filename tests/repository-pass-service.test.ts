@@ -7,9 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { openAsyncDb } from '../src/db/async.js';
-import { seedWorkspace } from './helpers.js';
 import { loadSecretKey } from '../src/secrets/secret-key.js';
-import { SecretService } from '../src/secrets/secret-service.js';
+import { GlobalSecretService } from '../src/secrets/global-secret-service.js';
 import { RepositoryPassService, PASS_LIFETIME_MS } from '../src/repository-proxy/pass-service.js';
 import { verifyPass } from '../src/repository-proxy/pass.js';
 import { createRepositoryProxy, repositoryPath } from '../src/repository-proxy/server.js';
@@ -36,7 +35,6 @@ const fails = async (cwd: string, ...args: string[]) => {
 describe('RepositoryPassService', () => {
   let root: string;
   let upstream: string;
-  let workspaceId: number;
   let service: RepositoryPassService;
   let proxy: Server | undefined;
   let proxyKey = '';
@@ -70,8 +68,7 @@ describe('RepositoryPassService', () => {
     await git(root, 'init', '-b', 'main', join(root, 'work'));
     await git(join(root, 'work'), 'remote', 'add', 'origin', upstream);
     const db = await openAsyncDb(root);
-    workspaceId = await seedWorkspace(db, root);
-    service = new RepositoryPassService(new SecretService(db, loadSecretKey(root, {})), () => now);
+    service = new RepositoryPassService(new GlobalSecretService(db, loadSecretKey(root, {})), () => now);
   });
 
   afterAll(() => {
@@ -80,30 +77,28 @@ describe('RepositoryPassService', () => {
   });
 
   it('refuses to issue a pass until a signing key exists', async () => {
-    expect(await service.status(workspaceId, 'k8s-prod')).toEqual({ set: false, secretName: 'k8s-prod-proxy-key', lastRotatedAt: null });
-    await expect(service.issue(workspaceId, 'k8s-prod', spec())).rejects.toThrow(/no signing key/);
+    await expect(service.issue('k8s-prod', spec())).rejects.toThrow(/no signing key/);
   });
 
   it('issues a 24 h pass the proxy accepts for git fetch', async () => {
-    const { key } = await service.rotate(workspaceId, 'k8s-prod');
+    const { key } = await service.rotate('k8s-prod');
     await startProxy(key);
-    const token = await service.issue(workspaceId, 'k8s-prod', spec());
+    const token = await service.issue('k8s-prod', spec());
     const verdict = verifyPass(token, key, now);
     expect(verdict.ok && verdict.pass.expiresAt).toBe(now + PASS_LIFETIME_MS);
     expect(await fetchWith(token)).toBe(false);
   });
 
   it('rejects the old pass after rotation, and a new pass works once the proxy has the new key', async () => {
-    const oldToken = await service.issue(workspaceId, 'k8s-prod', spec());
-    const rotated = await service.rotate(workspaceId, 'k8s-prod');
+    const oldToken = await service.issue('k8s-prod', spec());
+    const rotated = await service.rotate('k8s-prod');
     expect(rotated.key).not.toBe(proxyKey);
 
-    const newToken = await service.issue(workspaceId, 'k8s-prod', spec());
+    const newToken = await service.issue('k8s-prod', spec());
     expect(await fetchWith(newToken)).toBe(true);
 
     await startProxy(rotated.key);
     expect(await fetchWith(oldToken)).toBe(true);
     expect(await fetchWith(newToken)).toBe(false);
-    expect((await service.status(workspaceId, 'k8s-prod')).set).toBe(true);
-  });
+      });
 });
