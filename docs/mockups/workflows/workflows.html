@@ -704,6 +704,61 @@ dl.props .wide{flex:1 1 100%;border-right:0;border-top:1px solid var(--hairline)
 <div class="vlabel">Escalation reasons and the step each affects</div>
 <div class="card" style="padding:8px 12px"><table class="reasons"><tr><th>Escalation reason</th><th>Step it affects</th><th>Accept continues with</th></tr><tr><td>Attempt counter exhausted</td><td><code class="i">security</code> (critic)</td><td><code class="i">merge</code></td></tr><tr><td>Guardrail trip (a <code class="i">run:</code> step created a commit)</td><td><code class="i">lint</code></td><td><code class="i">verify</code></td></tr><tr><td>Permanent infrastructure failure</td><td><code class="i">implement</code> (agent)</td><td><code class="i">verify</code></td></tr><tr><td>Unresolved merge conflict</td><td><code class="i">merge</code></td><td>Merge</td></tr><tr><td>Red post-merge check</td><td><code class="i">post-merge</code> (outside <code class="i">attempts:</code>)</td><td><code class="i">close</code></td></tr></table></div>
 
+
+<h2 class="sec">7. #928 Epics choose and run an Epic workflow<span class="tk">#928</span></h2>
+<p class="sub">Epics run on the workflow engine. An operator picks the Epic workflow globally and can override it per Workspace. Only workflows declared <code class="i">subject: epic</code> are offered. Workflow Labels and per-Epic choice do not apply to Epics.</p>
+<div class="tabs"><span class="tab">General</span><span class="tab on">Execution</span><span class="tab">Verification</span><span class="tab">Prompts</span><span class="tab">Integrations</span><span class="tab">Security</span><span class="tab">Archive</span></div>
+
+<div class="vlabel">Settings &rsaquo; Execution: an Epic workflow card below Workflow Labels</div>
+<div class="grid2c">
+<div>
+<div class="scope"><span class="scopechip">Global</span><span class="crumb">Settings &rsaquo; Execution</span></div>
+<section class="card section"><h3>Epic workflow</h3><p class="desc">The Task Execution Workflow that verifies an Epic's integration branch, resolves failures, and merges it into the base. Workflow Labels do not apply to Epics.</p>
+<span class="label fl">Epic workflow</span><div class="select" style="max-width:360px">Migrated Epic (global) <span class="dim data">v1</span></div>
+<p class="note">Used when the Workspace has no Epic workflow of its own.</p></section>
+</div>
+<div>
+<div class="scope"><span class="scopechip ws">Workspace</span><span class="crumb">harmonic &rsaquo; Settings &rsaquo; Execution</span></div>
+<section class="card section"><h3>Epic workflow</h3><p class="desc">Overrides the global Epic workflow for every Epic in this Workspace.</p>
+<span class="label fl">Epic workflow</span><div class="select" style="max-width:360px">Use global default &middot; Migrated Epic (global)</div>
+<p class="note">Lists Epic workflows only (<code class="i">subject: epic</code>). Applies from the next Epic verification.</p></section>
+</div></div>
+
+<div class="vlabel">Epic page: workflow header and step list (same component as the Ticket page)</div>
+<div class="grid2c"><div>
+<div class="card tickethead"><div class="thr"><h1>Epic: Task Execution Workflows</h1><span class="pill working" style="margin-top:8px">verifying</span></div>
+<dl class="props"><div><dt class="label">Workspace</dt><dd>harmonic</dd></div><div><dt class="label">Members</dt><dd>2 merged into <code>epic/887</code></dd></div>
+<div class="wide"><dt class="label">Workflow</dt><dd><div class="wf"><strong>Migrated Epic (harmonic)</strong> <span class="dim data">v1</span> <span class="how">&mdash; Workspace Epic workflow</span></div></dd></div></dl></div>
+<div class="card" style="padding:0 16px;margin-top:12px"><div class="frow"><div class="label">Workflow</div><div class="wf"><strong>Migrated Epic (harmonic)</strong> <span class="dim data">v1</span> <span class="how">&mdash; Workspace Epic workflow</span></div></div><div class="frow"><div class="label">Workflow</div><div class="wf"><strong>Migrated Epic (global)</strong> <span class="dim data">v1</span> <span class="how">&mdash; global Epic workflow</span></div></div></div>
+<p class="note">Two sources only: the Workspace Epic workflow, or the global one.</p>
+<div class="vlabel">Earlier Epic Attempts (before the cutover)</div>
+<div class="card" style="padding:8px 12px"><p class="note" style="margin:0">Epic verifications that ran before the workflow cutover stay listed here as history, one row per verify pass, read-only.</p></div>
+</div>
+<div>
+<div class="card steps2">
+ <div class="stephead"><b>Steps</b><span class="dim small">Migrated Epic (harmonic) v1</span></div>
+ <div class="atabs" role="tablist"><span class="label">Attempt</span><span class="atab"><svg class="sic fail" width="18" height="18" viewBox="0 0 18 18" aria-label="fail"><circle cx="9" cy="9" r="8" fill="currentColor"/><path d="M6 6l6 6M12 6l-6 6" stroke="var(--surface)" stroke-width="1.8" stroke-linecap="round"/></svg>Attempt 1</span><span class="atab on"><svg class="sic running spin" width="18" height="18" viewBox="0 0 18 18" aria-label="running"><circle cx="9" cy="9" r="7" fill="none" stroke="var(--running-tint)" stroke-width="2.4"/><path d="M9 2a7 7 0 0 1 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>Attempt 2 of 3</span><span class="sp"></span><span class="small dim">Attempt 3 has not started</span></div>
+ <div class="sgh"><span>Attempt 2 of 3</span><span class="sp"></span><span class="c">bounded by max: 3</span></div>
+ <details class="stp " open><summary><span class="chev"></span><svg class="sic pass" width="18" height="18" viewBox="0 0 18 18" aria-label="pass"><circle cx="9" cy="9" r="8" fill="currentColor"/><path d="M5.3 9.3l2.4 2.4 4.6-4.9" fill="none" stroke="var(--surface)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sn">resolve</span><span class="kb">agent &middot; prompt <code>epic-resolve</code></span><span class="rn">if: attempt.number &gt; 1</span><span class="dur">3m 20s</span></summary><div class="logpane"><div class="lg"><span class="n">1</span><span class="c">Starting Claude session (Opus 5.5) in epic/887 worktree</span></div><div class="lg"><span class="n">2</span><span class="c">Prompt: epic-resolve (with Attempt 1 verify output)</span></div><div class="lg"><span class="n">3</span><span class="c">Editing src/execution/workflow-engine.ts</span></div><div class="lg"><span class="n">4</span><span class="c">Committed 9be01d2 "Fix integration test for merged members"</span></div></div></details>
+ <details class="stp "><summary><span class="chev"></span><svg class="sic running spin" width="18" height="18" viewBox="0 0 18 18" aria-label="running"><circle cx="9" cy="9" r="7" fill="none" stroke="var(--running-tint)" stroke-width="2.4"/><path d="M9 2a7 7 0 0 1 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span class="sn">verify</span><span class="kb">command &middot; <code>npm test</code></span><span class="dur">0m 31s</span></summary></details>
+ <div class="pgrp"><div class="pgl">parallel</div>
+ <div class="stp nolog in "><div class="sm"><span class="chev off"></span><svg class="sic pending" width="18" height="18" viewBox="0 0 18 18" aria-label="pending"><circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="sn">correctness</span><span class="kb">critic &middot; claude opus-5-5</span><span class="dur">&ndash;</span></div></div>
+ </div>
+ <div class="stp nolog "><div class="sm"><span class="chev off"></span><svg class="sic pending" width="18" height="18" viewBox="0 0 18 18" aria-label="pending"><circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="sn">merge</span><span class="kb">merge &middot; Epic into base, merge-commit policy</span><span class="dur">&ndash;</span></div></div>
+ <div class="stp nolog "><div class="sm"><span class="chev off"></span><svg class="sic pending" width="18" height="18" viewBox="0 0 18 18" aria-label="pending"><circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="sn">post-merge</span><span class="kb">post-merge-check</span><span class="dur">&ndash;</span></div></div>
+ <div class="stp nolog "><div class="sm"><span class="chev off"></span><svg class="sic pending" width="18" height="18" viewBox="0 0 18 18" aria-label="pending"><circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="sn">close</span><span class="kb">close-ticket</span><span class="dur">&ndash;</span></div></div>
+ <div class="sgh"><span>Cleanup</span><span class="sp"></span><span class="c">runs on done and on Close &middot; 1 step</span></div>
+ <div class="stp nolog "><div class="sm"><span class="chev off"></span><svg class="sic pending" width="18" height="18" viewBox="0 0 18 18" aria-label="pending"><circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="sn">cleanup</span><span class="kb">cleanup &middot; retire <code>epic/887</code></span><span class="dur">&ndash;</span></div></div>
+</div>
+<div class="vlabel">Attempt 1 selected: clean first pass runs no agent</div>
+<div class="card steps2">
+ <div class="atabs" role="tablist"><span class="label">Attempt</span><span class="atab on"><svg class="sic fail" width="18" height="18" viewBox="0 0 18 18" aria-label="fail"><circle cx="9" cy="9" r="8" fill="currentColor"/><path d="M6 6l6 6M12 6l-6 6" stroke="var(--surface)" stroke-width="1.8" stroke-linecap="round"/></svg>Attempt 1</span><span class="atab"><svg class="sic running spin" width="18" height="18" viewBox="0 0 18 18" aria-label="running"><circle cx="9" cy="9" r="7" fill="none" stroke="var(--running-tint)" stroke-width="2.4"/><path d="M9 2a7 7 0 0 1 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>Attempt 2 of 3</span></div>
+ <div class="sgh"><span>Attempt 1 of 3</span><span class="sp"></span><span class="c">ended on <code class="i">verify</code>: fail, next Attempt started</span></div>
+ <div class="stp nolog skip"><div class="sm"><span class="chev off"></span><svg class="sic skipped" width="18" height="18" viewBox="0 0 18 18" aria-label="skipped"><circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5.5 9h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="sn">resolve</span><span class="kb">agent &middot; prompt <code>epic-resolve</code></span><span class="rn">if: attempt.number &gt; 1</span><span class="dur">skipped</span></div></div>
+ <details class="stp " open><summary><span class="chev"></span><svg class="sic fail" width="18" height="18" viewBox="0 0 18 18" aria-label="fail"><circle cx="9" cy="9" r="8" fill="currentColor"/><path d="M6 6l6 6M12 6l-6 6" stroke="var(--surface)" stroke-width="1.8" stroke-linecap="round"/></svg><span class="sn">verify</span><span class="kb">command &middot; <code>npm test</code></span><span class="oc fail">fail</span><span class="dur">49s</span></summary><div class="logpane"><div class="lg"><span class="n">1</span><span class="c">$ npm test</span></div><div class="lg bad"><span class="n">2</span><span class="c">FAIL  tests/workflow-engine.test.ts &gt; merged members &gt; runs both</span></div><div class="lg bad"><span class="n">3</span><span class="c">Command exited with code 1</span></div></div></details>
+ <div class="stp nolog skip"><div class="sm"><span class="chev off"></span><svg class="sic skipped" width="18" height="18" viewBox="0 0 18 18" aria-label="skipped"><circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5.5 9h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="sn">correctness</span><span class="kb">critic &middot; claude opus-5-5</span><span class="dur">not run</span></div></div>
+</div>
+</div></div>
 </div>
 <script>
 window.toggleSelect = window.toggleSelect || function(el){

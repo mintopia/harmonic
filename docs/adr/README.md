@@ -1,8 +1,8 @@
 # Harmonic architecture decisions
 
-The current set contains **56 ADRs**, reconciled on **2026-10-03**; ADR-0052
+The current set contains **57 ADRs**, reconciled on **2026-10-03**; ADR-0052
 to ADR-0056 were added on **2026-10-30**, and ADR-0053 (with ADR-0052) was
-amended on **2026-10-31**. They record
+amended on **2026-10-31**, when ADR-0057 was added. They record
 accepted decisions, their rationale, and explicit amendments. A Context section
 may describe a historical defect; it does not by itself identify an open issue.
 Current-status notes and the operative Decision sections describe the current
@@ -27,10 +27,10 @@ Attempts without timing measurements retain the documented wall-clock fallback.
 
 | Topic | Foundation | Current amendments |
 |---|---|---|
-| Execution and escalation | 0001, 0002, 0005 | 0020 transition rules; 0027 pause/resume; 0038 step-aware Accept and fresh-Attempt Reject (resume table superseded by 0053); 0053 Task Execution Workflows; 0055 migration to them; 0056 Kubernetes Execution Targets (amends 0001's one-process, local-repositories ceiling) |
+| Execution and escalation | 0001, 0002, 0005 | 0020 transition rules; 0027 pause/resume; 0038 step-aware Accept and fresh-Attempt Reject (resume table superseded by 0053); 0053 Task Execution Workflows (Epics added by 0057); 0055 migration to them; 0056 Kubernetes Execution Targets (amends 0001's one-process, local-repositories ceiling) |
 | Merge placement and publication | 0001 | 0039 administrative worktrees and base synchronization; 0040 reconciliation and atomic publication |
-| Epics | 0004, 0015, 0016 | 0017 summary page; 0018 stored identity; 0023 structural roots; 0028 Epic Attempts; 0039 all-direct completion; 0051 blocked-by hold |
-| Verification | 0003 | 0028 stage lists; 0031 ordering; 0037 additive overlays; 0038 Step overrides; 0039 post-merge checkout; 0053 verify commands and Critics become workflow steps for Tickets and Native Tasks |
+| Epics | 0004, 0015, 0016 | 0017 summary page; 0018 stored identity; 0023 structural roots; 0028 Epic Attempts; 0039 all-direct completion; 0051 blocked-by hold; 0057 Epics run on the workflow engine (replaces 0028's Epic verification mechanics, amends 0053's Epic deferral) |
+| Verification | 0003 | 0028 stage lists; 0031 ordering; 0037 additive overlays; 0038 Step overrides; 0039 post-merge checkout; 0053 verify commands and Critics become workflow steps for Tickets and Native Tasks; 0057 the same for Epics (replaces 0028's Epic stage and resolve loop) |
 | Configuration and harnesses | 0009 | 0022 baseline/global/workspace layering; 0025 OpenCode; 0036 unattended permission modes; 0037 verifier overlays; 0046 tracker selection, Code Repository, Secrets (amended 2026-10-03: private-host probes; generic git Code Repository); 0049 Routing Labels (amended by 0052 Route Classifier); 0052 Model Options (amended 2026-10-31 by 0053: codes, Ticket overrides) |
 | Prompts | 0047 | superseded with 0050 by 0054 Prompt Library (0047's visibility rule kept) |
 | Conversations and navigation | 0006, 0011 | 0026 read-only Activity; 0029 transcript view; 0033 scoped routes; 0035 eager command discovery |
@@ -77,7 +77,7 @@ is historical and retains the terminology used at the reset.
 | 0025 | [The OpenCode harness and dynamic harness capabilities](0025-opencode-harness-and-dynamic-capabilities.md) |
 | 0026 | [Activity is strictly a read-only agent glance](0026-activity-strictly-read-only-agent-glance.md) |
 | 0027 | [Pause and resume: an operator execution freeze and one unified warm/cold resume](0027-pause-and-resume.md) |
-| 0028 | [Epic-as-workable and staged Verification](0028-epic-as-workable-and-staged-verification.md) |
+| 0028 | [Epic-as-workable and staged Verification](0028-epic-as-workable-and-staged-verification.md) (Epic verification mechanics replaced by 0057) |
 | 0029 | [Conversations as a first-class view with rich transcript rendering](0029-conversations-first-class-view-and-rich-transcript.md) |
 | 0030 | [In-place self-upgrade for packaged instances](0030-in-place-self-upgrade.md) |
 | 0031 | [Reorderable, named verifier lists with @dnd-kit](0031-reorderable-verifier-lists-with-dnd-kit.md) |
@@ -102,10 +102,11 @@ is historical and retains the terminology used at the reset.
 | 0050 | [The Prompts tab is organised by Prompt Anatomy](0050-prompts-tab-is-organised-by-prompt-anatomy.md) (superseded by 0054) |
 | 0051 | [An Epic's blocked-by links hold its Members](0051-epic-blocked-by-links-hold-members.md) |
 | 0052 | [A Route Classifier picks a Model Option when no operator setting or Routing Label applies](0052-route-classifier-picks-a-model-option.md) (amended 2026-10-31: Model Option codes, Ticket overrides) |
-| 0053 | [Task Execution Workflows define a Ticket's whole execution process](0053-task-execution-workflows.md) (amended 2026-10-31: steps reference Model Options by code) |
+| 0053 | [Task Execution Workflows define a Ticket's whole execution process](0053-task-execution-workflows.md) (amended 2026-10-31: steps reference Model Options by code; amended 2026-10-31 by 0057: Epics) |
 | 0054 | [The Prompt Library replaces Prompt Fragments and Prompt Anatomy](0054-prompt-library.md) |
-| 0055 | [Existing execution settings migrate to Task Execution Workflows at first boot](0055-migration-to-task-execution-workflows.md) |
+| 0055 | [Existing execution settings migrate to Task Execution Workflows at first boot](0055-migration-to-task-execution-workflows.md) (amended 2026-10-31 by 0057: Epic settings) |
 | 0056 | [Kubernetes Execution Targets run workflow steps in pods behind a Repository Proxy](0056-kubernetes-execution-targets-and-repository-proxy.md) |
+| 0057 | [Epics run on the Task Execution Workflow engine through a bundled Epic workflow](0057-epics-run-on-the-workflow-engine.md) |
 
 ## Where every pre-reset ADR went
 
