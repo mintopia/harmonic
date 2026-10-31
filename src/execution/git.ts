@@ -224,6 +224,29 @@ export const Git = {
     }
   },
 
+  /** Fetch `branch` from `remote` into `refs/remotes/<remote>/<branch>` and return its tip oid. */
+  async fetchRemoteBranch(dir: string, remote: string, branch: string): Promise<string> {
+    const tracking = `refs/remotes/${remote}/${branch}`;
+    await git(dir, 'fetch', '--no-tags', remote, `+refs/heads/${branch}:${tracking}`);
+    return Git.revParse(dir, tracking);
+  },
+
+  /** Push `oid` to `refs/heads/<branch>` on `remote` as a plain fast-forward; a moved remote is `rejected`, never forced. */
+  async pushToRemoteBranch(
+    dir: string,
+    remote: string,
+    oid: string,
+    branch: string,
+  ): Promise<{ ok: true } | { ok: false; rejected: boolean; detail: string }> {
+    try {
+      await git(dir, 'push', remote, `${oid}:refs/heads/${branch}`);
+      return { ok: true };
+    } catch (err) {
+      const detail = err instanceof GitError ? err.message : String(err);
+      return { ok: false, rejected: /non-fast-forward|fetch first|rejected|stale info/i.test(detail), detail };
+    }
+  },
+
   /** Add a disposable worktree with a DETACHED HEAD at `oid` — no branch is
    * created or moved, so a verifier sees a stable tree it cannot merge. */
   addDetachedWorktree: (dir: string, worktreePath: string, oid: string) =>
